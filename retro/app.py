@@ -1,0 +1,76 @@
+import asyncio
+import base64
+import binascii
+import secrets
+from ipaddress import ip_address
+from pathlib import Path
+
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+
+from retro.config import ROOT, Settings
+from retro.integrations.iiko import IikoClient
+from retro.modules.cashier.expenses import ExpenseStore
+from retro.modules.cashier.routes import router as cashier_router
+from retro.modules.cashier.service import SnapshotCache, today_tashkent
+
+STATIC = Path(__file__).parent / 'static'
+
+
+def create_app(settings=None, *, expense_db_path=None):
+    settings = settings or Settings.from_env()
+    app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.settings = settings
+    app.state.iiko = IikoClient(settings)
+    app.state.iiko_lock = asyncio.Lock()
+    app.state.cache = SnapshotCache()
+    app.state.expenses = ExpenseStore(expense_db_path or ROOT / 'build' / 'cashier.sqlite3')
+
+    @app.middleware('http')
+    async def security(request: Request, call_next):
+        if settings.dashboard_allowed_network and request.client:
+            try:
+                address = ip_address(request.client.host)
+            except ValueError:
+                return JSONResponse({'detail': 'Адрес клиента не распознан.'}, 403)
+            if not address.is_loopback and address not in settings.dashboard_allowed_network:
+                return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
+        authorized = False
+        if settings.dashboard_password:
+            header = request.headers.get('Authorization', '')
+            if header.startswith('Basic '):
+                try:
+                    user, password = base64.b64decode(header[6:], validate=True).decode().split(':', 1)
+                    authorized = secrets.compare_digest(user.encode(), settings.dashboard_user.encode()) & secrets.compare_digest(password.encode(), settings.dashboard_password.encode())
+                except (ValueError, UnicodeDecodeError, binascii.Error):
+                    pass
+            if not authorized:
+                return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
+                                    headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
+        elif request.client is None or request.client.host not in ('127.0.0.1', '::1'):
+            return JSONResponse({'detail': 'Внешний доступ закрыт. Настройте защиту дашборда.'}, 403)
+        response = await call_next(request)
+        response.headers['Cache-Control'] = 'no-store'
+        response.headers['X-Content-Type-Options'] = 'nosniff'
+        response.headers['X-Frame-Options'] = 'DENY'
+        response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        return response
+
+    @app.get('/')
+    def index():
+        return FileResponse(STATIC / 'index.html')
+
+    @app.get('/api/config')
+    def config():
+        return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
+                    configured=settings.configured, restaurant='Retro Milliy',
+                    modules=[dict(id='cashier', name='Кассир', available=True)], planned_modules=2)
+
+    app.include_router(cashier_router)
+    app.mount('/static', StaticFiles(directory=STATIC), name='static')
+    return app
+
+
+app = create_app()
