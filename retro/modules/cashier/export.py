@@ -45,7 +45,7 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['B20'].number_format = MONEY
     sheet['B21'].number_format = MONEY
     sheet['A27'], sheet['B27'] = 'Новые предоплаты наличными · iiko', snapshot.cash_prepayment
-    sheet['A28'], sheet['B28'] = 'Расходы наличными (вручную)', expense_total
+    sheet['A28'], sheet['B28'] = 'Расходы наличными (включая зарплату)', expense_total
     sheet['A29'], sheet['B29'] = 'К передаче в финансовый отдел', handover
     sheet['A30'], sheet['B30'] = 'Прочие поступления наличными', receipt_total
     for position in ('B27', 'B28', 'B29', 'B30'):
@@ -67,7 +67,7 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['C11'] = 'ИТОГО ВЫРУЧКА:'
     sheet['D11'] = f'=SUM(D3:D{2 + len(PAYMENT_SOURCES)})'
     sheet['D11'].number_format = MONEY
-    sheet['C13'] = 'РУЧНЫЕ РАСХОДЫ'
+    sheet['C13'] = 'РАСХОДЫ КАССЫ'
     sheet['C13'].font = Font(name='Calibri', size=11, bold=True, color='173D38')
     sheet['C14'], sheet['D14'] = 'Название', 'Сумма, сум'
     for row, item in enumerate(expenses[:22], 15):
@@ -149,7 +149,7 @@ def export_report(snapshot, expenses=(), receipts=()):
     manual['A2'].number_format = 'dd.mm.yyyy'
     manual['A4'], manual['B4'] = 'Демо · по данным iiko', next(
         (p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
-    manual['A5'], manual['B5'] = 'Расходы наличными · вручную', expense_total
+    manual['A5'], manual['B5'] = 'Расходы наличными · включая зарплату', expense_total
     manual['A6'], manual['B6'] = 'К передаче в финансовый отдел', handover
     manual['C4'], manual['D4'] = 'Предоплаты наличными · iiko', snapshot.cash_prepayment
     manual['C5'], manual['D5'] = 'Прочие поступления · вручную', receipt_total

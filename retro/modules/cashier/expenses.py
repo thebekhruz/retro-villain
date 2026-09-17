@@ -1,4 +1,4 @@
-"""Day-scoped manual cashier expenses, kept separate from iiko sales data."""
+"""Day-scoped cashier expenses, kept separate from iiko sales data."""
 
 import sqlite3
 from contextlib import closing
@@ -9,16 +9,23 @@ from pathlib import Path
 
 from .service import DataError
 
+DAILY_SALARY = Decimal('350000')
+SALARY_LABELS = {'зарплата', 'зп', 'любовь', 'любовь зп', 'любовь зарплата'}
+
 
 @dataclass(frozen=True)
 class Expense:
-    id: int
+    id: int | None
     day: date
     description: str
     amount: Decimal
+    automatic: bool = False
 
     def json(self):
-        return dict(id=self.id, description=self.description, amount=str(self.amount))
+        result = dict(id=self.id, description=self.description, amount=str(self.amount))
+        if self.automatic:
+            result['automatic'] = True
+        return result
 
 
 class ExpenseStore:
@@ -48,7 +55,11 @@ class ExpenseStore:
                 'SELECT id, description, amount FROM cashier_expenses WHERE day = ? ORDER BY id',
                 (day.isoformat(),),
             ).fetchall()
-        return [Expense(row[0], day, row[1], Decimal(row[2])) for row in rows]
+        manual = [Expense(row[0], day, row[1], Decimal(row[2])) for row in rows]
+        if any(item.amount == DAILY_SALARY and
+               ' '.join(item.description.casefold().split()) in SALARY_LABELS for item in manual):
+            return manual
+        return [Expense(None, day, 'Зарплата', DAILY_SALARY, automatic=True), *manual]
 
     def total(self, day: date):
         return sum((item.amount for item in self.list(day)), Decimal(0))

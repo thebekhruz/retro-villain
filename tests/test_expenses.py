@@ -26,7 +26,18 @@ def test_expenses_survive_reopening_and_are_scoped_to_day(tmp_path):
     assert reopened.delete(first.id, date(2026, 9, 11)) is False
     assert reopened.total(DAY) == Decimal('432000')
     assert reopened.delete(first.id, DAY) is True
-    assert reopened.total(DAY) == Decimal('82000')
+    assert reopened.total(DAY) == Decimal('432000')
+    assert reopened.list(DAY)[0].automatic is True
+
+
+def test_salary_is_present_each_day_without_creating_database_rows(tmp_path):
+    store = ExpenseStore(tmp_path / 'cashier.sqlite3')
+    for day in (DAY, date(2026, 4, 25)):
+        items = store.list(day)
+        assert [(item.description, item.amount, item.automatic) for item in items] == [
+            ('Зарплата', Decimal('350000'), True)]
+        assert store.total(day) == Decimal('350000')
+        assert store.delete(-1, day) is False
 
 
 @pytest.mark.parametrize('description,amount', [('', '100'), ('  ', '100'), ('Кофе', '0'),

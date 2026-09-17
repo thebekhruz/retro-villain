@@ -31,14 +31,12 @@ def test_placeholder_export_is_dated_and_contains_no_people():
         assert client.get('/api/cashier/entrances/export?date=2099-01-01').status_code == 422
 
 
-def test_cashier_page_previews_hikvision_people_as_explicit_demo_cards():
+def test_cashier_page_shows_usd_rate_and_has_no_attendance_preview():
     with TestClient(create_app(Settings()), client=('127.0.0.1', 50000)) as client:
         page = client.get('/').text
-    assert 'Демонстрационные карточки' in page
-    assert 'Вовремя' in page
-    assert 'Опоздал' in page
-    assert 'Нет входа' in page
-    assert 'Тестовые люди и время' in page
+    assert 'id="usd-title"' in page
+    assert 'Демонстрационные карточки' not in page
+    assert 'Зарплата 350 000 сум' in page
 
 
 def test_future_rows_mark_late_and_keep_names_as_text():

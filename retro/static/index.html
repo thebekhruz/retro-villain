@@ -35,15 +35,24 @@
       <article class="metric"><div class="metric-label">Количество чеков <span class="metric-icon">▤</span></div><div class="amount"><span id="receipts">—</span><small>чеков</small></div><div class="metric-foot muted">Только оплаченные продажи Retro</div></article>
       <article class="metric"><div class="metric-label">Средний чек <span class="metric-icon">≈</span></div><div class="amount"><span id="average">—</span><small>сум</small></div><div class="metric-foot muted">Продажи ÷ количество чеков</div></article>
     </section>
+    <section class="panel usd-panel" aria-labelledby="usd-title">
+      <div class="usd-heading"><p class="eyebrow">USD · КУРС ВЫБРАННОГО ДНЯ</p><h2 id="usd-title">Курс за <span id="usd-day">выбранный день</span></h2><p>Сохранён для этой даты и не меняется при просмотре старого отчёта.</p></div>
+      <div class="usd-rates">
+        <div class="usd-rate"><span>Официальный курс ЦБ</span><strong id="usd-official">—</strong><small>сум за 1 USD</small></div>
+        <div class="usd-rate restaurant"><span>Курс Retro Milliy</span><strong id="usd-restaurant">—</strong><small>сум за 1 USD · на 1,5% ниже, округлён вниз до 0,1</small></div>
+      </div>
+      <div class="usd-footer"><span id="usd-source-day">Дата действия курса ЦБ: —</span><a href="https://cbu.uz/ru/arkhiv-kursov-valyut/veb-masteram/" target="_blank" rel="noopener noreferrer">Источник: Центральный банк ↗</a></div>
+      <p id="usd-status" class="usd-status" role="status" aria-live="polite"></p>
+    </section>
     <div class="content-grid">
       <section class="panel payments-panel"><div class="panel-heading"><div><p class="eyebrow">СТРУКТУРА ПРОДАЖ</p><h2>Выручка по типам оплаты</h2></div><span class="tag">сум</span></div><div id="composition" class="composition" aria-hidden="true"></div><div id="payment-empty" class="empty-state"><span>▤</span><p>Здесь появятся оплаты за выбранный день</p></div><div id="payments" class="payments"></div><div class="payment-total"><span>Итого по оплатам</span><strong id="payment-total">—</strong></div><p class="panel-note">Сумма каждого типа оплаты получена из iiko отдельно. «Демо» — название источника выручки.</p></section>
       <aside class="right-column"><section class="panel report-card"><div class="paper-icon"><svg viewBox="0 0 32 40" aria-hidden="true"><path d="M5 1h15l8 8v30H5zM20 1v9h8M10 18h13M10 24h13M10 30h7"/></svg><span>XLSX</span></div><p class="eyebrow">ОТЧЁТ КАССИРА</p><h2>Один день.<br>Один документ.</h2><p>Excel по вашему шаблону — с оплатами, поступлениями, расходами и суммой к передаче.</p><div class="report-detail"><span>Дата</span><strong id="export-date">—</strong></div><div class="report-detail"><span>Формат</span><strong>Excel · .xlsx</strong></div><p class="report-scope">Сумма к передаче: «Демо» + предоплаты наличными + прочие поступления − расходы.</p></section><div class="source-info"><span class="source-dot"></span><div><strong id="source-title">Источник: iikoWeb</strong><p id="updated">Данные ещё не загружены</p></div></div></aside>
     </div>
     <section class="cashier-finance" aria-label="Расходы и передача денег">
       <div class="panel expenses-panel">
-        <div class="finance-heading"><div><p class="eyebrow">РУЧНОЙ УЧЁТ</p><h2>Расходы наличными</h2><p class="finance-subtitle">Добавьте каждую выплату из кассы отдельно <span id="expenses-day"></span></p></div><span class="finance-symbol" aria-hidden="true">↗</span></div>
+        <div class="finance-heading"><div><p class="eyebrow">РАСХОДЫ КАССЫ</p><h2>Расходы наличными</h2><p class="finance-subtitle">Зарплата 350 000 сум добавляется каждый день автоматически. Остальные выплаты внесите отдельно <span id="expenses-day"></span></p></div><span class="finance-symbol" aria-hidden="true">↗</span></div>
         <form id="expense-form" class="expense-form">
-          <div class="expense-field expense-description"><label for="expense-description">На что потрачено</label><input id="expense-description" name="description" type="text" maxlength="160" placeholder="Например, зарплата" required></div>
+          <div class="expense-field expense-description"><label for="expense-description">На что потрачено</label><input id="expense-description" name="description" type="text" maxlength="160" placeholder="Например, такси" required></div>
           <div class="expense-field expense-amount"><label for="expense-amount">Сумма, сум</label><input id="expense-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" required></div>
           <button id="expense-save" class="button primary expense-save" type="submit">Добавить расход</button>
         </form>
@@ -71,23 +80,9 @@
         <div class="handover-rule"><span>Демо · iiko</span><strong id="demo-cash">—</strong></div>
         <div class="handover-rule"><span>Предоплаты наличными · iiko</span><strong id="cash-prepay">—</strong></div>
         <div class="handover-rule"><span>Прочие поступления · вручную</span><strong id="handover-receipts">—</strong></div>
-        <div class="handover-rule"><span>Расходы наличными · вручную</span><strong id="handover-expenses">0</strong></div>
+        <div class="handover-rule"><span>Расходы наличными · включая зарплату</span><strong id="handover-expenses">0</strong></div>
         <div class="handover-divider"></div>
         <p class="handover-note">Расчётная сумма. Безналичные предоплаты не добавляются к наличным. Фактическую передачу пока не отмечаем.</p>
-      </div>
-    </section>
-    <section class="panel entrances-panel" aria-labelledby="entrances-title">
-      <div class="entrances-heading">
-        <div><p class="eyebrow">HIKVISION · ПРОХОДЫ</p><h2 id="entrances-title">Кто пришёл</h2><p class="entrances-subtitle">Так будут выглядеть первые входы за выбранный день <span id="entrances-day"></span></p></div>
-        <button id="entrances-download" class="button attendance-button" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Скачать входы <span class="attendance-file-type">XLSX</span></button>
-      </div>
-      <div class="entrances-meta"><span class="pending-pill"><span aria-hidden="true"></span>Hikvision ещё не подключён</span><span class="late-hint"><span aria-hidden="true"></span>После 10:00 — опоздание</span></div>
-      <div class="entrances-preview-note"><span class="entrances-demo-chip">Демонстрационные карточки</span><p>Тестовые люди и время. Это пример оформления, не данные Hikvision; в XLSX они не попадут.</p></div>
-      <div class="entrance-cards" role="list" aria-label="Пример карточек входа сотрудников">
-        <article class="entrance-card" role="listitem"><div class="entrance-card-top"><span class="entrance-avatar">АМ</span><span class="entrance-state on-time">Вовремя</span></div><h3>Азиза Мирзаева</h3><p class="entrance-role">Кассир · пример</p><div class="entrance-card-bottom"><span>Первый вход</span><strong>09:38</strong></div></article>
-        <article class="entrance-card" role="listitem"><div class="entrance-card-top"><span class="entrance-avatar">ОК</span><span class="entrance-state on-time">Вовремя</span></div><h3>Отабек Каримов</h3><p class="entrance-role">Официант · пример</p><div class="entrance-card-bottom"><span>Первый вход</span><strong>10:00</strong></div></article>
-        <article class="entrance-card is-late" role="listitem"><div class="entrance-card-top"><span class="entrance-avatar">МЮ</span><span class="entrance-state late">Опоздал</span></div><h3>Мадина Юсупова</h3><p class="entrance-role">Повар · пример</p><div class="entrance-card-bottom"><span>Первый вход</span><strong>10:17</strong></div></article>
-        <article class="entrance-card is-missing" role="listitem"><div class="entrance-card-top"><span class="entrance-avatar">БА</span><span class="entrance-state missing">Нет входа</span></div><h3>Бекзод Алиев</h3><p class="entrance-role">Администратор · пример</p><div class="entrance-card-bottom"><span>Первый вход</span><strong>—</strong></div></article>
       </div>
     </section>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Модуль кассира</span><span>Время Ташкента · UZS</span></footer>

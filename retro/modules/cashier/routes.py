@@ -37,6 +37,15 @@ def list_expenses(request: Request, date: date):
                 total=str(sum((item.amount for item in expenses), 0)))
 
 
+@router.get('/usd-rate')
+async def usd_rate(request: Request, date: date):
+    day = selected_day(date)
+    try:
+        return (await request.app.state.usd_rates.get(day)).json()
+    except DataError as error:
+        raise HTTPException(503, str(error)) from None
+
+
 @router.post('/expenses', status_code=201)
 def add_expense(request: Request, body: ExpenseInput):
     day = selected_day(body.date)

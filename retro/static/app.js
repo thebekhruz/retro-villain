@@ -1,5 +1,7 @@
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
+const rateOfficial = new Intl.NumberFormat('ru-RU', {minimumFractionDigits: 2, maximumFractionDigits: 2});
+const rateRestaurant = new Intl.NumberFormat('ru-RU', {minimumFractionDigits: 1, maximumFractionDigits: 1});
 const count = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
 const colors = ['#24594b','#91a786','#d2b77b','#b2c3aa','#81968c','#ddd2b6','#6b8074'];
 const demo = new URLSearchParams(location.search).get('demo') === '1';
@@ -17,6 +19,30 @@ function previousDay(day) {
   const value = new Date(day + 'T12:00:00Z');
   value.setUTCDate(value.getUTCDate()-1);
   return value.toISOString().slice(0,10);
+}
+function clearUsdRate(day) {
+  $('usd-day').textContent = formattedDay(day);
+  $('usd-official').textContent = '—';
+  $('usd-restaurant').textContent = '—';
+  $('usd-source-day').textContent = 'Дата действия курса ЦБ: —';
+  $('usd-status').textContent = 'Загружаем курс ЦБ…';
+  $('usd-status').classList.remove('is-error');
+}
+async function loadUsdRate(day, current, signal) {
+  if (demo) { $('usd-status').textContent = 'В демонстрационном режиме курс не загружается.'; return; }
+  try {
+    const data = await (await request(`/api/cashier/usd-rate?date=${encodeURIComponent(day)}`, signal)).json();
+    if (current !== generation) return;
+    $('usd-official').textContent = rateOfficial.format(Number(data.official_rate));
+    $('usd-restaurant').textContent = rateRestaurant.format(Number(data.restaurant_rate));
+    $('usd-source-day').textContent = 'Курс ЦБ действует с ' + formattedDay(data.source_date);
+    $('usd-status').textContent = '';
+  } catch (error) {
+    if (current === generation && error.name !== 'AbortError') {
+      $('usd-status').textContent = error.message;
+      $('usd-status').classList.add('is-error');
+    }
+  }
 }
 async function request(url, signal, options = {}) {
   const response = await fetch(url, {...options, signal, cache:'no-store'});
@@ -110,10 +136,17 @@ function showExpenses(data) {
     const row = document.createElement('div'); row.className = 'expense-item';
     const name = document.createElement('span'); name.className = 'expense-item-name'; name.textContent = item.description;
     const value = document.createElement('span'); value.className = 'expense-item-value'; value.textContent = money.format(Number(item.amount));
-    const remove = document.createElement('button'); remove.className = 'expense-remove'; remove.type = 'button';
-    remove.textContent = '×'; remove.setAttribute('aria-label', `Удалить расход «${item.description}»`);
-    remove.addEventListener('click', () => deleteExpense(item.id, data.date, remove));
-    row.append(name, value, remove); $('expense-list').append(row);
+    if (item.automatic) {
+      const marker = document.createElement('span'); marker.className = 'expense-automatic'; marker.textContent = 'Авто';
+      marker.setAttribute('aria-label', 'Добавляется автоматически каждый день');
+      row.append(name, value, marker);
+    } else {
+      const remove = document.createElement('button'); remove.className = 'expense-remove'; remove.type = 'button';
+      remove.textContent = '×'; remove.setAttribute('aria-label', `Удалить расход «${item.description}»`);
+      remove.addEventListener('click', () => deleteExpense(item.id, data.date, remove));
+      row.append(name, value, remove);
+    }
+    $('expense-list').append(row);
   }
   showHandover();
 }
@@ -169,14 +202,15 @@ async function load() {
   clearSnapshot(); clearFinance(); message('');
   const day = $('report-date').value;
   if (!config || !day || !$('report-date').checkValidity()) { message('Выберите корректную дату.', true); return; }
+  clearUsdRate(day);
   $('period-label').textContent = formattedDay(day);
   $('export-date').textContent = formattedDay(day);
-  $('entrances-day').textContent = '· ' + formattedDay(day);
   $('expenses-day').textContent = '· ' + formattedDay(day);
   $('today').classList.toggle('active', day === config.today);
   $('yesterday').classList.toggle('active', day === previousDay(config.today));
   loadExpenses(day, current, controller.signal);
   loadReceipts(day, current, controller.signal);
+  loadUsdRate(day, current, controller.signal);
   if (!config.configured && !demo) return;
   $('metrics').setAttribute('aria-busy','true');document.body.classList.add('loading');
   $('refresh').disabled = true;message('Загружаем отчёт из ' + (demo ? 'демонстрационного примера…' : 'iiko…'));
@@ -291,22 +325,6 @@ $('download').addEventListener('click',async()=>{
     message('Отчёт скачан за '+formattedDay(data.date));
   } catch(error) { if(current===generation) message(error.message,true); }
   finally {if(current===generation) $('download').disabled=!snapshot;}
-});
-$('entrances-download').addEventListener('click',async()=>{
-  const day = $('report-date').value, current = generation;
-  if (!day || !$('report-date').checkValidity()) { message('Выберите корректную дату.',true); return; }
-  $('entrances-download').disabled = true;
-  try {
-    const response = await request(`/api/cashier/entrances/export?date=${encodeURIComponent(day)}`);
-    const blob = await response.blob();
-    if (current !== generation) return;
-    const url = URL.createObjectURL(blob), link = document.createElement('a');
-    link.href = url; link.download = `Retro-entrances-${day}.xlsx`;
-    document.body.append(link); link.click(); link.remove();
-    setTimeout(()=>URL.revokeObjectURL(url),30000);
-    message('Пустой файл входов скачан за ' + formattedDay(day));
-  } catch(error) { if(current===generation) message(error.message,true); }
-  finally { $('entrances-download').disabled = false; }
 });
 (async()=>{
   try {

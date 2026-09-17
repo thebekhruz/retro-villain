@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from retro.config import ROOT, Settings
 from retro.integrations.iiko import IikoClient
+from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
 from retro.modules.cashier.routes import router as cashier_router
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
@@ -18,14 +19,16 @@ from retro.modules.cashier.service import SnapshotCache, today_tashkent
 STATIC = Path(__file__).parent / 'static'
 
 
-def create_app(settings=None, *, expense_db_path=None):
+def create_app(settings=None, *, expense_db_path=None, rate_transport=None):
     settings = settings or Settings.from_env()
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.iiko = IikoClient(settings)
     app.state.iiko_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
-    app.state.expenses = ExpenseStore(expense_db_path or ROOT / 'build' / 'cashier.sqlite3')
+    database_path = expense_db_path or ROOT / 'build' / 'cashier.sqlite3'
+    app.state.expenses = ExpenseStore(database_path)
+    app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
 
     @app.middleware('http')
     async def security(request: Request, call_next):
