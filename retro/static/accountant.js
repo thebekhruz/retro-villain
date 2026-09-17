@@ -127,14 +127,6 @@ function renderLedger(data) {
   updateButtons();
 }
 
-function renderScenarios(data) {
-  const shortfall = Number(data.scenarios.shortfall), target = $('scenario-groups'); target.replaceChildren();
-  $('scenario-shortfall').textContent = data.ledger.cash_balance === null ? 'Нет данных кассира: пока нельзя оценить, хватит ли денег на зарплату.'
-    : shortfall > 0 ? 'На ' + (data.ledger.payroll_confirmed ? 'погашение долга' : 'предварительную зарплату') + ' не хватает ' + money(shortfall) + '.'
-      : 'Денег с учётом переходящего остатка хватает на рассчитанную зарплату. Решение о сменах остаётся за финансовым отделом.';
-  $('scenario-shortfall').classList.toggle('is-short', shortfall > 0);
-  data.scenarios.groups.forEach(item => { const row = node('div', 'scenario-row'); row.append(node('span', '', item.group), node('strong', '', money(item.saving))); if (item.covers_shortfall) row.append(node('small', '', 'Покрыла бы недостачу будущей смены')); target.append(row); });
-}
 async function loadDay() {
   const day = selectedDay();
   if (!day || !$('accountant-date').checkValidity()) { $('entrances-download').disabled = true; message('Выберите сегодняшний или прошедший день.', true); return; }
@@ -150,7 +142,7 @@ async function loadDay() {
     const response = await fetch('/api/accountant/day?date=' + encodeURIComponent(day), {cache: 'no-store'}), data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить данные.');
     if (sequence !== requestNo) return;
-    current = data; renderStaff(data); renderLedger(data); renderScenarios(data); message('');
+    current = data; renderStaff(data); renderLedger(data); message('');
     $('finance-layout').setAttribute('aria-busy', 'false');
   } catch (error) { if (sequence === requestNo) message(error.message, true); }
 }
