@@ -14,12 +14,15 @@ from retro.integrations.iiko import IikoClient
 from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
 from retro.modules.cashier.routes import router as cashier_router
+from retro.modules.accountant.routes import router as accountant_router
+from retro.modules.accountant.roster import RosterStore
+from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
 
 STATIC = Path(__file__).parent / 'static'
 
 
-def create_app(settings=None, *, expense_db_path=None, rate_transport=None):
+def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None):
     settings = settings or Settings.from_env()
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
@@ -29,9 +32,15 @@ def create_app(settings=None, *, expense_db_path=None, rate_transport=None):
     database_path = expense_db_path or ROOT / 'build' / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
+    accountant_path = accountant_db_path or ROOT / 'build' / 'accountant-demo.sqlite3'
+    app.state.accountant_roster = RosterStore(accountant_path)
+    app.state.accountant_finance = FinanceStore(accountant_path)
 
     @app.middleware('http')
     async def security(request: Request, call_next):
+        if (request.url.path.startswith('/accountant') or request.url.path.startswith('/api/accountant/')) and \
+                request.url.hostname not in ('127.0.0.1', 'localhost', '::1'):
+            return JSONResponse({'detail': 'Модуль финансов доступен только локально до настройки защиты.'}, 403)
         if settings.dashboard_allowed_network and request.client:
             try:
                 address = ip_address(request.client.host)
@@ -65,13 +74,23 @@ def create_app(settings=None, *, expense_db_path=None, rate_transport=None):
     def index():
         return FileResponse(STATIC / 'index.html')
 
+    @app.get('/accountant')
+    def accountant():
+        return FileResponse(STATIC / 'accountant.html')
+
+    @app.get('/accountant/employees')
+    def accountant_employees():
+        return FileResponse(STATIC / 'employees.html')
+
     @app.get('/api/config')
     def config():
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
-                    modules=[dict(id='cashier', name='Кассир', available=True)], planned_modules=2)
+                    modules=[dict(id='cashier', name='Кассир', available=True),
+                             dict(id='accountant', name='Бухгалтер', available=True)], planned_modules=1)
 
     app.include_router(cashier_router)
+    app.include_router(accountant_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 

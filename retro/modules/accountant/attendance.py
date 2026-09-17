@@ -6,7 +6,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from .service import TZ
+from retro.modules.cashier.service import TZ
 
 LATE_AFTER = time(10, 0)
 GREEN = '16483F'

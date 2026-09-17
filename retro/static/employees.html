@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#143e35">
+  <title>Все сотрудники · Retro Milliy</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <script src="/static/employees.js" defer></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a href="/" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+  <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a></nav>
+  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
+</aside>
+<main>
+  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Все сотрудники</strong></span><span class="top-status">Локальный просмотр</span></header>
+  <div class="workspace accountant-workspace">
+    <div class="page-heading"><div><p class="eyebrow">КОМАНДА · РЕЕСТР</p><h1>Все сотрудники<span>.</span></h1><p class="subtitle">Первый вход, статус и расчёт за выбранный день.</p></div></div>
+    <div class="accountant-demo-banner" role="note"><strong>ДЕМО</strong><span>Время и статусы проходов смоделированы. Реальный Hikvision ресторана пока не подключён.</span></div>
+    <div class="employees-toolbar">
+      <a id="back-accountant" class="button secondary" href="/accountant">← К финансам</a>
+      <label class="date-group" for="employees-date">Дата<input id="employees-date" type="date" required></label>
+      <button id="employees-refresh" class="button secondary" type="button">Обновить</button>
+      <button id="employees-download" class="button primary" type="button">Скачать всех · XLSX</button>
+    </div>
+    <p id="employees-message" class="notice" role="status" aria-live="polite" hidden></p>
+    <section class="panel accountant-panel" aria-labelledby="employees-title">
+      <div class="accountant-panel-head"><div><p class="eyebrow">ПО ГРУППАМ</p><h2 id="employees-title">Список сотрудников</h2><p id="employees-summary" class="accountant-help">Загружаем реестр…</p></div></div>
+      <p class="accountant-help">Нажмите на название группы, чтобы открыть или закрыть её список. Опоздание после 10:00 показывается без автоматического удержания.</p>
+      <div id="employees-groups" class="employees-groups" aria-live="polite"></div>
+    </section>
+    <section class="panel accountant-panel" aria-labelledby="employees-edit-title">
+      <p class="eyebrow">ИСПРАВЛЕНИЕ РЕЕСТРА</p><h2 id="employees-edit-title">Ставка и группа</h2>
+      <p class="accountant-help">Укажите причину исправления. Подтверждённые начисления прошлых дней не пересчитываются.</p>
+      <form id="employee-form" class="accountant-form employee-edit-form">
+        <label>Сотрудник<select name="employee_id" id="edit-employee" required><option value="">Выберите сотрудника</option></select></label>
+        <label>Дневная ставка, сум<input name="rate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Пусто, если неизвестна"></label>
+        <label>Группа<select name="group" id="edit-group" required><option value="">Выберите группу</option></select></label>
+        <label>Причина<input name="reason" required maxlength="160" placeholder="Например, уточнена ставка"></label>
+        <button class="button primary" type="submit">Сохранить исправление</button>
+      </form>
+    </section>
+    <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Сотрудники</span><span>Время Ташкента · UZS</span></footer>
+  </div>
+</main>
+</body>
+</html>

@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 
 from retro.app import create_app
 from retro.config import Settings
-from retro.modules.cashier.attendance import Entrance, export_entrances, is_late
+from retro.modules.accountant.attendance import Entrance, export_entrances, is_late
 
 
 def test_ten_am_boundary_uses_tashkent_time():
@@ -18,8 +18,9 @@ def test_ten_am_boundary_uses_tashkent_time():
 
 
 def test_placeholder_export_is_dated_and_contains_no_people():
-    with TestClient(create_app(Settings()), client=('127.0.0.1', 50000)) as client:
-        response = client.get('/api/cashier/entrances/export?date=2026-09-15')
+    with TestClient(create_app(Settings()), base_url='http://127.0.0.1',
+                    client=('127.0.0.1', 50000)) as client:
+        response = client.get('/api/accountant/entrances/export?date=2026-09-15')
         assert response.status_code == 200
         assert 'Retro-entrances-2026-09-15.xlsx' in response.headers['content-disposition']
         sheet = openpyxl.load_workbook(BytesIO(response.content)).active
@@ -28,15 +29,28 @@ def test_placeholder_export_is_dated_and_contains_no_people():
         assert sheet['D4'].value == 0
         assert [sheet.cell(6, col).value for col in range(1, 5)] == ['№', 'Человек', 'Время входа', 'Статус']
         assert 'не подключены' in sheet['A7'].value
-        assert client.get('/api/cashier/entrances/export?date=2099-01-01').status_code == 422
+        assert client.get('/api/accountant/entrances/export?date=2099-01-01').status_code == 422
 
 
-def test_cashier_page_shows_usd_rate_and_has_no_attendance_preview():
-    with TestClient(create_app(Settings()), client=('127.0.0.1', 50000)) as client:
-        page = client.get('/').text
-    assert 'id="usd-title"' in page
-    assert 'Демонстрационные карточки' not in page
-    assert 'Зарплата 350 000 сум' in page
+def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
+    with TestClient(create_app(Settings()), base_url='http://127.0.0.1',
+                    client=('127.0.0.1', 50000)) as client:
+        accountant = client.get('/accountant')
+        cashier = client.get('/')
+        modules = client.get('/api/config').json()['modules']
+    assert accountant.status_code == 200
+    assert 'ДЕМО' in accountant.text
+    assert 'Опоздавшие сотрудники' in accountant.text
+    assert 'id="late-details"' in accountant.text
+    assert 'href="/accountant/employees"' in accountant.text
+    assert 'Скачать опоздавших' in accountant.text
+    assert 'name="item_code"' in accountant.text
+    assert 'Подтвердить получение' not in accountant.text
+    assert 'id="accountant-date"' in accountant.text
+    assert 'id="entrances-download"' in accountant.text
+    assert 'Зарплата к выплате' not in cashier.text
+    assert 'href="/accountant"' in cashier.text
+    assert any(item['id'] == 'accountant' and item['available'] for item in modules)
 
 
 def test_future_rows_mark_late_and_keep_names_as_text():

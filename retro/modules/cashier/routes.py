@@ -6,7 +6,6 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from .export import export_report
-from .attendance import export_entrances
 from .service import DataError, demo_snapshot, today_tashkent
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
@@ -86,15 +85,6 @@ def delete_receipt(request: Request, receipt_id: int, date: date):
     if not request.app.state.expenses.delete_receipt(receipt_id, day):
         raise HTTPException(404, 'Поступление не найдено для выбранного дня.')
     return Response(status_code=204)
-
-
-@router.get('/entrances/export')
-def download_entrances(date: date):
-    day = selected_day(date)
-    # Explicitly empty until the restaurant's Hikvision ISAPI source is connected.
-    data = export_entrances(day)
-    return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
-                    headers={'Content-Disposition': f'attachment; filename="Retro-entrances-{day.isoformat()}.xlsx"'})
 
 
 @router.get('/day')
