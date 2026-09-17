@@ -8,7 +8,8 @@ from zoneinfo import ZoneInfo
 
 TZ = ZoneInfo('Asia/Tashkent')
 PAYMENT_SOURCES = ('Демо', 'UzCard', 'Наличные (Инкасса QR)', 'Xumo',
-                   'Я Rahmat', 'Яндекс Еда', 'Click/Payme Безналичный перевод', 'Uzum')
+                   'Я Rahmat', 'Яндекс Еда', 'Click/Payme Безналичный перевод',
+                   'Единый QR', 'Uzum')
 RETRO_REGISTER = 'Kassa-FiscalBox1'
 SCHOOL_REGISTER = 'GL-Kassa-Oksbrich'
 BANQUET_SECTION = 'Бехруз (Свадьба)'

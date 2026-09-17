@@ -1,3 +1,4 @@
+from copy import copy
 from datetime import datetime
 from decimal import Decimal
 from io import BytesIO
@@ -25,6 +26,13 @@ def export_report(snapshot, expenses=(), receipts=()):
     handover = cash_to_finance(snapshot, expense_total, receipt_total)
     workbook = openpyxl.load_workbook(TEMPLATE)
     sheet = workbook['отчет']
+    total_label_style = copy(sheet['C11']._style)
+    total_amount_style = copy(sheet['D11']._style)
+    # Row 12 is an obsolete merged salary banner in the source template.
+    # Reuse it for the ninth payment and move the payment total below all sources.
+    sheet.unmerge_cells('C12:D12')
+    sheet['C11']._style = copy(sheet['C10']._style)
+    sheet['D11']._style = copy(sheet['D10']._style)
     # Preserve layout/style; erase the example's transactions and out-of-scope formulas.
     for region in ['A4:B19', 'D2:D11', 'C13:D19', 'C22:D37', 'C40:D55', 'B20:B23', 'D20:D20', 'D38:D39']:
         for cells in sheet[region]:
@@ -64,9 +72,12 @@ def export_report(snapshot, expenses=(), receipts=()):
         sheet.cell(row, 3).alignment = Alignment(wrap_text=True, vertical='center')
         sheet.cell(row, 4, amounts[name]).number_format = MONEY
         sheet.row_dimensions[row].height = 30 if len(name) > 28 else 22
-    sheet['C11'] = 'ИТОГО ВЫРУЧКА:'
-    sheet['D11'] = f'=SUM(D3:D{2 + len(PAYMENT_SOURCES)})'
-    sheet['D11'].number_format = MONEY
+    payment_total_row = 3 + len(PAYMENT_SOURCES)
+    total_label = sheet.cell(payment_total_row, 3, 'ИТОГО ВЫРУЧКА:')
+    total_amount = sheet.cell(payment_total_row, 4, f'=SUM(D3:D{payment_total_row - 1})')
+    total_label._style = total_label_style
+    total_amount._style = total_amount_style
+    total_amount.number_format = MONEY
     sheet['C13'] = 'РАСХОДЫ КАССЫ'
     sheet['C13'].font = Font(name='Calibri', size=11, bold=True, color='173D38')
     sheet['C14'], sheet['D14'] = 'Название', 'Сумма, сум'
