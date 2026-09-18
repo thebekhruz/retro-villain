@@ -4,8 +4,29 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
 from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.accountant.payroll import draft_payroll
 
 router = APIRouter(prefix='/api/director', tags=['director'])
+
+
+@router.get('/attendance')
+def attendance(request: Request):
+    """Return deterministic demo Hikvision attendance for the director preview."""
+    day = today_tashkent()
+    roster = request.app.state.accountant_roster.list()
+    rows = draft_payroll(day, roster, set())
+    arrived = [row for row in rows if row.status in ('on_time', 'late')]
+    late = [row for row in rows if row.status == 'late']
+    return {
+        'demo': True,
+        'date': day.isoformat(),
+        'source': 'Демо Hikvision; реальная интеграция ожидается',
+        'roster_count': len(rows),
+        'arrived_count': len(arrived),
+        'late_count': len(late),
+        'missing_count': sum(row.status == 'missing' for row in rows),
+        'employees': [row.json() for row in rows],
+    }
 
 
 @router.get('/today')
