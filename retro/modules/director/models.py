@@ -64,7 +64,7 @@ def direction(row):
     raise DataError('В iiko появилась неизвестная касса или отделение.')
 
 
-def build_snapshot(rows, categories, period_start, period_end):
+def build_snapshot(rows, categories, period_start, period_end, *, excluded_groups=frozenset()):
     expected_days = {period_start + timedelta(days=index) for index in range(10)}
     values = list(rows)
     days = {row.day for row in values}
@@ -75,8 +75,8 @@ def build_snapshot(rows, categories, period_start, period_end):
     cash_total = Decimal(0)
     yandex_total = Decimal(0)
     for row in values:
-        if row.category not in categories:
-            raise DataError('iiko вернул непроверенную категорию позиции.')
+        if row.category in excluded_groups:
+            raise DataError('Эта группа блюд не входит в отчёт директора.')
         if not row.waiter.strip():
             raise DataError('iiko не указал официанта для позиции.')
         if min(row.quantity, row.revenue, row.cost) < 0:

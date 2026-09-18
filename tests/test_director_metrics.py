@@ -33,13 +33,22 @@ def test_yandex_overlaps_cash_direction_without_double_counting():
     assert snapshot.item_metrics['all']['Плов 0'].margin_percent == Decimal('60.00')
 
 
-def test_unknown_category_and_missing_waiter_are_rejected():
+def test_missing_waiter_is_rejected():
     days = [date(2026, 9, 8) + timedelta(days=offset) for offset in range(10)]
-    with pytest.raises(DataError, match='категор'):
-        build_snapshot([sale(category='Сувениры', day=day, order_id=str(offset))
-                        for offset, day in enumerate(days)],
-                       CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
     with pytest.raises(DataError, match='официант'):
         build_snapshot([sale(waiter='', day=day, order_id=str(offset))
                         for offset, day in enumerate(days)],
                        CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
+
+
+def test_excluded_group_is_not_included_and_unmapped_group_defaults_to_menu():
+    days = [date(2026, 9, 8) + timedelta(days=offset) for offset in range(10)]
+    rows = [sale(category='Миллий', day=day, order_id=str(offset))
+            for offset, day in enumerate(days)]
+    snapshot = build_snapshot(rows, {'Десерты': 'dessert'}, date(2026, 9, 8), date(2026, 9, 17),
+                              excluded_groups={'Контейнеры'})
+    assert snapshot.cash_total == Decimal('2000000')
+    with pytest.raises(DataError, match='не входит'):
+        build_snapshot([sale(category='Контейнеры', day=day, order_id=str(offset))
+                        for offset, day in enumerate(days)], {'Десерты': 'dessert'},
+                       date(2026, 9, 8), date(2026, 9, 17), excluded_groups={'Контейнеры'})
