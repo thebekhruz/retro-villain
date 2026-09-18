@@ -6,10 +6,17 @@ Python 3.11+, FastAPI, мобильный HTML/CSS/JS интерфейс.
 
 Модуль директора доступен по `/director`. Он собирает последние десять
 завершённых дней iiko, разделяет Retro/Oxbridge/Yandex и формирует сохранённый
-PDF после настройки `CLAUDE_API_KEY` и `CLAUDE_MODEL` в `build/.env`. До
-настройки Claude кнопка отчёта честно сообщает об ошибке конфигурации. История
+PDF после настройки `GEMINI_API_KEY` и `GEMINI_MODEL` в `build/.env`. До
+настройки Gemini кнопка отчёта честно сообщает об ошибке конфигурации. История
 отчётов хранится в `build/director.sqlite3`; эту базу нужно включать в резервные
 копии вместе с остальными файлами `build/`.
+
+Минимальная конфигурация Gemini в `build/.env`:
+
+```env
+GEMINI_API_KEY=your-key
+GEMINI_MODEL=gemini-2.5-flash
+```
 
 ## Запуск
 

@@ -19,8 +19,8 @@ class Settings:
     dashboard_password: str = field(default='', repr=False)
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
     manual_handover_only: bool = False
-    claude_api_key: str = field(default='', repr=False)
-    claude_model: str = ''
+    gemini_api_key: str = field(default='', repr=False)
+    gemini_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
     director_excluded_groups: frozenset[str] = field(default_factory=frozenset)
 
@@ -29,8 +29,8 @@ class Settings:
         return bool(self.login and self.password and self.store_id is not None)
 
     @property
-    def claude_configured(self):
-        return bool(self.claude_api_key and self.claude_model)
+    def gemini_configured(self):
+        return bool(self.gemini_api_key and self.gemini_model)
 
 
     @classmethod
@@ -52,7 +52,7 @@ class Settings:
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
         return cls(base, os.getenv('IIKO_LOGIN', ''), os.getenv('IIKO_PASSWORD', ''),
                    int(store) if store else None, user, password, allowed_network, manual,
-                   os.getenv('CLAUDE_API_KEY', ''), os.getenv('CLAUDE_MODEL', ''), categories,
+                   os.getenv('GEMINI_API_KEY', ''), os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'), categories,
                    excluded_groups)
 
 

@@ -21,13 +21,13 @@ from retro.modules.cashier.service import SnapshotCache, today_tashkent
 from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
-from retro.integrations.claude import ClaudeClient
+from retro.integrations.gemini import GeminiClient
 
 STATIC = Path(__file__).parent / 'static'
 
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
-               director_db_path=None, claude_transport=None):
+               director_db_path=None, gemini_transport=None):
     settings = settings or Settings.from_env()
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
@@ -43,8 +43,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.accountant_finance = FinanceStore(accountant_path)
     director_path = director_db_path or ROOT / 'build' / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
-    app.state.claude = ClaudeClient(settings, transport=claude_transport)
-    app.state.director_service = DirectorService(app.state.iiko, app.state.claude, app.state.director_store)
+    app.state.gemini = GeminiClient(settings, transport=gemini_transport)
+    app.state.director_service = DirectorService(app.state.iiko, app.state.gemini, app.state.director_store)
 
     @app.middleware('http')
     async def security(request: Request, call_next):
