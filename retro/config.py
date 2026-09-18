@@ -19,10 +19,17 @@ class Settings:
     dashboard_password: str = field(default='', repr=False)
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
     manual_handover_only: bool = False
+    claude_api_key: str = field(default='', repr=False)
+    claude_model: str = ''
+    director_categories: dict[str, str] = field(default_factory=dict)
 
     @property
     def configured(self):
         return bool(self.login and self.password and self.store_id is not None)
+
+    @property
+    def claude_configured(self):
+        return bool(self.claude_api_key and self.claude_model)
 
 
     @classmethod
@@ -40,5 +47,22 @@ class Settings:
         network_value = os.getenv('DASHBOARD_ALLOWED_NETWORK', '').strip()
         allowed_network = ip_network(network_value, strict=False) if network_value else None
         manual = os.getenv('ACCOUNTANT_MANUAL_HANDOVER', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
+        categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
         return cls(base, os.getenv('IIKO_LOGIN', ''), os.getenv('IIKO_PASSWORD', ''),
-                   int(store) if store else None, user, password, allowed_network, manual)
+                   int(store) if store else None, user, password, allowed_network, manual,
+                   os.getenv('CLAUDE_API_KEY', ''), os.getenv('CLAUDE_MODEL', ''), categories)
+
+
+def parse_director_categories(value: str) -> dict[str, str]:
+    allowed = {'menu', 'dessert', 'drink'}
+    if not value.strip():
+        return {}
+    result = {}
+    for pair in value.split(';'):
+        if pair.count('=') != 1:
+            raise ValueError('IIKO_DIRECTOR_CATEGORIES должен содержать пары «категория=тип».')
+        name, kind = (part.strip() for part in pair.split('='))
+        if not name or kind not in allowed or name in result:
+            raise ValueError('IIKO_DIRECTOR_CATEGORIES содержит некорректную категорию.')
+        result[name] = kind
+    return result
