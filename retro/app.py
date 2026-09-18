@@ -18,16 +18,22 @@ from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
+from retro.modules.director.store import DirectorReportStore
+from retro.modules.director.service import DirectorService
+from retro.modules.director.routes import router as director_router
+from retro.integrations.claude import ClaudeClient
 
 STATIC = Path(__file__).parent / 'static'
 
 
-def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None):
+def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
+               director_db_path=None, claude_transport=None):
     settings = settings or Settings.from_env()
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.iiko = IikoClient(settings)
     app.state.iiko_lock = asyncio.Lock()
+    app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
     database_path = expense_db_path or ROOT / 'build' / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
@@ -35,6 +41,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     accountant_path = accountant_db_path or ROOT / 'build' / 'accountant-demo.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(accountant_path)
+    director_path = director_db_path or ROOT / 'build' / 'director.sqlite3'
+    app.state.director_store = DirectorReportStore(director_path)
+    app.state.claude = ClaudeClient(settings, transport=claude_transport)
+    app.state.director_service = DirectorService(app.state.iiko, app.state.claude, app.state.director_store)
 
     @app.middleware('http')
     async def security(request: Request, call_next):
@@ -82,15 +92,21 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def accountant_employees():
         return FileResponse(STATIC / 'employees.html')
 
+    @app.get('/director')
+    def director():
+        return FileResponse(STATIC / 'director.html')
+
     @app.get('/api/config')
     def config():
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
                     modules=[dict(id='cashier', name='Кассир', available=True),
-                             dict(id='accountant', name='Бухгалтер', available=True)], planned_modules=1)
+                             dict(id='accountant', name='Бухгалтер', available=True),
+                             dict(id='director', name='Директор', available=True)], planned_modules=0)
 
     app.include_router(cashier_router)
     app.include_router(accountant_router)
+    app.include_router(director_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 

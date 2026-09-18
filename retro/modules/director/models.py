@@ -48,6 +48,16 @@ class DirectorSnapshot:
     yandex_revenue: Decimal
     item_metrics: dict[str, dict[str, ItemMetric]]
 
+    def json(self):
+        def metric(value):
+            return dict(quantity=str(value.quantity), revenue=str(value.revenue), cost=str(value.cost),
+                        gross_profit=str(value.gross_profit), margin_percent=str(value.margin_percent)
+                        if value.margin_percent is not None else None)
+        return dict(period_start=self.period_start.isoformat(), period_end=self.period_end.isoformat(),
+                    cash_total=str(self.cash_total), yandex_revenue=str(self.yandex_revenue),
+                    item_metrics={group: {name: metric(value) for name, value in values.items()}
+                                  for group, values in self.item_metrics.items()})
+
 
 def completed_period(today: date):
     end = today - timedelta(days=1)

@@ -26,7 +26,7 @@ def test_director_category_config_rejects_invalid_values(monkeypatch, value):
 
 
 def test_director_categories_may_be_unset_before_director_goes_live(monkeypatch):
-    monkeypatch.delenv('IIKO_DIRECTOR_CATEGORIES', raising=False)
+    monkeypatch.setenv('IIKO_DIRECTOR_CATEGORIES', '')
 
     assert Settings.from_env().director_categories == {}
 

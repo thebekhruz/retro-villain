@@ -32,3 +32,18 @@ class DirectorReportStore:
         with self._connect() as connection:
             row = connection.execute('SELECT pdf FROM director_reports WHERE id=?', (report_id,)).fetchone()
         return row[0] if row else None
+
+    def get(self, report_id):
+        with self._connect() as connection:
+            row = connection.execute('SELECT id,created_at,period_start,period_end,snapshot_json,analysis_json,pdf_sha256 FROM director_reports WHERE id=?', (report_id,)).fetchone()
+        return self._row(row) if row else None
+
+    def list(self):
+        with self._connect() as connection:
+            rows = connection.execute('SELECT id,created_at,period_start,period_end,snapshot_json,analysis_json,pdf_sha256 FROM director_reports ORDER BY created_at DESC').fetchall()
+        return [self._row(row) for row in rows]
+
+    @staticmethod
+    def _row(row):
+        return dict(id=row[0], created_at=row[1], period_start=row[2], period_end=row[3],
+                    snapshot=json.loads(row[4]), analysis=json.loads(row[5]), pdf_sha256=row[6])
