@@ -58,7 +58,7 @@ def direction(row):
     if row.register == SCHOOL_REGISTER:
         return 'oxbridge'
     if row.register == RETRO_REGISTER and row.section == BANQUET_SECTION:
-        raise DataError('Продажи банкетного зала не входят в отчёт директора.')
+        return None
     if row.register == RETRO_REGISTER and 'бехруз' not in row.section.casefold():
         return 'retro'
     raise DataError('В iiko появилась неизвестная касса или отделение.')
@@ -82,6 +82,8 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
         if min(row.quantity, row.revenue, row.cost) < 0:
             raise DataError('iiko вернул отрицательное значение позиции.')
         group = direction(row)
+        if group is None:
+            continue
         names = ['all', group]
         payment = PAYMENT_ALIASES.get(row.payment_type, row.payment_type)
         if payment == 'Яндекс Еда':

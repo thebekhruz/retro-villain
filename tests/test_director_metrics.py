@@ -52,3 +52,10 @@ def test_excluded_group_is_not_included_and_unmapped_group_defaults_to_menu():
                                for offset, day in enumerate(days)], {'Десерты': 'dessert'},
                               date(2026, 9, 8), date(2026, 9, 17), excluded_groups={'Контейнеры'})
     assert excluded.cash_total == Decimal(0)
+
+
+def test_banquets_are_out_of_scope_without_blocking_other_sales():
+    rows = [sale(day=date(2026, 9, 8) + timedelta(days=offset), order_id=str(offset),
+                 section='Бехруз (Свадьба)' if offset == 0 else 'Ресторан') for offset in range(10)]
+    snapshot = build_snapshot(rows, CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
+    assert snapshot.cash_total == Decimal('1800000')
