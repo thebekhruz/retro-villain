@@ -29,3 +29,9 @@ def test_director_categories_may_be_unset_before_director_goes_live(monkeypatch)
     monkeypatch.delenv('IIKO_DIRECTOR_CATEGORIES', raising=False)
 
     assert Settings.from_env().director_categories == {}
+
+
+def test_director_excluded_groups_are_parsed(monkeypatch):
+    monkeypatch.setenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', 'Контейнеры;ДОСТАВКА ЯНДЕКС')
+
+    assert Settings.from_env().director_excluded_groups == {'Контейнеры', 'ДОСТАВКА ЯНДЕКС'}

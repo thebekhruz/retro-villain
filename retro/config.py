@@ -22,6 +22,7 @@ class Settings:
     claude_api_key: str = field(default='', repr=False)
     claude_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
+    director_excluded_groups: frozenset[str] = field(default_factory=frozenset)
 
     @property
     def configured(self):
@@ -48,9 +49,11 @@ class Settings:
         allowed_network = ip_network(network_value, strict=False) if network_value else None
         manual = os.getenv('ACCOUNTANT_MANUAL_HANDOVER', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
         categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
+        excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
         return cls(base, os.getenv('IIKO_LOGIN', ''), os.getenv('IIKO_PASSWORD', ''),
                    int(store) if store else None, user, password, allowed_network, manual,
-                   os.getenv('CLAUDE_API_KEY', ''), os.getenv('CLAUDE_MODEL', ''), categories)
+                   os.getenv('CLAUDE_API_KEY', ''), os.getenv('CLAUDE_MODEL', ''), categories,
+                   excluded_groups)
 
 
 def parse_director_categories(value: str) -> dict[str, str]:
@@ -66,3 +69,10 @@ def parse_director_categories(value: str) -> dict[str, str]:
             raise ValueError('IIKO_DIRECTOR_CATEGORIES содержит некорректную категорию.')
         result[name] = kind
     return result
+
+
+def parse_director_excluded_groups(value: str) -> frozenset[str]:
+    groups = [item.strip() for item in value.split(';') if item.strip()]
+    if len(groups) != len(set(groups)):
+        raise ValueError('IIKO_DIRECTOR_EXCLUDED_GROUPS содержит повторяющуюся группу.')
+    return frozenset(groups)
