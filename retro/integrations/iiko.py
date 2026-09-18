@@ -8,7 +8,7 @@ from retro.config import IIKO_ORIGIN
 from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
-from retro.modules.director.models import SalesRow
+from retro.modules.director.models import SalesRow, build_snapshot as build_director_snapshot, completed_period
 
 
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
@@ -136,6 +136,35 @@ class IikoClient:
                 total_prepay, cash_prepay = cash_prepay_from_shifts(day, snapshot.revenue, amounts, shifts)
                 from dataclasses import replace
                 return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay)
+        except (httpx.HTTPError, TimeoutError):
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def load_director_report(self, today):
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        if not self.settings.director_categories:
+            raise DataError('Настройте группы блюд для отчёта директора.')
+        start, end = completed_period(today)
+        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
+                   'Content-Type': 'application/json'}
+        try:
+            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
+                                        timeout=25, follow_redirects=False,
+                                        transport=self.transport) as client:
+                auth = await self._post(client, '/api/auth/login',
+                                        dict(login=self.settings.login, password=self.settings.password))
+                if not isinstance(auth.get('token'), str) or not auth['token']:
+                    raise DataError('iiko не подтвердил авторизацию.')
+                client.headers['Authorization'] = 'Bearer ' + auth['token']
+                rows = []
+                day = start
+                while day <= end:
+                    rows.extend(director_rows_from_olap(
+                        day, await self._olap(client, day, DIRECTOR_GROUPS, DIRECTOR_FIELDS)))
+                    from datetime import timedelta
+                    day += timedelta(days=1)
+                return build_director_snapshot(rows, self.settings.director_categories, start, end,
+                                               excluded_groups=self.settings.director_excluded_groups)
         except (httpx.HTTPError, TimeoutError):
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 

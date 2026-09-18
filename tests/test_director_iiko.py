@@ -2,6 +2,10 @@ from datetime import date
 from decimal import Decimal
 
 from retro.integrations.iiko import director_rows_from_olap
+from retro.config import Settings
+from retro.integrations.iiko import IikoClient
+from retro.modules.cashier.service import DataError
+import asyncio
 
 
 def node(index, value, children=()):
@@ -24,3 +28,14 @@ def test_director_rows_flattens_grouped_iiko_result_and_derives_cost():
     assert result[0].quantity == Decimal('2')
     assert result[0].revenue == Decimal('200000')
     assert result[0].cost == Decimal('80000')
+
+
+def test_director_load_requires_explicit_group_configuration():
+    source = IikoClient(Settings(login='x', password='x', store_id=1))
+
+    try:
+        asyncio.run(source.load_director_report(date(2026, 9, 18)))
+    except DataError as error:
+        assert 'группы блюд' in str(error)
+    else:
+        raise AssertionError('Expected director group configuration error')
