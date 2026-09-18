@@ -165,6 +165,14 @@ systemd-run --user --unit=retro-cashier --collect \
 build/venv/bin/python scripts/import_accountant_roster.py "/путь/к/зп.xlsx"
 ```
 
+Для полной замены текущего реестра данными из нового листа используйте флаг
+`--replace`. Импорт берёт лист «ЗП», колонки «ФИО», «Должность» и сумму,
+пропускает пустые строки и строки итогов:
+
+```sh
+PYTHONPATH=. build/venv/bin/python scripts/import_accountant_roster.py "/путь/к/зп.xlsx" --replace
+```
+
 Импорт сохраняет 60 сотрудников в `build/accountant-demo.sqlite3`; ставки,
 отсутствующие в исходнике, не угадываются и отмечаются как «Нет ставки».
 Исправление ставки через API требует причины и записывается в историю изменений.

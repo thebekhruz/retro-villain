@@ -87,7 +87,7 @@ class RosterStore:
         )''')
         return connection
 
-    def import_xlsx(self, source: Path) -> dict[str, int]:
+    def import_xlsx(self, source: Path, *, replace: bool = False) -> dict[str, int]:
         workbook = load_workbook(source, read_only=True, data_only=True)
         try:
             if 'ЗП' not in workbook.sheetnames:
@@ -107,14 +107,24 @@ class RosterStore:
         imported = existing = 0
         with closing(self._open()) as connection:
             with connection:
+                if replace:
+                    source_rows = {row[0] for row in rows}
+                    connection.execute('DELETE FROM accountant_employees WHERE source_row NOT IN (%s)' %
+                                       ','.join('?' for _ in source_rows), tuple(source_rows))
                 for row in rows:
-                    cursor = connection.execute(
-                        'INSERT OR IGNORE INTO accountant_employees '
-                        '(source_row, name, role, group_name, rate) VALUES (?, ?, ?, ?, ?)', row)
-                    if cursor.rowcount:
+                    cursor = connection.execute('SELECT id FROM accountant_employees WHERE source_row = ?', (row[0],))
+                    if cursor.fetchone() is None:
+                        connection.execute(
+                            'INSERT INTO accountant_employees '
+                            '(source_row, name, role, group_name, rate) VALUES (?, ?, ?, ?, ?)', row)
                         imported += 1
                     else:
-                        existing += 1
+                        if replace:
+                            connection.execute('UPDATE accountant_employees SET name=?, role=?, group_name=?, rate=? '
+                                               'WHERE source_row=?', (row[1], row[2], row[3], row[4], row[0]))
+                            imported += 1
+                        else:
+                            existing += 1
         return {'imported': imported, 'existing': existing}
 
     def list(self) -> list[Employee]:
@@ -123,23 +133,70 @@ class RosterStore:
                                       'FROM accountant_employees ORDER BY source_row').fetchall()
         return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None, row[6]) for row in rows]
 
-    def update(self, employee_id: int, *, rate: str | None, group_name: str, reason: str) -> Employee:
+    def monthly_total(self) -> Decimal:
+        """Return the total salary amount recorded for the imported roster."""
+        return sum((person.rate for person in self.list() if person.rate is not None), Decimal(0))
+
+    def add(self, *, name: str, role: str, rate: str | None, group_name: str) -> Employee:
+        name = name.strip()
+        role = role.strip()
+        if not name or len(name) > 160:
+            raise ValueError('Укажите корректное имя сотрудника.')
+        if not role or len(role) > 80:
+            raise ValueError('Укажите корректную должность.')
+        if group_name not in set(GROUPS.values()) | {'Кухня'}:
+            raise ValueError('Неизвестная группа.')
+        parsed_rate = parse_rate(rate)
+        with closing(self._open()) as connection, connection:
+            source_row = connection.execute('SELECT COALESCE(MAX(source_row), 0) + 1 '
+                                            'FROM accountant_employees').fetchone()[0]
+            employee_id = connection.execute(
+                'INSERT INTO accountant_employees (source_row, name, role, group_name, rate) '
+                'VALUES (?, ?, ?, ?, ?)',
+                (source_row, name, role, group_name,
+                 str(parsed_rate) if parsed_rate is not None else None)).lastrowid
+        return next(person for person in self.list() if person.id == employee_id)
+
+    def delete(self, employee_id: int):
+        with closing(self._open()) as connection, connection:
+            deleted = connection.execute('DELETE FROM accountant_employees WHERE id = ?',
+                                         (employee_id,)).rowcount
+        if not deleted:
+            raise ValueError('Сотрудник не найден.')
+
+    def update(self, employee_id: int, *, name: str | None = None, role: str | None = None,
+               rate: str | None,
+               group_name: str | None = None, reason: str) -> Employee:
         if not reason.strip():
             raise ValueError('Укажите причину изменения.')
-        if group_name not in set(GROUPS.values()) | {'Кухня'}:
+        with closing(self._open()) as connection:
+            existing = connection.execute('SELECT name, role FROM accountant_employees WHERE id = ?',
+                                          (employee_id,)).fetchone()
+        if existing is None:
+            raise ValueError('Сотрудник не найден.')
+        name = (name or existing[0]).strip()
+        role = (role or existing[1]).strip()
+        if not name or len(name) > 160:
+            raise ValueError('Укажите корректное имя сотрудника.')
+        if not role or len(role) > 80:
+            raise ValueError('Укажите корректную должность.')
+        derived_group = group_name or group_for(role)
+        if derived_group not in set(GROUPS.values()) | {'Кухня'}:
             raise ValueError('Неизвестная группа.')
         parsed_rate = parse_rate(rate)
         with closing(self._open()) as connection:
             with connection:
-                old = connection.execute('SELECT rate, group_name FROM accountant_employees WHERE id = ?',
+                old = connection.execute('SELECT name, role, rate, group_name FROM accountant_employees WHERE id = ?',
                                          (employee_id,)).fetchone()
                 if old is None:
                     raise ValueError('Сотрудник не найден.')
-                connection.execute('UPDATE accountant_employees SET rate = ?, group_name = ? WHERE id = ?',
-                                   (str(parsed_rate) if parsed_rate is not None else None, group_name, employee_id))
+                connection.execute('UPDATE accountant_employees SET name = ?, role = ?, rate = ?, group_name = ? '
+                                   'WHERE id = ?', (name, role,
+                                   str(parsed_rate) if parsed_rate is not None else None,
+                                   derived_group, employee_id))
                 connection.execute('INSERT INTO accountant_roster_audit '
                                    '(employee_id, changed_at, reason, old_rate, new_rate, old_group, new_group) '
                                    'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                                   (employee_id, datetime.now().isoformat(), reason.strip(), old[0],
-                                    str(parsed_rate) if parsed_rate is not None else None, old[1], group_name))
+                                   (employee_id, datetime.now().isoformat(), reason.strip(), old[2],
+                                    str(parsed_rate) if parsed_rate is not None else None, old[3], derived_group))
         return next(person for person in self.list() if person.id == employee_id)

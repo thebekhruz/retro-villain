@@ -14,28 +14,31 @@ function itemInfo(code) {
   return {category: "Операция", label: code || "—"};
 }
 function expenseImpact() {
-  const code = $("expense-item").value, item = special[code];
-  $('expense-paid-label').hidden = !!item;
-  $('expense-paid').disabled = !!item;
+  const code = $("expense-item").value, item = special[code], income = incomeCodes.includes(code);
+  $('expense-paid-label').hidden = !!item || income;
+  $('expense-paid').disabled = !!item || income;
   $("expense-currency").textContent = item?.account === "usd" ? "USD" : "сум";
-  $("expense-impact").textContent = item ? item.impact : 'Пустое поле «Оплачено сейчас» означает полную оплату. Ноль или меньшая сумма создадут долг; деньги уменьшатся только на фактически оплаченное.';
+  $("expense-impact").textContent = item ? item.impact : income ? 'Поступление увеличивает остаток бухгалтера.' : 'Пустое поле «Оплачено сейчас» означает полную оплату. Ноль или меньшая сумма создадут долг; деньги уменьшатся только на фактически оплаченное.';
   updateButtons();
 }
 function updateButtons() {
   const ready = current && current.date === selectedDay() && !saving;
   document.querySelectorAll(".finance-layout form button[type=submit]").forEach(b => b.disabled = !ready);
   if (!ready) return;
-  const entry = special[$("expense-item").value];
-  const needsCash = !entry || entry.kind === "transfer";
+  const code = $("expense-item").value, entry = special[code], income = incomeCodes.includes(code);
+  const needsCash = !entry && !income || entry?.kind === "transfer";
   const unpaid = !entry && $('expense-paid').value === '0';
   $("other-expense-form").querySelector("button").disabled = needsCash && !unpaid && current.ledger.cash_balance === null;
   $('debt-payment-form').querySelector('button').disabled = !current.ledger.manual_debts.length || current.ledger.cash_balance === null;
-  $('cash-opening-form').querySelector('button').disabled = current.ledger.cash_opening !== null || current.ledger.cash_flow.first_day !== selectedDay();
-  $("monthly-plan-form").querySelector("button").disabled = current.reserves.monthly.plan !== null;
+  $('cash-opening-form').querySelector('button').disabled = current.ledger.cash_opening !== null || current.expected_cashier === null;
 }
 function categoryChanged() {
   const group = catalog.find(g => g.code === $("expense-category").value);
   options($("expense-item"), (group?.items || []).map(i => ({id:i.code,label:i.label})), "Выберите тип");
+  if (group?.code === 'income') {
+    const opening = [...$("expense-item").options].find(option => option.value === 'income_opening');
+    if (opening) opening.disabled = true;
+  }
   expenseImpact();
 }
 
@@ -61,14 +64,16 @@ function renderStaff(data) {
 }
 function renderLedger(data) {
   const l = data.ledger, confirmed = l.payroll_confirmed, hasCashierData = l.cash_balance !== null;
+  const cashierDay = previousDay(data.date);
+  $('cashier-transfer-label').textContent = 'Касса за ' + formattedDay(cashierDay);
   $('expected-cashier').textContent = l.cash_flow.missing_day
-    ? (data.expected_cashier === null ? 'Нет данных кассира за этот день. ' : 'Для переноса остатка не хватает кассового отчёта за ' + formattedDay(l.cash_flow.missing_day) + '. ') + (data.cashier_error || 'Откройте эту дату и обновите её.')
-    : 'Кассовый приход за ' + formattedDay(data.date) + ': ' + money(data.expected_cashier) + '. Учёт начат с ' + formattedDay(l.cash_flow.first_day);
+    ? (data.expected_cashier === null ? 'Передача кассы за ' + formattedDay(cashierDay) + ' ещё не записана. ' : 'Для переноса остатка не хватает передачи кассы на ' + formattedDay(l.cash_flow.missing_day) + '. ') + (data.cashier_error || '')
+    : 'Получено от кассира за ' + formattedDay(cashierDay) + ': ' + money(data.expected_cashier) + '. Учёт начат с ' + formattedDay(l.cash_flow.first_day);
   $('cashier-transfer-total').textContent = data.expected_cashier === null ? 'Нет данных' : money(data.expected_cashier);
-  $('opening-cash-total').textContent = hasCashierData ? money(l.cash_flow.opening_balance) : 'Не рассчитано';
+  $('opening-cash-total').textContent = l.cash_flow.opening_balance !== null ? money(l.cash_flow.opening_balance) : 'Не рассчитано';
+  $('other-receipts-total').textContent = money(l.cash_flow.other_receipts);
   $('cash-opening-note').textContent = l.cash_opening ? 'Начальный остаток: ' + money(l.cash_opening.amount) + ' на ' + formattedDay(l.cash_opening.day) + '.'
-    : l.cash_flow.first_day ? 'Начальный остаток ещё не задан. Пока расчёт начинается с нуля на ' + formattedDay(l.cash_flow.first_day) + '.'
-      : 'Сначала загрузите первый день кассового отчёта.';
+    : 'Начальный остаток ещё не задан. Выберите первый день достоверного учёта и укажите подтверждённую сумму.';
   const unpaidDay = l.accruals.filter(r => r.work_day === data.date).reduce((sum, r) => sum + Number(r.debt), 0);
   $('payroll-draft-total').textContent = money(confirmed ? unpaidDay : data.payroll.draft_total);
   $('payroll-state').textContent = confirmed ? 'Осталось выплатить за выбранную смену' : 'Предварительно · ' + data.payroll.unknown_count + ' не рассчитаны';
@@ -83,23 +88,84 @@ function renderLedger(data) {
     const value = reserves[account].balance;
     $(account + '-balance').textContent = value === null ? 'Остаток не задан' : account === 'usd' ? number.format(Number(value)) + ' USD' : money(value);
   }
-  $('monthly-balance').textContent = reserves.monthly.balance === null ? 'План не задан' : money(reserves.monthly.balance);
-  $('monthly-note').textContent = reserves.monthly.month + ' · выплачено по месячным окладам: ' + money(reserves.monthly.paid);
+  $('monthly-balance').textContent = money(reserves.monthly.total);
+  $('monthly-note').textContent = reserves.monthly.month + ' · сумма ставок сотрудников из файла «ЗП»';
   const journal = $('finance-journal'); journal.replaceChildren();
   const breakdown = {};
-  const addRow = (category, type, name, amount, unit, cashEffect) => {
+  async function mutateHandover(method, day, body) {
+    const response = await fetch('/api/accountant/handover/' + encodeURIComponent(day), {method, headers: {'Content-Type':'application/json'}, body: body ? JSON.stringify(body) : undefined});
+    if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось изменить приход.'); }
+    await loadDay(); message(method === 'DELETE' ? 'Приход удалён.' : 'Приход изменён.');
+  }
+  async function mutateOperation(item, body) {
+    const response = await fetch('/api/accountant/operations/' + encodeURIComponent(item.operation) + '/' + item.id, {
+      method: 'PUT', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось изменить операцию.'); }
+    await loadDay(); message('Операция изменена.');
+  }
+  function editHandover(item, total, actions) {
+    total.replaceChildren();
+    const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.step = '0.01'; input.value = item.amount; input.className = 'operation-edit-input';
+    const save = node('button', 'operation-edit', 'Сохранить'); save.type = 'button'; save.addEventListener('click', async () => { try { await mutateHandover('PUT', item.day, {date:item.day, amount:input.value, note:'Исправлено вручную'}); } catch (error) { message(error.message, true); } });
+    total.append(input, actions); actions.replaceChildren(save);
+    input.focus();
+  }
+  function editOperation(item, cells, actions) {
+    const category = itemInfo(item.item_code).category;
+    const typeCell = cells[1], nameCell = cells[2], totalCell = cells[3];
+    const categorySelect = document.createElement('select');
+    catalog.forEach(group => categorySelect.add(new Option(group.label, group.code)));
+    categorySelect.value = catalog.find(group => group.items.some(entry => entry.code === item.item_code))?.code || '';
+    const typeSelect = document.createElement('select');
+    const fillTypes = () => {
+      const group = catalog.find(entry => entry.code === categorySelect.value);
+      options(typeSelect, (group?.items || []).map(entry => ({id: entry.code, label: entry.label})), 'Выберите тип');
+      typeSelect.value = item.item_code || '';
+    };
+    categorySelect.addEventListener('change', fillTypes); fillTypes();
+    const nameInput = document.createElement('input'); nameInput.value = item.description.split(' · ').slice(1).join(' · ') || item.description;
+    const amountInput = document.createElement('input'); amountInput.type = 'number'; amountInput.min = '0'; amountInput.step = '0.01'; amountInput.value = item.amount;
+    const save = node('button', 'operation-edit', 'Сохранить'); save.type = 'button';
+    save.addEventListener('click', async () => {
+      try {
+        await mutateOperation(item, {date: item.day, item_code: typeSelect.value, note: nameInput.value, amount: amountInput.value});
+      } catch (error) { message(error.message, true); }
+    });
+    cells[0].replaceChildren(categorySelect); typeCell.replaceChildren(typeSelect);
+    nameCell.replaceChildren(nameInput); totalCell.replaceChildren(amountInput, actions);
+    actions.replaceChildren(save);
+  }
+  const addRow = (category, type, name, amount, unit, cashEffect, item = null) => {
     const tr = node('tr');
-    tr.append(node('td', '', category), node('td', '', type), node('td', '', name));
+    const cells = [node('td', '', category), node('td', '', type), node('td', '', name)];
+    tr.append(...cells);
     const total = node('td', '', number.format(Number(amount)) + ' ' + unit);
-    total.append(node('small', '', cashEffect)); tr.append(total); journal.append(tr);
+    total.append(node('small', '', cashEffect)); cells.push(total); tr.append(total); journal.append(tr);
+    if (item && item.id !== null && (item.operation === 'movement' || item.operation === 'salary_payment')) {
+      const actions = node('div', 'operation-actions');
+      tr.querySelectorAll('td').forEach(cell => cell.addEventListener('dblclick', () => editOperation(item, cells, actions)));
+      total.append(actions);
+    }
+    if (type === 'От кассира' && data.manual_handover && item) {
+      const actions = node('div', 'operation-actions');
+      const edit = node('button', 'operation-edit', 'Изменить'); edit.type = 'button';
+      edit.addEventListener('click', () => editHandover(item, total, actions));
+      const remove = node('button', 'operation-delete', '×'); remove.type = 'button'; remove.title = 'Удалить приход';
+      remove.addEventListener('click', async () => { if (!confirm('Удалить приход за этот день?')) return; await mutateHandover('DELETE', item.day); });
+      actions.append(edit, remove); total.append(actions);
+    }
   };
   l.movements.forEach(item => {
     let info = itemInfo(item.item_code);
-    if (item.type === 'auto_cashier') info = {category: 'Приход', label: 'От кассира'};
+    if (item.type === 'opening') info = {category: 'Приходы', label: 'Остаток на начало дня'};
+    if (item.type === 'auto_cashier') info = {category: 'Приходы', label: 'От кассира'};
     if (item.type === 'reserve_transfer') info = {category: 'Резервы', label: 'Отложено в сейф'};
     if (item.type === 'procurement_advance') info = {category: 'Закуп', label: 'Выдача под отчёт'};
-    addRow(info.category, info.label, item.description, item.amount, 'сум', item.type === 'auto_cashier' ? 'В кассу' : 'Из кассы');
-    if (item.type !== 'auto_cashier') breakdown[info.category] = (breakdown[info.category] || 0) + Number(item.amount);
+    const opening = item.type === 'opening';
+    const incoming = item.type === 'auto_cashier' || item.type === 'other_receipt';
+    addRow(info.category, info.label, item.description, item.amount, 'сум', opening ? 'Перенос с прошлого дня' : incoming ? 'В кассу' : 'Из кассы', item);
+    if (!incoming && !opening) breakdown[info.category] = (breakdown[info.category] || 0) + Number(item.amount);
   });
   l.debts_created_today.forEach(item => {
     const info = itemInfo(item.item_code);
@@ -138,6 +204,7 @@ async function loadDay() {
   $('accountant-yesterday').classList.toggle('active', day === previousDay(today));
   $('entrances-download').disabled = false;
   $('all-employees-link').href = '/accountant/employees?date=' + encodeURIComponent(day);
+  $('employees-menu').href = '/accountant/employees?date=' + encodeURIComponent(day);
   try {
     const response = await fetch('/api/accountant/day?date=' + encodeURIComponent(day), {cache: 'no-store'}), data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить данные.');
@@ -162,15 +229,17 @@ function submit(id, endpoint, body, success) {
     } catch (error) { message(error.message, true); } finally { saving = false; updateButtons(); }
   });
 }
-submit('other-expense-form', f => special[f.get('item_code')] ? '/api/accountant/reserves' : '/api/accountant/expenses', f => {
+const incomeCodes = ['income_cashier', 'income_other'];
+submit('other-expense-form', f => special[f.get('item_code')] ? '/api/accountant/reserves' : incomeCodes.includes(f.get('item_code')) ? '/api/accountant/incomes' : '/api/accountant/expenses', f => {
   const entry = special[f.get('item_code')];
+  if (incomeCodes.includes(f.get('item_code'))) return {date:selectedDay(), item_code:f.get('item_code'), note:f.get('note'), amount:f.get('amount')};
   return entry ? {date: selectedDay(), amount: f.get('amount'), note: f.get('note'), account: entry.account, kind: entry.kind}
     : {date: selectedDay(), amount: f.get('amount'), paid_amount: f.get('paid_amount') === '' ? null : f.get('paid_amount'), item_code: f.get('item_code'), note: f.get('note')};
 }, 'Операция сохранена. Остатки пересчитаны.');
 submit('debt-payment-form', '/api/accountant/debts/pay', f => ({date:selectedDay(),debt_id:Number(f.get('debt_id')),amount:f.get('amount')}), 'Выплата по долгу сохранена.');
 submit('reserve-opening-form', '/api/accountant/reserves', f => ({date:selectedDay(),account:f.get('account'),kind:'opening',amount:f.get('amount'),note:f.get('note')}), 'Начальный остаток сохранён на выбранную дату.');
 submit('cash-opening-form', '/api/accountant/cash-opening', f => ({date:selectedDay(),amount:f.get('amount'),note:f.get('note')}), 'Начальный остаток бухгалтера сохранён.');
-submit('monthly-plan-form', '/api/accountant/monthly-plan', f => ({date:selectedDay(),amount:f.get('amount'),note:f.get('note')}), 'План наличных выплат за месяц сохранён.');
+submit('handover-form', '/api/accountant/handover', f => ({date:selectedDay(),amount:f.get('amount'),note:f.get('note')}), 'Приход от кассира сохранён.');
 $('expense-category').addEventListener('change', categoryChanged);
 $('expense-item').addEventListener('change', expenseImpact);
 $('expense-paid').addEventListener('input', updateButtons);

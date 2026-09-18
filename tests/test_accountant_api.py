@@ -47,6 +47,96 @@ def test_monthly_plan_and_usd_do_not_require_iiko_but_cash_transfer_does(tmp_pat
         assert data['ledger']['cash_balance'] is None
 
 
+def test_monthly_salary_total_is_calculated_from_imported_roster(tmp_path):
+    with demo_client(tmp_path) as client:
+        data = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        assert data['reserves']['monthly']['total'] == '5000000'
+
+
+def test_manual_cashier_income_is_used_without_iiko(tmp_path):
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        response = client.post('/api/accountant/handover', json={
+            'date': DAY.isoformat(), 'amount': '750000', 'note': 'Передано кассиром'})
+        assert response.status_code == 201
+        data = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        assert data['expected_cashier'] == '750000'
+        assert data['ledger']['cash_balance'] == '750000'
+
+
+def test_manual_cashier_income_can_be_updated_and_deleted(tmp_path):
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        payload = {'date': DAY.isoformat(), 'amount': '750000', 'note': 'Передано'}
+        assert client.post('/api/accountant/handover', json=payload).status_code == 201
+        assert client.put('/api/accountant/handover/' + DAY.isoformat(),
+                          json={'date': DAY.isoformat(), 'amount': '800000', 'note': 'Исправлено'}).status_code == 200
+        assert client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['expected_cashier'] == '800000'
+        assert client.delete('/api/accountant/handover/' + DAY.isoformat()).status_code == 204
+        assert client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['expected_cashier'] is None
+
+
+def test_accountant_income_and_expense_can_be_updated(tmp_path):
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        assert client.post('/api/accountant/handover', json={
+            'date': DAY.isoformat(), 'amount': '1000000', 'note': 'Передано'}).status_code == 201
+        income = client.post('/api/accountant/incomes', json={
+            'date': DAY.isoformat(), 'item_code': 'income_other',
+            'note': 'Старое назначение', 'amount': '200000'}).json()
+        expense = client.post('/api/accountant/expenses', json={
+            'date': DAY.isoformat(), 'item_code': 'ops_rent',
+            'note': 'Старая аренда', 'amount': '300000'}).json()
+        assert client.put(f"/api/accountant/operations/movement/{income['id']}", json={
+            'date': DAY.isoformat(), 'item_code': 'income_other',
+            'note': 'Новое назначение', 'amount': '250000'}).status_code == 200
+        assert client.put(f"/api/accountant/operations/movement/{expense['id']}", json={
+            'date': DAY.isoformat(), 'item_code': 'ops_rent',
+            'note': 'Новая аренда', 'amount': '150000'}).status_code == 200
+        movements = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['ledger']['movements']
+        assert next(item for item in movements if item['id'] == income['id'])['amount'] == '250000'
+        assert next(item for item in movements if item['id'] == expense['id'])['description'] == 'Аренда помещения · Новая аренда'
+
+
+def test_manual_mode_does_not_carry_balance_into_historical_dates(tmp_path):
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        first = DAY - timedelta(days=1)
+        client.post('/api/accountant/handover', json={'date': first.isoformat(), 'amount': '900000', 'note': 'Вчера'})
+        client.post('/api/accountant/handover', json={'date': DAY.isoformat(), 'amount': '100000', 'note': 'Сегодня'})
+        historical = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        assert historical['ledger']['cash_flow']['opening_balance'] == '0'
+
+
+def test_verified_accountant_start_reconciles_september_report_and_carries_forward(tmp_path, monkeypatch):
+    monkeypatch.setattr('retro.modules.accountant.routes.today_tashkent', lambda: date(2026, 9, 18))
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        finance_day = date(2026, 9, 17)
+        next_day = finance_day + timedelta(days=1)
+        assert client.post('/api/accountant/handover', json={
+            'date': '2026-09-15', 'amount': '15089000', 'note': 'Старый тестовый день'}).status_code == 201
+        assert client.post('/api/accountant/handover', json={
+            'date': finance_day.isoformat(), 'amount': '15992000',
+            'note': 'Касса за 16.09'}).status_code == 201
+        assert client.post('/api/accountant/cash-opening', json={
+            'date': finance_day.isoformat(), 'amount': '104000',
+            'note': 'Остаток на 17.09 по отчёту Лины'}).status_code == 201
+        assert client.post('/api/accountant/expenses', json={
+            'date': finance_day.isoformat(), 'item_code': 'salary_staff',
+            'note': 'ЗП персонал', 'amount': '15862000'}).status_code == 201
+
+        day = client.get('/api/accountant/day', params={'date': finance_day.isoformat()}).json()
+        assert day['ledger']['cash_flow']['opening_balance'] == '104000'
+        assert day['ledger']['cash_flow']['received_from_cashier'] == '15992000'
+        assert day['ledger']['cash_flow']['closing_balance'] == '234000'
+        assert day['ledger']['movements'][1]['description'] == 'Касса за 16.09.2026'
+
+        tomorrow = client.get('/api/accountant/day', params={'date': next_day.isoformat()}).json()
+        assert tomorrow['ledger']['cash_flow']['opening_balance'] == '234000'
+        assert tomorrow['ledger']['cash_balance'] is None
+
+
 def demo_client(tmp_path):
     app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
                      accountant_db_path=tmp_path / 'accountant-demo.sqlite3')
@@ -218,6 +308,40 @@ def test_missing_rate_can_be_corrected_with_reason_and_public_host_cannot_see_ro
             headers={'host': 'public.trycloudflare.com'}).status_code == 403
 
 
+def test_employee_registry_can_edit_name_role_and_salary(tmp_path):
+    with demo_client(tmp_path) as client:
+        employee = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['employees'][0]
+        updated = client.patch(f'/api/accountant/employees/{employee["employee_id"]}', json={
+            'name': 'Новое имя', 'role': 'официант', 'rate': '275000',
+            'reason': 'Обновление реестра'})
+        assert updated.status_code == 200
+        person = next(item for item in client.get('/api/accountant/day',
+                         params={'date': DAY.isoformat()}).json()['employees']
+                       if item['employee_id'] == employee['employee_id'])
+        assert person['name'] == 'Новое имя'
+        assert person['role'] == 'официант'
+        assert person['group'] == 'Обслуживание зала'
+        assert person['rate'] == '275000'
+
+
+def test_employee_registry_can_add_worker_and_change_group(tmp_path):
+    with demo_client(tmp_path) as client:
+        employee = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['employees'][0]
+        changed = client.patch(f'/api/accountant/employees/{employee["employee_id"]}', json={
+            'name': employee['name'], 'role': employee['role'], 'group': 'Бар',
+            'rate': employee['rate'], 'reason': 'Новая группа'})
+        assert changed.status_code == 200
+        assert changed.json()['employee']['group'] == 'Бар'
+        created = client.post('/api/accountant/employees', json={
+            'name': 'Новый сотрудник', 'role': 'официант', 'group': 'Обслуживание зала',
+            'rate': '200000'})
+        assert created.status_code == 201
+        assert created.json()['employee']['name'] == 'Новый сотрудник'
+        employee_id = created.json()['employee']['id']
+        assert client.delete(f'/api/accountant/employees/{employee_id}').status_code == 204
+        assert client.delete(f'/api/accountant/employees/{employee_id}').status_code == 404
+
+
 def test_expected_cashier_amount_is_read_only_and_requires_fresh_real_snapshot(tmp_path):
     with demo_client(tmp_path) as client:
         assert client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['expected_cashier'] is None
@@ -247,6 +371,7 @@ def test_expense_catalog_and_cash_rollforward_use_actual_outflows(tmp_path):
         summary = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['ledger']
         assert summary['cash_flow'] == {
             'opening_balance': '0', 'received_from_cashier': '1000000',
+            'other_receipts': '0',
             'salary_paid': '0', 'other_outflows': '200000',
             'closing_balance': '800000', 'missing_day': None,
             'first_day': DAY.isoformat()}
@@ -303,6 +428,7 @@ def test_daily_cash_starts_from_cashier_handover_without_manual_confirmation(tmp
         after = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         assert after['ledger']['cash_flow'] == {
             'opening_balance': '0', 'received_from_cashier': '650000',
+            'other_receipts': '0',
             'salary_paid': '100000', 'other_outflows': '150000',
             'closing_balance': '400000', 'missing_day': None,
             'first_day': DAY.isoformat()}

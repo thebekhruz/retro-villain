@@ -26,39 +26,125 @@ function render(data) {
     ' опоздали · ' + data.payroll.missing_count + ' не пришли · ' +
     data.payroll.unlinked_count + ' без демопривязки · ' + data.missing_rates + ' без ставки.';
   const container = $('employees-groups');
-  const hadGroups = container.querySelector('details') !== null;
-  const opened = new Set([...container.querySelectorAll('details[open]')].map(item => item.dataset.group));
   container.replaceChildren();
-  data.groups.forEach(group => {
+  const roles = [...new Set(data.employees.map(row => row.role))].sort((left, right) => left.localeCompare(right, 'ru'));
+  roles.forEach(role => {
     const details = document.createElement('details');
     details.className = 'employee-group';
-    details.dataset.group = group.name;
-    details.open = !hadGroups || opened.has(group.name);
+    details.open = true;
     const summary = document.createElement('summary');
-    summary.append(text('strong', '', group.name), text('span', '', group.count + ' чел. · ' + money(group.draft_total)));
+    const people = data.employees.filter(row => row.role === role);
+    summary.append(text('strong', '', role), text('span', '', people.length + ' чел.'));
     details.append(summary);
-    const list = text('div', 'staff-list', '');
-    data.employees.filter(row => row.group === group.name).forEach(row => {
-      const card = text('article', 'staff-row is-' + row.status, '');
-      const identity = document.createElement('div');
-      identity.append(text('div', 'staff-name', row.name),
-        text('div', 'staff-role', row.role + (row.rate === null ? ' · Нет ставки' : ' · ' + money(row.rate))));
-      const time = row.first_entry
-        ? new Date(row.first_entry).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'})
-        : '—';
-      const line = text('div', 'staff-line', '');
-      line.append(text('span', '', 'Вход: ' + time + (row.exception ? ' · разовое разрешение' : '')),
-        text('strong', '', row.payable === null ? 'Не рассчитано' : money(row.payable)));
-      card.append(identity, text('span', 'staff-status ' + row.status, statuses[row.status] || row.status), line);
-      list.append(card);
+    const table = document.createElement('table');
+    table.className = 'employee-roster-table';
+    table.innerHTML = '<thead><tr><th>Имя</th><th>Роль</th><th>Зарплата / ставка</th><th>Группа</th><th>Статус</th><th>Действия</th></tr></thead>';
+    const body = document.createElement('tbody');
+    people.sort((left, right) => left.name.localeCompare(right.name, 'ru')).forEach(row => {
+      const tr = document.createElement('tr');
+      const values = [row.name, row.role, row.rate === null ? 'Нет ставки' : money(row.rate), row.group,
+        statuses[row.status] || row.status];
+      values.forEach((value, index) => {
+        const cell = document.createElement('td'); cell.textContent = value;
+        if (index < 4) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
+        tr.append(cell);
+      });
+      const actions = document.createElement('td');
+      const remove = document.createElement('button');
+      remove.type = 'button'; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
+      remove.title = 'Удалить сотрудника';
+      remove.addEventListener('click', () => confirmDelete(row, tr, actions));
+      actions.append(remove); tr.append(actions);
+      body.append(tr);
     });
-    details.append(list);
+    table.append(body); details.append(table);
     container.append(details);
   });
-  options($('edit-employee'), data.employees.map(row => ({
-    id: row.employee_id, label: row.name + ' · ' + row.role + (row.rate === null ? ' · нет ставки' : '')
-  })), 'Выберите сотрудника');
-  options($('edit-group'), data.groups.map(group => ({id: group.name, label: group.name})), 'Выберите группу');
+}
+function confirmDelete(row, tableRow, actions) {
+  if (actions.querySelector('.employee-delete-confirm')) return;
+  const menu = document.createElement('div'); menu.className = 'employee-delete-confirm';
+  menu.append(text('span', '', 'Удалить сотрудника?'));
+  const keep = document.createElement('button'); keep.type = 'button'; keep.textContent = 'Оставить';
+  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'is-danger'; remove.textContent = 'Удалить';
+  menu.append(keep, remove); actions.replaceChildren(menu);
+  keep.addEventListener('click', () => { actions.replaceChildren(); actions.append(tableRow.querySelector('.employee-delete') || makeDeleteButton(row, tableRow, actions)); });
+  remove.addEventListener('click', async () => {
+    remove.disabled = true;
+    try {
+      const response = await fetch('/api/accountant/employees/' + encodeURIComponent(row.employee_id), {method: 'DELETE'});
+      if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось удалить сотрудника.'); }
+      await loadDay(); message('Сотрудник удалён.');
+    } catch (error) { message(error.message, true); }
+  });
+}
+function makeDeleteButton(row, tableRow, actions) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'employee-delete'; button.textContent = 'Удалить';
+  button.title = 'Удалить сотрудника'; button.addEventListener('click', () => confirmDelete(row, tableRow, actions));
+  return button;
+}
+async function saveEmployee(row, field, value) {
+  const updated = {name: row.name, role: row.role, rate: row.rate, group: row.group,
+    reason: 'Изменение в реестре сотрудников'};
+  updated[field] = value;
+  const response = await fetch('/api/accountant/employees/' + encodeURIComponent(row.employee_id), {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(updated)
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить сотрудника.');
+  await loadDay(); message('Изменение сотрудника сохранено.');
+}
+function editCell(row, cell, field, groups) {
+  if (cell.querySelector('input')) return;
+  const input = field === 'group' ? document.createElement('select') : document.createElement('input');
+  if (field === 'group') groups.forEach(group => input.add(new Option(group, group)));
+  input.type = field === 'rate' ? 'number' : 'text';
+  input.min = field === 'rate' ? '0' : undefined;
+  input.step = field === 'rate' ? '0.01' : undefined;
+  input.value = field === 'rate' ? row.rate || '' : row[field];
+  input.className = 'employee-cell-input';
+  cell.replaceChildren(input); input.focus(); if (input.select) input.select();
+  let finished = false;
+  const finish = async save => {
+    if (finished) return; finished = true;
+    const value = input.value.trim();
+    if (!save || (field !== 'rate' && !value) || (field === 'rate' && value && Number(value) <= 0)) {
+      await loadDay(); return;
+    }
+    try { await saveEmployee(row, field, field === 'rate' ? value || null : value); }
+    catch (error) { message(error.message, true); await loadDay(); }
+  };
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter') finish(true);
+    if (event.key === 'Escape') finish(false);
+  });
+  input.addEventListener('blur', () => finish(true));
+}
+function addEmployeeRow(data) {
+  if (!data || document.querySelector('.employee-add-row')) return;
+  const row = document.createElement('form'); row.className = 'employee-add-row';
+  row.innerHTML = '<input name="name" required maxlength="160" placeholder="Имя">' +
+    '<input name="role" required maxlength="80" placeholder="Роль">' +
+    '<input name="rate" type="number" min="0" step="0.01" placeholder="Зарплата / ставка">' +
+    '<select name="group" required><option value="">Группа</option></select>' +
+    '<button class="button primary" type="submit">Добавить</button>' +
+    '<button class="button secondary" type="button" data-cancel>Отмена</button>';
+  data.groups.forEach(group => row.elements.group.add(new Option(group.name, group.name)));
+  $('employees-groups').prepend(row);
+  row.addEventListener('submit', async event => {
+    event.preventDefault(); if (!row.reportValidity()) return;
+    const fields = new FormData(row);
+    try {
+      const response = await fetch('/api/accountant/employees', {method: 'POST', headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({name: fields.get('name'), role: fields.get('role'), rate: fields.get('rate') || null, group: fields.get('group')})});
+      const result = await response.json();
+      if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить сотрудника.');
+      await loadDay(); message('Новый сотрудник добавлен.');
+    } catch (error) { message(error.message, true); }
+  });
+  row.querySelector('[data-cancel]').addEventListener('click', () => row.remove());
+  row.elements.name.focus();
 }
 async function loadDay() {
   const day = $('employees-date').value;
@@ -77,30 +163,7 @@ async function loadDay() {
 }
 $('employees-date').addEventListener('change', loadDay);
 $('employees-refresh').addEventListener('click', loadDay);
-$('edit-employee').addEventListener('change', () => {
-  const person = current?.employees.find(item => String(item.employee_id) === $('edit-employee').value);
-  $('employee-form').elements.rate.value = person?.rate ?? '';
-  $('edit-group').value = person?.group ?? '';
-});
-$('employee-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const form = event.currentTarget;
-  if (!form.reportValidity()) return;
-  const button = form.querySelector('button[type="submit"]');
-  button.disabled = true;
-  try {
-    const fields = new FormData(form);
-    const response = await fetch('/api/accountant/employees/' + encodeURIComponent(fields.get('employee_id')), {
-      method: 'PATCH', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({rate: fields.get('rate') || null, group: fields.get('group'), reason: fields.get('reason')})
-    });
-    const result = await response.json();
-    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить исправление.');
-    form.reset();
-    await loadDay();
-    message('Изменение сохранено. Подтверждённые начисления прошлых дней не изменены.');
-  } catch (error) { message(error.message, true); } finally { button.disabled = false; }
-});
+$('employees-add').addEventListener('click', () => addEmployeeRow(current));
 $('employees-download').addEventListener('click', async () => {
   const day = $('employees-date').value;
   if (!day || !$('employees-date').checkValidity()) return;

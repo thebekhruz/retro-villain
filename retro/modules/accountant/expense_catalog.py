@@ -5,6 +5,11 @@ Income and discount columns are intentionally excluded from cash expenses.
 """
 
 GROUPS = (
+    ('income', 'Приходы', (
+        ('income_opening', 'Остаток на начало дня'),
+        ('income_cashier', 'Касса'),
+        ('income_other', 'Прочие поступления'),
+    )),
     ('salary', 'Заработная плата', (
         ('salary_cashier', 'Кассир'),
         ('salary_staff', 'ЗП персонал'),

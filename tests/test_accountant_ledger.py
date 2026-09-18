@@ -61,6 +61,30 @@ def test_other_expense_and_shoh_procurement_are_separate_cash_outflows(tmp_path)
         'opening', 'other_expense', 'procurement_advance']
 
 
+def test_daily_summary_shows_carried_balance_as_opening_income(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.daily_summary(WORKDAY, Decimal('500000'))
+    store.daily_summary(NEXT_DAY, Decimal('200000'))
+    result = store.daily_summary(NEXT_DAY, None)
+    assert result['cash_flow']['opening_balance'] == '500000'
+    assert result['movements'][0]['type'] == 'opening'
+    assert result['movements'][0]['amount'] == '500000'
+
+
+def test_other_receipt_increases_current_and_next_day_cash(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.daily_summary(WORKDAY, Decimal('100000'))
+    store.add_income(WORKDAY, 'income_other', 'Возврат долга', '25000')
+    store.daily_summary(NEXT_DAY, Decimal('50000'))
+    today = store.daily_summary(WORKDAY, Decimal('100000'))
+    tomorrow = store.daily_summary(NEXT_DAY, Decimal('50000'))
+    assert today['cash_balance'] == Decimal('125000')
+    assert today['cash_flow']['other_receipts'] == '25000'
+    assert store.daily_summary(WORKDAY, Decimal('100000'), carry_history=False)['cash_balance'] == Decimal('125000')
+    assert tomorrow['cash_flow']['opening_balance'] == '125000'
+    assert tomorrow['cash_balance'] == Decimal('175000')
+
+
 def test_transfer_and_unlinked_day_exception_cannot_be_repeated(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
     store.confirm_transfer(WORKDAY, NEXT_DAY, '200000')

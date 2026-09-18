@@ -28,20 +28,9 @@
     </div>
     <p id="employees-message" class="notice" role="status" aria-live="polite" hidden></p>
     <section class="panel accountant-panel" aria-labelledby="employees-title">
-      <div class="accountant-panel-head"><div><p class="eyebrow">ПО ГРУППАМ</p><h2 id="employees-title">Список сотрудников</h2><p id="employees-summary" class="accountant-help">Загружаем реестр…</p></div></div>
-      <p class="accountant-help">Нажмите на название группы, чтобы открыть или закрыть её список. Опоздание после 10:00 показывается без автоматического удержания.</p>
+      <div class="accountant-panel-head"><div><p class="eyebrow">ПО ГРУППАМ</p><h2 id="employees-title">Список сотрудников</h2><p id="employees-summary" class="accountant-help">Загружаем реестр…</p></div><button id="employees-add" class="icon-button" type="button" title="Добавить сотрудника" aria-label="Добавить сотрудника">+</button></div>
+      <p class="accountant-help">Сотрудники упорядочены по ролям. Дважды нажмите на имя, роль или зарплату, чтобы изменить ячейку как в Excel.</p>
       <div id="employees-groups" class="employees-groups" aria-live="polite"></div>
-    </section>
-    <section class="panel accountant-panel" aria-labelledby="employees-edit-title">
-      <p class="eyebrow">ИСПРАВЛЕНИЕ РЕЕСТРА</p><h2 id="employees-edit-title">Ставка и группа</h2>
-      <p class="accountant-help">Укажите причину исправления. Подтверждённые начисления прошлых дней не пересчитываются.</p>
-      <form id="employee-form" class="accountant-form employee-edit-form">
-        <label>Сотрудник<select name="employee_id" id="edit-employee" required><option value="">Выберите сотрудника</option></select></label>
-        <label>Дневная ставка, сум<input name="rate" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Пусто, если неизвестна"></label>
-        <label>Группа<select name="group" id="edit-group" required><option value="">Выберите группу</option></select></label>
-        <label>Причина<input name="reason" required maxlength="160" placeholder="Например, уточнена ставка"></label>
-        <button class="button primary" type="submit">Сохранить исправление</button>
-      </form>
     </section>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Сотрудники</span><span>Время Ташкента · UZS</span></footer>
   </div>

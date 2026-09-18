@@ -18,6 +18,7 @@ class Settings:
     dashboard_user: str = field(default='', repr=False)
     dashboard_password: str = field(default='', repr=False)
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
+    manual_handover_only: bool = False
 
     @property
     def configured(self):
@@ -38,5 +39,6 @@ class Settings:
             raise ValueError('Для защиты укажите и DASHBOARD_USER, и DASHBOARD_PASSWORD.')
         network_value = os.getenv('DASHBOARD_ALLOWED_NETWORK', '').strip()
         allowed_network = ip_network(network_value, strict=False) if network_value else None
+        manual = os.getenv('ACCOUNTANT_MANUAL_HANDOVER', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
         return cls(base, os.getenv('IIKO_LOGIN', ''), os.getenv('IIKO_PASSWORD', ''),
-                   int(store) if store else None, user, password, allowed_network)
+                   int(store) if store else None, user, password, allowed_network, manual)

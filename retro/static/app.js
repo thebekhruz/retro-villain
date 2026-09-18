@@ -20,6 +20,11 @@ function previousDay(day) {
   value.setUTCDate(value.getUTCDate()-1);
   return value.toISOString().slice(0,10);
 }
+function offsetDay(day, offset) {
+  const value = new Date(day + 'T12:00:00Z');
+  value.setUTCDate(value.getUTCDate() - offset);
+  return value.toISOString().slice(0,10);
+}
 function clearUsdRate(day) {
   $('usd-day').textContent = formattedDay(day);
   $('usd-official').textContent = '—';
@@ -27,6 +32,8 @@ function clearUsdRate(day) {
   $('usd-source-day').textContent = 'Дата действия курса ЦБ: —';
   $('usd-status').textContent = 'Загружаем курс ЦБ…';
   $('usd-status').classList.remove('is-error');
+  $('usd-balance').value = '';
+  $('usd-balance-status').textContent = '';
 }
 async function loadUsdRate(day, current, signal) {
   if (demo) { $('usd-status').textContent = 'В демонстрационном режиме курс не загружается.'; return; }
@@ -37,6 +44,9 @@ async function loadUsdRate(day, current, signal) {
     $('usd-restaurant').textContent = rateRestaurant.format(Number(data.restaurant_rate));
     $('usd-source-day').textContent = 'Курс ЦБ действует с ' + formattedDay(data.source_date);
     $('usd-status').textContent = '';
+    const balance = await request(`/api/cashier/usd-balance?date=${encodeURIComponent(day)}`, signal);
+    if (current !== generation) return;
+    $('usd-balance').value = balance.amount ?? '';
   } catch (error) {
     if (current === generation && error.name !== 'AbortError') {
       $('usd-status').textContent = error.message;
@@ -44,6 +54,13 @@ async function loadUsdRate(day, current, signal) {
     }
   }
 }
+$('usd-balance-save').addEventListener('click', async () => {
+  try {
+    const data = await request('/api/cashier/usd-balance', undefined, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:$('report-date').value, amount:$('usd-balance').value})});
+    $('usd-balance').value = data.amount;
+    $('usd-balance-status').textContent = 'Сохранено';
+  } catch (error) { $('usd-balance-status').textContent = error.message; }
+});
 async function request(url, signal, options = {}) {
   const response = await fetch(url, {...options, signal, cache:'no-store'});
   if (!response.ok) {
@@ -208,6 +225,7 @@ async function load() {
   $('expenses-day').textContent = '· ' + formattedDay(day);
   $('today').classList.toggle('active', day === config.today);
   $('yesterday').classList.toggle('active', day === previousDay(config.today));
+  document.querySelectorAll('.date-chip').forEach(button => button.classList.toggle('active', button.dataset.date === day));
   loadExpenses(day, current, controller.signal);
   loadReceipts(day, current, controller.signal);
   loadUsdRate(day, current, controller.signal);
@@ -311,6 +329,17 @@ $('report-date').addEventListener('change',load);
 $('refresh').addEventListener('click',load);
 $('today').addEventListener('click',()=>{if(config){$('report-date').value=config.today;load();}});
 $('yesterday').addEventListener('click',()=>{if(config){$('report-date').value=previousDay(config.today);load();}});
+function addRecentDateButtons() {
+  const container = document.querySelector('.quick-days');
+  for (let offset = 2; offset <= 8; offset++) {
+    const day = offsetDay(config.today, offset);
+    const button = document.createElement('button');
+    button.type = 'button'; button.className = 'chip date-chip'; button.dataset.date = day;
+    button.textContent = new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'short', timeZone:'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace('.', '');
+    button.addEventListener('click', () => { $('report-date').value = day; load(); });
+    container.append(button);
+  }
+}
 $('download').addEventListener('click',async()=>{
   if (!snapshot) return;
   const data = snapshot, current = generation;
@@ -330,6 +359,7 @@ $('download').addEventListener('click',async()=>{
   try {
     config = await (await request('/api/config')).json();
     $('report-date').max=config.today;$('report-date').value=config.today;
+    addRecentDateButtons();
     $('demo-banner').hidden=!demo;$('setup').hidden=config.configured||demo;
     if (demo) {
       for (const input of $('expense-form').querySelectorAll('input, button')) input.disabled = true;

@@ -39,7 +39,8 @@
       <div class="usd-heading"><p class="eyebrow">USD · КУРС ВЫБРАННОГО ДНЯ</p><h2 id="usd-title">Курс за <span id="usd-day">выбранный день</span></h2><p>Сохранён для этой даты и не меняется при просмотре старого отчёта.</p></div>
       <div class="usd-rates">
         <div class="usd-rate"><span>Официальный курс ЦБ</span><strong id="usd-official">—</strong><small>сум за 1 USD</small></div>
-        <div class="usd-rate restaurant"><span>Курс Retro Milliy</span><strong id="usd-restaurant">—</strong><small>сум за 1 USD · на 1,5% ниже, округлён вниз до 0,1</small></div>
+        <div class="usd-rate restaurant"><span>Курс Retro Milliy</span><strong id="usd-restaurant">—</strong><small>сум за 1 USD · на 1,5% ниже, округлён вниз до 100</small></div>
+        <div class="usd-balance-entry"><label for="usd-balance">Доллары в кассе, USD</label><input id="usd-balance" type="number" min="0" step="0.01" placeholder="0"><button id="usd-balance-save" class="button secondary" type="button">Сохранить</button><span id="usd-balance-status" role="status"></span></div>
       </div>
       <div class="usd-footer"><span id="usd-source-day">Дата действия курса ЦБ: —</span><a href="https://cbu.uz/ru/arkhiv-kursov-valyut/veb-masteram/" target="_blank" rel="noopener noreferrer">Источник: Центральный банк ↗</a></div>
       <p id="usd-status" class="usd-status" role="status" aria-live="polite"></p>

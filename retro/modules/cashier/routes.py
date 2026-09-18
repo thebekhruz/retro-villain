@@ -21,6 +21,11 @@ class ReceiptInput(ExpenseInput):
     pass
 
 
+class UsdBalanceInput(BaseModel):
+    date: date
+    amount: str
+
+
 def selected_day(value):
     day = value or today_tashkent()
     if day > today_tashkent():
@@ -43,6 +48,19 @@ async def usd_rate(request: Request, date: date):
         return (await request.app.state.usd_rates.get(day)).json()
     except DataError as error:
         raise HTTPException(503, str(error)) from None
+
+
+@router.get('/usd-balance')
+def usd_balance(request: Request, date: date):
+    return request.app.state.usd_rates.balance(selected_day(date))
+
+
+@router.post('/usd-balance', status_code=201)
+def save_usd_balance(request: Request, body: UsdBalanceInput):
+    try:
+        return request.app.state.usd_rates.save_balance(selected_day(body.date), body.amount)
+    except DataError as error:
+        raise HTTPException(422, str(error)) from None
 
 
 @router.post('/expenses', status_code=201)

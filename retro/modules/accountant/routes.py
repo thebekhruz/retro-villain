@@ -14,7 +14,7 @@ from retro.modules.cashier.expenses import cash_to_finance
 from .attendance import export_entrances
 from .employee_export import export_employees
 from .expense_catalog import catalog_json
-from .ledger import LedgerError, amount_value
+from .ledger import LedgerError, amount_value, required_text
 from .payroll import draft_payroll
 
 router = APIRouter(prefix='/api/accountant', tags=['accountant'])
@@ -38,6 +38,10 @@ def money_json(summary: dict) -> dict:
 
 
 async def cashier_handover(request: Request, day: date) -> Decimal | None:
+    """Use manual handovers when enabled; otherwise retain the iiko fallback."""
+    finance = request.app.state.accountant_finance
+    if request.app.state.settings.manual_handover_only:
+        return finance.handover_for_day(day)
     state = request.app.state
     snapshot = state.cache.latest_for_day(day)
     if snapshot is None and state.settings.configured:
@@ -80,7 +84,13 @@ async def day_view(request: Request, date: date | None = None):
             raise
         cashier_amount = None
         cashier_error = error.detail
-    summary = finance.daily_summary(day, cashier_amount)
+    anchor = finance.cash_opening()
+    carry_start = date.fromisoformat(anchor['day']) if anchor and request.app.state.settings.manual_handover_only else None
+    summary = finance.daily_summary(
+        day, cashier_amount,
+        carry_history=not request.app.state.settings.manual_handover_only or
+        (carry_start is not None and day >= carry_start),
+        carry_start=carry_start)
     draft_total = sum((row.payable for row in rows if row.payable is not None), Decimal(0))
     groups = {}
     for employee, row in zip(roster, rows, strict=True):
@@ -98,8 +108,10 @@ async def day_view(request: Request, date: date | None = None):
     scenarios = [dict(group=item['name'], saving=item['shift_cost'],
                       covers_shortfall=Decimal(item['shift_cost']) >= shortfall and shortfall > 0)
                  for item in group_items]
+    reserves = finance.reserves(day)
+    reserves['monthly']['total'] = str(request.app.state.accountant_roster.monthly_total())
     return dict(demo=True, date=day.isoformat(), source='Симуляция; ресторанный Hikvision не подключён',
-                employees=[row.json() for row in rows], roster_count=len(roster),
+                employees=[row.json() for row in rows], roster_count=len(roster), manual_handover=request.app.state.settings.manual_handover_only,
                 actual_hikvision_unlinked=sum(employee.hikvision_id is None for employee in roster),
                 missing_rates=sum(employee.rate is None for employee in roster),
                 groups=group_items,
@@ -108,7 +120,7 @@ async def day_view(request: Request, date: date | None = None):
                              missing_count=sum(row.status == 'missing' for row in rows),
                              unlinked_count=sum(row.status == 'unlinked' for row in rows)),
                 ledger=money_json(summary),
-                reserves=finance.reserves(day),
+                reserves=reserves,
                 expected_cashier=str(cashier_amount) if cashier_amount is not None else None,
                 cashier_error=cashier_error,
                 scenarios=dict(shortfall=str(shortfall), groups=scenarios,
@@ -123,19 +135,47 @@ class ExceptionInput(BaseModel):
 
 
 class EmployeeUpdateInput(BaseModel):
+    name: str | None = None
+    role: str | None = None
     rate: str | None
-    group: str
+    group: str | None = None
     reason: str
+
+
+class EmployeeCreateInput(BaseModel):
+    name: str
+    role: str
+    rate: str | None = None
+    group: str
 
 
 @router.patch('/employees/{employee_id}')
 def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInput):
     try:
         employee = request.app.state.accountant_roster.update(
-            employee_id, rate=body.rate, group_name=body.group, reason=body.reason)
+            employee_id, name=body.name, role=body.role, rate=body.rate,
+            group_name=body.group, reason=body.reason)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(demo=True, employee=employee.json())
+
+
+@router.post('/employees', status_code=201)
+def create_employee(request: Request, body: EmployeeCreateInput):
+    try:
+        employee = request.app.state.accountant_roster.add(
+            name=body.name, role=body.role, rate=body.rate, group_name=body.group)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return dict(demo=True, employee=employee.json())
+
+
+@router.delete('/employees/{employee_id}', status_code=204)
+def delete_employee(request: Request, employee_id: int):
+    try:
+        request.app.state.accountant_roster.delete(employee_id)
+    except ValueError as error:
+        raise HTTPException(404, str(error)) from None
 
 
 @router.post('/exceptions', status_code=201)
@@ -182,6 +222,40 @@ class OpeningInput(BaseModel):
     date: date
     amount: str
     note: str
+
+
+@router.post('/handover', status_code=201)
+def add_handover(request: Request, body: OpeningInput):
+    day = selected_day(body.date)
+    try:
+        amount = amount_value(body.amount, allow_zero=True)
+        note = required_text(body.note, 'примечание к приходу')
+        request.app.state.accountant_finance.record_handover(day, amount)
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=True, date=day.isoformat(), amount=str(amount), note=note)
+
+
+@router.put('/handover/{handover_date}')
+def update_handover(request: Request, handover_date: date, body: OpeningInput):
+    if handover_date != body.date:
+        raise HTTPException(422, 'Дата в адресе и форме должна совпадать.')
+    day = selected_day(handover_date)
+    try:
+        amount = amount_value(body.amount, allow_zero=True)
+        required_text(body.note, 'примечание к приходу')
+        if request.app.state.accountant_finance.handover_for_day(day) is None:
+            raise LedgerError('Приход за этот день ещё не записан.')
+        request.app.state.accountant_finance.record_handover(day, amount)
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=True, date=day.isoformat(), amount=str(amount))
+
+
+@router.delete('/handover/{handover_date}', status_code=204)
+def delete_handover(request: Request, handover_date: date):
+    day = selected_day(handover_date)
+    request.app.state.accountant_finance.delete_handover(day)
 
 
 class ReserveInput(OpeningInput):
@@ -261,6 +335,45 @@ class FinanceExpenseInput(BaseModel):
     note: str = ''
     amount: str
     paid_amount: str | None = None
+
+
+class OperationUpdateInput(BaseModel):
+    date: date
+    item_code: str = ''
+    note: str = ''
+    amount: str
+
+
+@router.put('/operations/{operation_type}/{operation_id}')
+def update_finance_operation(request: Request, operation_type: str, operation_id: int,
+                             body: OperationUpdateInput):
+    day = selected_day(body.date)
+    try:
+        if operation_type == 'movement':
+            request.app.state.accountant_finance.update_movement(
+                operation_id, day, body.item_code, body.note, body.amount)
+        elif operation_type == 'salary_payment':
+            request.app.state.accountant_finance.update_salary_payment(operation_id, day, body.amount)
+        else:
+            raise LedgerError('Эту операцию нельзя изменить здесь.')
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=True, id=operation_id)
+
+
+@router.post('/incomes', status_code=201)
+async def add_finance_income(request: Request, body: FinanceExpenseInput):
+    day = selected_day(body.date)
+    try:
+        amount = amount_value(body.amount, allow_zero=True)
+        note = required_text(body.note, 'назначение')
+        if body.item_code == 'income_cashier':
+            entry_id = request.app.state.accountant_finance.record_handover(day, amount)
+        else:
+            entry_id = request.app.state.accountant_finance.add_income(day, body.item_code, note, amount)
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=True, id=entry_id)
 
 
 @router.get('/expenses/catalog')

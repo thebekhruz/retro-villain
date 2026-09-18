@@ -16,6 +16,10 @@ CBU_ORIGIN = 'https://cbu.uz'
 DISCOUNT = Decimal('0.015')
 
 
+def round_restaurant_rate(value: Decimal) -> Decimal:
+    return (value.to_integral_value(rounding=ROUND_DOWN) // Decimal('100')) * Decimal('100')
+
+
 @dataclass(frozen=True)
 class UsdRate:
     day: date
@@ -44,7 +48,29 @@ class UsdRates:
             official_rate TEXT NOT NULL,
             restaurant_rate TEXT NOT NULL
         )''')
+        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_balances (
+            day TEXT PRIMARY KEY, amount TEXT NOT NULL
+        )''')
         return connection
+
+    def balance(self, day: date):
+        with closing(self._open()) as connection:
+            row = connection.execute('SELECT amount FROM cashier_usd_balances WHERE day = ?',
+                                     (day.isoformat(),)).fetchone()
+        return {'date': day.isoformat(), 'amount': row[0] if row else None}
+
+    def save_balance(self, day: date, amount):
+        try:
+            value = Decimal(str(amount))
+        except (InvalidOperation, ValueError):
+            raise DataError('Укажите корректное количество USD.') from None
+        if not value.is_finite() or value < 0 or value > Decimal('1000000000') or value.as_tuple().exponent < -2:
+            raise DataError('Количество USD должно быть от 0 до 1 млрд, не более двух знаков.')
+        with closing(self._open()) as connection, connection:
+            connection.execute('INSERT INTO cashier_usd_balances(day, amount) VALUES (?, ?) '
+                               'ON CONFLICT(day) DO UPDATE SET amount=excluded.amount',
+                               (day.isoformat(), str(value)))
+        return {'date': day.isoformat(), 'amount': str(value)}
 
     def _stored(self, day: date):
         with closing(self._open()) as connection:
@@ -54,7 +80,7 @@ class UsdRates:
             ).fetchone()
         if row is None:
             return None
-        return UsdRate(day, date.fromisoformat(row[0]), Decimal(row[1]), Decimal(row[2]))
+        return UsdRate(day, date.fromisoformat(row[0]), Decimal(row[1]), round_restaurant_rate(Decimal(row[2])))
 
     def _save(self, rate: UsdRate):
         with closing(self._open()) as connection:
@@ -98,5 +124,6 @@ class UsdRates:
         if (item.get('Ccy') != 'USD' or nominal != 1 or not official.is_finite()
                 or official <= 0 or source_date > day):
             raise DataError('Центральный банк вернул некорректный курс USD.')
-        restaurant = (official * (1 - DISCOUNT)).quantize(Decimal('0.1'), rounding=ROUND_DOWN)
+        discounted = (official * (1 - DISCOUNT)).to_integral_value(rounding=ROUND_DOWN)
+        restaurant = round_restaurant_rate(discounted)
         return UsdRate(day, source_date, official, restaurant)
