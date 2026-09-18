@@ -5,7 +5,7 @@ from reportlab.lib.pagesizes import A4
 from reportlab.lib.styles import getSampleStyleSheet
 from reportlab.pdfbase import pdfmetrics
 from reportlab.pdfbase.ttfonts import TTFont
-from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer
+from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
 
 
 def render_report_pdf(snapshot, analysis):
@@ -24,5 +24,18 @@ def render_report_pdf(snapshot, analysis):
     body.append(Paragraph('Выручка касс: %s сум' % snapshot.get('cash_total', '—'), styles['BodyText']))
     body.append(Spacer(1, 12))
     body.append(Paragraph('Вывод: ' + analysis['summary'], styles['BodyText']))
+    problems = analysis.get('problems', [])
+    if problems:
+        body.append(Spacer(1, 12))
+        body.append(Paragraph('Топ проблем меню', styles['Heading2']))
+        body.append(Table([['Позиция', 'Причина', 'Действие']] +
+                          [[entry['subject'], entry['reason'], entry['action']] for entry in problems]))
+    waiters = snapshot.get('waiter_metrics', {})
+    if waiters:
+        body.append(Spacer(1, 12))
+        body.append(Paragraph('Официанты', styles['Heading2']))
+        body.append(Table([['Официант', 'Выручка', 'Маржа']] +
+                          [[name, value['revenue'], value['margin_percent'] or '—']
+                           for name, value in waiters.items()]))
     document.build(body)
     return stream.getvalue()

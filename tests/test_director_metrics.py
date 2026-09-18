@@ -31,6 +31,7 @@ def test_yandex_overlaps_cash_direction_without_double_counting():
     assert snapshot.cash_total == Decimal('2000000')
     assert snapshot.yandex_revenue == Decimal('200000')
     assert snapshot.item_metrics['all']['Плов 0'].margin_percent == Decimal('60.00')
+    assert snapshot.waiter_metrics['Олег'].revenue == Decimal('2000000')
 
 
 def test_missing_waiter_is_rejected():

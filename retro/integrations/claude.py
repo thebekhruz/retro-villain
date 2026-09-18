@@ -13,9 +13,6 @@ class ClaudeClient:
         if not self.settings.claude_configured:
             raise DataError('Настройте CLAUDE_API_KEY и CLAUDE_MODEL для AI-анализа.')
         aggregate = snapshot.json()
-        for group in aggregate['item_metrics'].values():
-            for metric in group.values():
-                metric.pop('cost', None)
         prompt = ('Верни только JSON: {"summary": string, "problems": [{"subject": string, '
                   '"direction": "all|retro|oxbridge|yandex", "reason": string, '
                   '"priority": "high|medium|low", "action": "remove|replace|promote|review"}]}. '

@@ -47,6 +47,7 @@ class DirectorSnapshot:
     cash_total: Decimal
     yandex_revenue: Decimal
     item_metrics: dict[str, dict[str, ItemMetric]]
+    waiter_metrics: dict[str, ItemMetric]
 
     def json(self):
         def metric(value):
@@ -56,7 +57,8 @@ class DirectorSnapshot:
         return dict(period_start=self.period_start.isoformat(), period_end=self.period_end.isoformat(),
                     cash_total=str(self.cash_total), yandex_revenue=str(self.yandex_revenue),
                     item_metrics={group: {name: metric(value) for name, value in values.items()}
-                                  for group, values in self.item_metrics.items()})
+                                  for group, values in self.item_metrics.items()},
+                    waiter_metrics={name: metric(value) for name, value in self.waiter_metrics.items()})
 
 
 def completed_period(today: date):
@@ -84,6 +86,7 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
                for name in ('all', 'retro', 'oxbridge', 'yandex')}
     cash_total = Decimal(0)
     yandex_total = Decimal(0)
+    waiters = defaultdict(lambda: [Decimal(0), Decimal(0), Decimal(0)])
     for row in values:
         if row.category in excluded_groups:
             continue
@@ -100,6 +103,10 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
             names.append('yandex')
             yandex_total += row.revenue
         cash_total += row.revenue
+        waiter = waiters[row.waiter]
+        waiter[0] += row.quantity
+        waiter[1] += row.revenue
+        waiter[2] += row.cost
         for name in names:
             bucket = metrics[name][row.item]
             bucket[0] += row.quantity
@@ -107,4 +114,5 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
             bucket[2] += row.cost
     return DirectorSnapshot(period_start, period_end, cash_total, yandex_total,
                             {group: {item: ItemMetric(*amounts) for item, amounts in items.items()}
-                             for group, items in metrics.items()})
+                             for group, items in metrics.items()},
+                            {name: ItemMetric(*amounts) for name, amounts in waiters.items()})
