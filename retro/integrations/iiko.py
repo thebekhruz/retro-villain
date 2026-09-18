@@ -6,8 +6,45 @@ import httpx
 
 from retro.config import IIKO_ORIGIN
 from retro.modules.cashier.service import (
-    BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, number,
+    BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
+from retro.modules.director.models import SalesRow
+
+
+DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
+                   'DishGroup', 'WaiterName', 'UniqOrderId.Id']
+DIRECTOR_FIELDS = ['DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost']
+
+
+def director_rows_from_olap(day, rows):
+    """Flatten iiko's nested grouped-table response into safe typed sale rows."""
+    result = []
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку отчёта директора.')
+        values = list(inherited)
+        while len(values) < len(DIRECTOR_GROUPS):
+            index = len(values)
+            field = row.get(f'field{index}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != len(DIRECTOR_GROUPS):
+            raise DataError('iiko не вернул все измерения продажи.')
+        quantity, revenue, unit_cost = (number(cell(row, index)) for index in range(7, 10))
+        register, section, payment_type, item, category, waiter, order_id = values
+        result.append(SalesRow(day, register, section, payment_type, item, category,
+                               quantity, revenue, quantity * unit_cost, waiter, order_id))
+
+    for row in rows:
+        visit(row, [])
+    return result
 
 
 def cash_prepay_from_shifts(day, sales, payments, shifts):
