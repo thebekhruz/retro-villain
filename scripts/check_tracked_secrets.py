@@ -8,8 +8,6 @@ from pathlib import Path
 
 ALLOWED_ENV_FILES = {'config.env.example'}
 RUNTIME_SUFFIXES = {'.sqlite3', '.db', '.pdf'}
-SKIP_CONTENT_PREFIXES = ('docs/', 'tests/')
-SKIP_CONTENT_FILES = {'README.md', 'config.env.example'}
 SECRET_PATTERNS = (
     ('private key', re.compile(r'-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----')),
     ('Google API key', re.compile(r'\bAIza[0-9A-Za-z_-]{30,}\b')),
@@ -36,9 +34,6 @@ def filename_issue(path: Path):
 
 
 def content_issue(path: Path):
-    value = path.as_posix()
-    if value in SKIP_CONTENT_FILES or value.startswith(SKIP_CONTENT_PREFIXES):
-        return None
     try:
         if path.stat().st_size > 2_000_000:
             return None
