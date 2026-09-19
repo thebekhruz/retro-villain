@@ -33,3 +33,10 @@ def test_request_gate_rejects_late_response():
 def test_completed_periods_end_yesterday_in_tashkent():
     result = run_node("logic.quickPeriod('30','2026-09-19')")
     assert result == {'start': '2026-08-20', 'end': '2026-09-18'}
+
+
+def test_hover_selects_nearest_revenue_group_and_clamps_to_chart_edges():
+    result = run_node(
+        "[-20,149,151,420].map(x=>logic.nearestRevenueIndex(x,300,4))"
+    )
+    assert result == [0, 1, 2, 3]

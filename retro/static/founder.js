@@ -10,6 +10,21 @@ function selectedDirections(){return [...document.querySelectorAll('input[name=d
 function setMessage(text,error=false){const node=$('message');node.hidden=!text;node.textContent=text||'';node.classList.toggle('is-error',error)}
 function setLoading(value){document.querySelector('.founder-workspace').classList.toggle('is-loading',value);document.querySelector('.founder-metrics').setAttribute('aria-busy',String(value));$('refresh').disabled=value}
 
+function revenuePeriod(group){
+  const period=group.start===group.end?shortDate(group.start):`${shortDate(group.start)}–${shortDate(group.end)}`;
+  return period+(group.incomplete?' · день не завершён':'');
+}
+
+function revenueTooltip(group,directions){
+  const tooltip=document.createElement('div');tooltip.className='chart-tooltip';tooltip.hidden=true;
+  const period=document.createElement('strong');period.textContent=revenuePeriod(group);
+  const rows=document.createElement('div');rows.className='chart-tooltip-rows';
+  let total=0;
+  directions.forEach(direction=>{const value=Number(group.values[direction]||0);total+=value;const row=document.createElement('span');const label=document.createElement('i');label.style.background=directionMeta[direction].color;row.append(label,document.createTextNode(`${directionMeta[direction].label}: ${money.format(value)} сум`));rows.append(row)});
+  const sum=document.createElement('b');sum.textContent=`Всего: ${money.format(total)} сум`;
+  tooltip.append(period,rows,sum);return tooltip;
+}
+
 function renderRevenue(data){
   const target=$('revenue-chart');target.replaceChildren();const directions=data.directions;
   if(!data.revenue_series.length){const empty=document.createElement('div');empty.className='empty-chart';empty.textContent='За период нет временных групп.';target.append(empty);return}
@@ -17,8 +32,14 @@ function renderRevenue(data){
   const chart=svg('svg',{viewBox:`0 0 ${width} ${height}`,'aria-hidden':'true'});chart.style.width=width+'px';const all=data.revenue_series.flatMap(group=>directions.map(direction=>Number(group.values[direction]||0)));const max=Math.max(1,...all),min=Math.min(0,...all),span=max-min;
   for(let step=0;step<=4;step+=1){const y=pad.top+plotHeight*step/4;chart.append(svg('line',{x1:pad.left,y1:y,x2:width-pad.right,y2:y,class:'chart-grid'}));const label=svg('text',{x:pad.left-8,y:y+3,'text-anchor':'end',class:'chart-axis'});label.textContent=money.format(max-span*step/4);chart.append(label)}
   const paths=FounderLogic.revenuePaths(data.revenue_series,directions,plotWidth,plotHeight);
-  directions.forEach(direction=>{const points=paths[direction].split(' ').map(pair=>{const [x,y]=pair.split(',').map(Number);return `${x+pad.left},${y+pad.top}`}).join(' ');chart.append(svg('polyline',{points,class:'chart-line',stroke:directionMeta[direction].color}));data.revenue_series.forEach((group,index)=>{const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const value=Number(group.values[direction]||0),y=pad.top+plotHeight-(value-min)*plotHeight/span;const point=svg('circle',{cx:x,cy:y,r:4,fill:directionMeta[direction].color,class:'chart-point'});const title=svg('title');title.textContent=`${directionMeta[direction].label}: ${money.format(value)} сум · ${shortDate(group.start)}–${shortDate(group.end)}${group.incomplete?' · день не завершён':''}`;point.append(title);chart.append(point)})});
-  const labelEvery=Math.max(1,Math.ceil(data.revenue_series.length/6));data.revenue_series.forEach((group,index)=>{if(index%labelEvery!==0&&index!==data.revenue_series.length-1)return;const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const label=svg('text',{x,y:height-10,'text-anchor':'middle',class:'chart-axis'});label.textContent=shortDate(group.start)+(group.incomplete?' *':'');chart.append(label)});target.append(chart);
+  directions.forEach(direction=>{const points=paths[direction].split(' ').map(pair=>{const [x,y]=pair.split(',').map(Number);return `${x+pad.left},${y+pad.top}`}).join(' ');chart.append(svg('polyline',{points,class:'chart-line',stroke:directionMeta[direction].color}));data.revenue_series.forEach((group,index)=>{const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const value=Number(group.values[direction]||0),y=pad.top+plotHeight-(value-min)*plotHeight/span;const point=svg('circle',{cx:x,cy:y,r:4,fill:directionMeta[direction].color,class:'chart-point'});const title=svg('title');title.textContent=`${directionMeta[direction].label}: ${money.format(value)} сум · ${revenuePeriod(group)}`;point.append(title);chart.append(point)})});
+  const labelEvery=Math.max(1,Math.ceil(data.revenue_series.length/6));data.revenue_series.forEach((group,index)=>{if(index%labelEvery!==0&&index!==data.revenue_series.length-1)return;const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const label=svg('text',{x,y:height-10,'text-anchor':'middle',class:'chart-axis'});label.textContent=shortDate(group.start)+(group.incomplete?' *':'');chart.append(label)});
+  const hoverLine=svg('line',{y1:pad.top,y2:pad.top+plotHeight,class:'chart-hover-line',visibility:'hidden'});chart.append(hoverLine);
+  const hoverLayer=svg('rect',{x:pad.left,y:pad.top,width:plotWidth,height:plotHeight,class:'chart-hover-layer',tabindex:'0','aria-label':'Наведите или коснитесь графика, чтобы увидеть суммы'});chart.append(hoverLayer);
+  const tooltip=revenueTooltip(data.revenue_series[0],directions);
+  const showTooltip=event=>{const bounds=chart.getBoundingClientRect();const chartX=(event.clientX-bounds.left)/bounds.width*width;const index=FounderLogic.nearestRevenueIndex(chartX-pad.left,plotWidth,data.revenue_series.length);const group=data.revenue_series[index];const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const next=revenueTooltip(group,directions);tooltip.replaceChildren(...next.childNodes);tooltip.hidden=false;tooltip.style.left=x+'px';tooltip.classList.toggle('is-left',x-target.scrollLeft>target.clientWidth*.62);hoverLine.setAttribute('visibility','visible');hoverLine.setAttribute('x1',x);hoverLine.setAttribute('x2',x)};
+  hoverLayer.addEventListener('pointermove',showTooltip);hoverLayer.addEventListener('pointerdown',showTooltip);hoverLayer.addEventListener('click',showTooltip);hoverLayer.addEventListener('pointerleave',()=>{tooltip.hidden=true;hoverLine.setAttribute('visibility','hidden')});
+  target.append(chart,tooltip);
   const legend=$('revenue-legend');legend.replaceChildren();directions.forEach(direction=>{const item=document.createElement('span');const dot=document.createElement('i');dot.className='legend-dot';dot.style.background=directionMeta[direction].color;item.append(dot,document.createTextNode(directionMeta[direction].label));legend.append(item)})
 }
 

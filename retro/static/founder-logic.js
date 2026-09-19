@@ -32,5 +32,11 @@
     ]));
   }
 
-  return {quickPeriod,revenuePaths,requestGate};
+  function nearestRevenueIndex(pointerX,width,count){
+    if(count<=1)return 0;
+    const position=Math.max(0,Math.min(width,Number(pointerX)));
+    return Math.round(position/width*(count-1));
+  }
+
+  return {nearestRevenueIndex,quickPeriod,revenuePaths,requestGate};
 });
