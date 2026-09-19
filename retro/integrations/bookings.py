@@ -1,3 +1,4 @@
+import re
 from datetime import date, datetime, timezone
 
 import httpx
@@ -7,6 +8,7 @@ from retro.modules.cashier.service import DataError
 
 COUNT_FIELDS = ('bookings', 'guests', 'unknown_guest_bookings')
 UTM_FIELDS = ('utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term')
+RFC3339_UTC = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z')
 
 
 def _invalid():
@@ -32,9 +34,6 @@ def _validate_breakdown(value, totals, *, kind, start=None, end=None):
     for row in value:
         _validate_counts(row)
         key = row.get('value')
-        if key in seen:
-            _invalid()
-        seen.add(key)
         if kind == 'date':
             try:
                 day = date.fromisoformat(key)
@@ -44,6 +43,9 @@ def _validate_breakdown(value, totals, *, kind, start=None, end=None):
                 _invalid()
         elif key is not None and not isinstance(key, str):
             _invalid()
+        if key in seen:
+            _invalid()
+        seen.add(key)
         if kind in ('source', 'utm') and not isinstance(row.get('label'), str):
             _invalid()
         for field in COUNT_FIELDS:
@@ -57,6 +59,8 @@ def _validate_coverage(value):
             not isinstance(value.get('historical_data_complete'), bool):
         _invalid()
     timestamp = value['history_started_at']
+    if not RFC3339_UTC.fullmatch(timestamp):
+        _invalid()
     try:
         parsed = datetime.fromisoformat(timestamp.replace('Z', '+00:00'))
     except ValueError:

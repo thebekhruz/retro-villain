@@ -68,12 +68,14 @@ def test_booking_client_requests_submitted_and_cancelled_summaries_server_to_ser
     lambda payload: payload.__setitem__('by_date', 'not-a-list'),
     lambda payload: payload['coverage'].__setitem__('historical_data_complete', 'false'),
     lambda payload: payload['coverage'].__setitem__('history_started_at', 'not-a-date'),
+    lambda payload: payload['coverage'].__setitem__('history_started_at', '20260919T080000Z'),
     lambda payload: payload.__setitem__('timezone', 'UTC'),
     lambda payload: payload['by_status'][0].__setitem__('value', 'cancelled')
     if payload['by_status'][0]['value'] == 'submitted' else None,
     lambda payload: payload['by_source'].append({
         'value': payload['by_source'][0]['value'], 'label': 'duplicate',
         'bookings': 0, 'guests': 0, 'unknown_guest_bookings': 0}),
+    lambda payload: payload['by_source'][0].__setitem__('value', []),
 ])
 def test_booking_client_rejects_malformed_summary_instead_of_showing_zeroes(mutate):
     def handler(request):
