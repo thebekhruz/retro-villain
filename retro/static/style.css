@@ -14,6 +14,17 @@
 .sidebar nav{display:grid;gap:8px}.nav-link{display:flex;align-items:center;gap:13px;padding:15px;border:1px solid transparent;border-radius:10px;font-size:14px;background:transparent;color:#a4b8ab}.nav-link:hover{background:#ffffff0b;color:#e9f0e8}.accountant-workspace .entrances-panel{margin-top:0}.accountant-download{margin-left:auto}
 @media(max-width:900px){.sidebar nav{gap:10px}}
 @media(max-width:650px){.sidebar{height:auto;min-height:75px;align-items:center;gap:12px;flex-wrap:wrap}.sidebar nav{display:flex;gap:4px}.nav-active{white-space:nowrap}.accountant-download{grid-column:1/-1;margin-left:0}}
+/* Модулей в меню стало четыре, а горизонтальная шапка на телефоне была
+   рассчитана на два: список уезжал за правый край вместе с «Учредителем».
+   Теперь он занимает свою строку и прокручивается, ничего не обрезая. */
+@media(max-width:650px){
+  .sidebar nav{flex:1 1 100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  /* Меню на телефоне — основная навигация, и пальцем по 36 пикселям
+     попадать неудобно: поднимаем до стандартных сорока четырёх. */
+  .sidebar nav>a{flex:0 0 auto;min-height:44px;align-items:center}
+  .topbar{gap:10px}
+  .top-status{min-width:0;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
 @media(max-width:390px){.sidebar{padding:12px 14px}.brand{font-size:15px;letter-spacing:2px}.brand small{letter-spacing:3px}.nav-active,.nav-link{padding:8px;font-size:11px;gap:5px}.nav-icon{font-size:16px}}
 .cashier-finance{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(270px,1fr);gap:24px;align-items:stretch;margin-top:24px}
 .expenses-panel{padding:27px;min-width:0}.finance-heading{display:flex;align-items:start;justify-content:space-between}.finance-subtitle{color:var(--muted);font-size:12px;line-height:1.5;margin:9px 0 0}.finance-symbol{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#eef3e9;color:#65836b;font-size:19px}
