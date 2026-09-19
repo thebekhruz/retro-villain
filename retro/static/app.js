@@ -187,7 +187,9 @@ function show(data) {
   snapshot = data;
   $('revenue').textContent = money.format(Number(data.revenue));
   $('receipts').textContent = count.format(data.receipt_count);
-  $('average').textContent = data.average_receipt === null ? '—' : money.format(Number(data.average_receipt));
+  // Средний чек — целыми сумами: тийины не в обороте, а «146 428,57»
+  // читается дольше и обещает точность, которой нет.
+  $('average').textContent = data.average_receipt === null ? '—' : count.format(Math.round(Number(data.average_receipt)));
   $('payment-total').textContent = money.format(Number(data.payment_total));
   $('payment-empty').hidden = data.receipt_count > 0 || Number(data.revenue) !== 0;
   $('payment-empty').querySelector('p').textContent = 'За этот день продаж нет';
@@ -201,7 +203,15 @@ function show(data) {
     const share = document.createElement('small');
     const ratio = Number(data.revenue) > 0 ? Number(payment.amount) / Number(data.revenue) * 100 : null;
     share.textContent = ratio === null ? '' : money.format(ratio) + '% продаж';
-    value.append(share); row.append(dot,name,value); $('payments').append(row);
+    // Доля — полоской прямо в строке: общая полоса наверху не даёт
+    // сопоставить сегмент с конкретным способом оплаты.
+    const bar = document.createElement('span'); bar.className = 'payment-bar';
+    const fill = document.createElement('i'); fill.style.width = (ratio === null ? 0 : Math.max(ratio,0)) + '%';
+    bar.append(fill);
+    // Способы без единой транзакции остаются в списке (видно, что их
+    // проверяли), но гаснут и не спорят за внимание с теми, где были деньги.
+    if (Number(payment.amount) === 0) row.classList.add('is-zero');
+    value.append(share); row.append(dot,name,bar,value); $('payments').append(row);
     if (positiveTotal > 0 && Number(payment.amount) > 0) {
       const segment = document.createElement('span');segment.style.setProperty('--color',color);segment.style.width = (Number(payment.amount)/positiveTotal*100)+'%';$('composition').append(segment);
     }
@@ -371,4 +381,29 @@ $('download').addEventListener('click',async()=>{
     $('connection').classList.toggle('connected',config.configured&&!demo);
     await load();
   } catch(error){message(error.message,true);}
+})();
+
+// ── Вкладки операций кассы ───────────────────────────────────────────────────
+// Только показ и скрытие готовых панелей: обработчики форм, запросы и подсчёты
+// не меняются — за раз кассиру нужна одна форма, а не обе сразу.
+(function opsTabs() {
+  const tabs = [
+    { tab: 'tab-expenses', pane: 'pane-expenses' },
+    { tab: 'tab-receipts', pane: 'pane-receipts' },
+  ];
+  const select = (active) => {
+    tabs.forEach(({ tab, pane }) => {
+      const on = tab === active;
+      const tabEl = document.getElementById(tab);
+      const paneEl = document.getElementById(pane);
+      if (!tabEl || !paneEl) return;
+      tabEl.classList.toggle('is-active', on);
+      tabEl.setAttribute('aria-selected', String(on));
+      paneEl.hidden = !on;
+    });
+  };
+  tabs.forEach(({ tab }) => {
+    const el = document.getElementById(tab);
+    if (el) el.addEventListener('click', () => select(tab));
+  });
 })();
