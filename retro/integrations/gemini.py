@@ -26,7 +26,8 @@ class GeminiClient:
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{self.settings.gemini_model}:generateContent'
         try:
             async with httpx.AsyncClient(timeout=60, transport=self.transport) as client:
-                response = await client.post(url, params={'key': self.settings.gemini_api_key}, json=body)
+                response = await client.post(
+                    url, headers={'x-goog-api-key': self.settings.gemini_api_key}, json=body)
             if not response.is_success:
                 raise DataError('Gemini не смог сформировать анализ. Повторите позже.')
             text = response.json()['candidates'][0]['content']['parts'][0]['text']

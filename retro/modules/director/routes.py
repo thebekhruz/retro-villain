@@ -25,7 +25,10 @@ def attendance(request: Request):
         'arrived_count': len(arrived),
         'late_count': len(late),
         'missing_count': sum(row.status == 'missing' for row in rows),
-        'employees': [row.json() for row in rows],
+        'employees': [dict(employee_id=row.employee_id, name=row.name, role=row.role,
+                           group=row.group_name, status=row.status,
+                           first_entry=row.occurred_at.isoformat() if row.occurred_at else None,
+                           demo=True) for row in rows],
     }
 
 

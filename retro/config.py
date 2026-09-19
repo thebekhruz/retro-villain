@@ -21,6 +21,7 @@ class Settings:
     dashboard_user: str = field(default='', repr=False)
     dashboard_password: str = field(default='', repr=False)
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
+    trusted_proxy_network: IPv4Network | IPv6Network | None = None
     manual_handover_only: bool = False
     gemini_api_key: str = field(default='', repr=False)
     gemini_model: str = ''
@@ -57,6 +58,8 @@ class Settings:
             raise ValueError('Для защиты укажите и DASHBOARD_USER, и DASHBOARD_PASSWORD.')
         network_value = os.getenv('DASHBOARD_ALLOWED_NETWORK', '').strip()
         allowed_network = ip_network(network_value, strict=False) if network_value else None
+        proxy_value = os.getenv('TRUSTED_PROXY_NETWORK', '').strip()
+        trusted_proxy_network = ip_network(proxy_value, strict=False) if proxy_value else None
         manual = os.getenv('ACCOUNTANT_MANUAL_HANDOVER', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
         categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
@@ -80,6 +83,7 @@ class Settings:
             dashboard_user=user,
             dashboard_password=password,
             dashboard_allowed_network=allowed_network,
+            trusted_proxy_network=trusted_proxy_network,
             manual_handover_only=manual,
             gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
             gemini_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),

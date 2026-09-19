@@ -2,7 +2,6 @@ import asyncio
 import base64
 import binascii
 import secrets
-from ipaddress import ip_address
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -24,6 +23,7 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.integrations.gemini import GeminiClient
+from retro.security import client_address, is_finance_path, is_local_host, validate_mutation_origin
 
 STATIC = Path(__file__).parent / 'static'
 
@@ -50,15 +50,15 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.director_service = DirectorService(app.state.iiko, app.state.gemini, app.state.director_store)
 
     @app.middleware('http')
-    async def security(request: Request, call_next):
-        if (request.url.path.startswith('/accountant') or request.url.path.startswith('/api/accountant/')) and \
-                request.url.hostname not in ('127.0.0.1', 'localhost', '::1'):
+    async def security_middleware(request: Request, call_next):
+        try:
+            address = client_address(request, settings)
+        except ValueError as error:
+            return JSONResponse({'detail': str(error)}, 403)
+        if is_finance_path(request.url.path) and (
+                not address.is_loopback or not is_local_host(request.url.hostname)):
             return JSONResponse({'detail': 'Модуль финансов доступен только локально до настройки защиты.'}, 403)
-        if settings.dashboard_allowed_network and request.client:
-            try:
-                address = ip_address(request.client.host)
-            except ValueError:
-                return JSONResponse({'detail': 'Адрес клиента не распознан.'}, 403)
+        if settings.dashboard_allowed_network:
             if not address.is_loopback and address not in settings.dashboard_allowed_network:
                 return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
         authorized = False
@@ -73,8 +73,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if not authorized:
                 return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
                                     headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
-        elif request.client is None or request.client.host not in ('127.0.0.1', '::1'):
+        elif not address.is_loopback:
             return JSONResponse({'detail': 'Внешний доступ закрыт. Настройте защиту дашборда.'}, 403)
+        try:
+            validate_mutation_origin(request)
+        except ValueError as error:
+            return JSONResponse({'detail': str(error)}, 403)
         response = await call_next(request)
         response.headers['Cache-Control'] = 'no-store'
         response.headers['X-Content-Type-Options'] = 'nosniff'
