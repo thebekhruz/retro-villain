@@ -50,17 +50,50 @@ function render(data) {
         tr.append(cell);
       });
       const actions = document.createElement('td');
+      const edit = text('button', 'edit-monthly', 'Изменить');
+      edit.type = 'button';
+      edit.addEventListener('click', () => editEmployeeRow(row, tr, data.groups.map(item => item.name)));
       const remove = document.createElement('button');
       remove.type = 'button'; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
       remove.title = 'Удалить сотрудника';
       remove.addEventListener('click', () => confirmDelete(row, tr, actions));
-      actions.append(remove); tr.append(actions);
+      actions.append(edit, remove); tr.append(actions);
       body.append(tr);
     });
     table.append(body); details.append(table);
     container.append(details);
   });
   renderMonthly(data.monthly_employees || []);
+}
+function editEmployeeRow(row, tableRow, groups) {
+  if (tableRow.querySelector('input,select')) return;
+  const cells = [...tableRow.querySelectorAll('td')];
+  const fields = ['name', 'role', 'rate', 'group'];
+  fields.forEach((field, index) => {
+    const input = field === 'group' ? document.createElement('select') : document.createElement('input');
+    if (field === 'group') groups.forEach(group => input.add(new Option(group, group)));
+    else input.type = field === 'rate' ? 'number' : 'text';
+    if (field === 'rate') { input.min = '0'; input.step = '0.01'; }
+    input.value = row[field] || ''; input.className = 'employee-cell-input';
+    cells[index].replaceChildren(input);
+  });
+  const save = text('button', 'edit-monthly', 'Сохранить'); save.type = 'button';
+  const cancel = text('button', 'employee-delete', 'Отмена'); cancel.type = 'button';
+  cancel.addEventListener('click', loadDay);
+  save.addEventListener('click', async () => {
+    const values = fields.map((field, index) => cells[index].querySelector('input,select').value.trim());
+    const payload = {name: values[0], role: values[1], rate: values[2] || null,
+      group: values[3], reason: 'Изменение в реестре сотрудников'};
+    try {
+      const response = await fetch('/api/accountant/employees/' + encodeURIComponent(row.employee_id), {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
+      });
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'Не удалось сохранить сотрудника.');
+      await loadDay(); message('Изменение сотрудника сохранено.');
+    } catch (error) { message(error.message, true); }
+  });
+  cells[5].replaceChildren(save, cancel); cells[0].querySelector('input').focus();
 }
 function renderMonthly(people) {
   const container = $('monthly-employees');

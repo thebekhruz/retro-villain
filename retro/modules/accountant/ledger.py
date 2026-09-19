@@ -712,7 +712,7 @@ class FinanceStore:
             for entry_id, note, amount in connection.execute(
                     "SELECT id, note, amount FROM accountant_reserves WHERE kind = 'transfer' AND day = ?",
                     (day.isoformat(),)):
-                movements.append(dict(id=entry_id, type='reserve_transfer', description=note,
+                movements.append(dict(id=entry_id, type='reserve_transfer', operation='reserve_transfer', description=note,
                                       amount=amount, day=day.isoformat(), item_code=None))
         if cashier_amount is not None:
             movements.insert(0, dict(id=None, type='auto_cashier',
