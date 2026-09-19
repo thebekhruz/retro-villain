@@ -60,6 +60,78 @@ function render(data) {
     table.append(body); details.append(table);
     container.append(details);
   });
+  renderMonthly(data.monthly_employees || []);
+}
+function renderMonthly(people) {
+  const container = $('monthly-employees');
+  container.replaceChildren();
+  if (!people.length) {
+    container.append(text('p', 'accountant-help', 'Сотрудников с месячным окладом пока нет.'));
+    return;
+  }
+  const table = document.createElement('table');
+  table.className = 'employee-roster-table monthly-roster-table';
+  table.innerHTML = '<thead><tr><th>Имя</th><th>Должность</th><th>Оклад</th><th>График</th><th>На карту</th><th>Наличные</th><th>Авансы</th><th>Остаток</th><th>Действия</th></tr></thead>';
+  const body = document.createElement('tbody');
+  people.forEach(row => {
+    const tr = document.createElement('tr');
+    [row.name, row.role, money(row.salary), row.schedule, money(row.card), money(row.cash),
+      money(row.advances), money(row.remaining)].forEach(value => tr.append(text('td', '', value)));
+    const actions = document.createElement('td');
+    const edit = text('button', 'edit-monthly', 'Изменить');
+    edit.type = 'button';
+    edit.addEventListener('click', () => editMonthlyRow(row, tr));
+    const remove = text('button', 'employee-delete', 'Удалить');
+    remove.type = 'button';
+    remove.addEventListener('click', () => confirmMonthlyDelete(row, actions));
+    actions.append(edit, remove); tr.append(actions); body.append(tr);
+  });
+  table.append(body); container.append(table);
+}
+async function saveMonthly(row, values) {
+  const response = await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(row.id), {
+    method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(values)
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(result.detail || 'Не удалось сохранить месячную зарплату.');
+  await loadDay(); message('Месячный оклад сохранён.');
+}
+function editMonthlyRow(row, tableRow) {
+  if (tableRow.querySelector('input')) return;
+  const fields = ['name', 'role', 'salary', 'schedule', 'card', 'cash', 'advances', 'remaining'];
+  const cells = [...tableRow.querySelectorAll('td')];
+  fields.forEach((field, index) => {
+    const input = document.createElement('input');
+    const numeric = !['name', 'role', 'schedule'].includes(field);
+    input.type = numeric ? 'number' : 'text';
+    if (numeric) { input.min = '0'; input.step = '0.01'; }
+    input.value = row[field]; input.name = field; input.className = 'employee-cell-input';
+    cells[index].replaceChildren(input);
+  });
+  const actions = cells[8];
+  const save = text('button', 'edit-monthly', 'Сохранить'); save.type = 'button';
+  const cancel = text('button', 'employee-delete', 'Отмена'); cancel.type = 'button';
+  cancel.addEventListener('click', loadDay);
+  save.addEventListener('click', async () => {
+    const values = Object.fromEntries(fields.map((field, index) => [field, cells[index].querySelector('input').value]));
+    try { await saveMonthly(row, values); } catch (error) { message(error.message, true); }
+  });
+  actions.replaceChildren(save, cancel);
+  cells[0].querySelector('input').focus();
+}
+function confirmMonthlyDelete(row, actions) {
+  if (actions.querySelector('.employee-delete-confirm')) return;
+  const menu = document.createElement('div'); menu.className = 'employee-delete-confirm';
+  menu.append(text('span', '', 'Удалить сотрудника?'));
+  const keep = text('button', '', 'Оставить'); keep.type = 'button';
+  const remove = text('button', 'is-danger', 'Удалить'); remove.type = 'button';
+  keep.addEventListener('click', loadDay);
+  remove.addEventListener('click', async () => {
+    const response = await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(row.id), {method: 'DELETE'});
+    if (!response.ok) return message('Не удалось удалить сотрудника.', true);
+    await loadDay(); message('Сотрудник удалён.');
+  });
+  menu.append(keep, remove); actions.replaceChildren(menu);
 }
 function confirmDelete(row, tableRow, actions) {
   if (actions.querySelector('.employee-delete-confirm')) return;
@@ -146,6 +218,32 @@ function addEmployeeRow(data) {
   row.querySelector('[data-cancel]').addEventListener('click', () => row.remove());
   row.elements.name.focus();
 }
+function addMonthlyRow() {
+  if (document.querySelector('.monthly-add-row')) return;
+  const row = document.createElement('form'); row.className = 'employee-add-row monthly-add-row';
+  row.innerHTML = '<input name="name" required maxlength="160" placeholder="Имя">' +
+    '<input name="role" required maxlength="80" placeholder="Должность">' +
+    '<input name="salary" type="number" min="0" step="0.01" required placeholder="Оклад">' +
+    '<input name="schedule" maxlength="160" placeholder="График">' +
+    '<input name="card" type="number" min="0" step="0.01" value="0" aria-label="На карту">' +
+    '<input name="cash" type="number" min="0" step="0.01" value="0" aria-label="Наличные">' +
+    '<input name="advances" type="number" min="0" step="0.01" value="0" aria-label="Авансы">' +
+    '<input name="remaining" type="number" min="0" step="0.01" value="0" aria-label="Остаток">' +
+    '<button class="button primary" type="submit">Добавить</button>' +
+    '<button class="button secondary" type="button" data-cancel>Отмена</button>';
+  $('monthly-employees').prepend(row); row.elements.name.focus();
+  row.querySelector('[data-cancel]').addEventListener('click', () => row.remove());
+  row.addEventListener('submit', async event => {
+    event.preventDefault(); if (!row.reportValidity()) return;
+    const response = await fetch('/api/accountant/monthly-employees', {
+      method: 'POST', headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(Object.fromEntries(new FormData(row)))
+    });
+    const result = await response.json();
+    if (!response.ok) return message(result.detail || 'Не удалось добавить сотрудника.', true);
+    await loadDay(); message('Сотрудник с месячной зарплатой добавлен.');
+  });
+}
 async function loadDay() {
   const day = $('employees-date').value;
   if (!day || !$('employees-date').checkValidity()) { message('Выберите сегодняшний или прошедший день.', true); return; }
@@ -164,6 +262,7 @@ async function loadDay() {
 $('employees-date').addEventListener('change', loadDay);
 $('employees-refresh').addEventListener('click', loadDay);
 $('employees-add').addEventListener('click', () => addEmployeeRow(current));
+$('monthly-add').addEventListener('click', addMonthlyRow);
 $('employees-download').addEventListener('click', async () => {
   const day = $('employees-date').value;
   if (!day || !$('employees-date').checkValidity()) return;

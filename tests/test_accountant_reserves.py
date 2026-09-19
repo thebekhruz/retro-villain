@@ -65,7 +65,7 @@ def test_reserves_require_initial_balance_do_not_guess_legacy_dividends(tmp_path
 def test_monthly_plan_and_shoh_receipts_do_not_double_count_cash(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
     store.set_monthly_plan(DAY, '1000000', 'План выплат из кассы на сентябрь')
-    store.add_expense(DAY, 'salary_fazilova', 'Аванс', '200000', cashier_amount=Decimal('1000000'))
+    store.add_expense(DAY, 'salary_monthly', 'Аванс', '200000', cashier_amount=Decimal('1000000'))
     store.add_expense(DAY, 'salary_staff', 'Смена', '100000', cashier_amount=Decimal('1000000'))
     store.add_expense(DAY, 'proc_shoh', 'Закуп', '300000', cashier_amount=Decimal('1000000'))
     store.reserve_entry(DAY, 'shoh', 'opening', '0', 'До начала учёта остаток ноль')

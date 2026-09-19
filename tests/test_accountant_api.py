@@ -47,10 +47,20 @@ def test_monthly_plan_and_usd_do_not_require_iiko_but_cash_transfer_does(tmp_pat
         assert data['ledger']['cash_balance'] is None
 
 
-def test_monthly_salary_total_is_calculated_from_imported_roster(tmp_path):
+def test_monthly_salary_total_is_calculated_from_monthly_register(tmp_path):
     with demo_client(tmp_path) as client:
+        response = client.post('/api/accountant/monthly-employees', json={
+            'name': 'Администратор', 'role': 'Управление', 'salary': '5000000',
+            'schedule': '5/2', 'card': '3000000', 'cash': '2000000',
+            'advances': '0', 'remaining': '0'})
+        assert response.status_code == 201
         data = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         assert data['reserves']['monthly']['total'] == '5000000'
+        assert data['monthly_employees'][0]['name'] == 'Администратор'
+        invalid = client.patch(
+            f"/api/accountant/monthly-employees/{response.json()['employee']['id']}",
+            json=dict(response.json()['employee'], cash='NaN'))
+        assert invalid.status_code == 422
 
 
 def test_manual_cashier_income_is_used_without_iiko(tmp_path):

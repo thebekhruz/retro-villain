@@ -112,6 +112,7 @@ async def day_view(request: Request, date: date | None = None):
     reserves['monthly']['total'] = str(request.app.state.accountant_roster.monthly_total())
     return dict(demo=True, date=day.isoformat(), source='Симуляция; ресторанный Hikvision не подключён',
                 employees=[row.json() for row in rows], roster_count=len(roster), manual_handover=request.app.state.settings.manual_handover_only,
+                monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
                 actual_hikvision_unlinked=sum(employee.hikvision_id is None for employee in roster),
                 missing_rates=sum(employee.rate is None for employee in roster),
                 groups=group_items,
@@ -149,6 +150,17 @@ class EmployeeCreateInput(BaseModel):
     group: str
 
 
+class MonthlyEmployeeInput(BaseModel):
+    name: str
+    role: str
+    salary: str
+    schedule: str = ''
+    card: str = '0'
+    cash: str = '0'
+    advances: str = '0'
+    remaining: str = '0'
+
+
 @router.patch('/employees/{employee_id}')
 def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInput):
     try:
@@ -168,6 +180,37 @@ def create_employee(request: Request, body: EmployeeCreateInput):
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(demo=True, employee=employee.json())
+
+
+@router.post('/monthly-employees', status_code=201)
+def create_monthly_employee(request: Request, body: MonthlyEmployeeInput):
+    try:
+        employee = request.app.state.accountant_roster.add_monthly(
+            name=body.name, role=body.role, salary=body.salary, schedule=body.schedule,
+            card=body.card, cash=body.cash, advances=body.advances, remaining=body.remaining)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return dict(demo=True, employee=employee.json())
+
+
+@router.patch('/monthly-employees/{employee_id}')
+def update_monthly_employee(request: Request, employee_id: int, body: MonthlyEmployeeInput):
+    try:
+        employee = request.app.state.accountant_roster.update_monthly(
+            employee_id, name=body.name, role=body.role, salary=body.salary,
+            schedule=body.schedule, card=body.card, cash=body.cash,
+            advances=body.advances, remaining=body.remaining)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return dict(demo=True, employee=employee.json())
+
+
+@router.delete('/monthly-employees/{employee_id}', status_code=204)
+def delete_monthly_employee(request: Request, employee_id: int):
+    try:
+        request.app.state.accountant_roster.delete_monthly(employee_id)
+    except ValueError as error:
+        raise HTTPException(404, str(error)) from None
 
 
 @router.delete('/employees/{employee_id}', status_code=204)

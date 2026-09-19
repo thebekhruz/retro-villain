@@ -6,11 +6,13 @@ from decimal import Decimal
 from .ledger import LedgerError, amount_value, required_text
 from .audit import record_audit
 
-MONTHLY_CODES = (
-    'salary_fazilova', 'salary_arushanyants', 'salary_glukhova', 'salary_malitsyan',
-    'salary_sheraliev', 'salary_nazarov', 'salary_khudaiberganova', 'salary_radzhapova',
-    'salary_videographer',
-)
+SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}
+
+
+def is_monthly_salary(item_code):
+    return item_code == 'salary_monthly' or (
+        isinstance(item_code, str) and item_code.startswith('salary_')
+        and item_code not in SHIFT_SALARY_CODES)
 
 
 def _entries(connection, account, through=None):
@@ -104,7 +106,7 @@ def reserve_summary(store, day):
                                   (month,)).fetchone()
         paid = sum((Decimal(r[0]) for r in connection.execute(
             'SELECT amount, item_code FROM accountant_movements WHERE day >= ? AND day <= ? '
-            "AND kind = 'other_expense'", (month + '-01', day.isoformat())) if r[1] in MONTHLY_CODES), Decimal(0))
+            "AND kind = 'other_expense'", (month + '-01', day.isoformat())) if is_monthly_salary(r[1])), Decimal(0))
         result['monthly'] = dict(month=month, plan=plan[0] if plan else None, paid=str(paid),
                                  balance=str(Decimal(plan[0]) - paid) if plan else None)
     return result
