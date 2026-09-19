@@ -47,7 +47,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     director_path = director_db_path or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
     app.state.gemini = GeminiClient(settings, transport=gemini_transport)
-    app.state.director_service = DirectorService(app.state.iiko, app.state.gemini, app.state.director_store)
+    app.state.director_service = DirectorService(
+        app.state.iiko, app.state.gemini, app.state.director_store, settings.report_retention)
 
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):

@@ -44,7 +44,7 @@ async def today(request: Request):
 
 @router.get('/reports')
 def reports(request: Request):
-    return {'reports': request.app.state.director_store.list()}
+    return {'reports': request.app.state.director_store.list_metadata()}
 
 
 @router.post('/reports', status_code=201)
