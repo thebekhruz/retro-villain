@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 from decimal import Decimal
 from urllib.parse import quote
 
@@ -9,6 +10,7 @@ from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
 from retro.modules.director.models import SalesRow, build_snapshot as build_director_snapshot, completed_period
+from retro.modules.founder.models import PaymentRow, RevenueRow, build_analytics
 
 
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
@@ -78,16 +80,57 @@ def cash_prepay_from_shifts(day, sales, payments, shifts):
 
 
 def olap_body(store_id, day, groups, fields, extra_filters=()):
+    return olap_range_body(store_id, day, day, groups, fields, extra_filters)
+
+
+def olap_range_body(store_id, start, end, groups, fields, extra_filters=()):
     return dict(storeIds=[store_id], olapType='SALES', groupFields=groups,
                 dataFields=fields, calculatedFields=[],
-                filters=[dict(filterType='date_range', dateFrom=day.isoformat(),
-                              dateTo=day.isoformat(), includeLeft=True, includeRight=True,
+                filters=[dict(filterType='date_range', dateFrom=start.isoformat(),
+                              dateTo=end.isoformat(), includeLeft=True, includeRight=True,
                               field='OpenDate.Typed')] + [
                     dict(field=field, filterType='value_list', dateFrom=None, dateTo=None,
                          valueMin=None, valueMax=None, valueList=['NOT_DELETED'],
                          includeLeft=True, includeRight=False, inclusiveList=True)
                     for field in ['DeletedWithWriteoff', 'OrderDeleted']] + list(extra_filters),
                 includeVoidTransactions=False, includeNonBusinessPaymentTypes=False)
+
+
+def founder_rows_from_olap(rows, *, payments=False):
+    group_count = 4 if payments else 3
+    result = []
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку аналитики.')
+        values = list(inherited)
+        while len(values) < group_count:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != group_count:
+            raise DataError('iiko не вернул все измерения аналитики.')
+        try:
+            day = date.fromisoformat(values[0])
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату аналитики.') from None
+        amount = number(cell(row, group_count))
+        if payments:
+            result.append(PaymentRow(day, values[1], values[2], values[3], amount))
+        else:
+            result.append(RevenueRow(day, values[1], values[2], amount))
+
+    if not isinstance(rows, list):
+        raise DataError('iiko вернул некорректную структуру аналитики.')
+    for row in rows:
+        visit(row, [])
+    return result
 
 
 class IikoClient:
@@ -168,6 +211,36 @@ class IikoClient:
         except (httpx.HTTPError, TimeoutError):
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
+    async def load_founder_analytics(self, start, end, granularity, directions):
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        if self.settings.base_url != IIKO_ORIGIN:
+            raise DataError('Разрешён только сервер Retro Milliy.')
+        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
+                   'Content-Type': 'application/json'}
+        payment_scope = [dict(field='OperationType', filterType='value_list',
+                              valueList=['PAYMENT'], inclusiveList=True)]
+        try:
+            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
+                                        timeout=25, follow_redirects=False,
+                                        transport=self.transport) as client:
+                auth = await self._post(client, '/api/auth/login',
+                                        dict(login=self.settings.login, password=self.settings.password))
+                if not isinstance(auth.get('token'), str) or not auth['token']:
+                    raise DataError('iiko не подтвердил авторизацию.')
+                client.headers['Authorization'] = 'Bearer ' + auth['token']
+                revenue_groups = ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection']
+                payment_groups = revenue_groups + ['PayTypes']
+                revenue = founder_rows_from_olap(
+                    await self._olap_range(client, start, end, revenue_groups,
+                                           ['DishDiscountSumInt'], payment_scope))
+                payments = founder_rows_from_olap(
+                    await self._olap_range(client, start, end, payment_groups,
+                                           ['DishDiscountSumInt'], payment_scope), payments=True)
+                return build_analytics(revenue, payments, start, end, granularity, directions)
+        except (httpx.HTTPError, TimeoutError):
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
     async def _post(self, client, path, body, pending=False):
         response = await client.post(path, json=body)
         if pending and response.status_code == 400 and 'data not found' in response.text.lower():
@@ -185,7 +258,10 @@ class IikoClient:
         return data
 
     async def _olap(self, client, day, groups, fields, extra_filters=()):
-        body = olap_body(self.settings.store_id, day, groups, fields, extra_filters)
+        return await self._olap_range(client, day, day, groups, fields, extra_filters)
+
+    async def _olap_range(self, client, start, end, groups, fields, extra_filters=()):
+        body = olap_range_body(self.settings.store_id, start, end, groups, fields, extra_filters)
         init = await self._post(client, '/api/olap/init', body)
         fetch_id = init.get('fetchId') or init.get('data')
         if not isinstance(fetch_id, str) or not fetch_id:
