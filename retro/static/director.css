@@ -1,3 +1,243 @@
-.director{max-width:720px;margin:auto;padding:20px}.director header{display:flex;justify-content:space-between;color:#43635a;font-size:13px}.director .hero{background:#143e35;color:white;border-radius:20px;padding:22px;margin:22px 0}.director h1{margin:6px 0 12px;font-size:32px}.director h2{font-size:19px;margin:28px 0 10px}.director button{width:100%;min-height:48px;border:0;border-radius:10px;background:#d8b977;color:#143e35;font-weight:700}.metrics{display:grid;grid-template-columns:1fr 1fr;gap:10px}.metrics article,.waiting,.report-link{border:1px solid #e3e7df;border-radius:12px;background:#fff;padding:14px;display:flex;justify-content:space-between;gap:10px}.metrics strong{display:block;font-size:20px;margin-top:8px}.waiting{margin:8px 0}.waiting span{color:#7d8881;font-size:13px}.report-link{display:block;margin:8px 0}.report-link small{color:#7d8881}@media(max-width:360px){.director{padding:14px}.director h1{font-size:27px}}
-.attendance-metrics article{min-height:70px}.attendance-metrics small{display:block;color:#7d8881;font-size:11px;margin-top:5px}.attendance-list{margin-top:10px}.attendance-title{font-size:13px;color:#53655c;margin:14px 0 6px}
-.director h2 small{font-size:12px;color:#7d8881;font-weight:400}.period-note{font-size:12px;color:#7d8881;margin:-4px 0 10px}
+/* Модуль директора. Каркас, типографика и кнопки берутся из style.css —
+   здесь только то, чего нет у кассира: таблица меню, полоса маржи и выжимки. */
+
+.setup-reason{font-size:11.5px;color:var(--muted);margin:8px 0 12px}
+.visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap;border:0}
+
+/* Период в панели управления занимает место даты у кассира: тот же ряд,
+   та же высота, но менять его нельзя — iiko отдаёт ровно десять дней. */
+.period-display{display:flex;flex-direction:column;gap:3px;padding:2px 4px 2px 0;min-width:0}
+.period-caption{font-size:10px;font-weight:650;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+.period-display strong{font-size:14px;font-weight:600;letter-spacing:-.2px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.period-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-right:auto;max-width:210px}
+
+/* У кассира в этом ряду два показателя, у директора три направления.
+   Три плитки в ряд встают только на широком экране: в узкой колонке
+   девятизначная сумма в плитку не помещается и рвётся пополам. */
+.day-figures .mini-row-three{grid-template-columns:minmax(0,1fr);gap:8px}
+.mini-row-three .mini{flex-direction:row;align-items:baseline;justify-content:space-between}
+@media(min-width:1240px){
+  .day-figures .mini-row-three{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
+  .mini-row-three .mini{flex-direction:column;align-items:stretch}
+}
+.mini-row-three .mini-value strong{font-size:16px;letter-spacing:-.3px}
+.mini-row-three .mini-name{font-size:11.5px}
+.mini small{font-size:10.5px;color:var(--muted)}
+
+/* Маржа — вторая по важности цифра после выручки, поэтому карточка стоит
+   рядом с итогом, а не ниже: их всегда читают вместе. */
+.margin-card{padding:24px 26px;display:flex;flex-direction:column;gap:2px}
+.margin-bar{height:7px;border-radius:99px;background:#eef1ea;overflow:hidden;margin:12px 0 18px}
+.margin-bar span{display:block;height:100%;width:0;border-radius:99px;
+  background:linear-gradient(90deg,var(--green2),var(--gold));transition:width .35s ease}
+.margin-lines{display:flex;flex-direction:column;gap:2px}
+.margin-lines .rail-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;
+  border-top:1px solid #eef1ea;font-size:12.5px;color:var(--muted)}
+.margin-lines .rail-line b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
+
+.highlights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-bottom:20px}
+.highlight-card{padding:22px 24px}
+.highlight-card .panel-heading{margin-bottom:16px}
+.highlight-card h2{font-size:18px;font-weight:550;letter-spacing:-.3px;margin:0}
+.highlight-list{display:flex;flex-direction:column;gap:9px}
+.highlight-row{display:grid;grid-template-columns:22px minmax(0,1fr) auto;align-items:center;gap:12px;
+  padding:12px 14px;background:#f7f9f4;border-radius:12px}
+.highlight-rank{font-size:12px;font-weight:650;color:#93a58f;font-variant-numeric:tabular-nums}
+.highlight-name{min-width:0;display:flex;flex-direction:column;gap:3px}
+.highlight-name strong{font-size:13.5px;font-weight:550;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.highlight-name span{font-size:11px;color:var(--muted)}
+.highlight-value{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.highlight-value strong{display:block;font-size:14px;font-weight:600}
+.highlight-value span{font-size:11px;color:var(--muted)}
+.highlight-card.is-warning .highlight-row{background:#fdf6ec}
+.highlight-card.is-warning .highlight-value strong{color:#a5682c}
+
+.menu-panel{padding:24px 26px;margin-bottom:20px}
+.menu-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
+.menu-head h2{font-size:21px;font-weight:550;letter-spacing:-.4px;margin:0}
+.menu-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
+.menu-search{flex:1 1 220px;min-width:0}
+.menu-search input{width:100%;min-height:44px;border:1px solid var(--border);border-radius:9px;
+  padding:10px 14px;background:#fff;color:var(--ink);font:inherit;font-size:13px}
+.menu-search input::placeholder{color:#9aa79b}
+.menu-sort{display:flex;gap:4px;padding:4px;background:#f1f4ec;border-radius:9px;flex-wrap:wrap}
+
+/* Таблица с шестью числовыми колонками не влезает в телефон целиком,
+   поэтому прокручивается внутри себя, а не растягивает страницу. */
+.menu-table-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;margin:0 -4px}
+.menu-table{width:100%;border-collapse:collapse;font-size:13px;min-width:600px}
+.menu-table th{font-size:10px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;color:var(--muted);
+  text-align:right;padding:0 10px 10px;border-bottom:1px solid var(--border);white-space:nowrap}
+.menu-table th:first-child{text-align:left}
+.menu-table td{padding:11px 10px;border-bottom:1px solid #f0f3ec;text-align:right;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.menu-table td:first-child{text-align:left;white-space:normal}
+.menu-table tbody tr:hover{background:#fbfcf8}
+.menu-table tbody tr:last-child td{border-bottom:0}
+
+/* Название с полосой доли: видно, что позиция значит для выручки,
+   без отдельной колонки с процентами. */
+.item-cell{display:flex;flex-direction:column;gap:6px;min-width:170px;max-width:320px}
+.item-cell strong{font-size:13px;font-weight:550;line-height:1.35}
+.item-share{height:3px;border-radius:99px;background:#eef1ea;overflow:hidden}
+.item-share span{display:block;height:100%;background:var(--green2);border-radius:99px}
+
+.margin-value{display:inline-flex;align-items:center;gap:6px;justify-content:flex-end;font-weight:600}
+.margin-dot{width:7px;height:7px;border-radius:50%;background:#7fa07a;flex-shrink:0}
+.margin-value.is-low .margin-dot{background:#c98a3e}
+.margin-value.is-loss .margin-dot{background:#b4573a}
+.margin-value.is-loss{color:#a2452b}
+.margin-value.is-none{color:#9aa79b;font-weight:400}
+
+.menu-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;
+  margin-top:16px;font-size:11px;color:var(--muted)}
+.menu-foot .button{min-height:40px}
+
+.waiters-panel{padding:0 26px 24px;border:0}
+.waiters-panel .menu-table{min-width:520px}
+
+.team-panel{padding:22px 24px;margin-bottom:20px}
+.team-panel .mini-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;
+  border-top:1px solid #eef1ea;padding-top:16px}
+.team-panel h2{font-size:18px;font-weight:550;letter-spacing:-.3px;margin:0}
+.attendance-list{margin-top:14px;display:flex;flex-direction:column;gap:8px}
+.attendance-title{font-size:11px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);margin:4px 0 0}
+.attendance-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:11px 14px;background:#f7f9f4;border-radius:11px;font-size:13px}
+.attendance-row b{font-weight:550}
+.attendance-row span{color:var(--muted);font-variant-numeric:tabular-nums}
+.attendance-more{font-size:11px;color:var(--muted)}
+
+.reports-panel{padding:22px 24px}
+.reports-panel h2{font-size:18px;font-weight:550;letter-spacing:-.3px;margin:0}
+.reports-list{display:flex;flex-direction:column;gap:9px;font-size:12.5px;color:var(--muted)}
+.report-link{display:grid;grid-template-columns:24px minmax(0,1fr) auto;align-items:center;gap:12px;
+  padding:13px 15px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--ink)}
+.report-link:hover{background:#fbfcf8;border-color:#d7ded2}
+.report-icon{font-size:15px;color:var(--gold)}
+.report-body{min-width:0;display:flex;flex-direction:column;gap:3px}
+.report-body strong{font-size:13px;font-weight:550;font-variant-numeric:tabular-nums}
+.report-body span{font-size:11.5px;color:var(--muted);line-height:1.5;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.report-format{font-size:10px;color:var(--muted);background:#f3f5f0;border-radius:5px;padding:5px 9px}
+
+.is-busy{opacity:.55;pointer-events:none}
+
+@media(max-width:1100px){
+  .highlights{grid-template-columns:minmax(0,1fr)}
+}
+@media(max-width:900px){
+  .period-hint{display:none}
+  .menu-panel,.margin-card,.highlight-card,.team-panel,.reports-panel{padding:20px}
+  .waiters-panel{padding:0 20px 20px}
+}
+@media(max-width:650px){
+  /* В двухколоночной сетке управления период занимает целую строку:
+     иначе «Сформировать отчёт» не помещается рядом с датами. */
+  .controls .period-display{grid-column:1 / -1}
+}
+@media(max-width:620px){
+  .menu-head,.menu-tools{align-items:stretch;flex-direction:column}
+  /* Полоса направлений прокручивается внутри себя, но как элемент
+     колоночного флекса она требовала ширину всех четырёх вкладок сразу
+     и растягивала страницу на десяток лишних пикселей. */
+  .menu-head>*,.menu-tools>*{min-width:0;width:100%;box-sizing:border-box}
+  /* Полоса направлений липнет к верху экрана: список длинный, и переключать
+     Retro / Oxbridge / Яндекс приходится с середины прокрутки. Прилипание
+     работает в пределах родителя, поэтому шапка раздела растворяется
+     (display:contents) и полоса становится ребёнком всей панели. */
+  .menu-head{display:contents}
+  .menu-head .ops-tabs{position:sticky;top:0;z-index:3;overscroll-behavior-x:contain;
+    margin-bottom:14px;box-shadow:0 -18px 0 10px #fff,0 14px 0 2px #fff,0 0 0 10px #fff}
+  /* В колонке flex-basis задаёт высоту, и поле поиска раздувалось
+     на все 220 пикселей, оставляя под собой пустую полосу. */
+  .menu-search{flex:0 0 auto}
+  .ops-tabs{overflow-x:auto}
+  /* Четыре способа сортировки в один ряд не влезают, а перенос оставлял
+     последнюю кнопку висеть по центру: раскладываем два на два. */
+  .menu-sort{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:4px}
+  .menu-sort .chip{width:100%}
+  .report-link{grid-template-columns:20px minmax(0,1fr)}
+  .report-format{display:none}
+}
+
+/* ТЕЛЕФОН. Модулем директора пользуются с телефона, поэтому ниже 700 px
+   таблица перестаёт быть таблицей: шесть числовых колонок там либо
+   уезжают под горизонтальную прокрутку, либо сжимаются в кашу.
+   Каждая строка становится карточкой, подпись колонки встаёт слева
+   от значения — читается сверху вниз одним большим пальцем. */
+/* Узкие корпуса вроде SE: две кнопки в ряд перестают помещаться,
+   «Сформировать отчёт» не переносится и распирает страницу. */
+@media(max-width:380px){
+  .controls{grid-template-columns:minmax(0,1fr)}
+  .period-display strong{white-space:normal}
+}
+
+@media(max-width:700px){
+  /* Поле ввода мельче шестнадцати пикселей заставляет Safari на iOS
+     приближать страницу при фокусе, и вернуть масштаб потом нечем. */
+  .menu-search input{font-size:16px;min-height:48px}
+  /* Нижний край: у телефонов с жестовой полосой футер иначе под неё уезжает. */
+  .workspace{padding-bottom:calc(25px + env(safe-area-inset-bottom))}
+  .menu-sort .chip,.ops-tab,.button{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+
+  /* На телефоне первый экран должен отдавать цифру, а не заголовок:
+     подзаголовок убираем, шапку ужимаем. */
+  .workspace .subtitle{display:none}
+  .page-heading{margin-bottom:18px}
+  h1{font-size:27px;letter-spacing:-.8px}
+
+  .menu-table-scroll{overflow-x:visible;margin:0}
+  .menu-table{display:block;min-width:0}
+  .menu-table thead{display:none}
+  .menu-table tbody,.menu-table tr,.menu-table td{display:block;width:auto}
+  .menu-table tbody tr:hover{background:#fff}
+  .menu-table tbody tr:last-child td{border-bottom:0}
+
+  /* Карточка блюда на телефоне: сверху название и маржа, под ними выручка
+     крупно, мелочь — одной строкой. Вертикальный список из пяти подписей
+     на позицию давал страницу в семнадцать тысяч пикселей. */
+  .menu-table tr{display:flex;flex-wrap:wrap;align-items:baseline;column-gap:12px;row-gap:3px;
+    border:1px solid var(--border);border-radius:14px;padding:12px 14px;margin-bottom:8px;background:#fff}
+  .menu-table td{display:inline-flex;align-items:baseline;gap:5px;padding:0;border:0;
+    text-align:left;white-space:nowrap}
+  .menu-table td::before{content:attr(data-label);color:var(--muted);font-size:11px;font-weight:400}
+  .menu-table td:first-child{flex:1 1 auto;min-width:0;order:1;white-space:normal;display:block}
+  .menu-table td:first-child::before{content:none}
+  .menu-table td[data-label="Маржа"]{order:2;margin-left:auto}
+  .menu-table td[data-label="Маржа"]::before{content:none}
+  .menu-table td[data-label="Выручка"]{order:3;flex:1 1 100%;margin-top:3px}
+  .menu-table td[data-label="Выручка"]{font-size:15.5px;font-weight:600}
+  .menu-table td[data-label="Выручка"]::before{font-size:11px;font-weight:400}
+  /* Свёрнутая карточка отвечает на три вопроса: что, сколько денег, какая
+     маржа. Остальное открывается тапом — иначе список из тридцати позиций
+     не пролистать. */
+  .menu-table td[data-label="Продано"],
+  .menu-table td[data-label="Позиций продано"],
+  .menu-table td[data-label="Себестоимость"],
+  .menu-table td[data-label="Прибыль"]{order:4;font-size:12px;color:var(--muted);display:none}
+  .menu-table tr.is-open td[data-label="Продано"],
+  .menu-table tr.is-open td[data-label="Позиций продано"],
+  .menu-table tr.is-open td[data-label="Себестоимость"],
+  .menu-table tr.is-open td[data-label="Прибыль"]{display:inline-flex}
+  .menu-table tr[role="button"]{cursor:pointer;-webkit-tap-highlight-color:transparent;
+    position:relative;padding-right:30px;touch-action:manipulation}
+  /* Уголок-подсказка: карточку можно раскрыть. */
+  .menu-table tr[role="button"]::after{content:'';position:absolute;right:15px;top:17px;
+    width:7px;height:7px;border-right:1.6px solid #9aa79b;border-bottom:1.6px solid #9aa79b;
+    transform:rotate(45deg);transition:transform .18s}
+  .menu-table tr.is-open::after{transform:rotate(-135deg);top:20px}
+  .menu-table tr[role="button"]:active{background:#f7f9f4}
+  .menu-table tr[role="button"]:focus-visible{outline:2px solid var(--green2);outline-offset:2px}
+  .menu-table td[data-label="Маржа"]{margin-left:auto;margin-right:2px}
+
+  .item-cell{min-width:0;max-width:none;gap:5px}
+  .item-cell strong{font-size:14.5px;line-height:1.3}
+  .waiters-panel .menu-table{min-width:0}
+  .waiters-panel .menu-table td:first-child strong{font-size:14.5px;font-weight:550}
+  .margin-value{font-size:14px}
+  /* Названия блюд длинные: на телефоне переносим строку, а не обрезаем. */
+  .highlight-name strong{white-space:normal;overflow:visible;line-height:1.3}
+  .highlight-row{align-items:start;gap:10px}
+}
