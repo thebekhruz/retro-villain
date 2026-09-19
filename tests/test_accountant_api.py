@@ -9,6 +9,7 @@ from openpyxl import Workbook, load_workbook
 from retro.app import create_app
 from retro.config import Settings
 from retro.modules.cashier.service import DataError, Payment, demo_snapshot, today_tashkent
+from retro.modules.cashier.expenses import seed_cashier_expense
 
 
 DAY = date(2026, 9, 16)
@@ -148,6 +149,9 @@ def test_verified_accountant_start_reconciles_september_report_and_carries_forwa
 
 
 def demo_client(tmp_path):
+    seed_cashier_expense(
+        tmp_path / 'cashier.sqlite3', date(2026, 1, 1), date(2026, 12, 31),
+        'Зарплата', Decimal('350000'))
     app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
                      accountant_db_path=tmp_path / 'accountant-demo.sqlite3')
     source = tmp_path / 'roster.xlsx'

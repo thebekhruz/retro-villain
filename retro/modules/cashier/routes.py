@@ -38,7 +38,8 @@ def list_expenses(request: Request, date: date):
     day = selected_day(date)
     expenses = request.app.state.expenses.list(day)
     return dict(date=day.isoformat(), expenses=[item.json() for item in expenses],
-                total=str(sum((item.amount for item in expenses), 0)))
+                total=str(sum((item.amount for item in expenses), 0)),
+                expense_policy_configured=request.app.state.expenses.policy_configured())
 
 
 @router.get('/usd-rate')
@@ -118,7 +119,8 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
             async with state.iiko_lock:
                 result = await asyncio.wait_for(state.iiko.load(day), timeout=90)
         state.cache.put(result)
-        return result.json()
+        return {**result.json(),
+                'expense_policy_configured': state.expenses.policy_configured()}
     except TimeoutError:
         raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
     except DataError as error:

@@ -151,6 +151,7 @@ function showExpenses(data) {
   $('expenses-empty').hidden = data.expenses.length > 0;
   $('expense-total').textContent = money.format(Number(data.total));
   $('handover-expenses').textContent = money.format(Number(data.total));
+  $('expense-policy-warning').hidden = data.expense_policy_configured;
   for (const item of data.expenses) {
     const row = document.createElement('div'); row.className = 'expense-item';
     const name = document.createElement('span'); name.className = 'expense-item-name'; name.textContent = item.description;
@@ -171,7 +172,7 @@ function showExpenses(data) {
 }
 async function loadExpenses(day, current, signal) {
   if (demo) {
-    showExpenses({date:day, expenses:[], total:'0'});
+    showExpenses({date:day, expenses:[], total:'0', expense_policy_configured:true});
     $('expense-feedback').textContent = 'В демонстрационном режиме расходы не сохраняются.';
     return;
   }

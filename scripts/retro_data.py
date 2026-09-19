@@ -3,8 +3,12 @@
 
 import argparse
 import sqlite3
-from datetime import datetime, timezone
+import sys
+from datetime import date, datetime, timezone
+from decimal import Decimal
 from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from retro.maintenance import (
     MaintenanceError,
@@ -14,6 +18,8 @@ from retro.maintenance import (
 )
 from retro.runtime import secure_directory, secure_file
 from retro.schema import migrate_schema
+from retro.modules.cashier.expenses import seed_cashier_expense
+from retro.modules.cashier.service import DataError
 
 
 def print_check(path: Path) -> None:
@@ -54,6 +60,12 @@ def parser() -> argparse.ArgumentParser:
     restore.add_argument('--backup', type=Path, required=True)
     restore.add_argument('--destination', type=Path, required=True)
     restore.add_argument('--replace', action='store_true')
+    seed = commands.add_parser('seed-cashier-expense')
+    seed.add_argument('--database', type=Path, required=True)
+    seed.add_argument('--from', dest='date_from', type=date.fromisoformat, required=True)
+    seed.add_argument('--to', dest='date_to', type=date.fromisoformat, required=True)
+    seed.add_argument('--description', required=True)
+    seed.add_argument('--amount', type=Decimal, required=True)
     return root
 
 
@@ -67,6 +79,11 @@ def main() -> int:
             installed = install_verified_backup(args.backup, args.destination, args.replace)
             for path in installed:
                 print_check(path)
+            return 0
+        if args.command == 'seed-cashier-expense':
+            result = seed_cashier_expense(
+                args.database, args.date_from, args.date_to, args.description, args.amount)
+            print(f'Добавлено: {result.inserted}; уже существовало: {result.skipped}.')
             return 0
         backup = backup_databases(
             {'cashier.sqlite3': args.cashier, 'accountant.sqlite3': args.accountant},
@@ -87,7 +104,7 @@ def main() -> int:
             empty_director(director)
         print_check(director)
         return 0
-    except MaintenanceError as error:
+    except (MaintenanceError, DataError) as error:
         print(f'Ошибка: {error}')
         return 1
 
