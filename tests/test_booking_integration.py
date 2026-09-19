@@ -64,9 +64,16 @@ def test_booking_client_requests_submitted_and_cancelled_summaries_server_to_ser
 
 @pytest.mark.parametrize('mutate', [
     lambda payload: payload['totals'].__setitem__('bookings', -1),
+    lambda payload: payload['totals'].__setitem__('unknown_guest_bookings', 3),
     lambda payload: payload.__setitem__('by_date', 'not-a-list'),
     lambda payload: payload['coverage'].__setitem__('historical_data_complete', 'false'),
+    lambda payload: payload['coverage'].__setitem__('history_started_at', 'not-a-date'),
     lambda payload: payload.__setitem__('timezone', 'UTC'),
+    lambda payload: payload['by_status'][0].__setitem__('value', 'cancelled')
+    if payload['by_status'][0]['value'] == 'submitted' else None,
+    lambda payload: payload['by_source'].append({
+        'value': payload['by_source'][0]['value'], 'label': 'duplicate',
+        'bookings': 0, 'guests': 0, 'unknown_guest_bookings': 0}),
 ])
 def test_booking_client_rejects_malformed_summary_instead_of_showing_zeroes(mutate):
     def handler(request):
@@ -80,3 +87,24 @@ def test_booking_client_rejects_malformed_summary_instead_of_showing_zeroes(muta
 
     with pytest.raises(DataError, match='некорректный ответ'):
         asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
+
+
+def test_booking_client_accepts_empty_status_breakdown_for_empty_summary():
+    def handler(request):
+        payload = summary(request.url.params['status'])
+        zero = {'bookings': 0, 'guests': 0, 'unknown_guest_bookings': 0}
+        payload['totals'] = zero
+        payload['by_date'] = []
+        payload['by_status'] = []
+        payload['by_source'] = []
+        payload['by_utm'] = {name: [] for name in payload['by_utm']}
+        return httpx.Response(200, json=payload)
+
+    settings = Settings(booking_api_url='https://booking.example.test',
+                        booking_api_token='secret')
+    client = BookingAnalyticsClient(settings, transport=httpx.MockTransport(handler))
+
+    result = asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
+
+    assert result['submitted']['totals']['bookings'] == 0
+    assert result['cancelled']['by_status'] == []
