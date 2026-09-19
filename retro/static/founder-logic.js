@@ -38,5 +38,17 @@
     return Math.round(position/width*(count-1));
   }
 
-  return {nearestRevenueIndex,quickPeriod,revenuePaths,requestGate};
+  function paymentLineSeries(series,directions,payments){
+    return series.map(group=>({
+      start:group.start,
+      end:group.end,
+      incomplete:group.incomplete,
+      values:Object.fromEntries(payments.map(payment=>[
+        payment,
+        directions.reduce((sum,direction)=>sum+Number(group.directions[direction]?.[payment]||0),0),
+      ])),
+    }));
+  }
+
+  return {nearestRevenueIndex,paymentLineSeries,quickPeriod,revenuePaths,requestGate};
 });

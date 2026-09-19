@@ -40,3 +40,28 @@ def test_hover_selects_nearest_revenue_group_and_clamps_to_chart_edges():
         "[-20,149,151,420].map(x=>logic.nearestRevenueIndex(x,300,4))"
     )
     assert result == [0, 1, 2, 3]
+
+
+def test_payment_lines_sum_each_method_across_selected_directions_per_period():
+    result = run_node(
+        "logic.paymentLineSeries(["
+        "{start:'2026-09-01',end:'2026-09-01',incomplete:false,directions:{"
+        "retro:{Cash:100,Card:50},school:{Cash:25,Card:0}}},"
+        "{start:'2026-09-02',end:'2026-09-02',incomplete:true,directions:{"
+        "retro:{Cash:50,Card:20},school:{Cash:25,Card:80}}}"
+        "],['retro','school'],['Cash','Card'])"
+    )
+    assert result == [
+        {
+            'start': '2026-09-01',
+            'end': '2026-09-01',
+            'incomplete': False,
+            'values': {'Cash': 125, 'Card': 50},
+        },
+        {
+            'start': '2026-09-02',
+            'end': '2026-09-02',
+            'incomplete': True,
+            'values': {'Cash': 75, 'Card': 100},
+        },
+    ]
