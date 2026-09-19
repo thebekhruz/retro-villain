@@ -21,6 +21,7 @@ from retro.modules.cashier.service import SnapshotCache, today_tashkent
 from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
+from retro.modules.founder.routes import router as founder_router
 from retro.integrations.gemini import GeminiClient
 
 STATIC = Path(__file__).parent / 'static'
@@ -96,17 +97,23 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def director():
         return FileResponse(STATIC / 'director.html')
 
+    @app.get('/founder')
+    def founder():
+        return FileResponse(STATIC / 'founder.html')
+
     @app.get('/api/config')
     def config():
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
                     modules=[dict(id='cashier', name='Кассир', available=True),
                              dict(id='accountant', name='Бухгалтер', available=True),
-                             dict(id='director', name='Директор', available=True)], planned_modules=0)
+                             dict(id='director', name='Директор', available=True),
+                             dict(id='founder', name='Учредитель', available=True)], planned_modules=0)
 
     app.include_router(cashier_router)
     app.include_router(accountant_router)
     app.include_router(director_router)
+    app.include_router(founder_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 
