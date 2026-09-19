@@ -31,14 +31,14 @@ def test_founder_range_uses_payment_sales_without_menu_exclusions():
         if groups == ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection']:
             rows = [node(0, '2026-09-01', [
                 node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', amount=100)]),
-                node(1, 'GL-Kassa-Oksbrich', [node(2, 'Школа', amount=40)]),
+                node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', amount=40)]),
             ])]
         else:
             assert groups == ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'PayTypes']
             rows = [node(0, '2026-09-01', [
                 node(1, 'Kassa-FiscalBox1', [
                     node(2, 'Ресторан', [node(3, 'UzCard', amount=60), node(3, 'Демо', amount=40)])]),
-                node(1, 'GL-Kassa-Oksbrich', [node(2, 'Школа', [node(3, 'UzCard', amount=40)])]),
+                node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', [node(3, 'UzCard', amount=40)])]),
             ])]
         return httpx.Response(200, json={'result': {'rows': rows}})
 

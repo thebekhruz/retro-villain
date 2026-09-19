@@ -26,13 +26,17 @@ def payment(day, name, amount, *, register='Kassa-FiscalBox1', section='Рест
 
 def test_direction_classification_is_exclusive_and_rejects_unknown_values():
     assert classify_direction('Kassa-FiscalBox1', 'Ресторан') == 'retro'
-    assert classify_direction('GL-Kassa-Oksbrich', 'Школа') == 'school'
+    assert classify_direction('GL-Kassa-Oksbrich', 'Зал') == 'school'
     assert classify_direction('Kassa-FiscalBox1', 'Бехруз (Свадьба)') == 'banquet'
 
     with pytest.raises(DataError, match='неизвестная касса'):
         classify_direction('New-Kassa', 'Ресторан')
     with pytest.raises(DataError, match='новое отделение Бехруз'):
         classify_direction('Kassa-FiscalBox1', 'Бехруз VIP')
+    with pytest.raises(DataError, match='неизвестное отделение'):
+        classify_direction('Kassa-FiscalBox1', 'Новый зал')
+    with pytest.raises(DataError, match='неизвестное отделение'):
+        classify_direction('GL-Kassa-Oksbrich', 'Новый школьный зал')
 
 
 @pytest.mark.parametrize(
@@ -60,13 +64,13 @@ def test_mixed_payments_are_not_double_counted_and_are_split_by_direction():
     day = date(2026, 9, 7)
     revenues = [
         revenue(day, 100),
-        revenue(day, 40, register='GL-Kassa-Oksbrich', section='Школа'),
+        revenue(day, 40, register='GL-Kassa-Oksbrich', section='Зал'),
         revenue(day, 60, section='Бехруз (Свадьба)'),
     ]
     payments = [
         payment(day, 'UzCard', 60),
         payment(day, 'Демо', 40),
-        payment(day, 'UzCard', 40, register='GL-Kassa-Oksbrich', section='Школа'),
+        payment(day, 'UzCard', 40, register='GL-Kassa-Oksbrich', section='Зал'),
         payment(day, 'Наличные (Инкасса QR)', 60, section='Бехруз (Свадьба)'),
     ]
 
@@ -102,6 +106,17 @@ def test_payment_mismatch_is_returned_as_unverified_warning():
     assert result['warnings'] == [
         'Оплаты расходятся с выручкой на 2 сум. Данные не считаются сверенными.'
     ]
+
+
+def test_payment_share_uses_payment_total_when_one_sum_difference_is_tolerated():
+    day = date(2026, 9, 7)
+    result = build_analytics([revenue(day, 100)], [payment(day, 'UzCard', 99)],
+                             day, day, 'day', ('retro',),
+                             now=datetime(2026, 9, 8, 8, 0))
+
+    assert result['reconciled'] is True
+    assert result['payment_summary'] == [
+        {'name': 'UzCard', 'amount': '99', 'share_percent': '100.00'}]
 
 
 def test_zero_total_has_no_payment_share_and_current_day_is_marked_incomplete():

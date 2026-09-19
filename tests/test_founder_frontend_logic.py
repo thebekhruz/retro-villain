@@ -24,7 +24,8 @@ def test_revenue_paths_keep_each_direction_separate_and_scale_from_zero():
 
 def test_request_gate_rejects_late_response():
     result = run_node("(()=>{const gate=logic.requestGate();"
-                      "const first=gate.next();const second=gate.next();"
+                      "const first=gate.next();gate.invalidate();"
+                      "const second=gate.next();"
                       "return [gate.isCurrent(first),gate.isCurrent(second)]})()")
     assert result == [False, True]
 

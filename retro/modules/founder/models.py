@@ -16,6 +16,11 @@ from retro.modules.cashier.service import (
 
 DIRECTIONS = ('retro', 'school', 'banquet')
 GRANULARITIES = ('day', 'week', 'month')
+RETRO_SECTIONS = frozenset({
+    '2.1 Бар мили', 'Бар Рестаран', 'Вынос', 'Доставка', 'Летка',
+    'Напитки Мили', 'Напитки Ресторан', 'Ресторан', 'Ресторан Алкоголь',
+})
+SCHOOL_SECTIONS = frozenset({'Зал'})
 
 
 @dataclass(frozen=True)
@@ -41,12 +46,18 @@ def classify_direction(register, section):
     if not isinstance(section, str) or not section.strip():
         raise DataError('iiko не указал отделение для продажи.')
     if register == SCHOOL_REGISTER:
-        return 'school'
+        if section in SCHOOL_SECTIONS:
+            return 'school'
+        raise DataError('В iiko появилось неизвестное отделение школы. '
+                        'Разделение выручки требует проверки.')
     if section == BANQUET_SECTION:
         return 'banquet'
     if 'бехруз' in section.casefold():
         raise DataError('В iiko найдено новое отделение Бехруз. Проверьте распределение выручки.')
-    return 'retro'
+    if section in RETRO_SECTIONS:
+        return 'retro'
+    raise DataError('В iiko появилось неизвестное отделение Retro. '
+                    'Разделение выручки требует проверки.')
 
 
 def _next_month(day):
@@ -159,8 +170,8 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
     summary = []
     for name in sorted(seen_payments, key=lambda item: (-payment_totals[item], item)):
         amount = payment_totals[name]
-        share = None if selected_total == 0 else str(
-            (amount * Decimal(100) / selected_total).quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+        share = None if payment_total == 0 else str(
+            (amount * Decimal(100) / payment_total).quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
         summary.append(dict(name=name, amount=_amount(amount), share_percent=share))
 
     return {

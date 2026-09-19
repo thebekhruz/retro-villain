@@ -5,7 +5,7 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
   function requestGate(){
     let current=0;
-    return {next(){current+=1;return current},isCurrent(id){return id===current}};
+    return {next(){current+=1;return current},invalidate(){current+=1},isCurrent(id){return id===current}};
   }
 
   function iso(date){return date.toISOString().slice(0,10)}
