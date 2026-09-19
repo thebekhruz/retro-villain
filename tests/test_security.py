@@ -17,21 +17,48 @@ PANEL_USERS = {
 def test_panel_user_can_open_only_its_own_panel(tmp_path):
     app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
     with TestClient(app, client=('127.0.0.1', 50000),
-                    base_url='http://127.0.0.1') as client:
-        own = client.get('/', auth=('cashier', 'test-password'))
-        config = client.get('/api/config', auth=('cashier', 'test-password'))
-        forbidden = client.get('/accountant', auth=('cashier', 'test-password'))
-        forbidden_api = client.get('/api/accountant/day', auth=('cashier', 'test-password'))
-        wrong_password = client.get('/', auth=('cashier', '0000'))
+                    base_url='http://127.0.0.1', follow_redirects=False) as client:
         missing = client.get('/')
+        login_page = client.get('/login')
+        wrong_password = client.post(
+            '/api/session', json={'username': 'cashier', 'password': '0000'})
+        login = client.post(
+            '/api/session', json={'username': 'cashier', 'password': 'test-password'})
+        own = client.get('/')
+        config = client.get('/api/config')
+        forbidden = client.get('/accountant')
+        forbidden_api = client.get('/api/accountant/day')
 
+    assert missing.status_code == 303
+    assert missing.headers['location'] == '/login'
+    assert login_page.status_code == 200
+    assert wrong_password.status_code == 401
+    assert login.status_code == 200
+    assert login.json() == {'role': 'cashier', 'path': '/'}
+    assert 'retro_session=' in login.headers['set-cookie']
+    assert 'HttpOnly' in login.headers['set-cookie']
+    assert 'SameSite=strict' in login.headers['set-cookie']
     assert own.status_code == 200
     assert config.status_code == 200
     assert config.json()['role'] == 'cashier'
     assert forbidden.status_code == 403
     assert forbidden_api.status_code == 403
-    assert wrong_password.status_code == 401
-    assert missing.status_code == 401
+
+
+def test_logout_invalidates_dashboard_session(tmp_path):
+    app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1', follow_redirects=False) as client:
+        client.post('/api/session', json={
+            'username': 'director', 'password': 'test-password'})
+        logout = client.post('/api/session/logout')
+        page = client.get('/director')
+
+    assert logout.status_code == 204
+    assert 'retro_session=' in logout.headers['set-cookie']
+    assert 'Max-Age=0' in logout.headers['set-cookie']
+    assert page.status_code == 303
+    assert page.headers['location'] == '/login'
 
 
 def test_each_panel_user_can_open_the_assigned_page(tmp_path):

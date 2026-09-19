@@ -5,8 +5,9 @@ import secrets
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
 
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient
@@ -25,8 +26,18 @@ from retro.modules.founder.routes import router as founder_router
 from retro.integrations.gemini import GeminiClient
 from retro.logging_config import configure_logging
 from retro.security import client_address, is_finance_path, is_local_host, validate_mutation_origin
+from retro.sessions import SessionStore
 
 STATIC = Path(__file__).parent / 'static'
+SESSION_COOKIE = 'retro_session'
+PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js'}
+ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
+              'director': '/director', 'founder': '/founder', 'all': '/'}
+
+
+class LoginInput(BaseModel):
+    username: str
+    password: str
 
 
 def panel_for_path(path: str) -> str | None:
@@ -41,7 +52,10 @@ def panel_for_path(path: str) -> str | None:
     return None
 
 
-def dashboard_identity(request: Request, settings: Settings) -> str | None:
+def dashboard_identity(request: Request, settings: Settings, sessions: SessionStore) -> str | None:
+    session_role = sessions.role(request.cookies.get(SESSION_COOKIE))
+    if session_role:
+        return session_role
     header = request.headers.get('Authorization', '')
     if not header.startswith('Basic '):
         return None
@@ -69,6 +83,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     settings = settings or Settings.from_env()
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
+    app.state.sessions = SessionStore()
     app.state.iiko = IikoClient(settings)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.iiko_lock = asyncio.Lock()
@@ -100,15 +115,18 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if not address.is_loopback and address not in settings.dashboard_allowed_network:
                 return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
         auth_configured = bool(settings.dashboard_password or settings.dashboard_panel_users)
-        role = dashboard_identity(request, settings) if auth_configured else 'all'
-        if auth_configured:
+        role = dashboard_identity(request, settings, app.state.sessions) if auth_configured else 'all'
+        public = request.url.path in PUBLIC_PATHS
+        if auth_configured and not public:
             if role is None:
+                if not request.url.path.startswith(('/api/', '/static/')):
+                    return RedirectResponse('/login', status_code=303)
                 return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
                                     headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
         elif not address.is_loopback:
             return JSONResponse({'detail': 'Внешний доступ закрыт. Настройте защиту дашборда.'}, 403)
         required_panel = panel_for_path(request.url.path)
-        if required_panel and role not in ('all', required_panel):
+        if required_panel and not public and role not in ('all', required_panel):
             return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
         request.state.dashboard_role = role
         try:
@@ -127,6 +145,42 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     @app.get('/')
     def index():
         return FileResponse(STATIC / 'index.html')
+
+    @app.get('/login')
+    def login_page(request: Request):
+        role = getattr(request.state, 'dashboard_role', None)
+        if role:
+            return RedirectResponse(ROLE_PATHS[role], status_code=303)
+        return FileResponse(STATIC / 'login.html')
+
+    @app.post('/api/session')
+    def login(request: Request, body: LoginInput):
+        role = None
+        panel_user = settings.dashboard_panel_users.get(body.username)
+        if panel_user:
+            expected_password, candidate_role = panel_user
+            if secrets.compare_digest(body.password.encode(), expected_password.encode()):
+                role = candidate_role
+        if role is None and settings.dashboard_password:
+            valid = (secrets.compare_digest(body.username.encode(), settings.dashboard_user.encode())
+                     & secrets.compare_digest(body.password.encode(), settings.dashboard_password.encode()))
+            if valid:
+                role = 'all'
+        if role is None:
+            return JSONResponse({'detail': 'Неверный логин или пароль.'}, 401)
+        token = app.state.sessions.create(role)
+        response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
+        response.set_cookie(
+            SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
+            samesite='strict', secure=request.url.scheme == 'https', path='/')
+        return response
+
+    @app.post('/api/session/logout', status_code=204)
+    def logout(request: Request):
+        app.state.sessions.delete(request.cookies.get(SESSION_COOKIE))
+        response = Response(status_code=204)
+        response.delete_cookie(SESSION_COOKIE, path='/', samesite='strict')
+        return response
 
     @app.get('/accountant')
     def accountant():

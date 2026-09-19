@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#143e35">
+  <title>Вход · Retro Milliy</title>
+  <link rel="stylesheet" href="/static/login.css">
+  <script src="/static/login.js" defer></script>
+</head>
+<body>
+  <main class="login-card">
+    <div class="brand" aria-label="Retro Milliy"><span>R<span>✦</span></span></div>
+    <p class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+    <h1>Вход в Retro Milliy</h1>
+    <p class="subtitle">Введите логин и пароль своей панели.</p>
+    <form id="login-form">
+      <label for="username">Логин</label>
+      <input id="username" name="username" autocomplete="username" required autofocus>
+      <label for="password">Пароль</label>
+      <input id="password" name="password" type="password" autocomplete="current-password" required>
+      <button id="submit" type="submit">Войти</button>
+    </form>
+    <p id="error" class="error" role="alert" aria-live="polite"></p>
+  </main>
+</body>
+</html>
