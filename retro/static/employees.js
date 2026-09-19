@@ -1,6 +1,9 @@
 const $ = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0)) + ' сум';
 const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки'};
+const columns = ['Имя', 'Роль', 'Зарплата / ставка', 'Группа', 'Статус', 'Действия'];
+const formattedDay = day => new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric',
+  timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
 let today, current, requestNo = 0;
 
 function text(tag, className, value) {
@@ -8,6 +11,26 @@ function text(tag, className, value) {
   if (className) item.className = className;
   item.textContent = value;
   return item;
+}
+// Единое пустое состояние — такое же, как в журнале бухгалтера.
+function emptyState(glyph, value) {
+  const box = text('div', 'empty-state', '');
+  const sign = text('span', '', glyph);
+  sign.setAttribute('aria-hidden', 'true');
+  box.append(sign, text('p', '', value));
+  return box;
+}
+// Склонение по-русски: «1 сотрудник», «2 сотрудника», «5 сотрудников».
+function plural(count, forms) {
+  const tail = Math.abs(count) % 100, unit = tail % 10;
+  if (tail > 10 && tail < 20) return forms[2];
+  if (unit > 1 && unit < 5) return forms[1];
+  return unit === 1 ? forms[0] : forms[2];
+}
+function stat(label, value, flagged) {
+  const card = text('div', 'employees-stat' + (flagged && value > 0 ? ' is-flagged' : ''), '');
+  card.append(text('span', '', label), text('strong', '', String(value)));
+  return card;
 }
 function message(value, error = false) {
   const item = $('employees-message');
@@ -22,11 +45,21 @@ function options(select, items, placeholder) {
   if (items.some(item => String(item.id) === old)) select.value = old;
 }
 function render(data) {
-  $('employees-summary').textContent = data.roster_count + ' сотрудников · ' + data.payroll.late_count +
-    ' опоздали · ' + data.payroll.missing_count + ' не пришли · ' +
-    data.payroll.unlinked_count + ' без демопривязки · ' + data.missing_rates + ' без ставки.';
+  // formattedDay уже отдаёт «19 сентября 2026 г.» — точку в конце не добавляем.
+  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value);
+  $('employees-stats').replaceChildren(
+    stat('Всего в реестре', data.roster_count, false),
+    stat('Опоздали после 10:00', data.payroll.late_count, true),
+    stat('Не пришли', data.payroll.missing_count, true),
+    stat('Без демопривязки', data.payroll.unlinked_count, false),
+    stat('Без ставки', data.missing_rates, true)
+  );
   const container = $('employees-groups');
   container.replaceChildren();
+  if (!data.employees.length) {
+    container.append(emptyState('◫', 'В реестре пока нет сотрудников. Добавьте первого кнопкой «Добавить сотрудника» — роль, ставку и группу можно будет поправить прямо в списке.'));
+    return;
+  }
   const roles = [...new Set(data.employees.map(row => row.role))].sort((left, right) => left.localeCompare(right, 'ru'));
   roles.forEach(role => {
     const details = document.createElement('details');
@@ -38,18 +71,23 @@ function render(data) {
     details.append(summary);
     const table = document.createElement('table');
     table.className = 'employee-roster-table';
-    table.innerHTML = '<thead><tr><th>Имя</th><th>Роль</th><th>Зарплата / ставка</th><th>Группа</th><th>Статус</th><th>Действия</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th scope="col">Имя</th><th scope="col">Роль</th><th scope="col">Зарплата / ставка</th><th scope="col">Группа</th><th scope="col">Статус</th><th scope="col">Действия</th></tr></thead>';
     const body = document.createElement('tbody');
     people.sort((left, right) => left.name.localeCompare(right.name, 'ru')).forEach(row => {
       const tr = document.createElement('tr');
       const values = [row.name, row.role, row.rate === null ? 'Нет ставки' : money(row.rate), row.group,
         statuses[row.status] || row.status];
       values.forEach((value, index) => {
-        const cell = document.createElement('td'); cell.textContent = value;
+        const cell = document.createElement('td');
+        cell.dataset.label = columns[index];
+        if (index === 4) cell.append(text('span', 'staff-status ' + row.status, value));
+        else if (index === 2 && row.rate === null) cell.append(text('span', 'roster-missing', value));
+        else cell.textContent = value;
         if (index < 4) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
         tr.append(cell);
       });
       const actions = document.createElement('td');
+      actions.dataset.label = columns[5];
       const remove = document.createElement('button');
       remove.type = 'button'; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
       remove.title = 'Удалить сотрудника';
@@ -57,7 +95,10 @@ function render(data) {
       actions.append(remove); tr.append(actions);
       body.append(tr);
     });
-    table.append(body); details.append(table);
+    table.append(body);
+    const scroll = text('div', 'employee-roster-scroll', '');
+    scroll.append(table);
+    details.append(scroll);
     container.append(details);
   });
 }
@@ -124,10 +165,11 @@ function editCell(row, cell, field, groups) {
 function addEmployeeRow(data) {
   if (!data || document.querySelector('.employee-add-row')) return;
   const row = document.createElement('form'); row.className = 'employee-add-row';
-  row.innerHTML = '<input name="name" required maxlength="160" placeholder="Имя">' +
-    '<input name="role" required maxlength="80" placeholder="Роль">' +
-    '<input name="rate" type="number" min="0" step="0.01" placeholder="Зарплата / ставка">' +
-    '<select name="group" required><option value="">Группа</option></select>' +
+  row.setAttribute('aria-label', 'Новый сотрудник');
+  row.innerHTML = '<input name="name" required maxlength="160" placeholder="Имя" aria-label="Имя">' +
+    '<input name="role" required maxlength="80" placeholder="Роль" aria-label="Роль">' +
+    '<input name="rate" type="number" min="0" step="0.01" placeholder="Зарплата / ставка" aria-label="Зарплата или ставка, сум">' +
+    '<select name="group" required aria-label="Группа"><option value="">Группа</option></select>' +
     '<button class="button primary" type="submit">Добавить</button>' +
     '<button class="button secondary" type="button" data-cancel>Отмена</button>';
   data.groups.forEach(group => row.elements.group.add(new Option(group.name, group.name)));

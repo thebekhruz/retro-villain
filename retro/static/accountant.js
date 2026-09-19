@@ -46,14 +46,22 @@ function previousDay(day) { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate
 function formattedDay(day) { return new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')); }
 function message(value, error = false) { const n = $('accountant-message'); n.textContent = value; n.hidden = !value; n.setAttribute('role', error ? 'alert' : 'status'); }
 function node(tag, cls, value) { const n = document.createElement(tag); if (cls) n.className = cls; if (value !== undefined) n.textContent = value; return n; }
+// Единое пустое состояние: знак, объяснение и, если есть, следующий шаг.
+function emptyState(glyph, text, extra) {
+  const box = node('div', 'empty-state' + (extra ? ' ' + extra : ''));
+  const sign = node('span', '', glyph); sign.setAttribute('aria-hidden', 'true');
+  box.append(sign, node('p', '', text));
+  return box;
+}
 function options(select, items, placeholder) { const old = select.value; select.replaceChildren(new Option(placeholder, '')); items.forEach(x => select.add(new Option(x.label, String(x.id)))); if (items.some(x => String(x.id) === old)) select.value = old; }
 const selectedDay = () => $('accountant-date').value;
 
 function renderStaff(data) {
   const rows = data.employees.filter(row => row.status === 'late'), container = $('late-list');
-  $('staff-summary').textContent = rows.length + ' опоздали после 10:00 · без автоматического штрафа. Проходы демонстрационные.';
+  $('staff-summary').textContent = 'Опоздавших после 10:00: ' + rows.length +
+    ' · автоматический штраф не начисляется. Проходы демонстрационные.';
   container.replaceChildren();
-  if (!rows.length) container.append(node('p', 'accountant-help', 'За этот день опоздавших нет.'));
+  if (!rows.length) container.append(emptyState('✓', 'За этот день никто не опоздал.'));
   rows.forEach(row => {
       const card = node('article', 'staff-row is-' + row.status), identity = node('div'), detail = node('div', 'staff-line');
       identity.append(node('div', 'staff-name', row.name), node('div', 'staff-role', row.role + (row.rate === null ? ' · Нет ставки' : ' · ' + money(row.rate))));
@@ -80,14 +88,23 @@ function renderLedger(data) {
   $('payroll-paid-total').textContent = money(l.salary_recorded_on_day);
   $('payroll-debt-total').textContent = money(l.salary_debt);
   $('manual-debt-total').textContent = money(l.manual_debt_total);
-  $('all-debt-total').textContent = money(Number(l.salary_debt) + Number(l.manual_debt_total));
+  const debtTotal = Number(l.salary_debt) + Number(l.manual_debt_total);
+  $('all-debt-total').textContent = money(debtTotal);
+  $('debt-card').classList.toggle('is-owed', debtTotal > 0);
+  $('debt-card-note').textContent = debtTotal > 0
+    ? 'Долги к оплате на конец дня.'
+    : 'Непогашенных долгов на конец дня нет.';
   $('finance-cash-total').textContent = hasCashierData ? money(l.cash_balance) : '—';
   $('day-outflows').textContent = money(Number(l.cash_flow.salary_paid) + Number(l.cash_flow.other_outflows));
   const reserves = data.reserves;
+  let reservesKnown = 0;
   for (const account of ['dividends', 'usd', 'shoh']) {
     const value = reserves[account].balance;
-    $(account + '-balance').textContent = value === null ? 'Остаток не задан' : account === 'usd' ? number.format(Number(value)) + ' USD' : money(value);
+    if (value !== null) reservesKnown += 1;
+    $(account + '-balance').textContent = value === null ? 'Не задан' : account === 'usd' ? number.format(Number(value)) + ' USD' : money(value);
   }
+  $('reserves-lines').hidden = reservesKnown === 0;
+  $('reserves-empty').hidden = reservesKnown > 0;
   $('monthly-balance').textContent = money(reserves.monthly.total);
   $('monthly-note').textContent = reserves.monthly.month + ' · сумма ставок сотрудников из файла «ЗП»';
   const journal = $('finance-journal'); journal.replaceChildren();
@@ -142,6 +159,8 @@ function renderLedger(data) {
     tr.append(...cells);
     const total = node('td', '', number.format(Number(amount)) + ' ' + unit);
     total.append(node('small', '', cashEffect)); cells.push(total); tr.append(total); journal.append(tr);
+    // На телефоне таблица разворачивается в карточки, подписи берутся отсюда.
+    ['Категория', 'Тип', 'Наименование', 'Сумма'].forEach((label, index) => { cells[index].dataset.label = label; });
     if (item && item.id !== null && (item.operation === 'movement' || item.operation === 'salary_payment')) {
       const actions = node('div', 'operation-actions');
       tr.querySelectorAll('td').forEach(cell => cell.addEventListener('dblclick', () => editOperation(item, cells, actions)));
@@ -172,7 +191,7 @@ function renderLedger(data) {
     addRow(info.category, 'Начислен расход', item.description, item.total, 'сум', 'Обязательство; оплаты показаны отдельными строками');
   });
   const debtList = $('manual-debt-list'); debtList.replaceChildren();
-  if (!l.manual_debts.length) debtList.append(node('p', 'accountant-help', 'Неоплаченных расходов нет.'));
+  if (!l.manual_debts.length) debtList.append(emptyState('✓', 'Неоплаченных расходов нет.'));
   l.manual_debts.forEach(item => {
     const row=node('div','manual-debt-row');
     row.append(node('span','',item.description + ' · ' + formattedDay(item.day)), node('strong','',money(item.debt)));
@@ -186,10 +205,15 @@ function renderLedger(data) {
       addRow(label, type, e.note, e.amount, account === 'usd' ? 'USD' : 'сум', 'Не списывает сумовую кассу');
     });
   }
-  if (!journal.children.length) { const tr=node('tr'),td=node('td','','Пока нет операций за этот день.');td.colSpan=4;tr.append(td);journal.append(tr); }
+  if (!journal.children.length) {
+    const tr = node('tr', 'is-empty-row'), td = node('td', 'is-empty');
+    td.colSpan = 4;
+    td.append(emptyState('▤', 'За этот день операций ещё нет. Записи из формы выше появятся в этом списке.'));
+    tr.append(td); journal.append(tr);
+  }
   const target = $('expense-breakdown'); target.replaceChildren();
   Object.entries(breakdown).forEach(([label, value]) => {const row=node('div','rail-line');row.append(node('span','',label),node('b','',money(value)));target.append(row);});
-  if (!target.children.length) target.append(node('p','','Расходов за день ещё нет.'));
+  if (!target.children.length) target.append(emptyState('◔', 'Расходов за день ещё нет.', 'compact'));
   updateButtons();
 }
 
@@ -200,8 +224,11 @@ async function loadDay() {
   current = null; updateButtons();
   $("finance-layout").setAttribute("aria-busy", "true");
   $('entrances-day').textContent = formattedDay(day);
-  $('accountant-today').classList.toggle('active', day === today);
-  $('accountant-yesterday').classList.toggle('active', day === previousDay(today));
+  const isToday = day === today, isYesterday = day === previousDay(today);
+  $('accountant-today').classList.toggle('active', isToday);
+  $('accountant-today').setAttribute('aria-pressed', String(isToday));
+  $('accountant-yesterday').classList.toggle('active', isYesterday);
+  $('accountant-yesterday').setAttribute('aria-pressed', String(isYesterday));
   $('entrances-download').disabled = false;
   $('all-employees-link').href = '/accountant/employees?date=' + encodeURIComponent(day);
   $('employees-menu').href = '/accountant/employees?date=' + encodeURIComponent(day);

@@ -4,7 +4,8 @@
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#143e35">
   <title>Все сотрудники · Retro Milliy</title>
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23143e35'/%3E%3Ctext x='12' y='35' fill='%23e9cc8a' font-size='34' font-family='serif'%3ER%3C/text%3E">
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
   <script src="/static/employees.js" defer></script>
 </head>
 <body>
@@ -13,23 +14,30 @@
   <div class="side-rule"></div>
   <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
   <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a><a href="/director" class="nav-link"><span class="nav-icon">◉</span> Директор</a><a href="/founder" class="nav-link"><span class="nav-icon">⌁</span> Учредитель</a></nav>
+  <div class="coming"><span>Модуль 03</span><small>Позже</small></div>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Все сотрудники</strong></span><span class="top-status">Локальный просмотр</span></header>
-  <div class="workspace accountant-workspace">
-    <div class="page-heading"><div><p class="eyebrow">КОМАНДА · РЕЕСТР</p><h1>Все сотрудники<span>.</span></h1><p class="subtitle">Первый вход, статус и расчёт за выбранный день.</p></div></div>
+  <header class="topbar"><span class="breadcrumb"><a href="/accountant">Финансовый отдел</a> <span>/</span> <strong>Все сотрудники</strong></span><span class="top-status">Локальный просмотр</span></header>
+  <div class="workspace accountant-workspace employees-workspace">
+    <div class="page-heading"><div><p class="eyebrow">МОДУЛЬ 02 · КОМАНДА</p><h1>Все сотрудники<span>.</span></h1><p class="subtitle">Реестр ролей и ставок. Первый вход и статус — за выбранный день.</p></div><div class="module-badge"><span>02</span><div>Модуль<small>Финансы</small></div></div></div>
     <div class="accountant-demo-banner" role="note"><strong>ДЕМО</strong><span>Время и статусы проходов смоделированы. Реальный Hikvision ресторана пока не подключён.</span></div>
-    <div class="employees-toolbar">
-      <a id="back-accountant" class="button secondary" href="/accountant">← К финансам</a>
-      <label class="date-group" for="employees-date">Дата<input id="employees-date" type="date" required></label>
-      <button id="employees-refresh" class="button secondary" type="button">Обновить</button>
-      <button id="employees-download" class="button primary" type="button">Скачать всех · XLSX</button>
-    </div>
+    <section class="controls" aria-label="День реестра">
+      <div class="date-group"><label for="employees-date">Дата</label><input id="employees-date" type="date" required></div>
+      <div class="controls-actions">
+        <a id="back-accountant" class="button secondary" href="/accountant"><span aria-hidden="true">←</span> К финансам</a>
+        <button id="employees-refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
+        <button id="employees-download" class="button primary" type="button">Скачать всех <span class="attendance-file-type">XLSX</span></button>
+      </div>
+    </section>
     <p id="employees-message" class="notice" role="status" aria-live="polite" hidden></p>
+    <div id="employees-stats" class="employees-stats" role="group" aria-label="Сводка по реестру"></div>
     <section class="panel accountant-panel" aria-labelledby="employees-title">
-      <div class="accountant-panel-head"><div><p class="eyebrow">ПО ГРУППАМ</p><h2 id="employees-title">Список сотрудников</h2><p id="employees-summary" class="accountant-help">Загружаем реестр…</p></div><button id="employees-add" class="icon-button" type="button" title="Добавить сотрудника" aria-label="Добавить сотрудника">+</button></div>
-      <p class="accountant-help">Сотрудники упорядочены по ролям. Дважды нажмите на имя, роль или зарплату, чтобы изменить ячейку как в Excel.</p>
+      <div class="accountant-panel-head">
+        <div><p class="eyebrow">ПО ГРУППАМ</p><h2 id="employees-title">Список сотрудников</h2><p id="employees-summary" class="accountant-help">Загружаем реестр…</p></div>
+        <button id="employees-add" class="button secondary" type="button"><span aria-hidden="true">+</span> Добавить сотрудника</button>
+      </div>
+      <p class="accountant-help">Сотрудники сгруппированы по ролям. Дважды нажмите на имя, роль, ставку или группу, чтобы изменить ячейку прямо в списке.</p>
       <div id="employees-groups" class="employees-groups" aria-live="polite"></div>
     </section>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Сотрудники</span><span>Время Ташкента · UZS</span></footer>
