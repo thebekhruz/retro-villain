@@ -361,6 +361,16 @@ def update_finance_operation(request: Request, operation_type: str, operation_id
     return dict(demo=True, id=operation_id)
 
 
+@router.delete('/operations/{operation_type}/{operation_id}', status_code=204)
+def delete_finance_operation(request: Request, operation_type: str, operation_id: int,
+                             date: date):
+    day = selected_day(date)
+    try:
+        request.app.state.accountant_finance.delete_operation(operation_type, operation_id, day)
+    except LedgerError as error:
+        finance_error(error)
+
+
 @router.post('/incomes', status_code=201)
 async def add_finance_income(request: Request, body: FinanceExpenseInput):
     day = selected_day(body.date)

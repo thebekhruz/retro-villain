@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .payroll import PayrollRow
 from .expense_catalog import ITEMS
+from .audit import audit_entries as read_audit_entries, record_audit
 from retro.runtime import secure_directory, secure_file
 
 
@@ -112,6 +113,15 @@ class FinanceStore:
                 movement_id INTEGER NOT NULL REFERENCES accountant_movements(id),
                 created_at TEXT NOT NULL
             );
+            CREATE TABLE IF NOT EXISTS accountant_finance_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action TEXT NOT NULL,
+                before_json TEXT,
+                after_json TEXT,
+                changed_at TEXT NOT NULL
+            );
         ''')
         columns = {row[1] for row in connection.execute('PRAGMA table_info(accountant_movements)')}
         if 'item_code' not in columns:
@@ -132,10 +142,21 @@ class FinanceStore:
 
     def record_handover(self, day: date, amount: Decimal):
         with closing(self._open()) as connection, connection:
+            row = connection.execute(
+                'SELECT day, amount, checked_at FROM accountant_handover_days WHERE day = ?',
+                (day.isoformat(),)).fetchone()
+            before = dict(day=row[0], amount=row[1], checked_at=row[2]) if row else None
             connection.execute('INSERT INTO accountant_handover_days VALUES (?, ?, ?) '
                                'ON CONFLICT(day) DO UPDATE SET amount=excluded.amount, '
                                'checked_at=excluded.checked_at',
                                (day.isoformat(), str(amount), datetime.now().isoformat()))
+            row = connection.execute(
+                'SELECT day, amount, checked_at FROM accountant_handover_days WHERE day = ?',
+                (day.isoformat(),)).fetchone()
+            after = dict(day=row[0], amount=row[1], checked_at=row[2])
+            if before is None or before['amount'] != after['amount']:
+                record_audit(connection, 'handover', day.isoformat(),
+                             'create' if before is None else 'update', before, after)
 
     def handover_for_day(self, day: date) -> Decimal | None:
         with closing(self._open()) as connection:
@@ -145,7 +166,73 @@ class FinanceStore:
 
     def delete_handover(self, day: date):
         with closing(self._open()) as connection, connection:
+            row = connection.execute(
+                'SELECT day, amount, checked_at FROM accountant_handover_days WHERE day = ?',
+                (day.isoformat(),)).fetchone()
+            before = dict(day=row[0], amount=row[1], checked_at=row[2]) if row else None
             connection.execute('DELETE FROM accountant_handover_days WHERE day = ?', (day.isoformat(),))
+            if before is not None:
+                record_audit(connection, 'handover', day.isoformat(), 'delete', before, None)
+
+    def audit_entries(self, *, entity_type=None, entity_id=None):
+        with closing(self._open()) as connection:
+            return read_audit_entries(
+                connection, entity_type=entity_type, entity_id=entity_id)
+
+    @staticmethod
+    def _row_dict(connection, table: str, row_id: int):
+        cursor = connection.execute(f'SELECT * FROM {table} WHERE id = ?', (row_id,))
+        row = cursor.fetchone()
+        return dict(zip((column[0] for column in cursor.description), row)) if row else None
+
+    def delete_operation(self, operation_type: str, operation_id: int, day: date):
+        tables = {
+            'movement': 'accountant_movements',
+            'salary_payment': 'accountant_salary_payments',
+            'debt_payment': 'accountant_debt_payments',
+            'reserve_transfer': 'accountant_reserves',
+        }
+        table = tables.get(operation_type)
+        if table is None:
+            raise LedgerError('Эту операцию нельзя удалить здесь.')
+        with closing(self._open()) as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            try:
+                before = self._row_dict(connection, table, operation_id)
+                if before is None:
+                    raise LedgerError('Операция не найдена.')
+                stored_day = before['paid_day'] if operation_type == 'salary_payment' else before['day']
+                if stored_day != day.isoformat():
+                    raise LedgerError('Нельзя изменить дату операции.')
+                if operation_type == 'reserve_transfer':
+                    if before['kind'] != 'transfer':
+                        raise LedgerError('Эту резервную операцию нельзя удалить здесь.')
+                    connection.execute('DELETE FROM accountant_reserves WHERE id = ?', (operation_id,))
+                    from .reserves import _balance, _entries
+                    rows = _entries(connection, before['account'])
+                    for cutoff in {row['day'] for row in rows}:
+                        balance = _balance([row for row in rows if row['day'] <= cutoff])
+                        if balance is not None and balance < 0:
+                            raise LedgerError('Удаление делает остаток отрицательным в последующие дни.')
+                elif operation_type == 'debt_payment':
+                    connection.execute('DELETE FROM accountant_debt_payments WHERE id = ?', (operation_id,))
+                    connection.execute('DELETE FROM accountant_movements WHERE id = ?',
+                                       (before['movement_id'],))
+                elif operation_type == 'movement':
+                    linked = connection.execute(
+                        'SELECT id FROM accountant_debt_payments WHERE movement_id = ?',
+                        (operation_id,)).fetchone()
+                    if linked:
+                        connection.execute('DELETE FROM accountant_debt_payments WHERE id = ?', (linked[0],))
+                    connection.execute('DELETE FROM accountant_movements WHERE id = ?', (operation_id,))
+                    self._check_future_balances(connection, day)
+                else:
+                    connection.execute('DELETE FROM accountant_salary_payments WHERE id = ?', (operation_id,))
+                record_audit(connection, operation_type, operation_id, 'delete', before, None)
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
 
     def set_cash_opening(self, day: date, amount, note):
         value = amount_value(amount, allow_zero=True)
@@ -159,6 +246,8 @@ class FinanceStore:
                     raise LedgerError('Сначала запишите передачу кассы за первый день учёта.')
                 connection.execute('INSERT INTO accountant_cash_opening VALUES (1,?,?,?,?)',
                                    (day.isoformat(), str(value), note, datetime.now().isoformat()))
+                after = self._row_dict(connection, 'accountant_cash_opening', 1)
+                record_audit(connection, 'cash_opening', 1, 'create', None, after)
                 self._check_known_future_balances(connection, day)
                 connection.commit()
             except sqlite3.IntegrityError:
@@ -280,16 +369,21 @@ class FinanceStore:
                     return False
                 connection.execute('INSERT INTO accountant_payroll_days (day, approver, confirmed_at) '
                                    'VALUES (?, ?, ?)', (day.isoformat(), approver, datetime.now().isoformat()))
+                record_audit(connection, 'payroll_day', day.isoformat(), 'create', None,
+                             dict(day=day.isoformat(), approver=approver))
                 for row in rows:
                     if row.payable is None or row.payable <= 0:
                         continue
                     if row.rate is None:
                         raise LedgerError('Нельзя подтвердить начисление без ставки.')
-                    connection.execute('INSERT INTO accountant_accruals '
-                                       '(work_day, employee_id, employee_name, group_name, attendance_status, rate, amount) '
-                                       'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                                       (day.isoformat(), row.employee_id, row.name, row.group_name,
-                                        row.status, str(row.rate), str(row.payable)))
+                    cursor = connection.execute(
+                        'INSERT INTO accountant_accruals '
+                        '(work_day, employee_id, employee_name, group_name, attendance_status, rate, amount) '
+                        'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                        (day.isoformat(), row.employee_id, row.name, row.group_name,
+                         row.status, str(row.rate), str(row.payable)))
+                    record_audit(connection, 'accrual', cursor.lastrowid, 'create', None,
+                                 self._row_dict(connection, 'accountant_accruals', cursor.lastrowid))
                 connection.commit()
                 return True
             except Exception:
@@ -364,6 +458,8 @@ class FinanceStore:
                                             'VALUES (?, ?, ?, ?, ?, ?, ?)',
                                             (day.isoformat(), kind, description, str(value), item_code, reference,
                                              datetime.now().isoformat()))
+                record_audit(connection, 'movement', cursor.lastrowid, 'create', None,
+                             self._row_dict(connection, 'accountant_movements', cursor.lastrowid))
                 if cashier_amount is None:
                     self._check_future_balances(connection, day)
                 else:
@@ -423,6 +519,7 @@ class FinanceStore:
                 kind, old_amount, old_code, stored_day = row
                 if stored_day != day.isoformat():
                     raise LedgerError('Нельзя изменить дату операции.')
+                before = self._row_dict(connection, 'accountant_movements', movement_id)
                 if kind == 'other_receipt':
                     if item_code != 'income_other':
                         raise LedgerError('Выберите тип прочего поступления.')
@@ -435,6 +532,11 @@ class FinanceStore:
                     'SELECT debt_id FROM accountant_debt_payments WHERE movement_id = ?',
                     (movement_id,)).fetchone()
                 if linked:
+                    debt_before = self._row_dict(
+                        connection, 'accountant_debt_payments',
+                        connection.execute(
+                            'SELECT id FROM accountant_debt_payments WHERE movement_id = ?',
+                            (movement_id,)).fetchone()[0])
                     debt_total = connection.execute(
                         'SELECT total_amount FROM accountant_debts WHERE id = ?', (linked[0],)).fetchone()[0]
                     other_paid = sum((Decimal(item[0]) for item in connection.execute(
@@ -444,8 +546,14 @@ class FinanceStore:
                         raise LedgerError('Выплата превышает оставшийся долг.')
                     connection.execute('UPDATE accountant_debt_payments SET amount = ? WHERE movement_id = ?',
                                        (str(value), movement_id))
+                    debt_after = self._row_dict(
+                        connection, 'accountant_debt_payments', debt_before['id'])
+                    record_audit(connection, 'debt_payment', debt_before['id'], 'update',
+                                 debt_before, debt_after)
                 connection.execute('UPDATE accountant_movements SET description=?, amount=?, item_code=? '
                                    'WHERE id=?', (description, str(value), item_code, movement_id))
+                after = self._row_dict(connection, 'accountant_movements', movement_id)
+                record_audit(connection, 'movement', movement_id, 'update', before, after)
                 handover = connection.execute(
                     'SELECT amount FROM accountant_handover_days WHERE day = ?', (day.isoformat(),)).fetchone()
                 cashier_amount = Decimal(handover[0]) if handover else None
@@ -475,6 +583,7 @@ class FinanceStore:
                     raise LedgerError('Выплата не найдена.')
                 if row[3] != day.isoformat():
                     raise LedgerError('Нельзя изменить дату операции.')
+                before = self._row_dict(connection, 'accountant_salary_payments', payment_id)
                 paid_elsewhere = sum((Decimal(item[0]) for item in connection.execute(
                     'SELECT amount FROM accountant_salary_payments WHERE accrual_id = ? AND id != ?',
                     (row[2], payment_id))), Decimal(0))
@@ -482,6 +591,8 @@ class FinanceStore:
                     raise LedgerError('Выплата превышает начисленную сумму.')
                 connection.execute('UPDATE accountant_salary_payments SET amount = ? WHERE id = ?',
                                    (str(value), payment_id))
+                after = self._row_dict(connection, 'accountant_salary_payments', payment_id)
+                record_audit(connection, 'salary_payment', payment_id, 'update', before, after)
                 handover = connection.execute(
                     'SELECT amount FROM accountant_handover_days WHERE day = ?', (day.isoformat(),)).fetchone()
                 cashier_amount = Decimal(handover[0]) if handover else None
@@ -526,6 +637,8 @@ class FinanceStore:
                 cursor = connection.execute('INSERT INTO accountant_salary_payments '
                                             '(accrual_id, paid_day, amount, created_at) VALUES (?, ?, ?, ?)',
                                             (accrual_id, paid_day.isoformat(), str(value), datetime.now().isoformat()))
+                record_audit(connection, 'salary_payment', cursor.lastrowid, 'create', None,
+                             self._row_dict(connection, 'accountant_salary_payments', cursor.lastrowid))
                 if cashier_amount is None:
                     self._check_future_balances(connection, paid_day)
                 else:
