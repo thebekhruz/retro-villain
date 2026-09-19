@@ -14,6 +14,7 @@ def test_gemini_client_sends_prompt_and_validates_json():
 
     def handler(request):
         seen['url'] = str(request.url)
+        seen['api_key'] = request.headers.get('x-goog-api-key')
         seen['body'] = json.loads(request.content)
         return httpx.Response(200, json={'candidates': [{'content': {'parts': [
             {'text': '{"summary":"Проверить блюдо","problems":[]}'},
@@ -26,6 +27,8 @@ def test_gemini_client_sends_prompt_and_validates_json():
 
     assert result == {'summary': 'Проверить блюдо', 'problems': []}
     assert str(httpx.URL(seen['url']).path).endswith('/v1beta/models/gemini-test:generateContent')
+    assert httpx.URL(seen['url']).query == b''
+    assert seen['api_key'] == 'key'
     assert seen['body']['generationConfig']['responseMimeType'] == 'application/json'
 
 

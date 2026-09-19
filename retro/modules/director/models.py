@@ -90,6 +90,8 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
     for row in values:
         if row.category in excluded_groups:
             continue
+        if row.category not in categories:
+            raise DataError(f'Для категории iiko «{row.category}» не настроен тип отчёта.')
         if not row.waiter.strip():
             raise DataError('iiko не указал официанта для позиции.')
         if min(row.quantity, row.revenue, row.cost) < 0:

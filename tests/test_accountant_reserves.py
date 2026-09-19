@@ -39,6 +39,19 @@ def test_usd_are_actual_currency_and_backdating_cannot_break_later_balance(tmp_p
         store.reserve_entry(NEXT, 'usd', 'opening', '1', 'Повторный остаток')
 
 
+def test_deleting_transfer_cannot_make_later_reserve_negative(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.reserve_entry(DAY, 'dividends', 'opening', '0', 'Начало')
+    transfer = store.reserve_entry(
+        DAY, 'dividends', 'transfer', '300', 'Сейф', cashier_amount=Decimal('1000'))
+    store.reserve_entry(NEXT, 'dividends', 'withdrawal', '200', 'Выдача')
+
+    with pytest.raises(LedgerError, match='последующ'):
+        store.delete_operation('reserve_transfer', transfer, DAY)
+
+    assert store.reserves(NEXT)['dividends']['balance'] == '100'
+
+
 def test_reserves_require_initial_balance_do_not_guess_legacy_dividends(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
     store.add_expense(DAY, 'distribution_dividends', 'в сейфе?', '100', cashier_amount=Decimal('1000'))
@@ -52,7 +65,7 @@ def test_reserves_require_initial_balance_do_not_guess_legacy_dividends(tmp_path
 def test_monthly_plan_and_shoh_receipts_do_not_double_count_cash(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
     store.set_monthly_plan(DAY, '1000000', 'План выплат из кассы на сентябрь')
-    store.add_expense(DAY, 'salary_fazilova', 'Аванс', '200000', cashier_amount=Decimal('1000000'))
+    store.add_expense(DAY, 'salary_monthly', 'Аванс', '200000', cashier_amount=Decimal('1000000'))
     store.add_expense(DAY, 'salary_staff', 'Смена', '100000', cashier_amount=Decimal('1000000'))
     store.add_expense(DAY, 'proc_shoh', 'Закуп', '300000', cashier_amount=Decimal('1000000'))
     store.reserve_entry(DAY, 'shoh', 'opening', '0', 'До начала учёта остаток ноль')

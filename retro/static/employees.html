@@ -6,7 +6,7 @@
   <title>Все сотрудники · Retro Milliy</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23143e35'/%3E%3Ctext x='12' y='35' fill='%23e9cc8a' font-size='34' font-family='serif'%3ER%3C/text%3E">
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
-  <script src="/static/employees.js" defer></script>
+  <script src="/static/frontend-state.js" defer></script><script src="/static/employees.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -37,8 +37,10 @@
         <div><p class="eyebrow">ПО ГРУППАМ</p><h2 id="employees-title">Список сотрудников</h2><p id="employees-summary" class="accountant-help">Загружаем реестр…</p></div>
         <button id="employees-add" class="button secondary" type="button"><span aria-hidden="true">+</span> Добавить сотрудника</button>
       </div>
-      <p class="accountant-help">Сотрудники сгруппированы по ролям. Дважды нажмите на имя, роль, ставку или группу, чтобы изменить ячейку прямо в списке.</p>
+      <p class="accountant-help">Сотрудники сгруппированы по ролям. Нажмите «Изменить» в нужной строке, чтобы поправить имя, роль, ставку или группу.</p>
       <div id="employees-groups" class="employees-groups" aria-live="polite"></div>
+      <div class="monthly-roster-head"><div><p class="eyebrow">МЕСЯЧНАЯ ЗАРПЛАТА</p><h3>Административный персонал</h3><p class="accountant-help">Оклады хранятся в локальной базе, а не в исходном коде, и не участвуют в расчёте оплаты за смену.</p></div><button id="monthly-add" class="icon-button" type="button" title="Добавить сотрудника с месячной зарплатой" aria-label="Добавить сотрудника с месячной зарплатой">+</button></div>
+      <div id="monthly-employees" class="monthly-employees" aria-live="polite"></div>
     </section>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Сотрудники</span><span>Время Ташкента · UZS</span></footer>
   </div>

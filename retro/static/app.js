@@ -38,13 +38,15 @@ function clearUsdRate(day) {
 async function loadUsdRate(day, current, signal) {
   if (demo) { $('usd-status').textContent = 'В демонстрационном режиме курс не загружается.'; return; }
   try {
-    const data = await (await request(`/api/cashier/usd-rate?date=${encodeURIComponent(day)}`, signal)).json();
+    const data = await RetroState.responseJson(
+      await request(`/api/cashier/usd-rate?date=${encodeURIComponent(day)}`, signal));
     if (current !== generation) return;
     $('usd-official').textContent = rateOfficial.format(Number(data.official_rate));
     $('usd-restaurant').textContent = rateRestaurant.format(Number(data.restaurant_rate));
     $('usd-source-day').textContent = 'Курс ЦБ действует с ' + formattedDay(data.source_date);
     $('usd-status').textContent = '';
-    const balance = await request(`/api/cashier/usd-balance?date=${encodeURIComponent(day)}`, signal);
+    const balance = await RetroState.responseJson(
+      await request(`/api/cashier/usd-balance?date=${encodeURIComponent(day)}`, signal));
     if (current !== generation) return;
     $('usd-balance').value = balance.amount ?? '';
   } catch (error) {
@@ -56,7 +58,7 @@ async function loadUsdRate(day, current, signal) {
 }
 $('usd-balance-save').addEventListener('click', async () => {
   try {
-    const data = await request('/api/cashier/usd-balance', undefined, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:$('report-date').value, amount:$('usd-balance').value})});
+    const data = await RetroState.responseJson(await request('/api/cashier/usd-balance', undefined, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:$('report-date').value, amount:$('usd-balance').value})}));
     $('usd-balance').value = data.amount;
     $('usd-balance-status').textContent = 'Сохранено';
   } catch (error) { $('usd-balance-status').textContent = error.message; }
@@ -149,6 +151,7 @@ function showExpenses(data) {
   $('expenses-empty').hidden = data.expenses.length > 0;
   $('expense-total').textContent = money.format(Number(data.total));
   $('handover-expenses').textContent = money.format(Number(data.total));
+  $('expense-policy-warning').hidden = data.expense_policy_configured;
   for (const item of data.expenses) {
     const row = document.createElement('div'); row.className = 'expense-item';
     const name = document.createElement('span'); name.className = 'expense-item-name'; name.textContent = item.description;
@@ -169,7 +172,7 @@ function showExpenses(data) {
 }
 async function loadExpenses(day, current, signal) {
   if (demo) {
-    showExpenses({date:day, expenses:[], total:'0'});
+    showExpenses({date:day, expenses:[], total:'0', expense_policy_configured:true});
     $('expense-feedback').textContent = 'В демонстрационном режиме расходы не сохраняются.';
     return;
   }

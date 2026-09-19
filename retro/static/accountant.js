@@ -121,6 +121,12 @@ function renderLedger(data) {
     if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось изменить операцию.'); }
     await loadDay(); message('Операция изменена.');
   }
+  async function deleteOperation(item) {
+    const response = await fetch('/api/accountant/operations/' + encodeURIComponent(item.operation) + '/' + item.id +
+      '?date=' + encodeURIComponent(item.day), {method: 'DELETE'});
+    if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось удалить операцию.'); }
+    await loadDay(); message('Операция удалена.');
+  }
   function editHandover(item, total, actions) {
     total.replaceChildren();
     const input = document.createElement('input'); input.type = 'number'; input.min = '0'; input.step = '0.01'; input.value = item.amount; input.className = 'operation-edit-input';
@@ -161,9 +167,19 @@ function renderLedger(data) {
     total.append(node('small', '', cashEffect)); cells.push(total); tr.append(total); journal.append(tr);
     // На телефоне таблица разворачивается в карточки, подписи берутся отсюда.
     ['Категория', 'Тип', 'Наименование', 'Сумма'].forEach((label, index) => { cells[index].dataset.label = label; });
-    if (item && item.id !== null && (item.operation === 'movement' || item.operation === 'salary_payment')) {
+    if (item && item.id !== null && ['movement', 'salary_payment', 'reserve_transfer'].includes(item.operation)) {
       const actions = node('div', 'operation-actions');
-      tr.querySelectorAll('td').forEach(cell => cell.addEventListener('dblclick', () => editOperation(item, cells, actions)));
+      if (item.operation !== 'reserve_transfer') {
+        tr.querySelectorAll('td').forEach(cell => cell.addEventListener('dblclick', () => editOperation(item, cells, actions)));
+        const edit = node('button', 'operation-edit', 'Изменить'); edit.type = 'button';
+        edit.addEventListener('click', () => editOperation(item, cells, actions)); actions.append(edit);
+      }
+      const remove = node('button', 'operation-delete', 'Удалить'); remove.type = 'button';
+      remove.addEventListener('click', async () => {
+        if (!confirm('Удалить эту финансовую операцию?')) return;
+        try { await deleteOperation(item); } catch (error) { message(error.message, true); }
+      });
+      actions.append(remove);
       total.append(actions);
     }
     if (type === 'От кассира' && data.manual_handover && item) {
@@ -237,8 +253,8 @@ async function loadDay() {
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить данные.');
     if (sequence !== requestNo) return;
     current = data; renderStaff(data); renderLedger(data); message('');
-    $('finance-layout').setAttribute('aria-busy', 'false');
   } catch (error) { if (sequence === requestNo) message(error.message, true); }
+  finally { if (RetroState.shouldReleaseBusy(sequence, requestNo)) $('finance-layout').setAttribute('aria-busy', 'false'); }
 }
 function submit(id, endpoint, body, success) {
   const form = $(id);

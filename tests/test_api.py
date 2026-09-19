@@ -71,8 +71,13 @@ def test_pages_are_closed_without_login_and_served_after_it():
     app = create_app(settings)
     with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
         for path in ('/', '/accountant', '/accountant/employees'):
-            assert client.get(path).status_code == 401, path
-            assert client.get(path, auth=('viewer', 'wrong')).status_code == 401, path
+            # Страницу без входа отдавать нельзя: гостя уводит на форму входа,
+            # а не показывает содержимое с пустыми полями.
+            closed = client.get(path, follow_redirects=False)
+            assert closed.status_code == 303, path
+            assert closed.headers['location'] == '/login', path
+            wrong = client.get(path, auth=('viewer', 'wrong'), follow_redirects=False)
+            assert wrong.status_code == 303, path
             page = client.get(path, auth=('viewer', 'secret'))
             assert page.status_code == 200, path
             assert page.headers['content-type'].startswith('text/html'), path

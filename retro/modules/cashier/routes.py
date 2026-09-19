@@ -5,6 +5,8 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.logging_config import log_safe_failure
+
 from .export import export_report
 from .service import DataError, demo_snapshot, today_tashkent
 
@@ -38,7 +40,8 @@ def list_expenses(request: Request, date: date):
     day = selected_day(date)
     expenses = request.app.state.expenses.list(day)
     return dict(date=day.isoformat(), expenses=[item.json() for item in expenses],
-                total=str(sum((item.amount for item in expenses), 0)))
+                total=str(sum((item.amount for item in expenses), 0)),
+                expense_policy_configured=request.app.state.expenses.policy_configured())
 
 
 @router.get('/usd-rate')
@@ -47,6 +50,8 @@ async def usd_rate(request: Request, date: date):
     try:
         return (await request.app.state.usd_rates.get(day)).json()
     except DataError as error:
+        log_safe_failure('cashier-route', error, operation='usd_rate',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
 
@@ -118,10 +123,15 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
             async with state.iiko_lock:
                 result = await asyncio.wait_for(state.iiko.load(day), timeout=90)
         state.cache.put(result)
-        return result.json()
-    except TimeoutError:
+        return {**result.json(),
+                'expense_policy_configured': state.expenses.policy_configured()}
+    except TimeoutError as error:
+        log_safe_failure('cashier-route', error, operation='day_report',
+                         request_id=request.state.request_id)
         raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
     except DataError as error:
+        log_safe_failure('cashier-route', error, operation='day_report',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
 

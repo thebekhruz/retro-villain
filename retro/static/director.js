@@ -243,7 +243,8 @@ async function loadAttendance() {
     late.slice(0, 5).forEach(row => {
       const item = text('div', 'attendance-row');
       const time = row.first_entry
-        ? new Date(row.first_entry).toLocaleTimeString('ru-RU', { hour: '2-digit', minute: '2-digit' })
+        ? new Date(row.first_entry).toLocaleTimeString('ru-RU',
+          { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })
         : '—';
       item.append(text('b', '', row.name), text('span', '', time));
       target.append(item);
@@ -256,13 +257,19 @@ async function loadAttendance() {
   }
 }
 
+const created = new Intl.DateTimeFormat('ru-RU',
+  { dateStyle: 'short', timeStyle: 'short', timeZone: 'Asia/Tashkent' });
+
 function reportCard(report) {
   const link = document.createElement('a');
   link.className = 'report-link';
   link.href = '/api/director/reports/' + report.id + '/pdf';
   const body = text('div', 'report-body');
+  // Сводку список отдаёт отдельным полем, вместе с временем формирования.
+  const summary = report.analysis_summary || (report.analysis && report.analysis.summary) || '';
   body.append(text('strong', '', logic.periodLabel(report.period_start, report.period_end)),
-    text('span', '', (report.analysis && report.analysis.summary) || ''));
+    text('span', '', summary));
+  if (report.created_at) body.append(text('span', 'report-created', created.format(new Date(report.created_at))));
   link.append(text('span', 'report-icon', '▤'), body, text('span', 'report-format', 'PDF'));
   return link;
 }

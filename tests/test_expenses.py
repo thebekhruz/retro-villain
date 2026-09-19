@@ -1,13 +1,36 @@
-from datetime import date
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date, timedelta
 from decimal import Decimal
+from threading import Barrier
 
 import pytest
 
-from retro.modules.cashier.expenses import ExpenseStore, cash_to_finance
+from retro.modules.cashier.expenses import ExpenseStore, cash_to_finance, seed_cashier_expense
 from retro.modules.cashier.service import DataError, Payment, Snapshot
 
 
 DAY = date(2026, 9, 12)
+
+
+def test_legacy_expense_schema_can_open_concurrently(tmp_path):
+    database = tmp_path / 'cashier.sqlite3'
+    with sqlite3.connect(database) as connection:
+        connection.execute('''CREATE TABLE cashier_expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            day TEXT NOT NULL,
+            description TEXT NOT NULL,
+            amount TEXT NOT NULL
+        )''')
+    workers = 12
+    barrier = Barrier(workers)
+
+    def open_store(_):
+        barrier.wait()
+        return ExpenseStore(database).list_receipts(DAY)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        assert list(pool.map(open_store, range(workers))) == [[]] * workers
 
 
 def test_expenses_survive_reopening_and_are_scoped_to_day(tmp_path):
@@ -26,18 +49,28 @@ def test_expenses_survive_reopening_and_are_scoped_to_day(tmp_path):
     assert reopened.delete(first.id, date(2026, 9, 11)) is False
     assert reopened.total(DAY) == Decimal('432000')
     assert reopened.delete(first.id, DAY) is True
-    assert reopened.total(DAY) == Decimal('432000')
-    assert reopened.list(DAY)[0].automatic is True
+    assert reopened.total(DAY) == Decimal('82000')
+    assert reopened.list(DAY)[0].description == 'Напитки'
 
 
-def test_salary_is_present_each_day_without_creating_database_rows(tmp_path):
+def test_empty_day_has_no_implicit_salary(tmp_path):
     store = ExpenseStore(tmp_path / 'cashier.sqlite3')
     for day in (DAY, date(2026, 4, 25)):
-        items = store.list(day)
-        assert [(item.description, item.amount, item.automatic) for item in items] == [
-            ('Зарплата', Decimal('350000'), True)]
-        assert store.total(day) == Decimal('350000')
+        assert store.list(day) == []
+        assert store.total(day) == Decimal('0')
         assert store.delete(-1, day) is False
+
+
+def test_salary_seed_is_explicit_and_idempotent(tmp_path):
+    database = tmp_path / 'cashier.sqlite3'
+    next_day = DAY + timedelta(days=1)
+
+    first = seed_cashier_expense(database, DAY, next_day, 'Зарплата', Decimal('350000'))
+    second = seed_cashier_expense(database, DAY, next_day, 'Зарплата', Decimal('350000'))
+
+    assert first.inserted == 2
+    assert second.inserted == 0
+    assert ExpenseStore(database).policy_configured() is True
 
 
 @pytest.mark.parametrize('description,amount', [('', '100'), ('  ', '100'), ('Кофе', '0'),

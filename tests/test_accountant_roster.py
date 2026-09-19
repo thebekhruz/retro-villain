@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+import pytest
 from openpyxl import Workbook
 
 from retro.modules.accountant.roster import RosterStore
@@ -49,3 +50,28 @@ def test_reimport_does_not_overwrite_corrected_rate(tmp_path):
 
     assert store.import_xlsx(source) == {'imported': 0, 'existing': 3}
     assert RosterStore(tmp_path / 'demo.sqlite3').list()[0].rate == Decimal('260000')
+
+
+@pytest.mark.parametrize('field,value', [
+    ('card', 'bad'), ('cash', 'NaN'), ('advances', 'Infinity'),
+    ('remaining', '-1'), ('salary', '1.001'),
+])
+def test_monthly_money_fields_reject_invalid_values(tmp_path, field, value):
+    store = RosterStore(tmp_path / 'accountant.sqlite3')
+    payload = dict(name='Сотрудник', role='Роль', salary='100', schedule='',
+                   card='0', cash='0', advances='0', remaining='0')
+    payload[field] = value
+
+    with pytest.raises(ValueError):
+        store.add_monthly(**payload)
+
+    assert store.list_monthly() == []
+
+
+def test_deleting_last_monthly_employee_keeps_roster_empty(tmp_path):
+    store = RosterStore(tmp_path / 'accountant.sqlite3')
+    employee = store.add_monthly(name='Сотрудник', role='Роль', salary='100')
+
+    store.delete_monthly(employee.id)
+
+    assert store.list_monthly() == []

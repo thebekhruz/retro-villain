@@ -5,6 +5,7 @@ import json
 import httpx
 
 from retro.modules.cashier.service import DataError
+from retro.logging_config import log_upstream_failure
 
 
 class GeminiClient:
@@ -26,14 +27,16 @@ class GeminiClient:
         url = f'https://generativelanguage.googleapis.com/v1beta/models/{self.settings.gemini_model}:generateContent'
         try:
             async with httpx.AsyncClient(timeout=60, transport=self.transport) as client:
-                response = await client.post(url, params={'key': self.settings.gemini_api_key}, json=body)
+                response = await client.post(
+                    url, headers={'x-goog-api-key': self.settings.gemini_api_key}, json=body)
             if not response.is_success:
                 raise DataError('Gemini не смог сформировать анализ. Повторите позже.')
             text = response.json()['candidates'][0]['content']['parts'][0]['text']
             result = json.loads(text)
         except DataError:
             raise
-        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as error:
+            log_upstream_failure('gemini', error, operation='analyze')
             raise DataError('Gemini вернул некорректный ответ. Повторите позже.') from None
         problems = result.get('problems') if isinstance(result, dict) else None
         if not isinstance(result.get('summary') if isinstance(result, dict) else None, str) or not isinstance(problems, list) or len(problems) > 10:
