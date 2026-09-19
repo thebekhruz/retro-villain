@@ -66,6 +66,34 @@ def test_lan_access_is_limited_to_allowed_network_and_password():
         assert client.get('/api/config', auth=('viewer', 'secret')).status_code == 403
 
 
+def test_pages_are_closed_without_login_and_served_after_it():
+    settings = Settings(dashboard_user='viewer', dashboard_password='secret')
+    app = create_app(settings)
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        for path in ('/', '/accountant', '/accountant/employees'):
+            assert client.get(path).status_code == 401, path
+            assert client.get(path, auth=('viewer', 'wrong')).status_code == 401, path
+            page = client.get(path, auth=('viewer', 'secret'))
+            assert page.status_code == 200, path
+            assert page.headers['content-type'].startswith('text/html'), path
+    # Без настроенного пароля нелокальные запросы не получают и страницу.
+    with TestClient(create_app(Settings()), client=('192.168.1.80', 50000)) as client:
+        assert client.get('/').status_code == 403
+
+
+def test_finance_module_ignores_host_header_from_the_network():
+    """Host подставляет клиент: сеть ресторана не должна открывать зарплаты."""
+    settings = Settings(dashboard_user='viewer', dashboard_password='secret',
+                        dashboard_allowed_network=ip_network('10.10.8.0/22'))
+    app = create_app(settings)
+    with TestClient(app, base_url='http://retro.local', client=('10.10.8.91', 50000)) as client:
+        assert client.get('/', auth=('viewer', 'secret')).status_code == 200
+        for path in ('/accountant', '/accountant/employees', '/api/accountant/day?date=2026-09-10'):
+            spoofed = client.get(path, auth=('viewer', 'secret'), headers={'Host': 'localhost'})
+            assert spoofed.status_code == 403, path
+            assert client.get(path, auth=('viewer', 'secret')).status_code == 403, path
+
+
 def test_iiko_protocol_pending_poll_and_total_query():
     polls = {}
     def handler(request):
