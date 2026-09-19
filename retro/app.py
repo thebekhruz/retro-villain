@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import os
 import re
 import secrets
 from ipaddress import ip_address
@@ -27,6 +28,9 @@ from retro.modules.founder.routes import router as founder_router
 from retro.integrations.gemini import GeminiClient
 
 STATIC = Path(__file__).parent / 'static'
+# Базы лежат рядом с кодом, но на хостинге файловая система пересоздаётся при
+# каждом выкате: там каталог данных задаётся переменной и указывает на диск.
+DATA_DIR = Path(os.getenv('RETRO_DATA_DIR') or ROOT / 'build')
 LOOPBACK = ('127.0.0.1', '::1')
 LOCAL_HOSTNAMES = ('127.0.0.1', 'localhost', '::1')
 # Страницы финансового отдела и его API: и чтение, и записи о зарплатах.
@@ -43,13 +47,14 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.iiko_lock = asyncio.Lock()
     app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
-    database_path = expense_db_path or ROOT / 'build' / 'cashier.sqlite3'
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    database_path = expense_db_path or DATA_DIR / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
-    accountant_path = accountant_db_path or ROOT / 'build' / 'accountant-demo.sqlite3'
+    accountant_path = accountant_db_path or DATA_DIR / 'accountant-demo.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(accountant_path)
-    director_path = director_db_path or ROOT / 'build' / 'director.sqlite3'
+    director_path = director_db_path or DATA_DIR / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
     app.state.gemini = GeminiClient(settings, transport=gemini_transport)
     app.state.director_service = DirectorService(app.state.iiko, app.state.gemini, app.state.director_store)
