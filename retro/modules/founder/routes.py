@@ -3,6 +3,7 @@ from datetime import date, timedelta
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
@@ -46,9 +47,13 @@ async def analytics(
             return await asyncio.wait_for(
                 request.app.state.iiko.load_founder_analytics(
                     start, end, granularity, selected), timeout=90)
-    except TimeoutError:
+    except TimeoutError as error:
+        log_safe_failure('founder-route', error, operation='analytics',
+                         request_id=request.state.request_id)
         raise HTTPException(504, 'iiko формирует аналитику слишком долго. Повторите позже.') from None
     except DataError as error:
+        log_safe_failure('founder-route', error, operation='analytics',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
 
@@ -63,7 +68,11 @@ async def bookings(
     try:
         raw = await asyncio.wait_for(request.app.state.bookings.load(start, end), timeout=20)
         return build_booking_analytics(raw, start, end, granularity)
-    except TimeoutError:
+    except TimeoutError as error:
+        log_safe_failure('founder-route', error, operation='bookings',
+                         request_id=request.state.request_id)
         raise HTTPException(504, 'API бронирований отвечает слишком долго. Повторите позже.') from None
     except DataError as error:
+        log_safe_failure('founder-route', error, operation='bookings',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None

@@ -4,6 +4,7 @@ from datetime import date, datetime, timezone
 import httpx
 
 from retro.modules.cashier.service import DataError
+from retro.logging_config import log_upstream_failure
 
 
 COUNT_FIELDS = ('bookings', 'guests', 'unknown_guest_bookings')
@@ -134,5 +135,6 @@ class BookingAnalyticsClient:
                         raise DataError('API бронирований вернул некорректный ответ.') from None
                     result[status] = validate_summary(payload, start, end, status)
                 return result
-        except (httpx.HTTPError, TimeoutError):
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('bookings', error, operation='load_summary')
             raise DataError('Не удалось связаться с API бронирований.') from None

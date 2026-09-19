@@ -5,6 +5,7 @@ import json
 import httpx
 
 from retro.modules.cashier.service import DataError
+from retro.logging_config import log_upstream_failure
 
 
 class GeminiClient:
@@ -34,7 +35,8 @@ class GeminiClient:
             result = json.loads(text)
         except DataError:
             raise
-        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError):
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as error:
+            log_upstream_failure('gemini', error, operation='analyze')
             raise DataError('Gemini вернул некорректный ответ. Повторите позже.') from None
         problems = result.get('problems') if isinstance(result, dict) else None
         if not isinstance(result.get('summary') if isinstance(result, dict) else None, str) or not isinstance(problems, list) or len(problems) > 10:

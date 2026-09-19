@@ -23,6 +23,7 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.integrations.gemini import GeminiClient
+from retro.logging_config import configure_logging
 from retro.security import client_address, is_finance_path, is_local_host, validate_mutation_origin
 
 STATIC = Path(__file__).parent / 'static'
@@ -30,6 +31,7 @@ STATIC = Path(__file__).parent / 'static'
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, gemini_transport=None, booking_transport=None):
+    configure_logging()
     settings = settings or Settings.from_env()
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
@@ -52,6 +54,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):
+        request.state.request_id = secrets.token_hex(8)
         try:
             address = client_address(request, settings)
         except ValueError as error:
@@ -85,6 +88,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Referrer-Policy'] = 'no-referrer'
+        response.headers['X-Request-ID'] = request.state.request_id
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         return response
 

@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
 
@@ -51,9 +52,13 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
             async with state.iiko_lock:
                 snapshot = await asyncio.wait_for(state.iiko.load(day), timeout=90)
                 state.cache.put(snapshot)
-        except TimeoutError:
+        except TimeoutError as error:
+            log_safe_failure('accountant-route', error, operation='cashier_handover',
+                             request_id=request.state.request_id)
             raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
         except DataError as error:
+            log_safe_failure('accountant-route', error, operation='cashier_handover',
+                             request_id=request.state.request_id)
             raise HTTPException(503, str(error)) from None
     if snapshot is None:
         return None
