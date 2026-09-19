@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import re
 import secrets
 from ipaddress import ip_address
 from pathlib import Path
@@ -26,6 +27,10 @@ from retro.modules.founder.routes import router as founder_router
 from retro.integrations.gemini import GeminiClient
 
 STATIC = Path(__file__).parent / 'static'
+LOOPBACK = ('127.0.0.1', '::1')
+LOCAL_HOSTNAMES = ('127.0.0.1', 'localhost', '::1')
+# Страницы финансового отдела и его API: и чтение, и записи о зарплатах.
+FINANCE_PATHS = re.compile(r'/accountant(/|$)|/api/accountant(/|$)')
 
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
@@ -49,10 +54,19 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.gemini = GeminiClient(settings, transport=gemini_transport)
     app.state.director_service = DirectorService(app.state.iiko, app.state.gemini, app.state.director_store)
 
+    def from_this_machine(request):
+        """Личные данные и деньги финансового отдела открываем только с самой машины.
+
+        Заголовок Host подставляет сам клиент: с `Host: localhost` модуль
+        открывался из сети ресторана по общему паролю дашборда. Решает адрес
+        соединения, проверка Host остаётся дополнительным ограничителем.
+        """
+        address = request.client.host if request.client else None
+        return address in LOOPBACK and request.url.hostname in LOCAL_HOSTNAMES
+
     @app.middleware('http')
     async def security(request: Request, call_next):
-        if (request.url.path.startswith('/accountant') or request.url.path.startswith('/api/accountant/')) and \
-                request.url.hostname not in ('127.0.0.1', 'localhost', '::1'):
+        if FINANCE_PATHS.match(request.url.path) and not from_this_machine(request):
             return JSONResponse({'detail': 'Модуль финансов доступен только локально до настройки защиты.'}, 403)
         if settings.dashboard_allowed_network and request.client:
             try:
