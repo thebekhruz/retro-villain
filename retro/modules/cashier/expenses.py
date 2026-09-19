@@ -34,36 +34,48 @@ class SeedResult:
 class ExpenseStore:
     def __init__(self, path: Path):
         self.path = Path(path)
+        self._initialize()
 
     def _open(self):
         secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
         secure_file(self.path)
-        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_expenses (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            day TEXT NOT NULL,
-            description TEXT NOT NULL,
-            amount TEXT NOT NULL,
-            operation_key TEXT
-        )''')
-        columns = {row[1] for row in connection.execute('PRAGMA table_info(cashier_expenses)')}
-        if 'operation_key' not in columns:
-            connection.execute('ALTER TABLE cashier_expenses ADD COLUMN operation_key TEXT')
-        connection.execute(
-            'CREATE UNIQUE INDEX IF NOT EXISTS cashier_expense_operation_key '
-            'ON cashier_expenses(operation_key) WHERE operation_key IS NOT NULL')
-        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_expense_policy (
-            id INTEGER PRIMARY KEY CHECK(id=1), configured_at TEXT NOT NULL,
-            date_from TEXT NOT NULL, date_to TEXT NOT NULL,
-            description TEXT NOT NULL, amount TEXT NOT NULL
-        )''')
-        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_receipts (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            day TEXT NOT NULL,
-            description TEXT NOT NULL,
-            amount TEXT NOT NULL
-        )''')
         return connection
+
+    def _initialize(self):
+        with closing(self._open()) as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            try:
+                connection.execute('''CREATE TABLE IF NOT EXISTS cashier_expenses (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    day TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    operation_key TEXT
+                )''')
+                columns = {
+                    row[1] for row in connection.execute('PRAGMA table_info(cashier_expenses)')}
+                if 'operation_key' not in columns:
+                    connection.execute(
+                        'ALTER TABLE cashier_expenses ADD COLUMN operation_key TEXT')
+                connection.execute(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS cashier_expense_operation_key '
+                    'ON cashier_expenses(operation_key) WHERE operation_key IS NOT NULL')
+                connection.execute('''CREATE TABLE IF NOT EXISTS cashier_expense_policy (
+                    id INTEGER PRIMARY KEY CHECK(id=1), configured_at TEXT NOT NULL,
+                    date_from TEXT NOT NULL, date_to TEXT NOT NULL,
+                    description TEXT NOT NULL, amount TEXT NOT NULL
+                )''')
+                connection.execute('''CREATE TABLE IF NOT EXISTS cashier_receipts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    day TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    amount TEXT NOT NULL
+                )''')
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
 
     def list(self, day: date):
         with closing(self._open()) as connection:

@@ -1,5 +1,8 @@
+import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from datetime import date, timedelta
 from decimal import Decimal
+from threading import Barrier
 
 import pytest
 
@@ -8,6 +11,26 @@ from retro.modules.cashier.service import DataError, Payment, Snapshot
 
 
 DAY = date(2026, 9, 12)
+
+
+def test_legacy_expense_schema_can_open_concurrently(tmp_path):
+    database = tmp_path / 'cashier.sqlite3'
+    with sqlite3.connect(database) as connection:
+        connection.execute('''CREATE TABLE cashier_expenses (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            day TEXT NOT NULL,
+            description TEXT NOT NULL,
+            amount TEXT NOT NULL
+        )''')
+    workers = 12
+    barrier = Barrier(workers)
+
+    def open_store(_):
+        barrier.wait()
+        return ExpenseStore(database).list_receipts(DAY)
+
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        assert list(pool.map(open_store, range(workers))) == [[]] * workers
 
 
 def test_expenses_survive_reopening_and_are_scoped_to_day(tmp_path):
