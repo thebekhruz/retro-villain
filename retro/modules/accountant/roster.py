@@ -9,6 +9,8 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from retro.runtime import secure_directory, secure_file
+
 
 GROUPS = {
     'менеджер': 'Управление',
@@ -64,8 +66,9 @@ class RosterStore:
         self.path = Path(path)
 
     def _open(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
+        secure_file(self.path)
         connection.execute('''CREATE TABLE IF NOT EXISTS accountant_employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_row INTEGER NOT NULL UNIQUE,

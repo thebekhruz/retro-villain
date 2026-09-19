@@ -11,6 +11,7 @@ from pathlib import Path
 import httpx
 
 from retro.modules.cashier.service import DataError
+from retro.runtime import secure_directory, secure_file
 
 CBU_ORIGIN = 'https://cbu.uz'
 DISCOUNT = Decimal('0.015')
@@ -40,8 +41,9 @@ class UsdRates:
         self.lock = asyncio.Lock()
 
     def _open(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
+        secure_file(self.path)
         connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_rates (
             day TEXT PRIMARY KEY,
             source_date TEXT NOT NULL,

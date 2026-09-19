@@ -8,6 +8,7 @@ from pathlib import Path
 
 from .payroll import PayrollRow
 from .expense_catalog import ITEMS
+from retro.runtime import secure_directory, secure_file
 
 
 class LedgerError(ValueError):
@@ -37,8 +38,9 @@ class FinanceStore:
         self.path = Path(path)
 
     def _open(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
+        secure_file(self.path)
         connection.execute('PRAGMA foreign_keys=ON')
         connection.executescript('''
             CREATE TABLE IF NOT EXISTS accountant_exceptions (

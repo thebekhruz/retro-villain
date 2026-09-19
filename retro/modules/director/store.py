@@ -4,11 +4,13 @@ import sqlite3
 from pathlib import Path
 from uuid import uuid4
 
+from retro.runtime import secure_directory, secure_file
+
 
 class DirectorReportStore:
     def __init__(self, path):
         self.path = Path(path)
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.path.parent)
         with self._connect() as connection:
             connection.execute('''CREATE TABLE IF NOT EXISTS director_reports (
                 id TEXT PRIMARY KEY, created_at TEXT NOT NULL, period_start TEXT NOT NULL,
@@ -16,7 +18,9 @@ class DirectorReportStore:
                 pdf_sha256 TEXT NOT NULL, pdf BLOB NOT NULL)''')
 
     def _connect(self):
-        return sqlite3.connect(self.path)
+        connection = sqlite3.connect(self.path)
+        secure_file(self.path)
+        return connection
 
     def create(self, snapshot, analysis, pdf, created_at):
         report_id = uuid4().hex

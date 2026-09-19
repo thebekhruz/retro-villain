@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
+from retro.runtime import resolve_data_dir
+
 ROOT = Path(__file__).resolve().parent.parent
 IIKO_ORIGIN = 'https://retro3158.iikoweb.ru'
 
@@ -26,6 +28,8 @@ class Settings:
     director_excluded_groups: frozenset[str] = field(default_factory=frozenset)
     booking_api_url: str = ''
     booking_api_token: str = field(default='', repr=False)
+    data_dir: Path = ROOT / 'build'
+    report_retention: int = 24
 
     @property
     def configured(self):
@@ -65,10 +69,27 @@ class Settings:
             if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or \
                     parsed.query or parsed.fragment or parsed.path not in ('', '/'):
                 raise ValueError('BOOKING_ANALYTICS_URL должен быть корневым HTTPS URL без credentials/query.')
-        return cls(base, os.getenv('IIKO_LOGIN', ''), os.getenv('IIKO_PASSWORD', ''),
-                   int(store) if store else None, user, password, allowed_network, manual,
-                   os.getenv('GEMINI_API_KEY', ''), os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'), categories,
-                   excluded_groups, booking_url, booking_token)
+        retention_value = os.getenv('DIRECTOR_REPORT_RETENTION', '24').strip()
+        if not retention_value.isdigit() or not 1 <= int(retention_value) <= 1000:
+            raise ValueError('DIRECTOR_REPORT_RETENTION должен быть числом от 1 до 1000.')
+        return cls(
+            base_url=base,
+            login=os.getenv('IIKO_LOGIN', ''),
+            password=os.getenv('IIKO_PASSWORD', ''),
+            store_id=int(store) if store else None,
+            dashboard_user=user,
+            dashboard_password=password,
+            dashboard_allowed_network=allowed_network,
+            manual_handover_only=manual,
+            gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
+            gemini_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
+            director_categories=categories,
+            director_excluded_groups=excluded_groups,
+            booking_api_url=booking_url,
+            booking_api_token=booking_token,
+            data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
+            report_retention=int(retention_value),
+        )
 
 
 def parse_director_categories(value: str) -> dict[str, str]:

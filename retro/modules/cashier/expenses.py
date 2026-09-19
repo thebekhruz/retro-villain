@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .service import DataError
+from retro.runtime import secure_directory, secure_file
 
 DAILY_SALARY = Decimal('350000')
 SALARY_LABELS = {'зарплата', 'зп', 'любовь', 'любовь зп', 'любовь зарплата'}
@@ -33,8 +34,9 @@ class ExpenseStore:
         self.path = Path(path)
 
     def _open(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
+        secure_file(self.path)
         connection.execute('''CREATE TABLE IF NOT EXISTS cashier_expenses (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             day TEXT NOT NULL,

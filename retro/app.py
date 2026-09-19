@@ -9,7 +9,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from retro.config import ROOT, Settings
+from retro.config import Settings
 from retro.integrations.iiko import IikoClient
 from retro.integrations.bookings import BookingAnalyticsClient
 from retro.integrations.cbu import UsdRates
@@ -38,13 +38,13 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.iiko_lock = asyncio.Lock()
     app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
-    database_path = expense_db_path or ROOT / 'build' / 'cashier.sqlite3'
+    database_path = expense_db_path or settings.data_dir / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
-    accountant_path = accountant_db_path or ROOT / 'build' / 'accountant-demo.sqlite3'
+    accountant_path = accountant_db_path or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(accountant_path)
-    director_path = director_db_path or ROOT / 'build' / 'director.sqlite3'
+    director_path = director_db_path or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
     app.state.gemini = GeminiClient(settings, transport=gemini_transport)
     app.state.director_service = DirectorService(app.state.iiko, app.state.gemini, app.state.director_store)
