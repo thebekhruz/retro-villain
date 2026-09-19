@@ -20,6 +20,7 @@ class Settings:
     store_id: int | None = None
     dashboard_user: str = field(default='', repr=False)
     dashboard_password: str = field(default='', repr=False)
+    dashboard_panel_users: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
     trusted_proxy_network: IPv4Network | IPv6Network | None = None
     manual_handover_only: bool = False
@@ -56,6 +57,7 @@ class Settings:
         user, password = os.getenv('DASHBOARD_USER', ''), os.getenv('DASHBOARD_PASSWORD', '')
         if bool(user) != bool(password):
             raise ValueError('Для защиты укажите и DASHBOARD_USER, и DASHBOARD_PASSWORD.')
+        panel_users = parse_dashboard_panel_users(os.getenv('DASHBOARD_PANEL_USERS', ''))
         network_value = os.getenv('DASHBOARD_ALLOWED_NETWORK', '').strip()
         allowed_network = ip_network(network_value, strict=False) if network_value else None
         proxy_value = os.getenv('TRUSTED_PROXY_NETWORK', '').strip()
@@ -82,6 +84,7 @@ class Settings:
             store_id=int(store) if store else None,
             dashboard_user=user,
             dashboard_password=password,
+            dashboard_panel_users=panel_users,
             dashboard_allowed_network=allowed_network,
             trusted_proxy_network=trusted_proxy_network,
             manual_handover_only=manual,
@@ -108,6 +111,27 @@ def parse_director_categories(value: str) -> dict[str, str]:
         if not name or kind not in allowed or name in result:
             raise ValueError('IIKO_DIRECTOR_CATEGORIES содержит некорректную категорию.')
         result[name] = kind
+    return result
+
+
+def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
+    if not value.strip():
+        return {}
+    allowed_roles = {'cashier', 'accountant', 'director', 'founder'}
+    result = {}
+    roles = set()
+    for raw_entry in value.split(';'):
+        parts = [part.strip() for part in raw_entry.split(':')]
+        if len(parts) != 3:
+            raise ValueError('DASHBOARD_PANEL_USERS должен содержать пары user:password:role.')
+        username, password, role = parts
+        if (not username or not password or role not in allowed_roles or username in result
+                or role in roles or len(username) > 64 or len(password) > 256):
+            raise ValueError('DASHBOARD_PANEL_USERS содержит некорректную учётную запись.')
+        result[username] = (password, role)
+        roles.add(role)
+    if roles != allowed_roles:
+        raise ValueError('DASHBOARD_PANEL_USERS должен задавать по одному пользователю для каждой панели.')
     return result
 
 

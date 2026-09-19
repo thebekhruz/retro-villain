@@ -6,6 +6,63 @@ from retro.app import create_app
 from retro.config import Settings
 
 
+PANEL_USERS = {
+    'cashier': ('test-password', 'cashier'),
+    'accountant': ('test-password', 'accountant'),
+    'director': ('test-password', 'director'),
+    'founder': ('test-password', 'founder'),
+}
+
+
+def test_panel_user_can_open_only_its_own_panel(tmp_path):
+    app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1') as client:
+        own = client.get('/', auth=('cashier', 'test-password'))
+        config = client.get('/api/config', auth=('cashier', 'test-password'))
+        forbidden = client.get('/accountant', auth=('cashier', 'test-password'))
+        forbidden_api = client.get('/api/accountant/day', auth=('cashier', 'test-password'))
+        wrong_password = client.get('/', auth=('cashier', '0000'))
+        missing = client.get('/')
+
+    assert own.status_code == 200
+    assert config.status_code == 200
+    assert config.json()['role'] == 'cashier'
+    assert forbidden.status_code == 403
+    assert forbidden_api.status_code == 403
+    assert wrong_password.status_code == 401
+    assert missing.status_code == 401
+
+
+def test_each_panel_user_can_open_the_assigned_page(tmp_path):
+    app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1') as client:
+        responses = {
+            role: client.get(path, auth=(role, 'test-password')).status_code
+            for role, path in {
+                'cashier': '/',
+                'accountant': '/accountant',
+                'director': '/director',
+                'founder': '/founder',
+            }.items()
+        }
+
+    assert responses == {'cashier': 200, 'accountant': 200, 'director': 200, 'founder': 200}
+
+
+def test_legacy_dashboard_user_keeps_access_to_all_panels(tmp_path):
+    settings = Settings(
+        dashboard_user='viewer', dashboard_password='secret', data_dir=tmp_path)
+    app = create_app(settings)
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1') as client:
+        statuses = [client.get(path, auth=('viewer', 'secret')).status_code
+                    for path in ('/', '/accountant', '/director', '/founder')]
+
+    assert statuses == [200, 200, 200, 200]
+
+
 def test_external_peer_cannot_forge_local_host(tmp_path):
     settings = Settings(dashboard_user='viewer', dashboard_password='secret', data_dir=tmp_path)
     app = create_app(settings)

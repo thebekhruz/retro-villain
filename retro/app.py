@@ -29,6 +29,40 @@ from retro.security import client_address, is_finance_path, is_local_host, valid
 STATIC = Path(__file__).parent / 'static'
 
 
+def panel_for_path(path: str) -> str | None:
+    if path == '/' or path.startswith('/api/cashier/'):
+        return 'cashier'
+    if path == '/accountant' or path.startswith('/accountant/') or path.startswith('/api/accountant/'):
+        return 'accountant'
+    if path == '/director' or path.startswith('/director/') or path.startswith('/api/director/'):
+        return 'director'
+    if path == '/founder' or path.startswith('/founder/') or path.startswith('/api/founder/'):
+        return 'founder'
+    return None
+
+
+def dashboard_identity(request: Request, settings: Settings) -> str | None:
+    header = request.headers.get('Authorization', '')
+    if not header.startswith('Basic '):
+        return None
+    try:
+        username, password = base64.b64decode(
+            header[6:], validate=True).decode().split(':', 1)
+    except (ValueError, UnicodeDecodeError, binascii.Error):
+        return None
+    panel_user = settings.dashboard_panel_users.get(username)
+    if panel_user:
+        expected_password, role = panel_user
+        if secrets.compare_digest(password.encode(), expected_password.encode()):
+            return role
+    if settings.dashboard_password:
+        valid = (secrets.compare_digest(username.encode(), settings.dashboard_user.encode())
+                 & secrets.compare_digest(password.encode(), settings.dashboard_password.encode()))
+        if valid:
+            return 'all'
+    return None
+
+
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, gemini_transport=None, booking_transport=None):
     configure_logging()
@@ -65,20 +99,18 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         if settings.dashboard_allowed_network:
             if not address.is_loopback and address not in settings.dashboard_allowed_network:
                 return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
-        authorized = False
-        if settings.dashboard_password:
-            header = request.headers.get('Authorization', '')
-            if header.startswith('Basic '):
-                try:
-                    user, password = base64.b64decode(header[6:], validate=True).decode().split(':', 1)
-                    authorized = secrets.compare_digest(user.encode(), settings.dashboard_user.encode()) & secrets.compare_digest(password.encode(), settings.dashboard_password.encode())
-                except (ValueError, UnicodeDecodeError, binascii.Error):
-                    pass
-            if not authorized:
+        auth_configured = bool(settings.dashboard_password or settings.dashboard_panel_users)
+        role = dashboard_identity(request, settings) if auth_configured else 'all'
+        if auth_configured:
+            if role is None:
                 return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
                                     headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
         elif not address.is_loopback:
             return JSONResponse({'detail': 'Внешний доступ закрыт. Настройте защиту дашборда.'}, 403)
+        required_panel = panel_for_path(request.url.path)
+        if required_panel and role not in ('all', required_panel):
+            return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
+        request.state.dashboard_role = role
         try:
             validate_mutation_origin(request)
         except ValueError as error:
@@ -113,9 +145,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         return FileResponse(STATIC / 'founder.html')
 
     @app.get('/api/config')
-    def config():
+    def config(request: Request):
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
+                    role=getattr(request.state, 'dashboard_role', 'all'),
                     modules=[dict(id='cashier', name='Кассир', available=True),
                              dict(id='accountant', name='Бухгалтер', available=True),
                              dict(id='director', name='Директор', available=True),

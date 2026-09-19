@@ -35,3 +35,30 @@ def test_director_excluded_groups_are_parsed(monkeypatch):
     monkeypatch.setenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', 'Контейнеры;ДОСТАВКА ЯНДЕКС')
 
     assert Settings.from_env().director_excluded_groups == {'Контейнеры', 'ДОСТАВКА ЯНДЕКС'}
+
+
+def test_panel_users_are_read_from_environment(monkeypatch):
+    monkeypatch.setenv(
+        'DASHBOARD_PANEL_USERS',
+        'cashier:test-password:cashier;accountant:test-password:accountant;director:test-password:director;founder:test-password:founder')
+
+    assert Settings.from_env().dashboard_panel_users == {
+        'cashier': ('test-password', 'cashier'),
+        'accountant': ('test-password', 'accountant'),
+        'director': ('test-password', 'director'),
+        'founder': ('test-password', 'founder'),
+    }
+
+
+@pytest.mark.parametrize('value', [
+    'cashier:test-password',
+    'cashier:test-password:cashier',
+    'cashier:test-password:unknown',
+    'cashier:test-password:cashier;cashier:other-password:founder',
+    'cashier::cashier',
+])
+def test_panel_user_config_rejects_invalid_values(monkeypatch, value):
+    monkeypatch.setenv('DASHBOARD_PANEL_USERS', value)
+
+    with pytest.raises(ValueError, match='DASHBOARD_PANEL_USERS'):
+        Settings.from_env()
