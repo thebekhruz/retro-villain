@@ -416,11 +416,13 @@ class FinanceStore:
             connection.execute('BEGIN IMMEDIATE')
             try:
                 row = connection.execute(
-                    'SELECT kind, amount, item_code FROM accountant_movements WHERE id = ?',
+                    'SELECT kind, amount, item_code, day FROM accountant_movements WHERE id = ?',
                     (movement_id,)).fetchone()
                 if row is None or row[0] not in ('other_expense', 'other_receipt'):
                     raise LedgerError('Эту операцию нельзя изменить здесь.')
-                kind, old_amount, old_code = row
+                kind, old_amount, old_code, stored_day = row
+                if stored_day != day.isoformat():
+                    raise LedgerError('Нельзя изменить дату операции.')
                 if kind == 'other_receipt':
                     if item_code != 'income_other':
                         raise LedgerError('Выберите тип прочего поступления.')
@@ -465,16 +467,17 @@ class FinanceStore:
             connection.execute('BEGIN IMMEDIATE')
             try:
                 row = connection.execute(
-                    'SELECT a.amount, p.amount FROM accountant_salary_payments p '
+                    'SELECT a.amount, p.amount, p.accrual_id, p.paid_day '
+                    'FROM accountant_salary_payments p '
                     'JOIN accountant_accruals a ON a.id = p.accrual_id WHERE p.id = ?',
                     (payment_id,)).fetchone()
                 if row is None:
                     raise LedgerError('Выплата не найдена.')
+                if row[3] != day.isoformat():
+                    raise LedgerError('Нельзя изменить дату операции.')
                 paid_elsewhere = sum((Decimal(item[0]) for item in connection.execute(
-                    'SELECT amount FROM accountant_salary_payments WHERE accrual_id = ? AND id != '
-                    '(SELECT accrual_id FROM accountant_salary_payments WHERE id = ?)',
-                    (connection.execute('SELECT accrual_id FROM accountant_salary_payments WHERE id = ?',
-                                        (payment_id,)).fetchone()[0], payment_id))), Decimal(0))
+                    'SELECT amount FROM accountant_salary_payments WHERE accrual_id = ? AND id != ?',
+                    (row[2], payment_id))), Decimal(0))
                 if value > Decimal(row[0]) - paid_elsewhere:
                     raise LedgerError('Выплата превышает начисленную сумму.')
                 connection.execute('UPDATE accountant_salary_payments SET amount = ? WHERE id = ?',
