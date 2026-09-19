@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 
 from retro.config import ROOT, Settings
 from retro.integrations.iiko import IikoClient
+from retro.integrations.bookings import BookingAnalyticsClient
 from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
 from retro.modules.cashier.routes import router as cashier_router
@@ -28,11 +29,12 @@ STATIC = Path(__file__).parent / 'static'
 
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
-               director_db_path=None, gemini_transport=None):
+               director_db_path=None, gemini_transport=None, booking_transport=None):
     settings = settings or Settings.from_env()
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
     app.state.settings = settings
     app.state.iiko = IikoClient(settings)
+    app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.iiko_lock = asyncio.Lock()
     app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()

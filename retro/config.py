@@ -2,6 +2,7 @@ import os
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from dataclasses import dataclass, field
 from pathlib import Path
+from urllib.parse import urlsplit
 
 from dotenv import load_dotenv
 
@@ -23,6 +24,8 @@ class Settings:
     gemini_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
     director_excluded_groups: frozenset[str] = field(default_factory=frozenset)
+    booking_api_url: str = ''
+    booking_api_token: str = field(default='', repr=False)
 
     @property
     def configured(self):
@@ -32,6 +35,9 @@ class Settings:
     def gemini_configured(self):
         return bool(self.gemini_api_key and self.gemini_model)
 
+    @property
+    def booking_configured(self):
+        return bool(self.booking_api_url and self.booking_api_token)
 
     @classmethod
     def from_env(cls):
@@ -50,10 +56,19 @@ class Settings:
         manual = os.getenv('ACCOUNTANT_MANUAL_HANDOVER', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
         categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
+        booking_url = os.getenv('BOOKING_ANALYTICS_URL', '').strip().rstrip('/')
+        booking_token = os.getenv('ANALYTICS_API_TOKEN', '').strip()
+        if bool(booking_url) != bool(booking_token):
+            raise ValueError('BOOKING_ANALYTICS_URL и ANALYTICS_API_TOKEN задаются вместе.')
+        if booking_url:
+            parsed = urlsplit(booking_url)
+            if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or \
+                    parsed.query or parsed.fragment or parsed.path not in ('', '/'):
+                raise ValueError('BOOKING_ANALYTICS_URL должен быть корневым HTTPS URL без credentials/query.')
         return cls(base, os.getenv('IIKO_LOGIN', ''), os.getenv('IIKO_PASSWORD', ''),
                    int(store) if store else None, user, password, allowed_network, manual,
                    os.getenv('GEMINI_API_KEY', ''), os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'), categories,
-                   excluded_groups)
+                   excluded_groups, booking_url, booking_token)
 
 
 def parse_director_categories(value: str) -> dict[str, str]:
