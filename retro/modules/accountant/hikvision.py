@@ -117,6 +117,35 @@ class AttendanceStore:
                      event.source, event.serial_no))
         return bool(inserted)
 
+    def reconcile_links(self, employee_ids: dict[str, int]) -> int:
+        """Build first entries for events stored before their employees were linked."""
+        if not employee_ids:
+            return 0
+        reconciled = 0
+        values = tuple(employee_ids)
+        with closing(self._open()) as connection, connection:
+            for offset in range(0, len(values), 500):
+                batch = values[offset:offset + 500]
+                placeholders = ','.join('?' for _ in batch)
+                rows = connection.execute(
+                    'SELECT source,serial_no,employee_no,occurred_at FROM hikvision_events '
+                    f'WHERE employee_no IN ({placeholders})', batch).fetchall()
+                for source, serial_no, employee_no, occurred_at in rows:
+                    work_day = datetime.fromisoformat(occurred_at).astimezone(TZ).date().isoformat()
+                    connection.execute('''INSERT INTO hikvision_first_entries
+                        (work_day,employee_id,employee_no,occurred_at,source,serial_no)
+                        VALUES (?,?,?,?,?,?)
+                        ON CONFLICT(work_day,employee_id) DO UPDATE SET
+                          employee_no=excluded.employee_no,
+                          occurred_at=excluded.occurred_at,
+                          source=excluded.source,
+                          serial_no=excluded.serial_no
+                        WHERE excluded.occurred_at < hikvision_first_entries.occurred_at''',
+                                       (work_day, employee_ids[employee_no], employee_no,
+                                        occurred_at, source, serial_no))
+                    reconciled += 1
+        return reconciled
+
     def first_entries(self, day: date) -> dict[int, FirstEntry]:
         with closing(self._open()) as connection:
             rows = connection.execute(

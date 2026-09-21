@@ -88,6 +88,29 @@ def test_resume_overlaps_cursor_and_advances_only_after_success(tmp_path):
     assert state.covered_from == datetime(2026, 9, 20, 0, tzinfo=TZ)
 
 
+def test_new_link_reconciles_older_stored_events_outside_cursor_overlap(tmp_path):
+    path = tmp_path / 'accountant.sqlite3'
+    roster, store = RosterStore(path), AttendanceStore(path)
+    employee = roster.add(name='Азиза Каримова', role='официант', rate='250000',
+                          group_name='Обслуживание зала')
+    old_event = HikvisionEvent(
+        'entry', 'stored-before-roster', '100',
+        datetime(2026, 9, 21, 8, 30, tzinfo=TZ))
+    store.ingest(old_event, None, received_at=datetime(2026, 9, 21, 9, tzinfo=TZ))
+    previous = datetime(2026, 9, 21, 11, 30, tzinfo=TZ)
+    store.record_success(
+        'entry', at=previous, cursor_at=previous,
+        covered_from=datetime(2026, 9, 20, 0, tzinfo=TZ), covered_through=previous)
+    client = StubClient(people=(HikvisionPerson('100', 'азиза каримова'),), events=())
+
+    result = run(HikvisionPoller(CONFIG, client, roster, store, now=lambda: NOW).run_once())
+
+    assert result.success is True
+    assert result.linked == 1
+    assert client.ranges == [(datetime(2026, 9, 21, 11, 25, tzinfo=TZ), NOW)]
+    assert store.first_entries(NOW.date())[employee.id].occurred_at == old_event.occurred_at
+
+
 def test_failed_poll_keeps_old_cursor_and_records_safe_error(tmp_path):
     path = tmp_path / 'accountant.sqlite3'
     roster, store = RosterStore(path), AttendanceStore(path)

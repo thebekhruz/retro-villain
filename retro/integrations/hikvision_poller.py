@@ -52,6 +52,8 @@ class HikvisionPoller:
         self.store.record_attempt(self.config.source, now)
         try:
             employees = self.roster.list()
+            existing_links = {employee.hikvision_id for employee in employees
+                              if employee.hikvision_id is not None}
             should_sync_people = any(employee.hikvision_id is None for employee in employees) and (
                 self._last_people_sync is None
                 or now - self._last_people_sync >= PEOPLE_SYNC_INTERVAL)
@@ -62,14 +64,19 @@ class HikvisionPoller:
                 self._last_people_sync = now
                 employees = self.roster.list()
 
+            employee_ids = {employee.hikvision_id: employee.id for employee in employees
+                            if employee.hikvision_id is not None}
+            if linked:
+                self.store.reconcile_links({employee_no: employee_id
+                                            for employee_no, employee_id in employee_ids.items()
+                                            if employee_no not in existing_links})
+
             state = self.store.sync_state(self.config.source)
             if state.cursor_at is None:
                 start = datetime.combine(now.date() - timedelta(days=1), time.min, TZ)
             else:
                 start = state.cursor_at.astimezone(TZ) - OVERLAP
             events = await self.client.fetch_events(start, now)
-            employee_ids = {employee.hikvision_id: employee.id for employee in employees
-                            if employee.hikvision_id is not None}
             for event in events:
                 self.store.ingest(event, employee_ids.get(event.employee_no), received_at=now)
             self.store.record_success(
