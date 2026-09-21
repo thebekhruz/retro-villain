@@ -1,1 +1,25 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Retro Milliy — Директор</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/director.css"><script defer src="/static/director.js"></script></head><body><main class="director"><header><a href="/">RETRO MILLIY</a><span>Модуль 03 · Директор</span></header><section class="hero"><p>РЕШЕНИЯ ПО РЕСТОРАНУ</p><h1>Меню под контролем.</h1><p>10 последних завершённых дней iiko.</p><button id="generate">Сформировать отчёт</button><p id="state" role="status"></p></section><section><h2>Отчёт за 10 дней <small id="report-period"></small></h2><div class="period-note">Показатели ниже — сумма за весь период, не за сегодня.</div><div class="metrics"><article>RETRO<strong id="retro">—</strong></article><article>OXBRIDGE<strong id="oxbridge">—</strong></article><article>YANDEX · ПО МЕНЮ<strong id="yandex">—</strong></article><article>ИТОГО КАССЫ<strong id="cash">—</strong></article></div></section><section><h2>Команда</h2><div class="metrics attendance-metrics"><article>ПРИШЛИ СЕГОДНЯ<strong id="arrived">—</strong><small id="attendance-date"></small></article><article>ОПОЗДАЛИ<strong id="late">—</strong><small id="attendance-note"></small></article></div><div id="attendance-list" class="attendance-list" aria-live="polite"></div></section><section><h2>Операции</h2><div class="waiting"><b>Контроль рисков</b><span>Будет добавлено</span></div></section><section><h2>История отчётов</h2><div id="reports">Загружаем…</div></section></main></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Retro Milliy — Директор</title>
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/director.css">
+  <script defer src="/static/logout.js"></script>
+  <script defer src="/static/director.js"></script>
+</head>
+<body>
+<main class="director">
+  <header>
+    <a href="/">RETRO MILLIY</a>
+    <div class="topbar-actions"><span>Модуль 03 · Директор</span><button id="logout" class="logout-button" type="button">Выйти</button></div>
+  </header>
+  <section class="hero"><p>РЕШЕНИЯ ПО РЕСТОРАНУ</p><h1>Меню под контролем.</h1><p>10 последних завершённых дней iiko.</p><button id="generate">Сформировать отчёт</button><p id="state" role="status"></p></section>
+  <section><h2>Отчёт за 10 дней <small id="report-period"></small></h2><div class="period-note">Показатели ниже — сумма за весь период, не за сегодня.</div><div class="metrics"><article>RETRO<strong id="retro">—</strong></article><article>OXBRIDGE<strong id="oxbridge">—</strong></article><article>YANDEX · ПО МЕНЮ<strong id="yandex">—</strong></article><article>ИТОГО КАССЫ<strong id="cash">—</strong></article></div></section>
+  <section><h2>Команда</h2><div class="metrics attendance-metrics"><article>ПРИШЛИ СЕГОДНЯ<strong id="arrived">—</strong><small id="attendance-date"></small></article><article>ОПОЗДАЛИ<strong id="late">—</strong><small id="attendance-note"></small></article></div><div id="attendance-list" class="attendance-list" aria-live="polite"></div></section>
+  <section><h2>Операции</h2><div class="waiting"><b>Контроль рисков</b><span>Будет добавлено</span></div></section>
+  <section><h2>История отчётов</h2><div id="reports">Загружаем…</div></section>
+</main>
+</body>
+</html>

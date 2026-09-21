@@ -78,6 +78,20 @@ def test_each_panel_user_can_open_the_assigned_page(tmp_path):
     assert responses == {'cashier': 200, 'accountant': 200, 'director': 200, 'founder': 200}
 
 
+def test_each_dashboard_page_exposes_logout_control(tmp_path):
+    app = create_app(Settings(dashboard_user='viewer', dashboard_password='secret', data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1') as client:
+        pages = [client.get(path, auth=('viewer', 'secret')) for path in (
+            '/', '/accountant', '/accountant/employees', '/director', '/founder')]
+
+    for page in pages:
+        assert page.status_code == 200
+        assert 'id="logout"' in page.text
+        assert '>Выйти</button>' in page.text
+        assert 'src="/static/logout.js"' in page.text
+
+
 def test_legacy_dashboard_user_keeps_access_to_all_panels(tmp_path):
     settings = Settings(
         dashboard_user='viewer', dashboard_password='secret', data_dir=tmp_path)
