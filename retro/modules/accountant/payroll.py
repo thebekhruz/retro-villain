@@ -34,7 +34,7 @@ class PayrollRow:
                     first_entry=self.occurred_at.isoformat() if self.occurred_at else None,
                     rate=str(self.rate) if self.rate is not None else None,
                     payable=str(self.payable) if self.payable is not None else None,
-                    exception=self.exception, demo=True)
+                    exception=self.exception, demo=False)
 
 
 def compute_pay(rate: Decimal | None, status: str, *, exception: bool) -> Decimal | None:
@@ -70,10 +70,14 @@ def demo_attendance(day: date, employees: list[Employee]) -> list[AttendanceRow]
     return result
 
 
-def draft_payroll(day: date, employees: list[Employee], exceptions: set[int]) -> list[PayrollRow]:
-    attendance = demo_attendance(day, employees)
+def draft_payroll(day: date, employees: list[Employee], exceptions: set[int],
+                  attendance: list[AttendanceRow] | tuple[AttendanceRow, ...] | None = None
+                  ) -> list[PayrollRow]:
+    attendance = demo_attendance(day, employees) if attendance is None else attendance
+    by_employee = {entry.employee_id: entry for entry in attendance}
     return [PayrollRow(employee.id, employee.name, employee.role, employee.group_name,
-                       entry.status, entry.occurred_at, employee.rate,
-                       compute_pay(employee.rate, entry.status, exception=employee.id in exceptions),
+                       by_employee[employee.id].status, by_employee[employee.id].occurred_at, employee.rate,
+                       compute_pay(employee.rate, by_employee[employee.id].status,
+                                   exception=employee.id in exceptions),
                        employee.id in exceptions)
-            for employee, entry in zip(employees, attendance, strict=True)]
+            for employee in employees]
