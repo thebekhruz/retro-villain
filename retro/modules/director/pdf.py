@@ -8,10 +8,26 @@ from reportlab.pdfbase.ttfonts import TTFont
 from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table
 
 
+# Кириллицу в PDF рисует только подключённый TTF, а лежит он в разных местах:
+# на сервере это DejaVu из пакета шрифтов, на рабочем ноутбуке — системный
+# Arial Unicode. Отчёт не должен падать из-за того, где его открыли.
+CYRILLIC_FONTS = (
+    Path('/usr/share/fonts/TTF/DejaVuSans.ttf'),
+    Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
+    Path('/Library/Fonts/DejaVuSans.ttf'),
+    Path('/System/Library/Fonts/Supplemental/Arial Unicode.ttf'),
+)
+
+
+def _cyrillic_font():
+    for candidate in CYRILLIC_FONTS:
+        if candidate.exists():
+            return candidate
+    raise RuntimeError('Не найден шрифт с кириллицей для PDF.')
+
+
 def render_report_pdf(snapshot, analysis):
-    font = Path('/usr/share/fonts/TTF/DejaVuSans.ttf')
-    if not font.exists():
-        raise RuntimeError('Не найден шрифт DejaVu Sans для русского PDF.')
+    font = _cyrillic_font()
     pdfmetrics.registerFont(TTFont('DejaVuSans', str(font)))
     stream = BytesIO()
     document = SimpleDocTemplate(stream, pagesize=A4, title='Retro Milliy - отчёт директора')

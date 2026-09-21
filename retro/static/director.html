@@ -1,1 +1,154 @@
-<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Retro Milliy — Директор</title><link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/director.css"><script defer src="/static/director.js"></script></head><body><main class="director"><header><a href="/">RETRO MILLIY</a><span>Модуль 03 · Директор</span></header><section class="hero"><p>РЕШЕНИЯ ПО РЕСТОРАНУ</p><h1>Меню под контролем.</h1><p>10 последних завершённых дней iiko.</p><button id="generate">Сформировать отчёт</button><p id="state" role="status"></p></section><section><h2>Отчёт за 10 дней <small id="report-period"></small></h2><div class="period-note">Показатели ниже — сумма за весь период, не за сегодня.</div><div class="metrics"><article>RETRO<strong id="retro">—</strong></article><article>OXBRIDGE<strong id="oxbridge">—</strong></article><article>YANDEX · ПО МЕНЮ<strong id="yandex">—</strong></article><article>ИТОГО КАССЫ<strong id="cash">—</strong></article></div></section><section><h2>Команда</h2><div class="metrics attendance-metrics"><article>ПРИШЛИ СЕГОДНЯ<strong id="arrived">—</strong><small id="attendance-date"></small></article><article>ОПОЗДАЛИ<strong id="late">—</strong><small id="attendance-note"></small></article></div><div id="attendance-list" class="attendance-list" aria-live="polite"></div></section><section><h2>Операции</h2><div class="waiting"><b>Контроль рисков</b><span>Будет добавлено</span></div></section><section><h2>История отчётов</h2><div id="reports">Загружаем…</div></section></main></body></html>
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#143e35">
+  <title>Директор · Retro Milliy</title>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23143e35'/%3E%3Ctext x='12' y='35' fill='%23e9cc8a' font-size='34' font-family='serif'%3ER%3C/text%3E%3C/svg%3E">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/director.css">
+  <script src="/static/director-logic.js" defer></script>
+  <script src="/static/logout.js" defer></script>
+  <script src="/static/director.js" defer></script>
+</head>
+<body>
+<aside class="sidebar">
+  <a href="/" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+  <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-link"><span class="nav-icon">◫</span> Бухгалтер</a><a href="/director" class="nav-active" aria-current="page"><span class="nav-icon">◉</span> Директор <span class="nav-dot"></span></a><a href="/founder" class="nav-link"><span class="nav-icon">⌁</span> Учредитель</a></nav>
+  <div class="coming"><span>Модуль 04</span><small>Позже</small></div>
+  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
+</aside>
+<main>
+  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Директор</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Проверка подключения</span><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <div class="workspace">
+    <div class="page-heading">
+      <div>
+        <p class="eyebrow">РЕШЕНИЯ ПО РЕСТОРАНУ</p>
+        <h1>Меню под контролем<span>.</span></h1>
+        <p class="subtitle">Десять завершённых дней iiko: что продаётся, что съедает маржу, кто продаёт.</p>
+      </div>
+      <div class="module-badge"><span>03</span><div>Модуль<small>Директор</small></div></div>
+    </div>
+
+    <section class="controls" aria-label="Период отчёта">
+      <div class="period-display"><span class="period-caption">Период</span><strong id="report-period">—</strong></div>
+      <span class="period-hint">10 завершённых дней, сегодняшний не входит</span>
+      <button id="refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
+      <button id="generate" class="button primary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h4"/></svg>Сформировать отчёт</button>
+    </section>
+
+    <div class="day-meta"><span class="source-dot"></span><strong>Источник: iikoWeb</strong><span id="state" role="status" aria-live="polite">Загружаем данные…</span></div>
+
+    <section id="setup" class="setup" hidden><span class="setup-symbol">⌁</span><div><h2 id="setup-title">Подключим данные меню</h2><p id="setup-note">Интерфейс готов. Осталось задать на сервере группы блюд iiko, по которым считается отчёт.</p><p id="setup-reason" class="setup-reason"></p><a class="text-link" href="/">Вернуться к кассиру <span>↗</span></a></div></section>
+
+    <!-- 1. Итог периода: за этой цифрой сюда и заходят. -->
+    <section class="shift" aria-label="Итог периода">
+      <div class="panel day-figures">
+        <p class="kicker-line">Выручка · за период</p>
+        <div class="hero">
+          <span class="hero-value"><strong id="cash">—</strong><small>сум</small></span>
+          <span class="hero-note" id="cash-note">Без банкетного зала Бехруз</span>
+        </div>
+        <div class="mini-row mini-row-three">
+          <div class="mini"><span class="mini-name">Retro</span><span class="mini-value"><strong id="retro">—</strong></span></div>
+          <div class="mini"><span class="mini-name">Oxbridge</span><span class="mini-value"><strong id="oxbridge">—</strong></span></div>
+          <div class="mini"><span class="mini-name">Яндекс</span><span class="mini-value"><strong id="yandex">—</strong></span></div>
+        </div>
+      </div>
+      <div class="panel margin-card">
+        <p class="kicker-line">Маржа · по меню</p>
+        <div class="hero">
+          <span class="hero-value"><strong id="margin-percent">—</strong><small>%</small></span>
+          <span class="hero-note">Валовая прибыль к выручке за период</span>
+        </div>
+        <div class="margin-bar" aria-hidden="true"><span id="margin-fill"></span></div>
+        <div class="margin-lines">
+          <div class="rail-line"><span>Валовая прибыль</span><b id="gross-profit">—</b></div>
+          <div class="rail-line"><span>Себестоимость</span><b id="cost-total">—</b></div>
+          <div class="rail-line"><span>Позиций в продаже</span><b id="positions">—</b></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 2. Две короткие выжимки перед таблицей: на чём зарабатываем и что
+         тянет вниз. Директор редко долистывает таблицу до конца. -->
+    <section class="highlights" aria-label="Что важно в меню">
+      <div class="panel highlight-card">
+        <div class="panel-heading"><div><p class="eyebrow">ЛОКОМОТИВЫ</p><h2>Приносят прибыль</h2></div><span class="tag">топ-3</span></div>
+        <div id="locomotives" class="highlight-list"></div>
+      </div>
+      <div class="panel highlight-card is-warning">
+        <div class="panel-heading"><div><p class="eyebrow">СЪЕДАЮТ МАРЖУ</p><h2>Заметные, но невыгодные</h2></div><span class="tag">топ-3</span></div>
+        <div id="drains" class="highlight-list"></div>
+        <p class="panel-note">Считаем только позиции, дающие не меньше половины процента выручки. Единичные продажи в список не попадают.</p>
+      </div>
+    </section>
+
+    <!-- 3. Полная таблица меню: то, ради чего этот модуль и нужен. -->
+    <section class="panel menu-panel" aria-label="Блюда за период">
+      <div class="menu-head">
+        <div><p class="eyebrow">СТРУКТУРА ПРОДАЖ</p><h2>Блюда за период</h2></div>
+        <div class="ops-tabs" role="tablist" aria-label="Направление">
+          <button class="ops-tab is-active" type="button" role="tab" aria-selected="true" data-group="all">Все</button>
+          <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="retro">Retro</button>
+          <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="oxbridge">Oxbridge</button>
+          <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="yandex">Яндекс</button>
+        </div>
+      </div>
+      <div class="menu-tools">
+        <div class="menu-search"><label for="menu-query" class="visually-hidden">Поиск по названию</label><input id="menu-query" type="search" placeholder="Поиск блюда" autocomplete="off"></div>
+        <div class="menu-sort" role="group" aria-label="Сортировка">
+          <button class="chip active" type="button" data-sort="revenue">По выручке</button>
+          <button class="chip" type="button" data-sort="profit">По прибыли</button>
+          <button class="chip" type="button" data-sort="margin">По марже</button>
+          <button class="chip" type="button" data-sort="quantity">По количеству</button>
+        </div>
+      </div>
+      <div class="menu-table-scroll" data-scroll>
+        <table class="menu-table">
+          <thead><tr><th scope="col">Позиция</th><th scope="col">Продано</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль</th><th scope="col">Маржа</th></tr></thead>
+          <tbody id="menu-rows"></tbody>
+        </table>
+      </div>
+      <div id="menu-empty" class="empty-state" hidden><span>▤</span><p>По этому направлению продаж за период нет</p></div>
+      <div class="menu-foot"><span id="menu-count">—</span><button id="menu-more" class="button secondary" type="button" hidden>Показать все позиции</button></div>
+    </section>
+
+    <!-- 4. Официанты: тот же период, та же маржа, но по людям. -->
+    <details class="fold">
+      <summary><span class="eyebrow">ЛЮДИ В ЗАЛЕ</span><span class="fold-title">Официанты за период</span></summary>
+      <section class="panel waiters-panel">
+        <div class="menu-table-scroll" data-scroll>
+          <table class="menu-table">
+            <thead><tr><th scope="col">Официант</th><th scope="col">Позиций продано</th><th scope="col">Выручка</th><th scope="col">Прибыль</th><th scope="col">Маржа</th></tr></thead>
+            <tbody id="waiter-rows"></tbody>
+          </table>
+        </div>
+        <div id="waiters-empty" class="empty-state" hidden><span>◉</span><p>iiko не вернул официантов за период</p></div>
+        <p class="panel-note">Выручка засчитывается официанту, открывшему заказ. Маржа считается по себестоимости проданных позиций.</p>
+      </section>
+    </details>
+
+    <!-- 5. Команда: демонстрационные проходы, пока нет реальной интеграции. -->
+    <section class="panel team-panel" aria-label="Команда">
+      <div class="panel-heading"><div><p class="eyebrow">КОМАНДА · СЕГОДНЯ</p><h2>Кто на месте</h2></div><span class="tag" id="attendance-note">демо Hikvision</span></div>
+      <div class="mini-row">
+        <div class="mini"><span class="mini-name">Пришли</span><span class="mini-value"><strong id="arrived">—</strong></span><small id="attendance-date"></small></div>
+        <div class="mini"><span class="mini-name">Опоздали</span><span class="mini-value"><strong id="late">—</strong></span><small>после 10:00</small></div>
+      </div>
+      <div id="attendance-list" class="attendance-list" aria-live="polite"></div>
+    </section>
+
+    <!-- 6. История: сохранённые PDF, каждый со своим выводом. -->
+    <section class="panel reports-panel" aria-label="История отчётов">
+      <div class="panel-heading"><div><p class="eyebrow">АРХИВ</p><h2>Сохранённые отчёты</h2></div><span class="tag">PDF</span></div>
+      <div id="reports" class="reports-list">Загружаем…</div>
+    </section>
+
+    <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Модуль директора</span><span>Время Ташкента · UZS</span></footer>
+  </div>
+</main>
+</body>
+</html>

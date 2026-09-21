@@ -6,6 +6,7 @@ from decimal import Decimal
 
 from .expense_catalog import ITEMS
 from .ledger import LedgerError, amount_value, required_text
+from .audit import record_audit
 
 
 def _payments(connection, debt_id, through):
@@ -54,6 +55,8 @@ def record_debt(store, day, item_code, note, total, paid, cashier_amount):
                 'INSERT INTO accountant_debts (day,item_code,description,total_amount,created_at) '
                 'VALUES (?,?,?,?,?)',
                 (day.isoformat(), item_code, description, str(total_value), now)).lastrowid
+            record_audit(connection, 'debt', debt_id, 'create', None,
+                         store._row_dict(connection, 'accountant_debts', debt_id))
             if paid_value:
                 movement_id = connection.execute(
                     'INSERT INTO accountant_movements '
@@ -63,6 +66,13 @@ def record_debt(store, day, item_code, note, total, paid, cashier_amount):
                     'INSERT INTO accountant_debt_payments '
                     '(debt_id,day,amount,movement_id,created_at) VALUES (?,?,?,?,?)',
                     (debt_id, day.isoformat(), str(paid_value), movement_id, now))
+                payment_id = connection.execute(
+                    'SELECT id FROM accountant_debt_payments WHERE movement_id = ?',
+                    (movement_id,)).fetchone()[0]
+                record_audit(connection, 'movement', movement_id, 'create', None,
+                             store._row_dict(connection, 'accountant_movements', movement_id))
+                record_audit(connection, 'debt_payment', payment_id, 'create', None,
+                             store._row_dict(connection, 'accountant_debt_payments', payment_id))
                 if cashier_amount is not None:
                     store._check_known_future_balances(connection, day)
                 else:
@@ -101,6 +111,10 @@ def pay_debt(store, debt_id, day, amount, cashier_amount):
                 'INSERT INTO accountant_debt_payments '
                 '(debt_id,day,amount,movement_id,created_at) VALUES (?,?,?,?,?)',
                 (debt_id, day.isoformat(), str(value), movement_id, now)).lastrowid
+            record_audit(connection, 'movement', movement_id, 'create', None,
+                         store._row_dict(connection, 'accountant_movements', movement_id))
+            record_audit(connection, 'debt_payment', payment_id, 'create', None,
+                         store._row_dict(connection, 'accountant_debt_payments', payment_id))
             store._check_known_future_balances(connection, day)
             connection.commit()
             return payment_id

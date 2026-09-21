@@ -1,8 +1,8 @@
 .employee-roster-table{width:100%;border-collapse:collapse;background:#fff;font-size:13px}.employee-roster-table th,.employee-roster-table td{padding:12px 14px;border-top:1px solid #e7ece3;text-align:left;vertical-align:middle}.employee-roster-table th{color:#71827d;font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;background:#f5f7f1}.employee-roster-table td:nth-child(3){font-variant-numeric:tabular-nums;white-space:nowrap}.employee-roster-table tbody tr:hover{background:#fbf7ed}.employee-cell-input{width:100%;min-width:80px;border:1px solid #d2af59;border-radius:6px;padding:7px;background:#fffdf6;font:inherit;color:#203d33}
 .employee-roster-table th:last-child,.employee-roster-table td:last-child{min-width:118px;text-align:right}.employee-delete{border:1px solid #e4cfc2;border-radius:6px;background:#fff;color:#a96039;padding:6px 9px;font:inherit;font-size:12px;cursor:pointer}.employee-delete:hover{background:#fff5ee}.employee-delete-confirm{display:flex;align-items:center;justify-content:flex-end;gap:5px;flex-wrap:wrap}.employee-delete-confirm span{font-size:11px;color:#7b6257}.employee-delete-confirm button{border:1px solid #dbe3d8;border-radius:6px;background:#fff;color:#35624e;padding:5px 7px;font:inherit;font-size:11px;cursor:pointer}.employee-delete-confirm button.is-danger{border-color:#e4cfc2;color:#a33f2b}.employee-delete-confirm button.is-danger:hover{background:#fff0eb}
 .icon-button{width:38px;height:38px;border:1px solid #dbe3d8;border-radius:8px;background:#fff;color:#35624e;font-size:24px;line-height:1;cursor:pointer}.icon-button:hover{background:#f5f7f1}.employee-add-row{display:grid;grid-template-columns:1.4fr 1fr 150px 1fr auto auto;gap:8px;padding:12px;background:#f5f7f1;border:1px solid #dbe3d8;border-radius:10px}.employee-add-row input,.employee-add-row select{min-width:0;border:1px solid #dbe3d8;border-radius:7px;padding:9px;background:#fff;color:#203d33;font:inherit}.employee-add-row .button{white-space:nowrap}
-:root{--green:#143e35;--green2:#23574a;--gold:#d8b977;--paper:#f6f7f2;--ink:#1c302b;--muted:#7d8881;--border:#e3e7df;--white:#fff;--radius:18px;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--paper);font-synthesis:none}
-*{box-sizing:border-box}body{margin:0;display:flex;min-height:100vh}button,input,a{-webkit-tap-highlight-color:transparent}button,input{font:inherit}button,a{touch-action:manipulation}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.45}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #c5a359;outline-offset:4px}button:hover:not(:disabled){filter:brightness(.95)}[hidden]{display:none!important}.sidebar{width:238px;position:fixed;inset:0 auto 0 0;background:var(--green);padding:38px 23px;color:#e9f0e8;display:flex;flex-direction:column}.brand{display:flex;align-items:center;gap:14px;letter-spacing:3px;font-size:25px;font-weight:500}.brand small{display:block;font-size:10px;letter-spacing:6px;margin-top:5px}.brand-mark{position:relative;color:var(--gold);font-family:Georgia,serif;font-size:51px;line-height:1}.brand-mark span{position:absolute;right:-9px;top:0;font-size:15px}.side-rule{height:1px;background:#ffffff18;margin:34px 0}.nav-label{font-size:9px;letter-spacing:1.5px;color:#a4b7ad;margin-bottom:18px}.nav-active{display:flex;align-items:center;gap:13px;background:#ffffff12;border:1px solid #ffffff17;border-radius:10px;padding:15px;font-size:14px}.nav-icon{color:var(--gold);font-size:22px;line-height:1}.nav-dot{width:6px;height:6px;background:var(--gold);border-radius:100%;margin-left:auto}.coming{display:flex;justify-content:space-between;padding:20px 15px;color:#9cb0a5;font-size:13px}.coming small{font-size:10px;color:#bcc9bd;border:1px solid #ffffff19;padding:2px 6px;border-radius:4px}.sidebar-bottom{margin-top:auto;display:flex;gap:12px;border-top:1px solid #ffffff1a;padding-top:23px;font-size:13px}.sidebar-bottom small{display:block;color:#9db3a6;font-size:10px;margin-top:6px}.location-icon{font-size:26px;color:var(--gold)}main{margin-left:238px;min-width:0;width:calc(100% - 238px)}.topbar{height:80px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 42px;background:#fafbf7}.breadcrumb{font-size:12px;color:var(--muted)}.breadcrumb span{padding:0 15px;color:#b7c0b9}.breadcrumb strong{font-weight:500;color:var(--ink)}.top-status{font-size:11px;color:#66776a;display:flex;align-items:center;gap:7px}.top-status:before{content:"";width:6px;height:6px;background:#c4b780;border-radius:50%}.top-status.connected:before{background:#55866c}.workspace{max-width:1400px;padding:40px 42px 22px;margin:auto}.page-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}.eyebrow{font-size:10px;font-weight:650;letter-spacing:1.8px;color:#818c80;margin:0 0 11px}h1{font-size:37px;letter-spacing:-1.5px;font-weight:550;margin:0;line-height:1.15}h1>span{color:#bba26d}.subtitle{font-size:13px;color:var(--muted);margin:11px 0 0}.module-badge{display:flex;gap:10px;align-items:center}.module-badge>span{font-family:Georgia,serif;font-size:36px;color:#b6c0ad}.module-badge div{color:var(--muted);font-size:10px}.module-badge small{display:block;font-size:12px;color:var(--ink);margin-top:4px}.controls{display:flex;gap:10px;align-items:center;border:1px solid var(--border);background:#fff;padding:13px 16px;border-radius:13px;margin-bottom:23px}.date-group{display:flex;flex-direction:column;gap:4px;min-width:145px}.date-group label{font-size:10px;color:var(--muted)}input[type=date]{border:0;background:transparent;color:var(--ink);font-size:14px;font-weight:600;min-height:28px;max-width:165px;width:100%}.quick-days{display:flex;gap:4px;border-left:1px solid var(--border);padding-left:14px}.chip{border:0;background:transparent;color:#718075;border-radius:7px;padding:10px 12px;min-height:44px;font-size:12px}.chip.active{background:#edf2e9;color:var(--green);font-weight:600}.button{min-height:46px;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:9px;padding:11px 16px;font-size:12px;font-weight:550;border:1px solid var(--border);white-space:nowrap}.primary{background:var(--green);color:#fff;border-color:var(--green)}.secondary{background:white;margin-left:auto;color:#53675c}.secondary>span{font-size:21px;line-height:1}.button svg{height:18px;width:18px;stroke:currentColor;fill:none;stroke-width:1.6}.file-type{color:#bac9bc;font-size:9px;font-weight:400;padding-left:5px}.metrics{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:18px;margin-bottom:25px}.metric{background:white;padding:25px 24px 21px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;min-width:0}.revenue{background:var(--green);color:#fff;border-color:var(--green);position:relative}.revenue:after{content:"";width:210px;height:210px;border:1px solid #d8b97714;border-radius:100%;position:absolute;top:-120px;right:-90px;box-shadow:0 0 0 24px #d8b97707,0 0 0 50px #d8b97704;pointer-events:none}.metric-label{font-size:12px;color:#748376;display:flex;align-items:center;justify-content:space-between;gap:8px}.revenue .metric-label{color:#c5d3c9}.metric-icon{font-size:17px;color:#809579}.revenue .metric-icon{color:var(--gold)}.amount{font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;gap:7px;align-items:baseline;margin:24px 0 26px;line-height:1;letter-spacing:-1px}.amount>span{font-size:clamp(24px,2.3vw,37px);font-weight:600;white-space:nowrap}.amount small{font-size:12px;color:#909b8e;letter-spacing:0;font-weight:400}.revenue .amount small{color:#acbcae}.metric-foot{display:flex;align-items:center;gap:7px;font-size:10px;color:#c9d4c8}.muted{color:var(--muted)}.light-dot,.source-dot{flex-shrink:0;background:var(--gold);width:5px;height:5px;border-radius:50%}.decorative-line{margin-left:auto;width:37px;height:1px;background:#c2b680}.content-grid{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(270px,1fr);gap:24px;align-items:start}.panel{background:#fff;border:1px solid var(--border);border-radius:var(--radius)}.payments-panel{padding:26px}.panel-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}h2{font-size:20px;font-weight:550;letter-spacing:-.4px;margin:0}.tag{font-size:10px;color:var(--muted);background:#f3f5f0;border-radius:5px;padding:5px 9px}.composition{display:flex;gap:4px;height:10px;border-radius:5px;overflow:hidden;margin-bottom:25px;background:#f1f4ec}.composition>span{height:100%;min-width:2px;background:var(--color)}.payment-row{display:grid;grid-template-columns:12px minmax(0,1fr) auto;column-gap:10px;align-items:start;padding:16px 0;border-bottom:1px solid #eff1eb;font-size:13px}.payment-dot{margin-top:5px;width:8px;height:8px;border-radius:50%;background:var(--color)}.payment-name{line-height:1.5;overflow-wrap:anywhere}.payment-value{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}.payment-value small{display:block;font-weight:400;font-size:10px;color:#899489;margin-top:6px}.payment-total{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:23px 0 0;font-size:13px}.payment-total strong{font-size:17px;font-variant-numeric:tabular-nums}.panel-note{font-size:10px;line-height:1.6;color:#8d968b;margin:21px 0 0}.right-column{display:grid;gap:22px}.report-card{padding:27px;background:#edf1e8;position:relative;overflow:hidden}.paper-icon{margin-bottom:24px;position:relative;width:40px}.paper-icon svg{width:29px;height:36px;stroke:#7c9176;stroke-width:1.2;fill:transparent}.paper-icon>span{position:absolute;right:-8px;bottom:3px;font-size:7px;letter-spacing:.7px;background:#dce6d4;color:#426546;padding:3px 4px;border-radius:2px}.report-card .eyebrow{font-size:9px;color:#7d8a73}.report-card h2{font-size:24px;line-height:1.25;font-weight:500}.report-card>p:not(.eyebrow){font-size:12px;color:#7b8674;line-height:1.75;margin:15px 0 20px}.report-detail{border-top:1px solid #dfe5d8;padding:12px 0;display:flex;justify-content:space-between;font-size:11px;color:#819076}.report-detail strong{color:#52664a;font-weight:500}.report-card .report-scope{font-size:10px!important;margin:9px 0 0!important}.source-info{display:flex;gap:9px;padding:0 9px}.source-dot{background:#819875;margin-top:5px}.source-info strong{font-size:11px;font-weight:500}.source-info p{font-size:10px;color:var(--muted);margin:5px 0}.empty-state{text-align:center;padding:42px 10px;color:var(--muted);font-size:12px}.empty-state>span{font-size:29px;color:#b0bfaa}.notice{padding:15px 18px;background:#fff3df;color:#785b2d;border:1px solid #eddfbe;border-radius:10px;font-size:12px;line-height:1.6;margin-bottom:20px}.notice.demo{background:#e8eee2;border-color:#d8e2ce;color:#506148}.notice a{text-decoration:underline;margin-left:5px}.setup{display:flex;gap:18px;border:1px solid var(--border);padding:23px;border-radius:var(--radius);margin-bottom:23px;background:white}.setup h2{font-size:18px}.setup p{font-size:12px;line-height:1.6;color:var(--muted)}.setup-symbol{font-size:36px;color:#859c75}.text-link{font-size:12px;font-weight:600;border-bottom:1px solid #a8bda1;padding-bottom:3px}.text-link span{padding-left:12px}footer{display:flex;justify-content:space-between;font-size:9px;letter-spacing:.5px;color:#9ba392;padding-top:30px}.footer-divider{padding:0 8px;color:#c2c9bb}.loading .amount>span{color:#c7cfc2}.loading .revenue .amount>span{color:#79998a}@media(min-width:1600px){.workspace{padding-top:50px}.metrics{margin-top:28px}.metric{padding:28px}.amount>span{font-size:38px}}
+:root{--green:#143e35;--green2:#23574a;--gold:#d8b977;--paper:#f6f7f2;--ink:#1c302b;--muted:#5b675f;--border:#e3e7df;--white:#fff;--radius:18px;font-family:Inter,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--ink);background:var(--paper);font-synthesis:none}
+*{box-sizing:border-box}body{margin:0;display:flex;min-height:100vh}button,input,a{-webkit-tap-highlight-color:transparent}button,input{font:inherit}button,a{touch-action:manipulation}button{cursor:pointer}button:disabled{cursor:not-allowed;opacity:.45}a{color:inherit;text-decoration:none}button:focus-visible,a:focus-visible,input:focus-visible{outline:3px solid #c5a359;outline-offset:4px}button:hover:not(:disabled){filter:brightness(.95)}[hidden]{display:none!important}.sidebar{width:238px;position:fixed;inset:0 auto 0 0;background:var(--green);padding:38px 23px;color:#e9f0e8;display:flex;flex-direction:column}.brand{display:flex;align-items:center;gap:14px;letter-spacing:3px;font-size:25px;font-weight:500}.brand small{display:block;font-size:10px;letter-spacing:6px;margin-top:5px}.brand-mark{position:relative;color:var(--gold);font-family:Georgia,serif;font-size:51px;line-height:1}.brand-mark span{position:absolute;right:-9px;top:0;font-size:15px}.side-rule{height:1px;background:#ffffff18;margin:34px 0}.nav-label{font-size:9px;letter-spacing:1.5px;color:#a4b7ad;margin-bottom:18px}.nav-active{display:flex;align-items:center;gap:13px;background:#ffffff12;border:1px solid #ffffff17;border-radius:10px;padding:15px;font-size:14px}.nav-icon{color:var(--gold);font-size:22px;line-height:1}.nav-dot{width:6px;height:6px;background:var(--gold);border-radius:100%;margin-left:auto}.coming{display:flex;justify-content:space-between;padding:20px 15px;color:#9cb0a5;font-size:13px}.coming small{font-size:10px;color:#bcc9bd;border:1px solid #ffffff19;padding:2px 6px;border-radius:4px}.sidebar-bottom{margin-top:auto;display:flex;gap:12px;border-top:1px solid #ffffff1a;padding-top:23px;font-size:13px}.sidebar-bottom small{display:block;color:#9db3a6;font-size:10px;margin-top:6px}.location-icon{font-size:26px;color:var(--gold)}main{margin-left:238px;min-width:0;width:calc(100% - 238px)}.topbar{height:80px;border-bottom:1px solid var(--border);display:flex;align-items:center;justify-content:space-between;padding:0 42px;background:#fafbf7}.breadcrumb{font-size:12px;color:var(--muted)}.breadcrumb span{padding:0 15px;color:#b7c0b9}.breadcrumb strong{font-weight:500;color:var(--ink)}.top-status{font-size:11px;color:#556257;display:flex;align-items:center;gap:7px}.top-status:before{content:"";width:6px;height:6px;background:#c4b780;border-radius:50%}.top-status.connected:before{background:#55866c}.workspace{max-width:1400px;padding:40px 42px 22px;margin:auto}.page-heading{display:flex;align-items:center;justify-content:space-between;margin-bottom:28px}.eyebrow{font-size:10px;font-weight:650;letter-spacing:1.8px;color:var(--muted);margin:0 0 11px}h1{font-size:37px;letter-spacing:-1.5px;font-weight:550;margin:0;line-height:1.15}h1>span{color:#bba26d}.subtitle{font-size:13px;color:var(--muted);margin:11px 0 0}.module-badge{display:flex;gap:10px;align-items:center}.module-badge>span{font-family:Georgia,serif;font-size:36px;color:#9aa792}.module-badge div{color:var(--muted);font-size:10px}.module-badge small{display:block;font-size:12px;color:var(--ink);margin-top:4px}.controls{display:flex;gap:10px;align-items:center;border:1px solid var(--border);background:#fff;padding:13px 16px;border-radius:13px;margin-bottom:23px}.date-group{display:flex;flex-direction:column;gap:4px;min-width:145px}.date-group label{font-size:11px;color:var(--muted)}input[type=date]{border:0;background:transparent;color:var(--ink);font-size:14px;font-weight:600;min-height:28px;max-width:165px;width:100%}.quick-days{display:flex;gap:4px;border-left:1px solid var(--border);padding-left:14px}.chip{border:0;background:transparent;color:#4f5d54;border-radius:7px;padding:10px 12px;min-height:44px;font-size:12px}.chip.active{background:#edf2e9;color:var(--green);font-weight:600}.button{min-height:46px;border-radius:9px;display:flex;align-items:center;justify-content:center;gap:9px;padding:11px 16px;font-size:12px;font-weight:550;border:1px solid var(--border);white-space:nowrap}.primary{background:var(--green);color:#fff;border-color:var(--green)}.secondary{background:white;margin-left:auto;color:#53675c}.secondary>span{font-size:21px;line-height:1}.button svg{height:18px;width:18px;stroke:currentColor;fill:none;stroke-width:1.6}.file-type{color:#bac9bc;font-size:9px;font-weight:400;padding-left:5px}.metrics{display:grid;grid-template-columns:1.25fr 1fr 1fr;gap:18px;margin-bottom:25px}.metric{background:white;padding:25px 24px 21px;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden;min-width:0}.revenue{background:var(--green);color:#fff;border-color:var(--green);position:relative}.revenue:after{content:"";width:210px;height:210px;border:1px solid #d8b97714;border-radius:100%;position:absolute;top:-120px;right:-90px;box-shadow:0 0 0 24px #d8b97707,0 0 0 50px #d8b97704;pointer-events:none}.metric-label{font-size:12px;color:#5f6f62;display:flex;align-items:center;justify-content:space-between;gap:8px}.revenue .metric-label{color:#c5d3c9}.metric-icon{font-size:17px;color:#809579}.revenue .metric-icon{color:var(--gold)}.amount{font-variant-numeric:tabular-nums;display:flex;flex-wrap:wrap;gap:7px;align-items:baseline;margin:24px 0 26px;line-height:1;letter-spacing:-1px}.amount>span{font-size:clamp(24px,2.3vw,37px);font-weight:600;white-space:nowrap}.amount small{font-size:12px;color:#909b8e;letter-spacing:0;font-weight:400}.revenue .amount small{color:#acbcae}.metric-foot{display:flex;align-items:center;gap:7px;font-size:10px;color:#c9d4c8}.muted{color:var(--muted)}.light-dot,.source-dot{flex-shrink:0;background:var(--gold);width:5px;height:5px;border-radius:50%}.decorative-line{margin-left:auto;width:37px;height:1px;background:#c2b680}.content-grid{display:grid;grid-template-columns:minmax(0,1.85fr) minmax(270px,1fr);gap:24px;align-items:start}.panel{background:#fff;border:1px solid var(--border);border-radius:var(--radius)}.payments-panel{padding:26px}.panel-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:26px}h2{font-size:20px;font-weight:550;letter-spacing:-.4px;margin:0}.tag{font-size:10px;color:var(--muted);background:#f3f5f0;border-radius:5px;padding:5px 9px}.composition{display:flex;gap:3px;height:12px;border-radius:5px;overflow:hidden;margin-bottom:25px;background:#f1f4ec}.composition>span{height:100%;min-width:2px;background:var(--color)}.payment-row{display:grid;grid-template-columns:12px minmax(0,1.2fr) minmax(64px,.8fr) auto;column-gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid #eff1eb;font-size:13px}.payment-dot{margin-top:5px;width:8px;height:8px;border-radius:50%;background:var(--color)}.payment-name{line-height:1.5;overflow-wrap:anywhere}.payment-value{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}.payment-value small{display:block;font-weight:400;font-size:11px;color:var(--muted);margin-top:6px}.payment-total{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:23px 0 0;font-size:13px}.payment-total strong{font-size:17px;font-variant-numeric:tabular-nums}.panel-note{font-size:11px;line-height:1.6;color:var(--muted);margin:21px 0 0}.right-column{display:grid;gap:22px}.report-card{padding:27px;background:#edf1e8;position:relative;overflow:hidden}.paper-icon{margin-bottom:24px;position:relative;width:40px}.paper-icon svg{width:29px;height:36px;stroke:#7c9176;stroke-width:1.2;fill:transparent}.paper-icon>span{position:absolute;right:-8px;bottom:3px;font-size:7px;letter-spacing:.7px;background:#dce6d4;color:#426546;padding:3px 4px;border-radius:2px}.report-card .eyebrow{font-size:9px;color:#7d8a73}.report-card h2{font-size:24px;line-height:1.25;font-weight:500}.report-card>p:not(.eyebrow){font-size:12px;color:#7b8674;line-height:1.75;margin:15px 0 20px}.report-detail{border-top:1px solid #dfe5d8;padding:12px 0;display:flex;justify-content:space-between;font-size:11px;color:#819076}.report-detail strong{color:#52664a;font-weight:500}.report-card .report-scope{font-size:10px!important;margin:9px 0 0!important}.source-info{display:flex;gap:9px;padding:0 9px}.source-dot{background:#819875;margin-top:5px}.source-info strong{font-size:11px;font-weight:500}.source-info p{font-size:10px;color:var(--muted);margin:5px 0}.empty-state{text-align:center;padding:26px 10px;color:var(--muted);font-size:12px}.empty-state>span{font-size:29px;color:#8d9d87}.notice{padding:15px 18px;background:#fff3df;color:#785b2d;border:1px solid #eddfbe;border-radius:10px;font-size:12px;line-height:1.6;margin-bottom:20px}.notice.demo{background:#e8eee2;border-color:#d8e2ce;color:#506148}.notice a{text-decoration:underline;margin-left:5px}.setup{display:flex;gap:18px;border:1px solid var(--border);padding:23px;border-radius:var(--radius);margin-bottom:23px;background:white}.setup h2{font-size:18px}.setup p{font-size:12px;line-height:1.6;color:var(--muted)}.setup-symbol{font-size:36px;color:#859c75}.text-link{font-size:12px;font-weight:600;border-bottom:1px solid #a8bda1;padding-bottom:3px}.text-link span{padding-left:12px}footer{display:flex;justify-content:space-between;font-size:10px;letter-spacing:.5px;color:var(--muted);padding-top:30px}.footer-divider{padding:0 8px;color:#a8b1a2}.loading .amount>span{color:#c7cfc2}.loading .revenue .amount>span{color:#79998a}@media(min-width:1600px){.workspace{padding-top:50px}.metrics{margin-top:28px}.metric{padding:28px}.amount>span{font-size:38px}}
 @media(max-width:1180px){.sidebar{width:195px;padding:30px 18px}.brand{font-size:21px}main{margin-left:195px;width:calc(100% - 195px)}.workspace{padding:30px 25px}.topbar{padding:0 25px}.controls{flex-wrap:wrap}.quick-days{padding-left:7px}.button{padding:10px 12px}.metric{padding:21px 17px}.amount>span{font-size:27px}.metrics{gap:12px}.content-grid{gap:18px;grid-template-columns:minmax(0,1.5fr) minmax(245px,1fr)}.payments-panel{padding:23px}.report-card{padding:23px}}
 @media(max-width:900px){.sidebar{width:80px;align-items:center;padding:26px 12px}.brand>span:last-child,.nav-label,.coming,.sidebar-bottom,.side-rule{display:none}.brand-mark{font-size:41px}.sidebar nav{margin-top:38px}.nav-active{font-size:0;padding:15px 13px;gap:0}.nav-dot{display:none}.nav-icon{font-size:24px}main{margin-left:80px;width:calc(100% - 80px)}.module-badge{display:none}.metrics{grid-template-columns:1fr 1fr}.revenue{grid-column:span 2}.revenue .amount>span{font-size:38px}.content-grid{grid-template-columns:minmax(0,1fr) 245px}.amount{margin:21px 0}.topbar{height:64px}.file-type{display:none}}
 @media(max-width:650px){body{display:block}.sidebar{position:static;width:100%;height:75px;flex-direction:row;justify-content:space-between;padding:15px 21px}.brand{gap:11px;font-size:18px}.brand-mark{font-size:35px}.brand>span:last-child{display:block}.brand small{font-size:7px;letter-spacing:4px;margin-top:3px}.sidebar nav{margin:0}.nav-active{font-size:12px;gap:9px;padding:9px 13px;border-radius:8px}.nav-icon{font-size:18px}main{margin:0;width:100%}.topbar{height:43px;padding:0 20px}.breadcrumb{font-size:10px}.breadcrumb span{padding:0 8px}.top-status{font-size:9px}.workspace{padding:26px 18px 25px}.page-heading{margin-bottom:23px}h1{font-size:31px;letter-spacing:-1px}.eyebrow{font-size:9px}.subtitle{font-size:12px;line-height:1.6;max-width:270px;margin-top:8px}.controls{padding:12px;gap:12px;display:grid;grid-template-columns:1fr 1fr;margin-bottom:18px}.date-group{min-width:0}.quick-days{justify-content:flex-end;padding:0;border:0;gap:0}.chip{padding:10px;font-size:11px;min-width:53px}.button{font-size:12px;width:100%;min-height:46px}.secondary{margin:0}.primary{gap:6px}.metrics{gap:12px;margin-bottom:18px}.metric{border-radius:13px;padding:18px 15px}.revenue{padding:22px}.metric-label{font-size:11px;gap:4px}.metric-icon{font-size:15px}.amount{margin:22px 0;gap:5px}.amount>span{font-size:26px;letter-spacing:-.7px}.amount small{font-size:10px}.revenue .amount>span{font-size:38px}.revenue .amount{margin:22px 0 24px}.metric-foot{font-size:9px;line-height:1.5}.content-grid{grid-template-columns:1fr;gap:20px}.payments-panel{padding:23px 20px}.panel-heading{margin-bottom:22px}h2{font-size:19px}.right-column{gap:18px}.report-card{padding:24px}.report-card h2 br{display:none}.report-card h2{font-size:21px}.paper-icon{float:right;margin:0 10px 0 20px}.report-card>p:not(.eyebrow){max-width:260px}.payment-row{font-size:12px;padding:15px 0}.payment-total strong{font-size:16px}.source-info{padding-left:4px}footer{gap:10px;flex-wrap:wrap;font-size:8px;line-height:1.6;padding-top:25px}.notice{padding:13px;font-size:11px}.setup{padding:18px;gap:12px}.setup h2{font-size:16px}}
@@ -13,12 +13,24 @@
 @media(max-width:650px){.entrances-preview-note{align-items:flex-start;flex-direction:column;gap:8px}.entrance-cards{grid-template-columns:1fr}.entrance-card{padding:15px}}
 .sidebar nav{display:grid;gap:8px}.nav-link{display:flex;align-items:center;gap:13px;padding:15px;border:1px solid transparent;border-radius:10px;font-size:14px;background:transparent;color:#a4b8ab}.nav-link:hover{background:#ffffff0b;color:#e9f0e8}.accountant-workspace .entrances-panel{margin-top:0}.accountant-download{margin-left:auto}
 @media(max-width:900px){.sidebar nav{gap:10px}}
+.monthly-roster-head{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:28px;padding-top:24px;border-top:1px solid #e5ece0}.monthly-roster-head h3{margin:0;color:#173d35;font-size:18px}.monthly-roster-head .accountant-help{margin:5px 0 0}.monthly-employees{margin-top:12px;overflow-x:auto}.monthly-roster-table{min-width:900px}.monthly-add-row{margin-bottom:10px}.edit-monthly{border:0;border-radius:7px;background:#edf3e9;color:#315e4c;padding:7px 10px;margin-right:6px;cursor:pointer}.edit-monthly:focus-visible{outline:2px solid #315e4c;outline-offset:2px}
 @media(max-width:650px){.sidebar{height:auto;min-height:75px;align-items:center;gap:12px;flex-wrap:wrap}.sidebar nav{display:flex;gap:4px}.nav-active{white-space:nowrap}.accountant-download{grid-column:1/-1;margin-left:0}}
+/* Модулей в меню стало четыре, а горизонтальная шапка на телефоне была
+   рассчитана на два: список уезжал за правый край вместе с «Учредителем».
+   Теперь он занимает свою строку и прокручивается, ничего не обрезая. */
+@media(max-width:650px){
+  .sidebar nav{flex:1 1 100%;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+  /* Меню на телефоне — основная навигация, и пальцем по 36 пикселям
+     попадать неудобно: поднимаем до стандартных сорока четырёх. */
+  .sidebar nav>a{flex:0 0 auto;min-height:44px;align-items:center}
+  .topbar{gap:10px}
+  .top-status{min-width:0;flex-shrink:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+}
 @media(max-width:390px){.sidebar{padding:12px 14px}.brand{font-size:15px;letter-spacing:2px}.brand small{letter-spacing:3px}.nav-active,.nav-link{padding:8px;font-size:11px;gap:5px}.nav-icon{font-size:16px}}
 .cashier-finance{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(270px,1fr);gap:24px;align-items:stretch;margin-top:24px}
 .expenses-panel{padding:27px;min-width:0}.finance-heading{display:flex;align-items:start;justify-content:space-between}.finance-subtitle{color:var(--muted);font-size:12px;line-height:1.5;margin:9px 0 0}.finance-symbol{display:grid;place-items:center;width:36px;height:36px;border-radius:10px;background:#eef3e9;color:#65836b;font-size:19px}
 .receipt-section{margin-top:29px;padding-top:25px;border-top:1px solid #e6ece3}.receipt-section h2{font-size:18px}.receipt-section .expense-form{margin-top:17px}
-.expense-form{display:grid;grid-template-columns:minmax(0,1fr) 155px auto;align-items:end;gap:10px;margin:22px 0 8px}.expense-field{display:flex;flex-direction:column;gap:7px;min-width:0}.expense-field label{font-size:10px;color:#728176}.expense-field input{width:100%;height:46px;border:1px solid var(--border);border-radius:9px;background:#fcfdf9;padding:0 12px;color:var(--ink);font-size:13px;min-width:0}.expense-field input::placeholder{color:#aeb9ad}.expense-save{height:46px}.expense-feedback{min-height:18px;color:#4f795c;font-size:11px;margin:4px 0 0}.expense-feedback.is-error{color:#aa4656}.expense-empty{color:#8a978b;font-size:12px;padding:20px 0;border-top:1px solid #edf1e9}.expense-list{margin-top:10px}.expense-item{display:grid;grid-template-columns:minmax(0,1fr) auto 56px;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid #edf1e9;font-size:12px}.expense-item-name{overflow-wrap:anywhere}.expense-item-value{font-weight:600;font-variant-numeric:tabular-nums}.expense-remove{width:32px;height:32px;border:0;border-radius:8px;background:#f7f1ee;color:#a46a65;font-size:18px;line-height:1}.expense-remove:hover{background:#f8e8e4}.expense-automatic{justify-self:end;border-radius:6px;background:#eef3e9;color:#4d7959;padding:5px 7px;font-size:10px}.expense-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-top:17px;font-size:12px;color:#607368}.expense-total strong{font-size:19px;color:var(--ink);font-variant-numeric:tabular-nums}.expense-total small{font-size:10px;font-weight:400}
+.expense-form{display:grid;grid-template-columns:minmax(0,1fr) 155px auto;align-items:end;gap:10px;margin:22px 0 8px}.expense-field{display:flex;flex-direction:column;gap:7px;min-width:0}.expense-field label{font-size:10px;color:var(--muted)}.expense-field input{width:100%;height:46px;border:1px solid var(--border);border-radius:9px;background:#fcfdf9;padding:0 12px;color:var(--ink);font-size:13px;min-width:0}.expense-field input::placeholder{color:#aeb9ad}.expense-save{height:46px}.expense-feedback{min-height:18px;color:#4f795c;font-size:11px;margin:4px 0 0}.expense-feedback.is-error{color:#aa4656}.expense-empty{color:var(--muted);font-size:12px;padding:20px 0;border-top:1px solid #edf1e9}.expense-list{margin-top:10px}.expense-item{display:grid;grid-template-columns:minmax(0,1fr) auto 56px;gap:12px;align-items:center;padding:13px 0;border-bottom:1px solid #edf1e9;font-size:12px}.expense-item-name{overflow-wrap:anywhere}.expense-item-value{font-weight:600;font-variant-numeric:tabular-nums}.expense-remove{width:32px;height:32px;border:0;border-radius:8px;background:#f7f1ee;color:#a46a65;font-size:18px;line-height:1}.expense-remove:hover{background:#f8e8e4}.expense-automatic{justify-self:end;border-radius:6px;background:#eef3e9;color:#4d7959;padding:5px 7px;font-size:10px}.expense-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding-top:17px;font-size:12px;color:#607368}.expense-total strong{font-size:19px;color:var(--ink);font-variant-numeric:tabular-nums}.expense-total small{font-size:10px;font-weight:400}
 .handover-panel{padding:27px;background:var(--green);color:#f1f5ed;position:relative;overflow:hidden}.handover-panel:after{content:"";position:absolute;width:220px;height:220px;border-radius:50%;border:1px solid #d8b9771f;right:-140px;top:-120px;box-shadow:0 0 0 30px #d8b97709;pointer-events:none}.handover-panel .eyebrow{color:#b2c8b7}.handover-panel h2{color:#fff}.handover-number{display:flex;align-items:baseline;flex-wrap:wrap;gap:7px;margin:32px 0 28px;font-variant-numeric:tabular-nums}.handover-number span{font-size:clamp(25px,2.4vw,38px);font-weight:600;letter-spacing:-1px;overflow-wrap:anywhere}.handover-number small{font-size:11px;color:#b5c6b9}.handover-number.is-negative span{color:#f2b1b4}.handover-rule{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-top:1px solid #ffffff20;font-size:11px;color:#b9cbbd}.handover-rule strong{color:#fff;font-size:12px;font-weight:550;font-variant-numeric:tabular-nums}.handover-divider{height:1px;background:#d8b97765;margin:5px 0 13px}.handover-note{font-size:10px;line-height:1.6;color:#b9cbbd;margin:0}
 .inflow-summary{display:flex;align-items:baseline;justify-content:space-between;gap:14px;padding:13px 12px;margin:0 0 12px;border:1px solid #ffffff24;border-radius:9px;background:#ffffff0a;color:#c9d9cc;font-size:11px}.inflow-summary strong{color:#fff;font-size:15px;font-variant-numeric:tabular-nums;text-align:right}
 @media(max-width:1180px){.cashier-finance{gap:18px}.expense-form{grid-template-columns:minmax(0,1fr) 130px}.expense-save{grid-column:1/-1}}
@@ -37,3 +49,415 @@
 @media(max-width:760px){.accountant-actions{width:100%;flex-wrap:wrap}.accountant-actions .button{flex:1;min-width:150px}.employee-group .staff-list{grid-template-columns:1fr}}
 @media(max-width:650px){.employees-toolbar{display:grid;grid-template-columns:1fr 1fr}.employees-toolbar .button{width:100%}.employees-toolbar .date-group{min-width:0}.employees-toolbar #employees-download{grid-column:1/-1}.accountant-actions .button{width:100%}}
  .usd-balance-entry{grid-column:1/-1;display:flex;align-items:end;gap:10px;padding-top:4px}.usd-balance-entry label{display:grid;gap:6px;font-size:11px;color:#687c6e}.usd-balance-entry input{width:150px;border:1px solid #dbe3d8;border-radius:8px;padding:10px;background:#fff;color:#203d33;font:inherit}.usd-balance-entry button{min-height:40px}.usd-balance-entry span{font-size:11px;color:#557463;padding-bottom:10px}
+.topbar-actions{display:flex;align-items:center;justify-content:flex-end;gap:14px;margin-left:auto}.logout-button{min-height:36px;padding:7px 13px;border:1px solid #cad5cc;border-radius:8px;background:#fff;color:#40584c;font-size:11px;font-weight:600}.logout-button:hover:not(:disabled){background:#f0f4ed}.director .logout-button{width:auto;min-height:36px;padding:7px 13px;border:1px solid #cad5cc;background:#fff;color:#40584c}.director .topbar-actions{gap:12px}@media(max-width:650px){.topbar-actions{gap:8px}.logout-button,.director .logout-button{min-height:32px;padding:6px 10px}.topbar-actions .top-status{max-width:125px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}}
+/* ─────────────────────────────────────────────────────────────────────────
+   Дизайн-проход. Только оформление: расчёты, запросы и разметка данных
+   не менялись.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Происхождение данных — строкой под панелью управления вместо карточки
+   «Отчёт кассира» во всю правую колонку: это подпись к выбранному дню, а не
+   самостоятельный блок. Кнопка скачивания и так стоит в панели управления. */
+.day-meta{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:-8px 0 20px;padding:0 4px;
+  font-size:11px;color:var(--muted)}
+.day-meta strong{font-weight:600;color:#44553f}
+.day-meta .source-dot{margin:0}
+.day-meta-sep{color:#a8b1a2}
+
+/* Курс USD стал четвёртой карточкой в ряду показателей: отдельной широкой
+   полосой он весил столько же, сколько выручка дня, хотя это справка. */
+.metrics{grid-template-columns:1.35fr 1fr 1fr 1.15fr}
+.usd-metric .amount{margin:20px 0 14px}
+.usd-metric .amount>span{font-size:clamp(20px,1.8vw,28px)}
+.usd-metric .amount small{max-width:96px;line-height:1.4}
+.usd-official-line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:10px 12px;border-radius:10px;background:#f4f6f0;font-size:11px;color:var(--muted)}
+.usd-official-line strong{font-size:13px;color:var(--ink);font-variant-numeric:tabular-nums}
+.usd-foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;font-size:10px}
+.usd-foot a{border-bottom:1px solid #c3cfbe}
+.usd-metric .usd-status{margin-top:8px;font-size:10px}
+@media(max-width:1180px){.metrics{grid-template-columns:1fr 1fr}}
+@media(max-width:650px){.metrics{grid-template-columns:1fr}}
+
+/* Доля способа оплаты — полоской в самой строке: общая полоса сверху
+   показывает пропорции дня, но сопоставить её сегмент с нужной строкой было
+   нечем — восемь оттенков одной зелёной гаммы глаз не различает. */
+.payment-bar{display:block;height:6px;border-radius:3px;background:#eceee7;overflow:hidden}
+.payment-bar i{display:block;height:100%;border-radius:3px;background:var(--color,#9ab39b)}
+/* Гасим строку цветом, а не прозрачностью: .55 уводила текст
+   ниже порога читаемости. */
+.payment-row.is-zero{opacity:1}
+.payment-row.is-zero .payment-name,.payment-row.is-zero .payment-value,
+.payment-row.is-zero .payment-value small{color:var(--muted)}
+.payment-row.is-zero .payment-dot{opacity:.45}
+.payment-row.is-zero .payment-bar{background:#f1f3ed}
+
+/* Структура продаж уехала вниз и идёт во всю ширину: список слева, итог и
+   пояснение — колонкой справа, иначе панель превращается в полосу текста
+   через весь экран. */
+.content-grid{grid-template-columns:minmax(0,1fr)}
+
+
+/* Бенто ручного учёта: три равные карточки — расходы, поступления, итог.
+   Поступления были вторым разделом внутри карточки расходов, из-за чего
+   левая колонка выходила вдвое длиннее правой. */
+.cashier-finance{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px;align-items:stretch}
+.cashier-finance>.panel{display:flex;flex-direction:column}
+.expenses-panel{order:1}.receipts-panel{order:2}.handover-panel{order:3}
+.expenses-panel,.receipts-panel{padding:26px}
+.receipts-panel .finance-heading{margin-bottom:18px}
+.cashier-finance .expense-form{display:grid;grid-template-columns:1fr;gap:12px}
+.cashier-finance .expense-form .button{width:100%}
+.cashier-finance .expense-total{margin-top:auto;padding-top:18px}
+.cashier-finance .expense-feedback{margin:10px 0 14px}
+@media(max-width:1180px){
+  .cashier-finance{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .handover-panel{grid-column:1/-1}
+}
+@media(max-width:900px){
+  .cashier-finance{grid-template-columns:1fr}
+  .handover-panel{grid-column:1}
+}
+
+/* «Общий приход» в узкой карточке разрывался пополам: подпись и сумма
+   дрались за одну строку. */
+.handover-panel .inflow-summary{display:block}
+.handover-panel .inflow-summary>span{display:block;margin-bottom:6px}
+.handover-panel .inflow-summary>strong{display:block;white-space:nowrap;font-size:17px;
+  font-variant-numeric:tabular-nums}
+.handover-number span{overflow-wrap:normal;white-space:nowrap}
+
+/* Ошибка отличается от обычного сообщения: «загружаем», «демо-режим» и
+   «iiko отдал незнакомый справочник» были одинаковой бежевой плашкой. */
+/* Иконка абсолютом, а не flex-элементом: во flex каждый текстовый кусок
+   сообщения становился отдельной колонкой и на телефоне рвался на три
+   узких столбца. */
+.notice{position:relative;padding-left:46px}
+.notice::before{content:"i";position:absolute;left:18px;top:15px;width:18px;height:18px;border-radius:50%;
+  background:#e4d3ab;color:#6a5324;font-size:11px;font-weight:700;display:flex;align-items:center;
+  justify-content:center}
+.notice.demo::before{content:"◑";background:#d3dfc8;color:#42553a}
+.notice[role="alert"]{background:#fdeee9;border-color:#f0cfc3;color:#7d3620}
+.notice[role="alert"]::before{content:"!";background:#e8bcab;color:#73301b}
+
+/* Мелочи: кикер 10px читался текстурой, дата отчёта давала цель 28px. */
+.eyebrow{font-size:11px}
+#report-date{min-height:44px}
+
+/* Строка оплаты на телефоне: четыре колонки в 335 px не помещаются. */
+@media(max-width:650px){
+  .payment-row{grid-template-columns:12px minmax(0,1fr) auto;row-gap:8px}
+  .payment-bar{grid-column:2/4;height:5px}
+  .payment-value{grid-row:1;grid-column:3}
+}
+
+/* ── Экран кассира: три зоны вместо восьми карточек ───────────────────────────
+   Раньше на одном экране одновременно жили четыре карточки показателей,
+   полоса курса, две формы ручного учёта, итог к передаче и разбор продаж на
+   восемь строк. Кассир приходит за одним ответом — «сколько сдавать», —
+   поэтому итог поднят наверх, работа собрана в одну карточку с вкладками, а
+   разбор продаж свёрнут: он нужен владельцу и не каждый день.
+   ────────────────────────────────────────────────────────────────────────── */
+
+/* 1. Итог смены */
+/* Левая колонка — две карточки вместо одной растянутой: показатели дня и
+   курс. Раньше курс прижимался к низу единой карточки, и между «средним
+   чеком» и курсом зияла пустая треть — карточку тянула по высоте соседняя
+   «К передаче». */
+.shift{display:grid;grid-template-columns:minmax(0,1fr) minmax(300px,.85fr);gap:20px;align-items:stretch;margin-bottom:20px}
+.shift-left{display:grid;grid-template-rows:1fr auto;gap:20px;min-width:0;order:-1}
+.shift>.panel,.shift-left>.panel{display:flex;flex-direction:column}
+.shift .handover-panel{padding:26px}
+.shift .handover-number span{font-size:clamp(32px,3.2vw,46px)}
+.shift .handover-number{margin:22px 0 20px}
+.shift .handover-note{padding-top:14px}
+.shift .handover-note{margin-top:auto;padding-top:16px}
+
+/* Строки распределяются по высоте колонки: соседняя карточка «К передаче»
+   выше, и остаток лучше отдать воздуху между показателями, чем копить
+   пустым полем внизу. */
+.day-figures{padding:24px 26px;display:flex;flex-direction:column;justify-content:space-between;gap:2px}
+.usd-card{padding:20px 26px}
+.kicker-line{font-size:11px;font-weight:600;letter-spacing:.14em;text-indent:.14em;text-transform:uppercase;
+  color:var(--muted);margin:0 0 14px}
+.figure{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:baseline;gap:4px 14px;
+  padding:14px 0;border-top:1px solid #eef1ea}
+.figure:first-of-type{border-top:0;padding-top:0}
+.figure-name{font-size:12px;color:var(--muted)}
+.figure-value{display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.figure-value strong{font-size:19px;font-weight:600;letter-spacing:-.3px}
+.figure-value small{font-size:10px;color:var(--muted)}
+.figure-note{grid-column:1/-1;font-size:10px;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px}
+.figure-note strong{font-weight:600;color:#44553f}
+.figure-note a{border-bottom:1px solid #c3cfbe}
+.figure-main .figure-value strong{font-size:27px}
+.usd-card .figure-usd{border-top:0;padding:0}
+.figure-usd .usd-status{margin:6px 0 0;font-size:10px}
+.loading .figure-value strong{color:#c7cfc2}
+
+/* 2. Операции кассы */
+.ops{padding:26px}
+.ops-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px;flex-wrap:wrap;margin-bottom:20px}
+.ops-day{font-size:12px;font-weight:400;color:var(--muted)}
+.ops-tabs{display:flex;gap:4px;padding:4px;background:#f1f4ec;border-radius:999px}
+.ops-tab{border:0;background:transparent;color:#5c6d60;border-radius:999px;padding:10px 18px;min-height:44px;
+  font-size:13px;font-weight:550}
+.ops-tab.is-active{background:#fff;color:var(--green);box-shadow:0 1px 2px #16301f14}
+.ops-pane{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(280px,1fr);gap:20px 30px;align-items:start}
+.ops-hint{grid-column:1/-1;margin:0;font-size:12px;line-height:1.6;color:var(--muted)}
+.ops-pane .expense-form{grid-column:1;grid-row:2;display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:12px;align-items:end}
+.ops-pane .expense-save{grid-column:1/-1;width:100%}
+.ops-pane .expense-feedback{grid-column:1;grid-row:3;margin:0}
+/* Список и его итог идут одной колонкой: итог отрывался от списка на треть
+   экрана и читался как подпись к пустому месту. */
+.ops-pane .expense-empty{grid-column:2;grid-row:2;margin:0;padding:18px 0 0}
+.ops-pane .expense-list{grid-column:2;grid-row:2;margin:0}
+.ops-pane .expense-total{margin:0;padding:16px 18px;background:#f4f6f0;border-radius:14px;
+  display:flex;justify-content:space-between;align-items:baseline;gap:12px}
+.ops-pane .expense-total strong{font-size:20px}
+@media(max-width:900px){
+  .shift{grid-template-columns:1fr}
+  .ops-pane{grid-template-columns:1fr}
+  .ops-pane .expense-form{grid-column:1;grid-template-columns:1fr}
+  .ops-pane .expense-empty,.ops-pane .expense-list,.ops-pane .expense-total,.ops-pane .expense-feedback{grid-column:1;grid-row:auto}
+}
+
+/* 3. Свёрнутый разбор продаж */
+.fold{border:1px solid var(--border);border-radius:var(--radius);background:#fff;margin-top:20px;overflow:hidden}
+.fold>summary{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap;padding:20px 26px;min-height:56px;
+  cursor:pointer;list-style:none}
+.fold>summary::-webkit-details-marker{display:none}
+.fold>summary::after{content:"Развернуть";margin-left:auto;font-size:11px;color:var(--muted);
+  border:1px solid var(--border);border-radius:999px;padding:8px 14px}
+.fold[open]>summary::after{content:"Свернуть"}
+.fold .fold-title{font-size:18px;font-weight:550;letter-spacing:-.3px}
+.fold .payments-panel{border:0;border-top:1px solid var(--border);border-radius:0;padding:24px 26px 26px}
+.fold .panel-heading{display:none}
+
+/* «Общий приход» повторял цифру продаж соседней карточки и держал вокруг себя
+   рамку с отступами — делаем его такой же строкой, как остальные слагаемые. */
+.shift .inflow-summary{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
+  padding:12px 0;margin:0;border:0;border-top:1px solid #ffffff20;background:none;border-radius:0;
+  font-size:11px;color:#b9cbbd}
+.shift .inflow-summary>strong{font-size:12px;color:#fff;font-weight:550;white-space:nowrap}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   Типографическая шкала. Замер показал, что 51 текстовый элемент на экране
+   набран 10–11 px и ещё 35 — двенадцатым: контраст к фону был в норме, но
+   сам кегль оставлял интерфейс нечитаемым. Поднимаем весь служебный текст
+   на ступень и убираем избыточный трекинг у капса: при 10 px разрядка в
+   1,8 px превращает слово в текстуру.
+   ────────────────────────────────────────────────────────────────────── */
+
+/* Служебный капс */
+.eyebrow,.kicker-line{font-size:11.5px;letter-spacing:1.1px;line-height:1.4}
+.nav-label{font-size:11px;letter-spacing:1.1px}
+.file-type,.attendance-file-type{font-size:10.5px}
+
+/* Шапка и навигация */
+.breadcrumb{font-size:13.5px}
+.top-status{font-size:12.5px}
+.nav-active{font-size:15px}
+.coming{font-size:13.5px}
+.coming small{font-size:11px}
+.sidebar-bottom{font-size:13.5px}
+.sidebar-bottom small{font-size:11.5px}
+.brand small{font-size:10.5px;letter-spacing:5px}
+.module-badge div{font-size:11.5px}
+.module-badge small{font-size:13px}
+
+/* Панель управления */
+.subtitle{font-size:14.5px}
+.date-group label,.expense-field label{font-size:12.5px}
+input[type=date]{font-size:15px}
+.chip{font-size:13.5px}
+.button{font-size:13.5px}
+.day-meta{font-size:12.5px}
+.notice{font-size:13.5px;line-height:1.55}
+
+/* Показатели дня */
+.figure-name{font-size:13.5px}
+.figure-value small{font-size:12px}
+.figure-note{font-size:12px;line-height:1.5}
+.figure-value strong{font-size:21px}
+.figure-main .figure-value strong{font-size:29px}
+
+/* К передаче */
+.handover-rule{font-size:12.5px}
+.handover-rule strong{font-size:13.5px}
+.shift .inflow-summary{font-size:12.5px}
+.shift .inflow-summary>strong{font-size:13.5px}
+.handover-note{font-size:12px;line-height:1.55}
+.handover-number small{font-size:12.5px}
+
+/* Операции кассы */
+.ops-tab{font-size:14.5px}
+.ops-hint{font-size:13.5px}
+.ops-day{font-size:13px}
+.expense-empty{font-size:13.5px}
+.expense-feedback{font-size:12.5px}
+.expense-total{font-size:13.5px}
+.expense-automatic{font-size:11.5px}
+.expense-row,.expense-list{font-size:13.5px}
+
+/* Структура продаж */
+.payment-row{font-size:14.5px}
+.payment-value small{font-size:12.5px}
+.payment-total{font-size:14.5px}
+.panel-note{font-size:12.5px;line-height:1.6}
+.empty-state{font-size:13.5px}
+.tag{font-size:11.5px}
+.fold>summary::after{font-size:12.5px}
+
+/* Курс и подвал */
+.usd-status{font-size:12px}
+.amount small{font-size:12px}
+footer{font-size:11.5px}
+.expense-total strong small,.payment-total strong small{font-size:12px}
+.file-type,.attendance-file-type{font-size:11px}
+
+/* На телефоне название показателя и его значение перестают делить строку:
+   «Курс Retro · 17 сентября 2026 г.» переносился в три строки и упирался
+   в само число. */
+@media(max-width:650px){
+  .figure{grid-template-columns:1fr;row-gap:6px}
+  .figure-value{justify-content:flex-start}
+  .figure-note{margin-top:2px}
+}
+
+/* ── Карточка продаж: герой + два спутника ───────────────────────────────────
+   Три равноценные строки в столбик читались как таблица и тянулись по высоте
+   соседней карточки. Теперь выручка — главная цифра, а чеки и средний чек
+   стоят под ней парой: карточка стала компактнее и перестала спорить
+   с «К передаче» за внимание. */
+.day-figures{padding:26px;display:flex;flex-direction:column;gap:0;justify-content:flex-start}
+.day-figures .hero{display:flex;flex-direction:column;gap:6px;padding:18px 0 22px}
+.hero-value{display:flex;align-items:baseline;gap:8px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.hero-value strong{font-size:clamp(30px,3vw,40px);font-weight:600;letter-spacing:-1px;line-height:1}
+.hero-value small{font-size:13px;color:var(--muted)}
+.hero-note{font-size:12.5px;color:var(--muted)}
+.day-figures .mini-row{display:grid;grid-template-columns:1fr 1fr;gap:12px;border-top:1px solid #eef1ea;padding-top:18px}
+.mini{display:flex;flex-direction:column;gap:7px;padding:14px 16px;background:#f7f9f4;border-radius:13px;min-width:0}
+.mini-name{font-size:12.5px;color:var(--muted)}
+.mini-value{display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.mini-value strong{font-size:21px;font-weight:600;letter-spacing:-.4px}
+.mini-value small{font-size:11.5px;color:var(--muted)}
+.loading .hero-value strong,.loading .mini-value strong{color:#c7cfc2}
+
+/* ── Карточка курса: два курса рядом, а не строка-сноска ─────────────────── */
+.usd-card{padding:26px;display:flex;flex-direction:column;gap:0}
+.usd-grid{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:16px 0 0}
+.usd-item{display:flex;flex-direction:column;gap:7px;padding:15px 16px;border-radius:13px;background:#f7f9f4;min-width:0}
+/* Курс ресторана — тот, по которому считают гостю, поэтому он и выделен. */
+.usd-item.is-primary{background:#eef3e9;box-shadow:inset 0 0 0 1px #dbe6d3}
+.usd-item-name{font-size:12.5px;color:var(--muted)}
+.usd-item-value{display:flex;align-items:baseline;gap:5px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.usd-item-value strong{font-size:23px;font-weight:600;letter-spacing:-.5px}
+.usd-item.is-primary .usd-item-value strong{color:var(--green)}
+.usd-item-value small{font-size:11.5px;color:var(--muted)}
+.usd-foot{display:flex;align-items:center;flex-wrap:wrap;gap:8px 12px;padding-top:16px;margin-top:16px;
+  border-top:1px solid #eef1ea;font-size:12px;color:var(--muted)}
+.usd-delta{background:#f1f4ec;border-radius:999px;padding:5px 11px;font-weight:600;color:#4c6350}
+.usd-foot a{border-bottom:1px solid #c3cfbe}
+.usd-card .usd-status{margin:10px 0 0;font-size:12px}
+.loading .usd-item-value strong{color:#c7cfc2}
+
+@media(max-width:650px){
+  .day-figures .mini-row,.usd-grid{grid-template-columns:1fr}
+}
+
+/* ── Операции кассы: та же сетка плиток, что в карточках дня ───────────────── */
+.ops{padding:26px}
+.ops-head{margin-bottom:22px}
+.ops-tabs{background:#f1f4ec;padding:5px}
+.ops-tab{padding:11px 20px;font-size:14.5px}
+
+/* Ввод: поле, сумма и кнопка стоят в одну линию — раньше кнопка уезжала во
+   всю ширину под поля и отрывалась от них. */
+.ops-pane .expense-form{grid-template-columns:minmax(0,1fr) 150px;gap:12px 14px;margin:0}
+.ops-pane .expense-field input{height:48px;font-size:15px;border-radius:12px;background:#fff}
+.ops-pane .expense-field input:focus{border-color:#9db496;background:#fff}
+.ops-pane .expense-save{grid-column:1/-1;height:48px;min-height:48px;border-radius:12px}
+
+/* Список операций — строки-плитки, а не таблица с линиями. */
+.ops-pane .expense-list{margin:0;display:flex;flex-direction:column;gap:8px}
+.ops-pane .expense-item{grid-template-columns:minmax(0,1fr) auto auto;gap:12px;align-items:center;
+  padding:13px 16px;border:0;border-radius:12px;background:#f7f9f4;font-size:14px}
+.ops-pane .expense-item-name{font-weight:500}
+.ops-pane .expense-item-value{font-size:16px}
+.ops-pane .expense-remove{width:32px;height:32px;border-radius:9px;background:#fff;border:1px solid var(--border);
+  color:var(--muted);display:flex;align-items:center;justify-content:center}
+.ops-pane .expense-remove:hover{color:var(--destructive,#8a3a24);border-color:#dcc3b8}
+
+/* Пустое состояние — такая же плитка, чтобы колонка не выглядела оборванной. */
+.ops-pane .expense-empty{border:1px dashed #dde4d7;border-radius:12px;background:#fbfcf9;
+  padding:18px 16px;text-align:center;color:var(--muted)}
+
+/* Итог — плитка того же вида, что «чеков» и «средний чек». */
+.ops-pane .expense-total{padding:16px 18px;border-radius:13px;background:#eef3e9;color:var(--ink);
+  font-size:13.5px;align-items:baseline}
+.ops-pane .expense-total strong{font-size:22px;font-weight:600;letter-spacing:-.4px}
+.ops-pane .expense-total strong small{font-size:12px;color:var(--muted)}
+
+/* Подсказка раздела — на подложке, как часть формы, а не висящая строка. */
+.ops-hint{padding:12px 16px;border-radius:12px;background:#f7f9f4;color:var(--muted)}
+
+/* Список и его итог — одна колонка: между ними больше нет провала, а итог
+   стоит сразу под последней операцией. */
+.ops-pane{grid-template-columns:minmax(0,1.1fr) minmax(300px,1fr);align-items:start}
+.ops-side{grid-column:2;grid-row:2/span 2;display:flex;flex-direction:column;gap:10px;min-width:0}
+.ops-pane .expense-form{grid-column:1;grid-row:2}
+.ops-pane .expense-feedback{grid-column:1;grid-row:3}
+.ops-side .expense-total{margin-top:2px}
+@media(max-width:900px){
+  .ops-side{grid-column:1;grid-row:auto}
+  .ops-pane .expense-form,.ops-pane .expense-feedback{grid-column:1;grid-row:auto}
+}
+.ops-side>.expense-total{align-self:stretch;margin-top:2px}
+.ops-side>.expense-empty{margin:0}
+
+/* ── Структура продаж: список, а не таблица с обрубленными дорожками ────────
+   Полосы долей стояли отдельной колонкой фиксированной ширины: у мелких
+   способов оплаты заполнение почти не читалось, между полосой и суммой
+   зияла пустота, а итог висел в правой колонке в отрыве от списка.
+   ────────────────────────────────────────────────────────────────────────── */
+/* Итог — плиткой над списком: ответ «сколько всего» не должен ждать девяти
+   строк. Порядок задан в разметке, раскладка остаётся обычным потоком. */
+.payments-panel .payment-total{margin:0 0 18px;padding:16px 20px;border-radius:14px;background:#eef3e9;
+  display:flex;align-items:baseline;justify-content:space-between;gap:14px}
+.payments-panel .panel-note{margin-top:16px}
+.payments-panel .payment-total strong{font-size:24px;font-weight:600;letter-spacing:-.5px}
+
+/* Полоса переехала под строку и идёт во всю её ширину. */
+.payment-row{grid-template-columns:12px minmax(0,1fr) auto;column-gap:12px;row-gap:9px;
+  padding:14px 0;border-bottom:1px solid #eef1ea}
+.payment-row .payment-bar{grid-column:1/-1;height:5px;border-radius:3px;background:#eef1ea}
+.payment-name{font-weight:500}
+/* Сумма и доля — одной строкой: доля под суммой ломала ритм списка. */
+.payment-value{display:flex;align-items:baseline;gap:10px;white-space:nowrap}
+.payment-value small{display:inline;margin:0;font-size:12.5px;color:var(--muted)}
+.payment-dot{margin-top:0}
+/* Явные ячейки: порядок в разметке (точка, название, полоса, сумма) иначе
+   выбрасывал сумму на третью строку. */
+.payment-row .payment-dot{grid-column:1;grid-row:1;align-self:center}
+.payment-row .payment-name{grid-column:2;grid-row:1}
+.payment-row .payment-value{grid-column:3;grid-row:1;justify-self:end}
+.payment-row .payment-bar{grid-column:1/-1;grid-row:2}
+.payment-bar i{min-width:3px}
+
+/* Мобильные переопределения держим последними: правило сетки «операций»
+   объявлено ниже прежнего медиа-блока и перебивало его, из-за чего колонка
+   со списком схлопывалась в ноль ширины. */
+@media(max-width:900px){
+  .ops-pane{grid-template-columns:1fr}
+  .ops-side,.ops-pane .expense-form,.ops-pane .expense-feedback,
+  .ops-pane .expense-empty,.ops-pane .expense-list,.ops-pane .expense-total{grid-column:1;grid-row:auto}
+  .ops-pane .expense-form{grid-template-columns:minmax(0,1fr) 120px}
+  .fold>summary{padding:18px 20px}
+  .payments-panel .payment-total strong{font-size:20px}
+}
+/* Метка «Авто» была светлее нормы контраста. */
+.expense-automatic{color:#3d6a49}
+/* Подпись формата на кнопке скачивания была светлее нормы (2,85:1). */
+.file-type,.attendance-file-type{color:#7b8a7d}
+.primary .file-type,.primary .attendance-file-type{color:#b9cdbc}

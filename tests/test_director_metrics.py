@@ -42,13 +42,13 @@ def test_missing_waiter_is_rejected():
                        CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
 
 
-def test_excluded_group_is_not_included_and_unmapped_group_defaults_to_menu():
+def test_excluded_group_is_not_included_and_unmapped_group_fails_closed():
     days = [date(2026, 9, 8) + timedelta(days=offset) for offset in range(10)]
     rows = [sale(category='Миллий', day=day, order_id=str(offset))
             for offset, day in enumerate(days)]
-    snapshot = build_snapshot(rows, {'Десерты': 'dessert'}, date(2026, 9, 8), date(2026, 9, 17),
-                              excluded_groups={'Контейнеры'})
-    assert snapshot.cash_total == Decimal('2000000')
+    with pytest.raises(DataError, match='категор'):
+        build_snapshot(rows, {'Десерты': 'dessert'}, date(2026, 9, 8), date(2026, 9, 17),
+                       excluded_groups={'Контейнеры'})
     excluded = build_snapshot([sale(category='Контейнеры', day=day, order_id=str(offset))
                                for offset, day in enumerate(days)], {'Десерты': 'dessert'},
                               date(2026, 9, 8), date(2026, 9, 17), excluded_groups={'Контейнеры'})

@@ -7,6 +7,7 @@ from fastapi.testclient import TestClient
 
 from retro.app import create_app
 from retro.config import Settings
+from retro.modules.cashier.expenses import seed_cashier_expense
 from retro.modules.cashier.service import build_snapshot
 
 
@@ -29,23 +30,24 @@ def test_manual_expenses_are_saved_by_day_and_can_be_removed(tmp_path):
             'date': '2026-09-12',
             'expenses': [{'id': expense_id, 'description': 'Зарплата', 'amount': '350000'}],
             'total': '350000',
+            'expense_policy_configured': False,
         }
-        assert client.get('/api/cashier/expenses?date=2026-09-11').json()['total'] == '350000'
+        assert client.get('/api/cashier/expenses?date=2026-09-11').json()['total'] == '0'
         assert client.delete(f'/api/cashier/expenses/{expense_id}?date=2026-09-11').status_code == 404
         assert client.delete(f'/api/cashier/expenses/{expense_id}?date=2026-09-12').status_code == 204
     with TestClient(create_app(Settings(), expense_db_path=path), client=('127.0.0.1', 50000)) as client:
         assert client.get('/api/cashier/expenses?date=2026-09-12').json() == {
             'date': '2026-09-12',
-            'expenses': [{'id': None, 'description': 'Зарплата', 'amount': '350000',
-                          'automatic': True}],
-            'total': '350000',
+            'expenses': [],
+            'total': '0',
+            'expense_policy_configured': False,
         }
 
 
-def test_daily_salary_is_included_once_with_historical_manual_salary(tmp_path):
+def test_manual_expense_is_not_duplicated_by_runtime_policy(tmp_path):
     with TestClient(create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3'),
                     client=('127.0.0.1', 50000)) as client:
-        for day, description in [('2026-04-25', 'Любовь'), ('2026-09-15', 'Любовь зп')]:
+        for day, description in [('2026-04-25', 'Выплата за смену'), ('2026-09-15', 'Зарплата')]:
             saved = client.post('/api/cashier/expenses', json={
                 'date': day, 'description': description, 'amount': '350000',
             }).json()
@@ -55,7 +57,9 @@ def test_daily_salary_is_included_once_with_historical_manual_salary(tmp_path):
 
 
 def test_daily_salary_is_added_to_other_expenses_and_export(tmp_path):
-    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3')
+    path = tmp_path / 'cashier.sqlite3'
+    seed_cashier_expense(path, DAY, DAY, 'Зарплата', Decimal('350000'))
+    app = create_app(Settings(), expense_db_path=path)
     snapshot = build_snapshot(DAY, [row('2026-09-12', 2, 450000)],
                               [row('Демо', 100000), row('UzCard', 350000)])
     app.state.cache.put(snapshot)
@@ -84,11 +88,13 @@ def test_invalid_expense_does_not_change_saved_data(tmp_path):
                      dict(date='2026-09-12', description='Такси', amount='-1'),
                      dict(date='2099-01-01', description='Такси', amount='100')]:
             assert client.post('/api/cashier/expenses', json=body).status_code == 422
-        assert client.get('/api/cashier/expenses?date=2026-09-12').json()['total'] == '350000'
+        assert client.get('/api/cashier/expenses?date=2026-09-12').json()['total'] == '0'
 
 
 def test_export_includes_manual_expenses_and_demo_less_expenses(tmp_path):
-    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3')
+    path = tmp_path / 'cashier.sqlite3'
+    seed_cashier_expense(path, DAY, DAY, 'Зарплата', Decimal('350000'))
+    app = create_app(Settings(), expense_db_path=path)
     snapshot = build_snapshot(DAY, [row('2026-09-12', 2, 450000)],
                               [row('Демо', 100000), row('UzCard', 350000)])
     app.state.cache.put(snapshot)
@@ -112,7 +118,9 @@ def test_export_includes_manual_expenses_and_demo_less_expenses(tmp_path):
 
 def test_other_cash_receipts_affect_handover_and_export(tmp_path):
     from dataclasses import replace
-    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3')
+    path = tmp_path / 'cashier.sqlite3'
+    seed_cashier_expense(path, DAY, DAY, 'Зарплата', Decimal('350000'))
+    app = create_app(Settings(), expense_db_path=path)
     snapshot = replace(build_snapshot(DAY, [row('2026-09-12', 2, 450000)],
                                       [row('Демо', 100000), row('UzCard', 350000)]),
                        cash_prepayment=Decimal('600000'), new_prepayment=Decimal('600000'))

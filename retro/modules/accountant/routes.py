@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
 
@@ -51,9 +52,13 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
             async with state.iiko_lock:
                 snapshot = await asyncio.wait_for(state.iiko.load(day), timeout=90)
                 state.cache.put(snapshot)
-        except TimeoutError:
+        except TimeoutError as error:
+            log_safe_failure('accountant-route', error, operation='cashier_handover',
+                             request_id=request.state.request_id)
             raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
         except DataError as error:
+            log_safe_failure('accountant-route', error, operation='cashier_handover',
+                             request_id=request.state.request_id)
             raise HTTPException(503, str(error)) from None
     if snapshot is None:
         return None
@@ -112,6 +117,7 @@ async def day_view(request: Request, date: date | None = None):
     reserves['monthly']['total'] = str(request.app.state.accountant_roster.monthly_total())
     return dict(demo=True, date=day.isoformat(), source='Симуляция; ресторанный Hikvision не подключён',
                 employees=[row.json() for row in rows], roster_count=len(roster), manual_handover=request.app.state.settings.manual_handover_only,
+                monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
                 actual_hikvision_unlinked=sum(employee.hikvision_id is None for employee in roster),
                 missing_rates=sum(employee.rate is None for employee in roster),
                 groups=group_items,
@@ -149,6 +155,17 @@ class EmployeeCreateInput(BaseModel):
     group: str
 
 
+class MonthlyEmployeeInput(BaseModel):
+    name: str
+    role: str
+    salary: str
+    schedule: str = ''
+    card: str = '0'
+    cash: str = '0'
+    advances: str = '0'
+    remaining: str = '0'
+
+
 @router.patch('/employees/{employee_id}')
 def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInput):
     try:
@@ -168,6 +185,37 @@ def create_employee(request: Request, body: EmployeeCreateInput):
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(demo=True, employee=employee.json())
+
+
+@router.post('/monthly-employees', status_code=201)
+def create_monthly_employee(request: Request, body: MonthlyEmployeeInput):
+    try:
+        employee = request.app.state.accountant_roster.add_monthly(
+            name=body.name, role=body.role, salary=body.salary, schedule=body.schedule,
+            card=body.card, cash=body.cash, advances=body.advances, remaining=body.remaining)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return dict(demo=True, employee=employee.json())
+
+
+@router.patch('/monthly-employees/{employee_id}')
+def update_monthly_employee(request: Request, employee_id: int, body: MonthlyEmployeeInput):
+    try:
+        employee = request.app.state.accountant_roster.update_monthly(
+            employee_id, name=body.name, role=body.role, salary=body.salary,
+            schedule=body.schedule, card=body.card, cash=body.cash,
+            advances=body.advances, remaining=body.remaining)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return dict(demo=True, employee=employee.json())
+
+
+@router.delete('/monthly-employees/{employee_id}', status_code=204)
+def delete_monthly_employee(request: Request, employee_id: int):
+    try:
+        request.app.state.accountant_roster.delete_monthly(employee_id)
+    except ValueError as error:
+        raise HTTPException(404, str(error)) from None
 
 
 @router.delete('/employees/{employee_id}', status_code=204)
@@ -359,6 +407,16 @@ def update_finance_operation(request: Request, operation_type: str, operation_id
     except LedgerError as error:
         finance_error(error)
     return dict(demo=True, id=operation_id)
+
+
+@router.delete('/operations/{operation_type}/{operation_id}', status_code=204)
+def delete_finance_operation(request: Request, operation_type: str, operation_id: int,
+                             date: date):
+    day = selected_day(date)
+    try:
+        request.app.state.accountant_finance.delete_operation(operation_type, operation_id, day)
+    except LedgerError as error:
+        finance_error(error)
 
 
 @router.post('/incomes', status_code=201)

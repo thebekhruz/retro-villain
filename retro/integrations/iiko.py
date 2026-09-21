@@ -6,6 +6,7 @@ from urllib.parse import quote
 import httpx
 
 from retro.config import IIKO_ORIGIN
+from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
@@ -179,7 +180,8 @@ class IikoClient:
                 total_prepay, cash_prepay = cash_prepay_from_shifts(day, snapshot.revenue, amounts, shifts)
                 from dataclasses import replace
                 return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay)
-        except (httpx.HTTPError, TimeoutError):
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_cashier')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
     async def load_director_report(self, today):
@@ -208,7 +210,8 @@ class IikoClient:
                     day += timedelta(days=1)
                 return build_director_snapshot(rows, self.settings.director_categories, start, end,
                                                excluded_groups=self.settings.director_excluded_groups)
-        except (httpx.HTTPError, TimeoutError):
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_director')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
     async def load_founder_analytics(self, start, end, granularity, directions):
@@ -238,7 +241,8 @@ class IikoClient:
                     await self._olap_range(client, start, end, payment_groups,
                                            ['DishDiscountSumInt'], payment_scope), payments=True)
                 return build_analytics(revenue, payments, start, end, granularity, directions)
-        except (httpx.HTTPError, TimeoutError):
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_founder')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
     async def _post(self, client, path, body, pending=False):

@@ -3,6 +3,7 @@ import asyncio
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 
+from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.accountant.payroll import draft_payroll
 
@@ -25,7 +26,10 @@ def attendance(request: Request):
         'arrived_count': len(arrived),
         'late_count': len(late),
         'missing_count': sum(row.status == 'missing' for row in rows),
-        'employees': [row.json() for row in rows],
+        'employees': [dict(employee_id=row.employee_id, name=row.name, role=row.role,
+                           group=row.group_name, status=row.status,
+                           first_entry=row.occurred_at.isoformat() if row.occurred_at else None,
+                           demo=True) for row in rows],
     }
 
 
@@ -36,12 +40,14 @@ async def today(request: Request):
             snapshot = await request.app.state.iiko.load_director_report(today_tashkent())
         return snapshot.json()
     except DataError as error:
+        log_safe_failure('director-route', error, operation='today',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
 
 @router.get('/reports')
 def reports(request: Request):
-    return {'reports': request.app.state.director_store.list()}
+    return {'reports': request.app.state.director_store.list_metadata()}
 
 
 @router.post('/reports', status_code=201)
@@ -51,9 +57,13 @@ async def create_report(request: Request):
     try:
         async with request.app.state.director_lock:
             return await asyncio.wait_for(request.app.state.director_service.generate(today_tashkent()), timeout=180)
-    except TimeoutError:
+    except TimeoutError as error:
+        log_safe_failure('director-route', error, operation='create_report',
+                         request_id=request.state.request_id)
         raise HTTPException(504, 'Анализ формируется слишком долго. Повторите позже.') from None
     except DataError as error:
+        log_safe_failure('director-route', error, operation='create_report',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
 

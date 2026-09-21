@@ -1,5 +1,11 @@
 """Local employee roster imported from the approved payroll worksheet."""
 
+# Аннотации не вычисляются при импорте: ниже в классе есть метод list(),
+# и на Python 3.12 подпись «-> list[MonthlyEmployee]» бралась бы за него,
+# а не за встроенный тип. На 3.14 аннотации ленивые и это не всплывает,
+# поэтому локально всё работало, а на сервере приложение не поднималось.
+from __future__ import annotations
+
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -8,6 +14,8 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from openpyxl import load_workbook
+
+from retro.runtime import secure_directory, secure_file
 
 
 GROUPS = {
@@ -43,6 +51,17 @@ def parse_rate(value) -> Decimal | None:
     return rate
 
 
+def parse_money(value, *, allow_zero=True) -> Decimal:
+    try:
+        amount = Decimal(str(value))
+    except (InvalidOperation, ValueError):
+        raise ValueError('Сумма должна быть числом.') from None
+    if (not amount.is_finite() or amount < 0 or (amount == 0 and not allow_zero)
+            or amount > Decimal('1000000000000') or amount.as_tuple().exponent < -2):
+        raise ValueError('Сумма должна быть неотрицательной, не более 1 трлн сум и с точностью до тиына.')
+    return amount
+
+
 @dataclass(frozen=True)
 class Employee:
     id: int
@@ -59,13 +78,33 @@ class Employee:
                     hikvision_registered=self.hikvision_id is not None)
 
 
+@dataclass(frozen=True)
+class MonthlyEmployee:
+    id: int
+    external_key: str | None
+    name: str
+    role: str
+    salary: Decimal
+    schedule: str
+    card: Decimal
+    cash: Decimal
+    advances: Decimal
+    remaining: Decimal
+
+    def json(self):
+        return dict(id=self.id, external_key=self.external_key, name=self.name, role=self.role,
+                    salary=str(self.salary), schedule=self.schedule, card=str(self.card),
+                    cash=str(self.cash), advances=str(self.advances), remaining=str(self.remaining))
+
+
 class RosterStore:
     def __init__(self, path: Path):
         self.path = Path(path)
 
     def _open(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
+        secure_file(self.path)
         connection.execute('''CREATE TABLE IF NOT EXISTS accountant_employees (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             source_row INTEGER NOT NULL UNIQUE,
@@ -85,6 +124,25 @@ class RosterStore:
             old_group TEXT NOT NULL,
             new_group TEXT NOT NULL
         )''')
+        connection.execute('''CREATE TABLE IF NOT EXISTS accountant_monthly_employees (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            external_key TEXT UNIQUE,
+            name TEXT NOT NULL,
+            role TEXT NOT NULL,
+            salary TEXT NOT NULL,
+            schedule TEXT NOT NULL DEFAULT '',
+            card TEXT NOT NULL DEFAULT '0',
+            cash TEXT NOT NULL DEFAULT '0',
+            advances TEXT NOT NULL DEFAULT '0',
+            remaining TEXT NOT NULL DEFAULT '0'
+        )''')
+        columns = {row[1] for row in connection.execute(
+            'PRAGMA table_info(accountant_monthly_employees)')}
+        if 'external_key' not in columns:
+            connection.execute('ALTER TABLE accountant_monthly_employees ADD COLUMN external_key TEXT')
+            connection.execute(
+                'CREATE UNIQUE INDEX IF NOT EXISTS accountant_monthly_external_key '
+                'ON accountant_monthly_employees(external_key) WHERE external_key IS NOT NULL')
         return connection
 
     def import_xlsx(self, source: Path, *, replace: bool = False) -> dict[str, int]:
@@ -134,8 +192,75 @@ class RosterStore:
         return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None, row[6]) for row in rows]
 
     def monthly_total(self) -> Decimal:
-        """Return the total salary amount recorded for the imported roster."""
-        return sum((person.rate for person in self.list() if person.rate is not None), Decimal(0))
+        """Return only salaries explicitly stored in the monthly payroll register."""
+        return sum((person.salary for person in self.list_monthly()), Decimal(0))
+
+    def list_monthly(self) -> list[MonthlyEmployee]:
+        with closing(self._open()) as connection:
+            rows = connection.execute(
+                'SELECT id, external_key, name, role, salary, schedule, card, cash, advances, remaining '
+                'FROM accountant_monthly_employees ORDER BY role, name, id').fetchall()
+        return [MonthlyEmployee(row[0], row[1], row[2], row[3], Decimal(row[4]), row[5],
+                                Decimal(row[6]), Decimal(row[7]), Decimal(row[8]), Decimal(row[9]))
+                for row in rows]
+
+    @staticmethod
+    def _monthly_values(*, name, role, salary, schedule='', card='0', cash='0', advances='0',
+                        remaining='0'):
+        name = name.strip() if isinstance(name, str) else ''
+        role = role.strip() if isinstance(role, str) else ''
+        schedule = schedule.strip() if isinstance(schedule, str) else ''
+        if not name or len(name) > 160 or not role or len(role) > 80:
+            raise ValueError('Укажите корректные имя и должность.')
+        if len(schedule) > 160:
+            raise ValueError('График должен быть не длиннее 160 символов.')
+        money = {field: parse_money(value) for field, value in {
+            'salary': salary, 'card': card, 'cash': cash,
+            'advances': advances, 'remaining': remaining,
+        }.items()}
+        return name, role, schedule, money
+
+    def add_monthly(self, *, name: str, role: str, salary: str, schedule: str = '',
+                    card: str = '0', cash: str = '0', advances: str = '0',
+                    remaining: str = '0', external_key: str | None = None) -> MonthlyEmployee:
+        name, role, schedule, money = self._monthly_values(
+            name=name, role=role, salary=salary, schedule=schedule, card=card, cash=cash,
+            advances=advances, remaining=remaining)
+        key = external_key.strip() if isinstance(external_key, str) and external_key.strip() else None
+        with closing(self._open()) as connection, connection:
+            try:
+                employee_id = connection.execute(
+                    'INSERT INTO accountant_monthly_employees '
+                    '(external_key,name,role,salary,schedule,card,cash,advances,remaining) '
+                    'VALUES (?,?,?,?,?,?,?,?,?)',
+                    (key, name, role, str(money['salary']), schedule, str(money['card']),
+                     str(money['cash']), str(money['advances']), str(money['remaining']))).lastrowid
+            except sqlite3.IntegrityError:
+                raise ValueError('Сотрудник с таким внешним ключом уже существует.') from None
+        return next(item for item in self.list_monthly() if item.id == employee_id)
+
+    def update_monthly(self, employee_id: int, *, name: str, role: str, salary: str,
+                       schedule: str = '', card: str = '0', cash: str = '0',
+                       advances: str = '0', remaining: str = '0') -> MonthlyEmployee:
+        name, role, schedule, money = self._monthly_values(
+            name=name, role=role, salary=salary, schedule=schedule, card=card, cash=cash,
+            advances=advances, remaining=remaining)
+        with closing(self._open()) as connection, connection:
+            changed = connection.execute(
+                'UPDATE accountant_monthly_employees SET name=?,role=?,salary=?,schedule=?,card=?,cash=?, '
+                'advances=?,remaining=? WHERE id=?',
+                (name, role, str(money['salary']), schedule, str(money['card']), str(money['cash']),
+                 str(money['advances']), str(money['remaining']), employee_id)).rowcount
+        if not changed:
+            raise ValueError('Сотрудник не найден.')
+        return next(item for item in self.list_monthly() if item.id == employee_id)
+
+    def delete_monthly(self, employee_id: int):
+        with closing(self._open()) as connection, connection:
+            deleted = connection.execute(
+                'DELETE FROM accountant_monthly_employees WHERE id = ?', (employee_id,)).rowcount
+        if not deleted:
+            raise ValueError('Сотрудник не найден.')
 
     def add(self, *, name: str, role: str, rate: str | None, group_name: str) -> Employee:
         name = name.strip()

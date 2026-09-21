@@ -11,6 +11,8 @@ from pathlib import Path
 import httpx
 
 from retro.modules.cashier.service import DataError
+from retro.logging_config import log_upstream_failure
+from retro.runtime import secure_directory, secure_file
 
 CBU_ORIGIN = 'https://cbu.uz'
 DISCOUNT = Decimal('0.015')
@@ -40,8 +42,9 @@ class UsdRates:
         self.lock = asyncio.Lock()
 
     def _open(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
+        secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
+        secure_file(self.path)
         connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_rates (
             day TEXT PRIMARY KEY,
             source_date TEXT NOT NULL,
@@ -110,7 +113,8 @@ class UsdRates:
                 response = await client.get(f'/ru/arkhiv-kursov-valyut/json/USD/{day.isoformat()}/')
                 response.raise_for_status()
                 payload = response.json()
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as error:
+            log_upstream_failure('cbu', error, operation='load_usd_rate')
             raise DataError('Не удалось получить курс USD от Центрального банка.') from None
         if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
             raise DataError('Центральный банк вернул некорректный курс USD.')
