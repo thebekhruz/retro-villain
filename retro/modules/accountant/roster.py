@@ -1,5 +1,11 @@
 """Local employee roster imported from the approved payroll worksheet."""
 
+# Аннотации не вычисляются при импорте: ниже в классе есть метод list(),
+# и на Python 3.12 подпись «-> list[MonthlyEmployee]» бралась бы за него,
+# а не за встроенный тип. На 3.14 аннотации ленивые и это не всплывает,
+# поэтому локально всё работало, а на сервере приложение не поднималось.
+from __future__ import annotations
+
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
