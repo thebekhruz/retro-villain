@@ -20,55 +20,170 @@
 <main>
   <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Финансовый отдел</strong></span><div class="topbar-actions"><span class="top-status">Локальный просмотр</span><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace accountant-workspace">
-    <div class="page-heading"><div><p class="eyebrow">МОДУЛЬ 02 · ФИНАНСОВЫЙ ОТДЕЛ</p><h1>Финансы под контролем<span>.</span></h1><p class="subtitle">Записывайте операции. Остатки и обязательства — справа.</p></div><div class="module-badge"><span>02</span><div>Модуль<small>Финансы</small></div></div></div>
+    <div class="page-heading"><div><p class="eyebrow">МОДУЛЬ 02 · ФИНАНСОВЫЙ ОТДЕЛ</p><h1>Финансы под контролем<span>.</span></h1><p class="subtitle">Остаток и обязательства — сразу. Записи по дню — ниже.</p></div><div class="module-badge"><span>02</span><div>Модуль<small>Финансы</small></div></div></div>
     <div class="accountant-demo-banner" role="note"><strong>ДЕМО</strong><span>Проходы Hikvision смоделированы по списку «ЗП». Эти начисления, выплаты и расходы не меняют реальную кассу.</span></div>
     <section class="controls" aria-label="День проходов">
       <div class="date-group"><label for="accountant-date">Дата</label><input id="accountant-date" type="date" required></div>
-      <div class="quick-days"><button id="accountant-today" class="chip" type="button">Сегодня</button><button id="accountant-yesterday" class="chip" type="button">Вчера</button></div>
-      <button id="accountant-refresh" class="button secondary accountant-download" type="button">Обновить день</button>
-      <a id="employees-menu" class="button secondary" href="/accountant/employees">Сотрудники · зарплаты</a>
+      <div class="quick-days"><button id="accountant-today" class="chip" type="button" aria-pressed="false">Сегодня</button><button id="accountant-yesterday" class="chip" type="button" aria-pressed="false">Вчера</button></div>
+      <div class="controls-actions">
+        <button id="accountant-refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить день</button>
+        <a id="employees-menu" class="button secondary" href="/accountant/employees">Сотрудники · зарплаты</a>
+      </div>
     </section>
-    <section class="panel accountant-panel handover-entry"><p class="eyebrow">РУЧНОЙ ПРИХОД</p><h2>Передано от кассира</h2><form id="handover-form" class="accountant-form"><label>Сумма, сум<input name="amount" type="number" min="0" step="0.01" required placeholder="0"></label><label>Примечание<input name="note" maxlength="160" required placeholder="Например, касса за вчерашний день"></label><button class="button primary" type="submit">Сохранить приход</button></form><p class="accountant-help">Выберите дату получения денег бухгалтером. В отчёте за эту дату появится касса за предыдущий день. Вводите сумму, фактически переданную после расходов кассира.</p></section>
     <p id="accountant-message" class="notice" role="status" aria-live="polite" hidden></p>
     <div class="finance-layout" id="finance-layout">
+      <!-- Рельса со сводкой идёт в разметке второй, но на узких экранах правило
+           order поднимает её над формами: открывают страницу ради остатка. -->
       <div class="finance-main">
-    <section class="panel accountant-panel" aria-labelledby="staff-title">
-      <div class="accountant-panel-head"><div><p class="eyebrow">КОМАНДА · ПОСЛЕ 10:00</p><h2 id="staff-title">Опоздавшие сотрудники</h2><p id="staff-summary" class="accountant-help">Загружаем список…</p></div><span class="accountant-chip">Hikvision: демопроходы</span></div>
-      <details id="late-details" class="late-details"><summary>Показать / скрыть опоздавших</summary><div id="late-list" class="staff-list" aria-live="polite"></div></details>
-      <div class="accountant-panel-foot"><p>Входы за <span id="entrances-day">—</span> · данные демонстрационные.</p><div class="accountant-actions"><a id="all-employees-link" class="button secondary" href="/accountant/employees">Все сотрудники</a><button id="entrances-download" class="button attendance-button" type="button">Скачать опоздавших <span class="attendance-file-type">XLSX</span></button></div></div>
-    </section>
-
         <section class="panel accountant-panel expense-workbook" aria-labelledby="finance-expenses-title">
-          <p class="eyebrow">ЖУРНАЛ БУХГАЛТЕРА</p><h2 id="finance-expenses-title">Операции за день</h2>
-          <p class="accountant-help">Категория → тип → наименование → сумма. Сохраните строку — остатки справа пересчитаются.</p>
+          <div class="accountant-panel-head">
+            <div><p class="eyebrow">ЖУРНАЛ БУХГАЛТЕРА</p><h2 id="finance-expenses-title">Операции за день</h2>
+            <p class="accountant-help">Категория → тип → наименование → сумма. Сохранённая строка сразу пересчитывает остатки справа.</p></div>
+          </div>
           <form id="other-expense-form" class="expense-entry">
-            <label>Категория<select id="expense-category" required><option value="">Выберите категорию</option></select></label>
-            <label>Тип расхода / операции<select name="item_code" id="expense-item" required><option value="">Сначала категория</option></select></label>
-            <label class="expense-description">Наименование<input name="note" required maxlength="120" placeholder="За что / кому / документ"></label>
-            <label>Всего к оплате, <span id="expense-currency">сум</span><input name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"></label>
-            <label id="expense-paid-label">Оплачено сейчас, сум<input name="paid_amount" id="expense-paid" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Пусто = вся сумма"></label>
-            <button class="button primary" type="submit">Записать</button>
+            <div class="field">
+              <label for="expense-category">Категория</label>
+              <select id="expense-category" required><option value="">Выберите категорию</option></select>
+            </div>
+            <div class="field">
+              <label for="expense-item">Тип расхода или операции</label>
+              <select name="item_code" id="expense-item" required><option value="">Сначала категория</option></select>
+            </div>
+            <div class="field expense-description">
+              <label for="expense-note">Наименование</label>
+              <input id="expense-note" name="note" required maxlength="120" placeholder="За что / кому / документ">
+            </div>
+            <div class="field">
+              <label for="expense-amount">К оплате, <span id="expense-currency">сум</span></label>
+              <input id="expense-amount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0">
+            </div>
+            <div class="field" id="expense-paid-label">
+              <label for="expense-paid">Оплачено сейчас, сум</label>
+              <input name="paid_amount" id="expense-paid" type="number" inputmode="decimal" min="0" step="0.01" placeholder="Пусто = вся сумма">
+            </div>
+            <div class="expense-foot">
+              <p id="expense-impact" class="operation-impact" role="status" aria-live="polite">Выберите тип операции, чтобы увидеть, какой остаток изменится.</p>
+              <button class="button primary" type="submit">Записать</button>
+            </div>
           </form>
-          <p id="expense-impact" class="operation-impact">Выберите тип операции, чтобы увидеть, какой остаток изменится.</p>
-          <div class="expense-table-scroll"><table class="expense-table"><thead><tr><th>Категория</th><th>Тип</th><th>Наименование</th><th>Сумма</th></tr></thead><tbody id="finance-journal"></tbody></table></div>
-          <div class="debt-workspace"><h3>Неоплаченные расходы</h3><p class="accountant-help">Остаток долга переносится по дням. Запишите выплату, когда действительно передали деньги.</p><div id="manual-debt-list" class="manual-debt-list"></div><form id="debt-payment-form" class="debt-payment-form"><label>Какой долг погашаем<select name="debt_id" id="debt-select" required><option value="">Выберите долг</option></select></label><label>Оплачено, сум<input name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required></label><button class="button secondary" type="submit">Записать выплату</button></form></div>
+          <div class="expense-table-scroll">
+            <table class="expense-table">
+              <thead><tr><th scope="col">Категория</th><th scope="col">Тип</th><th scope="col">Наименование</th><th scope="col">Сумма</th></tr></thead>
+              <tbody id="finance-journal"></tbody>
+            </table>
+          </div>
+          <div class="debt-workspace">
+            <h3 id="debt-workspace-title">Неоплаченные расходы</h3>
+            <p class="accountant-help">Остаток долга переносится по дням. Запишите выплату, когда действительно передали деньги.</p>
+            <div id="manual-debt-list" class="manual-debt-list" aria-live="polite"></div>
+            <form id="debt-payment-form" class="debt-payment-form" aria-labelledby="debt-workspace-title">
+              <div class="field">
+                <label for="debt-select">Какой долг погашаем</label>
+                <select name="debt_id" id="debt-select" required><option value="">Выберите долг</option></select>
+              </div>
+              <div class="field">
+                <label for="debt-amount">Оплачено, сум</label>
+                <input id="debt-amount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0">
+              </div>
+              <button class="button secondary" type="submit">Записать выплату</button>
+            </form>
+          </div>
         </section>
-        <details class="panel accountant-panel finance-tools" id="balance-settings"><summary>Начальные остатки<small>Начальные суммы задаются один раз и переносятся автоматически</small></summary>
+
+        <section class="panel accountant-panel" aria-labelledby="staff-title">
+          <div class="accountant-panel-head"><div><p class="eyebrow">КОМАНДА · ПОСЛЕ 10:00</p><h2 id="staff-title">Опоздавшие сотрудники</h2><p id="staff-summary" class="accountant-help">Загружаем список…</p></div><span class="accountant-chip">Hikvision: демопроходы</span></div>
+          <details id="late-details" class="late-details"><summary>Показать или скрыть опоздавших</summary><div id="late-list" class="staff-list" aria-live="polite"></div></details>
+          <div class="accountant-panel-foot"><p>Входы за <span id="entrances-day">—</span> · данные демонстрационные.</p><div class="accountant-actions"><a id="all-employees-link" class="button secondary" href="/accountant/employees">Все сотрудники</a><button id="entrances-download" class="button attendance-button" type="button">Скачать опоздавших <span class="attendance-file-type">XLSX</span></button></div></div>
+        </section>
+
+        <!-- Ручной приход и начальные остатки — разовые действия. Свёрнуты,
+             чтобы не занимать экран, который открывают ради остатка дня. -->
+        <details class="panel accountant-panel finance-tools" id="handover-entry">
+          <summary><span class="tool-summary-title">Передано от кассира<small>Ручная запись прихода, если сумма не пришла из модуля кассира</small></span></summary>
+          <div class="finance-tool-body">
+            <form id="handover-form" class="accountant-form tool-form">
+              <div class="field"><label for="handover-amount">Сумма, сум</label><input id="handover-amount" name="amount" type="number" inputmode="decimal" min="0" step="0.01" required placeholder="0"></div>
+              <div class="field"><label for="handover-note">Примечание</label><input id="handover-note" name="note" maxlength="160" required placeholder="Например, касса за вчерашний день"></div>
+              <button class="button secondary" type="submit">Сохранить приход</button>
+            </form>
+            <p class="accountant-help">Дата — это день, когда бухгалтер получил деньги: в отчёте за неё появится касса за предыдущий день. Вводите сумму, фактически переданную после расходов кассира.</p>
+          </div>
+        </details>
+
+        <details class="panel accountant-panel finance-tools" id="balance-settings">
+          <summary><span class="tool-summary-title">Начальные остатки<small>Задаются один раз и дальше переносятся автоматически</small></span></summary>
           <div class="finance-tool-grid">
-            <section><h3>Деньги у бухгалтера на старте</h3><p class="accountant-help">На выбранную дату укажите подтверждённый остаток на начало учёта. Старые записи кассы не войдут в новый расчёт. Далее остаток переносится автоматически.</p><form id="cash-opening-form" class="accountant-form"><label>Остаток, сум<input name="amount" type="number" min="0" step="0.01" required></label><label>Основание<input name="note" required maxlength="160" placeholder="Пересчёт наличных на начало дня"></label><button class="button secondary" type="submit">Сохранить начальный остаток</button></form><p id="cash-opening-note" class="accountant-help"></p></section>
-            <section><h3>С чего начинаем учёт</h3><p class="accountant-help">Подтверждённый остаток на начало выбранного дня, до его операций. Это не новый приход и не списание из кассы. Для Шоха укажите остаток до первой записанной выдачи.</p><form id="reserve-opening-form" class="accountant-form"><label>Что учитываем<select name="account" required><option value="dividends">Дивиденды в сейфе · сум</option><option value="usd">Реальные доллары · USD</option><option value="shoh">Деньги у Шоха · сум</option></select></label><label>Остаток в указанной валюте<input name="amount" type="number" min="0" step="0.01" required></label><label>Основание сверки<input name="note" required maxlength="160" placeholder="Пересчёт сейфа / документ"></label><button class="button secondary" type="submit">Сохранить начальный остаток</button></form></section>
+            <section>
+              <h3>Деньги у бухгалтера на старте</h3>
+              <p class="accountant-help">На выбранную дату укажите подтверждённый остаток на начало учёта. Старые записи кассы не войдут в новый расчёт. Далее остаток переносится автоматически.</p>
+              <form id="cash-opening-form" class="accountant-form">
+                <div class="field"><label for="cash-opening-amount">Остаток, сум</label><input id="cash-opening-amount" name="amount" type="number" inputmode="decimal" min="0" step="0.01" required placeholder="0"></div>
+                <div class="field"><label for="cash-opening-reason">Основание</label><input id="cash-opening-reason" name="note" required maxlength="160" placeholder="Пересчёт наличных на начало дня"></div>
+                <button class="button secondary" type="submit">Сохранить начальный остаток</button>
+              </form>
+              <p id="cash-opening-note" class="accountant-help"></p>
+            </section>
+            <section>
+              <h3>С чего начинаем учёт резервов</h3>
+              <p class="accountant-help">Подтверждённый остаток на начало выбранного дня, до его операций. Это не новый приход и не списание из кассы. Для Шоха укажите остаток до первой записанной выдачи.</p>
+              <form id="reserve-opening-form" class="accountant-form">
+                <div class="field"><label for="reserve-account">Что учитываем</label><select id="reserve-account" name="account" required><option value="dividends">Дивиденды в сейфе · сум</option><option value="usd">Реальные доллары · USD</option><option value="shoh">Деньги у Шоха · сум</option></select></div>
+                <div class="field"><label for="reserve-amount">Остаток в указанной валюте</label><input id="reserve-amount" name="amount" type="number" inputmode="decimal" min="0" step="0.01" required placeholder="0"></div>
+                <div class="field"><label for="reserve-reason">Основание сверки</label><input id="reserve-reason" name="note" required maxlength="160" placeholder="Пересчёт сейфа / документ"></div>
+                <button class="button secondary" type="submit">Сохранить начальный остаток</button>
+              </form>
+            </section>
           </div>
         </details>
       </div>
+
       <aside class="finance-rail" aria-label="Остатки и обязательства">
-        <section class="finance-hero"><p class="eyebrow">ДЕНЬГИ НА РАСХОДЫ</p><h2>Остаток на конец дня</h2><strong id="finance-cash-total">—</strong><p id="expected-cashier">Загружаем данные кассира…</p><div class="rail-line"><span>На начало дня</span><b id="opening-cash-total">—</b></div><div class="rail-line"><span id="cashier-transfer-label">От кассира</span><b id="cashier-transfer-total">—</b></div><div class="rail-line"><span>Прочие поступления</span><b id="other-receipts-total">—</b></div><div class="rail-line"><span>Списано / отложено</span><b id="day-outflows">—</b></div><small>Резерв в сейфе и USD сюда не включены.</small></section>
-        <section class="rail-card"><p class="eyebrow">ЗАРПЛАТА ЗА СМЕНУ</p><strong id="payroll-draft-total">—</strong><p id="payroll-state">Ожидает расчёта</p><div class="rail-line"><span>Выплачено за день</span><b id="payroll-paid-total">—</b></div></section>
-        <section class="rail-card debt"><p class="eyebrow">ДОЛГИ К ОПЛАТЕ</p><strong id="all-debt-total">—</strong><div class="rail-line"><span>Расходы вручную</span><b id="manual-debt-total">—</b></div><div class="rail-line"><span>Подтверждённые смены</span><b id="payroll-debt-total">—</b></div></section>
-        <section class="rail-card"><p class="eyebrow">МЕСЯЧНАЯ ЗП · ПО РЕЕСТРУ</p><strong id="monthly-balance">—</strong><p id="monthly-note">Сумма ставок сотрудников из файла «ЗП»</p></section>
-        <section class="rail-card"><p class="eyebrow">БАЛАНС ШОХ</p><strong id="shoh-balance">—</strong><p>Начальный остаток + выдано − принятые закупки.</p></section>
-        <section class="rail-card dollar"><p class="eyebrow">РЕАЛЬНЫЕ ДОЛЛАРЫ</p><strong id="usd-balance">—</strong><p>Фактические USD. Не эквивалент сумов.</p></section>
-        <section class="rail-card dividends"><p class="eyebrow">ДИВИДЕНДЫ В СЕЙФЕ</p><strong id="dividends-balance">—</strong><p>Отложено − выдано собственнику. Выдача из резерва повторно не уменьшает деньги на расходы.</p></section>
-        <section class="rail-card"><p class="eyebrow">НА ЧТО УШЛИ ДЕНЬГИ</p><div id="expense-breakdown"></div></section>
+        <section class="finance-hero" aria-labelledby="finance-hero-title">
+          <p class="eyebrow">ДЕНЬГИ НА РАСХОДЫ</p><h2 id="finance-hero-title">Остаток на конец дня</h2>
+          <strong id="finance-cash-total">—</strong>
+          <p id="expected-cashier">Загружаем данные кассира…</p>
+          <div class="rail-line"><span>На начало дня</span><b id="opening-cash-total">—</b></div>
+          <div class="rail-line"><span id="cashier-transfer-label">От кассира</span><b id="cashier-transfer-total">—</b></div>
+          <div class="rail-line"><span>Прочие поступления</span><b id="other-receipts-total">—</b></div>
+          <div class="rail-line"><span>Списано / отложено</span><b id="day-outflows">—</b></div>
+          <small>Резерв в сейфе и USD сюда не включены.</small>
+        </section>
+
+        <!-- Обязательства собраны в одну карточку: тремя отдельными они занимали
+             столько же места, сколько остаток дня, хотя отвечают на один вопрос.
+             Тревожная окраска включается классом is-owed только при долге. -->
+        <section class="rail-card debt" id="debt-card" aria-labelledby="debt-card-title">
+          <p class="eyebrow" id="debt-card-title">ОБЯЗАТЕЛЬСТВА</p>
+          <strong id="all-debt-total">—</strong>
+          <p id="debt-card-note">Долги к оплате на конец дня.</p>
+          <div class="rail-line"><span>Расходы вручную</span><b id="manual-debt-total">—</b></div>
+          <div class="rail-line"><span>Подтверждённые смены</span><b id="payroll-debt-total">—</b></div>
+          <div class="rail-line"><span>Зарплата за смену</span><b id="payroll-draft-total">—</b></div>
+          <div class="rail-line"><span>Выплачено за день</span><b id="payroll-paid-total">—</b></div>
+          <div class="rail-line"><span>Месячная ЗП · остаток</span><b id="monthly-balance">—</b></div>
+          <p class="rail-foot"><span id="payroll-state">Ожидает расчёта</span><span id="monthly-note">План не задан</span>
+            <a href="#balance-settings" class="rail-link" data-open="balance-settings">Настроить план ↗</a></p>
+        </section>
+
+        <section class="rail-card reserves" aria-labelledby="reserves-title">
+          <p class="eyebrow" id="reserves-title">РЕЗЕРВЫ</p>
+          <div id="reserves-lines">
+            <div class="rail-line"><span>Деньги у Шоха</span><b id="shoh-balance">—</b></div>
+            <div class="rail-line"><span>Реальные доллары</span><b id="usd-balance">—</b></div>
+            <div class="rail-line"><span>Дивиденды в сейфе</span><b id="dividends-balance">—</b></div>
+            <p>Начальный остаток плюс движения за день. Доллары — фактические, не эквивалент сумов.</p>
+          </div>
+          <div id="reserves-empty" class="empty-state" hidden>
+            <span aria-hidden="true">◇</span>
+            <p>Начальные остатки сейфа, долларов и подотчёта Шоха ещё не заданы, поэтому считать нечего.</p>
+            <a href="#balance-settings" class="rail-link" data-open="balance-settings">Задать в «Начальных остатках» ↗</a>
+          </div>
+        </section>
+
+        <section class="rail-card" aria-labelledby="breakdown-title">
+          <p class="eyebrow" id="breakdown-title">НА ЧТО УШЛИ ДЕНЬГИ</p>
+          <div id="expense-breakdown"></div>
+        </section>
       </aside>
     </div>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Модуль бухгалтера</span><span>Время Ташкента · UZS</span></footer>

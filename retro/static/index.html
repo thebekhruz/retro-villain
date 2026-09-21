@@ -27,53 +27,12 @@
       <button id="refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
       <button id="download" class="button primary" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Скачать отчёт <span class="file-type">XLSX</span></button>
     </section>
+    <div class="day-meta"><span class="source-dot"></span><strong id="source-title">Источник: iikoWeb</strong><span id="updated">Данные ещё не загружены</span><span class="day-meta-sep">·</span><span>Отчёт за <strong id="export-date">—</strong> · Excel · .xlsx</span></div>
     <div id="demo-banner" class="notice demo" hidden><strong>Демонстрационный режим.</strong> Это пример интерфейса, не данные ресторана. <a href="/">Вернуться к iiko</a></div>
     <div id="message" class="notice" role="status" aria-live="polite" hidden></div>
     <section id="setup" class="setup" hidden><span class="setup-symbol">⌁</span><div><h2>Подключим ваши данные</h2><p>Интерфейс готов к работе. Осталось настроить доступ к iiko на сервере.</p><a class="text-link" href="/?demo=1">Посмотреть на примере <span>↗</span></a></div></section>
-    <section class="metrics" aria-label="Основные показатели" aria-busy="false" id="metrics">
-      <article class="metric revenue"><div class="metric-label">Продажи после скидок <span class="metric-icon">↗</span></div><div class="amount"><span id="revenue">—</span><small>сум</small></div><div class="metric-foot"><span class="light-dot"></span><span id="period-label">Выберите день</span><span class="decorative-line"></span></div></article>
-      <article class="metric"><div class="metric-label">Количество чеков <span class="metric-icon">▤</span></div><div class="amount"><span id="receipts">—</span><small>чеков</small></div><div class="metric-foot muted">Только оплаченные продажи Retro</div></article>
-      <article class="metric"><div class="metric-label">Средний чек <span class="metric-icon">≈</span></div><div class="amount"><span id="average">—</span><small>сум</small></div><div class="metric-foot muted">Продажи ÷ количество чеков</div></article>
-    </section>
-    <section class="panel usd-panel" aria-labelledby="usd-title">
-      <div class="usd-heading"><p class="eyebrow">USD · КУРС ВЫБРАННОГО ДНЯ</p><h2 id="usd-title">Курс за <span id="usd-day">выбранный день</span></h2><p>Сохранён для этой даты и не меняется при просмотре старого отчёта.</p></div>
-      <div class="usd-rates">
-        <div class="usd-rate"><span>Официальный курс ЦБ</span><strong id="usd-official">—</strong><small>сум за 1 USD</small></div>
-        <div class="usd-rate restaurant"><span>Курс Retro Milliy</span><strong id="usd-restaurant">—</strong><small>сум за 1 USD · на 1,5% ниже, округлён вниз до 100</small></div>
-        <div class="usd-balance-entry"><label for="usd-balance">Доллары в кассе, USD</label><input id="usd-balance" type="number" min="0" step="0.01" placeholder="0"><button id="usd-balance-save" class="button secondary" type="button">Сохранить</button><span id="usd-balance-status" role="status"></span></div>
-      </div>
-      <div class="usd-footer"><span id="usd-source-day">Дата действия курса ЦБ: —</span><a href="https://cbu.uz/ru/arkhiv-kursov-valyut/veb-masteram/" target="_blank" rel="noopener noreferrer">Источник: Центральный банк ↗</a></div>
-      <p id="usd-status" class="usd-status" role="status" aria-live="polite"></p>
-    </section>
-    <div class="content-grid">
-      <section class="panel payments-panel"><div class="panel-heading"><div><p class="eyebrow">СТРУКТУРА ПРОДАЖ</p><h2>Выручка по типам оплаты</h2></div><span class="tag">сум</span></div><div id="composition" class="composition" aria-hidden="true"></div><div id="payment-empty" class="empty-state"><span>▤</span><p>Здесь появятся оплаты за выбранный день</p></div><div id="payments" class="payments"></div><div class="payment-total"><span>Итого по оплатам</span><strong id="payment-total">—</strong></div><p class="panel-note">Сумма каждого типа оплаты получена из iiko отдельно. «Демо» — название источника выручки.</p></section>
-      <aside class="right-column"><section class="panel report-card"><div class="paper-icon"><svg viewBox="0 0 32 40" aria-hidden="true"><path d="M5 1h15l8 8v30H5zM20 1v9h8M10 18h13M10 24h13M10 30h7"/></svg><span>XLSX</span></div><p class="eyebrow">ОТЧЁТ КАССИРА</p><h2>Один день.<br>Один документ.</h2><p>Excel по вашему шаблону — с оплатами, поступлениями, расходами и суммой к передаче.</p><div class="report-detail"><span>Дата</span><strong id="export-date">—</strong></div><div class="report-detail"><span>Формат</span><strong>Excel · .xlsx</strong></div><p class="report-scope">Сумма к передаче: «Демо» + предоплаты наличными + прочие поступления − расходы.</p></section><div class="source-info"><span class="source-dot"></span><div><strong id="source-title">Источник: iikoWeb</strong><p id="updated">Данные ещё не загружены</p></div></div></aside>
-    </div>
-    <section class="cashier-finance" aria-label="Расходы и передача денег">
-      <div class="panel expenses-panel">
-        <div class="finance-heading"><div><p class="eyebrow">РАСХОДЫ КАССЫ</p><h2>Расходы наличными</h2><p class="finance-subtitle">Показываются только явно сохранённые расходы <span id="expenses-day"></span></p><p id="expense-policy-warning" class="expense-feedback is-error" hidden>Регулярная политика расходов ещё не установлена. История не дополняется автоматически.</p></div><span class="finance-symbol" aria-hidden="true">↗</span></div>
-        <form id="expense-form" class="expense-form">
-          <div class="expense-field expense-description"><label for="expense-description">На что потрачено</label><input id="expense-description" name="description" type="text" maxlength="160" placeholder="Например, такси" required></div>
-          <div class="expense-field expense-amount"><label for="expense-amount">Сумма, сум</label><input id="expense-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" required></div>
-          <button id="expense-save" class="button primary expense-save" type="submit">Добавить расход</button>
-        </form>
-        <p id="expense-feedback" class="expense-feedback" role="status" aria-live="polite"></p>
-        <div id="expenses-empty" class="expense-empty">За этот день расходы ещё не внесены.</div>
-        <div id="expense-list" class="expense-list" aria-live="polite"></div>
-        <div class="expense-total"><span>Итого расходы наличными</span><strong><span id="expense-total">0</span> <small>сум</small></strong></div>
-        <div class="receipt-section">
-          <div class="finance-heading"><div><p class="eyebrow">РУЧНОЙ УЧЁТ</p><h2>Прочие поступления наличными</h2><p class="finance-subtitle">Например, возврат долга. Предоплаты из iiko добавятся автоматически.</p></div></div>
-          <form id="receipt-form" class="expense-form">
-            <div class="expense-field"><label for="receipt-description">За что получено</label><input id="receipt-description" type="text" maxlength="160" placeholder="Например, вернули долг" required></div>
-            <div class="expense-field"><label for="receipt-amount">Сумма, сум</label><input id="receipt-amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" required></div>
-            <button id="receipt-save" class="button primary expense-save" type="submit">Добавить поступление</button>
-          </form>
-          <p id="receipt-feedback" class="expense-feedback" role="status" aria-live="polite"></p>
-          <div id="receipts-empty" class="expense-empty">Прочих поступлений за этот день нет.</div>
-          <div id="receipt-list" class="expense-list" aria-live="polite"></div>
-          <div class="expense-total"><span>Итого прочие поступления</span><strong><span id="receipt-total">0</span> <small>сум</small></strong></div>
-        </div>
-      </div>
+    <!-- 1. Итог смены: ради этой цифры экран и открывают. -->
+    <section class="shift" aria-label="Итог смены">
       <div class="panel handover-panel">
         <p class="eyebrow">ФИНАНСОВЫЙ ОТДЕЛ</p><h2>К передаче</h2>
         <p id="handover-number" class="handover-number"><span id="handover">—</span><small>сум</small></p>
@@ -85,7 +44,83 @@
         <div class="handover-divider"></div>
         <p class="handover-note">Расчётная сумма. Безналичные предоплаты не добавляются к наличным. Фактическую передачу пока не отмечаем.</p>
       </div>
+      <div class="shift-left">
+      <div class="panel day-figures" id="metrics" aria-busy="false" aria-label="Показатели дня">
+        <p class="kicker-line">Продажи · из iiko</p>
+        <div class="hero">
+          <span class="hero-value"><strong id="revenue">—</strong><small>сум</small></span>
+          <span class="hero-note" id="period-label">Выберите день</span>
+        </div>
+        <div class="mini-row">
+          <div class="mini"><span class="mini-name">Чеков</span><span class="mini-value"><strong id="receipts">—</strong></span></div>
+          <div class="mini"><span class="mini-name">Средний чек</span><span class="mini-value"><strong id="average">—</strong><small>сум</small></span></div>
+        </div>
+      </div>
+      <div class="panel usd-card">
+        <p class="kicker-line">Курс доллара · <span id="usd-day">выбранный день</span></p>
+        <div class="usd-grid">
+          <div class="usd-item is-primary">
+            <span class="usd-item-name">Курс Retro Milliy</span>
+            <span class="usd-item-value"><strong id="usd-restaurant">—</strong><small>сум за 1 USD</small></span>
+          </div>
+          <div class="usd-item">
+            <span class="usd-item-name">Официальный курс ЦБ</span>
+            <span class="usd-item-value"><strong id="usd-official">—</strong><small>сум за 1 USD</small></span>
+          </div>
+        </div>
+        <div class="usd-balance-entry"><label for="usd-balance">Доллары в кассе, USD</label><input id="usd-balance" type="number" min="0" step="0.01" placeholder="0"><button id="usd-balance-save" class="button secondary" type="button">Сохранить</button><span id="usd-balance-status" role="status"></span></div>
+        <div class="usd-foot">
+          <span class="usd-delta">на 1,5% ниже ЦБ</span>
+          <span id="usd-source-day">курс ЦБ: —</span>
+          <a href="https://cbu.uz/ru/arkhiv-kursov-valyut/veb-masteram/" target="_blank" rel="noopener noreferrer">источник ↗</a>
+        </div>
+        <p id="usd-status" class="usd-status" role="status" aria-live="polite"></p>
+      </div>
+      </div>
     </section>
+
+    <!-- 2. Работа кассира: две формы жили двумя карточками и занимали пол-экрана
+         одновременно, хотя за раз нужна одна. -->
+    <section class="panel ops" aria-label="Операции кассы">
+      <div class="ops-head">
+        <div><p class="eyebrow">РУЧНОЙ УЧЁТ</p><h2>Операции кассы <span id="expenses-day" class="ops-day"></span></h2></div>
+        <div class="ops-tabs" role="tablist" aria-label="Тип операции">
+          <button class="ops-tab is-active" type="button" role="tab" aria-selected="true" aria-controls="pane-expenses" id="tab-expenses">Расходы</button>
+          <button class="ops-tab" type="button" role="tab" aria-selected="false" aria-controls="pane-receipts" id="tab-receipts">Поступления</button>
+        </div>
+      </div>
+      <div class="ops-pane" id="pane-expenses" role="tabpanel" aria-labelledby="tab-expenses">
+        <p class="ops-hint">Показываются только явно сохранённые расходы.</p>
+        <p id="expense-policy-warning" class="expense-feedback is-error" hidden>Регулярная политика расходов ещё не установлена. История не дополняется автоматически.</p>
+        <form id="expense-form" class="expense-form">
+          <div class="expense-field expense-description"><label for="expense-description">На что потрачено</label><input id="expense-description" name="description" type="text" maxlength="160" placeholder="Например, такси" required></div>
+          <div class="expense-field expense-amount"><label for="expense-amount">Сумма, сум</label><input id="expense-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" required></div>
+          <button id="expense-save" class="button primary expense-save" type="submit">Добавить расход</button>
+        </form>
+        <p id="expense-feedback" class="expense-feedback" role="status" aria-live="polite"></p>
+        <div class="ops-side"><div id="expenses-empty" class="expense-empty">За этот день расходы ещё не внесены.</div>
+        <div id="expense-list" class="expense-list" aria-live="polite"></div>
+        <div class="expense-total"><span>Итого расходы наличными</span><strong><span id="expense-total">0</span> <small>сум</small></strong></div></div>
+      </div>
+      <div class="ops-pane" id="pane-receipts" role="tabpanel" aria-labelledby="tab-receipts" hidden>
+        <p class="ops-hint">Например, возврат долга. Предоплаты из iiko добавятся автоматически.</p>
+        <form id="receipt-form" class="expense-form">
+            <div class="expense-field"><label for="receipt-description">За что получено</label><input id="receipt-description" type="text" maxlength="160" placeholder="Например, вернули долг" required></div>
+            <div class="expense-field"><label for="receipt-amount">Сумма, сум</label><input id="receipt-amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" required></div>
+            <button id="receipt-save" class="button primary expense-save" type="submit">Добавить поступление</button>
+          </form>
+        <p id="receipt-feedback" class="expense-feedback" role="status" aria-live="polite"></p>
+          <div class="ops-side"><div id="receipts-empty" class="expense-empty">Прочих поступлений за этот день нет.</div>
+          <div id="receipt-list" class="expense-list" aria-live="polite"></div>
+          <div class="expense-total"><span>Итого прочие поступления</span><strong><span id="receipt-total">0</span> <small>сум</small></strong></div></div>
+      </div>
+    </section>
+
+    <!-- 3. Разбор продаж нужен владельцу, а не кассиру: свёрнут. -->
+    <details class="fold">
+      <summary><span class="eyebrow">СТРУКТУРА ПРОДАЖ</span><span class="fold-title">Выручка по типам оплаты</span></summary>
+      <section class="panel payments-panel"><div class="panel-heading"><div><p class="eyebrow">СТРУКТУРА ПРОДАЖ</p><h2>Выручка по типам оплаты</h2></div><span class="tag">сум</span></div><div id="composition" class="composition" aria-hidden="true"></div><div class="payment-total"><span>Итого по оплатам</span><strong id="payment-total">—</strong></div><div id="payment-empty" class="empty-state"><span>▤</span><p>Здесь появятся оплаты за выбранный день</p></div><div id="payments" class="payments"></div><p class="panel-note">Сумма каждого типа оплаты получена из iiko отдельно. «Демо» — название источника выручки.</p></section>
+    </details>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Модуль кассира</span><span>Время Ташкента · UZS</span></footer>
   </div>
 </main>

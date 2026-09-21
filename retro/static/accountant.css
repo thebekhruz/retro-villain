@@ -1,8 +1,275 @@
-.accountant-workspace{max-width:1640px;padding:34px 36px 20px}.accountant-workspace .page-heading{margin-bottom:22px}.accountant-workspace h1{font-size:clamp(28px,3vw,42px)}
-.finance-layout{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:24px;align-items:start}.finance-main{display:grid;gap:20px;min-width:0}.finance-rail{display:grid;gap:14px;position:sticky;top:20px;max-height:calc(100vh - 40px);overflow:auto;padding-right:4px;scrollbar-width:thin}.finance-layout .accountant-panel{margin:0;padding:24px}.finance-layout h2{font-size:22px}.finance-hero{background:#143e35;color:#fff;border-radius:20px;padding:25px}.finance-hero h2{font-size:18px;color:#fff;font-weight:400}.finance-hero>strong{display:block;font-size:30px;line-height:1.25;margin:20px 0;font-variant-numeric:tabular-nums}.finance-hero .eyebrow{color:#c7d4bf}.finance-hero p:not(.eyebrow),.finance-hero small{font-size:12px;color:#b6cbc5;line-height:1.6}.rail-line{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-top:1px solid #e5e9e0;font-size:12px}.rail-line b{text-align:right;font-variant-numeric:tabular-nums}.finance-hero .rail-line{border-color:#ffffff26}.rail-card{background:#fff;border:1px solid #e1e6dc;border-radius:16px;padding:20px}.rail-card>strong{display:block;font-size:24px;color:#143e35;font-variant-numeric:tabular-nums}.rail-card p:not(.eyebrow){font-size:12px;color:#71827d;line-height:1.6;margin:9px 0}.rail-card .eyebrow{margin-bottom:12px;font-size:10px}.rail-card.debt{background:#fff5ee;border-color:#efdccc}.rail-card.debt>strong{color:#a96039}.rail-card.dollar{background:#eff4ef}.rail-card.dividends{background:#f8f3e7;border-color:#e9ddbf}.rail-link{display:inline-block;margin-top:8px;font-size:12px;font-weight:600;color:#35624e;text-decoration:none}.expense-entry{display:grid;grid-template-columns:1fr 1fr;gap:12px;padding:18px;background:#f5f7f1;border:1px solid #e3e8dc;border-radius:14px}.expense-entry label{display:flex;flex-direction:column;gap:7px;font-size:12px;color:#64776c}.expense-entry .expense-description{grid-column:1 / -1}.expense-entry input,.expense-entry select{width:100%;min-width:0;border:1px solid #dbe3d8;border-radius:8px;padding:12px;background:#fff;color:#203d33;font:inherit;font-size:14px;min-height:44px}.expense-entry button{align-self:end;min-height:44px}.operation-impact{font-size:12px;line-height:1.6;color:#657c6e;margin:12px 0 22px;padding-left:2px}.expense-table-scroll{overflow-x:auto}.expense-table{width:100%;border-collapse:collapse;font-size:13px}.expense-table th{background:#f3f5ef;padding:12px 10px;text-align:left;color:#73836f;font-size:11px;letter-spacing:.04em;font-weight:600}.expense-table td{padding:16px 10px;border-bottom:1px solid #edf0e9;vertical-align:top;line-height:1.5;overflow-wrap:anywhere}.expense-table th:last-child,.expense-table td:last-child{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}.expense-table td small{display:block;color:#8b968c;font-size:10px}.finance-tools summary{cursor:pointer;font-size:17px;line-height:1.5;color:#143e35}.finance-tools summary small{display:block;font-size:12px;color:#809080;margin-top:5px}.finance-tool-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-top:25px}.finance-tool-grid section{min-width:0}.finance-tool-grid .accountant-panel{padding:0;border:0;box-shadow:none}.finance-tool-grid h3{font-size:16px}.finance-layout .accountant-panel-foot{flex-wrap:wrap}.finance-layout .staff-row{grid-template-columns:minmax(0,1fr) auto}.finance-layout .staff-line{grid-column:1 / -1}.finance-layout[aria-busy=true]{opacity:.6;pointer-events:none}.finance-layout .accountant-help{line-height:1.7}.finance-layout .button{font-size:12px;padding:12px 16px}.finance-layout :focus-visible{outline:3px solid #d2af59;outline-offset:3px}
-@media(min-width:1550px){.expense-entry{grid-template-columns:1.1fr 1.3fr 1.4fr 120px 120px auto;gap:10px}.expense-entry .expense-description{grid-column:auto}.expense-entry input,.expense-entry select{font-size:12px;padding:10px}.expense-entry{padding:14px}}
-@media(max-width:1150px){.accountant-workspace{padding:24px 20px}.finance-layout{grid-template-columns:minmax(0,1fr) 270px;gap:16px}.finance-layout .accountant-panel{padding:18px}.finance-tool-grid{grid-template-columns:1fr}.finance-hero{padding:20px}.finance-hero>strong{font-size:26px}.finance-layout .accountant-panel-head{flex-wrap:wrap;gap:8px}}
-@media(max-width:900px){.finance-layout{grid-template-columns:1fr}.finance-rail{position:static;max-height:none;overflow:visible;padding:0;grid-template-columns:repeat(2,minmax(0,1fr))}.finance-hero{grid-column:1 / -1}.expense-table{min-width:560px}.accountant-workspace{padding:22px 16px}.finance-rail .rail-card{padding:17px}.rail-card>strong{font-size:21px}}
-@media(max-width:460px){.finance-rail{grid-template-columns:1fr}.expense-entry{grid-template-columns:1fr}.expense-entry .expense-description{grid-column:auto}.finance-layout .accountant-panel-foot .accountant-actions{display:grid;width:100%;grid-template-columns:1fr 1fr}.finance-layout .accountant-actions .button{white-space:normal;text-align:center}.finance-layout .accountant-panel{padding:16px}.finance-hero>strong{font-size:32px}}
-.operation-actions{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}.operation-actions button{border:1px solid #dbe3d8;border-radius:6px;background:#fff;color:#35624e;font-size:11px;padding:3px 6px;cursor:pointer}.operation-actions .operation-delete{color:#a96039;font-size:16px;line-height:1;padding:1px 6px}.operation-edit-input{width:120px;border:1px solid #d2af59;border-radius:6px;padding:5px;font:inherit}
-.debt-workspace{border-top:1px solid #e5e9e0;margin-top:24px;padding-top:20px}.debt-workspace h3{font-size:17px;color:#173d35;margin:0 0 5px}.manual-debt-list{margin:15px 0}.manual-debt-row{display:flex;justify-content:space-between;gap:14px;padding:12px 0;border-bottom:1px solid #edf0e9;font-size:13px}.manual-debt-row strong{white-space:nowrap;color:#9a5939}.debt-payment-form{display:grid;grid-template-columns:minmax(0,1fr) 150px auto;gap:10px;align-items:end}.debt-payment-form label{display:grid;gap:7px;font-size:12px;color:#64776c}.debt-payment-form input,.debt-payment-form select{width:100%;min-width:0;border:1px solid #dbe3d8;border-radius:8px;padding:11px;background:#fff;color:#203d33;min-height:44px}.debt-payment-form button{min-height:44px}#expense-paid-label[hidden]{display:none}@media(max-width:650px){.debt-payment-form{grid-template-columns:1fr}.manual-debt-row{flex-wrap:wrap}}
+/* ─────────────────────────────────────────────────────────────────────────
+   Модуль бухгалтера: страница финансов и страница сотрудников.
+   Общая дизайн-система лежит в style.css — здесь только то, чего там нет.
+   Шкала кеглей и радиусы держатся заодно с модулем кассира.
+   ───────────────────────────────────────────────────────────────────────── */
+
+.accountant-workspace{max-width:1640px;padding:34px 36px 38px}
+.accountant-workspace .page-heading{margin-bottom:22px}
+.accountant-workspace h1{font-size:clamp(28px,3vw,42px)}
+
+/* Видимый фокус на всём, что можно нажать. В style.css правило не покрывает
+   select, summary и ссылки-кнопки внутри карточек. */
+.accountant-workspace :is(a,button,input,select,summary,textarea):focus-visible,
+.accountant-workspace .finance-tools>summary:focus-visible{outline:3px solid #c5a359;outline-offset:3px}
+
+/* ── Панель управления днём ───────────────────────────────────────────────
+   Кнопки жили каждая со своим margin-left:auto из .secondary и разъезжались
+   по краям. Собираем их в один блок справа. */
+.accountant-workspace .controls{flex-wrap:wrap;row-gap:12px}
+/* .secondary в общей системе несёт margin-left:auto для правого края панели
+   управления. Внутри форм и групп кнопок это отрывает кнопку от её места. */
+.accountant-workspace .controls .button.secondary,
+.accountant-workspace form .button.secondary,
+.accountant-workspace .accountant-actions .button.secondary{margin-left:0}
+.controls-actions{display:flex;align-items:center;gap:10px;margin-left:auto}
+.controls-actions .button{width:auto}
+
+/* ── Сетка страницы ───────────────────────────────────────────────────────── */
+.finance-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+.finance-main{display:grid;gap:20px;min-width:0}
+.finance-rail{display:grid;gap:16px;align-content:start;position:sticky;top:20px;
+  max-height:calc(100vh - 40px);overflow:auto;padding-right:4px;scrollbar-width:thin}
+.finance-layout .accountant-panel{margin:0;padding:24px}
+.finance-layout h2{font-size:21px}
+.finance-layout[aria-busy=true]{opacity:.6;pointer-events:none}
+.accountant-workspace .accountant-help{line-height:1.7;font-size:13px;color:var(--muted)}
+.finance-layout .button{font-size:13.5px;padding:13px 18px}
+
+/* ── Рельса: остаток дня ──────────────────────────────────────────────────── */
+.finance-hero{background:var(--green);color:#fff;border-radius:var(--radius);padding:26px}
+.finance-hero .eyebrow{color:#c7d4bf}
+.finance-hero h2{font-size:19px;color:#fff;font-weight:400}
+.finance-hero>strong{display:block;font-size:clamp(24px,2.2vw,32px);line-height:1.2;margin:18px 0 14px;
+  letter-spacing:-.6px;font-variant-numeric:tabular-nums;white-space:nowrap}
+.finance-hero p:not(.eyebrow),.finance-hero small{display:block;font-size:12.5px;color:#c3d4cd;line-height:1.6}
+.finance-hero small{margin-top:12px}
+.finance-hero .rail-line{border-color:#ffffff26}
+
+.rail-line{display:flex;justify-content:space-between;gap:14px;padding:11px 0;
+  border-top:1px solid var(--border);font-size:12.5px}
+.rail-line b{text-align:right;font-size:13.5px;font-variant-numeric:tabular-nums}
+
+/* ── Рельса: карточки ─────────────────────────────────────────────────────── */
+.rail-card{background:#fff;border:1px solid var(--border);border-radius:var(--radius);padding:22px}
+.rail-card .eyebrow{margin-bottom:10px;font-size:11.5px;letter-spacing:1.1px}
+.rail-card>strong{display:block;font-size:26px;letter-spacing:-.5px;color:var(--green);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.rail-card p:not(.eyebrow){font-size:12.5px;color:var(--muted);line-height:1.6;margin:9px 0}
+.rail-card .rail-line:first-of-type{border-top:0;padding-top:0}
+
+/* Обязательства. Ноль долгов — хорошая новость, поэтому по умолчанию карточка
+   спокойная; тёплую окраску включает JS классом is-owed, когда долг есть. */
+.rail-card.debt{background:#fff;border-color:var(--border)}
+.rail-card.debt>strong{color:var(--green)}
+.rail-card.debt.is-owed{background:#fff8f2;border-color:#ecdac8}
+.rail-card.debt.is-owed>strong{color:#a2562f}
+.rail-card.debt.is-owed .rail-line{border-color:#f0e2d4}
+
+.rail-card.reserves .rail-line:first-of-type{border-top:0;padding-top:0}
+.rail-foot{display:flex;flex-direction:column;align-items:flex-start;gap:6px;
+  margin:12px 0 0!important;padding-top:12px;border-top:1px solid var(--border);font-size:12px!important}
+.rail-link{display:inline-block;font-size:12.5px;font-weight:600;color:#35624e;
+  border-bottom:1px solid #b6c9bb;padding-bottom:2px}
+.rail-foot .rail-link{margin-top:2px}
+
+/* ── Пустые состояния ─────────────────────────────────────────────────────── */
+.accountant-workspace .empty-state{display:grid;justify-items:center;gap:7px;
+  padding:20px 14px;border:1px dashed #d8e0d5;border-radius:14px;background:#fbfcf9;
+  color:var(--muted);font-size:13px;line-height:1.6}
+.accountant-workspace .empty-state>span{font-size:26px;line-height:1;color:#8d9d87}
+.accountant-workspace .empty-state p{margin:0;max-width:44ch}
+.rail-card .empty-state{padding:18px 12px;font-size:12.5px;text-align:center}
+.rail-card .empty-state>span{font-size:22px}
+.empty-state.compact{padding:16px 10px;font-size:12.5px}
+.empty-state.compact>span{font-size:20px}
+
+/* ── Форма операций ───────────────────────────────────────────────────────── */
+.expense-entry{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;
+  padding:18px;background:#f5f7f1;border:1px solid #e3e8dc;border-radius:16px;margin-top:4px}
+.expense-entry .field{display:grid;gap:7px;min-width:0}
+.expense-entry .field>label{font-size:12.5px;color:var(--muted);line-height:1.3}
+.expense-entry .expense-description{grid-column:1/-1}
+.expense-entry input,.expense-entry select{width:100%;min-width:0;min-height:48px;
+  border:1px solid #dbe3d8;border-radius:12px;padding:12px;background:#fff;color:#203d33;
+  font:inherit;font-size:15px}
+.expense-entry input:focus,.expense-entry select:focus{border-color:#8ba68e;outline:none}
+.expense-entry input:focus-visible,.expense-entry select:focus-visible{border-color:#8ba68e}
+.expense-foot{grid-column:1/-1;display:flex;align-items:center;justify-content:space-between;
+  gap:18px;flex-wrap:wrap;border-top:1px solid #e3e8dc;padding-top:14px}
+.expense-foot .operation-impact{flex:1 1 280px;min-width:0;margin:0}
+.expense-foot .button{flex:0 0 auto;min-width:160px;min-height:48px;border-radius:12px}
+.operation-impact{font-size:12.5px;line-height:1.6;color:var(--muted)}
+
+/* ── Журнал операций: строки-плитки вместо разлинованной таблицы ──────────── */
+.expense-table-scroll{overflow-x:auto;margin-top:22px}
+.expense-table{width:100%;min-width:540px;font-size:14px;border-spacing:0 8px;border-collapse:separate}
+.expense-table th{background:none;text-align:left;color:var(--muted);font-size:11.5px;
+  letter-spacing:1.1px;text-transform:uppercase;font-weight:600;padding:0 14px 6px}
+.expense-table td{border:0;background:#f7f9f4;padding:14px;vertical-align:middle;
+  line-height:1.5;overflow-wrap:anywhere}
+.expense-table td:first-child{border-radius:12px 0 0 12px}
+.expense-table td:last-child{border-radius:0 12px 12px 0;text-align:right;white-space:nowrap;
+  font-weight:600;font-variant-numeric:tabular-nums}
+.expense-table td small{display:block;font-size:11.5px;font-weight:400;color:var(--muted)}
+.expense-table td.is-empty{background:none;padding:0;border-radius:0}
+
+.operation-actions{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}
+.operation-actions button{border:1px solid #dbe3d8;border-radius:6px;background:#fff;
+  color:#35624e;font-size:11px;padding:3px 6px;cursor:pointer}
+.operation-actions .operation-delete{color:#a96039;font-size:16px;line-height:1;padding:1px 6px}
+.operation-edit-input{width:120px;border:1px solid #d2af59;border-radius:6px;padding:5px;font:inherit}
+
+/* ── Неоплаченные расходы ─────────────────────────────────────────────────── */
+.debt-workspace{border-top:1px solid var(--border);margin-top:24px;padding-top:20px}
+.debt-workspace h3{font-size:17px;color:#173d35;margin:0 0 5px}
+.manual-debt-list{margin:15px 0}
+.manual-debt-row{display:flex;justify-content:space-between;gap:14px;align-items:baseline;
+  padding:13px 14px;border-radius:12px;background:#fff6f0;margin-bottom:8px;font-size:13.5px}
+.manual-debt-row strong{white-space:nowrap;color:#9a5939;font-variant-numeric:tabular-nums}
+.debt-payment-form{display:grid;grid-template-columns:minmax(0,1fr) 170px auto;gap:12px;align-items:end}
+.debt-payment-form .field{display:grid;gap:7px;min-width:0}
+.debt-payment-form .field>label{font-size:12.5px;color:var(--muted)}
+.debt-payment-form input,.debt-payment-form select{width:100%;min-width:0;min-height:48px;
+  border:1px solid #dbe3d8;border-radius:12px;padding:11px;background:#fff;color:#203d33;
+  font:inherit;font-size:15px}
+.debt-payment-form button{min-height:48px;border-radius:12px}
+
+/* ── Свёрнутые разделы: ручной приход и начальные остатки ─────────────────── */
+.finance-tools{padding:0!important;overflow:hidden}
+.finance-tools>summary{display:flex;align-items:center;justify-content:space-between;gap:14px;
+  list-style:none;cursor:pointer;padding:20px 24px;color:var(--green);font-size:17px;font-weight:550}
+.finance-tools>summary::-webkit-details-marker{display:none}
+.finance-tools>summary::after{content:"Развернуть";font-size:12.5px;font-weight:500;color:var(--muted);
+  white-space:nowrap}
+.finance-tools[open]>summary::after{content:"Свернуть"}
+.finance-tools[open]>summary{border-bottom:1px solid var(--border)}
+.tool-summary-title{display:block;min-width:0}
+.tool-summary-title small{display:block;font-size:12.5px;font-weight:400;color:var(--muted);
+  line-height:1.5;margin-top:5px}
+.finance-tool-body,.finance-tool-grid{padding:22px 24px 24px}
+.finance-tool-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:24px}
+.finance-tool-grid section{min-width:0}
+.finance-tool-grid h3,.finance-tools h3{font-size:16px;margin:0 0 6px}
+.tool-form{grid-template-columns:repeat(2,minmax(0,1fr));align-items:end}
+.tool-form>button{grid-column:1/-1;justify-self:start}
+
+.accountant-form{display:grid;gap:12px;margin-top:14px}
+.accountant-form .field{display:grid;gap:6px;min-width:0}
+.accountant-form .field>label{font-size:12.5px;color:var(--muted)}
+.accountant-form input,.accountant-form select{width:100%;min-width:0;height:48px;
+  border:1px solid #dfe6dc;border-radius:12px;padding:10px 12px;background:#fff;color:var(--ink);
+  font:inherit;font-size:15px}
+.accountant-form input:focus,.accountant-form select:focus{border-color:#8ba68e;outline:none}
+.accountant-form .button{justify-self:start;min-width:200px;min-height:48px;border-radius:12px}
+
+/* ── Команда ──────────────────────────────────────────────────────────────── */
+.accountant-demo-banner{font-size:13px;line-height:1.55;border-radius:14px;padding:15px 18px}
+.accountant-demo-banner strong{font-size:11px}
+.accountant-chip{font-size:11.5px;padding:8px 12px}
+.finance-layout .accountant-panel-foot{flex-wrap:wrap}
+.finance-layout .accountant-actions{margin-left:auto}
+.accountant-panel-foot p{font-size:12px;color:var(--muted)}
+.finance-layout .staff-row{grid-template-columns:minmax(0,1fr) auto}
+.finance-layout .staff-line{grid-column:1/-1}
+.staff-name{font-size:13px}
+.staff-role,.staff-line,.staff-status{font-size:11.5px}
+.late-details .empty-state{margin:0;border:0;border-radius:0;background:#fff}
+
+/* ── Страница сотрудников ─────────────────────────────────────────────────── */
+.employees-stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+  gap:12px;margin:18px 0 4px}
+.employees-stat{border:1px solid var(--border);border-radius:14px;background:#fbfcf9;padding:14px 16px}
+.employees-stat span{display:block;font-size:11.5px;color:var(--muted);line-height:1.4}
+.employees-stat strong{display:block;margin-top:8px;font-size:22px;font-weight:600;
+  letter-spacing:-.4px;font-variant-numeric:tabular-nums}
+.employees-stat.is-flagged{background:#fff8f2;border-color:#ecdac8}
+.employees-stat.is-flagged strong{color:#a2562f}
+
+.employees-groups{display:grid;gap:12px;margin-top:18px}
+.employee-roster-scroll{overflow-x:auto}
+.employee-roster-table{min-width:660px}
+.employee-roster-table th{white-space:nowrap}
+.employee-roster-table .staff-status{display:inline-block;justify-self:auto}
+.roster-missing{color:#a2562f}
+.employee-add-row{align-items:end}
+
+@media(max-width:700px){
+  /* Реестр на телефоне: шесть колонок не помещаются, строка становится карточкой. */
+  .employee-roster-scroll{overflow-x:visible}
+  .employee-roster-table{min-width:0;display:block}
+  .employee-roster-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .employee-roster-table tbody,.employee-roster-table tr,.employee-roster-table td{display:block;width:100%}
+  .employee-roster-table tr{border-top:1px solid #e7ece3;padding:10px 4px}
+  .employee-roster-table td{border:0;padding:6px 14px;text-align:left!important;min-width:0!important}
+  .employee-roster-table td::before{content:attr(data-label);display:block;margin-bottom:3px;
+    font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .employee-roster-table td:nth-child(3){white-space:normal}
+}
+
+@media(max-width:1400px){
+  .accountant-workspace{padding:30px 28px 34px}
+  .finance-layout{grid-template-columns:minmax(0,1fr) 300px;gap:20px}
+  .finance-layout .accountant-panel{padding:20px}
+  .finance-tools>summary{padding:18px 20px}
+  .finance-tool-body,.finance-tool-grid{padding:20px}
+  .finance-hero{padding:22px}
+}
+
+@media(max-width:1180px){
+  /* Ниже этой ширины две колонки зажимают журнал до переносов по буквам.
+     Рельса уходит наверх: страницу открывают ради остатка дня. */
+  .accountant-workspace{padding:26px 22px 30px}
+  .finance-layout{grid-template-columns:1fr}
+  .finance-rail{order:-1;position:static;max-height:none;overflow:visible;padding:0;
+    grid-template-columns:repeat(2,minmax(0,1fr))}
+  .finance-hero{grid-column:1/-1}
+  .finance-tool-grid{grid-template-columns:1fr}
+}
+
+@media(max-width:760px){
+  .accountant-workspace{padding:22px 16px 28px}
+  .finance-rail{grid-template-columns:1fr}
+  .debt-payment-form{grid-template-columns:1fr}
+  .debt-payment-form button{width:100%}
+  .manual-debt-row{flex-wrap:wrap}
+  .accountant-form .button{width:100%;min-width:0}
+  .tool-form{grid-template-columns:1fr}
+}
+
+@media(max-width:650px){
+  .accountant-workspace .controls{display:grid;grid-template-columns:1fr 1fr;row-gap:12px}
+  .controls-actions{grid-column:1/-1;display:grid;grid-template-columns:1fr 1fr;margin-left:0}
+  .controls-actions .button{width:100%}
+  .employees-workspace #employees-download{grid-column:1/-1}
+  .expense-entry{grid-template-columns:1fr;padding:16px}
+  .expense-foot{align-items:stretch}
+  .expense-foot .button{width:100%;min-width:0}
+  .finance-layout .accountant-panel{padding:16px}
+  .finance-tools>summary{padding:16px;font-size:16px}
+  .finance-tool-body,.finance-tool-grid{padding:16px}
+  .finance-hero>strong{font-size:30px}
+  .rail-card{padding:18px}
+  .rail-card>strong{font-size:23px}
+  .finance-layout .accountant-panel-foot .accountant-actions{display:grid;width:100%;grid-template-columns:1fr}
+  .finance-layout .accountant-actions .button{white-space:normal;text-align:center;width:100%}
+  .employees-stats{grid-template-columns:1fr 1fr}
+}
+
+@media(max-width:560px){
+  /* Журнал на телефоне: четыре колонки не помещаются, а прятать сумму за
+     горизонтальной прокруткой нельзя — строка разворачивается в карточку. */
+  .expense-table{min-width:0;display:block;border-spacing:0}
+  .expense-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
+  .expense-table tbody,.expense-table tr,.expense-table td{display:block;width:100%}
+  .expense-table tr{background:#f7f9f4;border-radius:12px;padding:8px 4px;margin-bottom:8px}
+  .expense-table td{background:none;border-radius:0!important;padding:7px 12px;text-align:left}
+  .expense-table td::before{content:attr(data-label);display:block;margin-bottom:3px;
+    font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .expense-table td:last-child{text-align:left;white-space:normal}
+  .expense-table tr.is-empty-row{background:none;padding:0;margin:0}
+  .expense-table td.is-empty::before{content:none}
+}
+
+/* Пустое состояние внутри двухколоночного списка смен занимает всю ширину. */
+.late-details .staff-list .empty-state{grid-column:1/-1}
