@@ -117,14 +117,16 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         auth_configured = bool(settings.dashboard_password or settings.dashboard_panel_users)
         role = dashboard_identity(request, settings, app.state.sessions) if auth_configured else 'all'
         public = request.url.path in PUBLIC_PATHS
-        if auth_configured and not public:
-            if role is None:
-                if not request.url.path.startswith(('/api/', '/static/')):
-                    return RedirectResponse('/login', status_code=303)
-                return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
-                                    headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
-        elif not address.is_loopback:
+        # Закрыт внешний доступ только тогда, когда защита не настроена вовсе.
+        # Раньше эта проверка стояла в ветке elif и срабатывала на страницу
+        # входа: пароли заданы, но форму логина снаружи никто не получал.
+        if not auth_configured and not address.is_loopback:
             return JSONResponse({'detail': 'Внешний доступ закрыт. Настройте защиту дашборда.'}, 403)
+        if auth_configured and not public and role is None:
+            if not request.url.path.startswith(('/api/', '/static/')):
+                return RedirectResponse('/login', status_code=303)
+            return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
+                                headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
         required_panel = panel_for_path(request.url.path)
         if required_panel and not public and role not in ('all', required_panel):
             return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
