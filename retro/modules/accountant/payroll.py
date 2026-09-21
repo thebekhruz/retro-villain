@@ -46,6 +46,8 @@ def compute_pay(rate: Decimal | None, status: str, *, exception: bool) -> Decima
         return rate
     if status == 'unlinked' and exception:
         return rate
+    if status == 'unavailable':
+        return None
     return None
 
 

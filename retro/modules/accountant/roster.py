@@ -16,6 +16,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from retro.runtime import secure_directory, secure_file
+from retro.integrations.hikvision import HikvisionPerson
 
 
 GROUPS = {
@@ -60,6 +61,10 @@ def parse_money(value, *, allow_zero=True) -> Decimal:
             or amount > Decimal('1000000000000') or amount.as_tuple().exponent < -2):
         raise ValueError('Сумма должна быть неотрицательной, не более 1 трлн сум и с точностью до тиына.')
     return amount
+
+
+def normalized_hikvision_name(value: str) -> str:
+    return ' '.join(value.casefold().split())
 
 
 @dataclass(frozen=True)
@@ -191,10 +196,58 @@ class RosterStore:
                                       'FROM accountant_employees ORDER BY source_row').fetchall()
         return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None, row[6]) for row in rows]
 
+    def link_hikvision_people(self, people: tuple[HikvisionPerson, ...]) -> dict[str, int]:
+        """Link only two-sided unique exact normalized names; never overwrite IDs."""
+        unique_people = {person.employee_no: person for person in people if person.employee_no}
+        employees = self.list()
+        already_ids = {employee.hikvision_id for employee in employees if employee.hikvision_id}
+        unlinked_by_name: dict[str, list[Employee]] = {}
+        for employee in employees:
+            if employee.hikvision_id is None:
+                key = normalized_hikvision_name(employee.name)
+                if key:
+                    unlinked_by_name.setdefault(key, []).append(employee)
+        people_by_name: dict[str, list[HikvisionPerson]] = {}
+        for person in unique_people.values():
+            if person.employee_no in already_ids:
+                continue
+            key = normalized_hikvision_name(person.name or '')
+            if key:
+                people_by_name.setdefault(key, []).append(person)
+
+        result = dict(people=len(unique_people), linked=0, already_linked=0,
+                      ambiguous=0, unmatched=0)
+        with closing(self._open()) as connection, connection:
+            for person in unique_people.values():
+                if person.employee_no in already_ids:
+                    result['already_linked'] += 1
+                    continue
+                key = normalized_hikvision_name(person.name or '')
+                candidates = unlinked_by_name.get(key, []) if key else []
+                device_candidates = people_by_name.get(key, []) if key else []
+                if key and (len(candidates) > 1 or len(device_candidates) > 1):
+                    result['ambiguous'] += 1
+                    continue
+                if not key or not candidates:
+                    result['unmatched'] += 1
+                    continue
+                try:
+                    changed = connection.execute(
+                        'UPDATE accountant_employees SET hikvision_id = ? '
+                        'WHERE id = ? AND hikvision_id IS NULL',
+                        (person.employee_no, candidates[0].id)).rowcount
+                except sqlite3.IntegrityError:
+                    changed = 0
+                if changed:
+                    result['linked'] += 1
+                    already_ids.add(person.employee_no)
+                else:
+                    result['ambiguous'] += 1
+        return result
+
     def monthly_total(self) -> Decimal:
         """Return only salaries explicitly stored in the monthly payroll register."""
         return sum((person.salary for person in self.list_monthly()), Decimal(0))
-
     def list_monthly(self) -> list[MonthlyEmployee]:
         with closing(self._open()) as connection:
             rows = connection.execute(
