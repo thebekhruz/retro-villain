@@ -1,6 +1,6 @@
 const $ = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0)) + ' сум';
-const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки'};
+const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки', unavailable: 'Нет данных'};
 const columns = ['Имя', 'Роль', 'Зарплата / ставка', 'Группа', 'Статус', 'Действия'];
 const formattedDay = day => new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric',
   timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
@@ -44,14 +44,27 @@ function options(select, items, placeholder) {
   items.forEach(item => select.add(new Option(item.label, item.id)));
   if (items.some(item => String(item.id) === old)) select.value = old;
 }
+function attendanceHealth(value) {
+  const status = value?.status || 'starting';
+  const states = {
+    ok: 'Hikvision синхронизирован.',
+    starting: 'Hikvision подключается; отсутствие входа пока не считается прогулом.',
+    stale: 'Данные Hikvision устарели; отсутствие входа не считается прогулом.',
+    not_configured: 'Hikvision не настроен; отсутствие входа не считается прогулом.'
+  };
+  return states[status] || 'Hikvision недоступен; отсутствие входа не считается прогулом.';
+}
 function render(data) {
   // formattedDay уже отдаёт «19 сентября 2026 г.» — точку в конце не добавляем.
-  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value);
+  const health = attendanceHealth(data.attendance);
+  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health;
+  $('employees-attendance-status').textContent = health;
   $('employees-stats').replaceChildren(
     stat('Всего в реестре', data.roster_count, false),
     stat('Опоздали после 10:00', data.payroll.late_count, true),
     stat('Не пришли', data.payroll.missing_count, true),
-    stat('Без демопривязки', data.payroll.unlinked_count, false),
+    stat('Без привязки Hikvision', data.payroll.unlinked_count, false),
+    stat('Нет данных источника', data.payroll.unavailable_count, true),
     stat('Без ставки', data.missing_rates, true)
   );
   const container = $('employees-groups');
@@ -349,12 +362,12 @@ $('employees-download').addEventListener('click', async () => {
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'Retro-employees-' + day + '-DEMO.xlsx';
+    link.download = 'Retro-employees-' + day + '.xlsx';
     document.body.append(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
-    message('Полный список скачан. Проходы демонстрационные.');
+    message('Полный список скачан.');
   } catch (error) { message(error.message, true); } finally { button.disabled = false; }
 });
 (async () => {
