@@ -24,7 +24,7 @@ from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
-from retro.integrations.gemini import GeminiClient
+from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
@@ -84,7 +84,7 @@ def dashboard_identity(request: Request, settings: Settings, sessions: SessionSt
 
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
-               director_db_path=None, gemini_transport=None, booking_transport=None,
+               director_db_path=None, claude_transport=None, booking_transport=None,
                hikvision_client=None, hikvision_poller=None):
     configure_logging()
     settings = settings or Settings.from_env()
@@ -132,9 +132,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         app.state.hikvision_poller = None
     director_path = director_db_path or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
-    app.state.gemini = GeminiClient(settings, transport=gemini_transport)
+    app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
-        app.state.iiko, app.state.gemini, app.state.director_store, settings.report_retention)
+        app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention)
 
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):

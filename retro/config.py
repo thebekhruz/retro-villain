@@ -36,8 +36,8 @@ class Settings:
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
     trusted_proxy_network: IPv4Network | IPv6Network | None = None
     manual_handover_only: bool = False
-    gemini_api_key: str = field(default='', repr=False)
-    gemini_model: str = ''
+    claude_api_key: str = field(default='', repr=False)
+    claude_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
     director_excluded_groups: frozenset[str] = field(default_factory=frozenset)
     booking_api_url: str = ''
@@ -51,8 +51,8 @@ class Settings:
         return bool(self.login and self.password and self.store_id is not None)
 
     @property
-    def gemini_configured(self):
-        return bool(self.gemini_api_key and self.gemini_model)
+    def claude_configured(self):
+        return bool(self.claude_api_key and self.claude_model)
 
     @property
     def booking_configured(self):
@@ -106,8 +106,8 @@ class Settings:
             dashboard_allowed_network=allowed_network,
             trusted_proxy_network=trusted_proxy_network,
             manual_handover_only=manual,
-            gemini_api_key=os.getenv('GEMINI_API_KEY', ''),
-            gemini_model=os.getenv('GEMINI_MODEL', 'gemini-2.5-flash'),
+            claude_api_key=os.getenv('CLAUDE_API_KEY', ''),
+            claude_model=os.getenv('CLAUDE_MODEL', 'claude-sonnet-4-6'),
             director_categories=categories,
             director_excluded_groups=excluded_groups,
             booking_api_url=booking_url,

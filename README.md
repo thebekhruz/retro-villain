@@ -6,8 +6,8 @@ Python 3.11+, FastAPI, мобильный HTML/CSS/JS интерфейс.
 
 Модуль директора доступен по `/director`. Он собирает последние десять
 завершённых дней iiko, разделяет Retro/Oxbridge/Yandex и формирует сохранённый
-PDF после настройки `GEMINI_API_KEY` и `GEMINI_MODEL` в `build/.env`. До
-настройки Gemini кнопка отчёта честно сообщает об ошибке конфигурации. История
+PDF после настройки `CLAUDE_API_KEY` и `CLAUDE_MODEL` в `build/.env`. До
+настройки Claude кнопка отчёта честно сообщает об ошибке конфигурации. История
 отчётов хранится в `director.sqlite3` в едином `RETRO_DATA_DIR`;
 его нужно резервировать вместе с базами кассы и бухгалтерии.
 
@@ -46,11 +46,11 @@ PDF после настройки `GEMINI_API_KEY` и `GEMINI_MODEL` в `build/.
 - 2026-08-20…2026-09-18: итог продаж и оплат 1 391 151 100 сум,
   расхождение 0; неизвестных касс и способов оплаты не обнаружено.
 
-Минимальная конфигурация Gemini в `build/.env`:
+Минимальная конфигурация Claude в `build/.env`:
 
 ```env
-GEMINI_API_KEY=your-key
-GEMINI_MODEL=gemini-2.5-flash
+CLAUDE_API_KEY=your-key
+CLAUDE_MODEL=claude-sonnet-4-6
 ```
 
 ## Запуск
@@ -128,7 +128,7 @@ RETRO_DATA_DIR=/data
 | `TRUSTED_PROXY_NETWORK` | подсеть обратного прокси хостинга |
 | `IIKO_LOGIN`, `IIKO_PASSWORD` | доступ к выгрузкам |
 | `IIKO_DIRECTOR_CATEGORIES` | группы блюд для отчёта директора |
-| `GEMINI_API_KEY` | разбор отчёта директора |
+| `CLAUDE_API_KEY` | разбор отчёта директора |
 | `HIKVISION_URL`, `HIKVISION_USER`, `HIKVISION_PASSWORD` | read-only ISAPI одного входного устройства |
 
 Панель закрыта по умолчанию: пока не задан ни один пароль, всё, что пришло
@@ -452,7 +452,7 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 - `IIKO_SERVER_URL`, `IIKO_LOGIN`, `IIKO_PASSWORD`, `IIKO_STORE_ID` — доступ к iiko.
 - `ACCOUNTANT_MANUAL_HANDOVER` — `1` для явных передач кассы, `0` для iiko fallback.
 - `RETRO_DATA_DIR` — общий каталог `cashier.sqlite3`, `accountant.sqlite3`, `director.sqlite3`.
-- `GEMINI_API_KEY`, `GEMINI_MODEL` — серверный AI-анализ отчёта директора.
+- `CLAUDE_API_KEY`, `CLAUDE_MODEL` — серверный AI-анализ отчёта директора.
 - `DIRECTOR_REPORT_RETENTION` — число хранимых отчётов.
 - `IIKO_DIRECTOR_CATEGORIES`, `IIKO_DIRECTOR_EXCLUDED_GROUPS` — явная классификация меню.
 - `DASHBOARD_USER`, `DASHBOARD_PASSWORD` — Basic Auth для всего dashboard.
