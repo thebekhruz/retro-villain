@@ -25,7 +25,7 @@ from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.integrations.gemini import GeminiClient
 from retro.logging_config import configure_logging
-from retro.security import client_address, is_finance_path, is_local_host, validate_mutation_origin
+from retro.security import effective_scheme, client_address, is_finance_path, is_local_host, validate_mutation_origin
 from retro.sessions import SessionStore
 
 STATIC = Path(__file__).parent / 'static'
@@ -174,7 +174,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
         response.set_cookie(
             SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
-            samesite='strict', secure=request.url.scheme == 'https', path='/')
+            samesite='strict', secure=effective_scheme(request) == 'https', path='/')
         return response
 
     @app.post('/api/session/logout', status_code=204)

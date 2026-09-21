@@ -48,11 +48,29 @@ def _origin_tuple(value: str):
     return parsed.scheme, parsed.hostname.casefold(), port
 
 
+def effective_scheme(request) -> str:
+    """Схема, которую видит браузер.
+
+    Сервер стоит за обратным прокси хостинга и разговаривает с ним по http,
+    поэтому request.url.scheme всегда http. Браузер при этом пришёл по https
+    и присылает такой Origin. Сравнивать с ним схему соединения нельзя:
+    иначе собственная форма входа выглядит как запрос с чужого сайта.
+    Подменить заголовок можно, но домен в Origin подделать нельзя, а защита
+    от межсайтовых запросов держится именно на домене."""
+    forwarded = request.headers.get('x-forwarded-proto', '')
+    first = forwarded.split(',')[0].strip().casefold()
+    if first in ('http', 'https'):
+        return first
+    return request.url.scheme
+
+
 def validate_mutation_origin(request) -> None:
     if request.method not in MUTATING_METHODS:
         return
     origin = request.headers.get('origin')
     if origin is None:
         return
-    if origin == 'null' or _origin_tuple(origin) != _origin_tuple(str(request.base_url)):
+    base = urlsplit(str(request.base_url))
+    expected = '%s://%s' % (effective_scheme(request), base.netloc)
+    if origin == 'null' or _origin_tuple(origin) != _origin_tuple(expected):
         raise ValueError('Запрос с другого источника отклонён.')
