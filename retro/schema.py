@@ -8,7 +8,7 @@ class SchemaError(RuntimeError):
     pass
 
 
-CURRENT_SCHEMAS = {'cashier': 1, 'accountant': 1, 'director': 1}
+CURRENT_SCHEMAS = {'cashier': 1, 'accountant': 1, 'director': 1, 'founder': 1}
 
 NUMERIC_COLUMNS = {
     'cashier': {
@@ -31,6 +31,7 @@ NUMERIC_COLUMNS = {
         'accountant_monthly_employees': ('salary', 'card', 'cash', 'advances', 'remaining'),
     },
     'director': {},
+    'founder': {},
 }
 
 

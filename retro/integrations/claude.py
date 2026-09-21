@@ -190,6 +190,78 @@ class ClaudeClient:
             log_upstream_failure('claude', error, operation='analyze')
             raise DataError('Claude вернул некорректный ответ. Повторите позже.') from None
 
+    async def chat(self, messages):
+        """Answer a bounded founder conversation without exposing provider details."""
+        if not self.settings.claude_configured:
+            raise DataError('Настройте CLAUDE_API_KEY и CLAUDE_MODEL для чата с ИИ.')
+        bounded = self._bounded_chat(messages)
+        headers = {
+            'content-type': 'application/json',
+            'x-api-key': self.settings.claude_api_key,
+            'anthropic-version': ANTHROPIC_VERSION,
+        }
+        body = {
+            'model': self.settings.claude_model,
+            'max_tokens': 1400,
+            'system': (
+                'Ты конфиденциальный деловой ассистент учредителей ресторана Retro Milliy. '
+                'Отвечай на русском языке ясно, кратко и практически. Отделяй факты от '
+                'предположений, не выдумывай цифры и не утверждай, что видишь живые данные '
+                'ресторана. Если для ответа не хватает данных, перечисли, что нужно уточнить. '
+                'Не выполняй действия и не меняй данные — этот чат только консультирует.'
+            ),
+            'messages': bounded,
+        }
+        try:
+            async with httpx.AsyncClient(timeout=60, transport=self.transport) as client:
+                response = await client.post(MESSAGES_URL, headers=headers, json=body)
+            if not response.is_success:
+                log_upstream_failure(
+                    'claude', RuntimeError(f'http_status_{response.status_code}'),
+                    operation='founder_chat')
+                raise DataError('Claude сейчас не отвечает. Повторите позже.')
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get('stop_reason') != 'end_turn':
+                raise ValueError('incomplete Claude chat response')
+            parts = [block.get('text') for block in payload.get('content', [])
+                     if isinstance(block, dict) and block.get('type') == 'text']
+            if not parts or any(not isinstance(part, str) for part in parts):
+                raise ValueError('missing Claude chat text')
+            answer = '\n'.join(part.strip() for part in parts if part.strip()).strip()
+            if not answer or len(answer) > 12_000:
+                raise ValueError('invalid Claude chat text')
+            return answer
+        except DataError:
+            raise
+        except (httpx.HTTPError, json.JSONDecodeError, TypeError, ValueError) as error:
+            log_upstream_failure('claude', error, operation='founder_chat')
+            raise DataError('Claude вернул некорректный ответ. Повторите позже.') from None
+
+    @staticmethod
+    def _bounded_chat(messages):
+        if not isinstance(messages, list) or not messages:
+            raise ValueError('chat messages must be a non-empty list')
+        selected, total = [], 0
+        for message in reversed(messages[-24:]):
+            if (not isinstance(message, dict) or message.get('role') not in {'user', 'assistant'}
+                    or not isinstance(message.get('content'), str)):
+                raise ValueError('invalid chat message')
+            content = message['content'].strip()
+            if not content or len(content) > 12_000:
+                raise ValueError('invalid chat content')
+            if selected and total + len(content) > 20_000:
+                break
+            selected.append({'role': message['role'], 'content': content})
+            total += len(content)
+        selected.reverse()
+        while selected and selected[0]['role'] == 'assistant':
+            selected.pop(0)
+        if not selected:
+            raise ValueError('chat must include a user message')
+        if selected[-1]['role'] != 'user':
+            raise ValueError('chat must end with user message')
+        return selected
+
     @staticmethod
     def _validate(result):
         if not isinstance(result, dict) or set(result) != {'summary', 'problems'}:

@@ -24,13 +24,14 @@ from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
+from retro.modules.founder.chat import FounderChatStore
 from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
 from retro.security import effective_scheme, client_address, is_finance_path, is_local_host, validate_mutation_origin
-from retro.sessions import SessionStore
+from retro.sessions import SessionIdentity, SessionStore
 
 STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
@@ -58,10 +59,12 @@ def panel_for_path(path: str) -> str | None:
     return None
 
 
-def dashboard_identity(request: Request, settings: Settings, sessions: SessionStore) -> str | None:
-    session_role = sessions.role(request.cookies.get(SESSION_COOKIE))
-    if session_role:
-        return session_role
+def dashboard_identity(
+        request: Request, settings: Settings, sessions: SessionStore,
+) -> SessionIdentity | None:
+    session_identity = sessions.identity(request.cookies.get(SESSION_COOKIE))
+    if session_identity:
+        return session_identity
     header = request.headers.get('Authorization', '')
     if not header.startswith('Basic '):
         return None
@@ -74,17 +77,17 @@ def dashboard_identity(request: Request, settings: Settings, sessions: SessionSt
     if panel_user:
         expected_password, role = panel_user
         if secrets.compare_digest(password.encode(), expected_password.encode()):
-            return role
+            return SessionIdentity(username, role)
     if settings.dashboard_password:
         valid = (secrets.compare_digest(username.encode(), settings.dashboard_user.encode())
                  & secrets.compare_digest(password.encode(), settings.dashboard_password.encode()))
         if valid:
-            return 'all'
+            return SessionIdentity(username, 'all')
     return None
 
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
-               director_db_path=None, claude_transport=None, booking_transport=None,
+               director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
                hikvision_client=None, hikvision_poller=None):
     configure_logging()
     settings = settings or Settings.from_env()
@@ -132,6 +135,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         app.state.hikvision_poller = None
     director_path = director_db_path or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
+    founder_path = founder_db_path or settings.data_dir / 'founder.sqlite3'
+    app.state.founder_chat_store = FounderChatStore(founder_path)
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
         app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention)
@@ -150,7 +155,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if not address.is_loopback and address not in settings.dashboard_allowed_network:
                 return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
         auth_configured = bool(settings.dashboard_password or settings.dashboard_panel_users)
-        role = dashboard_identity(request, settings, app.state.sessions) if auth_configured else 'all'
+        identity = (dashboard_identity(request, settings, app.state.sessions)
+                    if auth_configured else SessionIdentity('local', 'all'))
+        role = identity.role if identity else None
         public = request.url.path in PUBLIC_PATHS
         # Закрыт внешний доступ только тогда, когда защита не настроена вовсе.
         # Раньше эта проверка стояла в ветке elif и срабатывала на страницу
@@ -167,6 +174,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 and role != required_panel):
             return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
         request.state.dashboard_role = role
+        request.state.dashboard_user = identity.username if identity else None
         try:
             validate_mutation_origin(request)
         except ValueError as error:
@@ -206,7 +214,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 role = 'all'
         if role is None:
             return JSONResponse({'detail': 'Неверный логин или пароль.'}, 401)
-        token = app.state.sessions.create(role)
+        token = app.state.sessions.create(body.username, role)
         response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
         response.set_cookie(
             SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,

@@ -25,6 +25,13 @@ Claude получает не полный снимок меню, а ограни
 `Asia/Tashkent`; быстрые периоды на 7 и 30 дней заканчиваются вчера, а текущий
 месяц явно помечает незавершённый сегодняшний день.
 
+Справа в модуле находится выдвижной чат с Claude. Он доступен только роли
+`founder` и администраторам, хранит до 100 последних сообщений отдельно для
+каждого логина в `founder.sqlite3` и передаёт модели ограниченное окно контекста.
+Ключ Anthropic остаётся на сервере; чат не меняет данные и не имеет скрытого
+доступа к live-показателям, поэтому Claude обязан явно запрашивать недостающие
+цифры, а не придумывать их.
+
 Для аналитики выполняются два независимых OLAP-запроса: выручка группируется по
 `OpenDate.Typed → CashRegisterName → RestaurantSection`, а оплаты дополнительно
 по `PayTypes`. В обоих запросах используются `DishDiscountSumInt` и
@@ -445,7 +452,7 @@ manifest, SHA-256 и целостность каждой базы. Перед р
 
 Ежедневно запускайте `retro_data.py backup` в каталог на другом носителе и
 проверяйте код завершения. Не реже раза в месяц выполняйте `restore` в
-новый временный каталог, затем `verify` для всех трёх баз. Никогда не восстанавливайте
+новый временный каталог, затем `verify` для всех рабочих баз. Никогда не восстанавливайте
 поверх рабочего каталога без остановки сервиса и отдельной свежей копии.
 
 Проверка прав не читает содержимое файлов:
@@ -459,16 +466,16 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 
 - `IIKO_SERVER_URL`, `IIKO_LOGIN`, `IIKO_PASSWORD`, `IIKO_STORE_ID` — доступ к iiko.
 - `ACCOUNTANT_MANUAL_HANDOVER` — `1` для явных передач кассы, `0` для iiko fallback.
-- `RETRO_DATA_DIR` — общий каталог `cashier.sqlite3`, `accountant.sqlite3`, `director.sqlite3`.
-- `CLAUDE_API_KEY`, `CLAUDE_MODEL` — серверный AI-анализ отчёта директора.
+- `RETRO_DATA_DIR` — общий каталог `cashier.sqlite3`, `accountant.sqlite3`, `director.sqlite3`, `founder.sqlite3`.
+- `CLAUDE_API_KEY`, `CLAUDE_MODEL` — серверный AI-анализ директора и чат учредителей.
 - `DIRECTOR_REPORT_RETENTION` — число хранимых отчётов.
 - `IIKO_DIRECTOR_CATEGORIES` — необязательный allowlist групп; пустое значение включает все группы.
 - `IIKO_DIRECTOR_EXCLUDED_GROUPS` — явно исключённые группы меню.
 - `DASHBOARD_USER`, `DASHBOARD_PASSWORD` — Basic Auth для всего dashboard.
 - `DASHBOARD_PANEL_USERS` — ролевые записи в формате `user:password:role;...`.
   Обязательные роли: `cashier`, `accountant`, `director`, `founder`; необязательная
-  роль `admin` получает доступ ко всем страницам и API. Для каждой указанной роли
-  задайте ровно один уникальный логин.
+  роль `admin` получает доступ ко всем страницам и API. Логины должны быть
+  уникальными; роль `founder` можно назначить нескольким учредителям.
 - `DASHBOARD_ALLOWED_NETWORK` — необязательная CIDR-подсеть клиентов.
 - `TRUSTED_PROXY_NETWORK` — только CIDR самого reverse proxy. За его пределами
   `X-Forwarded-For` игнорируется; не указывайте там клиентскую подсеть.

@@ -25,6 +25,7 @@ def test_app_uses_shared_database_names(tmp_path):
     assert app.state.expenses.path == tmp_path / 'cashier.sqlite3'
     assert app.state.accountant_finance.path == tmp_path / 'accountant.sqlite3'
     assert app.state.director_store.path == tmp_path / 'director.sqlite3'
+    assert app.state.founder_chat_store.path == tmp_path / 'founder.sqlite3'
 
 
 def test_new_database_files_are_owner_only(tmp_path):
