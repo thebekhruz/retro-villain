@@ -175,12 +175,18 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             samesite='strict', secure=request.url.scheme == 'https', path='/')
         return response
 
-    @app.post('/api/session/logout', status_code=204)
-    def logout(request: Request):
+    def finish_logout(request: Request, response: Response):
         app.state.sessions.delete(request.cookies.get(SESSION_COOKIE))
-        response = Response(status_code=204)
         response.delete_cookie(SESSION_COOKIE, path='/', samesite='strict')
         return response
+
+    @app.post('/api/session/logout', status_code=204)
+    def logout(request: Request):
+        return finish_logout(request, Response(status_code=204))
+
+    @app.get('/logout')
+    def logout_page(request: Request):
+        return finish_logout(request, RedirectResponse('/login', status_code=303))
 
     @app.get('/accountant')
     def accountant():

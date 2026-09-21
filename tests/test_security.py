@@ -61,6 +61,23 @@ def test_logout_invalidates_dashboard_session(tmp_path):
     assert page.headers['location'] == '/login'
 
 
+def test_logout_page_clears_session_and_redirects_to_login(tmp_path):
+    app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1', follow_redirects=False) as client:
+        client.post('/api/session', json={
+            'username': 'director', 'password': 'test-password'})
+        logout = client.get('/logout')
+        page = client.get('/director')
+
+    assert logout.status_code == 303
+    assert logout.headers['location'] == '/login'
+    assert 'retro_session=' in logout.headers['set-cookie']
+    assert 'Max-Age=0' in logout.headers['set-cookie']
+    assert page.status_code == 303
+    assert page.headers['location'] == '/login'
+
+
 def test_each_panel_user_can_open_the_assigned_page(tmp_path):
     app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
     with TestClient(app, client=('127.0.0.1', 50000),
