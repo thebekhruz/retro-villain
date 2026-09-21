@@ -32,7 +32,9 @@ STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
-              'director': '/director', 'founder': '/founder', 'all': '/'}
+              'director': '/director', 'founder': '/founder',
+              'admin': '/', 'all': '/'}
+FULL_ACCESS_ROLES = {'admin', 'all'}
 
 
 class LoginInput(BaseModel):
@@ -126,7 +128,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         elif not address.is_loopback:
             return JSONResponse({'detail': 'Внешний доступ закрыт. Настройте защиту дашборда.'}, 403)
         required_panel = panel_for_path(request.url.path)
-        if required_panel and not public and role not in ('all', required_panel):
+        if (required_panel and not public and role not in FULL_ACCESS_ROLES
+                and role != required_panel):
             return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
         request.state.dashboard_role = role
         try:

@@ -117,7 +117,8 @@ def parse_director_categories(value: str) -> dict[str, str]:
 def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
     if not value.strip():
         return {}
-    allowed_roles = {'cashier', 'accountant', 'director', 'founder'}
+    required_roles = {'cashier', 'accountant', 'director', 'founder'}
+    allowed_roles = required_roles | {'admin'}
     result = {}
     roles = set()
     for raw_entry in value.split(';'):
@@ -130,7 +131,7 @@ def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
             raise ValueError('DASHBOARD_PANEL_USERS содержит некорректную учётную запись.')
         result[username] = (password, role)
         roles.add(role)
-    if roles != allowed_roles:
+    if not required_roles.issubset(roles):
         raise ValueError('DASHBOARD_PANEL_USERS должен задавать по одному пользователю для каждой панели.')
     return result
 
