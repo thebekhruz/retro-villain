@@ -43,6 +43,8 @@ def test_claude_client_uses_messages_api_header_and_json_schema():
     assert seen['body']['model'] == 'claude-test'
     assert seen['body']['output_config']['format']['type'] == 'json_schema'
     assert seen['body']['output_config']['format']['schema']['additionalProperties'] is False
+    direction = seen['body']['output_config']['format']['schema']['properties']['problems']['items']['properties']['direction']
+    assert 'banquet' in direction['enum']
     assert '2026-09-08' in seen['body']['messages'][0]['content']
     assert 'key' not in seen['body']['messages'][0]['content']
 

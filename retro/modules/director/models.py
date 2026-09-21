@@ -67,6 +67,8 @@ def completed_period(today: date):
 
 
 def direction(row):
+    if isinstance(row.item, str) and 'бехруз' in row.item.casefold():
+        return 'banquet'
     if row.register == SCHOOL_REGISTER:
         return 'oxbridge'
     if row.register == RETRO_REGISTER and row.section == BANQUET_SECTION:
@@ -83,15 +85,17 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
     if days != expected_days:
         raise DataError('iiko не вернул все десять дней для отчёта директора.')
     metrics = {name: defaultdict(lambda: [Decimal(0), Decimal(0), Decimal(0)])
-               for name in ('all', 'retro', 'oxbridge', 'yandex')}
+               for name in ('all', 'retro', 'oxbridge', 'banquet', 'yandex')}
     cash_total = Decimal(0)
     yandex_total = Decimal(0)
     waiters = defaultdict(lambda: [Decimal(0), Decimal(0), Decimal(0)])
     for row in values:
         if row.category in excluded_groups:
             continue
-        if row.category not in categories:
+        if categories and row.category not in categories:
             raise DataError(f'Для категории iiko «{row.category}» не настроен тип отчёта.')
+        if not isinstance(row.item, str) or not row.item.strip():
+            raise DataError('iiko не указал название блюда.')
         if not row.waiter.strip():
             raise DataError('iiko не указал официанта для позиции.')
         if min(row.quantity, row.revenue, row.cost) < 0:

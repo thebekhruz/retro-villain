@@ -5,11 +5,13 @@
 Python 3.11+, FastAPI, мобильный HTML/CSS/JS интерфейс.
 
 Модуль директора доступен по `/director`. Он собирает последние десять
-завершённых дней iiko, разделяет Retro/Oxbridge/Yandex и формирует сохранённый
+завершённых дней iiko, разделяет Retro/Oxbridge/банкет/Yandex и формирует сохранённый
 PDF после настройки `CLAUDE_API_KEY` и `CLAUDE_MODEL` в `build/.env`. До
 настройки Claude кнопка отчёта честно сообщает об ошибке конфигурации. История
 отчётов хранится в `director.sqlite3` в едином `RETRO_DATA_DIR`;
 его нужно резервировать вместе с базами кассы и бухгалтерии.
+Если `IIKO_DIRECTOR_CATEGORIES` пуст, в отчёт входят все группы, кроме явно исключённых.
+Блюдо с подстрокой `БЕХРУЗ` в названии (без учёта регистра) относится к банкетному залу.
 
 Модуль «Учредитель» доступен по `/founder`. Он строит read-only аналитику
 выручки и способов оплаты за произвольный диапазон с группировкой по дням,
@@ -454,7 +456,8 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 - `RETRO_DATA_DIR` — общий каталог `cashier.sqlite3`, `accountant.sqlite3`, `director.sqlite3`.
 - `CLAUDE_API_KEY`, `CLAUDE_MODEL` — серверный AI-анализ отчёта директора.
 - `DIRECTOR_REPORT_RETENTION` — число хранимых отчётов.
-- `IIKO_DIRECTOR_CATEGORIES`, `IIKO_DIRECTOR_EXCLUDED_GROUPS` — явная классификация меню.
+- `IIKO_DIRECTOR_CATEGORIES` — необязательный allowlist групп; пустое значение включает все группы.
+- `IIKO_DIRECTOR_EXCLUDED_GROUPS` — явно исключённые группы меню.
 - `DASHBOARD_USER`, `DASHBOARD_PASSWORD` — Basic Auth для всего dashboard.
 - `DASHBOARD_PANEL_USERS` — ролевые записи в формате `user:password:role;...`.
   Обязательные роли: `cashier`, `accountant`, `director`, `founder`; необязательная

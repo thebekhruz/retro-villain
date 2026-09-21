@@ -22,7 +22,7 @@ ANALYSIS_SCHEMA = {
                 'type': 'object',
                 'properties': {
                     'subject': {'type': 'string'},
-                    'direction': {'type': 'string', 'enum': ['all', 'retro', 'oxbridge', 'yandex']},
+                    'direction': {'type': 'string', 'enum': ['all', 'retro', 'oxbridge', 'banquet', 'yandex']},
                     'reason': {'type': 'string'},
                     'priority': {'type': 'string', 'enum': ['high', 'medium', 'low']},
                     'action': {'type': 'string', 'enum': ['remove', 'replace', 'promote', 'review']},
@@ -101,7 +101,7 @@ class ClaudeClient:
         if not isinstance(problems, list) or len(problems) > 10:
             raise ValueError('invalid problems')
         allowed = {
-            'direction': {'all', 'retro', 'oxbridge', 'yandex'},
+            'direction': {'all', 'retro', 'oxbridge', 'banquet', 'yandex'},
             'priority': {'high', 'medium', 'low'},
             'action': {'remove', 'replace', 'promote', 'review'},
         }

@@ -42,10 +42,12 @@ def test_missing_waiter_is_rejected():
                        CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
 
 
-def test_excluded_group_is_not_included_and_unmapped_group_fails_closed():
+def test_empty_category_map_includes_all_groups_and_explicit_map_still_fails_closed():
     days = [date(2026, 9, 8) + timedelta(days=offset) for offset in range(10)]
     rows = [sale(category='Миллий', day=day, order_id=str(offset))
             for offset, day in enumerate(days)]
+    automatic = build_snapshot(rows, {}, date(2026, 9, 8), date(2026, 9, 17))
+    assert automatic.cash_total == Decimal('2000000')
     with pytest.raises(DataError, match='категор'):
         build_snapshot(rows, {'Десерты': 'dessert'}, date(2026, 9, 8), date(2026, 9, 17),
                        excluded_groups={'Контейнеры'})
@@ -55,8 +57,12 @@ def test_excluded_group_is_not_included_and_unmapped_group_fails_closed():
     assert excluded.cash_total == Decimal(0)
 
 
-def test_banquets_are_out_of_scope_without_blocking_other_sales():
+def test_banquet_is_counted_by_bekhruz_marker_in_dish_name():
     rows = [sale(day=date(2026, 9, 8) + timedelta(days=offset), order_id=str(offset),
-                 section='Бехруз (Свадьба)' if offset == 0 else 'Ресторан') for offset in range(10)]
-    snapshot = build_snapshot(rows, CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
+                 item='СВАДЬБА Салат Оливье (Бехруз)' if offset == 0 else f'Плов {offset}',
+                 section='Бехруз (Свадьба)' if offset == 1 else 'Ресторан')
+            for offset in range(10)]
+    snapshot = build_snapshot(rows, {}, date(2026, 9, 8), date(2026, 9, 17))
     assert snapshot.cash_total == Decimal('1800000')
+    assert snapshot.item_metrics['banquet']['СВАДЬБА Салат Оливье (Бехруз)'].revenue == Decimal('200000')
+    assert 'Плов 1' not in snapshot.item_metrics['all']
