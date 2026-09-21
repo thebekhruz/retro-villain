@@ -56,10 +56,26 @@ function emptyState(glyph, text, extra) {
 function options(select, items, placeholder) { const old = select.value; select.replaceChildren(new Option(placeholder, '')); items.forEach(x => select.add(new Option(x.label, String(x.id)))); if (items.some(x => String(x.id) === old)) select.value = old; }
 const selectedDay = () => $('accountant-date').value;
 
+function attendanceHealth(value) {
+  const status = value?.status || 'starting';
+  const states = {
+    ok: ['Hikvision: работает', 'Hikvision синхронизирован.'],
+    starting: ['Hikvision: подключение', 'Hikvision подключается; отсутствие входа пока не считается прогулом.'],
+    stale: ['Hikvision: данные устарели', 'Данные Hikvision устарели; отсутствие входа не считается прогулом.'],
+    not_configured: ['Hikvision: не настроен', 'Hikvision не настроен; отсутствие входа не считается прогулом.']
+  };
+  const state = states[status] || ['Hikvision: нет связи', 'Hikvision недоступен; отсутствие входа не считается прогулом.'];
+  return {short: state[0], detail: state[1]};
+}
+
 function renderStaff(data) {
   const rows = data.employees.filter(row => row.status === 'late'), container = $('late-list');
+  const health = attendanceHealth(data.attendance);
   $('staff-summary').textContent = 'Опоздавших после 10:00: ' + rows.length +
-    ' · автоматический штраф не начисляется. Проходы демонстрационные.';
+    ' · автоматический штраф не начисляется. ' + health.detail;
+  $('attendance-chip').textContent = health.short;
+  $('attendance-banner-text').textContent = health.detail;
+  $('attendance-footnote').textContent = health.detail;
   container.replaceChildren();
   if (!rows.length) container.append(emptyState('✓', 'За этот день никто не опоздал.'));
   rows.forEach(row => {
@@ -297,9 +313,9 @@ $('entrances-download').addEventListener('click', async () => {
     const response = await fetch('/api/accountant/employees/export?scope=late&date=' + encodeURIComponent(day), {cache: 'no-store'});
     if (!response.ok) throw new Error('Не удалось скачать файл входов.');
     const blob = await response.blob(), url = URL.createObjectURL(blob), link = document.createElement('a');
-    link.href = url; link.download = 'Retro-late-' + day + '-DEMO.xlsx'; document.body.append(link); link.click(); link.remove();
+    link.href = url; link.download = 'Retro-late-' + day + '.xlsx'; document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
-    message('Список опоздавших скачан. Проходы демонстрационные.');
+    message('Список опоздавших скачан.');
   } catch (error) { message(error.message, true); } finally { $('entrances-download').disabled = false; }
 });
 (async () => {

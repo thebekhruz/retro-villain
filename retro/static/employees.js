@@ -1,9 +1,12 @@
 const $ = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0)) + ' сум';
-const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки'};
-const columns = ['Имя', 'Роль', 'Зарплата / ставка', 'Группа', 'Статус', 'Действия'];
+const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки', unavailable: 'Нет данных'};
+const columns = ['Имя', 'Роль', 'Зарплата / ставка', 'Группа', 'Статус', 'Пришёл', 'Действия'];
 const formattedDay = day => new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric',
   timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
+const formattedArrival = value => value ? new Intl.DateTimeFormat('ru-RU', {
+  hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent'
+}).format(new Date(value)) : '—';
 let today, current, requestNo = 0;
 
 function text(tag, className, value) {
@@ -44,14 +47,27 @@ function options(select, items, placeholder) {
   items.forEach(item => select.add(new Option(item.label, item.id)));
   if (items.some(item => String(item.id) === old)) select.value = old;
 }
+function attendanceHealth(value) {
+  const status = value?.status || 'starting';
+  const states = {
+    ok: 'Hikvision синхронизирован.',
+    starting: 'Hikvision подключается; отсутствие входа пока не считается прогулом.',
+    stale: 'Данные Hikvision устарели; отсутствие входа не считается прогулом.',
+    not_configured: 'Hikvision не настроен; отсутствие входа не считается прогулом.'
+  };
+  return states[status] || 'Hikvision недоступен; отсутствие входа не считается прогулом.';
+}
 function render(data) {
   // formattedDay уже отдаёт «19 сентября 2026 г.» — точку в конце не добавляем.
-  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value);
+  const health = attendanceHealth(data.attendance);
+  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health;
+  $('employees-attendance-status').textContent = health;
   $('employees-stats').replaceChildren(
     stat('Всего в реестре', data.roster_count, false),
     stat('Опоздали после 10:00', data.payroll.late_count, true),
     stat('Не пришли', data.payroll.missing_count, true),
-    stat('Без демопривязки', data.payroll.unlinked_count, false),
+    stat('Без привязки Hikvision', data.payroll.unlinked_count, false),
+    stat('Нет данных источника', data.payroll.unavailable_count, true),
     stat('Без ставки', data.missing_rates, true)
   );
   const container = $('employees-groups');
@@ -71,23 +87,24 @@ function render(data) {
     details.append(summary);
     const table = document.createElement('table');
     table.className = 'employee-roster-table';
-    table.innerHTML = '<thead><tr><th scope="col">Имя</th><th scope="col">Роль</th><th scope="col">Зарплата / ставка</th><th scope="col">Группа</th><th scope="col">Статус</th><th scope="col">Действия</th></tr></thead>';
+    table.innerHTML = '<thead><tr><th scope="col">Имя</th><th scope="col">Роль</th><th scope="col">Зарплата / ставка</th><th scope="col">Группа</th><th scope="col">Статус</th><th scope="col">Пришёл</th><th scope="col">Действия</th></tr></thead>';
     const body = document.createElement('tbody');
     people.sort((left, right) => left.name.localeCompare(right.name, 'ru')).forEach(row => {
       const tr = document.createElement('tr');
       const values = [row.name, row.role, row.rate === null ? 'Нет ставки' : money(row.rate), row.group,
-        statuses[row.status] || row.status];
+        statuses[row.status] || row.status, formattedArrival(row.first_entry)];
       values.forEach((value, index) => {
         const cell = document.createElement('td');
         cell.dataset.label = columns[index];
         if (index === 4) cell.append(text('span', 'staff-status ' + row.status, value));
+        else if (index === 5) cell.className = 'employee-arrival-time';
         else if (index === 2 && row.rate === null) cell.append(text('span', 'roster-missing', value));
-        else cell.textContent = value;
+        if (!cell.hasChildNodes()) cell.textContent = value;
         if (index < 4) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
         tr.append(cell);
       });
       const actions = document.createElement('td');
-      actions.dataset.label = columns[5];
+      actions.dataset.label = columns[6];
       const edit = text('button', 'edit-monthly', 'Изменить');
       edit.type = 'button';
       edit.addEventListener('click', () => editEmployeeRow(row, tr, data.groups.map(item => item.name)));
@@ -134,7 +151,7 @@ function editEmployeeRow(row, tableRow, groups) {
       await loadDay(); message('Изменение сотрудника сохранено.');
     } catch (error) { message(error.message, true); }
   });
-  cells[5].replaceChildren(save, cancel); cells[0].querySelector('input').focus();
+  cells[6].replaceChildren(save, cancel); cells[0].querySelector('input').focus();
 }
 function renderMonthly(people) {
   const container = $('monthly-employees');
@@ -349,12 +366,12 @@ $('employees-download').addEventListener('click', async () => {
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement('a');
     link.href = url;
-    link.download = 'Retro-employees-' + day + '-DEMO.xlsx';
+    link.download = 'Retro-employees-' + day + '.xlsx';
     document.body.append(link);
     link.click();
     link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
-    message('Полный список скачан. Проходы демонстрационные.');
+    message('Полный список скачан.');
   } catch (error) { message(error.message, true); } finally { button.disabled = false; }
 });
 (async () => {

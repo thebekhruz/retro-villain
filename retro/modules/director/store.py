@@ -70,6 +70,15 @@ class DirectorReportStore:
             row = connection.execute('SELECT id,created_at,period_start,period_end,snapshot_json,analysis_json,pdf_sha256 FROM director_reports WHERE id=?', (report_id,)).fetchone()
         return self._row(row) if row else None
 
+    def get_for_period(self, period_start, period_end):
+        with self._connect() as connection:
+            row = connection.execute(
+                'SELECT id,created_at,period_start,period_end,snapshot_json,analysis_json,pdf_sha256 '
+                'FROM director_reports WHERE period_start=? AND period_end=?',
+                (period_start, period_end),
+            ).fetchone()
+        return self._row(row) if row else None
+
     def list(self):
         with self._connect() as connection:
             rows = connection.execute('SELECT id,created_at,period_start,period_end,snapshot_json,analysis_json,pdf_sha256 FROM director_reports ORDER BY created_at DESC').fetchall()

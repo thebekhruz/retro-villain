@@ -193,6 +193,7 @@ function renderSnapshot(snapshot) {
   // единица измерения стоит один раз, у главной цифры над ними.
   $('retro').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.retro || {}).revenue));
   $('oxbridge').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.oxbridge || {}).revenue));
+  $('banquet').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.banquet || {}).revenue));
   $('yandex').textContent = money.format(Math.round(logic.amount(snapshot.yandex_revenue)));
   $('margin-percent').textContent = all.margin === null ? '—' : decimal.format(all.margin);
   $('margin-fill').style.width = Math.max(0, Math.min(100, all.margin || 0)) + '%';
@@ -229,6 +230,10 @@ async function loadSnapshot() {
 async function loadAttendance() {
   try {
     const data = await request('/api/director/attendance');
+    const status = data.attendance?.status || 'starting';
+    const labels = {ok: 'Hikvision · актуально', starting: 'Hikvision · подключение',
+      stale: 'Hikvision · данные устарели', not_configured: 'Hikvision · не настроен'};
+    $('attendance-note').textContent = labels[status] || 'Hikvision · нет связи';
     $('arrived').textContent = String(data.arrived_count);
     $('late').textContent = String(data.late_count);
     $('attendance-date').textContent = logic.dayLabel(data.date);

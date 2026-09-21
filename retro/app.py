@@ -2,6 +2,7 @@ import asyncio
 import base64
 import binascii
 import secrets
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -23,7 +24,10 @@ from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
-from retro.integrations.gemini import GeminiClient
+from retro.integrations.claude import ClaudeClient
+from retro.integrations.hikvision import HikvisionClient
+from retro.integrations.hikvision_poller import HikvisionPoller
+from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
 from retro.security import client_address, is_finance_path, is_local_host, validate_mutation_origin
 from retro.sessions import SessionStore
@@ -80,10 +84,24 @@ def dashboard_identity(request: Request, settings: Settings, sessions: SessionSt
 
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
-               director_db_path=None, gemini_transport=None, booking_transport=None):
+               director_db_path=None, claude_transport=None, booking_transport=None,
+               hikvision_client=None, hikvision_poller=None):
     configure_logging()
     settings = settings or Settings.from_env()
-    app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None)
+
+    @asynccontextmanager
+    async def lifespan(application):
+        poller = application.state.hikvision_poller
+        if poller is not None:
+            poller.start()
+        try:
+            yield
+        finally:
+            if poller is not None:
+                await poller.stop()
+
+    app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None,
+                  lifespan=lifespan)
     app.state.settings = settings
     app.state.sessions = SessionStore()
     app.state.iiko = IikoClient(settings)
@@ -97,11 +115,26 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     accountant_path = accountant_db_path or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(accountant_path)
+    app.state.attendance_store = AttendanceStore(accountant_path)
+    app.state.attendance = AttendanceService(
+        app.state.attendance_store,
+        source=settings.hikvision.source if settings.hikvision else 'retro-main-entry',
+        enabled=settings.hikvision_configured,
+        poll_seconds=settings.hikvision.poll_seconds if settings.hikvision else 30)
+    if hikvision_poller is not None:
+        app.state.hikvision_poller = hikvision_poller
+    elif settings.hikvision is not None:
+        client = hikvision_client or HikvisionClient(settings.hikvision)
+        app.state.hikvision_poller = HikvisionPoller(
+            settings.hikvision, client, app.state.accountant_roster,
+            app.state.attendance_store)
+    else:
+        app.state.hikvision_poller = None
     director_path = director_db_path or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
-    app.state.gemini = GeminiClient(settings, transport=gemini_transport)
+    app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
-        app.state.iiko, app.state.gemini, app.state.director_store, settings.report_retention)
+        app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention)
 
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):

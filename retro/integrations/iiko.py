@@ -187,8 +187,6 @@ class IikoClient:
     async def load_director_report(self, today):
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
-        if not self.settings.director_categories:
-            raise DataError('Настройте группы блюд для отчёта директора.')
         start, end = completed_period(today)
         headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
                    'Content-Type': 'application/json'}

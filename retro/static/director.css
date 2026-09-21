@@ -11,17 +11,17 @@
 .period-display strong{font-size:14px;font-weight:600;letter-spacing:-.2px;font-variant-numeric:tabular-nums;white-space:nowrap}
 .period-hint{font-size:11px;color:var(--muted);line-height:1.5;margin-right:auto;max-width:210px}
 
-/* У кассира в этом ряду два показателя, у директора три направления.
-   Три плитки в ряд встают только на широком экране: в узкой колонке
+/* У кассира в этом ряду два показателя, у директора четыре среза.
+   Четыре плитки в ряд встают только на широком экране: в узкой колонке
    девятизначная сумма в плитку не помещается и рвётся пополам. */
-.day-figures .mini-row-three{grid-template-columns:minmax(0,1fr);gap:8px}
-.mini-row-three .mini{flex-direction:row;align-items:baseline;justify-content:space-between}
+.day-figures .mini-row-four{grid-template-columns:minmax(0,1fr);gap:8px}
+.mini-row-four .mini{flex-direction:row;align-items:baseline;justify-content:space-between}
 @media(min-width:1240px){
-  .day-figures .mini-row-three{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}
-  .mini-row-three .mini{flex-direction:column;align-items:stretch}
+  .day-figures .mini-row-four{grid-template-columns:repeat(4,minmax(0,1fr));gap:12px}
+  .mini-row-four .mini{flex-direction:column;align-items:stretch}
 }
-.mini-row-three .mini-value strong{font-size:16px;letter-spacing:-.3px}
-.mini-row-three .mini-name{font-size:11.5px}
+.mini-row-four .mini-value strong{font-size:16px;letter-spacing:-.3px}
+.mini-row-four .mini-name{font-size:11.5px}
 .mini small{font-size:10.5px;color:var(--muted)}
 
 /* Маржа — вторая по важности цифра после выручки, поэтому карточка стоит
