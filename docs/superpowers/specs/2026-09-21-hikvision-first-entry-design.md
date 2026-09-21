@@ -17,7 +17,7 @@ The integration is split into independent units:
 
 1. `HikvisionConfig` validates one root HTTP(S) device URL, username, password, source name, polling interval, timeouts, and initial backfill. Credentials stay in `build/.env` or process environment and are excluded from representations and logs.
 2. `HikvisionDigestTransport` implements Hikvision-compatible Digest Auth for POST requests with replayable bodies and bounded responses. It follows the proven Parent App behavior instead of relying on an automatic client retry that can lose the request body.
-3. `HikvisionXmlParser` converts paginated `UserInfo/Search` and `AcsEvent` responses into typed people and pass events. XML namespaces, missing optional fields, malformed timestamps, and pagination status are handled explicitly.
+3. `HikvisionJsonParser` converts paginated `UserInfo/Search?format=json` and `AcsEvent?format=json` responses into typed people and pass events. Missing optional fields, malformed timestamps, and pagination status are handled explicitly.
 4. `HikvisionLinkService` performs a one-time exact normalized-name match and writes the unique Hikvision `employeeNo` to the existing unique `accountant_employees.hikvision_id`. Normalization trims, collapses whitespace, and compares case-insensitively. It does not transliterate or fuzzy-match. Both the Retro name and device name must be unique within their normalized value.
 5. `AttendanceStore` owns device event deduplication, poll state/coverage, and first-entry persistence in the existing accountant SQLite database.
 6. `HikvisionPoller` obtains people when linkage is requested and polls `AcsEvent` in the background. It advances its persistent cursor only after every page succeeds.
@@ -29,7 +29,7 @@ The ingest boundary accepts typed events independently of ISAPI transport. A fut
 
 People are read with `POST /ISAPI/AccessControl/UserInfo/Search`. Events are read with `POST /ISAPI/AccessControl/AcsEvent`; only successful pass events with `major=5` and `minor=75` are eligible. The event contract requires a non-empty `employeeNoString`, `serialNo`, and offset-aware `time` (or a device-local time explicitly interpreted as `Asia/Tashkent`).
 
-The client paginates until the device reports no more records. Response byte count, XML depth/size, page count, and per-request duration are bounded so a public device cannot exhaust the Retro process.
+The client paginates until the device reports no more records. Response byte count, JSON nesting/size, page count, and per-request duration are bounded so a public device cannot exhaust the Retro process.
 
 No `pictureURL` is fetched and no photo field is persisted.
 
@@ -57,7 +57,7 @@ The existing 10:00 boundary is retained: exactly 10:00:00 is on time; anything l
 
 `unavailable` never maps to zero payable. `missing` can map to the existing zero-shift rule only for a fully covered completed day. `unlinked` retains the existing one-day manual-exception path. Confirmed financial records are not retroactively rewritten by a later device event; reconciliation requires an explicit finance action.
 
-API payloads include `demo=false`, a source-health object, coverage information appropriate for the requested day, and employee statuses. They do not expose the device URL, username, credential state, raw XML, or serial numbers. Accountant and director endpoints use the same service snapshot; the director response continues to omit pay and rate fields.
+API payloads include `demo=false`, a source-health object, coverage information appropriate for the requested day, and employee statuses. They do not expose the device URL, username, credential state, raw JSON, or serial numbers. Accountant and director endpoints use the same service snapshot; the director response continues to omit pay and rate fields.
 
 ## Security
 
@@ -71,7 +71,7 @@ The integration is read-only. It never calls door-control, face-library mutation
 
 Errors are categorized as `not_configured`, `network`, `timeout`, `unauthorized`, `invalid_response`, or `device_error`. The UI displays actionable Russian states without treating them as zero attendance. The last successful poll time is visible to authorized dashboard users.
 
-Partial pagination is not success. A malformed individual event is skipped and counted only when the enclosing response is structurally valid; a malformed response page fails the poll and preserves the cursor.
+Partial pagination is not success. A malformed individual event is skipped and counted only when the enclosing response is structurally valid; a malformed JSON response page fails the poll and preserves the cursor.
 
 ## Testing
 
@@ -79,7 +79,7 @@ TDD covers:
 
 - configuration validation and secret redaction;
 - Digest challenge parsing and replayable POST bodies;
-- UserInfo and AcsEvent XML namespaces, pagination, and limits;
+- UserInfo and AcsEvent JSON contracts, pagination, and limits;
 - exact normalized linking, duplicate names, existing bindings, and conflicts;
 - event deduplication and earliest-entry upsert across restarts;
 - cursor advancement only after full success and initial backfill;
