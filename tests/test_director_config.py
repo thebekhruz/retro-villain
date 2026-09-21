@@ -3,15 +3,15 @@ import pytest
 from retro.config import Settings
 
 
-def test_director_config_reads_gemini_and_category_map(monkeypatch):
-    monkeypatch.setenv('GEMINI_API_KEY', 'key')
-    monkeypatch.setenv('GEMINI_MODEL', 'gemini-test')
+def test_director_config_reads_claude_and_category_map(monkeypatch):
+    monkeypatch.setenv('CLAUDE_API_KEY', 'key')
+    monkeypatch.setenv('CLAUDE_MODEL', 'claude-test')
     monkeypatch.setenv('IIKO_DIRECTOR_CATEGORIES',
                        'Основное меню=menu;Десерты=dessert;Напитки=drink')
 
     settings = Settings.from_env()
 
-    assert settings.gemini_configured is True
+    assert settings.claude_configured is True
     assert settings.director_categories == {
         'Основное меню': 'menu', 'Десерты': 'dessert', 'Напитки': 'drink',
     }

@@ -193,6 +193,7 @@ function renderSnapshot(snapshot) {
   // единица измерения стоит один раз, у главной цифры над ними.
   $('retro').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.retro || {}).revenue));
   $('oxbridge').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.oxbridge || {}).revenue));
+  $('banquet').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.banquet || {}).revenue));
   $('yandex').textContent = money.format(Math.round(logic.amount(snapshot.yandex_revenue)));
   $('margin-percent').textContent = all.margin === null ? '—' : decimal.format(all.margin);
   $('margin-fill').style.width = Math.max(0, Math.min(100, all.margin || 0)) + '%';

@@ -1,6 +1,8 @@
 from datetime import date
 from decimal import Decimal
 
+import httpx
+
 from retro.integrations.iiko import director_rows_from_olap
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient
@@ -30,12 +32,16 @@ def test_director_rows_flattens_grouped_iiko_result_and_derives_cost():
     assert result[0].cost == Decimal('80000')
 
 
-def test_director_load_requires_explicit_group_configuration():
-    source = IikoClient(Settings(login='x', password='x', store_id=1))
+def test_director_load_without_group_configuration_reaches_iiko():
+    def handler(request):
+        return httpx.Response(403)
+
+    source = IikoClient(Settings(login='x', password='x', store_id=1),
+                        transport=httpx.MockTransport(handler))
 
     try:
         asyncio.run(source.load_director_report(date(2026, 9, 18)))
     except DataError as error:
-        assert 'группы блюд' in str(error)
+        assert 'iiko отклонил доступ' in str(error)
     else:
-        raise AssertionError('Expected director group configuration error')
+        raise AssertionError('Expected upstream authorization error')
