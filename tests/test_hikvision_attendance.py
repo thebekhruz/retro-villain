@@ -16,13 +16,13 @@ def add_employee(store, name):
     return store.add(name=name, role='официант', rate='250000', group_name='Обслуживание зала')
 
 
-def test_exact_normalized_names_link_once_and_then_employee_no_wins(tmp_path):
+def test_unique_name_parts_link_regardless_of_order_and_then_employee_no_wins(tmp_path):
     store = RosterStore(tmp_path / 'accountant.sqlite3')
     aziza = add_employee(store, '  Азиза   Каримова ')
     add_employee(store, 'Бахром Алиев')
 
     report = store.link_hikvision_people((
-        HikvisionPerson('100', 'азиза каримова'),
+        HikvisionPerson('100', 'каримова азиза'),
         HikvisionPerson('200', 'Нет в Retro'),
     ))
     repeated = store.link_hikvision_people((

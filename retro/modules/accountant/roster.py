@@ -64,7 +64,11 @@ def parse_money(value, *, allow_zero=True) -> Decimal:
 
 
 def normalized_hikvision_name(value: str) -> str:
-    return ' '.join(value.casefold().split())
+    # Payroll exports and Hikvision may store the same full name in a
+    # different order (surname first vs. given name first).  Sorting complete
+    # whitespace-delimited parts keeps the match strict while ignoring order;
+    # the two-sided uniqueness checks below still reject duplicate names.
+    return ' '.join(sorted(value.casefold().split()))
 
 
 @dataclass(frozen=True)
@@ -175,16 +179,24 @@ class RosterStore:
                     connection.execute('DELETE FROM accountant_employees WHERE source_row NOT IN (%s)' %
                                        ','.join('?' for _ in source_rows), tuple(source_rows))
                 for row in rows:
-                    cursor = connection.execute('SELECT id FROM accountant_employees WHERE source_row = ?', (row[0],))
-                    if cursor.fetchone() is None:
+                    cursor = connection.execute(
+                        'SELECT id,name FROM accountant_employees WHERE source_row = ?',
+                        (row[0],))
+                    current = cursor.fetchone()
+                    if current is None:
                         connection.execute(
                             'INSERT INTO accountant_employees '
                             '(source_row, name, role, group_name, rate) VALUES (?, ?, ?, ?, ?)', row)
                         imported += 1
                     else:
                         if replace:
-                            connection.execute('UPDATE accountant_employees SET name=?, role=?, group_name=?, rate=? '
-                                               'WHERE source_row=?', (row[1], row[2], row[3], row[4], row[0]))
+                            preserve_link = (normalized_hikvision_name(current[1]) ==
+                                             normalized_hikvision_name(row[1]))
+                            connection.execute(
+                                'UPDATE accountant_employees SET name=?, role=?, group_name=?, rate=?, '
+                                'hikvision_id=CASE WHEN ? THEN hikvision_id ELSE NULL END '
+                                'WHERE source_row=?',
+                                (row[1], row[2], row[3], row[4], preserve_link, row[0]))
                             imported += 1
                         else:
                             existing += 1
