@@ -27,6 +27,8 @@ def test_same_period_replaces_without_duplicate(tmp_path):
     assert second == first
     assert len(store.list_metadata()) == 1
     assert store.get(first)['analysis']['summary'] == 'two'
+    assert store.get_for_period('2026-09-01', '2026-09-10')['id'] == first
+    assert store.get_for_period('2026-01-01', '2026-01-10') is None
 
 
 def test_report_retention_keeps_newest_periods(tmp_path):

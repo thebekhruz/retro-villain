@@ -10,8 +10,13 @@ class DirectorService:
 
     async def generate(self, today):
         snapshot = await self.iiko.load_director_report(today)
-        analysis = await self.claude.analyze(snapshot)
         snapshot_json = snapshot.json()
+        existing = self.store.get_for_period(
+            snapshot_json['period_start'], snapshot_json['period_end'])
+        if existing is not None and existing['snapshot'] == snapshot_json:
+            analysis = existing['analysis']
+        else:
+            analysis = await self.claude.analyze(snapshot)
         pdf = render_report_pdf(snapshot_json, analysis)
         report_id = self.store.create_or_replace(
             snapshot_json, analysis, pdf, datetime.now(TZ).isoformat(), self.retention)
