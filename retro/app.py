@@ -29,7 +29,7 @@ from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
-from retro.security import client_address, is_finance_path, is_local_host, validate_mutation_origin
+from retro.security import effective_scheme, client_address, is_finance_path, is_local_host, validate_mutation_origin
 from retro.sessions import SessionStore
 
 STATIC = Path(__file__).parent / 'static'
@@ -152,14 +152,16 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         auth_configured = bool(settings.dashboard_password or settings.dashboard_panel_users)
         role = dashboard_identity(request, settings, app.state.sessions) if auth_configured else 'all'
         public = request.url.path in PUBLIC_PATHS
-        if auth_configured and not public:
-            if role is None:
-                if not request.url.path.startswith(('/api/', '/static/')):
-                    return RedirectResponse('/login', status_code=303)
-                return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
-                                    headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
-        elif not address.is_loopback:
+        # Закрыт внешний доступ только тогда, когда защита не настроена вовсе.
+        # Раньше эта проверка стояла в ветке elif и срабатывала на страницу
+        # входа: пароли заданы, но форму логина снаружи никто не получал.
+        if not auth_configured and not address.is_loopback:
             return JSONResponse({'detail': 'Внешний доступ закрыт. Настройте защиту дашборда.'}, 403)
+        if auth_configured and not public and role is None:
+            if not request.url.path.startswith(('/api/', '/static/')):
+                return RedirectResponse('/login', status_code=303)
+            return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
+                                headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
         required_panel = panel_for_path(request.url.path)
         if (required_panel and not public and role not in FULL_ACCESS_ROLES
                 and role != required_panel):
@@ -208,7 +210,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
         response.set_cookie(
             SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
-            samesite='strict', secure=request.url.scheme == 'https', path='/')
+            samesite='strict', secure=effective_scheme(request) == 'https', path='/')
         return response
 
     def finish_logout(request: Request, response: Response):

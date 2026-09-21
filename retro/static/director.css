@@ -241,3 +241,21 @@
   .highlight-name strong{white-space:normal;overflow:visible;line-height:1.3}
   .highlight-row{align-items:start;gap:10px}
 }
+
+/* ── Пока отчёт не сформирован ────────────────────────────────────────
+   До первого отчёта топы стояли пустыми коробками, а таблица показывала
+   шапку и одинокое тире — это читается как поломка, а не как «данных ещё
+   нет». Пустые состояния собраны на CSS: разметку заполняет JS, и как
+   только строки появляются, подписи исчезают сами. */
+.highlight-list:empty::after{content:"Появится после первого отчёта";
+  display:block;padding:20px 10px;text-align:center;color:var(--muted);font-size:12px;
+  border:1px dashed #e1e7de;border-radius:13px;background:#fbfcf9}
+.menu-panel:has(#menu-rows:empty):has(#menu-empty[hidden]) .menu-table-scroll,
+.menu-panel:has(#menu-rows:empty):has(#menu-empty[hidden]) .menu-foot,
+.menu-panel:has(#menu-rows:empty):has(#menu-empty[hidden]) .menu-tools{display:none}
+.menu-panel:has(#menu-rows:empty):has(#menu-empty[hidden])::after{
+  content:"Здесь встанут позиции меню: продано, выручка, себестоимость, прибыль и маржа по каждой";
+  display:block;padding:24px 16px;text-align:center;color:var(--muted);font-size:12px;line-height:1.6;
+  border:1px dashed #e1e7de;border-radius:13px;background:#fbfcf9}
+.attendance-list:empty::after{content:"Данные Hikvision ещё не подключены";
+  display:block;padding:18px 10px;text-align:center;color:var(--muted);font-size:12px}

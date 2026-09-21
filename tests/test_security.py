@@ -190,3 +190,48 @@ def test_director_attendance_does_not_expose_payroll_amounts(tmp_path):
     assert employee['name'] == 'Тест'
     assert 'rate' not in employee
     assert 'payable' not in employee
+
+
+def test_login_page_is_reachable_from_outside_when_passwords_are_configured():
+    """Страница входа обязана открываться снаружи: иначе задать пароли —
+    значит закрыть панель для всех, включая тех, у кого пароль есть."""
+    settings = Settings(dashboard_panel_users={'lina': ('secret', 'cashier')})
+    app = create_app(settings)
+    with TestClient(app, base_url='http://dashboard.example.com',
+                    client=('203.0.113.10', 50000)) as client:
+        assert client.get('/login').status_code == 200
+        landing = client.get('/', follow_redirects=False)
+        assert landing.status_code == 303
+        assert landing.headers['location'] == '/login'
+
+
+def test_outside_access_stays_closed_while_no_password_is_set():
+    app = create_app(Settings())
+    with TestClient(app, base_url='http://dashboard.example.com',
+                    client=('203.0.113.10', 50000)) as client:
+        assert client.get('/login').status_code == 403
+
+
+def test_login_from_the_browser_passes_behind_an_https_proxy():
+    """Сервер за прокси говорит по http, браузер пришёл по https. Origin
+    собственной страницы не должен считаться чужим источником."""
+    settings = Settings(dashboard_panel_users={'lina': ('secret', 'cashier')})
+    app = create_app(settings)
+    with TestClient(app, base_url='http://dashboard.example.com',
+                    client=('203.0.113.10', 50000)) as client:
+        answer = client.post('/api/session', json={'username': 'lina', 'password': 'secret'},
+                             headers={'origin': 'https://dashboard.example.com',
+                                      'x-forwarded-proto': 'https'})
+        assert answer.status_code == 200, answer.text
+        assert answer.json()['role'] == 'cashier'
+
+
+def test_request_from_a_foreign_site_is_still_rejected():
+    settings = Settings(dashboard_panel_users={'lina': ('secret', 'cashier')})
+    app = create_app(settings)
+    with TestClient(app, base_url='http://dashboard.example.com',
+                    client=('203.0.113.10', 50000)) as client:
+        answer = client.post('/api/session', json={'username': 'lina', 'password': 'secret'},
+                             headers={'origin': 'https://chuzhoy-sayt.example',
+                                      'x-forwarded-proto': 'https'})
+        assert answer.status_code == 403
