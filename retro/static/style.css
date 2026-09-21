@@ -461,3 +461,4 @@ footer{font-size:11.5px}
 /* Подпись формата на кнопке скачивания была светлее нормы (2,85:1). */
 .file-type,.attendance-file-type{color:#7b8a7d}
 .primary .file-type,.primary .attendance-file-type{color:#b9cdbc}
+.staff-status.unavailable{color:#68746b;background:#eef1ed}

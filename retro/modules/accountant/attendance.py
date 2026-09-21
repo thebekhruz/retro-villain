@@ -27,8 +27,9 @@ def is_late(occurred_at: datetime) -> bool:
     return occurred_at.astimezone(TZ).time().replace(tzinfo=None) > LATE_AFTER
 
 
-def export_entrances(day: date, entries: tuple[Entrance, ...] = ()) -> bytes:
-    """Styled XLSX for the selected day. Until ISAPI is connected entries are empty."""
+def export_entrances(day: date, entries: tuple[Entrance, ...] = (),
+                     health: dict | None = None) -> bytes:
+    """Styled XLSX of real first entries for the selected day."""
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = 'Входы'
@@ -63,7 +64,12 @@ def export_entrances(day: date, entries: tuple[Entrance, ...] = ()) -> bytes:
             cell.alignment = Alignment(vertical='center', indent=1)
 
     sheet.merge_cells('A5:D5')
-    sheet['A5'] = ('Записи появятся после подключения Hikvision ISAPI.' if not entries else
+    status = (health or {}).get('status')
+    sheet['A5'] = ('Hikvision не настроен; отсутствие входа не считается прогулом.'
+                   if status == 'not_configured' else
+                   'Источник Hikvision недоступен или день покрыт не полностью.'
+                   if status in {'starting', 'network', 'timeout', 'unauthorized',
+                                 'invalid_response', 'device_error', 'internal', 'stale'} else
                    'Первый подтверждённый вход каждого человека за день.')
     sheet['A5'].font = Font(name='Calibri', size=10, italic=True, color='6D7F73')
     sheet['A5'].alignment = Alignment(vertical='center', indent=1)

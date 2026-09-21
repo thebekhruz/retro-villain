@@ -16,6 +16,7 @@ def test_late_still_earns_full_daily_rate_and_missing_earns_zero():
     assert compute_pay(None, 'on_time', exception=False) is None
     assert compute_pay(Decimal('270000'), 'unlinked', exception=False) is None
     assert compute_pay(Decimal('270000'), 'unlinked', exception=True) == Decimal('270000')
+    assert compute_pay(Decimal('270000'), 'unavailable', exception=False) is None
 
 
 def test_demo_status_is_stable_and_unlinked_is_visibly_separate():
