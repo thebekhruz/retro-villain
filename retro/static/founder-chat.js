@@ -19,7 +19,9 @@
   function bubble(item){
     const article=document.createElement('article');article.className=`ai-chat-message is-${item.role}`;
     const label=document.createElement('span');label.textContent=item.role==='assistant'?'Помощник':'Вы';
-    const content=document.createElement('p');content.textContent=item.content;
+    let content;
+    if(item.role==='assistant'&&window.FounderMarkdown){const rendered=window.FounderMarkdown.render(document,item.content);content=rendered.node;article.classList.toggle('has-table',rendered.hasTable)}
+    else{content=document.createElement('p');content.textContent=item.content}
     article.append(label,content);messages.append(article);empty.hidden=true;scrollBottom();return article;
   }
   async function request(url,options={}){
