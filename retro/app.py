@@ -19,7 +19,7 @@ from retro.modules.cashier.routes import router as cashier_router
 from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
-from retro.modules.cashier.service import SnapshotCache, today_tashkent
+from retro.modules.cashier.service import LatestReportRunner, SnapshotCache, today_tashkent
 from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
@@ -36,7 +36,8 @@ from retro.sessions import SessionIdentity, SessionStore
 STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js',
-                '/static/i18n.js', '/static/i18n-uz.js'}
+                '/static/i18n.js', '/static/i18n-uz.js', '/static/favicon.svg',
+                '/static/favicon-32.png', '/static/apple-touch-icon.png'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'admin': '/', 'all': '/'}
@@ -113,6 +114,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.iiko = IikoClient(settings)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.iiko_lock = asyncio.Lock()
+    app.state.iiko_daily_reports = LatestReportRunner()
     app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
     database_path = expense_db_path or settings.data_dir / 'cashier.sqlite3'
