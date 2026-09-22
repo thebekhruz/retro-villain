@@ -45,3 +45,17 @@ def test_director_load_without_group_configuration_reaches_iiko():
         assert 'iiko отклонил доступ' in str(error)
     else:
         raise AssertionError('Expected upstream authorization error')
+
+
+def test_sale_without_a_dish_group_gets_a_configurable_name():
+    """Пустую группу нельзя ни отнести к типу, ни исключить — отчёт падал
+    целиком. Теперь она приходит под именем и настраивается как обычная."""
+    from retro.integrations.iiko import director_rows_from_olap
+    from datetime import date
+    rows = [{'field0': {'value': 'Retro'}, 'field1': {'value': 'Зал'},
+             'field2': {'value': 'Наличные'}, 'field3': {'value': 'Чай'},
+             'field4': {'value': None}, 'field5': {'value': 'Азиз'},
+             'field6': {'value': 'order-1'},
+             'field7': {'value': 1}, 'field8': {'value': 9000}, 'field9': {'value': 1000}}]
+    parsed = director_rows_from_olap(date(2026, 9, 21), rows)
+    assert parsed[0].category == 'Без группы'

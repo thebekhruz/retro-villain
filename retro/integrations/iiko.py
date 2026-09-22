@@ -42,6 +42,12 @@ def director_rows_from_olap(day, rows):
             raise DataError('iiko не вернул все измерения продажи.')
         quantity, revenue, unit_cost = (number(cell(row, index)) for index in range(7, 10))
         register, section, payment_type, item, category, waiter, order_id = values
+        # У части продаж группа блюда в iiko пустая. Без имени такую строку
+        # нельзя ни отнести к типу отчёта, ни исключить — отчёт падал целиком
+        # из-за девяти тысяч сум. Даём ей имя, и дальше она настраивается как
+        # любая другая группа.
+        if not isinstance(category, str) or not category.strip():
+            category = 'Без группы'
         result.append(SalesRow(day, register, section, payment_type, item, category,
                                quantity, revenue, quantity * unit_cost, waiter, order_id))
 
