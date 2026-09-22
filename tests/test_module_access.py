@@ -21,14 +21,24 @@ def test_other_panels_are_marked_closed_for_a_single_role():
         assert rows[panel]['reason'], panel
 
 
-def test_full_access_role_keeps_every_module_but_finance_stays_local():
+def test_full_access_role_keeps_every_module_available_remotely():
     rows = modules(Settings(dashboard_user='boss', dashboard_password='secret'), ('boss', 'secret'))
-    for panel in ('cashier', 'director', 'founder'):
+    for panel in ('cashier', 'accountant', 'director', 'founder'):
         assert rows[panel]['available'] is True, panel
-    # Финансовый модуль снаружи закрыт даже полному доступу — так решено
-    # осознанно, и меню обязано это показывать, а не вести на отказ.
-    assert rows['accountant']['available'] is False
-    assert 'сервер' in rows['accountant']['reason']
+
+
+def test_accountant_role_sees_accountant_available_remotely():
+    rows = modules(
+        Settings(dashboard_panel_users={'bookkeeper': ('secret', 'accountant')}),
+        ('bookkeeper', 'secret'),
+    )
+    assert rows['accountant'] == {
+        'id': 'accountant',
+        'name': 'Бухгалтер',
+        'path': '/accountant',
+        'available': True,
+        'reason': '',
+    }
 
 
 def test_every_dashboard_page_loads_the_menu_script():

@@ -142,13 +142,20 @@ def test_legacy_dashboard_user_keeps_access_to_all_panels(tmp_path):
     assert statuses == [200, 200, 200, 200]
 
 
-def test_external_peer_cannot_forge_local_host(tmp_path):
-    settings = Settings(dashboard_user='viewer', dashboard_password='secret', data_dir=tmp_path)
+def test_accountant_user_can_open_finance_remotely_but_other_roles_cannot(tmp_path):
+    settings = Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path)
     app = create_app(settings)
-    with TestClient(app, client=('203.0.113.5', 50000), base_url='http://localhost') as client:
-        response = client.get('/api/accountant/day', headers={'host': 'localhost'},
-                              auth=('viewer', 'secret'))
-    assert response.status_code == 403
+    with TestClient(app, client=('203.0.113.5', 50000),
+                    base_url='https://dashboard.example.com') as client:
+        page = client.get('/accountant', auth=('accountant', 'test-password'))
+        employees = client.get('/accountant/employees', auth=('accountant', 'test-password'))
+        api_namespace = client.get(
+            '/api/accountant/not-a-route', auth=('accountant', 'test-password'))
+        wrong_role = client.get('/accountant', auth=('cashier', 'test-password'))
+    assert page.status_code == 200
+    assert employees.status_code == 200
+    assert api_namespace.status_code == 404
+    assert wrong_role.status_code == 403
 
 
 def test_cross_origin_report_generation_is_rejected(tmp_path):

@@ -86,17 +86,17 @@ def test_pages_are_closed_without_login_and_served_after_it():
         assert client.get('/').status_code == 403
 
 
-def test_finance_module_ignores_host_header_from_the_network():
-    """Host подставляет клиент: сеть ресторана не должна открывать зарплаты."""
-    settings = Settings(dashboard_user='viewer', dashboard_password='secret',
+def test_finance_module_is_available_to_authorized_user_from_allowed_network():
+    settings = Settings(dashboard_panel_users={
+                            'bookkeeper': ('secret', 'accountant'),
+                            'cashier': ('secret', 'cashier'),
+                        },
                         dashboard_allowed_network=ip_network('10.10.8.0/22'))
     app = create_app(settings)
     with TestClient(app, base_url='http://retro.local', client=('10.10.8.91', 50000)) as client:
-        assert client.get('/', auth=('viewer', 'secret')).status_code == 200
-        for path in ('/accountant', '/accountant/employees', '/api/accountant/day?date=2026-09-10'):
-            spoofed = client.get(path, auth=('viewer', 'secret'), headers={'Host': 'localhost'})
-            assert spoofed.status_code == 403, path
-            assert client.get(path, auth=('viewer', 'secret')).status_code == 403, path
+        assert client.get('/accountant', auth=('bookkeeper', 'secret')).status_code == 200
+        assert client.get('/accountant/employees', auth=('bookkeeper', 'secret')).status_code == 200
+        assert client.get('/accountant', auth=('cashier', 'secret')).status_code == 403
 
 
 def test_iiko_protocol_pending_poll_and_total_query():

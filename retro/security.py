@@ -19,23 +19,6 @@ def client_address(request, settings):
     return ip_address(forwarded.strip())
 
 
-def is_finance_path(path: str) -> bool:
-    return (path == '/accountant' or path.startswith('/accountant/')
-            or path.startswith('/api/accountant/')
-            or path == '/api/director/attendance')
-
-
-def is_local_host(hostname: str | None) -> bool:
-    if hostname is None:
-        return False
-    if hostname.casefold() == 'localhost':
-        return True
-    try:
-        return ip_address(hostname).is_loopback
-    except ValueError:
-        return False
-
-
 def _origin_tuple(value: str):
     parsed = urlsplit(value)
     if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username

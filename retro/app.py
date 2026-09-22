@@ -30,7 +30,7 @@ from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
-from retro.security import effective_scheme, client_address, is_finance_path, is_local_host, validate_mutation_origin
+from retro.security import effective_scheme, client_address, validate_mutation_origin
 from retro.sessions import SessionIdentity, SessionStore
 
 STATIC = Path(__file__).parent / 'static'
@@ -149,9 +149,6 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             address = client_address(request, settings)
         except ValueError as error:
             return JSONResponse({'detail': str(error)}, 403)
-        if is_finance_path(request.url.path) and (
-                not address.is_loopback or not is_local_host(request.url.hostname)):
-            return JSONResponse({'detail': 'Модуль финансов доступен только локально до настройки защиты.'}, 403)
         if settings.dashboard_allowed_network:
             if not address.is_loopback and address not in settings.dashboard_allowed_network:
                 return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
@@ -260,17 +257,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # Отдаём его вместе с причиной: закрытый модуль должен выглядеть
         # закрытым, а не открывать страницу с отказом.
         role = getattr(request.state, 'dashboard_role', 'all')
-        try:
-            local = client_address(request, settings).is_loopback and is_local_host(request.url.hostname)
-        except ValueError:
-            local = False
         modules = []
         for panel, name, path in MODULE_NAMES:
             reason = ''
             if role not in FULL_ACCESS_ROLES and role != panel:
                 reason = 'Доступно другой учётной записи'
-            elif panel == 'accountant' and not local:
-                reason = 'Открывается только на машине сервера'
             modules.append(dict(id=panel, name=name, path=path,
                                 available=not reason, reason=reason))
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
