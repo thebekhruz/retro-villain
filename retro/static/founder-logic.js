@@ -10,6 +10,11 @@
 
   function iso(date){return date.toISOString().slice(0,10)}
 
+  function weekday(dateIso){
+    const names=['воскресенье','понедельник','вторник','среда','четверг','пятница','суббота'];
+    return names[new Date(dateIso+'T00:00:00Z').getUTCDay()];
+  }
+
   function quickPeriod(kind,todayIso){
     const today=new Date(todayIso+'T00:00:00Z');
     if(kind==='month')return {start:todayIso.slice(0,8)+'01',end:todayIso};
@@ -50,5 +55,5 @@
     }));
   }
 
-  return {nearestRevenueIndex,paymentLineSeries,quickPeriod,revenuePaths,requestGate};
+  return {nearestRevenueIndex,paymentLineSeries,quickPeriod,revenuePaths,requestGate,weekday};
 });

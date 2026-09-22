@@ -12,7 +12,8 @@ function setMessage(text,error=false){const node=$('message');node.hidden=!text;
 function setLoading(value){document.querySelector('.founder-workspace').classList.toggle('is-loading',value);document.querySelector('.founder-metrics').setAttribute('aria-busy',String(value));$('refresh').disabled=value}
 
 function revenuePeriod(group){
-  const period=group.start===group.end?shortDate(group.start):`${shortDate(group.start)}–${shortDate(group.end)}`;
+  const dated=value=>`${shortDate(value)}, ${FounderLogic.weekday(value)}`;
+  const period=group.start===group.end?dated(group.start):`${dated(group.start)} – ${dated(group.end)}`;
   return period+(group.incomplete?' · день не завершён':'');
 }
 
