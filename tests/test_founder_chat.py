@@ -61,6 +61,7 @@ def test_claude_chat_uses_bounded_history_and_server_system_prompt():
     assert seen['body']['messages'][0]['role'] == 'user'
     assert len(seen['body']['messages']) <= 24
     assert sum(len(item['content']) for item in seen['body']['messages']) <= 20_000
+    assert seen['body']['max_tokens'] == 5600
     assert 'не выдумывай цифры' in seen['body']['system']
     assert 'secret-key' not in json.dumps(seen['body'], ensure_ascii=False)
 

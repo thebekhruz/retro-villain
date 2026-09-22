@@ -221,7 +221,7 @@ class ClaudeClient:
             system += f' Текущая дата ресторана в Asia/Tashkent: {current_date}.'
         body = {
             'model': self.settings.claude_model,
-            'max_tokens': 1400,
+            'max_tokens': 5600,
             'system': system,
             'messages': bounded,
         }
