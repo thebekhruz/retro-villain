@@ -14,6 +14,8 @@ from retro.modules.cashier.service import DataError
 MESSAGES_URL = 'https://api.anthropic.com/v1/messages'
 ANTHROPIC_VERSION = '2023-06-01'
 MAX_PROBLEMS = 6
+MAX_CHAT_TOOL_CALLS = 4
+MAX_CHAT_TOOL_RESULT_CHARS = 100_000
 ANALYSIS_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -190,47 +192,87 @@ class ClaudeClient:
             log_upstream_failure('claude', error, operation='analyze')
             raise DataError('Claude вернул некорректный ответ. Повторите позже.') from None
 
-    async def chat(self, messages):
-        """Answer a bounded founder conversation without exposing provider details."""
+    async def chat(self, messages, *, tools=(), tool_handler=None, current_date=None):
+        """Answer a founder conversation, optionally using allowlisted read-only tools."""
         if not self.settings.claude_configured:
             raise DataError('Настройте CLAUDE_API_KEY и CLAUDE_MODEL для чата с ИИ.')
         bounded = self._bounded_chat(messages)
+        if bool(tools) != bool(tool_handler):
+            raise ValueError('chat tools and handler must be configured together')
         headers = {
             'content-type': 'application/json',
             'x-api-key': self.settings.claude_api_key,
             'anthropic-version': ANTHROPIC_VERSION,
         }
+        system = (
+            'Ты конфиденциальный деловой ассистент учредителей ресторана Retro Milliy. '
+            'Отвечай на русском языке ясно, кратко и практически. Отделяй факты от '
+            'предположений, не выдумывай цифры. Для любых утверждений о выручке, оплатах, '
+            'бронированиях или посещаемости обязательно используй доступный серверный '
+            'инструмент, даже если похожая цифра встречалась раньше в диалоге. Указывай '
+            'период и предупреждения источника. unavailable и unlinked не означают, что '
+            'сотрудник отсутствовал; missing достоверен только при complete=true. '
+            'Не выполняй действия и не меняй данные — инструменты работают только на чтение.'
+        )
+        if current_date is not None:
+            system += f' Текущая дата ресторана в Asia/Tashkent: {current_date}.'
         body = {
             'model': self.settings.claude_model,
             'max_tokens': 1400,
-            'system': (
-                'Ты конфиденциальный деловой ассистент учредителей ресторана Retro Milliy. '
-                'Отвечай на русском языке ясно, кратко и практически. Отделяй факты от '
-                'предположений, не выдумывай цифры и не утверждай, что видишь живые данные '
-                'ресторана. Если для ответа не хватает данных, перечисли, что нужно уточнить. '
-                'Не выполняй действия и не меняй данные — этот чат только консультирует.'
-            ),
+            'system': system,
             'messages': bounded,
         }
+        if tools:
+            body['tools'] = list(tools)
         try:
             async with httpx.AsyncClient(timeout=60, transport=self.transport) as client:
-                response = await client.post(MESSAGES_URL, headers=headers, json=body)
-            if not response.is_success:
-                log_upstream_failure(
-                    'claude', RuntimeError(f'http_status_{response.status_code}'),
-                    operation='founder_chat')
-                raise DataError('Claude сейчас не отвечает. Повторите позже.')
-            payload = response.json()
-            if not isinstance(payload, dict) or payload.get('stop_reason') != 'end_turn':
-                raise ValueError('incomplete Claude chat response')
-            parts = [block.get('text') for block in payload.get('content', [])
-                     if isinstance(block, dict) and block.get('type') == 'text']
-            if not parts or any(not isinstance(part, str) for part in parts):
-                raise ValueError('missing Claude chat text')
-            answer = '\n'.join(part.strip() for part in parts if part.strip()).strip()
-            if not answer or len(answer) > 12_000:
-                raise ValueError('invalid Claude chat text')
-            return answer
+                tool_calls = 0
+                while True:
+                    response = await client.post(MESSAGES_URL, headers=headers, json=body)
+                    if not response.is_success:
+                        log_upstream_failure(
+                            'claude', RuntimeError(f'http_status_{response.status_code}'),
+                            operation='founder_chat')
+                        raise DataError('Claude сейчас не отвечает. Повторите позже.')
+                    payload = response.json()
+                    if not isinstance(payload, dict) or not isinstance(payload.get('content'), list):
+                        raise ValueError('invalid Claude chat response')
+                    content = payload['content']
+                    if payload.get('stop_reason') == 'end_turn':
+                        parts = [block.get('text') for block in content
+                                 if isinstance(block, dict) and block.get('type') == 'text']
+                        if not parts or any(not isinstance(part, str) for part in parts):
+                            raise ValueError('missing Claude chat text')
+                        answer = '\n'.join(part.strip() for part in parts if part.strip()).strip()
+                        if not answer or len(answer) > 12_000:
+                            raise ValueError('invalid Claude chat text')
+                        return answer
+                    if payload.get('stop_reason') != 'tool_use' or not tools:
+                        raise ValueError('incomplete Claude chat response')
+                    calls = [block for block in content
+                             if isinstance(block, dict) and block.get('type') == 'tool_use']
+                    if not calls or tool_calls + len(calls) > MAX_CHAT_TOOL_CALLS:
+                        raise ValueError('invalid Claude tool calls')
+                    results = []
+                    for call in calls:
+                        call_id, name, arguments = call.get('id'), call.get('name'), call.get('input')
+                        if (not isinstance(call_id, str) or not call_id
+                                or not isinstance(name, str) or not isinstance(arguments, dict)):
+                            raise ValueError('invalid Claude tool call')
+                        try:
+                            result = await tool_handler(name, arguments)
+                            result_text = json.dumps(result, ensure_ascii=False, separators=(',', ':'))
+                            if len(result_text) > MAX_CHAT_TOOL_RESULT_CHARS:
+                                raise DataError('Результат слишком большой. Сузьте период или фильтр.')
+                            results.append({'type': 'tool_result', 'tool_use_id': call_id,
+                                            'content': result_text})
+                        except DataError as error:
+                            results.append({'type': 'tool_result', 'tool_use_id': call_id,
+                                            'content': str(error), 'is_error': True})
+                        tool_calls += 1
+                    body['messages'] = [*body['messages'],
+                                        {'role': 'assistant', 'content': content},
+                                        {'role': 'user', 'content': results}]
         except DataError:
             raise
         except (httpx.HTTPError, json.JSONDecodeError, TypeError, ValueError) as error:
