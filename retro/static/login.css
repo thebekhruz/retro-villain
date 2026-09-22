@@ -5,9 +5,23 @@ body {
   color: #f5f1e8; background: radial-gradient(circle at top, #21594d, #102d27 52%, #091b17);
 }
 .login-card {
+  position: relative;
   width: min(100%, 430px); padding: 42px; border: 1px solid rgba(233,204,138,.25);
   border-radius: 22px; background: rgba(8,27,23,.88); box-shadow: 0 26px 80px rgba(0,0,0,.35);
 }
+/* Язык выбирают до входа, поэтому переключатель стоит на самой карточке —
+   в углу напротив знака, чтобы не разрывать заголовок. Свои правила ему
+   нужны потому, что страница входа не грузит общую таблицу стилей: без них
+   кнопки подхватывали вид кнопки «Войти». */
+.lang-switch {
+  position: absolute; top: 20px; right: 20px; display: flex; gap: 2px; padding: 3px;
+  border: 1px solid rgba(233,204,138,.28); border-radius: 11px; background: rgba(13,41,35,.92);
+}
+.lang-button {
+  margin: 0; min-width: 44px; min-height: 40px; padding: 0 10px; border: 0; border-radius: 8px;
+  color: #cdd9d4; background: transparent; font-size: 12px; font-weight: 700; letter-spacing: .04em;
+}
+.lang-button.is-active { color: #102d27; background: #e9cc8a; }
 .brand > span {
   display: grid; place-items: center; width: 58px; height: 58px; border-radius: 16px;
   font: 700 34px Georgia, serif; color: #e9cc8a; background: #143e35;
@@ -29,4 +43,7 @@ button {
 }
 button:disabled { cursor: wait; opacity: .65; }
 .error { min-height: 22px; margin: 16px 0 0; color: #ffaaa0; font-size: 14px; }
-@media (max-width: 520px) { .login-card { padding: 30px 24px; } }
+@media (max-width: 520px) {
+  .login-card { padding: 30px 24px; }
+  .lang-switch { top: 16px; right: 16px; }
+}
