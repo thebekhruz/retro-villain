@@ -17,7 +17,7 @@ def node(index, value, children=None, amount=None):
     return result
 
 
-def test_founder_range_uses_payment_sales_without_menu_exclusions():
+def test_founder_range_uses_payment_sales_plus_only_tagged_banquet_dishes():
     requests = []
 
     def handler(request):
@@ -25,36 +25,70 @@ def test_founder_range_uses_payment_sales_without_menu_exclusions():
             return httpx.Response(200, json={'token': 'test-only'})
         body = json.loads(request.content)
         groups = body['groupFields']
+        payment_sales = any(item.get('field') == 'OperationType' for item in body['filters'])
         if request.url.path == '/api/olap/init':
             requests.append(body)
             return httpx.Response(200, json={'fetchId': 'payments' if 'PayTypes' in groups else 'revenue'})
-        if groups == ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection']:
-            rows = [node(0, '2026-09-01', [
-                node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', amount=100)]),
-                node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', amount=40)]),
-            ])]
+        if groups == ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName']:
+            if payment_sales:
+                rows = [node(0, '2026-09-01', [
+                    node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', [
+                        node(3, 'Плов', amount=100),
+                        node(3, 'Салат (Бехруз)', amount=10),
+                    ])]),
+                    node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', [
+                        node(3, 'Обед', amount=40),
+                    ])]),
+                ])]
+            else:
+                rows = [node(0, '2026-09-01', [
+                    node(1, 'Kassa-FiscalBox1', [node(2, 'Бехруз (Свадьба)', [
+                        node(3, 'Салат (Бехруз)', amount=60),
+                        node(3, 'Аренда зала', amount=940),
+                    ])]),
+                ])]
         else:
-            assert groups == ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'PayTypes']
-            rows = [node(0, '2026-09-01', [
-                node(1, 'Kassa-FiscalBox1', [
-                    node(2, 'Ресторан', [node(3, 'UzCard', amount=60), node(3, 'Демо', amount=40)])]),
-                node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', [node(3, 'UzCard', amount=40)])]),
-            ])]
+            assert groups == [
+                'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName', 'PayTypes']
+            if payment_sales:
+                rows = [node(0, '2026-09-01', [
+                    node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', [
+                        node(3, 'Плов', [node(4, 'UzCard', amount=60),
+                                        node(4, 'Демо', amount=40)]),
+                        node(3, 'Салат (Бехруз)', [node(4, 'Демо', amount=10)]),
+                    ])]),
+                    node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', [
+                        node(3, 'Обед', [node(4, 'UzCard', amount=40)]),
+                    ])]),
+                ])]
+            else:
+                rows = [node(0, '2026-09-01', [
+                    node(1, 'Kassa-FiscalBox1', [node(2, 'Бехруз (Свадьба)', [
+                        node(3, 'Салат (Бехруз)', [node(4, 'Демо', amount=60)]),
+                        node(3, 'Аренда зала', [node(4, 'Демо', amount=940)]),
+                    ])]),
+                ])]
         return httpx.Response(200, json={'result': {'rows': rows}})
 
     source = IikoClient(Settings(login='test', password='test', store_id=123),
                         transport=httpx.MockTransport(handler), poll_delay=0)
     result = asyncio.run(source.load_founder_analytics(
-        date(2026, 9, 1), date(2026, 9, 1), 'day', ('retro', 'school')))
+        date(2026, 9, 1), date(2026, 9, 1), 'day', ('retro', 'school', 'banquet')))
 
-    assert result['totals']['selected'] == '140'
-    assert result['payment_total'] == '140'
-    assert len(requests) == 2
+    assert result['totals'] == {
+        'retro': '100', 'school': '40', 'banquet': '60', 'selected': '200'}
+    assert result['payment_total'] == '200'
+    assert result['reconciled'] is True
+    assert len(requests) == 4
+    assert sum(any(item.get('field') == 'OperationType' for item in body['filters'])
+               for body in requests) == 2
     for body in requests:
         assert body['filters'][0] == {
             'filterType': 'date_range', 'dateFrom': '2026-09-01', 'dateTo': '2026-09-01',
             'includeLeft': True, 'includeRight': True, 'field': 'OpenDate.Typed'}
         filters = {item['field']: item for item in body['filters'][1:]}
-        assert filters['OperationType']['valueList'] == ['PAYMENT']
+        if 'OperationType' in filters:
+            assert filters['OperationType']['valueList'] == ['PAYMENT']
         assert 'DishGroup' not in filters
+        assert 'DishName' in body['groupFields']
         assert body['dataFields'] == ['DishDiscountSumInt']
