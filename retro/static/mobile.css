@@ -37,6 +37,18 @@ input[type=date]{min-height:44px}
   small,.eyebrow,.kicker,.panel-note,.accountant-help,.field-label,legend,
   .period-caption,.menu-foot,.attendance-more,.report-format{font-size:11.5px}
   footer{font-size:11.5px;line-height:1.7}
+  /* Эти подписи заданы через класс и общее правило их не перебивало:
+     на экране оставались восемь и десять с половиной точек. */
+  .brand small{font-size:11.5px;letter-spacing:3px}
+  .mini small,.file-type,.attendance-file-type,.reconcile,.source-status{font-size:11.5px}
+  .ai-chat-head p{font-size:11px;letter-spacing:.08em}
+  .ai-chat-head span,.ai-chat-form-foot span,#ai-chat-clear{font-size:11.5px}
+
+  /* Колонки с кнопками не давали им сжиматься: на узбекском подписи длиннее,
+     и страница сотрудников уезжала вбок на шесть точек. */
+  .controls-actions,.employees-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .controls-actions>*,.employees-toolbar>*,
+  .controls-actions .button,.employees-toolbar .button{min-width:0}
 }
 
 @media(max-width:420px){
@@ -117,4 +129,17 @@ input[type=date]{min-height:44px}
   .brand{font-size:19px;letter-spacing:2px;gap:9px}
   .brand-mark{font-size:38px}
   .sidebar{padding:10px 14px}
+}
+
+@media(max-width:650px){
+  /* Язык и выход стоят парой справа от статуса и не мельчают под палец. */
+  .lang-button{min-width:44px;min-height:44px;font-size:12px}
+}
+
+@media(max-width:650px){
+  /* Ящик помощника на телефоне: закрыть, отправить и очистить — это тоже
+     кнопки под палец, а не значки под курсор. */
+  .ai-chat-close,#ai-chat-send{min-width:44px;min-height:44px}
+  .ai-chat-form-foot button{min-height:44px;padding:0 10px}
+  .ai-chat-toggle{min-height:52px;min-width:52px}
 }

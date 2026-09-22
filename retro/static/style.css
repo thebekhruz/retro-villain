@@ -472,3 +472,12 @@ footer{font-size:11.5px}
   color:#e4ecdf;font-size:12px;line-height:1.45;opacity:0;max-height:0;overflow:hidden;
   transition:opacity .2s ease}
 .nav-lock-hint.is-shown{opacity:1;max-height:120px}
+
+/* Переключатель языка в шапке: две короткие кнопки, активная подсвечена.
+   Панелью пользуются и те, кому по-узбекски привычнее. */
+.lang-switch{display:flex;gap:2px;padding:3px;border:1px solid #cad5cc;border-radius:9px;background:#fff}
+.lang-button{min-width:40px;min-height:38px;border:0;border-radius:7px;background:transparent;
+  color:#5b675f;font:600 11px/1 inherit;letter-spacing:.04em;cursor:pointer}
+.lang-button:hover{background:#f0f4ed}
+.lang-button.is-active{background:var(--green);color:#fff}
+.login-card .lang-switch{margin:0 auto 18px}

@@ -45,7 +45,8 @@ def test_login_page_loads_only_publicly_allowed_files():
     ссылка на закрытый файл даёт 401 прямо на форме входа."""
     import re
     app = (Path(__file__).resolve().parent.parent / 'retro' / 'app.py').read_text(encoding='utf-8')
-    allowed = set(re.search(r"PUBLIC_PATHS = \{([^}]*)\}", app).group(1).replace("'", '').split(', '))
+    block = re.search(r"PUBLIC_PATHS = \{([^}]*)\}", app, re.S).group(1)
+    allowed = set(re.findall(r"'([^']+)'", block))
     markup = (STATIC / 'login.html').read_text(encoding='utf-8')
     for asset in re.findall(r'(?:href|src)="(/static/[^"]+)"', markup):
         assert asset in allowed, asset
