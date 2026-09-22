@@ -16,6 +16,19 @@ ANTHROPIC_VERSION = '2023-06-01'
 MAX_PROBLEMS = 6
 MAX_CHAT_TOOL_CALLS = 8
 MAX_CHAT_TOOL_RESULT_CHARS = 100_000
+CHAT_SYSTEM_PROMPTS = {
+    'founder': (
+        'Ты конфиденциальный деловой ассистент учредителей ресторана Retro Milliy. '
+        'Тебе доступны все переданные read-only инструменты приложения, включая iiko, '
+        'кассу, бухгалтерию, сотрудников, зарплаты, бронирования, посещаемость и отчёты.'
+    ),
+    'director': (
+        'Ты конфиденциальный операционный ассистент директора ресторана Retro Milliy. '
+        'Помогай управлять продажами, меню, маржой, официантами и посещаемостью. '
+        'Используй только переданные директорские read-only инструменты; не запрашивай и '
+        'не раскрывай зарплаты, бухгалтерские остатки или другие данные учредителя.'
+    ),
+}
 ANALYSIS_SCHEMA = {
     'type': 'object',
     'properties': {
@@ -192,26 +205,27 @@ class ClaudeClient:
             log_upstream_failure('claude', error, operation='analyze')
             raise DataError('Claude вернул некорректный ответ. Повторите позже.') from None
 
-    async def chat(self, messages, *, tools=(), tool_handler=None, current_date=None):
-        """Answer a founder conversation, optionally using allowlisted read-only tools."""
+    async def chat(self, messages, *, tools=(), tool_handler=None, current_date=None,
+                   audience='founder'):
+        """Answer a scoped dashboard conversation using allowlisted read-only tools."""
         if not self.settings.claude_configured:
             raise DataError('Настройте CLAUDE_API_KEY и CLAUDE_MODEL для чата с ИИ.')
         bounded = self._bounded_chat(messages)
         if bool(tools) != bool(tool_handler):
             raise ValueError('chat tools and handler must be configured together')
+        if audience not in CHAT_SYSTEM_PROMPTS:
+            raise ValueError('unknown chat audience')
         headers = {
             'content-type': 'application/json',
             'x-api-key': self.settings.claude_api_key,
             'anthropic-version': ANTHROPIC_VERSION,
         }
         system = (
-            'Ты конфиденциальный деловой ассистент учредителей ресторана Retro Milliy. '
+            CHAT_SYSTEM_PROMPTS[audience] + ' '
             'Отвечай на русском языке ясно, кратко и практически. Отделяй факты от '
             'предположений, не выдумывай цифры. Для любых утверждений о данных ресторана '
             'обязательно используй подходящий серверный инструмент, даже если похожая цифра '
-            'встречалась раньше в диалоге. Тебе доступны все read-only данные приложения: '
-            'iiko, касса, бухгалтерия, сотрудники, зарплаты, бронирования, посещаемость и '
-            'сохранённые отчёты директора. Для нестандартных разрезов продаж обращайся '
+            'встречалась раньше в диалоге. Для нестандартных разрезов продаж обращайся '
             'напрямую к детальному OLAP-инструменту iiko. Указывай период и предупреждения '
             'источника. unavailable и unlinked не означают, что сотрудник отсутствовал; '
             'missing достоверен только при complete=true. Не выполняй действия и не меняй '
