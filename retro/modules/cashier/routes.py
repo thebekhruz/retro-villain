@@ -8,7 +8,7 @@ from pydantic import BaseModel
 from retro.logging_config import log_safe_failure
 
 from .export import export_report
-from .service import DataError, demo_snapshot, today_tashkent
+from .service import DataError, ReportReplaced, demo_snapshot, today_tashkent
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
 
@@ -118,13 +118,16 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
         if demo:
             result = demo_snapshot(day)
         else:
-            if state.iiko_lock.locked():
-                raise HTTPException(429, 'Другой отчёт ещё загружается. Повторите через несколько секунд.')
-            async with state.iiko_lock:
-                result = await asyncio.wait_for(state.iiko.load(day), timeout=90)
+            async def load_latest():
+                async with state.iiko_lock:
+                    return await asyncio.wait_for(state.iiko.load(day), timeout=90)
+
+            result = await state.iiko_daily_reports.run(load_latest)
         state.cache.put(result)
         return {**result.json(),
                 'expense_policy_configured': state.expenses.policy_configured()}
+    except ReportReplaced:
+        raise HTTPException(409, 'Отчёт заменён новым запросом.') from None
     except TimeoutError as error:
         log_safe_failure('cashier-route', error, operation='day_report',
                          request_id=request.state.request_id)

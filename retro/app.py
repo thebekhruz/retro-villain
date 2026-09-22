@@ -19,7 +19,7 @@ from retro.modules.cashier.routes import router as cashier_router
 from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
-from retro.modules.cashier.service import SnapshotCache, today_tashkent
+from retro.modules.cashier.service import LatestReportRunner, SnapshotCache, today_tashkent
 from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
@@ -113,6 +113,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.iiko = IikoClient(settings)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.iiko_lock = asyncio.Lock()
+    app.state.iiko_daily_reports = LatestReportRunner()
     app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
     database_path = expense_db_path or settings.data_dir / 'cashier.sqlite3'

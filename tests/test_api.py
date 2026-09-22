@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 from retro.app import create_app
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient, cash_prepay_from_shifts, detail_rows_from_olap
-from retro.modules.cashier.service import DataError
+from retro.modules.cashier.service import DataError, demo_snapshot
 import pytest
 
 
@@ -44,6 +44,47 @@ def test_invalid_and_future_dates_are_rejected():
     with local_client() as client:
         assert client.get('/api/cashier/day?date=bad').status_code == 422
         assert client.get('/api/cashier/day?date=2099-01-01').status_code == 422
+
+
+def test_new_daily_report_cancels_inflight_report_and_starts_immediately():
+    first_started = asyncio.Event()
+    first_cancelled = asyncio.Event()
+
+    class IikoStub:
+        calls = []
+
+        async def load(self, day):
+            self.calls.append(day)
+            if len(self.calls) == 1:
+                first_started.set()
+                try:
+                    await asyncio.Event().wait()
+                except asyncio.CancelledError:
+                    first_cancelled.set()
+                    raise
+            return demo_snapshot(day)
+
+    async def scenario():
+        app = create_app(Settings())
+        app.state.iiko = IikoStub()
+        transport = httpx.ASGITransport(app=app, client=('127.0.0.1', 50000))
+        async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1') as client:
+            old_request = asyncio.create_task(
+                client.get('/api/cashier/day?date=2026-09-10'))
+            await asyncio.wait_for(first_started.wait(), timeout=1)
+            new_response = await asyncio.wait_for(
+                client.get('/api/cashier/day?date=2026-09-11'), timeout=1)
+            old_response = await asyncio.wait_for(old_request, timeout=1)
+        return app.state.iiko.calls, old_response, new_response
+
+    calls, old_response, new_response = asyncio.run(scenario())
+
+    assert calls == [date(2026, 9, 10), date(2026, 9, 11)]
+    assert first_cancelled.is_set()
+    assert old_response.status_code == 409
+    assert old_response.json()['detail'] == 'Отчёт заменён новым запросом.'
+    assert new_response.status_code == 200
+    assert new_response.json()['date'] == '2026-09-11'
 
 
 def test_iiko_detail_rows_keep_dimensions_metrics_and_report_truncation():

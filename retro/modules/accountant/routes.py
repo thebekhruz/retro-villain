@@ -9,7 +9,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import DataError, ReportReplaced, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
 
 from .attendance import Entrance, export_entrances
@@ -51,12 +51,15 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
     state = request.app.state
     snapshot = state.cache.latest_for_day(day)
     if snapshot is None and state.settings.configured:
-        if state.iiko_lock.locked():
-            raise HTTPException(429, 'Другой отчёт ещё загружается. Повторите через несколько секунд.')
         try:
-            async with state.iiko_lock:
-                snapshot = await asyncio.wait_for(state.iiko.load(day), timeout=90)
-                state.cache.put(snapshot)
+            async def load_latest():
+                async with state.iiko_lock:
+                    return await asyncio.wait_for(state.iiko.load(day), timeout=90)
+
+            snapshot = await state.iiko_daily_reports.run(load_latest)
+            state.cache.put(snapshot)
+        except ReportReplaced:
+            raise HTTPException(409, 'Отчёт заменён новым запросом.') from None
         except TimeoutError as error:
             log_safe_failure('accountant-route', error, operation='cashier_handover',
                              request_id=request.state.request_id)
