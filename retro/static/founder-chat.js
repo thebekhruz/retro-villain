@@ -18,7 +18,7 @@
   function resizeInput(){input.style.height='auto';input.style.height=Math.min(input.scrollHeight,120)+'px'}
   function bubble(item){
     const article=document.createElement('article');article.className=`ai-chat-message is-${item.role}`;
-    const label=document.createElement('span');label.textContent=item.role==='assistant'?'Claude':'Вы';
+    const label=document.createElement('span');label.textContent=item.role==='assistant'?'Помощник':'Вы';
     const content=document.createElement('p');content.textContent=item.content;
     article.append(label,content);messages.append(article);empty.hidden=true;scrollBottom();return article;
   }
@@ -32,7 +32,7 @@
     try{
       const data=await request('/api/founder/chat');
       data.messages.forEach(bubble);loaded=true;
-      setStatus(data.configured?'':'Claude ещё не настроен на сервере.',!data.configured);
+      setStatus(data.configured?'':'Помощник ещё не настроен на сервере.',!data.configured);
     }catch(error){setStatus(error.message,true)}
   }
   function open(){
@@ -46,7 +46,7 @@
   }
   async function submit(){
     const question=input.value.trim();if(!question||busy)return;
-    busy=true;send.disabled=true;input.disabled=true;setStatus('Claude формирует ответ…');bubble({role:'user',content:question});
+    busy=true;send.disabled=true;input.disabled=true;setStatus('Помощник формирует ответ…');bubble({role:'user',content:question});
     input.value='';resizeInput();
     const pending=bubble({role:'assistant',content:'Думаю…'});pending.classList.add('is-pending');
     try{
