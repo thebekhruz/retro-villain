@@ -31,8 +31,6 @@ def test_safe_workflow_and_historical_balances_through_api(tmp_path):
         assert data['ledger']['cash_balance'] == '700000'
         assert client.post('/api/accountant/reserves', json=dict(payload, date='2099-01-01')).status_code == 422
         assert client.post('/api/accountant/reserves', json=dict(payload, kind='deposit')).status_code == 422
-        assert client.post('/api/accountant/reserves', json=payload,
-                           headers={'host': 'public.trycloudflare.com'}).status_code == 403
 
 
 def test_monthly_plan_and_usd_do_not_require_iiko_but_cash_transfer_does(tmp_path):
@@ -321,7 +319,7 @@ def test_unlinked_employee_gets_only_one_demo_exception_and_other_expenses_are_s
         assert balance['cash_balance'] == '250000'
 
 
-def test_missing_rate_can_be_corrected_with_reason_and_public_host_cannot_see_roster(tmp_path):
+def test_missing_rate_can_be_corrected_and_host_does_not_disable_accountant(tmp_path):
     with demo_client(tmp_path) as client:
         employee = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['employees'][0]
         corrected = client.patch(f'/api/accountant/employees/{employee["employee_id"]}', json={
@@ -329,12 +327,12 @@ def test_missing_rate_can_be_corrected_with_reason_and_public_host_cannot_see_ro
         assert corrected.status_code == 200
         updated = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         assert updated['employees'][0]['rate'] == '310000'
-        assert client.get('/accountant', headers={'host': 'public.trycloudflare.com'}).status_code == 403
-        assert client.get('/accountant/employees', headers={'host': 'public.trycloudflare.com'}).status_code == 403
-        assert client.get('/api/accountant/day', headers={'host': 'public.trycloudflare.com'}).status_code == 403
+        assert client.get('/accountant', headers={'host': 'dashboard.example.com'}).status_code == 200
+        assert client.get('/accountant/employees', headers={'host': 'dashboard.example.com'}).status_code == 200
+        assert client.get('/api/accountant/day', headers={'host': 'dashboard.example.com'}).status_code == 200
         assert client.get('/api/accountant/employees/export', params={
             'date': DAY.isoformat(), 'scope': 'all'},
-            headers={'host': 'public.trycloudflare.com'}).status_code == 403
+            headers={'host': 'dashboard.example.com'}).status_code == 200
 
 
 def test_employee_registry_can_edit_name_role_and_salary(tmp_path):
