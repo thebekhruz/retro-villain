@@ -8,6 +8,7 @@ from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
+from retro.modules.founder.tools import FounderChatTools
 
 
 router = APIRouter(prefix='/api/founder', tags=['founder'])
@@ -108,8 +109,14 @@ async def chat(request: Request, body: ChatInput):
     history = request.app.state.founder_chat_store.list(owner, limit=24)
     messages = [{'role': item['role'], 'content': item['content']} for item in history]
     messages.append({'role': 'user', 'content': question})
+    chat_tools = FounderChatTools(request.app)
     try:
-        answer = await asyncio.wait_for(request.app.state.claude.chat(messages), timeout=70)
+        answer = await asyncio.wait_for(request.app.state.claude.chat(
+            messages,
+            tools=chat_tools.definitions,
+            tool_handler=chat_tools.execute,
+            current_date=today_tashkent().isoformat(),
+        ), timeout=180)
     except TimeoutError as error:
         log_safe_failure('founder-chat', error, operation='answer',
                          request_id=request.state.request_id)

@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import date, datetime
 from types import SimpleNamespace
 
 import httpx
@@ -8,9 +9,11 @@ from fastapi.testclient import TestClient
 
 from retro.app import create_app
 from retro.config import Settings
+from retro.integrations.hikvision import HikvisionEvent, HikvisionPerson
 from retro.integrations.claude import ClaudeClient
-from retro.modules.cashier.service import DataError
+from retro.modules.cashier.service import DataError, TZ
 from retro.modules.founder.chat import FounderChatStore
+from retro.modules.founder.tools import FounderChatTools
 
 
 def claude_response(text='Проверьте маржинальность по направлениям.'):
@@ -61,6 +64,87 @@ def test_claude_chat_uses_bounded_history_and_server_system_prompt():
     assert 'secret-key' not in json.dumps(seen['body'], ensure_ascii=False)
 
 
+def test_claude_chat_executes_read_only_tool_and_returns_result_to_model():
+    requests = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if len(requests) == 1:
+            return httpx.Response(200, json={
+                'stop_reason': 'tool_use',
+                'content': [{
+                    'type': 'tool_use', 'id': 'tool-1',
+                    'name': 'get_revenue_analytics',
+                    'input': {'start': '2026-09-01', 'end': '2026-09-07',
+                              'granularity': 'week', 'directions': ['retro']},
+                }],
+            })
+        return claude_response('Выручка Retro за 1–7 сентября — 100 сум.')
+
+    calls = []
+
+    async def tool_handler(name, arguments):
+        calls.append((name, arguments))
+        return {'period': {'start': arguments['start'], 'end': arguments['end']},
+                'totals': {'retro': '100'}, 'currency': 'UZS'}
+
+    settings = SimpleNamespace(
+        claude_api_key='secret-key', claude_model='claude-test', claude_configured=True)
+    result = asyncio.run(ClaudeClient(
+        settings, transport=httpx.MockTransport(handler)).chat(
+            [{'role': 'user', 'content': 'Какая была выручка Retro за прошлую неделю?'}],
+            tools=FounderChatTools.definitions,
+            tool_handler=tool_handler,
+            current_date='2026-09-22'))
+
+    assert result == 'Выручка Retro за 1–7 сентября — 100 сум.'
+    assert {tool['name'] for tool in requests[0]['tools']} == {
+        'get_revenue_analytics', 'get_bookings', 'get_employee_attendance'}
+    assert calls[0][0] == 'get_revenue_analytics'
+    tool_result = requests[1]['messages'][-1]['content'][0]
+    assert tool_result['tool_use_id'] == 'tool-1'
+    assert json.loads(tool_result['content'])['totals']['retro'] == '100'
+    assert 'Текущая дата ресторана' in requests[0]['system']
+
+
+def test_founder_chat_booking_tool_returns_existing_founder_metrics():
+    coverage = {'history_started_at': '2026-09-01T08:00:00Z',
+                'historical_data_complete': True}
+
+    class BookingsStub:
+        async def load(self, start, end):
+            assert (start, end) == (date(2026, 9, 1), date(2026, 9, 7))
+            return {
+                'submitted': {
+                    'coverage': coverage, 'excluded_missing_date': 0,
+                    'totals': {'bookings': 2, 'guests': 5,
+                               'unknown_guest_bookings': 0},
+                    'by_date': [{'value': '2026-09-01', 'bookings': 2,
+                                 'guests': 5, 'unknown_guest_bookings': 0}],
+                    'by_source': [{'value': 'direct', 'label': 'Прямые',
+                                   'bookings': 2, 'guests': 5,
+                                   'unknown_guest_bookings': 0}],
+                },
+                'cancelled': {
+                    'coverage': coverage, 'excluded_missing_date': 0,
+                    'totals': {'bookings': 1, 'guests': 0,
+                               'unknown_guest_bookings': 0},
+                    'by_date': [{'value': '2026-09-02', 'bookings': 1,
+                                 'guests': 0, 'unknown_guest_bookings': 0}],
+                    'by_source': [],
+                },
+            }
+
+    app = SimpleNamespace(state=SimpleNamespace(bookings=BookingsStub()))
+    result = asyncio.run(FounderChatTools(app).execute('get_bookings', {
+        'start': '2026-09-01', 'end': '2026-09-07', 'granularity': 'week'}))
+
+    assert result['totals'] == {
+        'bookings': 2, 'guests': 5, 'unknown_guest_bookings': 0, 'cancelled': 1}
+    assert result['sources'][0]['name'] == 'Прямые'
+
+
 @pytest.mark.parametrize('payload', [
     {'stop_reason': 'max_tokens', 'content': [{'type': 'text', 'text': 'обрыв'}]},
     {'stop_reason': 'end_turn', 'content': []},
@@ -101,6 +185,71 @@ def test_founder_chat_api_persists_success_and_can_clear(tmp_path):
     assert [item['role'] for item in history.json()['messages']] == ['user', 'assistant']
     assert cleared.status_code == 204
     assert after.json()['messages'] == []
+
+
+def test_founder_chat_can_read_revenue_and_late_employee_without_financial_fields(tmp_path):
+    requests = []
+
+    def handler(request):
+        body = json.loads(request.content)
+        requests.append(body)
+        if len(requests) == 1:
+            return httpx.Response(200, json={
+                'stop_reason': 'tool_use',
+                'content': [
+                    {'type': 'tool_use', 'id': 'revenue-1',
+                     'name': 'get_revenue_analytics',
+                     'input': {'start': '2026-09-16', 'end': '2026-09-16',
+                               'granularity': 'day',
+                               'directions': ['retro', 'school', 'banquet']}},
+                    {'type': 'tool_use', 'id': 'attendance-1',
+                     'name': 'get_employee_attendance',
+                     'input': {'date': '2026-09-16', 'status': 'late'}},
+                ],
+            })
+        return claude_response('За 16 сентября выручка 300 сум; опоздала Азиза Каримова.')
+
+    class IikoStub:
+        async def load_founder_analytics(self, start, end, granularity, directions):
+            assert (start, end) == (date(2026, 9, 16), date(2026, 9, 16))
+            return {'period': {'start': str(start), 'end': str(end)},
+                    'totals': {'retro': '100', 'school': '100', 'banquet': '100',
+                               'selected': '300'},
+                    'currency': 'UZS', 'reconciled': True, 'warnings': []}
+
+    settings = Settings(
+        claude_api_key='key', claude_model='claude-test', data_dir=tmp_path)
+    app = create_app(settings, claude_transport=httpx.MockTransport(handler))
+    app.state.iiko = IikoStub()
+    employee = app.state.accountant_roster.add(
+        name='Азиза Каримова', role='официант', rate='250000',
+        group_name='Обслуживание зала')
+    app.state.accountant_roster.link_hikvision_people((
+        HikvisionPerson('hik-aziza', 'Азиза Каримова'),))
+    app.state.attendance_store.ingest(HikvisionEvent(
+        'retro-main-entry', 'event-1', 'hik-aziza',
+        datetime(2026, 9, 16, 10, 15, tzinfo=TZ)), employee.id)
+
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1') as client:
+        response = client.post('/api/founder/chat', json={
+            'message': 'Какая была выручка и кто опоздал 16 сентября?'})
+
+    assert response.status_code == 200
+    results = requests[1]['messages'][-1]['content']
+    revenue = json.loads(next(item for item in results
+                              if item['tool_use_id'] == 'revenue-1')['content'])
+    attendance = json.loads(next(item for item in results
+                                 if item['tool_use_id'] == 'attendance-1')['content'])
+    assert revenue['totals']['selected'] == '300'
+    assert attendance['counts']['late'] == 1
+    assert attendance['employees'] == [{
+        'name': 'Азиза Каримова', 'role': 'официант',
+        'group': 'Обслуживание зала', 'status': 'late',
+        'first_entry': '2026-09-16T10:15:00+05:00',
+    }]
+    assert 'rate' not in json.dumps(attendance)
+    assert 'payable' not in json.dumps(attendance)
 
 
 def test_failed_founder_chat_request_is_not_persisted(tmp_path):
