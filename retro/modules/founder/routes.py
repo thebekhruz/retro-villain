@@ -1,7 +1,8 @@
 import asyncio
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from pydantic import BaseModel, Field
 
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
@@ -10,6 +11,17 @@ from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
 
 
 router = APIRouter(prefix='/api/founder', tags=['founder'])
+
+
+class ChatInput(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+def _chat_owner(request):
+    owner = getattr(request.state, 'dashboard_user', None)
+    if not owner:
+        raise HTTPException(401, 'Для чата требуется вход.')
+    return owner
 
 
 def _validated_period(start, end, granularity):
@@ -76,3 +88,42 @@ async def bookings(
         log_safe_failure('founder-route', error, operation='bookings',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+
+
+@router.get('/chat')
+def chat_history(request: Request):
+    owner = _chat_owner(request)
+    return {
+        'configured': request.app.state.settings.claude_configured,
+        'messages': request.app.state.founder_chat_store.list(owner),
+    }
+
+
+@router.post('/chat')
+async def chat(request: Request, body: ChatInput):
+    owner = _chat_owner(request)
+    question = body.message.strip()
+    if not question:
+        raise HTTPException(422, 'Напишите вопрос.')
+    history = request.app.state.founder_chat_store.list(owner, limit=24)
+    messages = [{'role': item['role'], 'content': item['content']} for item in history]
+    messages.append({'role': 'user', 'content': question})
+    try:
+        answer = await asyncio.wait_for(request.app.state.claude.chat(messages), timeout=70)
+    except TimeoutError as error:
+        log_safe_failure('founder-chat', error, operation='answer',
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'Claude отвечает слишком долго. Повторите позже.') from None
+    except DataError as error:
+        log_safe_failure('founder-chat', error, operation='answer',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+    created_at = datetime.now(timezone.utc).isoformat()
+    request.app.state.founder_chat_store.append_exchange(
+        owner, question, answer, created_at)
+    return {'message': {'role': 'assistant', 'content': answer, 'created_at': created_at}}
+
+
+@router.delete('/chat', status_code=204)
+def clear_chat(request: Request):
+    request.app.state.founder_chat_store.clear(_chat_owner(request))

@@ -69,6 +69,19 @@ def test_panel_users_accept_optional_admin_role(monkeypatch):
     }
 
 
+def test_panel_users_allow_multiple_founder_accounts(monkeypatch):
+    monkeypatch.setenv(
+        'DASHBOARD_PANEL_USERS',
+        'cashier:test-password:cashier;accountant:test-password:accountant;'
+        'director:test-password:director;founder-one:test-password:founder;'
+        'founder-two:other-password:founder')
+
+    panel_users = Settings.from_env().dashboard_panel_users
+
+    assert panel_users['founder-one'][1] == 'founder'
+    assert panel_users['founder-two'][1] == 'founder'
+
+
 @pytest.mark.parametrize('value', [
     'cashier:test-password',
     'cashier:test-password:cashier',

@@ -187,7 +187,7 @@ def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
             raise ValueError('DASHBOARD_PANEL_USERS должен содержать пары user:password:role.')
         username, password, role = parts
         if (not username or not password or role not in allowed_roles or username in result
-                or role in roles or len(username) > 64 or len(password) > 256):
+                or len(username) > 64 or len(password) > 256):
             raise ValueError('DASHBOARD_PANEL_USERS содержит некорректную учётную запись.')
         result[username] = (password, role)
         roles.add(role)
