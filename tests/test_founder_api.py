@@ -5,6 +5,7 @@ from fastapi.testclient import TestClient
 from retro.app import create_app
 from retro.config import Settings
 from retro.modules.cashier.service import DataError
+from retro.integrations.broadcasts import BroadcastConflict
 
 
 class FounderIiko:
@@ -31,6 +32,31 @@ class FounderBookings:
         if self.error:
             raise self.error
         return self.result
+
+
+class FounderBroadcasts:
+    def __init__(self, error=None):
+        self.error = error
+        self.calls = []
+
+    async def audience(self):
+        if self.error:
+            raise self.error
+        return {'subscribers': 7, 'profiles': 9}
+
+    async def start(self, operation_id, text):
+        self.calls.append((operation_id, text))
+        if self.error:
+            raise self.error
+        return {'id': operation_id, 'status': 'queued', 'audience': 7,
+                'sent': 0, 'blocked': 0, 'failed': 0}
+
+    async def status(self, operation_id):
+        self.calls.append(('status', operation_id))
+        if self.error:
+            raise self.error
+        return {'id': operation_id, 'status': 'completed', 'audience': 7,
+                'sent': 6, 'blocked': 1, 'failed': 0}
 
 
 def client_with(source):
@@ -133,3 +159,33 @@ def test_booking_api_error_is_local_and_does_not_replace_iiko_data():
     assert booking_response.json() == {'detail': 'бот недоступен'}
     assert iiko_response.status_code == 200
     assert iiko_response.json() == {'revenue_series': [{'ok': True}]}
+
+
+def test_founder_broadcast_preview_start_and_status_are_server_side():
+    app = create_app(Settings())
+    source = FounderBroadcasts()
+    app.state.broadcasts = source
+    operation_id = '12345678-1234-4123-8123-123456789012'
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        audience = client.get('/api/founder/broadcast/audience')
+        started = client.post('/api/founder/broadcast', json={
+            'operation_id': operation_id, 'text': '  Новое меню  '})
+        status = client.get('/api/founder/broadcast/' + operation_id)
+    assert audience.json() == {'subscribers': 7, 'profiles': 9}
+    assert started.status_code == 202
+    assert status.json()['sent'] == 6
+    assert source.calls == [(operation_id, 'Новое меню'), ('status', operation_id)]
+
+
+def test_founder_broadcast_rejects_empty_text_and_reports_parallel_run():
+    app = create_app(Settings())
+    source = FounderBroadcasts(error=BroadcastConflict('Другая рассылка уже выполняется.'))
+    app.state.broadcasts = source
+    operation_id = '12345678-1234-4123-8123-123456789012'
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        assert client.post('/api/founder/broadcast', json={
+            'operation_id': operation_id, 'text': '   '}).status_code == 422
+        conflict = client.post('/api/founder/broadcast', json={
+            'operation_id': operation_id, 'text': 'Текст'})
+    assert conflict.status_code == 409
+    assert conflict.json() == {'detail': 'Другая рассылка уже выполняется.'}
