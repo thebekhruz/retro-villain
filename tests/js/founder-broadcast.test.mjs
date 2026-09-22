@@ -16,3 +16,12 @@ test('broadcast operation ids are UUIDs and terminal states stop polling',()=>{
   assert.equal(logic.isTerminal('completed'),true);
   assert.match(logic.statusText({status:'completed',sent:2,blocked:1,failed:0,audience:3}),/отправлено 2/);
 });
+
+test('targeted broadcast requires unique recipients that still exist',()=>{
+  const available=['A'.repeat(32),'B'.repeat(32)];
+  assert.equal(logic.validateRecipients([],available).ok,false);
+  assert.equal(logic.validateRecipients(['A'.repeat(32),'missing'],available).ok,false);
+  assert.deepEqual(logic.validateRecipients(['B'.repeat(32),'B'.repeat(32)],available),{
+    ok:true,ids:['B'.repeat(32)],
+  });
+});
