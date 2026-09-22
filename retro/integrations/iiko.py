@@ -19,6 +19,14 @@ from retro.modules.founder.models import (
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
                    'DishGroup', 'WaiterName', 'UniqOrderId.Id']
 DIRECTOR_FIELDS = ['DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost']
+IIKO_DETAIL_DIMENSIONS = (
+    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'PayTypes',
+    'DishName', 'DishGroup', 'WaiterName', 'UniqOrderId.Id', 'OperationType',
+)
+IIKO_DETAIL_FIELDS = (
+    'DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost',
+    'UniqOrderId.OrdersCount',
+)
 
 
 def director_rows_from_olap(day, rows):
@@ -150,6 +158,51 @@ def founder_rows_from_olap(rows, *, payments=False, dish_filter='all'):
     return result
 
 
+def detail_rows_from_olap(rows, dimensions, *, limit):
+    """Flatten a bounded, allowlisted iiko OLAP report for founder questions."""
+    records = []
+    total_rows = 0
+    group_count = len(dimensions)
+
+    def visit(row, inherited):
+        nonlocal total_rows
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку детального отчёта.')
+        values = list(inherited)
+        while len(values) < group_count:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != group_count:
+            raise DataError('iiko не вернул все измерения детального отчёта.')
+        quantity, revenue, unit_cost, orders = (
+            number(cell(row, group_count + index)) for index in range(4)
+        )
+        total_rows += 1
+        if len(records) >= limit:
+            return
+        records.append({
+            'dimensions': dict(zip(dimensions, values, strict=True)),
+            'quantity': str(quantity),
+            'revenue': str(revenue),
+            'product_cost_per_unit': str(unit_cost),
+            'product_cost_total': str(quantity * unit_cost),
+            'orders': str(orders),
+        })
+
+    if not isinstance(rows, list):
+        raise DataError('iiko вернул некорректную структуру детального отчёта.')
+    for row in rows:
+        visit(row, [])
+    return records, total_rows
+
+
 class IikoClient:
     def __init__(self, settings, *, transport=None, poll_delay=1):
         self.settings, self.transport, self.poll_delay = settings, transport, poll_delay
@@ -268,6 +321,45 @@ class IikoClient:
                 return build_analytics(revenue, payments, start, end, granularity, directions)
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def load_sales_details(self, start, end, dimensions, *, limit):
+        """Read selected sales dimensions directly from the allowlisted iiko OLAP API."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        if self.settings.base_url != IIKO_ORIGIN:
+            raise DataError('Разрешён только сервер Retro Milliy.')
+        if (not dimensions or len(dimensions) > 4 or len(set(dimensions)) != len(dimensions)
+                or any(value not in IIKO_DETAIL_DIMENSIONS for value in dimensions)):
+            raise DataError('Выберите от одного до четырёх разрешённых измерений iiko.')
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
+            raise DataError('Лимит строк iiko должен быть от 1 до 200.')
+        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
+                   'Content-Type': 'application/json'}
+        try:
+            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
+                                        timeout=25, follow_redirects=False,
+                                        transport=self.transport) as client:
+                auth = await self._post(client, '/api/auth/login',
+                                        dict(login=self.settings.login, password=self.settings.password))
+                if not isinstance(auth.get('token'), str) or not auth['token']:
+                    raise DataError('iiko не подтвердил авторизацию.')
+                client.headers['Authorization'] = 'Bearer ' + auth['token']
+                raw = await self._olap_range(
+                    client, start, end, list(dimensions), list(IIKO_DETAIL_FIELDS))
+                rows, total_rows = detail_rows_from_olap(raw, dimensions, limit=limit)
+                return {
+                    'source': 'iiko OLAP SALES',
+                    'period': {'start': start.isoformat(), 'end': end.isoformat()},
+                    'dimensions': list(dimensions),
+                    'metrics': list(IIKO_DETAIL_FIELDS),
+                    'rows': rows,
+                    'returned_rows': len(rows),
+                    'total_rows': total_rows,
+                    'truncated': total_rows > len(rows),
+                }
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_sales_details')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
     async def _post(self, client, path, body, pending=False):
