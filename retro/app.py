@@ -250,15 +250,31 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def founder():
         return FileResponse(STATIC / 'founder.html')
 
+    MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
+                    ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'))
+
     @app.get('/api/config')
     def config(request: Request):
+        # Меню рисуется на клиенте, а право входа знает только сервер.
+        # Отдаём его вместе с причиной: закрытый модуль должен выглядеть
+        # закрытым, а не открывать страницу с отказом.
+        role = getattr(request.state, 'dashboard_role', 'all')
+        try:
+            local = client_address(request, settings).is_loopback and is_local_host(request.url.hostname)
+        except ValueError:
+            local = False
+        modules = []
+        for panel, name, path in MODULE_NAMES:
+            reason = ''
+            if role not in FULL_ACCESS_ROLES and role != panel:
+                reason = 'Доступно другой учётной записи'
+            elif panel == 'accountant' and not local:
+                reason = 'Открывается только на машине сервера'
+            modules.append(dict(id=panel, name=name, path=path,
+                                available=not reason, reason=reason))
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
-                    role=getattr(request.state, 'dashboard_role', 'all'),
-                    modules=[dict(id='cashier', name='Кассир', available=True),
-                             dict(id='accountant', name='Бухгалтер', available=True),
-                             dict(id='director', name='Директор', available=True),
-                             dict(id='founder', name='Учредитель', available=True)], planned_modules=0)
+                    role=role, modules=modules, planned_modules=0)
 
     app.include_router(cashier_router)
     app.include_router(accountant_router)

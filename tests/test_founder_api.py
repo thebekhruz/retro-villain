@@ -81,7 +81,10 @@ def test_founder_page_and_module_are_exposed():
 
     assert page.status_code == 200
     assert 'Учредитель' in page.text
-    assert config['modules'][-1] == {'id': 'founder', 'name': 'Учредитель', 'available': True}
+    # В ответе появились путь и причина отказа: меню рисует закрытый модуль
+    # серым, а не ведёт на страницу с отказом.
+    assert config['modules'][-1] == {'id': 'founder', 'name': 'Учредитель',
+                                     'path': '/founder', 'available': True, 'reason': ''}
 
 
 def test_founder_booking_api_applies_period_and_granularity_without_directions():
