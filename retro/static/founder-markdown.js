@@ -80,12 +80,12 @@
     const blocks=parse(markdown);
     blocks.forEach(block=>{
       if(block.type==='table'){
-        const wrap=document.createElement('div');wrap.className='ai-chat-table-wrap';wrap.tabIndex=0;wrap.setAttribute('role','region');wrap.setAttribute('aria-label','Таблица в ответе помощника');
+        const wrap=document.createElement('div');wrap.className='ai-chat-table-wrap';wrap.setAttribute('role','region');wrap.setAttribute('aria-label','Таблица в ответе помощника');
         const table=document.createElement('table'),head=document.createElement('thead'),headerRow=document.createElement('tr');
-        if(block.headers.length<=4)table.className='is-compact';
+        table.className=block.headers.length<=4?'is-compact':'is-wide';
         block.headers.forEach((content,index)=>{const th=document.createElement('th');th.scope='col';if(block.alignments[index])th.style.textAlign=block.alignments[index];appendInline(document,th,content);headerRow.append(th)});
         head.append(headerRow);table.append(head);const body=document.createElement('tbody');
-        block.rows.forEach(row=>{const tr=document.createElement('tr');row.forEach((content,index)=>{const td=document.createElement('td');if(block.alignments[index])td.style.textAlign=block.alignments[index];appendInline(document,td,content);tr.append(td)});body.append(tr)});
+        block.rows.forEach(row=>{const tr=document.createElement('tr');row.forEach((content,index)=>{const td=document.createElement('td');td.dataset.label=block.headers[index].map(token=>token.value).join('');if(block.alignments[index])td.style.textAlign=block.alignments[index];appendInline(document,td,content);tr.append(td)});body.append(tr)});
         table.append(body);wrap.append(table);rootNode.append(wrap);return;
       }
       const tag=block.type==='heading'?`h${Math.min(block.level+2,6)}`:block.type==='list'?(block.ordered?'ol':'ul'):block.type==='quote'?'blockquote':'p';
