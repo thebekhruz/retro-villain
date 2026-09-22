@@ -1,14 +1,27 @@
 import asyncio
-from datetime import date
+from datetime import date, datetime, timezone
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
+from pydantic import BaseModel, Field
 
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.director.tools import DirectorChatTools
 
 router = APIRouter(prefix='/api/director', tags=['director'])
+
+
+class ChatInput(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+
+
+def _chat_owner(request):
+    owner = getattr(request.state, 'dashboard_user', None)
+    if not owner:
+        raise HTTPException(401, 'Для чата требуется вход.')
+    return f'director:{owner}'
 
 
 @router.get('/attendance')
@@ -54,6 +67,46 @@ async def today(request: Request):
 @router.get('/reports')
 def reports(request: Request):
     return {'reports': request.app.state.director_store.list_metadata()}
+
+
+@router.get('/chat')
+def chat_history(request: Request):
+    return {
+        'configured': request.app.state.settings.claude_configured,
+        'messages': request.app.state.founder_chat_store.list(_chat_owner(request)),
+    }
+
+
+@router.post('/chat')
+async def chat(request: Request, body: ChatInput):
+    owner = _chat_owner(request)
+    question = body.message.strip()
+    if not question:
+        raise HTTPException(422, 'Напишите вопрос.')
+    history = request.app.state.founder_chat_store.list(owner, limit=24)
+    messages = [{'role': item['role'], 'content': item['content']} for item in history]
+    messages.append({'role': 'user', 'content': question})
+    chat_tools = DirectorChatTools(request.app)
+    try:
+        answer = await asyncio.wait_for(request.app.state.claude.chat(
+            messages, tools=chat_tools.definitions, tool_handler=chat_tools.execute,
+            current_date=today_tashkent().isoformat(), audience='director'), timeout=180)
+    except TimeoutError as error:
+        log_safe_failure('director-chat', error, operation='answer',
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'ИИ отвечает слишком долго. Повторите позже.') from None
+    except DataError as error:
+        log_safe_failure('director-chat', error, operation='answer',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+    created_at = datetime.now(timezone.utc).isoformat()
+    request.app.state.founder_chat_store.append_exchange(owner, question, answer, created_at)
+    return {'message': {'role': 'assistant', 'content': answer, 'created_at': created_at}}
+
+
+@router.delete('/chat', status_code=204)
+def clear_chat(request: Request):
+    request.app.state.founder_chat_store.clear(_chat_owner(request))
 
 
 @router.post('/reports', status_code=201)

@@ -2,6 +2,7 @@
   const toggle=document.getElementById('ai-chat-toggle');
   const drawer=document.getElementById('ai-chat-drawer');
   if(!toggle||!drawer)return;
+  const endpoint=drawer.dataset.endpoint||'/api/founder/chat';
   const closeButton=document.getElementById('ai-chat-close');
   const backdrop=document.getElementById('ai-chat-backdrop');
   const messages=document.getElementById('ai-chat-messages');
@@ -32,7 +33,7 @@
   async function loadHistory(){
     if(loaded)return;setStatus('Загружаю историю…');
     try{
-      const data=await request('/api/founder/chat');
+      const data=await request(endpoint);
       data.messages.forEach(bubble);loaded=true;
       setStatus(data.configured?'':'Помощник ещё не настроен на сервере.',!data.configured);
     }catch(error){setStatus(error.message,true)}
@@ -52,7 +53,7 @@
     input.value='';resizeInput();
     const pending=bubble({role:'assistant',content:'Думаю…'});pending.classList.add('is-pending');
     try{
-      const data=await request('/api/founder/chat',{method:'POST',body:JSON.stringify({message:question})});
+      const data=await request(endpoint,{method:'POST',body:JSON.stringify({message:question})});
       pending.remove();bubble(data.message);setStatus('');
     }catch(error){pending.remove();setStatus(error.message,true)}
     finally{busy=false;send.disabled=false;input.disabled=false;input.focus()}
@@ -66,6 +67,6 @@
   empty.querySelectorAll('button').forEach(button=>button.addEventListener('click',()=>{input.value=button.textContent;resizeInput();input.focus()}));
   clear.addEventListener('click',async()=>{
     if(busy||!window.confirm('Удалить всю историю этого чата?'))return;
-    try{await request('/api/founder/chat',{method:'DELETE'});messages.querySelectorAll('.ai-chat-message').forEach(node=>node.remove());empty.hidden=false;setStatus('История очищена.')}catch(error){setStatus(error.message,true)}
+    try{await request(endpoint,{method:'DELETE'});messages.querySelectorAll('.ai-chat-message').forEach(node=>node.remove());empty.hidden=false;setStatus('История очищена.')}catch(error){setStatus(error.message,true)}
   });
 })();

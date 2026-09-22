@@ -9,10 +9,12 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/director.css">
+  <link rel="stylesheet" href="/static/ai-chat.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/director-logic.js" defer></script>
+  <script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script>
   <script src="/static/logout.js" defer></script>
   <script src="/static/director.js" defer></script>
+  <script src="/static/founder-chat.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -155,5 +157,15 @@
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Модуль директора</span><span>Время Ташкента · UZS</span></footer>
   </div>
 </main>
+<button id="ai-chat-toggle" class="ai-chat-toggle" type="button" aria-label="Открыть чат с ИИ" aria-controls="ai-chat-drawer" aria-expanded="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4.75h14a2.25 2.25 0 0 1 2.25 2.25v8A2.25 2.25 0 0 1 19 17.25h-7.3L7 20.5v-3.25H5A2.25 2.25 0 0 1 2.75 15V7A2.25 2.25 0 0 1 5 4.75Z"/><path d="M7 9h10M7 13h6"/></svg><span>Спросить ИИ</span></button>
+<div id="ai-chat-backdrop" class="ai-chat-backdrop" hidden></div>
+<aside id="ai-chat-drawer" class="ai-chat-drawer" data-endpoint="/api/director/chat" aria-labelledby="ai-chat-title" aria-hidden="true">
+  <header class="ai-chat-head"><div class="ai-chat-avatar">AI</div><div><p>ПОМОЩНИК ДИРЕКТОРА</p><h2 id="ai-chat-title">Чат с помощником</h2><span><i></i> Данные только для управления рестораном</span></div><button id="ai-chat-close" class="ai-chat-close" type="button" aria-label="Закрыть чат">×</button></header>
+  <div id="ai-chat-messages" class="ai-chat-messages" aria-live="polite">
+    <section id="ai-chat-empty" class="ai-chat-empty"><div class="ai-chat-spark">✦</div><h3>Что разобрать?</h3><p>Спросите о продажах, меню, марже, официантах или посещаемости команды.</p><div class="ai-chat-prompts"><button type="button">Какие блюда съедают маржу?</button><button type="button">Кто из официантов продаёт лучше?</button><button type="button">Кто сегодня опоздал?</button></div></section>
+  </div>
+  <p id="ai-chat-status" class="ai-chat-status" role="status" aria-live="polite"></p>
+  <form id="ai-chat-form" class="ai-chat-form"><label for="ai-chat-input" class="sr-only">Сообщение помощнику</label><div class="ai-chat-compose"><textarea id="ai-chat-input" rows="1" maxlength="4000" placeholder="Напишите вопрос…" required></textarea><button id="ai-chat-send" type="submit" aria-label="Отправить сообщение"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m4 12 15-7-4.5 14-3-5-7.5-2Z"/><path d="m11.5 14 3-3"/></svg></button></div><div class="ai-chat-form-foot"><span>Enter — отправить · Shift+Enter — новая строка</span><button id="ai-chat-clear" type="button">Очистить чат</button></div></form>
+</aside>
 </body>
 </html>
