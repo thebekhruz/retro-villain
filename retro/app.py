@@ -36,7 +36,8 @@ from retro.sessions import SessionIdentity, SessionStore
 STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js',
-                '/static/i18n.js', '/static/i18n-uz.js'}
+                '/static/i18n.js', '/static/i18n-uz.js', '/static/favicon.svg',
+                '/static/favicon-32.png', '/static/apple-touch-icon.png'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'admin': '/', 'all': '/'}
