@@ -1,0 +1,120 @@
+/* ── Телефон и планшет ───────────────────────────────────────────────────
+   Панель открывают с чего угодно: телефон официанта, планшет на кассе,
+   ноутбук бухгалтера. Ниже — правила, которые держат раскладку на узком
+   экране: ничего не уезжает вбок, подписи не режутся, по кнопкам попадает
+   палец, а не курсор. Блок идёт последним, чтобы перекрывать частные
+   правила модулей. */
+
+/* Палец — это сорок четыре точки. Всё, по чему тапают, не мельче. */
+.logout-button{min-height:44px;padding:10px 14px}
+.icon-button{width:44px;height:44px}
+input[type=date]{min-height:44px}
+.text-link,.rail-link{display:inline-flex;align-items:center;min-height:44px}
+
+@media(max-width:650px){
+  /* Шапка перестаёт быть одной строкой: хлебные крошки дублируют активный
+     модуль в меню, а статус подключения важнее и должен читаться целиком. */
+  .topbar{height:auto;min-height:52px;padding:10px 16px;align-items:center}
+  .breadcrumb{display:none}
+  .topbar-actions{width:100%;justify-content:space-between}
+  .top-status{max-width:none;white-space:normal;overflow:visible;text-overflow:clip;
+    font-size:11.5px;line-height:1.35;text-align:left}
+
+  /* Ряд управления: дата и быстрые дни занимают целую строку каждая,
+     кнопки встают парой. Раньше семь дней вытягивали страницу до 668
+     точек при экране в 390, и вбок уезжала вся панель. */
+  .controls{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
+  .controls>*{min-width:0}
+  .controls .date-group{grid-column:1 / -1}
+  .controls .button{width:100%}
+  .quick-days{grid-column:1 / -1;border-left:0;padding-left:0;
+    flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
+    scroll-snap-type:x proximity;gap:6px}
+  .quick-days .chip{flex:0 0 auto;scroll-snap-align:start;min-width:64px}
+
+  /* Подписи и сноски: всё, что было мельче одиннадцати точек, на телефоне
+     не читается — особенно на солнце в зале. */
+  small,.eyebrow,.kicker,.panel-note,.accountant-help,.field-label,legend,
+  .period-caption,.menu-foot,.attendance-more,.report-format{font-size:11.5px}
+  footer{font-size:11.5px;line-height:1.7}
+}
+
+@media(max-width:420px){
+  /* На узких телефонах кнопки в ряду управления перестают делить строку:
+     «Сотрудники · зарплаты» и «Скачать отчёт» не влезают вдвоём. */
+  .controls{grid-template-columns:minmax(0,1fr)}
+  .workspace{padding-left:14px;padding-right:14px}
+}
+
+@media(max-width:650px){
+  /* Карточки в сетке смены должны уметь сжиматься. Без этого колонка
+     держит ширину самой длинной строки внутри, и вся страница уезжает
+     вбок на несколько точек — мелочь, но прокрутка вбок появляется. */
+  .shift>*,.shift-left>*,.finance-layout>*,.highlights>*{min-width:0}
+  .inflow-summary,.handover-rule,.rail-line,.usd-foot,.menu-foot{flex-wrap:wrap}
+
+  /* Поля панелей: 26 точек по краям на телефоне съедают шестую часть
+     строки. Восемнадцати достаточно, чтобы карточка читалась карточкой. */
+  .panel,.day-figures,.usd-card,.handover-panel,.menu-panel,.highlight-card,
+  .team-panel,.reports-panel,.accountant-panel,.founder-panel{padding-left:18px;padding-right:18px}
+  .waiters-panel{padding-left:18px;padding-right:18px}
+}
+
+@media(max-width:650px){
+  /* Статус подключения в шапке дописывался многоточием: «Данные ещё не…».
+     На телефоне он переносится и читается целиком. */
+  .topbar-actions .top-status,.topbar .top-status{max-width:none;white-space:normal;
+    overflow:visible;text-overflow:clip}
+
+  /* Подписи модулей объявлены с весом выше базового, поэтому перечисляем
+     их через рабочую область: иначе десятая точка остаётся десятой. */
+  .workspace small,.workspace .eyebrow,.workspace .kicker-line,.workspace legend,
+  .workspace .field-label,.workspace .period-caption,.workspace .panel-note,
+  .workspace .accountant-help,.workspace .source-status,.workspace .mini small,
+  .workspace .attendance-more,.workspace .menu-foot,.workspace .select-group>span,
+  .workspace footer span{font-size:11.5px;line-height:1.45}
+
+  /* Ряды-полоски с выбором прокручиваются, а не растягивают страницу. */
+  .quick-days,.quick-periods,.menu-sort,.ops-tabs,.direction-set{
+    flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch}
+  .quick-periods>.chip,.direction-set>*,.menu-sort>.chip{flex:0 0 auto}
+
+  /* Ввод долларов в кассе: подпись, поле и кнопка переносятся вместо того,
+     чтобы вытягивать карточку за край экрана. */
+  .usd-balance-entry{flex-wrap:wrap;align-items:stretch}
+  .usd-balance-entry label{flex:1 1 100%}
+  .usd-balance-entry input{flex:1 1 120px;min-width:0}
+  .usd-balance-entry .button{flex:0 0 auto}
+
+  /* Логотип в шапке — ссылка на кассу, по ней тоже попадают пальцем. */
+  .brand{min-height:44px}
+  /* Ссылка на источник курса в подвале карточки была высотой в строку. */
+  .usd-foot a,.panel-note a{display:inline-flex;align-items:center;min-height:44px}
+}
+
+@media(max-width:420px){
+  /* Длинные подписи кнопок переносятся: «Сотрудники · зарплаты» одной
+     строкой шире самого экрана. */
+  .button{white-space:normal;text-align:center;line-height:1.3;padding-top:9px;padding-bottom:9px}
+}
+
+@media(max-width:650px){
+  /* Быстрые дни прижимались к правому краю: полоса открывалась «хвостом»,
+     и «Сегодня» оказывалось за левым краем экрана. */
+  .quick-days{justify-content:flex-start}
+  /* Без рамки день выглядел подписью, а не переключателем. */
+  .quick-days .chip{border:1px solid var(--border);background:#fff}
+  .quick-days .chip.active{border-color:#cfe0cd}
+
+  /* Меню модулей прокручивается, и у правого края оно тает — так видно,
+     что список продолжается, а не обрезан. */
+  .sidebar nav{mask-image:linear-gradient(90deg,#000 88%,transparent);
+    -webkit-mask-image:linear-gradient(90deg,#000 88%,transparent);
+    scroll-snap-type:x proximity}
+  .sidebar nav>a{scroll-snap-align:start}
+
+  /* Логотип на телефоне занимал шестую часть экрана до первой цифры. */
+  .brand{font-size:19px;letter-spacing:2px;gap:9px}
+  .brand-mark{font-size:38px}
+  .sidebar{padding:10px 14px}
+}
