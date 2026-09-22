@@ -40,6 +40,7 @@ class HikvisionPoller:
         self._task: asyncio.Task | None = None
         self._last_people_sync: datetime | None = None
         self._failures = 0
+        self._run_lock = asyncio.Lock()
 
     def _current_time(self) -> datetime:
         value = self._now()
@@ -48,6 +49,10 @@ class HikvisionPoller:
         return value.astimezone(TZ)
 
     async def run_once(self) -> PollResult:
+        async with self._run_lock:
+            return await self._run_once()
+
+    async def _run_once(self) -> PollResult:
         now = self._current_time()
         self.store.record_attempt(self.config.source, now)
         try:
@@ -95,6 +100,19 @@ class HikvisionPoller:
                 'component=hikvision-poller operation=run_once error_class=%s',
                 error.__class__.__name__)
             return PollResult(False, error='internal')
+
+    async def sync_all_people(self) -> dict[str, int]:
+        """Explicit operator action: import every unambiguous Hikvision person."""
+        async with self._run_lock:
+            people = await self.client.fetch_people()
+            report = self.roster.import_hikvision_people(people)
+            employees = self.roster.list()
+            self.store.reconcile_links({
+                employee.hikvision_id: employee.id for employee in employees
+                if employee.hikvision_id is not None
+            })
+            self._last_people_sync = self._current_time()
+            return report
 
     def start(self):
         if self._task is None or self._task.done():

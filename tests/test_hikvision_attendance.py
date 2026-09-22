@@ -5,7 +5,9 @@ from zoneinfo import ZoneInfo
 from retro.integrations.hikvision import HikvisionEvent, HikvisionPerson
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.modules.accountant.payroll import compute_pay
-from retro.modules.accountant.roster import Employee, RosterStore
+from retro.modules.accountant.roster import (
+    Employee, RosterStore, UNASSIGNED_GROUP, UNASSIGNED_ROLE,
+)
 
 
 TZ = ZoneInfo('Asia/Tashkent')
@@ -53,6 +55,35 @@ def test_duplicate_names_on_either_side_are_never_auto_linked(tmp_path):
     assert all(employee.hikvision_id is None for employee in store.list())
     assert report['ambiguous'] == 3
     assert report['unmatched'] == 1
+
+
+def test_explicit_device_import_creates_missing_people_and_is_idempotent(tmp_path):
+    store = RosterStore(tmp_path / 'accountant.sqlite3')
+    existing = add_employee(store, 'Азиза Каримова')
+    people = (
+        HikvisionPerson('100', 'каримова азиза'),
+        HikvisionPerson('200', 'Бахром Алиев'),
+        HikvisionPerson('300', 'Повтор Имени'),
+        HikvisionPerson('301', 'повтор имени'),
+        HikvisionPerson('400', None),
+    )
+
+    first = store.import_hikvision_people(people)
+    second = store.import_hikvision_people(people)
+    employees = store.list()
+
+    assert first == {'people': 5, 'created': 1, 'linked': 1,
+                     'already_linked': 0, 'ambiguous': 3}
+    assert second == {'people': 5, 'created': 0, 'linked': 0,
+                      'already_linked': 2, 'ambiguous': 3}
+    assert len(employees) == 2
+    assert next(row for row in employees if row.id == existing.id).hikvision_id == '100'
+    created = next(row for row in employees if row.id != existing.id)
+    assert created.name == 'Бахром Алиев'
+    assert created.role == UNASSIGNED_ROLE
+    assert created.group_name == UNASSIGNED_GROUP
+    assert created.rate is None
+    assert created.hikvision_id == '200'
 
 
 def test_event_dedup_and_delayed_older_event_keep_one_earliest_entry(tmp_path):

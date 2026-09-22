@@ -8,6 +8,7 @@ from openpyxl import load_workbook
 from retro.app import create_app
 from retro.config import HikvisionConfig, Settings
 from retro.integrations.hikvision import HikvisionEvent, HikvisionPerson
+from retro.integrations.hikvision_poller import PollResult
 
 
 TZ = ZoneInfo('Asia/Tashkent')
@@ -23,6 +24,15 @@ class NoopPoller:
 
     async def stop(self):
         pass
+
+
+class SyncPoller(NoopPoller):
+    async def sync_all_people(self):
+        return {'people': 35, 'created': 35, 'linked': 0,
+                'already_linked': 0, 'ambiguous': 0}
+
+    async def run_once(self):
+        return PollResult(True, events=14)
 
 
 def live_client(tmp_path, *, complete=True):
@@ -73,6 +83,24 @@ def test_accountant_and_director_share_real_first_entries_without_pay_leak(tmp_p
     assert {row['employee_id']: row['status'] for row in director['employees']} == {
         arrived.id: 'on_time', missing.id: 'missing'}
     assert all('rate' not in row and 'payable' not in row for row in director['employees'])
+
+
+def test_authenticated_accountant_can_trigger_full_hikvision_people_sync(tmp_path):
+    app = create_app(
+        Settings(hikvision=CONFIG, data_dir=tmp_path, manual_handover_only=True),
+        accountant_db_path=tmp_path / 'accountant.sqlite3',
+        expense_db_path=tmp_path / 'cashier.sqlite3',
+        director_db_path=tmp_path / 'director.sqlite3',
+        hikvision_poller=SyncPoller())
+
+    with TestClient(app, base_url='http://127.0.0.1',
+                    client=('127.0.0.1', 50000)) as client:
+        response = client.post('/api/accountant/hikvision/sync-people')
+
+    assert response.status_code == 200
+    assert response.json() == {
+        'source': 'Hikvision ISAPI', 'people': 35, 'created': 35, 'linked': 0,
+        'already_linked': 0, 'ambiguous': 0, 'events': 14}
 
 
 def test_incomplete_source_is_unavailable_and_payroll_confirmation_is_blocked(tmp_path):
