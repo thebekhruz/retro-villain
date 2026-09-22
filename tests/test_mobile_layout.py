@@ -4,8 +4,11 @@ import re
 from pathlib import Path
 
 STATIC = Path(__file__).resolve().parent.parent / 'retro' / 'static'
+# Страница входа в этот список не входит: она открывается до входа, и всё,
+# что она грузит, должно быть в списке публичных путей приложения. Своей
+# вёрстки у неё одна карточка по центру, правила рабочей области ей не нужны.
 PAGES = ['index.html', 'accountant.html', 'employees.html',
-         'director.html', 'founder.html', 'login.html']
+         'director.html', 'founder.html']
 
 
 def stylesheets(page: str) -> list[str]:
@@ -35,3 +38,14 @@ def test_rows_of_chips_scroll_instead_of_stretching_the_page():
     rules = (STATIC / 'mobile.css').read_text(encoding='utf-8')
     assert 'overflow-x:auto' in rules
     assert '.quick-days' in rules
+
+
+def test_login_page_loads_only_publicly_allowed_files():
+    """До входа доступны только перечисленные в приложении пути. Лишняя
+    ссылка на закрытый файл даёт 401 прямо на форме входа."""
+    import re
+    app = (Path(__file__).resolve().parent.parent / 'retro' / 'app.py').read_text(encoding='utf-8')
+    allowed = set(re.search(r"PUBLIC_PATHS = \{([^}]*)\}", app).group(1).replace("'", '').split(', '))
+    markup = (STATIC / 'login.html').read_text(encoding='utf-8')
+    for asset in re.findall(r'(?:href|src)="(/static/[^"]+)"', markup):
+        assert asset in allowed, asset
