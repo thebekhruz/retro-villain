@@ -111,6 +111,25 @@ def test_new_link_reconciles_older_stored_events_outside_cursor_overlap(tmp_path
     assert store.first_entries(NOW.date())[employee.id].occurred_at == old_event.occurred_at
 
 
+def test_explicit_people_sync_imports_roster_and_reconciles_saved_events(tmp_path):
+    path = tmp_path / 'accountant.sqlite3'
+    roster, store = RosterStore(path), AttendanceStore(path)
+    old_event = HikvisionEvent(
+        'entry', 'stored-before-roster', '100',
+        datetime(2026, 9, 21, 8, 30, tzinfo=TZ))
+    store.ingest(old_event, None, received_at=datetime(2026, 9, 21, 9, tzinfo=TZ))
+    client = StubClient(people=(HikvisionPerson('100', 'Азиза Каримова'),))
+    poller = HikvisionPoller(CONFIG, client, roster, store, now=lambda: NOW)
+
+    report = run(poller.sync_all_people())
+
+    employee = roster.list()[0]
+    assert report == {'people': 1, 'created': 1, 'linked': 0,
+                      'already_linked': 0, 'ambiguous': 0}
+    assert employee.hikvision_id == '100'
+    assert store.first_entries(NOW.date())[employee.id].occurred_at == old_event.occurred_at
+
+
 def test_failed_poll_keeps_old_cursor_and_records_safe_error(tmp_path):
     path = tmp_path / 'accountant.sqlite3'
     roster, store = RosterStore(path), AttendanceStore(path)

@@ -30,6 +30,9 @@ GROUPS = {
     'охрана': 'Охрана',
 }
 
+UNASSIGNED_ROLE = 'Должность не указана'
+UNASSIGNED_GROUP = 'Не распределено'
+
 
 def group_for(role: str) -> str:
     normalized = ' '.join(role.casefold().split())
@@ -257,6 +260,68 @@ class RosterStore:
                     result['ambiguous'] += 1
         return result
 
+    def import_hikvision_people(self, people: tuple[HikvisionPerson, ...]) -> dict[str, int]:
+        """Create missing device people with explicit placeholders and link by employeeNo.
+
+        This is intentionally separate from background polling: importing people changes the
+        accountant roster and must only be triggered by an authenticated operator.
+        """
+        unique_people = {person.employee_no: person for person in people if person.employee_no}
+        people_by_name: dict[str, list[HikvisionPerson]] = {}
+        for person in unique_people.values():
+            key = normalized_hikvision_name(person.name or '')
+            if key:
+                people_by_name.setdefault(key, []).append(person)
+
+        result = dict(people=len(unique_people), created=0, linked=0,
+                      already_linked=0, ambiguous=0)
+        with closing(self._open()) as connection, connection:
+            rows = connection.execute(
+                'SELECT id,name,hikvision_id FROM accountant_employees ORDER BY source_row').fetchall()
+            by_name: dict[str, list[tuple[int, str | None]]] = {}
+            linked_ids = set()
+            for employee_id, name, hikvision_id in rows:
+                key = normalized_hikvision_name(name)
+                if key:
+                    by_name.setdefault(key, []).append((employee_id, hikvision_id))
+                if hikvision_id:
+                    linked_ids.add(hikvision_id)
+
+            next_source_row = connection.execute(
+                'SELECT COALESCE(MAX(source_row), 0) + 1 FROM accountant_employees').fetchone()[0]
+            for person in unique_people.values():
+                if person.employee_no in linked_ids:
+                    result['already_linked'] += 1
+                    continue
+                key = normalized_hikvision_name(person.name or '')
+                device_matches = people_by_name.get(key, []) if key else []
+                roster_matches = by_name.get(key, []) if key else []
+                if not key or len(device_matches) != 1 or len(roster_matches) > 1:
+                    result['ambiguous'] += 1
+                    continue
+                if roster_matches:
+                    employee_id, current_link = roster_matches[0]
+                    if current_link:
+                        result['ambiguous'] += 1
+                        continue
+                    connection.execute(
+                        'UPDATE accountant_employees SET hikvision_id=? WHERE id=?',
+                        (person.employee_no, employee_id))
+                    linked_ids.add(person.employee_no)
+                    result['linked'] += 1
+                    continue
+                connection.execute(
+                    'INSERT INTO accountant_employees '
+                    '(source_row,name,role,group_name,rate,hikvision_id) VALUES (?,?,?,?,NULL,?)',
+                    (next_source_row, person.name.strip(), UNASSIGNED_ROLE,
+                     UNASSIGNED_GROUP, person.employee_no))
+                by_name[key] = [(connection.execute('SELECT last_insert_rowid()').fetchone()[0],
+                                 person.employee_no)]
+                linked_ids.add(person.employee_no)
+                next_source_row += 1
+                result['created'] += 1
+        return result
+
     def monthly_total(self) -> Decimal:
         """Return only salaries explicitly stored in the monthly payroll register."""
         return sum((person.salary for person in self.list_monthly()), Decimal(0))
@@ -334,7 +399,7 @@ class RosterStore:
             raise ValueError('Укажите корректное имя сотрудника.')
         if not role or len(role) > 80:
             raise ValueError('Укажите корректную должность.')
-        if group_name not in set(GROUPS.values()) | {'Кухня'}:
+        if group_name not in set(GROUPS.values()) | {'Кухня', UNASSIGNED_GROUP}:
             raise ValueError('Неизвестная группа.')
         parsed_rate = parse_rate(rate)
         with closing(self._open()) as connection, connection:
@@ -371,7 +436,7 @@ class RosterStore:
         if not role or len(role) > 80:
             raise ValueError('Укажите корректную должность.')
         derived_group = group_name or group_for(role)
-        if derived_group not in set(GROUPS.values()) | {'Кухня'}:
+        if derived_group not in set(GROUPS.values()) | {'Кухня', UNASSIGNED_GROUP}:
             raise ValueError('Неизвестная группа.')
         parsed_rate = parse_rate(rate)
         with closing(self._open()) as connection:

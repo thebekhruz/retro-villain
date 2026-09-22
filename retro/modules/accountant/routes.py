@@ -194,6 +194,23 @@ def create_employee(request: Request, body: EmployeeCreateInput):
     return dict(demo=True, employee=employee.json())
 
 
+@router.post('/hikvision/sync-people')
+async def sync_hikvision_people(request: Request):
+    poller = request.app.state.hikvision_poller
+    if poller is None:
+        raise HTTPException(503, 'Hikvision не настроен.')
+    try:
+        report = await poller.sync_all_people()
+        poll = await poller.run_once()
+    except Exception as error:
+        log_safe_failure('accountant-route', error, operation='sync-hikvision-people',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, 'Не удалось синхронизировать сотрудников Hikvision.') from None
+    if not poll.success:
+        raise HTTPException(503, 'Сотрудники привязаны, но проходы Hikvision пока недоступны.')
+    return dict(source='Hikvision ISAPI', **report, events=poll.events)
+
+
 @router.post('/monthly-employees', status_code=201)
 def create_monthly_employee(request: Request, body: MonthlyEmployeeInput):
     try:
