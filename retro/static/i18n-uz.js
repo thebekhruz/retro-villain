@@ -565,4 +565,11 @@ globalThis.RetroDictionaryUz = {
   'Доступно другой учётной записи': "Boshqa hisob yozuvida ochiladi",
   'Данные за': "Ma'lumotlar:",
   'Данные не загрузились': "Ma'lumotlar yuklanmadi",
+  'понедельник': "dushanba",
+  'вторник': "seshanba",
+  'среда': "chorshanba",
+  'четверг': "payshanba",
+  'пятница': "juma",
+  'суббота': "shanba",
+  'воскресенье': "yakshanba",
 };
