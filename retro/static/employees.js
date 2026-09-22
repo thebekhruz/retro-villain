@@ -2,8 +2,10 @@ const $ = id => document.getElementById(id);
 const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0)) + ' сум';
 const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки', unavailable: 'Нет данных'};
 const columns = ['Имя', 'Роль', 'Зарплата / ставка', 'Группа', 'Статус', 'Пришёл', 'Действия'];
+// Точку в конце подписи ставит сама подпись, поэтому «г.» тут лишнее:
+// иначе на экране выходит «2026 г.. Hikvision синхронизирован».
 const formattedDay = day => new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric',
-  timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
+  timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace(/\s*г\.$/, '');
 const formattedArrival = value => value ? new Intl.DateTimeFormat('ru-RU', {
   hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent'
 }).format(new Date(value)) : '—';
@@ -58,7 +60,6 @@ function attendanceHealth(value) {
   return states[status] || 'Hikvision недоступен; отсутствие входа не считается прогулом.';
 }
 function render(data) {
-  // formattedDay уже отдаёт «19 сентября 2026 г.» — точку в конце не добавляем.
   const health = attendanceHealth(data.attendance);
   $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health;
   $('employees-attendance-status').textContent = health;

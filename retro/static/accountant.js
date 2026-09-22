@@ -43,7 +43,9 @@ function categoryChanged() {
 }
 
 function previousDay(day) { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); }
-function formattedDay(day) { return new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')); }
+// Точку в конце подписи ставит сама подпись, поэтому «г.» тут лишнее:
+// иначе на экране выходит «2026 г.. Hikvision синхронизирован».
+function formattedDay(day) { return new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace(/\s*г\.$/, ''); }
 function message(value, error = false) { const n = $('accountant-message'); n.textContent = value; n.hidden = !value; n.setAttribute('role', error ? 'alert' : 'status'); }
 function node(tag, cls, value) { const n = document.createElement(tag); if (cls) n.className = cls; if (value !== undefined) n.textContent = value; return n; }
 // Единое пустое состояние: знак, объяснение и, если есть, следующий шаг.
