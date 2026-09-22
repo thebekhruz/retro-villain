@@ -4,7 +4,11 @@ from __future__ import annotations
 
 import asyncio
 from datetime import date
+from types import SimpleNamespace
 
+from fastapi import HTTPException
+
+from retro.integrations.iiko import IIKO_DETAIL_DIMENSIONS
 from retro.modules.accountant.payroll import draft_payroll
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
@@ -75,6 +79,76 @@ TOOL_DEFINITIONS = (
             'additionalProperties': False,
         },
     },
+    {
+        'name': 'get_iiko_sales_details',
+        'description': (
+            'Напрямую запросить детальный read-only OLAP-отчёт iiko по продажам. '
+            'Доступны даты, кассы, отделения, способы оплаты, блюда, группы блюд, '
+            'официанты, заказы и типы операций; метрики включают количество, выручку, '
+            'себестоимость и число заказов. Выбирай только нужные измерения и узкий период.'
+        ),
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'start': {'type': 'string', 'format': 'date', 'description': 'Дата YYYY-MM-DD.'},
+                'end': {'type': 'string', 'format': 'date', 'description': 'Дата YYYY-MM-DD.'},
+                'dimensions': {
+                    'type': 'array',
+                    'items': {'type': 'string', 'enum': list(IIKO_DETAIL_DIMENSIONS)},
+                    'minItems': 1, 'maxItems': 4, 'uniqueItems': True,
+                },
+                'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200},
+            },
+            'required': ['start', 'end', 'dimensions', 'limit'],
+            'additionalProperties': False,
+        },
+    },
+    {
+        'name': 'get_cashier_day',
+        'description': (
+            'Получить все доступные данные кассира за день: live-снимок iiko, способы '
+            'оплаты, чеки, предоплаты, разбивку выручки, ручные расходы и поступления, '
+            'курс и остаток USD.'
+        ),
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'date': {'type': 'string', 'format': 'date', 'description': 'Дата YYYY-MM-DD.'},
+            },
+            'required': ['date'],
+            'additionalProperties': False,
+        },
+    },
+    {
+        'name': 'get_accounting_day',
+        'description': (
+            'Получить полный read-only снимок бухгалтерии за день: сотрудники, ставки, '
+            'начисления, выплаты, долги, движения денег, остатки, резервы, месячные '
+            'сотрудники, кассовую передачу и посещаемость.'
+        ),
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'date': {'type': 'string', 'format': 'date', 'description': 'Дата YYYY-MM-DD.'},
+            },
+            'required': ['date'],
+            'additionalProperties': False,
+        },
+    },
+    {
+        'name': 'get_saved_director_reports',
+        'description': (
+            'Получить список сохранённых отчётов директора либо полный отчёт по его id, '
+            'включая снимок iiko и ранее сформированный анализ.'
+        ),
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'report_id': {'type': 'string', 'minLength': 1, 'maxLength': 64},
+            },
+            'additionalProperties': False,
+        },
+    },
 )
 
 
@@ -116,6 +190,19 @@ def _period(arguments, *, with_directions):
     return start, end, granularity, tuple(directions)
 
 
+def _single_day(arguments):
+    if not isinstance(arguments, dict) or set(arguments) != {'date'}:
+        raise DataError('Инструмент получил неполные параметры даты.')
+    day = _parse_date(arguments['date'], 'date')
+    if day > today_tashkent():
+        raise DataError('Будущие даты недоступны.')
+    return day
+
+
+def _tool_request(app):
+    return SimpleNamespace(app=app, state=SimpleNamespace(request_id='founder-chat-tool'))
+
+
 class FounderChatTools:
     """Execute only the explicitly allowlisted read-only founder data queries."""
 
@@ -137,7 +224,82 @@ class FounderChatTools:
             return build_booking_analytics(raw, start, end, granularity)
         if name == 'get_employee_attendance':
             return self._attendance(arguments)
+        if name == 'get_iiko_sales_details':
+            if not isinstance(arguments, dict) or set(arguments) != {
+                    'start', 'end', 'dimensions', 'limit'}:
+                raise DataError('Инструмент iiko получил неполные параметры.')
+            start = _parse_date(arguments['start'], 'start')
+            end = _parse_date(arguments['end'], 'end')
+            if start > end:
+                raise DataError('Дата начала должна быть не позже даты конца.')
+            if end > today_tashkent():
+                raise DataError('Будущие даты недоступны.')
+            if (end - start).days >= 31:
+                raise DataError('Детальный отчёт iiko доступен максимум за 31 день.')
+            dimensions = arguments['dimensions']
+            limit = arguments['limit']
+            if (not isinstance(dimensions, list) or not dimensions
+                    or len(dimensions) > 4 or len(set(dimensions)) != len(dimensions)
+                    or any(not isinstance(item, str) or item not in IIKO_DETAIL_DIMENSIONS
+                           for item in dimensions)):
+                raise DataError('Выберите от одного до четырёх разрешённых измерений iiko без повторов.')
+            if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
+                raise DataError('Лимит строк iiko должен быть от 1 до 200.')
+            async with self.app.state.iiko_lock:
+                return await asyncio.wait_for(
+                    self.app.state.iiko.load_sales_details(
+                        start, end, tuple(dimensions), limit=limit), timeout=90)
+        if name == 'get_cashier_day':
+            return await self._cashier_day(arguments)
+        if name == 'get_accounting_day':
+            return await self._accounting_day(arguments)
+        if name == 'get_saved_director_reports':
+            return self._director_reports(arguments)
         raise DataError('Чат запросил неизвестный инструмент.')
+
+    async def _cashier_day(self, arguments):
+        day = _single_day(arguments)
+        from retro.modules.cashier.routes import day_report
+        try:
+            result = await day_report(_tool_request(self.app), day, False)
+        except HTTPException as error:
+            raise DataError(str(error.detail)) from None
+        try:
+            usd_rate = (await self.app.state.usd_rates.get(day)).json()
+        except DataError as error:
+            usd_rate = {'error': str(error)}
+        expenses = self.app.state.expenses.list(day)
+        receipts = self.app.state.expenses.list_receipts(day)
+        return {
+            **result,
+            'expenses': [item.json() for item in expenses],
+            'expense_total': str(sum((item.amount for item in expenses), 0)),
+            'receipts': [item.json() for item in receipts],
+            'receipt_total': str(sum((item.amount for item in receipts), 0)),
+            'usd_rate': usd_rate,
+            'usd_balance': self.app.state.usd_rates.balance(day),
+        }
+
+    async def _accounting_day(self, arguments):
+        day = _single_day(arguments)
+        from retro.modules.accountant.routes import day_view
+        try:
+            return await day_view(_tool_request(self.app), day)
+        except HTTPException as error:
+            raise DataError(str(error.detail)) from None
+
+    def _director_reports(self, arguments):
+        if not isinstance(arguments, dict) or not set(arguments) <= {'report_id'}:
+            raise DataError('Инструмент отчётов директора получил неверные параметры.')
+        report_id = arguments.get('report_id')
+        if report_id is None:
+            return {'reports': self.app.state.director_store.list_metadata()}
+        if not isinstance(report_id, str) or not report_id or len(report_id) > 64:
+            raise DataError('Укажите корректный id отчёта директора.')
+        report = self.app.state.director_store.get(report_id)
+        if report is None:
+            raise DataError('Отчёт директора не найден.')
+        return report
 
     def _attendance(self, arguments):
         if not isinstance(arguments, dict) or set(arguments) != {'date', 'status'}:
@@ -167,6 +329,7 @@ class FounderChatTools:
             selected = [row for row in rows if row.status in ('on_time', 'late')]
         else:
             selected = [row for row in rows if row.status == selected_status]
+        by_id = {employee.id: employee for employee in roster}
         return {
             'date': day.isoformat(),
             'timezone': str(TZ),
@@ -174,17 +337,12 @@ class FounderChatTools:
             'health': snapshot.health,
             'counts': counts,
             'filter': selected_status,
-            'employees': [
-                {
-                    'name': row.name,
-                    'role': row.role,
-                    'group': row.group_name,
-                    'status': row.status,
-                    'first_entry': (
-                        row.occurred_at.astimezone(TZ).isoformat(timespec='seconds')
-                        if row.occurred_at else None
-                    ),
-                }
-                for row in selected
-            ],
+            'employees': [{
+                **row.json(),
+                'first_entry': (
+                    row.occurred_at.astimezone(TZ).isoformat(timespec='seconds')
+                    if row.occurred_at else None
+                ),
+                'hikvision_registered': by_id[row.employee_id].hikvision_id is not None,
+            } for row in selected],
         }

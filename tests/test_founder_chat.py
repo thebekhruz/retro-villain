@@ -1,5 +1,6 @@
 import asyncio
 import json
+from dataclasses import replace
 from datetime import date, datetime
 from types import SimpleNamespace
 
@@ -11,7 +12,7 @@ from retro.app import create_app
 from retro.config import Settings
 from retro.integrations.hikvision import HikvisionEvent, HikvisionPerson
 from retro.integrations.claude import ClaudeClient
-from retro.modules.cashier.service import DataError, TZ
+from retro.modules.cashier.service import DataError, TZ, demo_snapshot
 from retro.modules.founder.chat import FounderChatStore
 from retro.modules.founder.tools import FounderChatTools
 
@@ -100,7 +101,9 @@ def test_claude_chat_executes_read_only_tool_and_returns_result_to_model():
 
     assert result == 'Выручка Retro за 1–7 сентября — 100 сум.'
     assert {tool['name'] for tool in requests[0]['tools']} == {
-        'get_revenue_analytics', 'get_bookings', 'get_employee_attendance'}
+        'get_revenue_analytics', 'get_bookings', 'get_employee_attendance',
+        'get_iiko_sales_details', 'get_cashier_day', 'get_accounting_day',
+        'get_saved_director_reports'}
     assert calls[0][0] == 'get_revenue_analytics'
     tool_result = requests[1]['messages'][-1]['content'][0]
     assert tool_result['tool_use_id'] == 'tool-1'
@@ -187,7 +190,7 @@ def test_founder_chat_api_persists_success_and_can_clear(tmp_path):
     assert after.json()['messages'] == []
 
 
-def test_founder_chat_can_read_revenue_and_late_employee_without_financial_fields(tmp_path):
+def test_founder_chat_can_read_revenue_and_full_employee_financial_fields(tmp_path):
     requests = []
 
     def handler(request):
@@ -244,12 +247,99 @@ def test_founder_chat_can_read_revenue_and_late_employee_without_financial_field
     assert revenue['totals']['selected'] == '300'
     assert attendance['counts']['late'] == 1
     assert attendance['employees'] == [{
+        'employee_id': employee.id,
         'name': 'Азиза Каримова', 'role': 'официант',
         'group': 'Обслуживание зала', 'status': 'late',
         'first_entry': '2026-09-16T10:15:00+05:00',
+        'rate': '250000', 'payable': '250000', 'exception': False,
+        'demo': False, 'hikvision_registered': True,
     }]
-    assert 'rate' not in json.dumps(attendance)
-    assert 'payable' not in json.dumps(attendance)
+    assert attendance['employees'][0]['rate'] == '250000'
+    assert attendance['employees'][0]['payable'] == '250000'
+
+
+def test_founder_tools_expose_full_accounting_day(tmp_path):
+    app = create_app(Settings(data_dir=tmp_path))
+    employee = app.state.accountant_roster.add(
+        name='Лина', role='официант', rate='275000', group_name='Обслуживание зала')
+
+    result = asyncio.run(FounderChatTools(app).execute(
+        'get_accounting_day', {'date': '2026-09-16'}))
+
+    row = next(item for item in result['employees'] if item['employee_id'] == employee.id)
+    assert row['rate'] == '275000'
+    assert 'ledger' in result
+    assert 'reserves' in result
+    assert 'monthly_employees' in result
+
+
+def test_founder_tools_expose_iiko_and_local_cashier_data(tmp_path):
+    class IikoStub:
+        async def load(self, day):
+            return replace(demo_snapshot(day), demo=False)
+
+    class RateStub:
+        async def get(self, day):
+            return SimpleNamespace(json=lambda: {
+                'date': day.isoformat(), 'official_rate': '12500',
+                'restaurant_rate': '12300'})
+
+        def balance(self, day):
+            return {'date': day.isoformat(), 'amount': '100'}
+
+    app = create_app(Settings(data_dir=tmp_path))
+    app.state.iiko = IikoStub()
+    app.state.usd_rates = RateStub()
+    app.state.expenses.add(date(2026, 9, 16), 'Такси', '20000')
+    app.state.expenses.add_receipt(date(2026, 9, 16), 'Возврат', '50000')
+
+    result = asyncio.run(FounderChatTools(app).execute(
+        'get_cashier_day', {'date': '2026-09-16'}))
+
+    assert result['revenue'] == '18450000'
+    assert result['expenses'][0]['description'] == 'Такси'
+    assert result['expense_total'] == '20000'
+    assert result['receipt_total'] == '50000'
+    assert result['usd_rate']['restaurant_rate'] == '12300'
+    assert result['usd_balance']['amount'] == '100'
+
+
+def test_founder_tools_can_query_custom_iiko_dimensions():
+    seen = {}
+
+    class IikoStub:
+        async def load_sales_details(self, start, end, dimensions, *, limit):
+            seen.update(start=start, end=end, dimensions=dimensions, limit=limit)
+            return {'rows': [{'dimensions': {'DishName': 'Стейк'}, 'revenue': '500000'}]}
+
+    app = SimpleNamespace(state=SimpleNamespace(
+        iiko=IikoStub(), iiko_lock=asyncio.Lock()))
+    result = asyncio.run(FounderChatTools(app).execute('get_iiko_sales_details', {
+        'start': '2026-09-01', 'end': '2026-09-07',
+        'dimensions': ['DishName'], 'limit': 50,
+    }))
+
+    assert result['rows'][0]['dimensions']['DishName'] == 'Стейк'
+    assert seen == {
+        'start': date(2026, 9, 1), 'end': date(2026, 9, 7),
+        'dimensions': ('DishName',), 'limit': 50,
+    }
+
+
+@pytest.mark.parametrize('dimensions,limit', [
+    (['DishName', 'DishName'], 10),
+    (['UnknownField'], 10),
+    (['DishName'], 0),
+    (['DishName'], True),
+])
+def test_founder_iiko_detail_tool_rejects_unbounded_or_unknown_queries(dimensions, limit):
+    app = SimpleNamespace(state=SimpleNamespace(
+        iiko=SimpleNamespace(), iiko_lock=asyncio.Lock()))
+    with pytest.raises(DataError):
+        asyncio.run(FounderChatTools(app).execute('get_iiko_sales_details', {
+            'start': '2026-09-01', 'end': '2026-09-07',
+            'dimensions': dimensions, 'limit': limit,
+        }))
 
 
 def test_failed_founder_chat_request_is_not_persisted(tmp_path):
