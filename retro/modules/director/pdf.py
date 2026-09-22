@@ -22,13 +22,19 @@ from reportlab.platypus import (
 )
 
 
+# Шрифт лежит в репозитории: на хостинге системных шрифтов нет вовсе, и
+# отчёт не собирался — кнопка «Сформировать отчёт» падала с ошибкой про
+# отсутствующий шрифт. Системные пути оставлены запасными.
+BUNDLED_FONT = Path(__file__).resolve().parent.parent.parent / 'assets' / 'DejaVuSans.ttf'
 CYRILLIC_FONTS = (
+    BUNDLED_FONT,
     Path('/usr/share/fonts/TTF/DejaVuSans.ttf'),
     Path('/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf'),
     Path('/Library/Fonts/DejaVuSans.ttf'),
     Path('/System/Library/Fonts/Supplemental/Arial Unicode.ttf'),
 )
 CYRILLIC_BOLD_FONTS = (
+    BUNDLED_FONT.with_name('DejaVuSans-Bold.ttf'),
     Path('/usr/share/fonts/TTF/DejaVuSans-Bold.ttf'),
     Path('/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf'),
     Path('/Library/Fonts/DejaVuSans-Bold.ttf'),

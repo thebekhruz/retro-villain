@@ -29,3 +29,11 @@ def test_director_pdf_contains_report_summary():
     assert pdf.startswith(b'%PDF-')
     assert b'/ToUnicode' in pdf
     assert pdf.count(b'/Type /Page') >= 2
+
+
+def test_report_font_travels_with_the_code():
+    """На хостинге системных шрифтов нет вовсе: отчёт собирался только на
+    машине разработчика, а кнопка на сервере падала."""
+    from retro.modules.director.pdf import BUNDLED_FONT
+    assert BUNDLED_FONT.exists()
+    assert BUNDLED_FONT.with_name('DejaVuSans-Bold.ttf').exists()
