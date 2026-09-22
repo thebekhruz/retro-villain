@@ -7,6 +7,7 @@ from retro.modules.cashier.service import DataError
 
 
 JOB_ID = re.compile(r'[A-Za-z0-9_-]{16,80}')
+RECIPIENT_ID = re.compile(r'[A-Za-z0-9_-]{20,64}')
 STATUSES = {'queued', 'running', 'completed', 'failed', 'interrupted'}
 
 
@@ -25,7 +26,22 @@ def validate_audience(payload):
     if (isinstance(subscribers, bool) or not isinstance(subscribers, int) or subscribers < 0
             or isinstance(profiles, bool) or not isinstance(profiles, int) or profiles < subscribers):
         _invalid()
-    return {'subscribers': subscribers, 'profiles': profiles}
+    recipients = payload.get('recipients')
+    if not isinstance(recipients, list) or len(recipients) != subscribers:
+        _invalid()
+    cleaned, seen = [], set()
+    for recipient in recipients:
+        if not isinstance(recipient, dict) or set(recipient) != {'id', 'name', 'phone'}:
+            _invalid()
+        recipient_id, name, phone = recipient['id'], recipient['name'], recipient['phone']
+        if (not isinstance(recipient_id, str) or not RECIPIENT_ID.fullmatch(recipient_id)
+                or recipient_id in seen or not isinstance(name, str) or not name.strip()
+                or len(name) > 80 or not isinstance(phone, str) or not phone
+                or len(phone) > 20):
+            _invalid()
+        seen.add(recipient_id)
+        cleaned.append({'id': recipient_id, 'name': name.strip(), 'phone': phone})
+    return {'subscribers': subscribers, 'profiles': profiles, 'recipients': cleaned}
 
 
 def validate_job(payload):
@@ -80,7 +96,9 @@ class BookingBroadcastClient:
             if code == 'broadcast_in_progress':
                 raise BroadcastConflict('Другая рассылка уже выполняется.')
             if code == 'idempotency_conflict':
-                raise BroadcastConflict('Ключ этой рассылки уже использован для другого текста.')
+                raise BroadcastConflict('Ключ этой рассылки уже использован для других параметров.')
+            if code == 'recipients_changed':
+                raise BroadcastConflict('Список получателей изменился. Обновите его и выберите снова.')
             raise BroadcastConflict('Рассылку сейчас нельзя запустить.')
         if not 200 <= response.status_code < 300:
             raise DataError('API рассылок недоступен.')
@@ -97,13 +115,18 @@ class BookingBroadcastClient:
             log_upstream_failure('broadcasts', error, operation='audience')
             raise DataError('Не удалось связаться с API рассылок.') from None
 
-    async def start(self, operation_id, text):
+    async def start(self, operation_id, text, recipient_ids):
+        if (not isinstance(recipient_ids, list) or not recipient_ids
+                or len(recipient_ids) > 2000 or len(set(recipient_ids)) != len(recipient_ids)
+                or any(not isinstance(value, str) or not RECIPIENT_ID.fullmatch(value)
+                       for value in recipient_ids)):
+            raise DataError('Выберите хотя бы одного корректного получателя.')
         try:
             async with self._client() as client:
                 response = await client.post(
                     '/admin/broadcast/jobs',
                     headers={'Idempotency-Key': operation_id},
-                    json={'text': text},
+                    json={'text': text, 'recipient_ids': recipient_ids},
                 )
                 self._raise(response)
                 return validate_job(response.json())

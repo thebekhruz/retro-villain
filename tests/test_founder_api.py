@@ -42,13 +42,16 @@ class FounderBroadcasts:
     async def audience(self):
         if self.error:
             raise self.error
-        return {'subscribers': 7, 'profiles': 9}
+        return {'subscribers': 2, 'profiles': 9, 'recipients': [
+            {'id': 'A' * 32, 'name': 'Азиза', 'phone': '••• 12 34'},
+            {'id': 'B' * 32, 'name': 'Бехруз', 'phone': '••• 56 78'},
+        ]}
 
-    async def start(self, operation_id, text):
-        self.calls.append((operation_id, text))
+    async def start(self, operation_id, text, recipient_ids):
+        self.calls.append((operation_id, text, recipient_ids))
         if self.error:
             raise self.error
-        return {'id': operation_id, 'status': 'queued', 'audience': 7,
+        return {'id': operation_id, 'status': 'queued', 'audience': len(recipient_ids),
                 'sent': 0, 'blocked': 0, 'failed': 0}
 
     async def status(self, operation_id):
@@ -169,12 +172,14 @@ def test_founder_broadcast_preview_start_and_status_are_server_side():
     with TestClient(app, client=('127.0.0.1', 50000)) as client:
         audience = client.get('/api/founder/broadcast/audience')
         started = client.post('/api/founder/broadcast', json={
-            'operation_id': operation_id, 'text': '  Новое меню  '})
+            'operation_id': operation_id, 'text': '  Новое меню  ',
+            'recipient_ids': ['B' * 32]})
         status = client.get('/api/founder/broadcast/' + operation_id)
-    assert audience.json() == {'subscribers': 7, 'profiles': 9}
+    assert audience.json()['recipients'][1]['name'] == 'Бехруз'
     assert started.status_code == 202
     assert status.json()['sent'] == 6
-    assert source.calls == [(operation_id, 'Новое меню'), ('status', operation_id)]
+    assert source.calls == [
+        (operation_id, 'Новое меню', ['B' * 32]), ('status', operation_id)]
 
 
 def test_founder_broadcast_rejects_empty_text_and_reports_parallel_run():
@@ -184,8 +189,10 @@ def test_founder_broadcast_rejects_empty_text_and_reports_parallel_run():
     operation_id = '12345678-1234-4123-8123-123456789012'
     with TestClient(app, client=('127.0.0.1', 50000)) as client:
         assert client.post('/api/founder/broadcast', json={
-            'operation_id': operation_id, 'text': '   '}).status_code == 422
+            'operation_id': operation_id, 'text': '   ',
+            'recipient_ids': ['A' * 32]}).status_code == 422
         conflict = client.post('/api/founder/broadcast', json={
-            'operation_id': operation_id, 'text': 'Текст'})
+            'operation_id': operation_id, 'text': 'Текст',
+            'recipient_ids': ['A' * 32]})
     assert conflict.status_code == 409
     assert conflict.json() == {'detail': 'Другая рассылка уже выполняется.'}

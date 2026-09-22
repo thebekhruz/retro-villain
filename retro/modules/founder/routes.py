@@ -23,6 +23,7 @@ class ChatInput(BaseModel):
 class BroadcastInput(BaseModel):
     operation_id: UUID
     text: str = Field(min_length=1, max_length=4096)
+    recipient_ids: list[str] = Field(min_length=1, max_length=2000)
 
 
 def _chat_owner(request):
@@ -119,7 +120,8 @@ async def start_broadcast(request: Request, body: BroadcastInput):
         raise HTTPException(422, 'Введите текст рассылки.')
     try:
         return await asyncio.wait_for(
-            request.app.state.broadcasts.start(str(body.operation_id), text), timeout=20)
+            request.app.state.broadcasts.start(
+                str(body.operation_id), text, body.recipient_ids), timeout=20)
     except BroadcastConflict as error:
         raise HTTPException(409, str(error)) from None
     except TimeoutError as error:

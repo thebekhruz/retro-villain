@@ -12,6 +12,13 @@
     const hex=[...bytes].map(value=>value.toString(16).padStart(2,'0')).join('');
     return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
   }
+  function validateRecipients(values,available){
+    if(!Array.isArray(values)||!Array.isArray(available))return {ok:false,error:'Не удалось проверить получателей.'};
+    const ids=[...new Set(values)];const known=new Set(available);
+    if(!ids.length)return {ok:false,error:'Выберите хотя бы одного получателя.'};
+    if(ids.length>2000||ids.some(id=>typeof id!=='string'||!known.has(id)))return {ok:false,error:'Список получателей изменился. Обновите выбор.'};
+    return {ok:true,ids};
+  }
   function statusText(job){
     if(job.status==='queued')return `Рассылка поставлена в очередь · получателей: ${job.audience}`;
     if(job.status==='running')return `Отправляется: ${job.sent+job.blocked+job.failed} из ${job.audience}`;
@@ -19,5 +26,5 @@
     if(job.status==='interrupted')return 'Рассылка была прервана перезапуском сервиса. Повтор автоматически не выполнялся.';
     return 'Рассылка завершилась с ошибкой.';
   }
-  root.FounderBroadcastLogic={validateText,operationId,statusText,isTerminal:status=>terminal.has(status)};
+  root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,isTerminal:status=>terminal.has(status)};
 })(typeof globalThis==='undefined'?window:globalThis);
