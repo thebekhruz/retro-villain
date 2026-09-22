@@ -122,7 +122,7 @@ RETRO_DATA_DIR=/data
 
 | Переменная | Зачем |
 |---|---|
-| `DASHBOARD_PANEL_USERS` | вход по ролям: кассир, бухгалтер, директор, учредитель |
+| `DASHBOARD_PANEL_USERS` | вход по ролям: кассир, бухгалтер, директор, учредитель и необязательный администратор |
 | `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | общий вход, если роли не нужны |
 | `RETRO_DATA_DIR` | каталог на подключённом диске |
 | `TRUSTED_PROXY_NETWORK` | подсеть обратного прокси хостинга |
@@ -422,10 +422,10 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 - `DIRECTOR_REPORT_RETENTION` — число хранимых отчётов.
 - `IIKO_DIRECTOR_CATEGORIES`, `IIKO_DIRECTOR_EXCLUDED_GROUPS` — явная классификация меню.
 - `DASHBOARD_USER`, `DASHBOARD_PASSWORD` — Basic Auth для всего dashboard.
-- `DASHBOARD_PANEL_USERS` — четыре ролевые Basic Auth-записи в формате
-  `user:password:role;...`; роли: `cashier`, `accountant`, `director`, `founder`.
-  Каждая запись получает доступ только к своей странице и API. Задайте ровно по
-  одному уникальному логину для всех четырёх ролей.
+- `DASHBOARD_PANEL_USERS` — ролевые записи в формате `user:password:role;...`.
+  Обязательные роли: `cashier`, `accountant`, `director`, `founder`; необязательная
+  роль `admin` получает доступ ко всем страницам и API. Для каждой указанной роли
+  задайте ровно один уникальный логин.
 - `DASHBOARD_ALLOWED_NETWORK` — необязательная CIDR-подсеть клиентов.
 - `TRUSTED_PROXY_NETWORK` — только CIDR самого reverse proxy. За его пределами
   `X-Forwarded-For` игнорируется; не указывайте там клиентскую подсеть.

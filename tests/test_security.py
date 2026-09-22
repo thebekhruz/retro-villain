@@ -13,6 +13,8 @@ PANEL_USERS = {
     'founder': ('test-password', 'founder'),
 }
 
+ADMIN_USERS = {**PANEL_USERS, 'admin': ('test-password', 'admin')}
+
 
 def test_panel_user_can_open_only_its_own_panel(tmp_path):
     app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
@@ -61,6 +63,23 @@ def test_logout_invalidates_dashboard_session(tmp_path):
     assert page.headers['location'] == '/login'
 
 
+def test_logout_page_clears_session_and_redirects_to_login(tmp_path):
+    app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1', follow_redirects=False) as client:
+        client.post('/api/session', json={
+            'username': 'director', 'password': 'test-password'})
+        logout = client.get('/logout')
+        page = client.get('/director')
+
+    assert logout.status_code == 303
+    assert logout.headers['location'] == '/login'
+    assert 'retro_session=' in logout.headers['set-cookie']
+    assert 'Max-Age=0' in logout.headers['set-cookie']
+    assert page.status_code == 303
+    assert page.headers['location'] == '/login'
+
+
 def test_each_panel_user_can_open_the_assigned_page(tmp_path):
     app = create_app(Settings(dashboard_panel_users=PANEL_USERS, data_dir=tmp_path))
     with TestClient(app, client=('127.0.0.1', 50000),
@@ -76,6 +95,39 @@ def test_each_panel_user_can_open_the_assigned_page(tmp_path):
         }
 
     assert responses == {'cashier': 200, 'accountant': 200, 'director': 200, 'founder': 200}
+
+
+def test_admin_user_can_open_every_panel_and_api_namespace(tmp_path):
+    app = create_app(Settings(dashboard_panel_users=ADMIN_USERS, data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1', follow_redirects=False,
+                    raise_server_exceptions=False) as client:
+        login = client.post('/api/session', json={
+            'username': 'admin', 'password': 'test-password'})
+        pages = [client.get(path).status_code for path in (
+            '/', '/accountant', '/accountant/employees', '/director', '/founder')]
+        api_namespaces = [client.get(path).status_code for path in (
+            '/api/cashier/not-a-route', '/api/accountant/not-a-route',
+            '/api/director/not-a-route', '/api/founder/not-a-route')]
+
+    assert login.status_code == 200
+    assert login.json() == {'role': 'admin', 'path': '/'}
+    assert pages == [200, 200, 200, 200, 200]
+    assert api_namespaces == [404, 404, 404, 404]
+
+
+def test_each_dashboard_page_exposes_logout_control(tmp_path):
+    app = create_app(Settings(dashboard_user='viewer', dashboard_password='secret', data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000),
+                    base_url='http://127.0.0.1') as client:
+        pages = [client.get(path, auth=('viewer', 'secret')) for path in (
+            '/', '/accountant', '/accountant/employees', '/director', '/founder')]
+
+    for page in pages:
+        assert page.status_code == 200
+        assert 'id="logout"' in page.text
+        assert '>Выйти</button>' in page.text
+        assert 'src="/static/logout.js"' in page.text
 
 
 def test_legacy_dashboard_user_keeps_access_to_all_panels(tmp_path):

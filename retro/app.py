@@ -32,7 +32,9 @@ STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
-              'director': '/director', 'founder': '/founder', 'all': '/'}
+              'director': '/director', 'founder': '/founder',
+              'admin': '/', 'all': '/'}
+FULL_ACCESS_ROLES = {'admin', 'all'}
 
 
 class LoginInput(BaseModel):
@@ -128,7 +130,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
                                 headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
         required_panel = panel_for_path(request.url.path)
-        if required_panel and not public and role not in ('all', required_panel):
+        if (required_panel and not public and role not in FULL_ACCESS_ROLES
+                and role != required_panel):
             return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
         request.state.dashboard_role = role
         try:
@@ -177,12 +180,18 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             samesite='strict', secure=effective_scheme(request) == 'https', path='/')
         return response
 
-    @app.post('/api/session/logout', status_code=204)
-    def logout(request: Request):
+    def finish_logout(request: Request, response: Response):
         app.state.sessions.delete(request.cookies.get(SESSION_COOKIE))
-        response = Response(status_code=204)
         response.delete_cookie(SESSION_COOKIE, path='/', samesite='strict')
         return response
+
+    @app.post('/api/session/logout', status_code=204)
+    def logout(request: Request):
+        return finish_logout(request, Response(status_code=204))
+
+    @app.get('/logout')
+    def logout_page(request: Request):
+        return finish_logout(request, RedirectResponse('/login', status_code=303))
 
     @app.get('/accountant')
     def accountant():

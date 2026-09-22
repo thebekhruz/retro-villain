@@ -6,7 +6,7 @@
   <title>Кассир · Retro Milliy</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23143e35'/%3E%3Ctext x='12' y='35' fill='%23e9cc8a' font-size='34' font-family='serif'%3ER%3C/text%3E%3C/svg%3E">
   <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/frontend-state.js" defer></script><script src="/static/app.js" defer></script>
+  <script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -18,7 +18,7 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Кассир</strong></span><span class="top-status" id="connection">Проверка подключения</span></header>
+  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Кассир</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Проверка подключения</span><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace">
     <div class="page-heading"><div><p class="eyebrow">ЕЖЕДНЕВНЫЙ ОБЗОР</p><h1>День в цифрах<span>.</span></h1><p class="subtitle">Только Retro: без школы и банкетного зала Бехруз.</p></div><div class="module-badge"><span>01</span><div>Модуль<small>Кассир</small></div></div></div>
     <section class="controls" aria-label="Период отчёта">
@@ -91,7 +91,6 @@
       </div>
       <div class="ops-pane" id="pane-expenses" role="tabpanel" aria-labelledby="tab-expenses">
         <p class="ops-hint">Показываются только явно сохранённые расходы.</p>
-        <p id="expense-policy-warning" class="expense-feedback is-error" hidden>Регулярная политика расходов ещё не установлена. История не дополняется автоматически.</p>
         <form id="expense-form" class="expense-form">
           <div class="expense-field expense-description"><label for="expense-description">На что потрачено</label><input id="expense-description" name="description" type="text" maxlength="160" placeholder="Например, такси" required></div>
           <div class="expense-field expense-amount"><label for="expense-amount">Сумма, сум</label><input id="expense-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="0" required></div>

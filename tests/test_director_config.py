@@ -50,6 +50,25 @@ def test_panel_users_are_read_from_environment(monkeypatch):
     }
 
 
+def test_panel_users_accept_optional_admin_role(monkeypatch):
+    monkeypatch.setenv(
+        'DASHBOARD_PANEL_USERS',
+        'cashier:test-password:cashier;accountant:test-password:accountant;director:test-password:director;founder:test-password:founder;admin:test-password:admin')
+
+    try:
+        panel_users = Settings.from_env().dashboard_panel_users
+    except ValueError:
+        panel_users = {}
+
+    assert panel_users == {
+        'cashier': ('test-password', 'cashier'),
+        'accountant': ('test-password', 'accountant'),
+        'director': ('test-password', 'director'),
+        'founder': ('test-password', 'founder'),
+        'admin': ('test-password', 'admin'),
+    }
+
+
 @pytest.mark.parametrize('value', [
     'cashier:test-password',
     'cashier:test-password:cashier',

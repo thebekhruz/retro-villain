@@ -6,7 +6,7 @@
   <title>Все сотрудники · Retro Milliy</title>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 48 48'%3E%3Crect width='48' height='48' rx='12' fill='%23143e35'/%3E%3Ctext x='12' y='35' fill='%23e9cc8a' font-size='34' font-family='serif'%3ER%3C/text%3E">
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
-  <script src="/static/frontend-state.js" defer></script><script src="/static/employees.js" defer></script>
+  <script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/employees.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -18,7 +18,7 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb"><a href="/accountant">Финансовый отдел</a> <span>/</span> <strong>Все сотрудники</strong></span><span class="top-status">Локальный просмотр</span></header>
+  <header class="topbar"><span class="breadcrumb"><a href="/accountant">Финансовый отдел</a> <span>/</span> <strong>Все сотрудники</strong></span><div class="topbar-actions"><span class="top-status">Локальный просмотр</span><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace accountant-workspace employees-workspace">
     <div class="page-heading"><div><p class="eyebrow">МОДУЛЬ 02 · КОМАНДА</p><h1>Все сотрудники<span>.</span></h1><p class="subtitle">Реестр ролей и ставок. Первый вход и статус — за выбранный день.</p></div><div class="module-badge"><span>02</span><div>Модуль<small>Финансы</small></div></div></div>
     <div class="accountant-demo-banner" role="note"><strong>ДЕМО</strong><span>Время и статусы проходов смоделированы. Реальный Hikvision ресторана пока не подключён.</span></div>
