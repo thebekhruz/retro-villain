@@ -35,6 +35,11 @@ def test_completed_periods_end_yesterday_in_tashkent():
     assert result == {'start': '2026-08-20', 'end': '2026-09-18'}
 
 
+def test_weekday_uses_calendar_date_without_local_timezone_shift():
+    result = run_node("['2026-09-20','2026-09-21','2026-09-22'].map(logic.weekday)")
+    assert result == ['воскресенье', 'понедельник', 'вторник']
+
+
 def test_hover_selects_nearest_revenue_group_and_clamps_to_chart_edges():
     result = run_node(
         "[-20,149,151,420].map(x=>logic.nearestRevenueIndex(x,300,4))"
