@@ -16,27 +16,30 @@ START = date(2026, 8, 31)
 END = date(2026, 9, 8)
 
 
-def revenue(day, amount, *, register='Kassa-FiscalBox1', section='Ресторан'):
-    return RevenueRow(day, register, section, Decimal(str(amount)))
+def revenue(day, amount, *, register='Kassa-FiscalBox1', section='Ресторан', item='Плов'):
+    return RevenueRow(day, register, section, item, Decimal(str(amount)))
 
 
-def payment(day, name, amount, *, register='Kassa-FiscalBox1', section='Ресторан'):
-    return PaymentRow(day, register, section, name, Decimal(str(amount)))
+def payment(day, name, amount, *, register='Kassa-FiscalBox1', section='Ресторан', item='Плов'):
+    return PaymentRow(day, register, section, item, name, Decimal(str(amount)))
 
 
 def test_direction_classification_is_exclusive_and_rejects_unknown_values():
-    assert classify_direction('Kassa-FiscalBox1', 'Ресторан') == 'retro'
-    assert classify_direction('GL-Kassa-Oksbrich', 'Зал') == 'school'
-    assert classify_direction('Kassa-FiscalBox1', 'Бехруз (Свадьба)') == 'banquet'
+    assert classify_direction('Kassa-FiscalBox1', 'Ресторан', 'Плов') == 'retro'
+    assert classify_direction('GL-Kassa-Oksbrich', 'Зал', 'Обед') == 'school'
+    assert classify_direction(
+        'Kassa-FiscalBox1', 'Ресторан', 'Салат Оливье (БЕХРУЗ)') == 'banquet'
+    assert classify_direction(
+        'Kassa-FiscalBox1', 'Бехруз (Свадьба)', 'Аренда зала') is None
 
     with pytest.raises(DataError, match='неизвестная касса'):
-        classify_direction('New-Kassa', 'Ресторан')
+        classify_direction('New-Kassa', 'Ресторан', 'Плов')
     with pytest.raises(DataError, match='новое отделение Бехруз'):
-        classify_direction('Kassa-FiscalBox1', 'Бехруз VIP')
+        classify_direction('Kassa-FiscalBox1', 'Бехруз VIP', 'Плов')
     with pytest.raises(DataError, match='неизвестное отделение'):
-        classify_direction('Kassa-FiscalBox1', 'Новый зал')
+        classify_direction('Kassa-FiscalBox1', 'Новый зал', 'Плов')
     with pytest.raises(DataError, match='неизвестное отделение'):
-        classify_direction('GL-Kassa-Oksbrich', 'Новый школьный зал')
+        classify_direction('GL-Kassa-Oksbrich', 'Новый школьный зал', 'Обед')
 
 
 @pytest.mark.parametrize(
@@ -65,13 +68,14 @@ def test_mixed_payments_are_not_double_counted_and_are_split_by_direction():
     revenues = [
         revenue(day, 100),
         revenue(day, 40, register='GL-Kassa-Oksbrich', section='Зал'),
-        revenue(day, 60, section='Бехруз (Свадьба)'),
+        revenue(day, 60, section='Бехруз (Свадьба)', item='Салат (Бехруз)'),
     ]
     payments = [
         payment(day, 'UzCard', 60),
         payment(day, 'Демо', 40),
         payment(day, 'UzCard', 40, register='GL-Kassa-Oksbrich', section='Зал'),
-        payment(day, 'Наличные (Инкасса QR)', 60, section='Бехруз (Свадьба)'),
+        payment(day, 'Наличные (Инкасса QR)', 60,
+                section='Бехруз (Свадьба)', item='Салат (Бехруз)'),
     ]
 
     result = build_analytics(revenues, payments, day, day, 'day',

@@ -28,6 +28,7 @@ class RevenueRow:
     day: date
     register: str
     section: str
+    item: str
     amount: Decimal
 
 
@@ -36,22 +37,31 @@ class PaymentRow:
     day: date
     register: str
     section: str
+    item: str
     payment: str
     amount: Decimal
 
 
-def classify_direction(register, section):
+def is_banquet_item(item):
+    return isinstance(item, str) and 'бехруз' in item.casefold()
+
+
+def classify_direction(register, section, item):
     if register not in (RETRO_REGISTER, SCHOOL_REGISTER):
         raise DataError('В iiko появилась неизвестная касса. Разделение выручки требует проверки.')
     if not isinstance(section, str) or not section.strip():
         raise DataError('iiko не указал отделение для продажи.')
+    if not isinstance(item, str) or not item.strip():
+        raise DataError('iiko не указал название блюда для разделения выручки.')
+    if is_banquet_item(item):
+        return 'banquet'
     if register == SCHOOL_REGISTER:
         if section in SCHOOL_SECTIONS:
             return 'school'
         raise DataError('В iiko появилось неизвестное отделение школы. '
                         'Разделение выручки требует проверки.')
     if section == BANQUET_SECTION:
-        return 'banquet'
+        return None
     if 'бехруз' in section.casefold():
         raise DataError('В iiko найдено новое отделение Бехруз. Проверьте распределение выручки.')
     if section in RETRO_SECTIONS:
@@ -121,7 +131,9 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
     for row in revenue_rows:
         if not start <= row.day <= end:
             raise DataError('iiko вернул выручку вне выбранного периода.')
-        direction = classify_direction(row.register, row.section)
+        direction = classify_direction(row.register, row.section, row.item)
+        if direction is None:
+            continue
         group = _period_start(row.day, start, granularity)
         revenue_by_group[group][direction] += row.amount
         totals[direction] += row.amount
@@ -129,7 +141,9 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
     for row in payment_rows:
         if not start <= row.day <= end:
             raise DataError('iiko вернул оплату вне выбранного периода.')
-        direction = classify_direction(row.register, row.section)
+        direction = classify_direction(row.register, row.section, row.item)
+        if direction is None:
+            continue
         payment_name = PAYMENT_ALIASES.get(row.payment, row.payment)
         if payment_name not in PAYMENT_SOURCES:
             if row.payment == '(без оплаты)' and row.amount == 0:

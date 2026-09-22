@@ -11,7 +11,9 @@ from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
 from retro.modules.director.models import SalesRow, build_snapshot as build_director_snapshot, completed_period
-from retro.modules.founder.models import PaymentRow, RevenueRow, build_analytics
+from retro.modules.founder.models import (
+    PaymentRow, RevenueRow, build_analytics, is_banquet_item,
+)
 
 
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
@@ -103,8 +105,10 @@ def olap_range_body(store_id, start, end, groups, fields, extra_filters=()):
                 includeVoidTransactions=False, includeNonBusinessPaymentTypes=False)
 
 
-def founder_rows_from_olap(rows, *, payments=False):
-    group_count = 4 if payments else 3
+def founder_rows_from_olap(rows, *, payments=False, dish_filter='all'):
+    if dish_filter not in {'all', 'exclude_banquet', 'banquet_only'}:
+        raise ValueError('unknown founder dish filter')
+    group_count = 5 if payments else 4
     result = []
 
     def visit(row, inherited):
@@ -128,10 +132,16 @@ def founder_rows_from_olap(rows, *, payments=False):
         except (TypeError, ValueError):
             raise DataError('iiko вернул некорректную дату аналитики.') from None
         amount = number(cell(row, group_count))
+        banquet_item = is_banquet_item(values[3])
+        if dish_filter == 'exclude_banquet' and banquet_item:
+            return
+        if dish_filter == 'banquet_only' and not banquet_item:
+            return
         if payments:
-            result.append(PaymentRow(day, values[1], values[2], values[3], amount))
+            result.append(PaymentRow(
+                day, values[1], values[2], values[3], values[4], amount))
         else:
-            result.append(RevenueRow(day, values[1], values[2], amount))
+            result.append(RevenueRow(day, values[1], values[2], values[3], amount))
 
     if not isinstance(rows, list):
         raise DataError('iiko вернул некорректную структуру аналитики.')
@@ -236,14 +246,25 @@ class IikoClient:
                 if not isinstance(auth.get('token'), str) or not auth['token']:
                     raise DataError('iiko не подтвердил авторизацию.')
                 client.headers['Authorization'] = 'Bearer ' + auth['token']
-                revenue_groups = ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection']
+                revenue_groups = [
+                    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName']
                 payment_groups = revenue_groups + ['PayTypes']
                 revenue = founder_rows_from_olap(
                     await self._olap_range(client, start, end, revenue_groups,
-                                           ['DishDiscountSumInt'], payment_scope))
+                                           ['DishDiscountSumInt'], payment_scope),
+                    dish_filter='exclude_banquet')
                 payments = founder_rows_from_olap(
                     await self._olap_range(client, start, end, payment_groups,
-                                           ['DishDiscountSumInt'], payment_scope), payments=True)
+                                           ['DishDiscountSumInt'], payment_scope), payments=True,
+                    dish_filter='exclude_banquet')
+                revenue.extend(founder_rows_from_olap(
+                    await self._olap_range(client, start, end, revenue_groups,
+                                           ['DishDiscountSumInt']),
+                    dish_filter='banquet_only'))
+                payments.extend(founder_rows_from_olap(
+                    await self._olap_range(client, start, end, payment_groups,
+                                           ['DishDiscountSumInt']), payments=True,
+                    dish_filter='banquet_only'))
                 return build_analytics(revenue, payments, start, end, granularity, directions)
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')
