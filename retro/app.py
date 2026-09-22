@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient
 from retro.integrations.bookings import BookingAnalyticsClient
+from retro.integrations.broadcasts import BookingBroadcastClient
 from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
 from retro.modules.cashier.routes import router as cashier_router
@@ -90,7 +91,7 @@ def dashboard_identity(
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
-               hikvision_client=None, hikvision_poller=None):
+               broadcast_transport=None, hikvision_client=None, hikvision_poller=None):
     configure_logging()
     settings = settings or Settings.from_env()
 
@@ -113,6 +114,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.sessions = SessionStore(settings.data_dir / 'sessions.json')
     app.state.iiko = IikoClient(settings)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
+    app.state.broadcasts = BookingBroadcastClient(settings, transport=broadcast_transport)
     app.state.iiko_lock = asyncio.Lock()
     app.state.iiko_daily_reports = LatestReportRunner()
     app.state.director_lock = asyncio.Lock()

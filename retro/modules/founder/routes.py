@@ -3,12 +3,14 @@ from datetime import date, datetime, timedelta, timezone
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
+from uuid import UUID
 
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
 from retro.modules.founder.tools import FounderChatTools
+from retro.integrations.broadcasts import BroadcastConflict
 
 
 router = APIRouter(prefix='/api/founder', tags=['founder'])
@@ -16,6 +18,11 @@ router = APIRouter(prefix='/api/founder', tags=['founder'])
 
 class ChatInput(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
+
+
+class BroadcastInput(BaseModel):
+    operation_id: UUID
+    text: str = Field(min_length=1, max_length=4096)
 
 
 def _chat_owner(request):
@@ -87,6 +94,55 @@ async def bookings(
         raise HTTPException(504, 'API бронирований отвечает слишком долго. Повторите позже.') from None
     except DataError as error:
         log_safe_failure('founder-route', error, operation='bookings',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
+@router.get('/broadcast/audience')
+async def broadcast_audience(request: Request):
+    try:
+        return await asyncio.wait_for(request.app.state.broadcasts.audience(), timeout=20)
+    except TimeoutError as error:
+        log_safe_failure('founder-broadcast', error, operation='audience',
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'API рассылок отвечает слишком долго.') from None
+    except DataError as error:
+        log_safe_failure('founder-broadcast', error, operation='audience',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
+@router.post('/broadcast', status_code=202)
+async def start_broadcast(request: Request, body: BroadcastInput):
+    text = body.text.strip()
+    if not text:
+        raise HTTPException(422, 'Введите текст рассылки.')
+    try:
+        return await asyncio.wait_for(
+            request.app.state.broadcasts.start(str(body.operation_id), text), timeout=20)
+    except BroadcastConflict as error:
+        raise HTTPException(409, str(error)) from None
+    except TimeoutError as error:
+        log_safe_failure('founder-broadcast', error, operation='start',
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'API рассылок отвечает слишком долго.') from None
+    except DataError as error:
+        log_safe_failure('founder-broadcast', error, operation='start',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
+@router.get('/broadcast/{operation_id}')
+async def broadcast_status(request: Request, operation_id: UUID):
+    try:
+        return await asyncio.wait_for(
+            request.app.state.broadcasts.status(str(operation_id)), timeout=20)
+    except TimeoutError as error:
+        log_safe_failure('founder-broadcast', error, operation='status',
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'API рассылок отвечает слишком долго.') from None
+    except DataError as error:
+        log_safe_failure('founder-broadcast', error, operation='status',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 

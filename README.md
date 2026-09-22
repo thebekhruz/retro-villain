@@ -240,12 +240,22 @@ HIKVISION_VERIFY_TLS=true
 
 - `BOOKING_ANALYTICS_URL` — корневой HTTPS URL сервиса без пути;
 - `ANALYTICS_API_TOKEN` — Bearer-токен аналитического API.
+- `BROADCAST_API_TOKEN` — отдельный Bearer-токен write API рассылок. Он должен
+  совпадать на сервисах dashboard и booking-бота и отличаться от analytics-токена.
 
 Токен используется только сервером и не попадает в браузер. Dashboard запрашивает
 агрегаты по дате визита: отправленные заявки, гостей, брони без указанного числа
 гостей, отмены и источники. Персональные данные и список отдельных броней не
 загружаются. Если Telegram API недоступен, блок показывает локальную ошибку, а
 аналитика iiko продолжает работать.
+
+В том же модуле учредитель может подготовить текстовую Telegram-рассылку. Перед
+отправкой dashboard заново получает число доступных получателей и требует явного
+подтверждения. Операция имеет UUID и идемпотентна: повтор запроса не отправляет
+сообщение второй раз. Одновременно бот выполняет только одну рассылку. В аудиторию
+входят лишь гости, оформившие заявку через booking-бота и не отписавшиеся;
+Instagram-only заявки ManyChat не включены. Браузер обращается только к
+`/api/founder/broadcast*`, а write-токен остаётся на сервере.
 
 Адаптер использует протокол рабочего Apps Script: `/api/auth/login`,
 `/api/olap/init`, `/api/olap/fetch/{id}/grouped-table`. Это iikoWeb, не iiko Cloud.
@@ -489,6 +499,7 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 - `TRUSTED_PROXY_NETWORK` — только CIDR самого reverse proxy. За его пределами
   `X-Forwarded-For` игнорируется; не указывайте там клиентскую подсеть.
 - `BOOKING_ANALYTICS_URL`, `ANALYTICS_API_TOKEN` — агрегированная аналитика бронирований.
+- `BROADCAST_API_TOKEN` — отдельный write-токен рассылок booking-бота.
 
 `build/.env` должен иметь права `0600`. Секреты не передаются в URL,
 логи, frontend или Git. Полный образец находится в `config.env.example`.

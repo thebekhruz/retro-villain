@@ -42,6 +42,7 @@ class Settings:
     director_excluded_groups: frozenset[str] = field(default_factory=frozenset)
     booking_api_url: str = ''
     booking_api_token: str = field(default='', repr=False)
+    booking_broadcast_token: str = field(default='', repr=False)
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
     data_dir: Path = ROOT / 'build'
     report_retention: int = 24
@@ -57,6 +58,10 @@ class Settings:
     @property
     def booking_configured(self):
         return bool(self.booking_api_url and self.booking_api_token)
+
+    @property
+    def booking_broadcast_configured(self):
+        return bool(self.booking_api_url and self.booking_broadcast_token)
 
     @property
     def hikvision_configured(self):
@@ -84,6 +89,7 @@ class Settings:
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
         booking_url = os.getenv('BOOKING_ANALYTICS_URL', '').strip().rstrip('/')
         booking_token = os.getenv('ANALYTICS_API_TOKEN', '').strip()
+        broadcast_token = os.getenv('BROADCAST_API_TOKEN', '').strip()
         if bool(booking_url) != bool(booking_token):
             raise ValueError('BOOKING_ANALYTICS_URL и ANALYTICS_API_TOKEN задаются вместе.')
         if booking_url:
@@ -91,6 +97,10 @@ class Settings:
             if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or \
                     parsed.query or parsed.fragment or parsed.path not in ('', '/'):
                 raise ValueError('BOOKING_ANALYTICS_URL должен быть корневым HTTPS URL без credentials/query.')
+        if broadcast_token and not booking_url:
+            raise ValueError('Для BROADCAST_API_TOKEN требуется BOOKING_ANALYTICS_URL.')
+        if broadcast_token and broadcast_token == booking_token:
+            raise ValueError('BROADCAST_API_TOKEN должен отличаться от ANALYTICS_API_TOKEN.')
         retention_value = os.getenv('DIRECTOR_REPORT_RETENTION', '24').strip()
         if not retention_value.isdigit() or not 1 <= int(retention_value) <= 1000:
             raise ValueError('DIRECTOR_REPORT_RETENTION должен быть числом от 1 до 1000.')
@@ -112,6 +122,7 @@ class Settings:
             director_excluded_groups=excluded_groups,
             booking_api_url=booking_url,
             booking_api_token=booking_token,
+            booking_broadcast_token=broadcast_token,
             hikvision=hikvision,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
             report_retention=int(retention_value),
