@@ -107,7 +107,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None,
                   lifespan=lifespan)
     app.state.settings = settings
-    app.state.sessions = SessionStore()
+    # Список сессий лежит рядом с базами модулей, на том же томе:
+    # иначе каждый деплой выбрасывает смену на экран входа.
+    app.state.sessions = SessionStore(settings.data_dir / 'sessions.json')
     app.state.iiko = IikoClient(settings)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.iiko_lock = asyncio.Lock()

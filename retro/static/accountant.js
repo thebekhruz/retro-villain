@@ -249,6 +249,8 @@ function renderLedger(data) {
   updateButtons();
 }
 
+function status(text) { const box = $('connection'); if (box) box.textContent = text; }
+
 async function loadDay() {
   const day = selectedDay();
   if (!day || !$('accountant-date').checkValidity()) { $('entrances-download').disabled = true; message('Выберите сегодняшний или прошедший день.', true); return; }
@@ -269,7 +271,8 @@ async function loadDay() {
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить данные.');
     if (sequence !== requestNo) return;
     current = data; renderStaff(data); renderLedger(data); message('');
-  } catch (error) { if (sequence === requestNo) message(error.message, true); }
+    status('Данные за ' + formattedDay(day));
+  } catch (error) { if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); } }
   finally { if (RetroState.shouldReleaseBusy(sequence, requestNo)) $('finance-layout').setAttribute('aria-busy', 'false'); }
 }
 function submit(id, endpoint, body, success) {

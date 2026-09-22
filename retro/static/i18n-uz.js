@@ -563,4 +563,6 @@ globalThis.RetroDictionaryUz = {
   'Загружаем отчёт из iiko…': "iikodan hisobot yuklanmoqda…",
   'Другой отчёт ещё загружается. Повторите через несколько секунд.': "Boshqa hisobot hali yuklanmoqda. Bir necha soniyadan keyin qayta urining.",
   'Доступно другой учётной записи': "Boshqa hisob yozuvida ochiladi",
+  'Данные за': "Ma'lumotlar:",
+  'Данные не загрузились': "Ma'lumotlar yuklanmadi",
 };

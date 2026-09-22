@@ -336,6 +336,8 @@ function addMonthlyRow() {
     await loadDay(); message('Сотрудник с месячной зарплатой добавлен.');
   });
 }
+function status(text) { const box = $('connection'); if (box) box.textContent = text; }
+
 async function loadDay() {
   const day = $('employees-date').value;
   if (!day || !$('employees-date').checkValidity()) { message('Выберите сегодняшний или прошедший день.', true); return; }
@@ -349,7 +351,8 @@ async function loadDay() {
     current = data;
     render(data);
     message('');
-  } catch (error) { if (sequence === requestNo) message(error.message, true); }
+    status('Данные за ' + formattedDay(day));
+  } catch (error) { if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); } }
 }
 $('employees-date').addEventListener('change', loadDay);
 $('employees-refresh').addEventListener('click', loadDay);
