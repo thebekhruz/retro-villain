@@ -12,6 +12,10 @@ const phone = matchMedia('(max-width:700px)');
  *  позиция — карточка, и двух с половиной десятков уже слишком много. */
 function previewRows() { return phone.matches ? 12 : 25; }
 
+/** Сколько опоздавших видно до нажатия. Остальные сворачиваются: смена
+ *  начинается в 10:00, и в плохой день список уезжает за экран. */
+const LATE_PREVIEW = 5;
+
 const view = { snapshot: null, group: 'all', sort: 'revenue', query: '', expanded: false, open: new Set() };
 
 async function request(url, options) {
@@ -245,16 +249,29 @@ async function loadAttendance() {
       return;
     }
     target.append(text('p', 'attendance-title', 'Опоздали'));
-    late.slice(0, 5).forEach(row => {
+    target.classList.remove('is-unfolded');
+    late.forEach((row, index) => {
       const item = text('div', 'attendance-row');
       const time = row.first_entry
         ? new Date(row.first_entry).toLocaleTimeString('ru-RU',
           { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })
         : '—';
       item.append(text('b', '', row.name), text('span', '', time));
+      if (index >= LATE_PREVIEW) item.classList.add('is-folded');
       target.append(item);
     });
-    if (late.length > 5) target.append(text('p', 'attendance-more', 'И ещё ' + (late.length - 5)));
+    if (late.length > LATE_PREVIEW) {
+      const hidden = late.length - LATE_PREVIEW;
+      const more = text('button', 'attendance-more', 'И ещё ' + hidden);
+      more.type = 'button';
+      more.setAttribute('aria-expanded', 'false');
+      more.addEventListener('click', () => {
+        const opened = target.classList.toggle('is-unfolded');
+        more.setAttribute('aria-expanded', String(opened));
+        more.textContent = opened ? 'Свернуть' : 'И ещё ' + hidden;
+      });
+      target.append(more);
+    }
   } catch (error) {
     $('arrived').textContent = '—';
     $('late').textContent = '—';

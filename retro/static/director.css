@@ -107,7 +107,19 @@
   padding:11px 14px;background:#f7f9f4;border-radius:11px;font-size:13px}
 .attendance-row b{font-weight:550}
 .attendance-row span{color:var(--muted);font-variant-numeric:tabular-nums}
-.attendance-more{font-size:11px;color:var(--muted)}
+/* Список опоздавших свёрнут на пятом человеке. «И ещё N» было подписью —
+   по ней жали, и ничего не происходило. Теперь это кнопка во всю ширину
+   карточки с зоной нажатия в 44 px и стрелкой, которая переворачивается. */
+.attendance-row.is-folded{display:none}
+.attendance-list.is-unfolded .attendance-row.is-folded{display:flex}
+.attendance-more{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;
+  min-height:44px;margin-top:2px;padding:10px 14px;border:1px solid var(--border);border-radius:11px;
+  background:#fff;color:#4f5d54;font:inherit;font-size:12px;cursor:pointer;
+  transition:background .15s,border-color .15s}
+.attendance-more:hover{background:#f5f7f1}
+.attendance-more:focus-visible{outline:0;border-color:var(--green2);box-shadow:0 0 0 3px rgba(35,87,74,.16)}
+.attendance-more::after{content:"▾";font-size:11px;line-height:1;color:#8a9a8f;transition:transform .15s}
+.attendance-list.is-unfolded .attendance-more::after{transform:rotate(180deg)}
 
 .reports-panel{padding:22px 24px}
 .reports-panel h2{font-size:18px;font-weight:550;letter-spacing:-.3px;margin:0}
