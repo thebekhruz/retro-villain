@@ -93,10 +93,10 @@ def test_iiko_detail_rows_keep_dimensions_metrics_and_report_truncation():
         'children': [
             {'field1': {'value': 'Стейк'}, 'field2': {'value': 2},
              'field3': {'value': 500000}, 'field4': {'value': 120000},
-             'field5': {'value': 1}},
+             'field5': {'value': 60000}, 'field6': {'value': 1}},
             {'field1': {'value': 'Салат'}, 'field2': {'value': 3},
              'field3': {'value': 210000}, 'field4': {'value': 30000},
-             'field5': {'value': 2}},
+             'field5': {'value': 10000}, 'field6': {'value': 2}},
         ],
     }]
 
@@ -107,7 +107,7 @@ def test_iiko_detail_rows_keep_dimensions_metrics_and_report_truncation():
     assert result == [{
         'dimensions': {'OpenDate.Typed': '2026-09-16', 'DishName': 'Стейк'},
         'quantity': '2', 'revenue': '500000',
-        'product_cost_per_unit': '120000', 'product_cost_total': '240000',
+        'product_cost_per_unit': '60000', 'product_cost_total': '120000',
         'orders': '1',
     }]
 
@@ -125,7 +125,7 @@ def test_iiko_detail_report_uses_allowlisted_olap_dimensions_and_metrics():
         return httpx.Response(200, json={'result': {'rows': [{
             'field0': {'value': 'Стейк'}, 'field1': {'value': 2},
             'field2': {'value': 500000}, 'field3': {'value': 120000},
-            'field4': {'value': 1},
+            'field4': {'value': 60000}, 'field5': {'value': 1},
         }]}})
 
     source = IikoClient(
@@ -137,7 +137,7 @@ def test_iiko_detail_report_uses_allowlisted_olap_dimensions_and_metrics():
     assert captured['body']['groupFields'] == ['DishName']
     assert captured['body']['dataFields'] == [
         'DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost',
-        'UniqOrderId.OrdersCount']
+        'ProductCostBase.OneItem', 'UniqOrderId.OrdersCount']
     assert result['rows'][0]['dimensions'] == {'DishName': 'Стейк'}
     assert result['truncated'] is False
 

@@ -7,6 +7,7 @@ from retro.integrations.iiko import director_rows_from_olap
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient
 from retro.modules.cashier.service import DataError
+from retro.modules.director.models import ItemMetric
 import asyncio
 
 
@@ -17,7 +18,7 @@ def node(index, value, children=()):
     return result
 
 
-def test_director_rows_flattens_grouped_iiko_result_and_derives_cost():
+def test_director_rows_uses_iiko_total_cost_without_multiplying_by_quantity():
     rows = [node(0, 'Kassa-FiscalBox1', [node(1, 'Ресторан', [node(2, 'Яндекс Еда', [
         node(3, 'Плов', [node(4, 'Миллий', [node(5, 'Олег', [
             {**node(6, 'order-1'), 'field7': {'value': 2}, 'field8': {'value': 200000},
@@ -29,7 +30,10 @@ def test_director_rows_flattens_grouped_iiko_result_and_derives_cost():
     assert result[0].item == 'Плов'
     assert result[0].quantity == Decimal('2')
     assert result[0].revenue == Decimal('200000')
-    assert result[0].cost == Decimal('80000')
+    assert result[0].cost == Decimal('40000')
+    metric = ItemMetric(result[0].quantity, result[0].revenue, result[0].cost)
+    assert metric.gross_profit == Decimal('160000')
+    assert metric.margin_percent == Decimal('80.00')
 
 
 def test_director_load_without_group_configuration_reaches_iiko():
