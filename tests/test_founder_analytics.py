@@ -148,9 +148,12 @@ def test_refunds_reduce_sales_and_payment_totals_instead_of_being_discarded():
         {'name': 'UzCard', 'amount': '80', 'share_percent': '100.00'}]
 
 
-def test_unknown_payment_type_is_not_hidden_in_other():
+def test_unknown_payment_type_is_shown_separately_with_warning():
     day = date(2026, 9, 7)
-    with pytest.raises(DataError, match='новый тип оплаты'):
-        build_analytics([revenue(day, 100)], [payment(day, 'Crypto', 100)],
-                        day, day, 'day', ('retro',),
-                        now=datetime(2026, 9, 8, 8, 0))
+    result = build_analytics(
+        [revenue(day, 100)], [payment(day, 'Crypto', 100)],
+        day, day, 'day', ('retro',), now=datetime(2026, 9, 8, 8, 0))
+
+    assert result['payment_summary'] == [
+        {'name': 'Crypto', 'amount': '100', 'share_percent': '100.00'}]
+    assert result['warnings'] == ['Новые типы оплаты iiko показаны отдельно: Crypto.']
