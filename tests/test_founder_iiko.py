@@ -140,3 +140,33 @@ def test_founder_large_range_is_split_before_requesting_iiko():
         (date(2026, 2, 1), date(2026, 2, 1)),
         (date(2026, 2, 1), date(2026, 2, 1)),
     ]
+
+
+def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
+    def handler(request):
+        assert request.url.path == '/api/auth/login'
+        return httpx.Response(200, json={'token': 'test-only'})
+
+    source = IikoClient(Settings(login='test', password='test', store_id=123),
+                        transport=httpx.MockTransport(handler), poll_delay=0)
+    active = 0
+    max_active = 0
+    calls = []
+
+    async def fake_olap_range(client, start, end, groups, fields, extra_filters=()):
+        nonlocal active, max_active
+        active += 1
+        max_active = max(max_active, active)
+        calls.append((start, end, tuple(groups), tuple(fields), tuple(extra_filters)))
+        await asyncio.sleep(.01)
+        active -= 1
+        return []
+
+    source._olap_range = fake_olap_range
+    result = asyncio.run(source.load_founder_analytics(
+        date(2026, 1, 1), date(2026, 9, 22), 'month',
+        ('retro', 'school', 'banquet')))
+
+    assert result['period'] == {'start': '2026-01-01', 'end': '2026-09-22'}
+    assert len(calls) == 36
+    assert max_active == 4
