@@ -92,3 +92,51 @@ def test_founder_range_uses_payment_sales_plus_only_tagged_banquet_dishes():
         assert 'DishGroup' not in filters
         assert 'DishName' in body['groupFields']
         assert body['dataFields'] == ['DishDiscountSumInt']
+
+
+def test_founder_large_range_is_split_before_requesting_iiko():
+    requests = []
+
+    def handler(request):
+        if request.url.path == '/api/auth/login':
+            return httpx.Response(200, json={'token': 'test-only'})
+        body = json.loads(request.content)
+        period = body['filters'][0]
+        start = date.fromisoformat(period['dateFrom'])
+        end = date.fromisoformat(period['dateTo'])
+        if request.url.path == '/api/olap/init':
+            if (end - start).days >= 31:
+                return httpx.Response(500, json={'error': 'range too large'})
+            requests.append((start, end))
+            return httpx.Response(200, json={'fetchId': f'{start}-{len(requests)}'})
+
+        payment_sales = any(item.get('field') == 'OperationType' for item in body['filters'])
+        banquet = not payment_sales
+        item = 'Салат (Бехруз)' if banquet else 'Плов'
+        amount = 10 if banquet else 100
+        if 'PayTypes' in body['groupFields']:
+            leaf = node(3, item, [node(4, 'Демо', amount=amount)])
+        else:
+            leaf = node(3, item, amount=amount)
+        rows = [node(0, start.isoformat(), [
+            node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', [leaf])]),
+        ])]
+        return httpx.Response(200, json={'result': {'rows': rows}})
+
+    source = IikoClient(Settings(login='test', password='test', store_id=123),
+                        transport=httpx.MockTransport(handler), poll_delay=0)
+    result = asyncio.run(source.load_founder_analytics(
+        date(2026, 1, 1), date(2026, 2, 1), 'month', ('retro', 'banquet')))
+
+    assert result['totals']['selected'] == '220'
+    assert result['payment_total'] == '220'
+    assert requests == [
+        (date(2026, 1, 1), date(2026, 1, 31)),
+        (date(2026, 1, 1), date(2026, 1, 31)),
+        (date(2026, 1, 1), date(2026, 1, 31)),
+        (date(2026, 1, 1), date(2026, 1, 31)),
+        (date(2026, 2, 1), date(2026, 2, 1)),
+        (date(2026, 2, 1), date(2026, 2, 1)),
+        (date(2026, 2, 1), date(2026, 2, 1)),
+        (date(2026, 2, 1), date(2026, 2, 1)),
+    ]
