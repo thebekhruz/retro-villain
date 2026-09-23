@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.accountant.payroll import draft_payroll
@@ -53,11 +54,13 @@ def attendance(request: Request, date: date | None = None):
 
 
 @router.get('/today')
-async def today(request: Request):
+async def today(request: Request, refresh: bool = False):
     try:
-        async with request.app.state.iiko_lock:
-            snapshot = await request.app.state.iiko.load_director_report(today_tashkent())
+        snapshot = await load_iiko(request.app.state, 'load_director_report', today_tashkent(),
+                                   refresh=refresh, request=request, timeout=150)
         return snapshot.json()
+    except TimeoutError:
+        raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
     except DataError as error:
         log_safe_failure('director-route', error, operation='today',
                          request_id=request.state.request_id)
@@ -83,7 +86,7 @@ async def chat(request: Request, body: ChatInput):
     question = body.message.strip()
     if not question:
         raise HTTPException(422, 'Напишите вопрос.')
-    history = request.app.state.founder_chat_store.list(owner, limit=24)
+    history = await asyncio.to_thread(request.app.state.founder_chat_store.list, owner, limit=24)
     messages = [{'role': item['role'], 'content': item['content']} for item in history]
     messages.append({'role': 'user', 'content': question})
     chat_tools = DirectorChatTools(request.app)
@@ -100,7 +103,8 @@ async def chat(request: Request, body: ChatInput):
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
     created_at = datetime.now(timezone.utc).isoformat()
-    request.app.state.founder_chat_store.append_exchange(owner, question, answer, created_at)
+    await asyncio.to_thread(request.app.state.founder_chat_store.append_exchange,
+                            owner, question, answer, created_at)
     return {'message': {'role': 'assistant', 'content': answer, 'created_at': created_at}}
 
 

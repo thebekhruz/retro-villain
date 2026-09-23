@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 from decimal import Decimal, InvalidOperation
 
 import httpx
@@ -270,23 +271,26 @@ class ClaudeClient:
                              if isinstance(block, dict) and block.get('type') == 'tool_use']
                     if not calls or tool_calls + len(calls) > MAX_CHAT_TOOL_CALLS:
                         raise ValueError('invalid Claude tool calls')
-                    results = []
-                    for call in calls:
+                    slots = asyncio.Semaphore(2)
+
+                    async def execute_call(call):
                         call_id, name, arguments = call.get('id'), call.get('name'), call.get('input')
                         if (not isinstance(call_id, str) or not call_id
                                 or not isinstance(name, str) or not isinstance(arguments, dict)):
                             raise ValueError('invalid Claude tool call')
                         try:
-                            result = await tool_handler(name, arguments)
+                            async with slots:
+                                result = await tool_handler(name, arguments)
                             result_text = json.dumps(result, ensure_ascii=False, separators=(',', ':'))
                             if len(result_text) > MAX_CHAT_TOOL_RESULT_CHARS:
                                 raise DataError('Результат слишком большой. Сузьте период или фильтр.')
-                            results.append({'type': 'tool_result', 'tool_use_id': call_id,
-                                            'content': result_text})
+                            return {'type': 'tool_result', 'tool_use_id': call_id, 'content': result_text}
                         except DataError as error:
-                            results.append({'type': 'tool_result', 'tool_use_id': call_id,
-                                            'content': str(error), 'is_error': True})
-                        tool_calls += 1
+                            return {'type': 'tool_result', 'tool_use_id': call_id,
+                                    'content': str(error), 'is_error': True}
+
+                    results = await asyncio.gather(*(execute_call(call) for call in calls))
+                    tool_calls += len(calls)
                     body['messages'] = [*body['messages'],
                                         {'role': 'assistant', 'content': content},
                                         {'role': 'user', 'content': results}]

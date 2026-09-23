@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from retro.report_cache import load_iiko
+
 import asyncio
 from datetime import date
 from types import SimpleNamespace
@@ -214,16 +216,14 @@ class FounderChatTools:
     async def execute(self, name, arguments):
         if name == 'get_revenue_analytics':
             start, end, granularity, directions = _period(arguments, with_directions=True)
-            async with self.app.state.iiko_lock:
-                return await asyncio.wait_for(
-                    self.app.state.iiko.load_founder_analytics(
-                        start, end, granularity, directions), timeout=180)
+            return await load_iiko(self.app.state, 'load_founder_analytics',
+                                   start, end, granularity, directions, timeout=180)
         if name == 'get_bookings':
             start, end, granularity = _period(arguments, with_directions=False)
             raw = await asyncio.wait_for(self.app.state.bookings.load(start, end), timeout=20)
             return build_booking_analytics(raw, start, end, granularity)
         if name == 'get_employee_attendance':
-            return self._attendance(arguments)
+            return await asyncio.to_thread(self._attendance, arguments)
         if name == 'get_iiko_sales_details':
             if not isinstance(arguments, dict) or set(arguments) != {
                     'start', 'end', 'dimensions', 'limit'}:
@@ -245,16 +245,14 @@ class FounderChatTools:
                 raise DataError('Выберите от одного до четырёх разрешённых измерений iiko без повторов.')
             if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
                 raise DataError('Лимит строк iiko должен быть от 1 до 200.')
-            async with self.app.state.iiko_lock:
-                return await asyncio.wait_for(
-                    self.app.state.iiko.load_sales_details(
-                        start, end, tuple(dimensions), limit=limit), timeout=90)
+            return await load_iiko(self.app.state, 'load_sales_details',
+                                   start, end, tuple(dimensions), limit=limit)
         if name == 'get_cashier_day':
             return await self._cashier_day(arguments)
         if name == 'get_accounting_day':
             return await self._accounting_day(arguments)
         if name == 'get_saved_director_reports':
-            return self._director_reports(arguments)
+            return await asyncio.to_thread(self._director_reports, arguments)
         raise DataError('Чат запросил неизвестный инструмент.')
 
     async def _cashier_day(self, arguments):
@@ -268,8 +266,8 @@ class FounderChatTools:
             usd_rate = (await self.app.state.usd_rates.get(day)).json()
         except DataError as error:
             usd_rate = {'error': str(error)}
-        expenses = self.app.state.expenses.list(day)
-        receipts = self.app.state.expenses.list_receipts(day)
+        expenses = await asyncio.to_thread(self.app.state.expenses.list, day)
+        receipts = await asyncio.to_thread(self.app.state.expenses.list_receipts, day)
         return {
             **result,
             'expenses': [item.json() for item in expenses],
@@ -277,7 +275,7 @@ class FounderChatTools:
             'receipts': [item.json() for item in receipts],
             'receipt_total': str(sum((item.amount for item in receipts), 0)),
             'usd_rate': usd_rate,
-            'usd_balance': self.app.state.usd_rates.balance(day),
+            'usd_balance': await asyncio.to_thread(self.app.state.usd_rates.balance, day),
         }
 
     async def _accounting_day(self, arguments):

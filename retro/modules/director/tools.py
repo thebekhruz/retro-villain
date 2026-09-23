@@ -1,5 +1,7 @@
 """Least-privilege, read-only tools for the director AI chat."""
 
+from retro.report_cache import load_iiko
+
 import asyncio
 from datetime import date
 
@@ -49,12 +51,10 @@ class DirectorChatTools:
                 raise DataError('Поле as_of должно содержать дату YYYY-MM-DD.') from None
             if as_of > today_tashkent():
                 raise DataError('Будущая дата недоступна.')
-            async with self.app.state.iiko_lock:
-                snapshot = await asyncio.wait_for(
-                    self.app.state.iiko.load_director_report(as_of), timeout=90)
+            snapshot = await load_iiko(self.app.state, 'load_director_report', as_of, timeout=150)
             return snapshot.json()
         if name == 'get_employee_attendance':
-            return self._attendance(arguments)
+            return await asyncio.to_thread(self._attendance, arguments)
         if name in DELEGATED_NAMES:
             return await self._delegate.execute(name, arguments)
         raise DataError('Чат директора запросил неизвестный инструмент.')

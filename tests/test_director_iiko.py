@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import httpx
@@ -96,6 +96,21 @@ def test_director_loads_yandex_headline_from_payment_report_not_excluded_group()
         ])])]
 
     async def fake_olap_range(client, start, end, groups, fields, extra_filters=()):
+        if 'UniqOrderId.Id' in groups:
+            rows = []
+            for offset in range((end - start).days + 1):
+                day = start + timedelta(days=offset)
+                # Flatten the existing nested day fixture into the new date-first shape.
+                old = await fake_olap(client, day, groups[1:], fields, extra_filters)
+                parsed = director_rows_from_olap(day, old, split_payments='PayTypes' in groups)
+                for row in parsed:
+                    values = [day.isoformat(), row.register, row.section]
+                    if 'PayTypes' in groups: values.append(row.payment_type)
+                    values += [row.item, row.category, row.waiter, row.order_id]
+                    if 'NonCashPaymentType' in groups: values.append(row.payment_purpose)
+                    values += [row.quantity, row.revenue, row.cost]
+                    rows.append({f'field{i}': {'value': value} for i, value in enumerate(values)})
+            return rows
         payment_calls.append(tuple(extra_filters))
         if extra_filters:
             return [node(0, '2026-09-13', [node(1, 'Kassa-FiscalBox1', [
@@ -211,7 +226,15 @@ def test_director_load_reconciles_cost_before_item_and_waiter_aggregation():
                           ('Демо', 1.8, 21600), ('Яндех Еда', .2, 2400))]
 
     async def fake_range(client, start, end, groups, fields, extra_filters=()):
-        return []
+        if 'UniqOrderId.Id' not in groups:
+            return []
+        rows = []
+        for offset in range((end - start).days + 1):
+            day = start + timedelta(days=offset)
+            for row in await fake_olap(client, day, groups[1:], fields):
+                shifted = {f'field{int(key[5:])+1}': value for key, value in row.items()}
+                rows.append({'field0': {'value': day.isoformat()}, **shifted})
+        return rows
 
     source._olap = fake_olap
     source._olap_range = fake_range

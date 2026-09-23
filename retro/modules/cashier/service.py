@@ -1,10 +1,8 @@
-import asyncio
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from time import monotonic
-from typing import Awaitable, Callable, TypeVar
 from uuid import uuid4
 from zoneinfo import ZoneInfo
 
@@ -21,44 +19,6 @@ PAYMENT_ALIASES = {'Яндех Еда': 'Яндекс Еда'}
 
 class DataError(Exception):
     """Safe user-facing validation error, never an upstream response body."""
-
-
-class ReportReplaced(Exception):
-    """The in-flight daily report was intentionally superseded by a newer request."""
-
-
-T = TypeVar('T')
-
-
-class LatestReportRunner:
-    """Run one daily report at a time, cancelling it when a newer request arrives."""
-
-    def __init__(self):
-        self._replace_lock = asyncio.Lock()
-        self._task: asyncio.Task | None = None
-
-    async def run(self, operation: Callable[[], Awaitable[T]]) -> T:
-        async with self._replace_lock:
-            previous = self._task
-            if previous is not None and not previous.done():
-                previous.cancel()
-            if previous is not None:
-                await asyncio.gather(previous, return_exceptions=True)
-            task = asyncio.create_task(operation())
-            self._task = task
-        try:
-            # The runner owns the operation lifecycle. A disconnected HTTP client
-            # must not make the task untrackable before the next request replaces it.
-            return await asyncio.shield(task)
-        except asyncio.CancelledError:
-            if task.cancelled():
-                raise ReportReplaced from None
-            raise
-        finally:
-            if task.done():
-                async with self._replace_lock:
-                    if self._task is task:
-                        self._task = None
 
 
 def today_tashkent(now=None):

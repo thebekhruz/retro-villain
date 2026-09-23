@@ -60,62 +60,73 @@ def _datetime(value: str | None) -> datetime | None:
 class AttendanceStore:
     def __init__(self, path: Path):
         self.path = Path(path)
+        self._initialize()
 
     def _open(self):
         secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
         secure_file(self.path)
-        connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_events (
-            source TEXT NOT NULL,
-            serial_no TEXT NOT NULL,
-            employee_no TEXT NOT NULL,
-            occurred_at TEXT NOT NULL,
-            received_at TEXT NOT NULL,
-            PRIMARY KEY (source, serial_no)
-        )''')
-        connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_first_entries (
-            work_day TEXT NOT NULL,
-            employee_id INTEGER NOT NULL,
-            employee_no TEXT NOT NULL,
-            occurred_at TEXT NOT NULL,
-            source TEXT NOT NULL,
-            serial_no TEXT NOT NULL,
-            PRIMARY KEY (work_day, employee_id)
-        )''')
-        connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_sync_state (
-            source TEXT PRIMARY KEY,
-            cursor_at TEXT,
-            covered_from TEXT,
-            covered_through TEXT,
-            last_attempt_at TEXT,
-            last_success_at TEXT,
-            last_error_code TEXT
-        )''')
         return connection
+
+    def _initialize(self):
+        with closing(self._open()) as connection, connection:
+            connection.execute('PRAGMA journal_mode=WAL')
+            connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_events (
+                source TEXT NOT NULL,
+                serial_no TEXT NOT NULL,
+                employee_no TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                received_at TEXT NOT NULL,
+                PRIMARY KEY (source, serial_no)
+            )''')
+            connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_first_entries (
+                work_day TEXT NOT NULL,
+                employee_id INTEGER NOT NULL,
+                employee_no TEXT NOT NULL,
+                occurred_at TEXT NOT NULL,
+                source TEXT NOT NULL,
+                serial_no TEXT NOT NULL,
+                PRIMARY KEY (work_day, employee_id)
+            )''')
+            connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_sync_state (
+                source TEXT PRIMARY KEY,
+                cursor_at TEXT,
+                covered_from TEXT,
+                covered_through TEXT,
+                last_attempt_at TEXT,
+                last_success_at TEXT,
+                last_error_code TEXT
+            )''')
+
 
     def ingest(self, event: HikvisionEvent, employee_id: int | None,
                *, received_at: datetime | None = None) -> bool:
-        occurred_at = _iso(event.occurred_at)
+        return bool(self.ingest_many(((event, employee_id),), received_at=received_at))
+
+    def ingest_many(self, events, *, received_at=None):
         received = _iso(received_at or datetime.now(TZ))
-        work_day = event.occurred_at.astimezone(TZ).date().isoformat()
+        inserted = 0
         with closing(self._open()) as connection, connection:
-            inserted = connection.execute(
-                'INSERT OR IGNORE INTO hikvision_events '
-                '(source,serial_no,employee_no,occurred_at,received_at) VALUES (?,?,?,?,?)',
-                (event.source, event.serial_no, event.employee_no, occurred_at, received)).rowcount
-            if employee_id is not None:
-                connection.execute('''INSERT INTO hikvision_first_entries
-                    (work_day,employee_id,employee_no,occurred_at,source,serial_no)
-                    VALUES (?,?,?,?,?,?)
-                    ON CONFLICT(work_day,employee_id) DO UPDATE SET
-                      employee_no=excluded.employee_no,
-                      occurred_at=excluded.occurred_at,
-                      source=excluded.source,
-                      serial_no=excluded.serial_no
-                    WHERE excluded.occurred_at < hikvision_first_entries.occurred_at''',
-                    (work_day, employee_id, event.employee_no, occurred_at,
-                     event.source, event.serial_no))
-        return bool(inserted)
+            for event, employee_id in events:
+                occurred_at = _iso(event.occurred_at)
+                work_day = event.occurred_at.astimezone(TZ).date().isoformat()
+                inserted += connection.execute(
+                    'INSERT OR IGNORE INTO hikvision_events '
+                    '(source,serial_no,employee_no,occurred_at,received_at) VALUES (?,?,?,?,?)',
+                    (event.source, event.serial_no, event.employee_no, occurred_at, received)).rowcount
+                if employee_id is not None:
+                    connection.execute('''INSERT INTO hikvision_first_entries
+                        (work_day,employee_id,employee_no,occurred_at,source,serial_no)
+                        VALUES (?,?,?,?,?,?)
+                        ON CONFLICT(work_day,employee_id) DO UPDATE SET
+                          employee_no=excluded.employee_no,
+                          occurred_at=excluded.occurred_at,
+                          source=excluded.source,
+                          serial_no=excluded.serial_no
+                        WHERE excluded.occurred_at < hikvision_first_entries.occurred_at''',
+                        (work_day, employee_id, event.employee_no, occurred_at,
+                         event.source, event.serial_no))
+        return inserted
 
     def reconcile_links(self, employee_ids: dict[str, int]) -> int:
         """Build first entries for events stored before their employees were linked."""

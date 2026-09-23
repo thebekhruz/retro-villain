@@ -1,4 +1,5 @@
 import re
+import asyncio
 from datetime import date, datetime, timezone
 
 import httpx
@@ -123,8 +124,11 @@ class BookingAnalyticsClient:
                     transport=self.transport,
             ) as client:
                 result = {}
-                for status in ('submitted', 'cancelled'):
-                    response = await client.get('/analytics/summary', params={**params, 'status': status})
+                statuses = ('submitted', 'cancelled')
+                responses = await asyncio.gather(*(
+                    client.get('/analytics/summary', params={**params, 'status': status})
+                    for status in statuses))
+                for status, response in zip(statuses, responses, strict=True):
                     if response.status_code in (401, 403):
                         raise DataError('API бронирований отклонил доступ.')
                     if not 200 <= response.status_code < 300:

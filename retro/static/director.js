@@ -230,18 +230,28 @@ function showSetup(message) {
   $('connection').textContent = 'Меню не настроено';
 }
 
-async function loadSnapshot() {
+let snapshotController = null, snapshotRequest = 0;
+async function loadSnapshot(refresh = false) {
+  snapshotController?.abort();
+  snapshotController = new AbortController();
+  const requestId = ++snapshotRequest;
+  $('refresh').disabled = true;
   $('state').textContent = 'Загружаем данные…';
   try {
-    const snapshot = await request('/api/director/today');
+    const snapshot = await request('/api/director/today?refresh=' + (refresh === true),
+                                   {signal: snapshotController.signal});
+    if (requestId !== snapshotRequest) return;
     $('setup').hidden = true;
     renderSnapshot(snapshot);
-    $('state').textContent = 'Данные за период получены';
+    $('state').textContent = 'Данные за период получены · «Обновить» проверит изменения iiko';
     $('connection').textContent = 'iiko отвечает';
   } catch (error) {
+    if (requestId !== snapshotRequest || error.name === 'AbortError') return;
     $('state').textContent = error.message;
     if (error.status === 503) showSetup(error.message);
     else $('connection').textContent = 'Нет данных';
+  } finally {
+    if (requestId === snapshotRequest) $('refresh').disabled = false;
   }
 }
 
@@ -325,7 +335,7 @@ async function loadReports() {
   }
 }
 
-$('refresh').addEventListener('click', () => { loadSnapshot(); loadAttendance(); });
+$('refresh').addEventListener('click', () => { loadSnapshot(true); loadAttendance(); });
 
 $('generate').addEventListener('click', async () => {
   const button = $('generate');

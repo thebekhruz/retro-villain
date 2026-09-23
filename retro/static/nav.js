@@ -41,8 +41,12 @@
     timer = setTimeout(() => hint.classList.remove('is-shown'), 4000);
   }
 
-  fetch('/api/config', { headers: { accept: 'application/json' } })
-    .then(response => (response.ok ? response.json() : null))
+  globalThis.RetroConfig = fetch('/api/config', {headers: {accept: 'application/json'}})
+    .then(response => {
+      if (!response.ok) throw new Error('Не удалось определить настройки сервера.');
+      return response.json();
+    });
+  globalThis.RetroConfig
     .then(config => {
       if (!config || !Array.isArray(config.modules)) return;
       const byPath = new Map(config.modules.map(module => [module.path, module]));

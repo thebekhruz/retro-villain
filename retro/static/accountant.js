@@ -325,18 +325,18 @@ $('entrances-download').addEventListener('click', async () => {
 });
 (async () => {
   try {
-    const response = await fetch('/api/config', {cache: 'no-store'});
-    if (!response.ok) throw new Error('Не удалось определить текущую дату.');
-    today = (await response.json()).today;
+    const catalogRequest = fetch('/api/accountant/expenses/catalog', {cache: 'no-store'});
+    today = (await globalThis.RetroConfig).today;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;
     $('accountant-date').value = requested && requested <= today ? requested : previousDay(today);
-    const catalogResponse = await fetch('/api/accountant/expenses/catalog', {cache: 'no-store'});
+    const dayRequest = loadDay();
+    const catalogResponse = await catalogRequest;
     if (!catalogResponse.ok) throw new Error('Не удалось загрузить наименования затрат.');
     catalog = (await catalogResponse.json()).groups;
     catalog.push({code: 'reserves', label:'Резервы и подотчёт', items:Object.entries(special).map(([code,value])=>({code,label:value.label}))});
     catalog.forEach(group => $('expense-category').add(new Option(group.label, group.code)));
     categoryChanged();
-    await loadDay();
+    await dayRequest;
   } catch (error) { message(error.message, true); }
 })();

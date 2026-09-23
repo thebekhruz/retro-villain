@@ -40,21 +40,27 @@ class UsdRates:
         self.path = Path(path)
         self.transport = transport
         self.lock = asyncio.Lock()
+        self._initialize()
 
     def _open(self):
         secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
         secure_file(self.path)
-        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_rates (
-            day TEXT PRIMARY KEY,
-            source_date TEXT NOT NULL,
-            official_rate TEXT NOT NULL,
-            restaurant_rate TEXT NOT NULL
-        )''')
-        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_balances (
-            day TEXT PRIMARY KEY, amount TEXT NOT NULL
-        )''')
         return connection
+
+    def _initialize(self):
+        with closing(self._open()) as connection, connection:
+            connection.execute('PRAGMA journal_mode=WAL')
+            connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_rates (
+                day TEXT PRIMARY KEY,
+                source_date TEXT NOT NULL,
+                official_rate TEXT NOT NULL,
+                restaurant_rate TEXT NOT NULL
+            )''')
+            connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_balances (
+                day TEXT PRIMARY KEY, amount TEXT NOT NULL
+            )''')
+
 
     def balance(self, day: date):
         with closing(self._open()) as connection:
@@ -95,15 +101,15 @@ class UsdRates:
         return self._stored(rate.day)
 
     async def get(self, day: date):
-        saved = self._stored(day)
+        saved = await asyncio.to_thread(self._stored, day)
         if saved is not None:
             return saved
         async with self.lock:
-            saved = self._stored(day)
+            saved = await asyncio.to_thread(self._stored, day)
             if saved is not None:
                 return saved
             rate = await self._fetch(day)
-            return self._save(rate)
+            return await asyncio.to_thread(self._save, rate)
 
     async def _fetch(self, day: date):
         try:

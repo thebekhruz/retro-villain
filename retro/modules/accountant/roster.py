@@ -112,50 +112,56 @@ class MonthlyEmployee:
 class RosterStore:
     def __init__(self, path: Path):
         self.path = Path(path)
+        self._initialize()
 
     def _open(self):
         secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
         secure_file(self.path)
-        connection.execute('''CREATE TABLE IF NOT EXISTS accountant_employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            source_row INTEGER NOT NULL UNIQUE,
-            name TEXT NOT NULL,
-            role TEXT NOT NULL,
-            group_name TEXT NOT NULL,
-            rate TEXT,
-            hikvision_id TEXT UNIQUE
-        )''')
-        connection.execute('''CREATE TABLE IF NOT EXISTS accountant_roster_audit (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            employee_id INTEGER NOT NULL,
-            changed_at TEXT NOT NULL,
-            reason TEXT NOT NULL,
-            old_rate TEXT,
-            new_rate TEXT,
-            old_group TEXT NOT NULL,
-            new_group TEXT NOT NULL
-        )''')
-        connection.execute('''CREATE TABLE IF NOT EXISTS accountant_monthly_employees (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            external_key TEXT UNIQUE,
-            name TEXT NOT NULL,
-            role TEXT NOT NULL,
-            salary TEXT NOT NULL,
-            schedule TEXT NOT NULL DEFAULT '',
-            card TEXT NOT NULL DEFAULT '0',
-            cash TEXT NOT NULL DEFAULT '0',
-            advances TEXT NOT NULL DEFAULT '0',
-            remaining TEXT NOT NULL DEFAULT '0'
-        )''')
-        columns = {row[1] for row in connection.execute(
-            'PRAGMA table_info(accountant_monthly_employees)')}
-        if 'external_key' not in columns:
-            connection.execute('ALTER TABLE accountant_monthly_employees ADD COLUMN external_key TEXT')
-            connection.execute(
-                'CREATE UNIQUE INDEX IF NOT EXISTS accountant_monthly_external_key '
-                'ON accountant_monthly_employees(external_key) WHERE external_key IS NOT NULL')
         return connection
+
+    def _initialize(self):
+        with closing(self._open()) as connection, connection:
+            connection.execute('PRAGMA journal_mode=WAL')
+            connection.execute('''CREATE TABLE IF NOT EXISTS accountant_employees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                source_row INTEGER NOT NULL UNIQUE,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                group_name TEXT NOT NULL,
+                rate TEXT,
+                hikvision_id TEXT UNIQUE
+            )''')
+            connection.execute('''CREATE TABLE IF NOT EXISTS accountant_roster_audit (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                employee_id INTEGER NOT NULL,
+                changed_at TEXT NOT NULL,
+                reason TEXT NOT NULL,
+                old_rate TEXT,
+                new_rate TEXT,
+                old_group TEXT NOT NULL,
+                new_group TEXT NOT NULL
+            )''')
+            connection.execute('''CREATE TABLE IF NOT EXISTS accountant_monthly_employees (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                external_key TEXT UNIQUE,
+                name TEXT NOT NULL,
+                role TEXT NOT NULL,
+                salary TEXT NOT NULL,
+                schedule TEXT NOT NULL DEFAULT '',
+                card TEXT NOT NULL DEFAULT '0',
+                cash TEXT NOT NULL DEFAULT '0',
+                advances TEXT NOT NULL DEFAULT '0',
+                remaining TEXT NOT NULL DEFAULT '0'
+            )''')
+            columns = {row[1] for row in connection.execute(
+                'PRAGMA table_info(accountant_monthly_employees)')}
+            if 'external_key' not in columns:
+                connection.execute('ALTER TABLE accountant_monthly_employees ADD COLUMN external_key TEXT')
+                connection.execute(
+                    'CREATE UNIQUE INDEX IF NOT EXISTS accountant_monthly_external_key '
+                    'ON accountant_monthly_employees(external_key) WHERE external_key IS NOT NULL')
+
 
     def import_xlsx(self, source: Path, *, replace: bool = False) -> dict[str, int]:
         workbook = load_workbook(source, read_only=True, data_only=True)

@@ -224,7 +224,7 @@ function show(data) {
   $('updated').textContent = `${data.demo ? 'Пример сформирован' : 'Обновлено'} в ${time} · Ташкент`;
   showHandover();
 }
-async function load() {
+async function load(options = {}) {
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
   $('refresh').disabled = false; document.body.classList.remove('loading'); $('metrics').setAttribute('aria-busy','false');
@@ -245,7 +245,7 @@ async function load() {
   $('metrics').setAttribute('aria-busy','true');document.body.classList.add('loading');
   $('refresh').disabled = true;message('Загружаем отчёт из ' + (demo ? 'демонстрационного примера…' : 'iiko…'));
   try {
-    const response = await request(`/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}`, controller.signal);
+    const response = await request(`/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}&refresh=${options.refresh === true}`, controller.signal);
     const data = await response.json();
     if (current !== generation) return;
     show(data);message('');
@@ -338,7 +338,7 @@ async function deleteExpense(id, day, button) {
   }
 }
 $('report-date').addEventListener('change',load);
-$('refresh').addEventListener('click',load);
+$('refresh').addEventListener('click',()=>load({refresh:true}));
 $('today').addEventListener('click',()=>{if(config){$('report-date').value=config.today;load();}});
 $('yesterday').addEventListener('click',()=>{if(config){$('report-date').value=previousDay(config.today);load();}});
 function addRecentDateButtons() {
@@ -369,7 +369,7 @@ $('download').addEventListener('click',async()=>{
 });
 (async()=>{
   try {
-    config = await (await request('/api/config')).json();
+    config = await globalThis.RetroConfig;
     $('report-date').max=config.today;$('report-date').value=config.today;
     addRecentDateButtons();
     $('demo-banner').hidden=!demo;$('setup').hidden=config.configured||demo;

@@ -54,9 +54,9 @@ class HikvisionPoller:
 
     async def _run_once(self) -> PollResult:
         now = self._current_time()
-        self.store.record_attempt(self.config.source, now)
         try:
-            employees = self.roster.list()
+            await asyncio.to_thread(self.store.record_attempt, self.config.source, now)
+            employees = await asyncio.to_thread(self.roster.list)
             existing_links = {employee.hikvision_id for employee in employees
                               if employee.hikvision_id is not None}
             should_sync_people = any(employee.hikvision_id is None for employee in employees) and (
@@ -65,49 +65,56 @@ class HikvisionPoller:
             linked = 0
             if should_sync_people:
                 people = await self.client.fetch_people()
-                linked = self.roster.link_hikvision_people(people)['linked']
+                linked = (await asyncio.to_thread(self.roster.link_hikvision_people, people))['linked']
                 self._last_people_sync = now
-                employees = self.roster.list()
+                employees = await asyncio.to_thread(self.roster.list)
 
             employee_ids = {employee.hikvision_id: employee.id for employee in employees
                             if employee.hikvision_id is not None}
             if linked:
-                self.store.reconcile_links({employee_no: employee_id
+                await asyncio.to_thread(self.store.reconcile_links, {employee_no: employee_id
                                             for employee_no, employee_id in employee_ids.items()
                                             if employee_no not in existing_links})
 
-            state = self.store.sync_state(self.config.source)
+            state = await asyncio.to_thread(self.store.sync_state, self.config.source)
             if state.cursor_at is None:
                 start = datetime.combine(now.date() - timedelta(days=1), time.min, TZ)
             else:
                 start = state.cursor_at.astimezone(TZ) - OVERLAP
             events = await self.client.fetch_events(start, now)
-            for event in events:
-                self.store.ingest(event, employee_ids.get(event.employee_no), received_at=now)
-            self.store.record_success(
+            await asyncio.to_thread(self.store.ingest_many,
+                [(event, employee_ids.get(event.employee_no)) for event in events], received_at=now)
+            await asyncio.to_thread(self.store.record_success,
                 self.config.source, at=now, cursor_at=now,
                 covered_from=start, covered_through=now)
             self._failures = 0
             return PollResult(True, events=len(events), linked=linked)
         except HikvisionError as error:
             self._failures += 1
-            self.store.record_failure(self.config.source, at=now, code=error.code)
+            await self._record_failure(now, error.code)
             return PollResult(False, error=error.code)
         except Exception as error:
             self._failures += 1
-            self.store.record_failure(self.config.source, at=now, code='internal')
+            await self._record_failure(now, 'internal')
             logging.getLogger('retro.hikvision').warning(
                 'component=hikvision-poller operation=run_once error_class=%s',
                 error.__class__.__name__)
             return PollResult(False, error='internal')
 
+    async def _record_failure(self, now, code):
+        try:
+            await asyncio.to_thread(self.store.record_failure, self.config.source, at=now, code=code)
+        except Exception as error:
+            logging.getLogger('retro.hikvision').warning(
+                'operation=record_failure error_class=%s', error.__class__.__name__)
+
     async def sync_all_people(self) -> dict[str, int]:
         """Explicit operator action: import every unambiguous Hikvision person."""
         async with self._run_lock:
             people = await self.client.fetch_people()
-            report = self.roster.import_hikvision_people(people)
-            employees = self.roster.list()
-            self.store.reconcile_links({
+            report = await asyncio.to_thread(self.roster.import_hikvision_people, people)
+            employees = await asyncio.to_thread(self.roster.list)
+            await asyncio.to_thread(self.store.reconcile_links, {
                 employee.hikvision_id: employee.id for employee in employees
                 if employee.hikvision_id is not None
             })
@@ -123,7 +130,7 @@ class HikvisionPoller:
             result = await self.run_once()
             delay = self.config.poll_seconds
             if not result.success:
-                delay = min(self.config.poll_seconds, 2 ** min(self._failures, 6))
+                delay = min(300, self.config.poll_seconds * 2 ** min(self._failures, 4))
             await asyncio.sleep(delay)
 
     async def stop(self):
