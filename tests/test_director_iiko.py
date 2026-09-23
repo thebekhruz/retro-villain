@@ -63,3 +63,50 @@ def test_sale_without_a_dish_group_gets_a_configurable_name():
              'field7': {'value': 1}, 'field8': {'value': 9000}, 'field9': {'value': 1000}}]
     parsed = director_rows_from_olap(date(2026, 9, 21), rows)
     assert parsed[0].category == 'Без группы'
+
+
+def test_director_loads_yandex_headline_from_payment_report_not_excluded_group():
+    def handler(request):
+        assert request.url.path == '/api/auth/login'
+        return httpx.Response(200, json={'token': 'test-only'})
+
+    source = IikoClient(
+        Settings(login='test', password='test', store_id=123,
+                 director_excluded_groups=frozenset({'ДОСТАВКА ЯНДЕКС'})),
+        transport=httpx.MockTransport(handler), poll_delay=0)
+    payment_calls = []
+
+    async def fake_olap(client, day, groups, fields, extra_filters=()):
+        return [node(0, 'Kassa-FiscalBox1', [node(1, 'Ресторан', [
+            node(2, 'Яндех Еда', [node(3, 'Доставка', [
+                node(4, 'ДОСТАВКА ЯНДЕКС', [node(5, 'Олег', [
+                    {**node(6, f'order-{day}'), 'field7': {'value': 1},
+                     'field8': {'value': 65000}, 'field9': {'value': 10000}}
+                ])])
+            ])])
+        ])])]
+
+    async def fake_olap_range(client, start, end, groups, fields, extra_filters=()):
+        payment_calls.append(tuple(extra_filters))
+        if extra_filters:
+            return [node(0, '2026-09-13', [node(1, 'Kassa-FiscalBox1', [
+                node(2, 'Ресторан', [node(3, 'Доставка', [
+                    {**node(4, 'Яндех Еда'), 'field5': {'value': 28004000}}
+                ])])
+            ])])]
+        return []
+
+    source._olap = fake_olap
+    source._olap_range = fake_olap_range
+    result = asyncio.run(source.load_director_report(date(2026, 9, 23)))
+
+    assert result.period_start == date(2026, 9, 13)
+    assert result.period_end == date(2026, 9, 22)
+    assert result.cash_total == Decimal(0)
+    assert result.yandex_revenue == Decimal('28004000')
+    assert len(payment_calls) == 2
+    assert payment_calls[0] == ({
+        'field': 'OperationType', 'filterType': 'value_list',
+        'valueList': ['PAYMENT'], 'inclusiveList': True,
+    },)
+    assert payment_calls[1] == ()

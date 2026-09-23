@@ -4,7 +4,8 @@ from decimal import Decimal
 import pytest
 
 from retro.modules.cashier.service import DataError
-from retro.modules.director.models import SalesRow, build_snapshot, completed_period
+from retro.modules.director.models import SalesRow, build_snapshot, completed_period, payment_total
+from retro.modules.founder.models import PaymentRow
 
 
 CATEGORIES = {'Основное меню': 'menu', 'Десерты': 'dessert', 'Напитки': 'drink'}
@@ -55,6 +56,32 @@ def test_empty_category_map_includes_all_groups_and_explicit_map_still_fails_clo
                                for offset, day in enumerate(days)], {'Десерты': 'dessert'},
                               date(2026, 9, 8), date(2026, 9, 17), excluded_groups={'Контейнеры'})
     assert excluded.cash_total == Decimal(0)
+
+
+def test_authoritative_yandex_payments_are_not_reduced_by_excluded_dish_groups():
+    days = [date(2026, 9, 8) + timedelta(days=offset) for offset in range(10)]
+    rows = [sale(category='ДОСТАВКА ЯНДЕКС', day=day, order_id=str(offset))
+            for offset, day in enumerate(days)]
+    snapshot = build_snapshot(
+        rows, {}, date(2026, 9, 8), date(2026, 9, 17),
+        excluded_groups={'ДОСТАВКА ЯНДЕКС'}, yandex_revenue=Decimal('28004000'))
+
+    assert snapshot.cash_total == Decimal(0)
+    assert snapshot.item_metrics['yandex'] == {}
+    assert snapshot.yandex_revenue == Decimal('28004000')
+
+
+def test_yandex_payment_total_normalizes_iiko_alias_and_applies_direction_rules():
+    rows = [
+        PaymentRow(date(2026, 9, 13), 'Kassa-FiscalBox1', 'Ресторан',
+                   'Доставка', 'Яндех Еда', Decimal('27000000')),
+        PaymentRow(date(2026, 9, 14), 'GL-Kassa-Oksbrich', 'Зал',
+                   'Обед', 'Яндекс Еда', Decimal('1004000')),
+        PaymentRow(date(2026, 9, 15), 'Kassa-FiscalBox1', 'Бехруз (Свадьба)',
+                   'Старая банкетная строка', 'Яндекс Еда', Decimal('999999')),
+    ]
+
+    assert payment_total(rows, 'Яндекс Еда') == Decimal('28004000')
 
 
 def test_banquet_is_counted_by_bekhruz_marker_in_dish_name():

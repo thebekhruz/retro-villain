@@ -10,7 +10,9 @@ from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
-from retro.modules.director.models import SalesRow, build_snapshot as build_director_snapshot, completed_period
+from retro.modules.director.models import (
+    SalesRow, build_snapshot as build_director_snapshot, completed_period, payment_total,
+)
 from retro.modules.founder.models import (
     PaymentRow, RevenueRow, build_analytics, is_banquet_item,
 )
@@ -285,8 +287,26 @@ class IikoClient:
                     rows.extend(director_rows_from_olap(
                         day, await self._olap(client, day, DIRECTOR_GROUPS, DIRECTOR_FIELDS)))
                     day += timedelta(days=1)
+                payment_groups = [
+                    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
+                    'PayTypes',
+                ]
+                payment_scope = [dict(field='OperationType', filterType='value_list',
+                                      valueList=['PAYMENT'], inclusiveList=True)]
+                regular_rows, banquet_rows = await asyncio.gather(
+                    self._olap_range(client, start, end, payment_groups,
+                                     ['DishDiscountSumInt'], payment_scope),
+                    self._olap_range(client, start, end, payment_groups,
+                                     ['DishDiscountSumInt']),
+                )
+                payments = founder_rows_from_olap(
+                    regular_rows, payments=True, dish_filter='exclude_banquet')
+                payments.extend(founder_rows_from_olap(
+                    banquet_rows, payments=True, dish_filter='banquet_only'))
+                yandex_revenue = payment_total(payments, 'Яндекс Еда')
                 return build_director_snapshot(rows, self.settings.director_categories, start, end,
-                                               excluded_groups=self.settings.director_excluded_groups)
+                                               excluded_groups=self.settings.director_excluded_groups,
+                                               yandex_revenue=yandex_revenue)
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_director')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
