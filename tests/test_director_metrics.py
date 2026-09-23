@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 from decimal import Decimal
+from dataclasses import replace
 
 import pytest
 
@@ -33,6 +34,42 @@ def test_yandex_overlaps_cash_direction_without_double_counting():
     assert snapshot.yandex_revenue == Decimal('200000')
     assert snapshot.item_metrics['all']['Плов 0'].margin_percent == Decimal('60.00')
     assert snapshot.waiter_metrics['Олег'].revenue == Decimal('2000000')
+
+
+def test_sales_and_zero_revenue_purposes_reconcile_for_items_and_waiters():
+    rows = []
+    for offset in range(10):
+        day = date(2026, 9, 8) + timedelta(days=offset)
+        rows.extend([
+            sale(day=day, quantity='234', revenue='2808000', cost='1343137.55'),
+            replace(sale(day=day, quantity='52', revenue='0', cost='280048.13'),
+                    non_cash_payment_type='Счет Шефа'),
+            replace(sale(day=day, quantity='10', revenue='0', cost='57167.12'),
+                    non_cash_payment_type='Дегустация'),
+            replace(sale(day=day, quantity='1', revenue='0', cost='2000'),
+                    non_cash_payment_type='Другая причина'),
+        ])
+    report = build_snapshot(rows, CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
+    metric = report.item_metrics['all']['Плов']
+    assert report.item_metrics['retro']['Плов'] == report.waiter_metrics['Олег'] == metric
+    assert metric.breakdown['sales'].quantity == 2340
+    assert metric.breakdown['chef'].quantity == 520
+    assert metric.breakdown['tasting'].quantity == 100
+    assert metric.breakdown['other_zero'].quantity == 10
+    for attr in ('quantity', 'revenue', 'cost', 'gross_profit'):
+        assert getattr(metric, attr) == sum(getattr(part, attr) for part in metric.breakdown.values())
+    assert metric.breakdown['sales'].gross_profit == Decimal('14648624.50')
+    assert report.json()['item_metrics']['all']['Плов']['breakdown']['chef']['cost'] == '2800481.30'
+
+
+@pytest.mark.parametrize('purpose,revenue,expected', [
+    ('  Счёт Шефа  ', '0', 'chef'), ('ДЕГУСТАЦИЯ', '0', 'tasting'),
+    ('', '0', 'other_zero'), ('Комплимент', '0', 'other_zero'),
+    ('Счет Шефа', '100', 'sales'),
+])
+def test_classification_uses_actual_revenue_and_known_iiko_purpose(purpose, revenue, expected):
+    from retro.modules.director.models import sale_kind
+    assert sale_kind(replace(sale(revenue=revenue), non_cash_payment_type=purpose)) == expected
 
 
 def test_missing_waiter_is_rejected():

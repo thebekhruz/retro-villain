@@ -24,6 +24,12 @@
         revenue: revenue,
         cost: cost,
         profit: profit,
+        breakdown: metric.breakdown ? Object.fromEntries(
+          ['sales', 'chef', 'tasting', 'other_zero'].map(function (key) {
+            const part = metric.breakdown[key] || {};
+            return [key, { quantity: amount(part.quantity), revenue: amount(part.revenue),
+              cost: amount(part.cost), profit: amount(part.gross_profit) }];
+          })) : null,
         // Маржу считаем сами, а не берём строкой: позиция с нулевой выручкой
         // не имеет процента, и рисовать у неё ноль было бы враньём.
         margin: revenue > 0 ? (profit / revenue) * 100 : null,
@@ -45,6 +51,12 @@
     );
     sum.positions = rows.length;
     sum.margin = sum.revenue > 0 ? (sum.profit / sum.revenue) * 100 : null;
+    sum.breakdown = rows.length && rows.every(row => row.breakdown)
+      ? Object.fromEntries(['sales', 'chef', 'tasting', 'other_zero'].map(key => [key,
+        rows.reduce((total, row) => {
+          for (const field of ['quantity', 'revenue', 'cost', 'profit']) total[field] += row.breakdown[key][field];
+          return total;
+        }, {quantity: 0, revenue: 0, cost: 0, profit: 0})])) : null;
     return sum;
   }
 

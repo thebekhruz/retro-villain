@@ -78,6 +78,13 @@
       </div>
     </section>
 
+    <section class="profit-summary" aria-label="Выручка и прибыль">
+      <div class="panel profit-tile"><p>Выручка</p><strong id="summary-revenue">—</strong><small>Все направления за период</small></div>
+      <div class="panel profit-tile"><p>Прибыль продаж</p><strong id="sales-profit">—</strong><small>Выручка минус себестоимость платных позиций</small></div>
+      <div class="panel profit-tile"><p>Расход без выручки</p><strong id="internal-cost">—</strong><div id="internal-detail"></div></div>
+      <div class="panel profit-tile is-total"><p>Прибыль итоговая</p><strong id="summary-profit">—</strong><small>Прибыль продаж минус расход без выручки</small></div>
+    </section>
+
     <!-- 2. Две короткие выжимки перед таблицей: на чём зарабатываем и что
          тянет вниз. Директор редко долистывает таблицу до конца. -->
     <section class="highlights" aria-label="Что важно в меню">
@@ -113,9 +120,10 @@
           <button class="chip" type="button" data-sort="quantity">По количеству</button>
         </div>
       </div>
+      <p class="panel-note">Выручка и прибыль — в сум. Количество и себестоимость включают все позиции; расход без выручки показан отдельно и уже вычтен из итоговой прибыли.</p>
       <div class="menu-table-scroll" data-scroll>
         <table class="menu-table">
-          <thead><tr><th scope="col">Позиция</th><th scope="col">Продано</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль</th><th scope="col">Маржа</th></tr></thead>
+          <thead><tr><th scope="col">Позиция</th><th scope="col">Количество</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль продаж</th><th scope="col">Расход без выручки</th><th scope="col">Прибыль итоговая</th><th scope="col">Маржа</th></tr></thead>
           <tbody id="menu-rows"></tbody>
         </table>
       </div>
@@ -129,12 +137,12 @@
       <section class="panel waiters-panel">
         <div class="menu-table-scroll" data-scroll>
           <table class="menu-table">
-            <thead><tr><th scope="col">Официант</th><th scope="col">Позиций продано</th><th scope="col">Выручка</th><th scope="col">Прибыль</th><th scope="col">Маржа</th></tr></thead>
+            <thead><tr><th scope="col">Официант</th><th scope="col">Количество</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль продаж</th><th scope="col">Расход без выручки</th><th scope="col">Прибыль итоговая</th><th scope="col">Маржа</th></tr></thead>
             <tbody id="waiter-rows"></tbody>
           </table>
         </div>
         <div id="waiters-empty" class="empty-state" hidden><span>◉</span><p>iiko не вернул официантов за период</p></div>
-        <p class="panel-note">Выручка засчитывается официанту, открывшему заказ. Маржа считается по себестоимости проданных позиций.</p>
+        <p class="panel-note">Выручка засчитывается официанту, открывшему заказ. Итоговая прибыль и маржа учитывают расход без выручки.</p>
       </section>
     </details>
 

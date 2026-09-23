@@ -30,7 +30,30 @@ def test_totals_sum_the_group_and_skip_margin_without_revenue():
 
 def test_totals_of_an_empty_group_report_no_margin_instead_of_zero():
     result = run_node("logic.totals({})")
-    assert result == {'quantity': 0, 'revenue': 0, 'cost': 0, 'profit': 0, 'positions': 0, 'margin': None}
+    assert result == {'quantity': 0, 'revenue': 0, 'cost': 0, 'profit': 0, 'positions': 0,
+                      'margin': None, 'breakdown': None}
+
+
+def test_split_metrics_sum_across_items_without_changing_total_profit():
+    item = {'quantity': '296', 'revenue': '2808000', 'cost': '1680352.80',
+            'gross_profit': '1127647.20', 'breakdown': {
+                'sales': {'quantity': '234', 'revenue': '2808000', 'cost': '1343137.55',
+                          'gross_profit': '1464862.45'},
+                'chef': {'quantity': '52', 'cost': '280048.13', 'gross_profit': '-280048.13'},
+                'tasting': {'quantity': '10', 'cost': '57167.12', 'gross_profit': '-57167.12'},
+                'other_zero': {}}}
+    result = run_node(f'logic.totals({json.dumps({"A": item, "B": item})})')
+    parts = result['breakdown']
+    assert parts['sales']['quantity'] == 468
+    assert parts['chef']['quantity'] == 104
+    assert parts['tasting']['quantity'] == 20
+    assert abs(result['profit'] - sum(part['profit'] for part in parts.values())) < .001
+    assert abs(result['cost'] - sum(part['cost'] for part in parts.values())) < .001
+
+
+def test_legacy_metric_does_not_invent_a_sales_breakdown():
+    assert run_node(f'logic.entries({GROUP})[0].breakdown') is None
+    assert run_node(f'logic.totals({GROUP}).breakdown') is None
 
 
 def test_position_without_revenue_has_no_margin():

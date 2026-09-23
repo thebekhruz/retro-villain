@@ -1,5 +1,5 @@
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 
@@ -22,6 +22,17 @@ class SalesRow:
     cost: Decimal
     waiter: str
     order_id: str
+    non_cash_payment_type: str = ''
+
+
+BREAKDOWN_KEYS = ('sales', 'chef', 'tasting', 'other_zero')
+
+
+def sale_kind(row):
+    if row.revenue > 0:
+        return 'sales'
+    purpose = ' '.join((row.non_cash_payment_type or '').casefold().replace('ё', 'е').split())
+    return {'счет шефа': 'chef', 'дегустация': 'tasting'}.get(purpose, 'other_zero')
 
 
 @dataclass(frozen=True)
@@ -29,6 +40,7 @@ class ItemMetric:
     quantity: Decimal
     revenue: Decimal
     cost: Decimal
+    breakdown: dict = field(default_factory=dict)
 
     @property
     def gross_profit(self):
@@ -52,9 +64,12 @@ class DirectorSnapshot:
 
     def json(self):
         def metric(value):
-            return dict(quantity=str(value.quantity), revenue=str(value.revenue), cost=str(value.cost),
+            result = dict(quantity=str(value.quantity), revenue=str(value.revenue), cost=str(value.cost),
                         gross_profit=str(value.gross_profit), margin_percent=str(value.margin_percent)
                         if value.margin_percent is not None else None)
+            if value.breakdown:
+                result['breakdown'] = {key: metric(part) for key, part in value.breakdown.items()}
+            return result
         return dict(period_start=self.period_start.isoformat(), period_end=self.period_end.isoformat(),
                     cash_total=str(self.cash_total), yandex_revenue=str(self.yandex_revenue),
                     item_metrics={group: {name: metric(value) for name, value in values.items()}
@@ -98,11 +113,26 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
     days = {row.day for row in values}
     if days != expected_days:
         raise DataError('iiko не вернул все десять дней для отчёта директора.')
-    metrics = {name: defaultdict(lambda: [Decimal(0), Decimal(0), Decimal(0)])
+    def new_bucket():
+        return {kind: [Decimal(0), Decimal(0), Decimal(0)] for kind in BREAKDOWN_KEYS}
+
+    def add(bucket, kind, row):
+        values = bucket[kind]
+        values[0] += row.quantity
+        values[1] += row.revenue
+        values[2] += row.cost
+
+    def finish(bucket):
+        parts = {kind: ItemMetric(*values) for kind, values in bucket.items()}
+        totals = [sum((values[index] for values in bucket.values()), Decimal(0))
+                  for index in range(3)]
+        return ItemMetric(*totals, breakdown=parts)
+
+    metrics = {name: defaultdict(new_bucket)
                for name in ('all', 'retro', 'oxbridge', 'banquet', 'yandex')}
     cash_total = Decimal(0)
     yandex_total = Decimal(0)
-    waiters = defaultdict(lambda: [Decimal(0), Decimal(0), Decimal(0)])
+    waiters = defaultdict(new_bucket)
     for row in values:
         if row.category in excluded_groups:
             continue
@@ -123,20 +153,15 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
             names.append('yandex')
             yandex_total += row.revenue
         cash_total += row.revenue
-        waiter = waiters[row.waiter]
-        waiter[0] += row.quantity
-        waiter[1] += row.revenue
-        waiter[2] += row.cost
+        kind = sale_kind(row)
+        add(waiters[row.waiter], kind, row)
         for name in names:
-            bucket = metrics[name][row.item]
-            bucket[0] += row.quantity
-            bucket[1] += row.revenue
-            bucket[2] += row.cost
+            add(metrics[name][row.item], kind, row)
     if yandex_revenue is not None:
         if yandex_revenue < 0:
             raise DataError('iiko вернул отрицательную сумму оплат Яндекс Еды.')
         yandex_total = yandex_revenue
     return DirectorSnapshot(period_start, period_end, cash_total, yandex_total,
-                            {group: {item: ItemMetric(*amounts) for item, amounts in items.items()}
+                            {group: {item: finish(amounts) for item, amounts in items.items()}
                              for group, items in metrics.items()},
-                            {name: ItemMetric(*amounts) for name, amounts in waiters.items()})
+                            {name: finish(amounts) for name, amounts in waiters.items()})

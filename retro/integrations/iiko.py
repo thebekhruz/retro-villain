@@ -23,6 +23,7 @@ from retro.modules.founder.models import (
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
                    'DishGroup', 'WaiterName', 'UniqOrderId.Id']
 DIRECTOR_COST_GROUPS = [field for field in DIRECTOR_GROUPS if field != 'PayTypes']
+DIRECTOR_DETAIL_GROUPS = DIRECTOR_GROUPS + ['NonCashPaymentType']
 DIRECTOR_FIELDS = ['DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost']
 IIKO_DETAIL_DIMENSIONS = (
     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'PayTypes',
@@ -45,10 +46,12 @@ def date_chunks(start, end, *, max_days):
         cursor = chunk_end + timedelta(days=1)
 
 
-def director_rows_from_olap(day, rows, *, split_payments=True):
+def director_rows_from_olap(day, rows, *, split_payments=True, payment_details=False):
     """Flatten iiko's nested grouped-table response into safe typed sale rows."""
     result = []
     groups = DIRECTOR_GROUPS if split_payments else DIRECTOR_COST_GROUPS
+    if payment_details:
+        groups = DIRECTOR_DETAIL_GROUPS
 
     def visit(row, inherited):
         if not isinstance(row, dict):
@@ -71,6 +74,7 @@ def director_rows_from_olap(day, rows, *, split_payments=True):
             number(cell(row, index)) for index in range(len(groups), len(groups) + 3))
         if not split_payments:
             values.insert(2, '')
+        purpose = values.pop() if payment_details else ''
         register, section, payment_type, item, category, waiter, order_id = values
         # У части продаж группа блюда в iiko пустая. Без имени такую строку
         # нельзя ни отнести к типу отчёта, ни исключить — отчёт падал целиком
@@ -79,7 +83,7 @@ def director_rows_from_olap(day, rows, *, split_payments=True):
         if not isinstance(category, str) or not category.strip():
             category = 'Без группы'
         result.append(SalesRow(day, register, section, payment_type, item, category,
-                               quantity, revenue, total_cost, waiter, order_id))
+                               quantity, revenue, total_cost, waiter, order_id, purpose or ''))
 
     for row in rows:
         visit(row, [])
@@ -340,11 +344,11 @@ class IikoClient:
                 day = start
                 while day <= end:
                     payment_rows, cost_rows = await asyncio.gather(
-                        self._olap(client, day, DIRECTOR_GROUPS, DIRECTOR_FIELDS),
+                        self._olap(client, day, DIRECTOR_DETAIL_GROUPS, DIRECTOR_FIELDS),
                         self._olap(client, day, DIRECTOR_COST_GROUPS, DIRECTOR_FIELDS),
                     )
                     rows.extend(reconcile_director_costs(
-                        director_rows_from_olap(day, payment_rows),
+                        director_rows_from_olap(day, payment_rows, payment_details=True),
                         director_rows_from_olap(day, cost_rows, split_payments=False)))
                     day += timedelta(days=1)
                 payment_groups = [
