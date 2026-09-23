@@ -127,6 +127,7 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
     totals = {direction: Decimal(0) for direction in DIRECTIONS}
     payment_totals = defaultdict(Decimal)
     seen_payments = set()
+    unknown_payments = set()
 
     for row in revenue_rows:
         if not start <= row.day <= end:
@@ -148,8 +149,7 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         if payment_name not in PAYMENT_SOURCES:
             if row.payment == '(без оплаты)' and row.amount == 0:
                 continue
-            raise DataError('В iiko появился новый тип оплаты. '
-                            'Нужно проверить справочник; сумма не будет скрыта или перераспределена.')
+            unknown_payments.add(payment_name)
         group = _period_start(row.day, start, granularity)
         payment_by_group[group][direction][payment_name] += row.amount
         if direction in directions:
@@ -164,6 +164,10 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         f'Оплаты расходятся с выручкой на {abs(discrepancy)} сум. '
         'Данные не считаются сверенными.'
     ]
+    if unknown_payments:
+        warnings.append(
+            'Новые типы оплаты iiko показаны отдельно: ' +
+            ', '.join(sorted(unknown_payments)) + '.')
 
     revenue_series = []
     payment_series = []
