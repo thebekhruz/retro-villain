@@ -28,6 +28,7 @@ IIKO_DETAIL_FIELDS = (
     'ProductCostBase.OneItem', 'UniqOrderId.OrdersCount',
 )
 FOUNDER_OLAP_MAX_DAYS = 31
+FOUNDER_OLAP_CHUNK_CONCURRENCY = 2
 
 
 def date_chunks(start, end, *, max_days):
@@ -313,19 +314,28 @@ class IikoClient:
                 payment_groups = revenue_groups + ['PayTypes']
                 revenue = []
                 payments = []
-                for chunk_start, chunk_end in date_chunks(
-                        start, end, max_days=FOUNDER_OLAP_MAX_DAYS):
-                    (regular_revenue_rows, regular_payment_rows,
-                     banquet_revenue_rows, banquet_payment_rows) = await asyncio.gather(
-                        self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                         ['DishDiscountSumInt'], payment_scope),
-                        self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                         ['DishDiscountSumInt'], payment_scope),
-                        self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                         ['DishDiscountSumInt']),
-                        self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                         ['DishDiscountSumInt']),
-                    )
+                chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
+
+                async def load_chunk(chunk_start, chunk_end):
+                    async with chunk_limit:
+                        return await asyncio.gather(
+                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                             ['DishDiscountSumInt'], payment_scope),
+                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                             ['DishDiscountSumInt'], payment_scope),
+                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                             ['DishDiscountSumInt']),
+                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                             ['DishDiscountSumInt']),
+                        )
+
+                chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
+                chunk_rows = await asyncio.gather(*(
+                    load_chunk(chunk_start, chunk_end)
+                    for chunk_start, chunk_end in chunks
+                ))
+                for (regular_revenue_rows, regular_payment_rows,
+                     banquet_revenue_rows, banquet_payment_rows) in chunk_rows:
                     revenue.extend(founder_rows_from_olap(
                         regular_revenue_rows,
                         dish_filter='exclude_banquet'))
