@@ -169,4 +169,4 @@ def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
 
     assert result['period'] == {'start': '2026-01-01', 'end': '2026-09-22'}
     assert len(calls) == 36
-    assert max_active == 4
+    assert max_active == 8
