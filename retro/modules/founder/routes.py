@@ -67,7 +67,7 @@ async def analytics(
         async with request.app.state.iiko_lock:
             return await asyncio.wait_for(
                 request.app.state.iiko.load_founder_analytics(
-                    start, end, granularity, selected), timeout=90)
+                    start, end, granularity, selected), timeout=180)
     except TimeoutError as error:
         log_safe_failure('founder-route', error, operation='analytics',
                          request_id=request.state.request_id)

@@ -217,7 +217,7 @@ class FounderChatTools:
             async with self.app.state.iiko_lock:
                 return await asyncio.wait_for(
                     self.app.state.iiko.load_founder_analytics(
-                        start, end, granularity, directions), timeout=90)
+                        start, end, granularity, directions), timeout=180)
         if name == 'get_bookings':
             start, end, granularity = _period(arguments, with_directions=False)
             raw = await asyncio.wait_for(self.app.state.bookings.load(start, end), timeout=20)
