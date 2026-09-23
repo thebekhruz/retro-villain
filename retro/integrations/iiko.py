@@ -25,7 +25,7 @@ IIKO_DETAIL_DIMENSIONS = (
 )
 IIKO_DETAIL_FIELDS = (
     'DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost',
-    'UniqOrderId.OrdersCount',
+    'ProductCostBase.OneItem', 'UniqOrderId.OrdersCount',
 )
 
 
@@ -50,7 +50,7 @@ def director_rows_from_olap(day, rows):
             return
         if len(values) != len(DIRECTOR_GROUPS):
             raise DataError('iiko не вернул все измерения продажи.')
-        quantity, revenue, unit_cost = (number(cell(row, index)) for index in range(7, 10))
+        quantity, revenue, total_cost = (number(cell(row, index)) for index in range(7, 10))
         register, section, payment_type, item, category, waiter, order_id = values
         # У части продаж группа блюда в iiko пустая. Без имени такую строку
         # нельзя ни отнести к типу отчёта, ни исключить — отчёт падал целиком
@@ -59,7 +59,7 @@ def director_rows_from_olap(day, rows):
         if not isinstance(category, str) or not category.strip():
             category = 'Без группы'
         result.append(SalesRow(day, register, section, payment_type, item, category,
-                               quantity, revenue, quantity * unit_cost, waiter, order_id))
+                               quantity, revenue, total_cost, waiter, order_id))
 
     for row in rows:
         visit(row, [])
@@ -181,8 +181,8 @@ def detail_rows_from_olap(rows, dimensions, *, limit):
             return
         if len(values) != group_count:
             raise DataError('iiko не вернул все измерения детального отчёта.')
-        quantity, revenue, unit_cost, orders = (
-            number(cell(row, group_count + index)) for index in range(4)
+        quantity, revenue, total_cost, unit_cost, orders = (
+            number(cell(row, group_count + index)) for index in range(5)
         )
         total_rows += 1
         if len(records) >= limit:
@@ -192,7 +192,7 @@ def detail_rows_from_olap(rows, dimensions, *, limit):
             'quantity': str(quantity),
             'revenue': str(revenue),
             'product_cost_per_unit': str(unit_cost),
-            'product_cost_total': str(quantity * unit_cost),
+            'product_cost_total': str(total_cost),
             'orders': str(orders),
         })
 
