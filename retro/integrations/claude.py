@@ -8,6 +8,8 @@ from decimal import Decimal, InvalidOperation
 
 import httpx
 
+from retro.async_utils import gather_reads
+
 from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import DataError
 
@@ -289,7 +291,7 @@ class ClaudeClient:
                             return {'type': 'tool_result', 'tool_use_id': call_id,
                                     'content': str(error), 'is_error': True}
 
-                    results = await asyncio.gather(*(execute_call(call) for call in calls))
+                    results = await gather_reads(*(execute_call(call) for call in calls))
                     tool_calls += len(calls)
                     body['messages'] = [*body['messages'],
                                         {'role': 'assistant', 'content': content},

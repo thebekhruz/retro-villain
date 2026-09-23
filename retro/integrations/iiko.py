@@ -1,5 +1,6 @@
 import asyncio
 import json
+import logging
 from contextlib import asynccontextmanager
 from time import monotonic
 from collections import defaultdict
@@ -9,6 +10,8 @@ from decimal import Decimal
 from urllib.parse import quote
 
 import httpx
+
+from retro.async_utils import gather_reads
 
 from retro.report_cache import ReportCache, refresh_source
 from retro.config import IIKO_ORIGIN
@@ -336,10 +339,6 @@ class IikoClient:
             raise DataError('Разрешён только сервер Retro Milliy.')
         try:
             async with self._client() as client:
-                breakdown_rows = await self._olap(client, day,
-                                                  ['CashRegisterName', 'RestaurantSection'],
-                                                  ['DishDiscountSumInt'])
-                breakdown = build_revenue_breakdown(breakdown_rows)
                 scope = [
                     dict(field='CashRegisterName', filterType='value_list',
                          valueList=[RETRO_REGISTER], inclusiveList=True),
@@ -348,13 +347,17 @@ class IikoClient:
                     dict(field='OperationType', filterType='value_list',
                          valueList=['PAYMENT'], inclusiveList=True),
                 ]
-                total = await self._olap(client, day, ['OpenDate.Typed'],
-                                         ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope)
-                payments = await self._olap(client, day, ['PayTypes'],
-                                            ['DishDiscountSumInt'], scope)
+                breakdown_rows, total, payments, shifts_data = await gather_reads(
+                    self._olap(client, day, ['CashRegisterName', 'RestaurantSection'],
+                               ['DishDiscountSumInt']),
+                    self._olap(client, day, ['OpenDate.Typed'],
+                               ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope),
+                    self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], scope),
+                    self._post(client, '/api/cash/shift/list_period',
+                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()}),
+                )
+                breakdown = build_revenue_breakdown(breakdown_rows)
                 snapshot = build_snapshot(day, total, payments, revenue_breakdown=breakdown)
-                shifts_data = await self._post(client, '/api/cash/shift/list_period',
-                                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()})
                 shifts = shifts_data.get('shifts')
                 if not isinstance(shifts, list):
                     raise DataError('iiko не вернул список кассовых смен.')
@@ -378,7 +381,7 @@ class IikoClient:
                 ]
                 payment_scope = [dict(field='OperationType', filterType='value_list',
                                       valueList=['PAYMENT'], inclusiveList=True)]
-                payment_rows, cost_rows, regular_rows, banquet_rows = await asyncio.gather(
+                payment_rows, cost_rows, regular_rows, banquet_rows = await gather_reads(
                     self._olap_range(client, start, end, ['OpenDate.Typed', *DIRECTOR_DETAIL_GROUPS],
                                      DIRECTOR_FIELDS),
                     self._olap_range(client, start, end, ['OpenDate.Typed', *DIRECTOR_COST_GROUPS],
@@ -422,7 +425,7 @@ class IikoClient:
 
                 async def load_chunk(chunk_start, chunk_end):
                     async with chunk_limit:
-                        return await asyncio.gather(
+                        return await gather_reads(
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt'], payment_scope),
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
@@ -430,7 +433,7 @@ class IikoClient:
                         )
 
                 chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
-                chunk_rows = await asyncio.gather(*(
+                chunk_rows = await gather_reads(*(
                     load_chunk(chunk_start, chunk_end)
                     for chunk_start, chunk_end in chunks
                 ))
@@ -510,9 +513,10 @@ class IikoClient:
         key = json.dumps(body, sort_keys=True, ensure_ascii=False)
         return await self._olap_cache.get(
             key, lambda: self._fetch_olap(client, body), ttl=60, timeout=90,
-            refresh=refresh_source.get())
+            refresh=refresh_source.get(), label="iiko_olap")
 
     async def _fetch_olap(self, client, body):
+        started = monotonic()
         init = await self._post(client, '/api/olap/init', body)
         fetch_id = init.get('fetchId') or init.get('data')
         if not isinstance(fetch_id, str) or not fetch_id:
@@ -523,6 +527,9 @@ class IikoClient:
                 result = data.get('result')
                 if not isinstance(result, dict) or not isinstance(result.get('rows'), list):
                     raise DataError('iiko вернул некорректную структуру отчёта.')
+                logging.getLogger('retro.performance').info(
+                    'operation=iiko_fetch attempts=%d duration_ms=%d',
+                    attempt + 1, (monotonic() - started) * 1000)
                 return result['rows']
             if attempt < 14:
                 await asyncio.sleep(self.poll_delay)

@@ -1,8 +1,9 @@
 import re
-import asyncio
 from datetime import date, datetime, timezone
 
 import httpx
+
+from retro.async_utils import gather_reads
 
 from retro.modules.cashier.service import DataError
 from retro.logging_config import log_upstream_failure
@@ -125,7 +126,7 @@ class BookingAnalyticsClient:
             ) as client:
                 result = {}
                 statuses = ('submitted', 'cancelled')
-                responses = await asyncio.gather(*(
+                responses = await gather_reads(*(
                     client.get('/analytics/summary', params={**params, 'status': status})
                     for status in statuses))
                 for status, response in zip(statuses, responses, strict=True):

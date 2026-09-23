@@ -137,7 +137,6 @@ class FinanceStore:
             connection.execute('CREATE INDEX IF NOT EXISTS accountant_salary_paid_day ON accountant_salary_payments(paid_day)')
             connection.execute('CREATE INDEX IF NOT EXISTS accountant_movements_day ON accountant_movements(day)')
 
-
     def reserves(self, day: date):
         from .reserves import reserve_summary
         return reserve_summary(self, day)

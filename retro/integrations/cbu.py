@@ -61,7 +61,6 @@ class UsdRates:
                 day TEXT PRIMARY KEY, amount TEXT NOT NULL
             )''')
 
-
     def balance(self, day: date):
         with closing(self._open()) as connection:
             row = connection.execute('SELECT amount FROM cashier_usd_balances WHERE day = ?',

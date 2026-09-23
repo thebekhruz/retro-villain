@@ -102,12 +102,13 @@ def test_director_loads_yandex_headline_from_payment_report_not_excluded_group()
                 day = start + timedelta(days=offset)
                 # Flatten the existing nested day fixture into the new date-first shape.
                 old = await fake_olap(client, day, groups[1:], fields, extra_filters)
-                parsed = director_rows_from_olap(day, old, split_payments='PayTypes' in groups)
+                parsed = director_rows_from_olap(day, old, split_payments='PayTypes' in groups,
+                                                 payment_details='NonCashPaymentType' in groups)
                 for row in parsed:
                     values = [day.isoformat(), row.register, row.section]
                     if 'PayTypes' in groups: values.append(row.payment_type)
                     values += [row.item, row.category, row.waiter, row.order_id]
-                    if 'NonCashPaymentType' in groups: values.append(row.payment_purpose)
+                    if 'NonCashPaymentType' in groups: values.append(row.non_cash_payment_type)
                     values += [row.quantity, row.revenue, row.cost]
                     rows.append({f'field{i}': {'value': value} for i, value in enumerate(values)})
             return rows

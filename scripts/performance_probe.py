@@ -15,7 +15,6 @@ import tempfile
 import threading
 import time
 from types import SimpleNamespace
-from unittest.mock import patch
 
 import httpx
 from fastapi import HTTPException
@@ -27,8 +26,8 @@ from retro.modules.accountant.hikvision import AttendanceStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.cashier.routes import day_report
-from retro.modules.cashier.service import LatestReportRunner, SnapshotCache, demo_snapshot, TZ
-from retro.modules.founder.routes import analytics
+from retro.modules.cashier.service import SnapshotCache, demo_snapshot, TZ
+from retro.report_cache import ReportCache
 
 
 async def olap_counts():
@@ -49,11 +48,13 @@ async def olap_counts():
         if 'UniqOrderId.Id' in groups:
             values = {'CashRegisterName': 'Kassa-FiscalBox1', 'RestaurantSection': 'Ресторан',
                       'PayTypes': 'Демо', 'DishName': 'Synthetic', 'DishGroup': 'Synthetic',
-                      'WaiterName': 'Synthetic', 'UniqOrderId.Id': 'synthetic-order'}
+                      'WaiterName': 'Synthetic', 'UniqOrderId.Id': 'synthetic-order',
+                      'OpenDate.Typed': '2026-09-13', 'NonCashPaymentType': ''}
             row = {f'field{i}': {'value': values[name]} for i, name in enumerate(groups)}
             row.update({f'field{len(groups)+i}': {'value': value}
                         for i, value in enumerate((1, 100, 20))})
-            rows = [row]
+            rows = [{**row, 'field0': {'value': date(2026, 9, day).isoformat()}}
+                    for day in range(13, 23)]
         return httpx.Response(200, json={'result': {'rows': rows}})
 
     source = IikoClient(Settings(login='synthetic', password='synthetic', store_id=1),
@@ -61,31 +62,32 @@ async def olap_counts():
     await source.load_director_report(date(2026, 9, 23))
     first = dict(counts)
     await source.load_director_report(date(2026, 9, 23))
+    await source.close()
     return {'first_load': first, 'two_identical_loads': dict(counts)}
 
 
 async def queue_timeout():
-    """Scale the inner 180 s deadline to 50 ms; hold queue for 200 ms."""
-    class Source:
-        async def load_founder_analytics(self, *args):
-            await asyncio.sleep(.01)
-            return {'ok': True}
+    """A 50 ms deadline must expire while all report slots are occupied."""
+    cache = ReportCache(concurrency=1)
+    started = asyncio.Event()
 
-    lock = asyncio.Lock()
-    await lock.acquire()
-    request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace(
-        iiko_lock=lock, iiko=Source())), state=SimpleNamespace(request_id='offline'))
-    original = asyncio.wait_for
+    async def occupied():
+        started.set()
+        await asyncio.sleep(.2)
 
-    async def short_deadline(operation, timeout):
-        return await original(operation, timeout=.05)
-
-    asyncio.get_running_loop().call_later(.2, lock.release)
+    first = asyncio.create_task(cache.get('occupied', occupied))
+    await started.wait()
     start = time.perf_counter()
-    with patch('retro.modules.founder.routes.asyncio.wait_for', short_deadline):
-        result = await analytics(request, date(2026, 9, 1), date(2026, 9, 2), 'day', 'retro')
+    try:
+        await cache.get('queued', lambda: asyncio.sleep(.01), timeout=.05)
+        result = 'completed'
+    except TimeoutError:
+        result = 'deadline'
+    elapsed = (time.perf_counter() - start) * 1000
+    await first
+    await cache.close()
     return {'scaled_timeout_ms': 50, 'queue_hold_ms': 200,
-            'elapsed_ms': round((time.perf_counter() - start) * 1000, 1), 'result': result}
+            'elapsed_ms': round(elapsed, 1), 'result': result}
 
 
 async def cross_user_replacement():
@@ -97,8 +99,7 @@ async def cross_user_replacement():
             await asyncio.sleep(.1)
             return replace(demo_snapshot(day), demo=False)
 
-    state = SimpleNamespace(iiko=Source(), iiko_lock=asyncio.Lock(),
-                            iiko_daily_reports=LatestReportRunner(), cache=SnapshotCache(),
+    state = SimpleNamespace(iiko=Source(), reports=ReportCache(), cache=SnapshotCache(),
                             expenses=SimpleNamespace(policy_configured=lambda: False))
 
     async def call(owner, day):

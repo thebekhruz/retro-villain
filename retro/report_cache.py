@@ -17,15 +17,16 @@ class Flight:
 
 
 class ReportCache:
-    def __init__(self, *, concurrency=4, limit=64, max_weight=None, weigh=None, clock=monotonic):
+    def __init__(self, *, concurrency=4, limit=64, max_weight=None, weigh=None, max_pending=128, clock=monotonic):
         self.concurrency, self.limit, self.clock = concurrency, limit, clock
         self.max_weight, self.weigh = max_weight, weigh or (lambda value: 1)
         self.entries = OrderedDict()
         self.pending = {}
+        self.max_pending = max_pending
         self._loop = None
         self._slots = None
 
-    async def get(self, key, operation, *, ttl=60, timeout=90, refresh=False):
+    async def get(self, key, operation, *, ttl=60, timeout=90, refresh=False, label="report"):
         loop = asyncio.get_running_loop()
         if self._loop is not loop:
             self._loop, self._slots = loop, asyncio.Semaphore(self.concurrency)
@@ -37,9 +38,13 @@ class ReportCache:
             self.entries.pop(key, None)
         elif key in self.entries:
             self.entries.move_to_end(key)
+            logging.getLogger('retro.performance').info('operation=%s cache=hit', label)
             return self.entries[key][1]
         flight = self.pending.get(key)
         if flight is None:
+            if len(self.pending) >= self.max_pending:
+                raise TimeoutError("Report queue is full")
+
             async def produce():
                 started = self.clock()
                 try:
@@ -57,8 +62,8 @@ class ReportCache:
                                         sum(row[2] for row in self.entries.values()) > self.max_weight):
                                     self.entries.popitem(last=False)
                             logging.getLogger('retro.performance').info(
-                                'operation=report queue_ms=%d duration_ms=%d',
-                                (acquired-started)*1000, (self.clock()-started)*1000)
+                                'operation=%s cache=miss queue_ms=%d duration_ms=%d',
+                                label, (acquired-started)*1000, (self.clock()-started)*1000)
                             return value
                 finally:
                     current = self.pending.get(key)
@@ -103,7 +108,7 @@ async def load_iiko(state, method, *args, refresh=False, request=None, timeout=9
             refresh_source.reset(token)
 
     ttl = 300 if method == 'load_director_report' else 30 if method == 'load' else 60
-    reader = asyncio.create_task(cache.get(key, operation, ttl=ttl, timeout=timeout, refresh=refresh))
+    reader = asyncio.create_task(cache.get(key, operation, ttl=ttl, timeout=timeout, refresh=refresh, label=method))
     try:
         if request is not None and hasattr(request, 'is_disconnected'):
             while not reader.done():

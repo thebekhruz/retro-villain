@@ -326,6 +326,7 @@ $('entrances-download').addEventListener('click', async () => {
 (async () => {
   try {
     const catalogRequest = fetch('/api/accountant/expenses/catalog', {cache: 'no-store'});
+    catalogRequest.catch(() => {}); // The config request may fail before we await the catalog.
     today = (await globalThis.RetroConfig).today;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;

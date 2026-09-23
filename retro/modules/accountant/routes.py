@@ -51,7 +51,7 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
         return await asyncio.to_thread(finance.handover_for_day, day)
     state = request.app.state
     snapshot = state.cache.latest_for_day(day)
-    if snapshot is None and state.settings.configured:
+    if state.settings.configured:
         try:
             snapshot = await load_iiko(state, 'load', day, request=request)
             state.cache.put(snapshot)
