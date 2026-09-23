@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import quote
 
@@ -27,6 +27,16 @@ IIKO_DETAIL_FIELDS = (
     'DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost',
     'ProductCostBase.OneItem', 'UniqOrderId.OrdersCount',
 )
+FOUNDER_OLAP_MAX_DAYS = 31
+
+
+def date_chunks(start, end, *, max_days):
+    """Yield inclusive ranges small enough for one iiko OLAP report."""
+    cursor = start
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=max_days - 1))
+        yield cursor, chunk_end
+        cursor = chunk_end + timedelta(days=1)
 
 
 def director_rows_from_olap(day, rows):
@@ -273,7 +283,6 @@ class IikoClient:
                 while day <= end:
                     rows.extend(director_rows_from_olap(
                         day, await self._olap(client, day, DIRECTOR_GROUPS, DIRECTOR_FIELDS)))
-                    from datetime import timedelta
                     day += timedelta(days=1)
                 return build_director_snapshot(rows, self.settings.director_categories, start, end,
                                                excluded_groups=self.settings.director_excluded_groups)
@@ -302,22 +311,26 @@ class IikoClient:
                 revenue_groups = [
                     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName']
                 payment_groups = revenue_groups + ['PayTypes']
-                revenue = founder_rows_from_olap(
-                    await self._olap_range(client, start, end, revenue_groups,
-                                           ['DishDiscountSumInt'], payment_scope),
-                    dish_filter='exclude_banquet')
-                payments = founder_rows_from_olap(
-                    await self._olap_range(client, start, end, payment_groups,
-                                           ['DishDiscountSumInt'], payment_scope), payments=True,
-                    dish_filter='exclude_banquet')
-                revenue.extend(founder_rows_from_olap(
-                    await self._olap_range(client, start, end, revenue_groups,
-                                           ['DishDiscountSumInt']),
-                    dish_filter='banquet_only'))
-                payments.extend(founder_rows_from_olap(
-                    await self._olap_range(client, start, end, payment_groups,
-                                           ['DishDiscountSumInt']), payments=True,
-                    dish_filter='banquet_only'))
+                revenue = []
+                payments = []
+                for chunk_start, chunk_end in date_chunks(
+                        start, end, max_days=FOUNDER_OLAP_MAX_DAYS):
+                    revenue.extend(founder_rows_from_olap(
+                        await self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                               ['DishDiscountSumInt'], payment_scope),
+                        dish_filter='exclude_banquet'))
+                    payments.extend(founder_rows_from_olap(
+                        await self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                               ['DishDiscountSumInt'], payment_scope), payments=True,
+                        dish_filter='exclude_banquet'))
+                    revenue.extend(founder_rows_from_olap(
+                        await self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                               ['DishDiscountSumInt']),
+                        dish_filter='banquet_only'))
+                    payments.extend(founder_rows_from_olap(
+                        await self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                               ['DishDiscountSumInt']), payments=True,
+                        dish_filter='banquet_only'))
                 return build_analytics(revenue, payments, start, end, granularity, directions)
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')
