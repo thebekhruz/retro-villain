@@ -315,21 +315,28 @@ class IikoClient:
                 payments = []
                 for chunk_start, chunk_end in date_chunks(
                         start, end, max_days=FOUNDER_OLAP_MAX_DAYS):
+                    (regular_revenue_rows, regular_payment_rows,
+                     banquet_revenue_rows, banquet_payment_rows) = await asyncio.gather(
+                        self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                         ['DishDiscountSumInt'], payment_scope),
+                        self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                         ['DishDiscountSumInt'], payment_scope),
+                        self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                         ['DishDiscountSumInt']),
+                        self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                         ['DishDiscountSumInt']),
+                    )
                     revenue.extend(founder_rows_from_olap(
-                        await self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                               ['DishDiscountSumInt'], payment_scope),
+                        regular_revenue_rows,
                         dish_filter='exclude_banquet'))
                     payments.extend(founder_rows_from_olap(
-                        await self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                               ['DishDiscountSumInt'], payment_scope), payments=True,
+                        regular_payment_rows, payments=True,
                         dish_filter='exclude_banquet'))
                     revenue.extend(founder_rows_from_olap(
-                        await self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                               ['DishDiscountSumInt']),
+                        banquet_revenue_rows,
                         dish_filter='banquet_only'))
                     payments.extend(founder_rows_from_olap(
-                        await self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                               ['DishDiscountSumInt']), payments=True,
+                        banquet_payment_rows, payments=True,
                         dish_filter='banquet_only'))
                 return build_analytics(revenue, payments, start, end, granularity, directions)
         except (httpx.HTTPError, TimeoutError) as error:
