@@ -6,6 +6,7 @@ from decimal import Decimal, ROUND_HALF_UP
 from retro.modules.cashier.service import (
     BANQUET_SECTION, PAYMENT_ALIASES, RETRO_REGISTER, SCHOOL_REGISTER, DataError,
 )
+from retro.modules.founder.models import classify_direction
 
 
 @dataclass(frozen=True)
@@ -78,7 +79,20 @@ def direction(row):
     raise DataError('В iiko появилась неизвестная касса или отделение.')
 
 
-def build_snapshot(rows, categories, period_start, period_end, *, excluded_groups=frozenset()):
+def payment_total(rows, payment_name):
+    total = Decimal(0)
+    for row in rows:
+        group = classify_direction(row.register, row.section, row.item)
+        if group is None:
+            continue
+        normalized = PAYMENT_ALIASES.get(row.payment, row.payment)
+        if normalized == payment_name:
+            total += row.amount
+    return total
+
+
+def build_snapshot(rows, categories, period_start, period_end, *, excluded_groups=frozenset(),
+                   yandex_revenue=None):
     expected_days = {period_start + timedelta(days=index) for index in range(10)}
     values = list(rows)
     days = {row.day for row in values}
@@ -118,6 +132,10 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
             bucket[0] += row.quantity
             bucket[1] += row.revenue
             bucket[2] += row.cost
+    if yandex_revenue is not None:
+        if yandex_revenue < 0:
+            raise DataError('iiko вернул отрицательную сумму оплат Яндекс Еды.')
+        yandex_total = yandex_revenue
     return DirectorSnapshot(period_start, period_end, cash_total, yandex_total,
                             {group: {item: ItemMetric(*amounts) for item, amounts in items.items()}
                              for group, items in metrics.items()},
