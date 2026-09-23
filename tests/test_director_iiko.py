@@ -5,7 +5,7 @@ import httpx
 import pytest
 
 from retro.integrations.iiko import (
-    DIRECTOR_COST_GROUPS, DIRECTOR_GROUPS, director_rows_from_olap,
+    DIRECTOR_COST_GROUPS, DIRECTOR_DETAIL_GROUPS, director_rows_from_olap,
     reconcile_director_costs,
 )
 from retro.config import Settings
@@ -88,8 +88,9 @@ def test_director_loads_yandex_headline_from_payment_report_not_excluded_group()
         return [node(0, 'Kassa-FiscalBox1', [node(1, 'Ресторан', [
             node(2, 'Яндех Еда', [node(3, 'Доставка', [
                 node(4, 'ДОСТАВКА ЯНДЕКС', [node(5, 'Олег', [
-                    {**node(6, f'order-{day}'), 'field7': {'value': 1},
-                     'field8': {'value': 65000}, 'field9': {'value': 10000}}
+                    {**node(6, f'order-{day}'), 'field7': {'value': ''},
+                     'field8': {'value': 1}, 'field9': {'value': 65000},
+                     'field10': {'value': 10000}}
                 ])])
             ])])
         ])])]
@@ -157,6 +158,19 @@ def test_zero_quantity_and_zero_cost_do_not_divide_by_zero():
     assert result[0].cost == 0
 
 
+def test_non_cash_purpose_survives_parsing_and_cost_reconciliation():
+    raw = [{f'field{index}': {'value': value} for index, value in enumerate([
+        'Kassa-FiscalBox1', 'Ресторан', '(без оплаты)', 'Олот Самса', 'Кухня',
+        'Олег', 'order-1', 'Счет Шефа', 52, 0, 280048.13])}]
+    payments = director_rows_from_olap(date(2026, 9, 13), raw, payment_details=True)
+    costs = [sale('', '52', '0', '280048.13')]
+    result = reconcile_director_costs(payments, costs)
+    assert result[0].non_cash_payment_type == 'Счет Шефа'
+    assert result[0].quantity == 52
+    assert result[0].cost == Decimal('280048.13')
+    assert 'NonCashPaymentType' not in DIRECTOR_COST_GROUPS
+
+
 @pytest.mark.parametrize('costs', [
     [],
     [sale('', '2', '24000', '10000', order='wrong-order')],
@@ -191,8 +205,8 @@ def test_director_load_reconciles_cost_before_item_and_waiter_aggregation():
             assert 'PayTypes' not in groups
             cost_days.append(day)
             return [flat(['Kassa-FiscalBox1', 'Ресторан', *common, 2, 24000, 10000])]
-        assert groups == DIRECTOR_GROUPS
-        return [flat(['Kassa-FiscalBox1', 'Ресторан', payment, *common,
+        assert groups == DIRECTOR_DETAIL_GROUPS
+        return [flat(['Kassa-FiscalBox1', 'Ресторан', payment, *common, '',
                       quantity, revenue, 10000]) for payment, quantity, revenue in (
                           ('Демо', 1.8, 21600), ('Яндех Еда', .2, 2400))]
 

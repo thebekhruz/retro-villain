@@ -3,9 +3,7 @@ const money = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 0 });
 const decimal = new Intl.NumberFormat('ru-RU', { maximumFractionDigits: 1 });
 const logic = globalThis.DirectorLogic;
 
-/** Телефонная раскладка: список блюд превращается в карточки, часть
- *  показателей прячется под тап. Поворот экрана слушаем, иначе после
- *  альбомной ориентации страница остаётся в чужом режиме. */
+/** На телефоне показываем все показатели в карточке рядом с названием. */
 const phone = matchMedia('(max-width:700px)');
 
 /** Сколько позиций показываем до «Показать все». На телефоне каждая
@@ -16,7 +14,7 @@ function previewRows() { return phone.matches ? 12 : 25; }
  *  начинается в 10:00, и в плохой день список уезжает за экран. */
 const LATE_PREVIEW = 5;
 
-const view = { snapshot: null, group: 'all', sort: 'revenue', query: '', expanded: false, open: new Set() };
+const view = { snapshot: null, group: 'all', sort: 'revenue', query: '', expanded: false };
 
 async function request(url, options) {
   const response = await fetch(url, options);
@@ -84,29 +82,6 @@ function renderHighlights(group) {
 
 function menuRow(row, groupTotals) {
   const tr = document.createElement('tr');
-  // Подробности по позиции на телефоне открываются тапом: в свёрнутом виде
-  // карточка — это название, выручка и маржа, то есть три вопроса из трёх.
-  if (phone.matches) {
-    tr.tabIndex = 0;
-    tr.setAttribute('role', 'button');
-    const open = view.open.has(row.name);
-    tr.classList.toggle('is-open', open);
-    tr.setAttribute('aria-expanded', String(open));
-    tr.setAttribute('aria-label', row.name + ', подробности');
-    const toggle = () => {
-      if (view.open.has(row.name)) view.open.delete(row.name);
-      else view.open.add(row.name);
-      const next = view.open.has(row.name);
-      tr.classList.toggle('is-open', next);
-      tr.setAttribute('aria-expanded', String(next));
-    };
-    tr.addEventListener('click', toggle);
-    tr.addEventListener('keydown', event => {
-      if (event.key !== 'Enter' && event.key !== ' ') return;
-      event.preventDefault();
-      toggle();
-    });
-  }
   const first = document.createElement('td');
   const cell = text('div', 'item-cell');
   const share = text('div', 'item-share');
@@ -117,21 +92,67 @@ function menuRow(row, groupTotals) {
   first.append(cell);
   // Подпись колонки едет с ячейкой: на телефоне таблица разворачивается
   // в карточки, и шапка там не видна.
-  const cells = [
-    ['Продано', decimal.format(row.quantity)],
-    ['Выручка', money.format(Math.round(row.revenue))],
-    ['Себестоимость', money.format(Math.round(row.cost))],
-    ['Прибыль', money.format(Math.round(row.profit))],
-  ].map(([label, value]) => {
-    const cell = text('td', '', value);
-    cell.dataset.label = label;
-    return cell;
-  });
+  const cells = financialCells(row);
   const last = document.createElement('td');
   last.dataset.label = 'Маржа';
   last.append(marginCell(row.margin));
   tr.append(first, ...cells, last);
   return tr;
+}
+
+function detailLine(label, value) {
+  const line = text('small', 'metric-detail');
+  line.append(text('span', '', label), text('span', '', value));
+  return line;
+}
+
+function zeroParts(row) {
+  return row.breakdown ? ['chef', 'tasting', 'other_zero'].map(key => row.breakdown[key]) : null;
+}
+
+function financialCells(row) {
+  const parts = zeroParts(row);
+  const zeroCost = parts ? parts.reduce((sum, part) => sum + part.cost, 0) : null;
+  const zeroQuantity = parts ? parts.reduce((sum, part) => sum + part.quantity, 0) : null;
+  const cells = [
+    ['Количество', decimal.format(row.quantity)],
+    ['Выручка', money.format(Math.round(row.revenue))],
+    ['Себестоимость', money.format(Math.round(row.cost))],
+    ['Прибыль продаж', row.breakdown ? money.format(Math.round(row.breakdown.sales.profit)) : '—'],
+    ['Расход без выручки', zeroCost === null ? '—' : money.format(Math.round(zeroCost))],
+    ['Прибыль итоговая', money.format(Math.round(row.profit))],
+  ].map(([label, value]) => {
+    const cell = text('td', 'metric-cell');
+    cell.dataset.label = label;
+    cell.append(text('span', 'metric-label', label), text('strong', 'metric-main', value));
+    return cell;
+  });
+  if (row.breakdown) {
+    cells[0].append(detailLine('Продажи', decimal.format(row.breakdown.sales.quantity)),
+      detailLine('Без выручки', decimal.format(zeroQuantity)));
+    cells[2].append(detailLine('Продажи', money.format(Math.round(row.breakdown.sales.cost))));
+    [['chef', 'Счёт Шефа'], ['tasting', 'Дегустация'], ['other_zero', 'Прочее']].forEach(([key, label]) => {
+      const part = row.breakdown[key];
+      if (part.quantity || part.cost) cells[4].append(detailLine(label,
+        decimal.format(part.quantity) + ' · ' + sums(part.cost)));
+    });
+  }
+  return cells;
+}
+
+function renderProfitSummary(total) {
+  const parts = zeroParts(total);
+  $('sales-profit').textContent = total.breakdown ? sums(total.breakdown.sales.profit) : '—';
+  $('internal-cost').textContent = parts ? sums(parts.reduce((sum, part) => sum + part.cost, 0)) : '—';
+  $('summary-revenue').textContent = sums(total.revenue);
+  $('summary-profit').textContent = sums(total.profit);
+  const details = $('internal-detail');
+  details.replaceChildren();
+  if (total.breakdown) {
+    [['chef', 'Счёт Шефа'], ['tasting', 'Дегустация'], ['other_zero', 'Прочее без выручки']].forEach(([key, label]) => {
+      details.append(detailLine(label, sums(total.breakdown[key].cost)));
+    });
+  }
 }
 
 function renderMenu() {
@@ -172,15 +193,7 @@ function renderWaiters(metrics) {
     const last = document.createElement('td');
     last.dataset.label = 'Маржа';
     last.append(marginCell(row.margin));
-    const cells = [
-      ['Позиций продано', decimal.format(row.quantity)],
-      ['Выручка', money.format(Math.round(row.revenue))],
-      ['Прибыль', money.format(Math.round(row.profit))],
-    ].map(([label, value]) => {
-      const cell = text('td', '', value);
-      cell.dataset.label = label;
-      return cell;
-    });
+    const cells = financialCells(row);
     tr.append(name, ...cells, last);
     body.append(tr);
   });
@@ -204,6 +217,7 @@ function renderSnapshot(snapshot) {
   $('gross-profit').textContent = sums(all.profit);
   $('cost-total').textContent = sums(all.cost);
   $('positions').textContent = String(all.positions);
+  renderProfitSummary(all);
   renderMenu();
   renderWaiters(snapshot.waiter_metrics || {});
 }
@@ -341,7 +355,7 @@ function scrollToList() {
   window.scrollTo({ top, behavior: 'smooth' });
 }
 
-phone.addEventListener('change', () => { view.open.clear(); renderMenu(); });
+phone.addEventListener('change', () => { renderMenu(); });
 
 document.querySelectorAll('.ops-tab[data-group]').forEach(tab => {
   tab.addEventListener('click', () => {

@@ -271,3 +271,34 @@
   border:1px dashed #e1e7de;border-radius:13px;background:#fbfcf9}
 .attendance-list:empty::after{content:"Данные Hikvision ещё не подключены";
   display:block;padding:18px 10px;text-align:center;color:var(--muted);font-size:12px}
+
+/* Общий итог рядом с продажами и расходом без выручки. */
+.profit-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}
+.profit-tile{padding:20px;min-width:0}
+.profit-tile p{margin:0 0 10px;font-size:12px;color:var(--muted)}
+.profit-tile>strong{display:block;font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.profit-tile>small{display:block;margin-top:10px;font-size:11px;line-height:1.5;color:var(--muted)}
+.profit-tile.is-total{background:#f0f5eb}
+#internal-detail{margin-top:10px}
+.metric-detail{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;font-weight:400;color:var(--muted);line-height:1.4}
+.metric-detail span:first-child{white-space:normal;text-align:left}
+.metric-detail span:last-child{white-space:nowrap}
+.metric-main{font-size:inherit;font-weight:550}
+.metric-label{display:none}
+.menu-table th{white-space:normal;line-height:1.4}
+.menu-table td{vertical-align:top}
+.menu-table td.metric-cell::before{content:none}
+@media(min-width:701px){.menu-table{min-width:980px}.metric-cell{min-width:90px}.metric-cell[data-label="Расход без выручки"]{min-width:165px}}
+@media(max-width:1100px){.profit-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:700px){
+  .profit-summary{gap:10px}
+  .profit-tile{padding:14px}
+  .profit-tile>strong{font-size:17px}
+  .profit-tile .metric-detail{flex-wrap:wrap;gap:2px}
+  .menu-table td.metric-cell{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;order:4;flex:1 1 100%;min-width:0;white-space:normal;padding-top:5px}
+  .metric-label{display:block;font-size:11px;color:var(--muted);font-weight:400}
+  .metric-main{text-align:right;font-size:13px}
+  .metric-cell>.metric-detail{grid-column:1/-1;margin-top:0}
+  .menu-table td.metric-cell[data-label="Выручка"]{order:3}
+  .menu-table td.metric-cell[data-label="Прибыль итоговая"]{border-top:1px solid var(--border);margin-top:4px;padding-top:8px}
+}
