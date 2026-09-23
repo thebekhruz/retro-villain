@@ -1,4 +1,6 @@
 import asyncio
+from collections import defaultdict
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import quote
@@ -20,6 +22,7 @@ from retro.modules.founder.models import (
 
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
                    'DishGroup', 'WaiterName', 'UniqOrderId.Id']
+DIRECTOR_COST_GROUPS = [field for field in DIRECTOR_GROUPS if field != 'PayTypes']
 DIRECTOR_FIELDS = ['DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost']
 IIKO_DETAIL_DIMENSIONS = (
     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'PayTypes',
@@ -42,15 +45,16 @@ def date_chunks(start, end, *, max_days):
         cursor = chunk_end + timedelta(days=1)
 
 
-def director_rows_from_olap(day, rows):
+def director_rows_from_olap(day, rows, *, split_payments=True):
     """Flatten iiko's nested grouped-table response into safe typed sale rows."""
     result = []
+    groups = DIRECTOR_GROUPS if split_payments else DIRECTOR_COST_GROUPS
 
     def visit(row, inherited):
         if not isinstance(row, dict):
             raise DataError('iiko вернул некорректную строку отчёта директора.')
         values = list(inherited)
-        while len(values) < len(DIRECTOR_GROUPS):
+        while len(values) < len(groups):
             index = len(values)
             field = row.get(f'field{index}')
             if not isinstance(field, dict) or 'value' not in field:
@@ -61,9 +65,12 @@ def director_rows_from_olap(day, rows):
             for child in children:
                 visit(child, values)
             return
-        if len(values) != len(DIRECTOR_GROUPS):
+        if len(values) != len(groups):
             raise DataError('iiko не вернул все измерения продажи.')
-        quantity, revenue, total_cost = (number(cell(row, index)) for index in range(7, 10))
+        quantity, revenue, total_cost = (
+            number(cell(row, index)) for index in range(len(groups), len(groups) + 3))
+        if not split_payments:
+            values.insert(2, '')
         register, section, payment_type, item, category, waiter, order_id = values
         # У части продаж группа блюда в iiko пустая. Без имени такую строку
         # нельзя ни отнести к типу отчёта, ни исключить — отчёт падал целиком
@@ -76,6 +83,54 @@ def director_rows_from_olap(day, rows):
 
     for row in rows:
         visit(row, [])
+    return result
+
+
+def reconcile_director_costs(payment_rows, cost_rows):
+    """Allocate unsplit iiko costs; PayTypes repeats cost for mixed payments.
+
+    Quantity is apportioned by iiko between payment types (to 3 decimals).
+    Normalize those weights, including zero-revenue dishes, and keep the
+    remainder on the largest share so the authoritative cost is conserved.
+    Never deduplicate by amount: equal costs can belong to different orders.
+    """
+    def key(row):
+        return (row.day, row.register, row.section, row.item, row.category,
+                row.waiter, row.order_id)
+
+    mismatch = 'Детализация оплат и себестоимости iiko не совпала. Обновите данные.'
+    grouped = defaultdict(list)
+    for row in payment_rows:
+        grouped[key(row)].append(row)
+    costs = {}
+    for row in cost_rows:
+        row_key = key(row)
+        if row_key in costs:
+            raise DataError(mismatch)
+        costs[row_key] = row
+    if grouped.keys() != costs.keys():
+        raise DataError(mismatch)
+    result = []
+    for row_key, parts in grouped.items():
+        source = costs[row_key]
+        quantity = sum((row.quantity for row in parts), Decimal(0))
+        revenue = sum((row.revenue for row in parts), Decimal(0))
+        if (min(source.quantity, source.revenue, source.cost) < 0
+                or any(min(row.quantity, row.revenue) < 0 for row in parts)
+                or abs(quantity - source.quantity) > Decimal('.001') * len(parts)
+                or abs(revenue - source.revenue) > Decimal('.01') * len(parts)
+                or (not quantity and source.cost)):
+            raise DataError(mismatch)
+        # Largest share receives the remainder, including Decimal division dust.
+        parts = sorted(parts, key=lambda row: row.quantity)
+        remaining = source.cost
+        for index, row in enumerate(parts):
+            if index == len(parts) - 1:
+                cost = remaining
+            else:
+                cost = source.cost * row.quantity / quantity if quantity else Decimal(0)
+                remaining -= cost
+            result.append(replace(row, cost=cost))
     return result
 
 
@@ -284,8 +339,13 @@ class IikoClient:
                 rows = []
                 day = start
                 while day <= end:
-                    rows.extend(director_rows_from_olap(
-                        day, await self._olap(client, day, DIRECTOR_GROUPS, DIRECTOR_FIELDS)))
+                    payment_rows, cost_rows = await asyncio.gather(
+                        self._olap(client, day, DIRECTOR_GROUPS, DIRECTOR_FIELDS),
+                        self._olap(client, day, DIRECTOR_COST_GROUPS, DIRECTOR_FIELDS),
+                    )
+                    rows.extend(reconcile_director_costs(
+                        director_rows_from_olap(day, payment_rows),
+                        director_rows_from_olap(day, cost_rows, split_payments=False)))
                     day += timedelta(days=1)
                 payment_groups = [
                     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
