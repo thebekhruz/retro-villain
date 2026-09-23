@@ -309,9 +309,10 @@ class IikoClient:
                 if not isinstance(auth.get('token'), str) or not auth['token']:
                     raise DataError('iiko не подтвердил авторизацию.')
                 client.headers['Authorization'] = 'Bearer ' + auth['token']
-                revenue_groups = [
-                    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName']
-                payment_groups = revenue_groups + ['PayTypes']
+                payment_groups = [
+                    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
+                    'PayTypes',
+                ]
                 revenue = []
                 payments = []
                 chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
@@ -319,12 +320,8 @@ class IikoClient:
                 async def load_chunk(chunk_start, chunk_end):
                     async with chunk_limit:
                         return await asyncio.gather(
-                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                             ['DishDiscountSumInt'], payment_scope),
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt'], payment_scope),
-                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                             ['DishDiscountSumInt']),
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt']),
                         )
@@ -334,20 +331,19 @@ class IikoClient:
                     load_chunk(chunk_start, chunk_end)
                     for chunk_start, chunk_end in chunks
                 ))
-                for (regular_revenue_rows, regular_payment_rows,
-                     banquet_revenue_rows, banquet_payment_rows) in chunk_rows:
-                    revenue.extend(founder_rows_from_olap(
-                        regular_revenue_rows,
-                        dish_filter='exclude_banquet'))
-                    payments.extend(founder_rows_from_olap(
+                for regular_payment_rows, banquet_payment_rows in chunk_rows:
+                    regular_payments = founder_rows_from_olap(
                         regular_payment_rows, payments=True,
-                        dish_filter='exclude_banquet'))
-                    revenue.extend(founder_rows_from_olap(
-                        banquet_revenue_rows,
-                        dish_filter='banquet_only'))
-                    payments.extend(founder_rows_from_olap(
+                        dish_filter='exclude_banquet')
+                    banquet_payments = founder_rows_from_olap(
                         banquet_payment_rows, payments=True,
-                        dish_filter='banquet_only'))
+                        dish_filter='banquet_only')
+                    payments.extend(regular_payments)
+                    payments.extend(banquet_payments)
+                    revenue.extend(
+                        RevenueRow(row.day, row.register, row.section, row.item, row.amount)
+                        for row in (*regular_payments, *banquet_payments)
+                    )
                 return build_analytics(revenue, payments, start, end, granularity, directions)
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')
