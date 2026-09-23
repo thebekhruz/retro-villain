@@ -204,8 +204,7 @@
 
 /* Во время загрузки гаснут только данные: фильтры остаются живыми, чтобы
    можно было передумать, не дожидаясь ответа iiko. */
-.founder-workspace.is-loading .founder-metrics,
-.founder-workspace.is-loading .founder-panel{opacity:.55}
+.founder-metrics[aria-busy="true"]{opacity:.55}
 
 /* ── Узкие экраны ─────────────────────────────────────────────────────── */
 @media(max-width:1180px){

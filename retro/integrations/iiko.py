@@ -1,4 +1,8 @@
 import asyncio
+import json
+import logging
+from contextlib import asynccontextmanager
+from time import monotonic
 from collections import defaultdict
 from dataclasses import replace
 from datetime import date, timedelta
@@ -7,6 +11,9 @@ from urllib.parse import quote
 
 import httpx
 
+from retro.async_utils import gather_reads
+
+from retro.report_cache import ReportCache, refresh_source
 from retro.config import IIKO_ORIGIN
 from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
@@ -52,6 +59,8 @@ def director_rows_from_olap(day, rows, *, split_payments=True, payment_details=F
     groups = DIRECTOR_GROUPS if split_payments else DIRECTOR_COST_GROUPS
     if payment_details:
         groups = DIRECTOR_DETAIL_GROUPS
+    if day is None:
+        groups = ['OpenDate.Typed', *groups]
 
     def visit(row, inherited):
         if not isinstance(row, dict):
@@ -72,6 +81,12 @@ def director_rows_from_olap(day, rows, *, split_payments=True, payment_details=F
             raise DataError('iiko не вернул все измерения продажи.')
         quantity, revenue, total_cost = (
             number(cell(row, index)) for index in range(len(groups), len(groups) + 3))
+        row_day = day
+        if row_day is None:
+            try:
+                row_day = date.fromisoformat(values.pop(0))
+            except (ValueError, TypeError):
+                raise DataError('iiko вернул некорректную дату продажи.') from None
         if not split_payments:
             values.insert(2, '')
         purpose = values.pop() if payment_details else ''
@@ -82,7 +97,7 @@ def director_rows_from_olap(day, rows, *, split_payments=True, payment_details=F
         # любая другая группа.
         if not isinstance(category, str) or not category.strip():
             category = 'Без группы'
-        result.append(SalesRow(day, register, section, payment_type, item, category,
+        result.append(SalesRow(row_day, register, section, payment_type, item, category,
                                quantity, revenue, total_cost, waiter, order_id, purpose or ''))
 
     for row in rows:
@@ -278,27 +293,52 @@ def detail_rows_from_olap(rows, dimensions, *, limit):
 class IikoClient:
     def __init__(self, settings, *, transport=None, poll_delay=1):
         self.settings, self.transport, self.poll_delay = settings, transport, poll_delay
+        self._http = None
+        self._auth_lock = asyncio.Lock()
+        self._auth_until = 0
+        self._olap_cache = ReportCache(concurrency=4, limit=16, max_weight=12_000_000,
+            weigh=lambda rows: len(json.dumps(rows, ensure_ascii=False).encode()))
+
+    @asynccontextmanager
+    async def _client(self):
+        if self.settings.base_url != IIKO_ORIGIN:
+            raise DataError('Разрешён только сервер Retro Milliy.')
+        if self._http is None:
+            self._http = httpx.AsyncClient(
+                base_url=IIKO_ORIGIN,
+                headers={'Accept': 'application/json', 'Accept-Language': 'ru_RU',
+                         'Content-Type': 'application/json'},
+                timeout=25, follow_redirects=False, transport=self.transport,
+                limits=httpx.Limits(max_connections=8, max_keepalive_connections=8))
+        await self._authorize(self._http)
+        yield self._http
+
+    async def _authorize(self, client, rejected_token=None):
+        async with self._auth_lock:
+            current = client.headers.get('Authorization')
+            if current and ((rejected_token is None and monotonic() < self._auth_until)
+                            or (rejected_token is not None and current != rejected_token)):
+                return
+            auth = await self._post(client, '/api/auth/login',
+                dict(login=self.settings.login, password=self.settings.password))
+            if not isinstance(auth.get('token'), str) or not auth['token']:
+                raise DataError('iiko не подтвердил авторизацию.')
+            client.headers['Authorization'] = 'Bearer ' + auth['token']
+            self._auth_until = monotonic() + 15 * 60
+
+    async def close(self):
+        await self._olap_cache.close()
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
 
     async def load(self, day):
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
         if self.settings.base_url != IIKO_ORIGIN:
             raise DataError('Разрешён только сервер Retro Milliy.')
-        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
-                   'Content-Type': 'application/json'}
         try:
-            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
-                                        timeout=25, follow_redirects=False,
-                                        transport=self.transport) as client:
-                auth = await self._post(client, '/api/auth/login',
-                                        dict(login=self.settings.login, password=self.settings.password))
-                if not isinstance(auth.get('token'), str) or not auth['token']:
-                    raise DataError('iiko не подтвердил авторизацию.')
-                client.headers['Authorization'] = 'Bearer ' + auth['token']
-                breakdown_rows = await self._olap(client, day,
-                                                  ['CashRegisterName', 'RestaurantSection'],
-                                                  ['DishDiscountSumInt'])
-                breakdown = build_revenue_breakdown(breakdown_rows)
+            async with self._client() as client:
                 scope = [
                     dict(field='CashRegisterName', filterType='value_list',
                          valueList=[RETRO_REGISTER], inclusiveList=True),
@@ -307,13 +347,17 @@ class IikoClient:
                     dict(field='OperationType', filterType='value_list',
                          valueList=['PAYMENT'], inclusiveList=True),
                 ]
-                total = await self._olap(client, day, ['OpenDate.Typed'],
-                                         ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope)
-                payments = await self._olap(client, day, ['PayTypes'],
-                                            ['DishDiscountSumInt'], scope)
+                breakdown_rows, total, payments, shifts_data = await gather_reads(
+                    self._olap(client, day, ['CashRegisterName', 'RestaurantSection'],
+                               ['DishDiscountSumInt']),
+                    self._olap(client, day, ['OpenDate.Typed'],
+                               ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope),
+                    self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], scope),
+                    self._post(client, '/api/cash/shift/list_period',
+                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()}),
+                )
+                breakdown = build_revenue_breakdown(breakdown_rows)
                 snapshot = build_snapshot(day, total, payments, revenue_breakdown=breakdown)
-                shifts_data = await self._post(client, '/api/cash/shift/list_period',
-                                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()})
                 shifts = shifts_data.get('shifts')
                 if not isinstance(shifts, list):
                     raise DataError('iiko не вернул список кассовых смен.')
@@ -329,40 +373,27 @@ class IikoClient:
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
         start, end = completed_period(today)
-        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
-                   'Content-Type': 'application/json'}
         try:
-            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
-                                        timeout=25, follow_redirects=False,
-                                        transport=self.transport) as client:
-                auth = await self._post(client, '/api/auth/login',
-                                        dict(login=self.settings.login, password=self.settings.password))
-                if not isinstance(auth.get('token'), str) or not auth['token']:
-                    raise DataError('iiko не подтвердил авторизацию.')
-                client.headers['Authorization'] = 'Bearer ' + auth['token']
-                rows = []
-                day = start
-                while day <= end:
-                    payment_rows, cost_rows = await asyncio.gather(
-                        self._olap(client, day, DIRECTOR_DETAIL_GROUPS, DIRECTOR_FIELDS),
-                        self._olap(client, day, DIRECTOR_COST_GROUPS, DIRECTOR_FIELDS),
-                    )
-                    rows.extend(reconcile_director_costs(
-                        director_rows_from_olap(day, payment_rows, payment_details=True),
-                        director_rows_from_olap(day, cost_rows, split_payments=False)))
-                    day += timedelta(days=1)
+            async with self._client() as client:
                 payment_groups = [
                     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
                     'PayTypes',
                 ]
                 payment_scope = [dict(field='OperationType', filterType='value_list',
                                       valueList=['PAYMENT'], inclusiveList=True)]
-                regular_rows, banquet_rows = await asyncio.gather(
+                payment_rows, cost_rows, regular_rows, banquet_rows = await gather_reads(
+                    self._olap_range(client, start, end, ['OpenDate.Typed', *DIRECTOR_DETAIL_GROUPS],
+                                     DIRECTOR_FIELDS),
+                    self._olap_range(client, start, end, ['OpenDate.Typed', *DIRECTOR_COST_GROUPS],
+                                     DIRECTOR_FIELDS),
                     self._olap_range(client, start, end, payment_groups,
                                      ['DishDiscountSumInt'], payment_scope),
                     self._olap_range(client, start, end, payment_groups,
                                      ['DishDiscountSumInt']),
                 )
+                rows = reconcile_director_costs(
+                    director_rows_from_olap(None, payment_rows, payment_details=True),
+                    director_rows_from_olap(None, cost_rows, split_payments=False))
                 payments = founder_rows_from_olap(
                     regular_rows, payments=True, dish_filter='exclude_banquet')
                 payments.extend(founder_rows_from_olap(
@@ -380,19 +411,10 @@ class IikoClient:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
         if self.settings.base_url != IIKO_ORIGIN:
             raise DataError('Разрешён только сервер Retro Milliy.')
-        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
-                   'Content-Type': 'application/json'}
         payment_scope = [dict(field='OperationType', filterType='value_list',
                               valueList=['PAYMENT'], inclusiveList=True)]
         try:
-            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
-                                        timeout=25, follow_redirects=False,
-                                        transport=self.transport) as client:
-                auth = await self._post(client, '/api/auth/login',
-                                        dict(login=self.settings.login, password=self.settings.password))
-                if not isinstance(auth.get('token'), str) or not auth['token']:
-                    raise DataError('iiko не подтвердил авторизацию.')
-                client.headers['Authorization'] = 'Bearer ' + auth['token']
+            async with self._client() as client:
                 payment_groups = [
                     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
                     'PayTypes',
@@ -403,7 +425,7 @@ class IikoClient:
 
                 async def load_chunk(chunk_start, chunk_end):
                     async with chunk_limit:
-                        return await asyncio.gather(
+                        return await gather_reads(
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt'], payment_scope),
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
@@ -411,7 +433,7 @@ class IikoClient:
                         )
 
                 chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
-                chunk_rows = await asyncio.gather(*(
+                chunk_rows = await gather_reads(*(
                     load_chunk(chunk_start, chunk_end)
                     for chunk_start, chunk_end in chunks
                 ))
@@ -444,17 +466,8 @@ class IikoClient:
             raise DataError('Выберите от одного до четырёх разрешённых измерений iiko.')
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
             raise DataError('Лимит строк iiko должен быть от 1 до 200.')
-        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
-                   'Content-Type': 'application/json'}
         try:
-            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
-                                        timeout=25, follow_redirects=False,
-                                        transport=self.transport) as client:
-                auth = await self._post(client, '/api/auth/login',
-                                        dict(login=self.settings.login, password=self.settings.password))
-                if not isinstance(auth.get('token'), str) or not auth['token']:
-                    raise DataError('iiko не подтвердил авторизацию.')
-                client.headers['Authorization'] = 'Bearer ' + auth['token']
+            async with self._client() as client:
                 raw = await self._olap_range(
                     client, start, end, list(dimensions), list(IIKO_DETAIL_FIELDS))
                 rows, total_rows = detail_rows_from_olap(raw, dimensions, limit=limit)
@@ -473,7 +486,11 @@ class IikoClient:
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
     async def _post(self, client, path, body, pending=False):
+        sent_token = client.headers.get('Authorization')
         response = await client.post(path, json=body)
+        if response.status_code in (401, 403) and path != '/api/auth/login':
+            await self._authorize(client, rejected_token=sent_token)
+            response = await client.post(path, json=body)
         if pending and response.status_code == 400 and 'data not found' in response.text.lower():
             return None
         if response.status_code in (401, 403):
@@ -493,6 +510,13 @@ class IikoClient:
 
     async def _olap_range(self, client, start, end, groups, fields, extra_filters=()):
         body = olap_range_body(self.settings.store_id, start, end, groups, fields, extra_filters)
+        key = json.dumps(body, sort_keys=True, ensure_ascii=False)
+        return await self._olap_cache.get(
+            key, lambda: self._fetch_olap(client, body), ttl=60, timeout=90,
+            refresh=refresh_source.get(), label="iiko_olap")
+
+    async def _fetch_olap(self, client, body):
+        started = monotonic()
         init = await self._post(client, '/api/olap/init', body)
         fetch_id = init.get('fetchId') or init.get('data')
         if not isinstance(fetch_id, str) or not fetch_id:
@@ -503,6 +527,9 @@ class IikoClient:
                 result = data.get('result')
                 if not isinstance(result, dict) or not isinstance(result.get('rows'), list):
                     raise DataError('iiko вернул некорректную структуру отчёта.')
+                logging.getLogger('retro.performance').info(
+                    'operation=iiko_fetch attempts=%d duration_ms=%d',
+                    attempt + 1, (monotonic() - started) * 1000)
                 return result['rows']
             if attempt < 14:
                 await asyncio.sleep(self.poll_delay)

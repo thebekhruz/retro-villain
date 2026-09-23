@@ -5,6 +5,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
 from uuid import UUID
 
+from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
@@ -58,16 +59,16 @@ async def analytics(
         end: date | None = None,
         granularity: str = Query('day'),
         directions: str = Query(','.join(DIRECTIONS)),
+        refresh: bool = False,
 ):
     start, end = _validated_period(start, end, granularity)
     selected = tuple(item.strip() for item in directions.split(',') if item.strip())
     if not selected or len(set(selected)) != len(selected) or any(item not in DIRECTIONS for item in selected):
         raise HTTPException(422, 'Выберите известные направления без повторов.')
     try:
-        async with request.app.state.iiko_lock:
-            return await asyncio.wait_for(
-                request.app.state.iiko.load_founder_analytics(
-                    start, end, granularity, selected), timeout=180)
+        return await load_iiko(request.app.state, 'load_founder_analytics',
+                               start, end, granularity, selected, refresh=refresh,
+                               request=request, timeout=180)
     except TimeoutError as error:
         log_safe_failure('founder-route', error, operation='analytics',
                          request_id=request.state.request_id)
@@ -164,7 +165,7 @@ async def chat(request: Request, body: ChatInput):
     question = body.message.strip()
     if not question:
         raise HTTPException(422, 'Напишите вопрос.')
-    history = request.app.state.founder_chat_store.list(owner, limit=24)
+    history = await asyncio.to_thread(request.app.state.founder_chat_store.list, owner, limit=24)
     messages = [{'role': item['role'], 'content': item['content']} for item in history]
     messages.append({'role': 'user', 'content': question})
     chat_tools = FounderChatTools(request.app)
@@ -184,8 +185,8 @@ async def chat(request: Request, body: ChatInput):
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
     created_at = datetime.now(timezone.utc).isoformat()
-    request.app.state.founder_chat_store.append_exchange(
-        owner, question, answer, created_at)
+    await asyncio.to_thread(request.app.state.founder_chat_store.append_exchange,
+                            owner, question, answer, created_at)
     return {'message': {'role': 'assistant', 'content': answer, 'created_at': created_at}}
 
 

@@ -8,8 +8,9 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, ReportReplaced, today_tashkent
+from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
 
 from .attendance import Entrance, export_entrances
@@ -47,19 +48,13 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
     """Use manual handovers when enabled; otherwise retain the iiko fallback."""
     finance = request.app.state.accountant_finance
     if request.app.state.settings.manual_handover_only:
-        return finance.handover_for_day(day)
+        return await asyncio.to_thread(finance.handover_for_day, day)
     state = request.app.state
     snapshot = state.cache.latest_for_day(day)
-    if snapshot is None and state.settings.configured:
+    if state.settings.configured:
         try:
-            async def load_latest():
-                async with state.iiko_lock:
-                    return await asyncio.wait_for(state.iiko.load(day), timeout=90)
-
-            snapshot = await state.iiko_daily_reports.run(load_latest)
+            snapshot = await load_iiko(state, 'load', day, request=request)
             state.cache.put(snapshot)
-        except ReportReplaced:
-            raise HTTPException(409, 'Отчёт заменён новым запросом.') from None
         except TimeoutError as error:
             log_safe_failure('accountant-route', error, operation='cashier_handover',
                              request_id=request.state.request_id)
@@ -70,8 +65,10 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
             raise HTTPException(503, str(error)) from None
     if snapshot is None:
         return None
-    expense_total = sum((item.amount for item in state.expenses.list(day)), Decimal(0))
-    receipt_total = sum((item.amount for item in state.expenses.list_receipts(day)), Decimal(0))
+    expenses = await asyncio.to_thread(state.expenses.list, day)
+    receipts = await asyncio.to_thread(state.expenses.list_receipts, day)
+    expense_total = sum((item.amount for item in expenses), Decimal(0))
+    receipt_total = sum((item.amount for item in receipts), Decimal(0))
     return cash_to_finance(snapshot, expense_total, receipt_total)
 
 
@@ -79,16 +76,13 @@ async def required_handover(request: Request, day: date) -> Decimal:
     amount = await cashier_handover(request, day)
     if amount is None:
         raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
-    request.app.state.accountant_finance.record_handover(day, amount)
+    await asyncio.to_thread(request.app.state.accountant_finance.record_handover, day, amount)
     return amount
 
 
 @router.get('/day')
 async def day_view(request: Request, date: date | None = None):
     day = selected_day(date)
-    roster = request.app.state.accountant_roster.list()
-    finance = request.app.state.accountant_finance
-    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
     cashier_error = None
     try:
         cashier_amount = await cashier_handover(request, day)
@@ -97,6 +91,26 @@ async def day_view(request: Request, date: date | None = None):
             raise
         cashier_amount = None
         cashier_error = error.detail
+    return await asyncio.to_thread(_day_data, request, day, cashier_amount, cashier_error)
+
+
+@router.get('/staff')
+def staff_view(request: Request, date: date | None = None):
+    return _day_data(request, selected_day(date), None, None, staff_only=True)
+
+
+def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
+    roster = request.app.state.accountant_roster.list()
+    finance = request.app.state.accountant_finance
+    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
+    if staff_only:
+        return dict(demo=False, date=day.isoformat(), source='Hikvision ISAPI',
+                    attendance=attendance.health, employees=[row.json() for row in rows],
+                    roster_count=len(roster), missing_rates=sum(employee.rate is None for employee in roster),
+                    monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
+                    groups=[dict(name=name) for name in dict.fromkeys(e.group_name for e in roster)],
+                    payroll={f'{status}_count': sum(row.status == status for row in rows)
+                             for status in ('late', 'missing', 'unlinked', 'unavailable')})
     anchor = finance.cash_opening()
     carry_start = date.fromisoformat(anchor['day']) if anchor and request.app.state.settings.manual_handover_only else None
     summary = finance.daily_summary(
@@ -347,7 +361,7 @@ async def add_reserve(request: Request, body: ReserveInput):
     day = selected_day(body.date)
     cashier_amount = await required_handover(request, day) if body.kind == 'transfer' else None
     try:
-        entry_id = request.app.state.accountant_finance.reserve_entry(
+        entry_id = await asyncio.to_thread(request.app.state.accountant_finance.reserve_entry,
             day, body.account, body.kind, body.amount, body.note, cashier_amount=cashier_amount)
     except LedgerError as error:
         finance_error(error)
@@ -401,7 +415,7 @@ async def add_salary_payment(request: Request, body: SalaryPaymentInput):
     day = selected_day(body.date)
     cashier_amount = await required_handover(request, day)
     try:
-        entry_id = request.app.state.accountant_finance.pay_salary(
+        entry_id = await asyncio.to_thread(request.app.state.accountant_finance.pay_salary,
             body.accrual_id, day, body.amount, cashier_amount=cashier_amount)
     except LedgerError as error:
         finance_error(error)
@@ -451,7 +465,7 @@ def delete_finance_operation(request: Request, operation_type: str, operation_id
 
 
 @router.post('/incomes', status_code=201)
-async def add_finance_income(request: Request, body: FinanceExpenseInput):
+def add_finance_income(request: Request, body: FinanceExpenseInput):
     day = selected_day(body.date)
     try:
         amount = amount_value(body.amount, allow_zero=True)
@@ -481,10 +495,10 @@ async def add_finance_expense(request: Request, body: FinanceExpenseInput):
             raise LedgerError('Оплаченная сумма не может превышать весь расход.')
         cashier_amount = await required_handover(request, day) if paid > 0 else None
         if paid == total:
-            entry_id = request.app.state.accountant_finance.add_expense(
+            entry_id = await asyncio.to_thread(request.app.state.accountant_finance.add_expense,
                 day, body.item_code, body.note, body.amount, cashier_amount=cashier_amount)
         else:
-            entry_id = request.app.state.accountant_finance.record_debt(
+            entry_id = await asyncio.to_thread(request.app.state.accountant_finance.record_debt,
                 day, body.item_code, body.note, body.amount, body.paid_amount,
                 cashier_amount=cashier_amount)
     except LedgerError as error:
@@ -503,7 +517,7 @@ async def pay_finance_debt(request: Request, body: DebtPaymentInput):
     day = selected_day(body.date)
     cashier_amount = await required_handover(request, day)
     try:
-        entry_id = request.app.state.accountant_finance.pay_debt(
+        entry_id = await asyncio.to_thread(request.app.state.accountant_finance.pay_debt,
             body.debt_id, day, body.amount, cashier_amount=cashier_amount)
     except LedgerError as error:
         finance_error(error)
@@ -537,7 +551,7 @@ async def add_procurement(request: Request, body: ProcurementInput):
     day = selected_day(body.date)
     cashier_amount = await required_handover(request, day)
     try:
-        entry_id = request.app.state.accountant_finance.give_procurement(
+        entry_id = await asyncio.to_thread(request.app.state.accountant_finance.give_procurement,
             day, body.recipient, body.purpose, body.amount, cashier_amount=cashier_amount)
     except LedgerError as error:
         finance_error(error)

@@ -46,9 +46,10 @@ def test_invalid_and_future_dates_are_rejected():
         assert client.get('/api/cashier/day?date=2099-01-01').status_code == 422
 
 
-def test_new_daily_report_cancels_inflight_report_and_starts_immediately():
+def test_new_daily_report_does_not_cancel_another_readers_report():
     first_started = asyncio.Event()
     first_cancelled = asyncio.Event()
+    release_first = asyncio.Event()
 
     class IikoStub:
         calls = []
@@ -58,7 +59,7 @@ def test_new_daily_report_cancels_inflight_report_and_starts_immediately():
             if len(self.calls) == 1:
                 first_started.set()
                 try:
-                    await asyncio.Event().wait()
+                    await release_first.wait()
                 except asyncio.CancelledError:
                     first_cancelled.set()
                     raise
@@ -74,15 +75,17 @@ def test_new_daily_report_cancels_inflight_report_and_starts_immediately():
             await asyncio.wait_for(first_started.wait(), timeout=1)
             new_response = await asyncio.wait_for(
                 client.get('/api/cashier/day?date=2026-09-11'), timeout=1)
+            assert not first_cancelled.is_set()
+            release_first.set()
             old_response = await asyncio.wait_for(old_request, timeout=1)
         return app.state.iiko.calls, old_response, new_response
 
     calls, old_response, new_response = asyncio.run(scenario())
 
     assert calls == [date(2026, 9, 10), date(2026, 9, 11)]
-    assert first_cancelled.is_set()
-    assert old_response.status_code == 409
-    assert old_response.json()['detail'] == 'Отчёт заменён новым запросом.'
+    assert not first_cancelled.is_set()
+    assert old_response.status_code == 200
+    assert old_response.json()['date'] == '2026-09-10'
     assert new_response.status_code == 200
     assert new_response.json()['date'] == '2026-09-11'
 

@@ -5,10 +5,11 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 
 from .export import export_report
-from .service import DataError, ReportReplaced, demo_snapshot, today_tashkent
+from .service import DataError, demo_snapshot, today_tashkent
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
 
@@ -111,23 +112,17 @@ def delete_receipt(request: Request, receipt_id: int, date: date):
 
 
 @router.get('/day')
-async def day_report(request: Request, date: date | None = None, demo: bool = False):
+async def day_report(request: Request, date: date | None = None, demo: bool = False, refresh: bool = False):
     day = selected_day(date)
     state = request.app.state
     try:
         if demo:
             result = demo_snapshot(day)
         else:
-            async def load_latest():
-                async with state.iiko_lock:
-                    return await asyncio.wait_for(state.iiko.load(day), timeout=90)
-
-            result = await state.iiko_daily_reports.run(load_latest)
+            result = await load_iiko(state, 'load', day, refresh=refresh, request=request)
         state.cache.put(result)
         return {**result.json(),
-                'expense_policy_configured': state.expenses.policy_configured()}
-    except ReportReplaced:
-        raise HTTPException(409, 'Отчёт заменён новым запросом.') from None
+                'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured)}
     except TimeoutError as error:
         log_safe_failure('cashier-route', error, operation='day_report',
                          request_id=request.state.request_id)

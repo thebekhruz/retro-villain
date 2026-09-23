@@ -345,7 +345,7 @@ async function loadDay() {
   const sequence = ++requestNo;
   $('back-accountant').href = '/accountant?date=' + encodeURIComponent(day);
   try {
-    const response = await fetch('/api/accountant/day?date=' + encodeURIComponent(day), {cache: 'no-store'});
+    const response = await fetch('/api/accountant/staff?date=' + encodeURIComponent(day), {cache: 'no-store'});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить сотрудников.');
     if (sequence !== requestNo) return;
@@ -380,9 +380,7 @@ $('employees-download').addEventListener('click', async () => {
 });
 (async () => {
   try {
-    const response = await fetch('/api/config', {cache: 'no-store'});
-    if (!response.ok) throw new Error('Не удалось определить текущую дату.');
-    today = (await response.json()).today;
+    today = (await globalThis.RetroConfig).today;
     const requested = new URLSearchParams(location.search).get('date');
     $('employees-date').max = today;
     $('employees-date').value = requested && requested <= today ? requested : today;

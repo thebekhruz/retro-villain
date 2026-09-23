@@ -10,6 +10,7 @@ from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Resp
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from retro.report_cache import ReportCache, load_iiko
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient
 from retro.integrations.bookings import BookingAnalyticsClient
@@ -20,7 +21,7 @@ from retro.modules.cashier.routes import router as cashier_router
 from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
-from retro.modules.cashier.service import LatestReportRunner, SnapshotCache, today_tashkent
+from retro.modules.cashier.service import SnapshotCache, today_tashkent
 from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
@@ -105,6 +106,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         finally:
             if poller is not None:
                 await poller.stop()
+            await application.state.reports.close()
+            close = getattr(application.state.iiko, 'close', None)
+            if close is not None:
+                await close()
 
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None,
                   lifespan=lifespan)
@@ -115,8 +120,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.iiko = IikoClient(settings)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.broadcasts = BookingBroadcastClient(settings, transport=broadcast_transport)
-    app.state.iiko_lock = asyncio.Lock()
-    app.state.iiko_daily_reports = LatestReportRunner()
+    app.state.reports = ReportCache()
     app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
     database_path = expense_db_path or settings.data_dir / 'cashier.sqlite3'
@@ -146,7 +150,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.founder_chat_store = FounderChatStore(founder_path)
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
-        app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention)
+        app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention,
+        loader=lambda today: load_iiko(app.state, 'load_director_report', today, timeout=150))
 
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):
@@ -184,7 +189,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         except ValueError as error:
             return JSONResponse({'detail': str(error)}, 403)
         response = await call_next(request)
-        response.headers['Cache-Control'] = 'no-store'
+        response.headers['Cache-Control'] = (
+            'private, no-cache' if request.url.path.startswith('/static/') else 'no-store')
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Referrer-Policy'] = 'no-referrer'

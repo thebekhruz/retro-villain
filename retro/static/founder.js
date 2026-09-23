@@ -4,12 +4,12 @@ const shortDate=value=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'sho
 const directionMeta={retro:{label:'Retro',color:'#143e35'},school:{label:'Школа',color:'#52786f'},banquet:{label:'Банкет',color:'#a27445'}};
 const paymentColors=['#143e35','#d8b977','#52786f','#a27445','#769a83','#8c6f98','#ba7b67','#87909a','#b3a676'];
 const bookingMeta={bookings:{label:'Брони',color:'#143e35'},guests:{label:'Гости',color:'#d8b977'},cancelled:{label:'Отмены',color:'#ba7b67'}};
-const gate=FounderLogic.requestGate();let controller=null,lastAnalytics=null,lastBookings=null;
+const gate=FounderLogic.requestGate();let controller=null,lastAnalytics=null,lastBookings=null,lastQuery='';
 
 function svg(name,attrs={}){const node=document.createElementNS('http://www.w3.org/2000/svg',name);Object.entries(attrs).forEach(([key,value])=>node.setAttribute(key,value));return node}
 function selectedDirections(){return [...document.querySelectorAll('input[name=direction]:checked')].map(input=>input.value)}
 function setMessage(text,error=false){const node=$('message');node.hidden=!text;node.textContent=text||'';node.classList.toggle('is-error',error)}
-function setLoading(value){document.querySelector('.founder-workspace').classList.toggle('is-loading',value);document.querySelector('.founder-metrics').setAttribute('aria-busy',String(value));$('refresh').disabled=value}
+function setLoading(value){document.querySelector('.founder-metrics').setAttribute('aria-busy',String(value));$('refresh').disabled=value}
 
 function revenuePeriod(group){
   const dated=value=>`${shortDate(value)}, ${FounderLogic.weekday(value)}`;
@@ -110,13 +110,38 @@ function render(data){
   const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Оплаты сверены · '+money.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${money.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices.join(' '),!data.reconciled)
 }
 
-async function load(){
-  const directions=selectedDirections();if(!directions.length){setMessage('Выберите хотя бы одно направление.',true);return}controller?.abort();controller=new AbortController();const requestId=gate.next();setLoading(true);clearResults();setMessage('');const params=new URLSearchParams({start:$('start').value,end:$('end').value,granularity:$('granularity').value,directions:directions.join(',')});
-  const bookingParams=new URLSearchParams({start:$('start').value,end:$('end').value,granularity:$('granularity').value});const fetchJson=async(url,fallback)=>RetroState.responseJson(await fetch(url,{signal:controller.signal}),fallback);try{const [analyticsResult,bookingResult]=await Promise.allSettled([fetchJson('/api/founder/analytics?'+params,'Не удалось получить аналитику.'),fetchJson('/api/founder/bookings?'+bookingParams,'Не удалось получить бронирования.')]);if(!gate.isCurrent(requestId))return;if(analyticsResult.status==='fulfilled')render(analyticsResult.value);else{lastAnalytics=RetroState.analyticsAfterFailure(lastAnalytics);renderSeriesTable();if(analyticsResult.reason.name!=='AbortError'){setMessage(analyticsResult.reason.message,true);$('updated').textContent='Источник iiko недоступен'}}if(bookingResult.status==='fulfilled')renderBookings(bookingResult.value);else if(bookingResult.reason.name!=='AbortError')renderBookingError(bookingResult.reason.message)}finally{if(gate.isCurrent(requestId))setLoading(false)}
+async function load(options = {}) {
+  const directions = selectedDirections();
+  if (!directions.length) { setMessage('Выберите хотя бы одно направление.', true); return; }
+  controller?.abort();
+  controller = new AbortController();
+  const signal = controller.signal, requestId = gate.next();
+  const params = new URLSearchParams({start:$('start').value, end:$('end').value,
+    granularity:$('granularity').value, directions:directions.join(',')});
+  const query = params.toString();
+  if (options.refresh === true && lastQuery === query) params.set('refresh', 'true');
+  setLoading(true); clearResults(); setMessage('');
+  const bookingParams = new URLSearchParams({start:$('start').value, end:$('end').value,
+    granularity:$('granularity').value});
+  const fetchJson = async (url, fallback) => RetroState.responseJson(await fetch(url, {signal}), fallback);
+  const analytics = fetchJson('/api/founder/analytics?' + params, 'Не удалось получить аналитику.')
+    .then(data => { if (gate.isCurrent(requestId)) { lastQuery=query; render(data); } })
+    .catch(error => {
+      if (!gate.isCurrent(requestId) || error.name === 'AbortError') return;
+      lastAnalytics=RetroState.analyticsAfterFailure(lastAnalytics); renderSeriesTable();
+      setMessage(error.message,true); $('updated').textContent='Источник iiko недоступен';
+    })
+    .finally(() => { if (gate.isCurrent(requestId)) setLoading(false); });
+  const bookings = fetchJson('/api/founder/bookings?' + bookingParams, 'Не удалось получить бронирования.')
+    .then(data => { if (gate.isCurrent(requestId)) renderBookings(data); })
+    .catch(error => {
+      if (gate.isCurrent(requestId) && error.name !== 'AbortError') renderBookingError(error.message);
+    });
+  await Promise.allSettled([analytics, bookings]);
 }
 
-async function start(){try{const response=await fetch('/api/config');if(!response.ok)throw new Error();const config=await response.json();$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
+async function start(){try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
 function clearResults(){lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
 function invalidatePending(){controller?.abort();controller=null;gate.invalidate();setLoading(false);clearResults();$('updated').textContent='Фильтры изменены · нажмите «Показать»';setMessage('Фильтры изменены. Нажмите «Показать», чтобы загрузить новую выборку.')}
 ['start','end','granularity'].forEach(id=>$(id).addEventListener('change',invalidatePending));document.querySelectorAll('input[name=direction]').forEach(input=>input.addEventListener('change',invalidatePending));
-$('filters').addEventListener('submit',event=>{event.preventDefault();document.querySelectorAll('[data-period]').forEach(button=>button.classList.remove('is-active'));load()});document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.toggle('is-active',item===button));const period=FounderLogic.quickPeriod(button.dataset.period,$('end').max);$('start').value=period.start;$('end').value=period.end;load()}));start();
+$('filters').addEventListener('submit',event=>{event.preventDefault();document.querySelectorAll('[data-period]').forEach(button=>button.classList.remove('is-active'));load({refresh:true})});document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.toggle('is-active',item===button));const period=FounderLogic.quickPeriod(button.dataset.period,$('end').max);$('start').value=period.start;$('end').value=period.end;load()}));start();

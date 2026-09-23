@@ -1,6 +1,7 @@
 """Demo finance ledger: earned wages, actual payments, and available cash."""
 
 import sqlite3
+from collections import defaultdict
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
@@ -37,96 +38,104 @@ def required_text(value: str, label: str) -> str:
 class FinanceStore:
     def __init__(self, path: Path):
         self.path = Path(path)
+        self._initialize()
 
     def _open(self):
         secure_directory(self.path.parent)
         connection = sqlite3.connect(self.path, timeout=10)
         secure_file(self.path)
         connection.execute('PRAGMA foreign_keys=ON')
-        connection.executescript('''
-            CREATE TABLE IF NOT EXISTS accountant_exceptions (
-                employee_id INTEGER PRIMARY KEY,
-                day TEXT NOT NULL,
-                reason TEXT NOT NULL,
-                approver TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_payroll_days (
-                day TEXT PRIMARY KEY,
-                approver TEXT NOT NULL,
-                confirmed_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_accruals (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                work_day TEXT NOT NULL,
-                employee_id INTEGER NOT NULL,
-                employee_name TEXT NOT NULL,
-                group_name TEXT NOT NULL,
-                attendance_status TEXT NOT NULL,
-                rate TEXT NOT NULL,
-                amount TEXT NOT NULL,
-                UNIQUE(work_day, employee_id)
-            );
-            CREATE TABLE IF NOT EXISTS accountant_salary_payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                accrual_id INTEGER NOT NULL REFERENCES accountant_accruals(id),
-                paid_day TEXT NOT NULL,
-                amount TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_movements (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                day TEXT NOT NULL,
-                kind TEXT NOT NULL,
-                description TEXT NOT NULL,
-                amount TEXT NOT NULL,
-                item_code TEXT,
-                reference TEXT,
-                created_at TEXT NOT NULL,
-                UNIQUE(kind, reference)
-            );
-            CREATE TABLE IF NOT EXISTS accountant_reserves (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                day TEXT NOT NULL, account TEXT NOT NULL, kind TEXT NOT NULL,
-                amount TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_monthly_plans (
-                month TEXT PRIMARY KEY, amount TEXT NOT NULL, note TEXT NOT NULL,
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_handover_days (
-                day TEXT PRIMARY KEY, amount TEXT NOT NULL, checked_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_cash_opening (
-                id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL,
-                amount TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_debts (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL,
-                item_code TEXT NOT NULL, description TEXT NOT NULL,
-                total_amount TEXT NOT NULL, created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_debt_payments (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                debt_id INTEGER NOT NULL REFERENCES accountant_debts(id),
-                day TEXT NOT NULL, amount TEXT NOT NULL,
-                movement_id INTEGER NOT NULL REFERENCES accountant_movements(id),
-                created_at TEXT NOT NULL
-            );
-            CREATE TABLE IF NOT EXISTS accountant_finance_audit (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                entity_type TEXT NOT NULL,
-                entity_id TEXT NOT NULL,
-                action TEXT NOT NULL,
-                before_json TEXT,
-                after_json TEXT,
-                changed_at TEXT NOT NULL
-            );
-        ''')
-        columns = {row[1] for row in connection.execute('PRAGMA table_info(accountant_movements)')}
-        if 'item_code' not in columns:
-            connection.execute('ALTER TABLE accountant_movements ADD COLUMN item_code TEXT')
         return connection
+
+    def _initialize(self):
+        with closing(self._open()) as connection, connection:
+            connection.execute('PRAGMA journal_mode=WAL')
+            connection.executescript('''
+                CREATE TABLE IF NOT EXISTS accountant_exceptions (
+                    employee_id INTEGER PRIMARY KEY,
+                    day TEXT NOT NULL,
+                    reason TEXT NOT NULL,
+                    approver TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_payroll_days (
+                    day TEXT PRIMARY KEY,
+                    approver TEXT NOT NULL,
+                    confirmed_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_accruals (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    work_day TEXT NOT NULL,
+                    employee_id INTEGER NOT NULL,
+                    employee_name TEXT NOT NULL,
+                    group_name TEXT NOT NULL,
+                    attendance_status TEXT NOT NULL,
+                    rate TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    UNIQUE(work_day, employee_id)
+                );
+                CREATE TABLE IF NOT EXISTS accountant_salary_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    accrual_id INTEGER NOT NULL REFERENCES accountant_accruals(id),
+                    paid_day TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_movements (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    day TEXT NOT NULL,
+                    kind TEXT NOT NULL,
+                    description TEXT NOT NULL,
+                    amount TEXT NOT NULL,
+                    item_code TEXT,
+                    reference TEXT,
+                    created_at TEXT NOT NULL,
+                    UNIQUE(kind, reference)
+                );
+                CREATE TABLE IF NOT EXISTS accountant_reserves (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    day TEXT NOT NULL, account TEXT NOT NULL, kind TEXT NOT NULL,
+                    amount TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_monthly_plans (
+                    month TEXT PRIMARY KEY, amount TEXT NOT NULL, note TEXT NOT NULL,
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_handover_days (
+                    day TEXT PRIMARY KEY, amount TEXT NOT NULL, checked_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_cash_opening (
+                    id INTEGER PRIMARY KEY CHECK(id=1), day TEXT NOT NULL,
+                    amount TEXT NOT NULL, note TEXT NOT NULL, created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_debts (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT, day TEXT NOT NULL,
+                    item_code TEXT NOT NULL, description TEXT NOT NULL,
+                    total_amount TEXT NOT NULL, created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_debt_payments (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    debt_id INTEGER NOT NULL REFERENCES accountant_debts(id),
+                    day TEXT NOT NULL, amount TEXT NOT NULL,
+                    movement_id INTEGER NOT NULL REFERENCES accountant_movements(id),
+                    created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_finance_audit (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    entity_type TEXT NOT NULL,
+                    entity_id TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    before_json TEXT,
+                    after_json TEXT,
+                    changed_at TEXT NOT NULL
+                );
+            ''')
+            columns = {row[1] for row in connection.execute('PRAGMA table_info(accountant_movements)')}
+            if 'item_code' not in columns:
+                connection.execute('ALTER TABLE accountant_movements ADD COLUMN item_code TEXT')
+            connection.execute('CREATE INDEX IF NOT EXISTS accountant_salary_accrual_day ON accountant_salary_payments(accrual_id, paid_day)')
+            connection.execute('CREATE INDEX IF NOT EXISTS accountant_salary_paid_day ON accountant_salary_payments(paid_day)')
+            connection.execute('CREATE INDEX IF NOT EXISTS accountant_movements_day ON accountant_movements(day)')
 
     def reserves(self, day: date):
         from .reserves import reserve_summary
@@ -395,11 +404,15 @@ class FinanceStore:
             rows = connection.execute('SELECT id, work_day, employee_id, employee_name, group_name, '
                                       'attendance_status, rate, amount FROM accountant_accruals '
                                       'WHERE work_day <= ? ORDER BY work_day, id', (day.isoformat(),)).fetchall()
+            payments = defaultdict(Decimal)
+            for accrual_id, amount in connection.execute(
+                    'SELECT p.accrual_id, p.amount FROM accountant_salary_payments p '
+                    'JOIN accountant_accruals a ON a.id = p.accrual_id '
+                    'WHERE p.paid_day <= ? AND a.work_day <= ?', (day.isoformat(), day.isoformat())):
+                payments[accrual_id] += Decimal(amount)
             result = []
             for row in rows:
-                paid = sum((Decimal(p[0]) for p in connection.execute(
-                    'SELECT amount FROM accountant_salary_payments WHERE accrual_id = ? AND paid_day <= ?',
-                    (row[0], day.isoformat()))), Decimal(0))
+                paid = payments[row[0]]
                 result.append(dict(id=row[0], work_day=row[1], employee_id=row[2],
                                    name=row[3], group=row[4], status=row[5], rate=str(row[6]),
                                    amount=str(row[7]), paid=str(paid),
