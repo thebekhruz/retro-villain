@@ -157,3 +157,26 @@ def test_unknown_payment_type_is_shown_separately_with_warning():
     assert result['payment_summary'] == [
         {'name': 'Crypto', 'amount': '100', 'share_percent': '100.00'}]
     assert result['warnings'][:1] == ['Новые типы оплаты iiko показаны отдельно: Crypto.']
+
+
+def test_costs_follow_selected_directions_include_zero_sales_and_refunds():
+    day = date(2026, 9, 22)
+    rows = [
+        RevenueRow(day, 'Kassa-FiscalBox1', 'Ресторан', 'Плов', Decimal(100), Decimal(40)),
+        RevenueRow(day, 'Kassa-FiscalBox1', 'Ресторан', 'Дегустация', Decimal(0), Decimal(5)),
+        RevenueRow(day, 'Kassa-FiscalBox1', 'Ресторан', 'Возврат', Decimal(-20), Decimal(-8)),
+        RevenueRow(day, 'GL-Kassa-Oksbrich', 'Зал', 'Обед', Decimal(50), Decimal(10)),
+        RevenueRow(day, 'Kassa-FiscalBox1', 'Бехруз (Свадьба)', 'Аренда', Decimal(900), Decimal(300)),
+    ]
+    report = build_analytics(rows, [], day, day, 'day', ('retro',))
+    assert report['cost_totals'] == {'retro': '37', 'school': '10', 'banquet': '0', 'selected': '37'}
+    assert report['totals']['selected'] == '80'
+
+
+def test_missing_cost_is_not_presented_as_zero():
+    day = date(2026, 9, 22)
+    rows = [RevenueRow(day, 'Kassa-FiscalBox1', 'Ресторан', 'Плов', Decimal(100))]
+    report = build_analytics(rows, [], day, day, 'day', ('retro',))
+    assert report['cost_totals']['selected'] is None
+    assert report['cost_totals']['retro'] is None
+    assert report['cost_totals']['school'] == '0'

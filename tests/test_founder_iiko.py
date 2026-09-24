@@ -3,21 +3,25 @@ import json
 from datetime import date
 
 import httpx
+import pytest
 
 from retro.config import Settings
-from retro.integrations.iiko import IikoClient
+from retro.integrations.iiko import IikoClient, founder_rows_from_olap
+from retro.modules.cashier.service import DataError
 
 
-def node(index, value, children=None, amount=None):
+def node(index, value, children=None, amount=None, cost=None):
     result = {f'field{index}': {'value': value}}
     if children is not None:
         result['children'] = children
     if amount is not None:
         result[f'field{index + 1}'] = {'value': amount}
+    if cost is not None:
+        result[f'field{index + 2}'] = {'value': cost}
     return result
 
 
-def test_founder_range_uses_payment_sales_plus_only_tagged_banquet_dishes():
+def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
     requests = []
 
     def handler(request):
@@ -25,49 +29,30 @@ def test_founder_range_uses_payment_sales_plus_only_tagged_banquet_dishes():
             return httpx.Response(200, json={'token': 'test-only'})
         body = json.loads(request.content)
         groups = body['groupFields']
-        payment_sales = any(item.get('field') == 'OperationType' for item in body['filters'])
+        assert not any(item.get('field') == 'OperationType' for item in body['filters'])
         if request.url.path == '/api/olap/init':
             requests.append(body)
             return httpx.Response(200, json={'fetchId': 'payments' if 'PayTypes' in groups else 'revenue'})
-        if groups == ['OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName']:
-            if payment_sales:
-                rows = [node(0, '2026-09-01', [
-                    node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', [
-                        node(3, 'Плов', amount=100),
-                        node(3, 'Салат (Бехруз)', amount=10),
-                    ])]),
-                    node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', [
-                        node(3, 'Обед', amount=40),
-                    ])]),
-                ])]
-            else:
-                rows = [node(0, '2026-09-01', [
-                    node(1, 'Kassa-FiscalBox1', [node(2, 'Бехруз (Свадьба)', [
-                        node(3, 'Салат (Бехруз)', amount=60),
-                        node(3, 'Аренда зала', amount=940),
-                    ])]),
-                ])]
+        if 'PayTypes' in groups:
+            assert body['dataFields'] == ['DishDiscountSumInt']
+            dishes = [node(3, 'Плов', [node(4, 'UzCard', amount=100),
+                                     node(4, 'Демо', amount=50)]),
+                      node(3, 'Дегустация', [node(4, '(без оплаты)', amount=0)])]
+            banquet = [node(3, 'Салат (Бехруз)', [node(4, 'Демо', amount=60)]),
+                       node(3, 'Аренда зала', [node(4, 'Демо', amount=940)])]
+            school = [node(3, 'Обед', [node(4, 'UzCard', amount=40)])]
         else:
-            assert groups == [
-                'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName', 'PayTypes']
-            if payment_sales:
-                rows = [node(0, '2026-09-01', [
-                    node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', [
-                        node(3, 'Плов', [node(4, 'UzCard', amount=60),
-                                        node(4, 'Демо', amount=40)]),
-                        node(3, 'Салат (Бехруз)', [node(4, 'Демо', amount=10)]),
-                    ])]),
-                    node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', [
-                        node(3, 'Обед', [node(4, 'UzCard', amount=40)]),
-                    ])]),
-                ])]
-            else:
-                rows = [node(0, '2026-09-01', [
-                    node(1, 'Kassa-FiscalBox1', [node(2, 'Бехруз (Свадьба)', [
-                        node(3, 'Салат (Бехруз)', [node(4, 'Демо', amount=60)]),
-                        node(3, 'Аренда зала', [node(4, 'Демо', amount=940)]),
-                    ])]),
-                ])]
+            assert body['dataFields'] == ['DishDiscountSumInt', 'ProductCostBase.ProductCost']
+            dishes = [node(3, 'Плов', amount=150, cost=45),
+                      node(3, 'Дегустация', amount=0, cost=5)]
+            banquet = [node(3, 'Салат (Бехруз)', amount=60, cost=20),
+                       node(3, 'Аренда зала', amount=940, cost=300)]
+            school = [node(3, 'Обед', amount=40, cost=17)]
+        rows = [node(0, '2026-09-01', [
+            node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', dishes),
+                                       node(2, 'Бехруз (Свадьба)', banquet)]),
+            node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', school)]),
+        ])]
         return httpx.Response(200, json={'result': {'rows': rows}})
 
     source = IikoClient(Settings(login='test', password='test', store_id=123),
@@ -76,22 +61,19 @@ def test_founder_range_uses_payment_sales_plus_only_tagged_banquet_dishes():
         date(2026, 9, 1), date(2026, 9, 1), 'day', ('retro', 'school', 'banquet')))
 
     assert result['totals'] == {
-        'retro': '100', 'school': '40', 'banquet': '60', 'selected': '200'}
-    assert result['payment_total'] == '200'
+        'retro': '150', 'school': '40', 'banquet': '60', 'selected': '250'}
+    assert result['cost_totals'] == {
+        'retro': '50', 'school': '17', 'banquet': '20', 'selected': '87'}
+    assert result['payment_total'] == '250'
     assert result['reconciled'] is True
-    assert len(requests) == 4
-    assert sum(any(item.get('field') == 'OperationType' for item in body['filters'])
-               for body in requests) == 2
+    assert result['scope_excluded_revenue'] == '940'
+    assert len(requests) == 2
     for body in requests:
         assert body['filters'][0] == {
             'filterType': 'date_range', 'dateFrom': '2026-09-01', 'dateTo': '2026-09-01',
             'includeLeft': True, 'includeRight': True, 'field': 'OpenDate.Typed'}
-        filters = {item['field']: item for item in body['filters'][1:]}
-        if 'OperationType' in filters:
-            assert filters['OperationType']['valueList'] == ['PAYMENT']
-        assert 'DishGroup' not in filters
+        assert not any(item['field'] == 'DishGroup' for item in body['filters'])
         assert 'DishName' in body['groupFields']
-        assert body['dataFields'] == ['DishDiscountSumInt']
 
 
 def test_founder_large_range_is_split_before_requesting_iiko():
@@ -110,16 +92,14 @@ def test_founder_large_range_is_split_before_requesting_iiko():
             requests.append((start, end))
             return httpx.Response(200, json={'fetchId': f'{start}-{len(requests)}'})
 
-        payment_sales = any(item.get('field') == 'OperationType' for item in body['filters'])
-        banquet = not payment_sales
-        item = 'Салат (Бехруз)' if banquet else 'Плов'
-        amount = 10 if banquet else 100
         if 'PayTypes' in body['groupFields']:
-            leaf = node(3, item, [node(4, 'Демо', amount=amount)])
+            leaves = [node(3, 'Плов', [node(4, 'Демо', amount=100)]),
+                      node(3, 'Салат (Бехруз)', [node(4, 'Демо', amount=10)])]
         else:
-            leaf = node(3, item, amount=amount)
+            leaves = [node(3, 'Плов', amount=100, cost=40),
+                      node(3, 'Салат (Бехруз)', amount=10, cost=3)]
         rows = [node(0, start.isoformat(), [
-            node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', [leaf])]),
+            node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', leaves)]),
         ])]
         return httpx.Response(200, json={'result': {'rows': rows}})
 
@@ -130,8 +110,9 @@ def test_founder_large_range_is_split_before_requesting_iiko():
 
     assert result['totals']['selected'] == '220'
     assert result['payment_total'] == '220'
-    assert requests == ([(date(2026, 1, 1), date(2026, 1, 31))] * 4
-                        + [(date(2026, 2, 1), date(2026, 2, 1))] * 4)
+    assert result['cost_totals']['selected'] == '86'
+    assert requests == ([(date(2026, 1, 1), date(2026, 1, 31))] * 2
+                        + [(date(2026, 2, 1), date(2026, 2, 1))] * 2)
 
 
 
@@ -161,5 +142,13 @@ def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
         ('retro', 'school', 'banquet')))
 
     assert result['period'] == {'start': '2026-01-01', 'end': '2026-09-22'}
-    assert len(calls) == 36
-    assert max_active == 8
+    assert len(calls) == 18
+    assert max_active == 4
+
+
+@pytest.mark.parametrize('cost', [None, '40', float('nan')])
+def test_founder_rejects_missing_or_invalid_source_cost(cost):
+    values = ['2026-09-22', 'Kassa-FiscalBox1', 'Ресторан', 'Плов', 100, cost]
+    row = {f'field{i}': {'value': value} for i, value in enumerate(values)}
+    with pytest.raises(DataError):
+        founder_rows_from_olap([row], include_cost=True)
