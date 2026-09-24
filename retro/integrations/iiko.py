@@ -43,6 +43,8 @@ IIKO_DETAIL_FIELDS = (
 )
 FOUNDER_OLAP_MAX_DAYS = 31
 FOUNDER_OLAP_CHUNK_CONCURRENCY = 2
+FOUNDER_PNL_METRICS = ('PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS')
+FOUNDER_INTERNAL_COST_TYPES = ('Дегустация', 'Счет Шефа')
 
 
 def date_chunks(start, end, *, max_days):
@@ -250,6 +252,60 @@ def founder_rows_from_olap(rows, *, payments=False, dish_filter='all', include_c
     return result
 
 
+def founder_internal_costs_from_olap(rows):
+    """Sum zero-revenue internal operations by iiko non-cash purpose."""
+    totals = {name: Decimal(0) for name in FOUNDER_INTERNAL_COST_TYPES}
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку внутренних расходов.')
+        values = list(inherited)
+        while len(values) < 2:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != 2:
+            raise DataError('iiko не вернул назначение внутреннего расхода.')
+        try:
+            date.fromisoformat(values[0])
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату внутреннего расхода.') from None
+        if values[1] in totals:
+            totals[values[1]] += number(cell(row, 2))
+
+    if not isinstance(rows, list):
+        raise DataError('iiko вернул некорректную структуру внутренних расходов.')
+    for row in rows:
+        visit(row, [])
+    return totals
+
+
+def founder_pnl_from_kpi(data):
+    """Validate and total the exact accounting metrics used by iiko P&L."""
+    if not isinstance(data, dict):
+        raise DataError('iiko вернул некорректный отчёт о прибылях и убытках.')
+    totals = {}
+    for metric in FOUNDER_PNL_METRICS:
+        periods = data.get(metric)
+        if not isinstance(periods, dict) or not periods:
+            raise DataError('iiko не вернул показатель отчёта о прибылях и убытках.')
+        totals[metric] = sum((number(value) for value in periods.values()), Decimal(0))
+    if abs(totals['PL_SALES_TOTAL'] - totals['PL_COS_TOTAL']
+           - totals['PL_PROFIT_GROSS']) > Decimal('.01'):
+        raise DataError('Показатели отчёта iiko о прибылях и убытках не сходятся.')
+    return {
+        'sales': str(totals['PL_SALES_TOTAL']),
+        'cost': str(totals['PL_COS_TOTAL']),
+        'gross_profit': str(totals['PL_PROFIT_GROSS']),
+    }
+
+
 def detail_rows_from_olap(rows, dimensions, *, limit, offset=0):
     """Flatten a bounded, allowlisted iiko OLAP report for founder questions."""
     records = []
@@ -303,6 +359,7 @@ class IikoClient:
         self._auth_until = 0
         self._olap_cache = ReportCache(concurrency=4, limit=16, max_weight=12_000_000,
             weigh=lambda rows: len(json.dumps(rows, ensure_ascii=False).encode()))
+        self._kpi_cache = ReportCache(concurrency=2, limit=16)
 
     @asynccontextmanager
     async def _client(self):
@@ -333,6 +390,7 @@ class IikoClient:
 
     async def close(self):
         await self._olap_cache.close()
+        await self._kpi_cache.close()
         if self._http is not None:
             await self._http.aclose()
             self._http = None
@@ -438,6 +496,7 @@ class IikoClient:
                 revenue_groups = payment_groups[:-1]
                 revenue = []
                 payments = []
+                internal_costs = {name: Decimal(0) for name in FOUNDER_INTERNAL_COST_TYPES}
                 chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
 
                 async def load_chunk(chunk_start, chunk_end):
@@ -447,17 +506,26 @@ class IikoClient:
                                              ['DishDiscountSumInt']),
                             self._olap_range(client, chunk_start, chunk_end, revenue_groups,
                                              ['DishDiscountSumInt', 'ProductCostBase.ProductCost']),
+                            self._olap_range(
+                                client, chunk_start, chunk_end,
+                                ['OpenDate.Typed', 'NonCashPaymentType'],
+                                ['ProductCostBase.ProductCost']),
                         )
 
                 chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
-                chunk_rows = await gather_reads(*(
-                    load_chunk(chunk_start, chunk_end)
-                    for chunk_start, chunk_end in chunks
-                ))
-                for payment_rows, sales_rows in chunk_rows:
+                pnl, chunk_rows = await gather_reads(
+                    self._founder_pnl(client, start, end),
+                    gather_reads(*(load_chunk(chunk_start, chunk_end)
+                                   for chunk_start, chunk_end in chunks)),
+                )
+                for payment_rows, sales_rows, internal_rows in chunk_rows:
                     payments.extend(founder_rows_from_olap(payment_rows, payments=True))
                     revenue.extend(founder_rows_from_olap(sales_rows, include_cost=True))
+                    for name, amount in founder_internal_costs_from_olap(internal_rows).items():
+                        internal_costs[name] += amount
                 result = build_analytics(revenue, payments, start, end, granularity, directions)
+                result['olap_product_cost_totals'] = result.pop('cost_totals')
+                result['olap_sales_margin_totals'] = result.pop('gross_profit_totals')
                 from retro.modules.founder.models import classify_direction
                 sales = {name: Decimal(0) for name in ('retro', 'school', 'banquet')}
                 excluded = Decimal(0)
@@ -469,17 +537,41 @@ class IikoClient:
                         sales[group] += row.amount
                 result['sales_totals'] = {key: str(value) for key, value in sales.items()}
                 result['scope_excluded_revenue'] = str(excluded)
-                result['calculation_version'] = '2026-09-24-founder-sales-cost'
+                result['pnl'] = pnl
+                result['internal_costs'] = {
+                    'tasting': str(internal_costs['Дегустация']),
+                    'chef_account': str(internal_costs['Счет Шефа']),
+                }
+                result['calculation_version'] = '2026-09-24-founder-pnl-cost'
                 result['scope_note'] = (
                     'Выручка включает продажи, оплаченные авансом; новые авансы за будущие '
                     'заказы не добавляются. Банкет — только блюда с меткой «БЕХРУЗ». '
-                    'Себестоимость iiko учитывает те же направления, включая позиции '
-                    'без выручки; группы меню не исключаются. '
+                    'Блок P&L — бухгалтерские показатели всего ресторана из отчёта iiko '
+                    '«Прибыли и убытки»; фильтр направлений на него не влияет. '
+                    'Дегустация и Счёт Шефа показаны отдельно по себестоимости операций '
+                    'без выручки и не прибавляются к продажам. '
                     'Способы оплаты показывают распределение продаж, а не поступления денег.')
                 return result
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def _founder_pnl(self, client, start, end):
+        body = {
+            'dateFrom': start.isoformat(),
+            'dateTo': end.isoformat(),
+            'metricCodes': list(FOUNDER_PNL_METRICS),
+            'storeIds': [self.settings.store_id],
+            'dataType': 'DATA_SUMMARY_BY_PERIODS',
+        }
+        key = json.dumps(body, sort_keys=True, ensure_ascii=False)
+
+        async def fetch():
+            response = await self._post(client, '/api/kpi/dashboard/get-data', body)
+            return founder_pnl_from_kpi(response.get('data'))
+
+        return await self._kpi_cache.get(
+            key, fetch, ttl=60, timeout=90, refresh=refresh_source.get(), label='iiko_kpi')
 
     async def load_sales_details(self, start, end, dimensions, *, limit, offset=0, revision=None):
         """Read selected sales dimensions directly from the allowlisted iiko OLAP API."""

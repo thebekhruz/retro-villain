@@ -250,6 +250,9 @@ def test_founder_independent_report_detects_mismatch():
 
     client._client = no_http
     client._olap_range = olap
+    async def pnl(_client, start, end):
+        return {'sales': '110', 'cost': '40', 'gross_profit': '70'}
+    client._founder_pnl = pnl
     result = asyncio.run(client.load_founder_analytics(DAY, DAY, 'day', ('retro',)))
     assert result['totals']['selected'] == '110'
     assert result['payment_total'] == '100'

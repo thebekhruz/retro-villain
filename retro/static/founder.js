@@ -1,6 +1,6 @@
 const $=id=>document.getElementById(id);
 const money=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
-const exactMoney=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
+const exactMoney=new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2});
 const shortDate=value=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
 const directionMeta={retro:{label:'Retro',color:'#143e35'},school:{label:'Школа',color:'#52786f'},banquet:{label:'Банкет',color:'#a27445'}};
 const paymentColors=['#143e35','#d8b977','#52786f','#a27445','#769a83','#8c6f98','#ba7b67','#87909a','#b3a676'];
@@ -10,7 +10,7 @@ const gate=FounderLogic.requestGate();let controller=null,lastAnalytics=null,las
 function svg(name,attrs={}){const node=document.createElementNS('http://www.w3.org/2000/svg',name);Object.entries(attrs).forEach(([key,value])=>node.setAttribute(key,value));return node}
 function selectedDirections(){return [...document.querySelectorAll('input[name=direction]:checked')].map(input=>input.value)}
 function setMessage(text,error=false){const node=$('message');node.hidden=!text;node.textContent=text||'';node.classList.toggle('is-error',error)}
-function setLoading(value){document.querySelector('.founder-metrics').setAttribute('aria-busy',String(value));$('refresh').disabled=value}
+function setLoading(value){document.querySelectorAll('.founder-metrics').forEach(node=>node.setAttribute('aria-busy',String(value)));$('refresh').disabled=value}
 
 function revenuePeriod(group){
   const dated=value=>`${shortDate(value)}, ${FounderLogic.weekday(value)}`;
@@ -107,11 +107,11 @@ function renderSeriesTable(){
 
 function render(data){
   lastAnalytics=data;
-  ['retro','school','banquet','selected'].forEach(direction=>{
-    const cost=data.cost_totals?.[direction], profit=data.gross_profit_totals?.[direction];
-    $('profit-'+direction).textContent='После себестоимости: '+(profit==null?'нет данных':money.format(Number(profit))+' сум');
-    $('cost-'+direction).textContent='Себестоимость: '+(cost==null?'нет данных':money.format(Number(cost))+' сум');
-  });
+  $('pnl-sales').textContent=exactMoney.format(Number(data.pnl.sales));
+  $('pnl-cost').textContent=exactMoney.format(Number(data.pnl.cost));
+  $('pnl-profit').textContent=exactMoney.format(Number(data.pnl.gross_profit));
+  $('internal-tasting').textContent=exactMoney.format(Number(data.internal_costs.tasting));
+  $('internal-chef').textContent=exactMoney.format(Number(data.internal_costs.chef_account));
   ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
   const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Оплаты сверены · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices.join(' '),!data.reconciled)
 }
@@ -147,7 +147,7 @@ async function load(options = {}) {
 }
 
 async function start(){try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
-function clearResults(){['retro','school','banquet','selected'].forEach(direction=>$('profit-'+direction).textContent='После себестоимости: —');['retro','school','banquet','selected'].forEach(direction=>$('cost-'+direction).textContent='Себестоимость: —');lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
+function clearResults(){lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';['pnl-sales','pnl-cost','pnl-profit','internal-tasting','internal-chef'].forEach(id=>$(id).textContent='—');$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
 function invalidatePending(){controller?.abort();controller=null;gate.invalidate();setLoading(false);clearResults();$('updated').textContent='Фильтры изменены · нажмите «Показать»';setMessage('Фильтры изменены. Нажмите «Показать», чтобы загрузить новую выборку.')}
 ['start','end','granularity'].forEach(id=>$(id).addEventListener('change',invalidatePending));document.querySelectorAll('input[name=direction]').forEach(input=>input.addEventListener('change',invalidatePending));
 $('filters').addEventListener('submit',event=>{event.preventDefault();document.querySelectorAll('[data-period]').forEach(button=>button.classList.remove('is-active'));load({refresh:true})});document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.toggle('is-active',item===button));const period=FounderLogic.quickPeriod(button.dataset.period,$('end').max);$('start').value=period.start;$('end').value=period.end;load()}));start();

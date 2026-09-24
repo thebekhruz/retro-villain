@@ -75,6 +75,12 @@
 .founder-metrics .total span{color:#a9c2b5}
 .founder-metrics .total strong{color:var(--gold)}
 .founder-metrics .total small{color:#b9cdbc}
+.accounting-metrics{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:28px}
+.accounting-metrics article::before{background:#6f8b82}
+.accounting-metrics article.cost::before{background:#a27445}
+.accounting-metrics article.profit::before{background:#143e35}
+.accounting-metrics article.internal::before{background:#c7a866}
+.accounting-metrics strong{font-size:clamp(21px,1.75vw,28px)}
 
 /* ── Панели ───────────────────────────────────────────────────────────── */
 .founder-panel{padding:24px 26px;margin-bottom:20px}
@@ -268,7 +274,3 @@
 .ai-chat-form-foot{display:flex;justify-content:space-between;gap:12px;margin-top:7px;color:#98a39b;font-size:8px}.ai-chat-form-foot button{border:0;padding:0;background:transparent;color:#7a8c82;font:600 9px/1 inherit;cursor:pointer}.ai-chat-form-foot button:hover{color:#9b433d}
 @media(max-width:650px){.ai-chat-toggle{right:14px;bottom:14px;padding:12px}.ai-chat-toggle span{display:none}.ai-chat-drawer{width:100vw;border-left:0}.ai-chat-head{padding-top:max(16px,env(safe-area-inset-top))}.ai-chat-form{padding-bottom:max(14px,env(safe-area-inset-bottom))}.ai-chat-form-foot>span{display:none}.ai-chat-message.has-table .ai-chat-content{padding:10px}.ai-chat-table-wrap{margin-inline:0}.ai-chat-table-wrap table.is-compact th:first-child,.ai-chat-table-wrap table.is-compact td:first-child{min-width:0}.ai-chat-table-wrap table.is-compact th:not(:first-child),.ai-chat-table-wrap table.is-compact td:not(:first-child){width:22%}}
 @media(prefers-reduced-motion:reduce){.ai-chat-drawer,.ai-chat-toggle{transition:none}.ai-chat-messages{scroll-behavior:auto}}
-
-.founder-metrics .cost-line{margin-top:12px;line-height:1.5;font-variant-numeric:tabular-nums}
-
-.founder-metrics .profit-line{margin-top:8px;font-weight:600;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
