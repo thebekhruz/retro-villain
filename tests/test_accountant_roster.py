@@ -53,7 +53,7 @@ def test_reimport_does_not_overwrite_corrected_rate(tmp_path):
     assert RosterStore(tmp_path / 'demo.sqlite3').list()[0].rate == Decimal('260000')
 
 
-def test_replace_clears_hikvision_link_when_source_row_changes_person(tmp_path):
+def test_replace_rejects_reusing_identity_for_another_person(tmp_path):
     source = tmp_path / 'roster.xlsx'
     make_roster(source)
     store = RosterStore(tmp_path / 'demo.sqlite3')
@@ -71,9 +71,9 @@ def test_replace_clears_hikvision_link_when_source_row_changes_person(tmp_path):
     sheet.cell(5, 4, 250000)
     book.save(source)
 
-    store.import_xlsx(source, replace=True)
-
-    assert store.list()[0].hikvision_id is None
+    with pytest.raises(ValueError, match='другому сотруднику'):
+        store.import_xlsx(source, replace=True)
+    assert store.list()[0].hikvision_id == '100'
 
 
 @pytest.mark.parametrize('field,value', [

@@ -26,7 +26,7 @@ def test_manual_expenses_are_saved_by_day_and_can_be_removed(tmp_path):
         })
         assert created.status_code == 201
         expense_id = created.json()['id']
-        assert client.get('/api/cashier/expenses?date=2026-09-12').json() == {
+        assert {key: value for key, value in client.get('/api/cashier/expenses?date=2026-09-12').json().items() if key != 'revision'} == {
             'date': '2026-09-12',
             'expenses': [{'id': expense_id, 'description': 'Зарплата', 'amount': '350000'}],
             'total': '350000',
@@ -36,7 +36,7 @@ def test_manual_expenses_are_saved_by_day_and_can_be_removed(tmp_path):
         assert client.delete(f'/api/cashier/expenses/{expense_id}?date=2026-09-11').status_code == 404
         assert client.delete(f'/api/cashier/expenses/{expense_id}?date=2026-09-12').status_code == 204
     with TestClient(create_app(Settings(), expense_db_path=path), client=('127.0.0.1', 50000)) as client:
-        assert client.get('/api/cashier/expenses?date=2026-09-12').json() == {
+        assert {key: value for key, value in client.get('/api/cashier/expenses?date=2026-09-12').json().items() if key != 'revision'} == {
             'date': '2026-09-12',
             'expenses': [],
             'total': '0',

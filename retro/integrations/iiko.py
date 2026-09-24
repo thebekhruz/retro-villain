@@ -1,5 +1,6 @@
 import asyncio
 import json
+import hashlib
 import logging
 from contextlib import asynccontextmanager
 from time import monotonic
@@ -134,14 +135,14 @@ def reconcile_director_costs(payment_rows, cost_rows):
         source = costs[row_key]
         quantity = sum((row.quantity for row in parts), Decimal(0))
         revenue = sum((row.revenue for row in parts), Decimal(0))
-        if (min(source.quantity, source.revenue, source.cost) < 0
-                or any(min(row.quantity, row.revenue) < 0 for row in parts)
+        if (source.quantity * source.cost < 0
+                or any(row.quantity * source.quantity < 0 for row in parts)
                 or abs(quantity - source.quantity) > Decimal('.001') * len(parts)
                 or abs(revenue - source.revenue) > Decimal('.01') * len(parts)
                 or (not quantity and source.cost)):
             raise DataError(mismatch)
         # Largest share receives the remainder, including Decimal division dust.
-        parts = sorted(parts, key=lambda row: row.quantity)
+        parts = sorted(parts, key=lambda row: abs(row.quantity))
         remaining = source.cost
         for index, row in enumerate(parts):
             if index == len(parts) - 1:
@@ -149,7 +150,10 @@ def reconcile_director_costs(payment_rows, cost_rows):
             else:
                 cost = source.cost * row.quantity / quantity if quantity else Decimal(0)
                 remaining -= cost
-            result.append(replace(row, cost=cost))
+            result.append(replace(
+                row, cost=cost,
+                quantity=row.quantity + (source.quantity - quantity if index == len(parts) - 1 else 0),
+                revenue=row.revenue + (source.revenue - revenue if index == len(parts) - 1 else 0)))
     return result
 
 
@@ -245,7 +249,7 @@ def founder_rows_from_olap(rows, *, payments=False, dish_filter='all'):
     return result
 
 
-def detail_rows_from_olap(rows, dimensions, *, limit):
+def detail_rows_from_olap(rows, dimensions, *, limit, offset=0):
     """Flatten a bounded, allowlisted iiko OLAP report for founder questions."""
     records = []
     total_rows = 0
@@ -272,7 +276,7 @@ def detail_rows_from_olap(rows, dimensions, *, limit):
             number(cell(row, group_count + index)) for index in range(5)
         )
         total_rows += 1
-        if len(records) >= limit:
+        if total_rows <= offset or len(records) >= limit:
             return
         records.append({
             'dimensions': dict(zip(dimensions, values, strict=True)),
@@ -337,6 +341,7 @@ class IikoClient:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
         if self.settings.base_url != IIKO_ORIGIN:
             raise DataError('Разрешён только сервер Retro Milliy.')
+        fresh_token = refresh_source.set(True)
         try:
             async with self._client() as client:
                 scope = [
@@ -347,12 +352,16 @@ class IikoClient:
                     dict(field='OperationType', filterType='value_list',
                          valueList=['PAYMENT'], inclusiveList=True),
                 ]
-                breakdown_rows, total, payments, shifts_data = await gather_reads(
+                breakdown_rows, total, payments, shift_payments, shifts_data = await gather_reads(
                     self._olap(client, day, ['CashRegisterName', 'RestaurantSection'],
                                ['DishDiscountSumInt']),
                     self._olap(client, day, ['OpenDate.Typed'],
                                ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope),
                     self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], scope),
+                    # A shift covers the entire register, including the banquet
+                    # section. Subtract an equally scoped PAYMENT report, never
+                    # the narrower cashier sales card.
+                    self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], [scope[0], scope[2]]),
                     self._post(client, '/api/cash/shift/list_period',
                                {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()}),
                 )
@@ -361,13 +370,21 @@ class IikoClient:
                 shifts = shifts_data.get('shifts')
                 if not isinstance(shifts, list):
                     raise DataError('iiko не вернул список кассовых смен.')
-                amounts = {payment.name: payment.amount for payment in snapshot.payments}
-                total_prepay, cash_prepay = cash_prepay_from_shifts(day, snapshot.revenue, amounts, shifts)
+                amounts = defaultdict(Decimal)
+                for row in shift_payments:
+                    amounts[cell(row, 0)] += number(cell(row, 1))
+                total_prepay, cash_prepay = cash_prepay_from_shifts(
+                    day, sum(amounts.values(), Decimal(0)), amounts, shifts)
                 from dataclasses import replace
-                return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay)
+                register_sales = sum(amounts.values(), Decimal(0))
+                return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay,
+                               register_payment_sales=register_sales,
+                               register_received_total=register_sales + total_prepay)
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_cashier')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+        finally:
+            refresh_source.reset(fresh_token)
 
     async def load_director_report(self, today):
         if not self.settings.configured:
@@ -419,7 +436,9 @@ class IikoClient:
                     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
                     'PayTypes',
                 ]
+                revenue_groups = payment_groups[:-1]
                 revenue = []
+                full_revenue = []
                 payments = []
                 chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
 
@@ -430,6 +449,10 @@ class IikoClient:
                                              ['DishDiscountSumInt'], payment_scope),
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt']),
+                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                             ['DishDiscountSumInt'], payment_scope),
+                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                             ['DishDiscountSumInt']),
                         )
 
                 chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
@@ -437,7 +460,7 @@ class IikoClient:
                     load_chunk(chunk_start, chunk_end)
                     for chunk_start, chunk_end in chunks
                 ))
-                for regular_payment_rows, banquet_payment_rows in chunk_rows:
+                for regular_payment_rows, banquet_payment_rows, regular_revenue, banquet_revenue in chunk_rows:
                     regular_payments = founder_rows_from_olap(
                         regular_payment_rows, payments=True,
                         dish_filter='exclude_banquet')
@@ -446,16 +469,33 @@ class IikoClient:
                         dish_filter='banquet_only')
                     payments.extend(regular_payments)
                     payments.extend(banquet_payments)
-                    revenue.extend(
-                        RevenueRow(row.day, row.register, row.section, row.item, row.amount)
-                        for row in (*regular_payments, *banquet_payments)
-                    )
-                return build_analytics(revenue, payments, start, end, granularity, directions)
+                    full_revenue.extend(founder_rows_from_olap(banquet_revenue))
+                    revenue.extend(founder_rows_from_olap(regular_revenue, dish_filter='exclude_banquet'))
+                    revenue.extend(founder_rows_from_olap(banquet_revenue, dish_filter='banquet_only'))
+                result = build_analytics(revenue, payments, start, end, granularity, directions)
+                from retro.modules.founder.models import classify_direction
+                sales = {name: Decimal(0) for name in ('retro', 'school', 'banquet')}
+                excluded = Decimal(0)
+                for row in full_revenue:
+                    group = classify_direction(row.register, row.section, row.item)
+                    if group is None:
+                        excluded += row.amount
+                    else:
+                        sales[group] += row.amount
+                result['sales_totals'] = {key: str(value) for key, value in sales.items()}
+                result['scope_excluded_revenue'] = str(excluded)
+                result['calculation_version'] = '2026-09-24'
+                result['scope_note'] = (
+                    'График: обычные заказы — операция «Оплата», без зачтённых авансов; '
+                    'банкет — все операции блюд с меткой «БЕХРУЗ». '
+                    'Это согласованная выборка, а не все продажи или поступления денег. '
+                    'Сверка — с отдельным отчётом без разбивки по типам оплаты.')
+                return result
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
-    async def load_sales_details(self, start, end, dimensions, *, limit):
+    async def load_sales_details(self, start, end, dimensions, *, limit, offset=0, revision=None):
         """Read selected sales dimensions directly from the allowlisted iiko OLAP API."""
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
@@ -466,11 +506,22 @@ class IikoClient:
             raise DataError('Выберите от одного до четырёх разрешённых измерений iiko.')
         if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
             raise DataError('Лимит строк iiko должен быть от 1 до 200.')
+        if not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 100000:
+            raise DataError('Некорректное смещение страницы iiko.')
+        if offset and not revision:
+            raise DataError('Для следующей страницы укажите revision первой страницы.')
         try:
             async with self._client() as client:
                 raw = await self._olap_range(
                     client, start, end, list(dimensions), list(IIKO_DETAIL_FIELDS))
-                rows, total_rows = detail_rows_from_olap(raw, dimensions, limit=limit)
+                report_revision = hashlib.sha256(json.dumps(raw, sort_keys=True, default=str).encode()).hexdigest()
+                if revision is not None and revision != report_revision:
+                    raise DataError('Отчёт iiko изменился между страницами. Начните чтение заново.')
+                rows, total_rows = detail_rows_from_olap(raw, dimensions, limit=limit, offset=offset)
+                unsafe_cost = 'PayTypes' in dimensions or 'OperationType' in dimensions
+                if unsafe_cost:
+                    for row in rows:
+                        row['product_cost_total'] = None
                 return {
                     'source': 'iiko OLAP SALES',
                     'period': {'start': start.isoformat(), 'end': end.isoformat()},
@@ -479,7 +530,18 @@ class IikoClient:
                     'rows': rows,
                     'returned_rows': len(rows),
                     'total_rows': total_rows,
-                    'truncated': total_rows > len(rows),
+                    'truncated': offset > 0 or total_rows > len(rows),
+                    'offset': offset, 'revision': report_revision,
+                    'next_offset': offset + len(rows) if offset + len(rows) < total_rows else None,
+                    'cost_additive': not unsafe_cost,
+                    'warnings': ([
+                        'Себестоимость скрыта: iiko повторяет её при разделении по оплатам/операциям. '
+                        'Запросите себестоимость без этих измерений.'
+                    ] if unsafe_cost else []) + ([
+                        'Выдача усечена; нельзя вычислять итоги и полный рейтинг по этим строкам.'
+                    ] if offset > 0 or total_rows > len(rows) else []),
+                    'scope': 'Все продажи источника; фильтры направлений и исключения меню не применены.',
+                    'non_additive_metrics': ['product_cost_per_unit', 'orders'],
                 }
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_sales_details')

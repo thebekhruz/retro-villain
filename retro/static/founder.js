@@ -1,5 +1,6 @@
 const $=id=>document.getElementById(id);
 const money=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
+const exactMoney=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
 const shortDate=value=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
 const directionMeta={retro:{label:'Retro',color:'#143e35'},school:{label:'Школа',color:'#52786f'},banquet:{label:'Банкет',color:'#a27445'}};
 const paymentColors=['#143e35','#d8b977','#52786f','#a27445','#769a83','#8c6f98','#ba7b67','#87909a','#b3a676'];
@@ -107,7 +108,7 @@ function renderSeriesTable(){
 function render(data){
   lastAnalytics=data;
   ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
-  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Оплаты сверены · '+money.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${money.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices.join(' '),!data.reconciled)
+  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Оплаты сверены · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices.join(' '),!data.reconciled)
 }
 
 async function load(options = {}) {

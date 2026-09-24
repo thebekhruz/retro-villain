@@ -48,11 +48,12 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['B25'] = snapshot.receipt_count
     sheet['B26'] = snapshot.average_receipt
     sheet['B26'].number_format = MONEY
-    sheet['A20'], sheet['B20'] = 'ИТОГО НОВЫЕ ПРЕДОПЛАТЫ', snapshot.new_prepayment
-    sheet['A21'], sheet['B21'] = 'ОБЩИЙ ПРИХОД', snapshot.revenue + snapshot.new_prepayment + receipt_total
+    sheet['A20'], sheet['B20'] = 'ОЦЕНКА НОВЫХ ПРЕДОПЛАТ', snapshot.new_prepayment
+    register_total = snapshot.register_received_total if snapshot.register_received_total is not None else snapshot.revenue + snapshot.new_prepayment
+    sheet['A21'], sheet['B21'] = 'ПРИХОД КАССЫ, ВКЛЮЧАЯ БАНКЕТ', register_total + receipt_total
     sheet['B20'].number_format = MONEY
     sheet['B21'].number_format = MONEY
-    sheet['A27'], sheet['B27'] = 'Новые предоплаты наличными · iiko', snapshot.cash_prepayment
+    sheet['A27'], sheet['B27'] = 'Оценка предоплат наличными · разница', snapshot.cash_prepayment
     sheet['A28'], sheet['B28'] = 'Расходы наличными (включая зарплату)', expense_total
     sheet['A29'], sheet['B29'] = 'К передаче в финансовый отдел', handover
     sheet['A30'], sheet['B30'] = 'Прочие поступления наличными', receipt_total
@@ -124,6 +125,8 @@ def export_report(snapshot, expenses=(), receipts=()):
     detail.cell(end + 4, 1, 'Источник: https://retro3158.iikoweb.ru')
     detail.cell(end + 5, 1, 'Получено: ' + snapshot.fetched_at.strftime('%d.%m.%Y %H:%M') + ' (Ташкент)')
     detail.cell(end + 6, 1, 'Только касса Retro, без отделения «Бехруз (Свадьба)»; операции PAYMENT.')
+    detail.cell(end + 8, 1, 'Предоплаты — несверенная разница смены и продаж. Проверьте фактическую наличность.')
+    detail.cell(end + 9, 1, 'Наличные (Инкасса QR) не включены в передачу: учитываются отдельно.')
     if snapshot.demo:
         detail.cell(end + 7, 1, 'ДЕМОНСТРАЦИЯ. Данные вымышлены, не использовать для учёта.')
     detail.column_dimensions['A'].width = 68

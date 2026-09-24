@@ -64,7 +64,8 @@ $('usd-balance-save').addEventListener('click', async () => {
   } catch (error) { $('usd-balance-status').textContent = error.message; }
 });
 async function request(url, signal, options = {}) {
-  const response = await fetch(url, {...options, signal, cache:'no-store'});
+  const sender = options.method === 'POST' ? RetroFinancialWrite : fetch;
+  const response = await sender(url, {...options, signal, cache:'no-store'});
   if (!response.ok) {
     let detail;
     try { detail = (await response.json()).detail; } catch {}
@@ -106,7 +107,7 @@ function showHandover() {
   $('demo-cash').textContent = demoAmount === null ? '—' : money.format(demoAmount);
   $('cash-prepay').textContent = cashPrepay === null ? '—' : money.format(cashPrepay);
   $('total-inflow').textContent = snapshot && receiptData ?
-    money.format(Number(snapshot.revenue) + Number(snapshot.new_prepayment || 0) + Number(receiptData.total)) : '—';
+    money.format(Number(snapshot.register_received_total ?? (Number(snapshot.revenue) + Number(snapshot.new_prepayment || 0))) + Number(receiptData.total)) : '—';
   if (!financeData || !receiptData || demoAmount === null) {
     $('handover').textContent = '—';
     $('handover-number').classList.remove('is-negative');
@@ -353,11 +354,11 @@ function addRecentDateButtons() {
   }
 }
 $('download').addEventListener('click',async()=>{
-  if (!snapshot) return;
+  if (!snapshot || !financeData || !receiptData) return;
   const data = snapshot, current = generation;
   $('download').disabled=true;
   try {
-    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}`);
+    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}`);
     const blob = await response.blob();
     if(current !== generation) return;
     const url = URL.createObjectURL(blob), link = document.createElement('a');

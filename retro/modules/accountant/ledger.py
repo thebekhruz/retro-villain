@@ -149,16 +149,23 @@ class FinanceStore:
         from .reserves import set_monthly_plan
         return set_monthly_plan(self, day, amount, note)
 
-    def record_handover(self, day: date, amount: Decimal):
+    def record_handover(self, day: date, amount: Decimal, *, add=False, create_only=False):
+        amount = amount_value(amount, allow_zero=True)
         with closing(self._open()) as connection, connection:
+            connection.execute('BEGIN IMMEDIATE')
             row = connection.execute(
                 'SELECT day, amount, checked_at FROM accountant_handover_days WHERE day = ?',
                 (day.isoformat(),)).fetchone()
             before = dict(day=row[0], amount=row[1], checked_at=row[2]) if row else None
+            if row and create_only:
+                raise LedgerError('Приход за этот день уже записан. Используйте исправление дневного итога.')
+            if row and add:
+                amount = amount_value(Decimal(row[1]) + amount, allow_zero=True)
             connection.execute('INSERT INTO accountant_handover_days VALUES (?, ?, ?) '
                                'ON CONFLICT(day) DO UPDATE SET amount=excluded.amount, '
                                'checked_at=excluded.checked_at',
                                (day.isoformat(), str(amount), datetime.now().isoformat()))
+            self._check_known_future_balances(connection, day)
             row = connection.execute(
                 'SELECT day, amount, checked_at FROM accountant_handover_days WHERE day = ?',
                 (day.isoformat(),)).fetchone()
@@ -175,6 +182,16 @@ class FinanceStore:
 
     def delete_handover(self, day: date):
         with closing(self._open()) as connection, connection:
+            connection.execute('BEGIN IMMEDIATE')
+            anchor = connection.execute('SELECT day FROM accountant_cash_opening WHERE id=1').fetchone()
+            dependent = connection.execute(
+                'SELECT day FROM accountant_handover_days WHERE day > ? '
+                'UNION SELECT day FROM accountant_movements WHERE day >= ? '
+                'UNION SELECT paid_day FROM accountant_salary_payments WHERE paid_day >= ? '
+                'UNION SELECT day FROM accountant_reserves WHERE day >= ?',
+                (day.isoformat(),) * 4).fetchone()
+            if (anchor and anchor[0] == day.isoformat()) or dependent:
+                raise LedgerError('Приход используется в остатках. Исправьте сумму вместо удаления.')
             row = connection.execute(
                 'SELECT day, amount, checked_at FROM accountant_handover_days WHERE day = ?',
                 (day.isoformat(),)).fetchone()
@@ -234,9 +251,10 @@ class FinanceStore:
                     if linked:
                         connection.execute('DELETE FROM accountant_debt_payments WHERE id = ?', (linked[0],))
                     connection.execute('DELETE FROM accountant_movements WHERE id = ?', (operation_id,))
-                    self._check_future_balances(connection, day)
+                    self._check_cash_balances(connection, day)
                 else:
                     connection.execute('DELETE FROM accountant_salary_payments WHERE id = ?', (operation_id,))
+                self._check_reserve_balances(connection)
                 record_audit(connection, operation_type, operation_id, 'delete', before, None)
                 connection.commit()
             except Exception:
@@ -271,10 +289,13 @@ class FinanceStore:
             row = connection.execute('SELECT day,amount,note FROM accountant_cash_opening WHERE id=1').fetchone()
         return dict(day=row[0], amount=row[1], note=row[2]) if row else None
 
-    def cash_position(self, connection, day: date, start_day: date | None = None):
+    def cash_position(self, connection, day: date, start_day: date | None = None, *, current_amount=None):
         """Carry verified daily handovers forward; never silently fill an unobserved day."""
         rows = connection.execute('SELECT day, amount FROM accountant_handover_days '
                                   'WHERE day <= ? ORDER BY day', (day.isoformat(),)).fetchall()
+        if current_amount is not None:
+            rows = sorted([row for row in rows if row[0] != day.isoformat()]
+                          + [(day.isoformat(), str(current_amount))])
         if start_day is not None:
             rows = [row for row in rows if row[0] >= start_day.isoformat()]
         anchor = connection.execute('SELECT day,amount FROM accountant_cash_opening WHERE id=1').fetchone()
@@ -282,7 +303,7 @@ class FinanceStore:
             rows = [row for row in rows if row[0] >= anchor[0]]
         if not rows:
             return None, None, day.isoformat(), None
-        first = date.fromisoformat(rows[0][0])
+        first = date.fromisoformat(anchor[0] if anchor and day.isoformat() >= anchor[0] else rows[0][0])
         expected = first
         for recorded, _ in rows:
             if date.fromisoformat(recorded) != expected:
@@ -317,17 +338,35 @@ class FinanceStore:
                 None, first.isoformat())
 
     def available_cash(self, connection, day: date, cashier_amount: Decimal | None):
-        if cashier_amount is None:
+        has_handovers = connection.execute('SELECT 1 FROM accountant_handover_days LIMIT 1').fetchone()
+        if cashier_amount is None and not has_handovers:
             return self._cash_balance(connection, day)
-        opening, closing, missing, _ = self.cash_position(connection, day)
-        if missing == day.isoformat() and not connection.execute(
-                'SELECT 1 FROM accountant_handover_days LIMIT 1').fetchone():
+        if cashier_amount is not None and not connection.execute(
+                'SELECT 1 FROM accountant_handover_days WHERE day=?', (day.isoformat(),)).fetchone():
             connection.execute('INSERT INTO accountant_handover_days VALUES (?,?,?)',
                                (day.isoformat(), str(cashier_amount), datetime.now().isoformat()))
-            opening, closing, missing, _ = self.cash_position(connection, day)
+            record_audit(connection, 'handover', day.isoformat(), 'create', None,
+                         dict(day=day.isoformat(), amount=str(cashier_amount), source='cash_operation'))
+        opening, closing, missing, _ = self.cash_position(connection, day)
         if missing:
             raise LedgerError(f'Для переноса остатка загрузите данные кассира за {missing}.')
         return closing
+
+    def _check_cash_balances(self, connection, day):
+        if connection.execute('SELECT 1 FROM accountant_handover_days LIMIT 1').fetchone():
+            self._check_known_future_balances(connection, day)
+        else:
+            self._check_future_balances(connection, day)
+
+    @staticmethod
+    def _check_reserve_balances(connection):
+        from .reserves import _entries, _balance
+        for account in ('shoh', 'dividends', 'usd'):
+            rows = _entries(connection, account)
+            for cutoff in {row['day'] for row in rows}:
+                balance = _balance([row for row in rows if row['day'] <= cutoff])
+                if balance is not None and balance < 0:
+                    raise LedgerError('Операция делает остаток подотчёта или резерва отрицательным.')
 
     def _check_known_future_balances(self, connection, day: date):
         for (recorded,) in connection.execute(
@@ -376,13 +415,23 @@ class FinanceStore:
                                       (day.isoformat(),)).fetchone():
                     connection.rollback()
                     return False
+                if not rows or any(row.payable is None or row.rate is None for row in rows):
+                    raise LedgerError('Нельзя подтвердить неполное начисление: проверьте ставки и посещаемость всех сотрудников.')
+                if len({row.employee_id for row in rows}) != len(rows):
+                    raise LedgerError('В начислении повторяется сотрудник.')
+                for row in rows:
+                    amount_value(row.payable, allow_zero=True)
+                    amount_value(row.rate, allow_zero=True)
+                if connection.execute(
+                        "SELECT 1 FROM accountant_movements WHERE day=? AND kind='other_expense' "
+                        "AND item_code IN ('salary_cashier','salary_staff','salary_technical','salary_carryover')",
+                        (day.isoformat(),)).fetchone():
+                    raise LedgerError('За день уже записана зарплата без сотрудника. Сверьте ручные выплаты перед начислением.')
                 connection.execute('INSERT INTO accountant_payroll_days (day, approver, confirmed_at) '
                                    'VALUES (?, ?, ?)', (day.isoformat(), approver, datetime.now().isoformat()))
                 record_audit(connection, 'payroll_day', day.isoformat(), 'create', None,
                              dict(day=day.isoformat(), approver=approver))
                 for row in rows:
-                    if row.payable is None or row.payable <= 0:
-                        continue
                     if row.rate is None:
                         raise LedgerError('Нельзя подтвердить начисление без ставки.')
                     cursor = connection.execute(
@@ -454,6 +503,17 @@ class FinanceStore:
             (day.isoformat(),))), Decimal(0))
         return spent + salaries + transfers
 
+    @staticmethod
+    def _validate_salary_expense(connection, day, item_code):
+        if item_code not in {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}:
+            return
+        earned = sum((Decimal(r[0]) for r in connection.execute(
+            'SELECT amount FROM accountant_accruals WHERE work_day<=?', (day.isoformat(),))), Decimal(0))
+        paid = sum((Decimal(r[0]) for r in connection.execute(
+            'SELECT amount FROM accountant_salary_payments WHERE paid_day<=?', (day.isoformat(),))), Decimal(0))
+        if earned > paid:
+            raise LedgerError('Выберите начисление сотрудника в форме выплаты зарплаты; общий расход не погашает долг.')
+
     def _movement(self, day: date, kind: str, description: str, amount,
                   *, reference: str | None = None, item_code: str | None = None,
                   allow_zero=False, cashier_amount: Decimal | None = None):
@@ -462,6 +522,8 @@ class FinanceStore:
         with closing(self._open()) as connection:
             connection.execute('BEGIN IMMEDIATE')
             try:
+                if kind == 'other_expense':
+                    self._validate_salary_expense(connection, day, item_code)
                 if kind not in ('opening', 'cashier_transfer', 'other_receipt'):
                     available = self.available_cash(connection, day, cashier_amount)
                     if available < value:
@@ -473,10 +535,7 @@ class FinanceStore:
                                              datetime.now().isoformat()))
                 record_audit(connection, 'movement', cursor.lastrowid, 'create', None,
                              self._row_dict(connection, 'accountant_movements', cursor.lastrowid))
-                if cashier_amount is None:
-                    self._check_future_balances(connection, day)
-                else:
-                    self._check_known_future_balances(connection, day)
+                self._check_cash_balances(connection, day)
                 connection.commit()
                 return cursor.lastrowid
             except sqlite3.IntegrityError:
@@ -498,7 +557,7 @@ class FinanceStore:
 
     def add_expense(self, day: date, item_code: str, note: str, amount,
                     *, cashier_amount: Decimal | None = None):
-        if item_code not in ITEMS:
+        if item_code not in ITEMS or ITEMS[item_code][0] == 'income':
             raise LedgerError('Выберите наименование затрат из справочника.')
         note = note.strip() if isinstance(note, str) else ''
         if len(note) > 160:
@@ -538,9 +597,11 @@ class FinanceStore:
                         raise LedgerError('Выберите тип прочего поступления.')
                     description = f'Прочие поступления · {note}' if note else 'Прочие поступления'
                 else:
-                    if item_code not in ITEMS:
+                    if item_code not in ITEMS or ITEMS[item_code][0] == 'income':
                         raise LedgerError('Выберите наименование затрат из справочника.')
                     description = f'{ITEMS[item_code][1]} · {note}' if note else ITEMS[item_code][1]
+                if kind == 'other_expense' and item_code != old_code:
+                    self._validate_salary_expense(connection, day, item_code)
                 linked = connection.execute(
                     'SELECT debt_id FROM accountant_debt_payments WHERE movement_id = ?',
                     (movement_id,)).fetchone()
@@ -566,6 +627,7 @@ class FinanceStore:
                 connection.execute('UPDATE accountant_movements SET description=?, amount=?, item_code=? '
                                    'WHERE id=?', (description, str(value), item_code, movement_id))
                 after = self._row_dict(connection, 'accountant_movements', movement_id)
+                self._check_reserve_balances(connection)
                 record_audit(connection, 'movement', movement_id, 'update', before, after)
                 handover = connection.execute(
                     'SELECT amount FROM accountant_handover_days WHERE day = ?', (day.isoformat(),)).fetchone()
@@ -573,10 +635,7 @@ class FinanceStore:
                 available = self.available_cash(connection, day, cashier_amount)
                 if kind == 'other_expense' and available < 0:
                     raise LedgerError('Операция делает остаток отрицательным.')
-                if cashier_amount is None:
-                    self._check_future_balances(connection, day)
-                else:
-                    self._check_known_future_balances(connection, day)
+                self._check_cash_balances(connection, day)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -611,10 +670,7 @@ class FinanceStore:
                 cashier_amount = Decimal(handover[0]) if handover else None
                 if self.available_cash(connection, day, cashier_amount) < 0:
                     raise LedgerError('Операция делает остаток отрицательным.')
-                if cashier_amount is None:
-                    self._check_future_balances(connection, day)
-                else:
-                    self._check_known_future_balances(connection, day)
+                self._check_cash_balances(connection, day)
                 connection.commit()
             except Exception:
                 connection.rollback()
@@ -652,10 +708,7 @@ class FinanceStore:
                                             (accrual_id, paid_day.isoformat(), str(value), datetime.now().isoformat()))
                 record_audit(connection, 'salary_payment', cursor.lastrowid, 'create', None,
                              self._row_dict(connection, 'accountant_salary_payments', cursor.lastrowid))
-                if cashier_amount is None:
-                    self._check_future_balances(connection, paid_day)
-                else:
-                    self._check_known_future_balances(connection, paid_day)
+                self._check_cash_balances(connection, paid_day)
                 connection.commit()
                 return cursor.lastrowid
             except Exception:
@@ -716,8 +769,6 @@ class FinanceStore:
     def daily_summary(self, day: date, cashier_amount: Decimal | None, *, carry_history: bool = True,
                       carry_start: date | None = None) -> dict:
         """Verified carried cash plus today's handover less actual cash outflows."""
-        if cashier_amount is not None:
-            self.record_handover(day, cashier_amount)
         result = self.summary(day)
         movements = [item for item in result['movements']
                      if item['type'] in ('other_expense', 'other_receipt', 'procurement_advance', 'salary_payment')]
@@ -729,23 +780,21 @@ class FinanceStore:
                                       amount=amount, day=day.isoformat(), item_code=None))
         if cashier_amount is not None:
             movements.insert(0, dict(id=None, type='auto_cashier',
-                                     description=f'Касса за {(day - timedelta(days=1)).strftime("%d.%m.%Y")}',
+                                     description=f'Касса за {day.strftime("%d.%m.%Y")}',
                                      amount=str(cashier_amount), day=day.isoformat(), item_code=None))
         other_receipts = sum((Decimal(item['amount']) for item in movements
                               if item['type'] == 'other_receipt'), Decimal(0))
         other = sum((Decimal(item['amount']) for item in movements
                      if item['type'] in ('other_expense', 'procurement_advance', 'reserve_transfer')), Decimal(0))
         paid = result['salary_paid_on_day']
-        result['salary_recorded_on_day'] = paid + sum(
+        result['salary_unallocated_on_day'] = sum(
             (Decimal(item['amount']) for item in movements
              if item['type'] == 'other_expense'
              and ITEMS.get(item['item_code'], (None,))[0] == 'salary'), Decimal(0))
+        result['salary_recorded_on_day'] = paid + result['salary_unallocated_on_day']
         with closing(self._open()) as connection:
-            opening, remaining, missing, first_day = self.cash_position(connection, day, carry_start)
-            if not carry_history and cashier_amount is not None:
-                opening = Decimal(0)
-                remaining = cashier_amount + other_receipts - self._daily_outflows(connection, day)
-                missing = None
+            opening, remaining, missing, first_day = self.cash_position(
+                connection, day, carry_start, current_amount=cashier_amount)
         if opening is not None and opening > 0:
             movements.insert(0, dict(id=None, type='opening',
                                      description='Остаток на начало дня',

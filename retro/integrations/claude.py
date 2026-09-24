@@ -73,6 +73,7 @@ def _metric(name, direction, value):
         'cost': str(value.get('cost', '0')),
         'gross_profit': str(value.get('gross_profit', '0')),
         'margin_percent': value.get('margin_percent'),
+        'breakdown': value.get('breakdown', {}),
     }
 
 
@@ -98,17 +99,11 @@ def compact_analysis_input(snapshot):
     item_metrics = snapshot.get('item_metrics', {})
     all_items = item_metrics.get('all', {})
 
-    def item_direction(name):
-        if name in item_metrics.get('banquet', {}):
-            return 'banquet'
-        if name in item_metrics.get('oxbridge', {}):
-            return 'oxbridge'
-        if name in item_metrics.get('yandex', {}) and 'яндекс' in name.casefold():
-            return 'yandex'
-        return 'retro'
-
-    candidates = [_metric(name, item_direction(name), value)
-                  for name, value in all_items.items()]
+    candidates = [_metric(name, direction, value)
+                  for direction in ('retro', 'oxbridge', 'banquet')
+                  for name, value in item_metrics.get(direction, {}).items()]
+    if not candidates:
+        candidates = [_metric(name, 'all', value) for name, value in all_items.items()]
     losses = sorted(
         (item for item in candidates if _decimal(item['gross_profit']) < 0),
         key=lambda item: (_decimal(item['gross_profit']), -_decimal(item['revenue'])),
@@ -126,7 +121,7 @@ def compact_analysis_input(snapshot):
     )[:5]
     selected, seen = [], set()
     for item in losses + low_margin + leaders:
-        key = item['subject'].casefold()
+        key = (item['direction'], item['subject'].casefold())
         if key not in seen:
             selected.append(item)
             seen.add(key)
@@ -136,6 +131,7 @@ def compact_analysis_input(snapshot):
         if _decimal(value.get('gross_profit')) < 0:
             negative_waiters.append({
                 'name': name,
+                'breakdown': value.get('breakdown', {}),
                 'revenue': str(value.get('revenue', '0')),
                 'gross_profit': str(value.get('gross_profit', '0')),
                 'margin_percent': value.get('margin_percent'),
@@ -150,6 +146,8 @@ def compact_analysis_input(snapshot):
         'direction_totals': _direction_totals(item_metrics),
         'review_candidates': selected,
         'negative_waiters': negative_waiters[:6],
+        'scope': {key: snapshot.get(key) for key in ('calculation_version', 'menu_revenue',
+                  'excluded_revenue', 'excluded_groups', 'scope_excluded_revenue', 'yandex_menu_revenue')},
     }
 
 
@@ -176,7 +174,9 @@ class ClaudeClient:
             'model': self.settings.claude_model,
             'max_tokens': 1200,
             'system': ('Ты аналитик ресторанного бизнеса. Возвращай результат строго по заданной '
-                       'JSON-схеме. Не придумывай отсутствующие показатели.'),
+                       'JSON-схеме. Не придумывай отсутствующие показатели. Выручка и маржа меню имеют '
+                       'разный охват с оплатами. breakdown разделяет продажи, счёт шефа, дегустации '
+                       'и прочие нулевые выдачи: внутреннее потребление не означает убыточную продажу.'),
             'messages': [{'role': 'user', 'content': prompt}],
             'output_config': {
                 'format': {'type': 'json_schema', 'schema': ANALYSIS_SCHEMA},

@@ -205,6 +205,7 @@ function renderSnapshot(snapshot) {
   view.expanded = false;
   const all = logic.totals(snapshot.item_metrics.all || {});
   $('report-period').textContent = logic.periodLabel(snapshot.period_start, snapshot.period_end);
+  $('cash-note').textContent = 'Продажи до исключений меню. Меню: ' + sums(snapshot.menu_revenue ?? all.revenue) + '; исключены группы: ' + Object.entries(snapshot.excluded_revenue || {}).map(([name, amount]) => name + ' ' + sums(amount)).join(', ') + '. Вне банкетной выборки: ' + sums(snapshot.scope_excluded_revenue || 0) + '. Яндекс: оплаты ' + sums(snapshot.yandex_revenue) + ', меню ' + sums(snapshot.yandex_menu_revenue || 0) + '.';
   $('cash').textContent = money.format(Math.round(logic.amount(snapshot.cash_total)));
   // В трёх узких плитках «сум» у каждого числа не помещается и рвёт строку:
   // единица измерения стоит один раз, у главной цифры над ними.
@@ -247,7 +248,7 @@ async function loadSnapshot(refresh = false) {
     $('connection').textContent = 'iiko отвечает';
   } catch (error) {
     if (requestId !== snapshotRequest || error.name === 'AbortError') return;
-    $('state').textContent = error.message;
+    $('state').textContent = error.message + (view.snapshot ? ' На экране прежний отчёт за ' + logic.periodLabel(view.snapshot.period_start, view.snapshot.period_end) + '; обновление не выполнено.' : '');
     if (error.status === 503) showSetup(error.message);
     else $('connection').textContent = 'Нет данных';
   } finally {

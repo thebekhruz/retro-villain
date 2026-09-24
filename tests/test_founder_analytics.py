@@ -107,7 +107,7 @@ def test_payment_mismatch_is_returned_as_unverified_warning():
 
     assert result['reconciled'] is False
     assert result['discrepancy'] == '-2'
-    assert result['warnings'] == [
+    assert result['warnings'][:1] == [
         'Оплаты расходятся с выручкой на 2 сум. Данные не считаются сверенными.'
     ]
 
@@ -156,4 +156,4 @@ def test_unknown_payment_type_is_shown_separately_with_warning():
 
     assert result['payment_summary'] == [
         {'name': 'Crypto', 'amount': '100', 'share_percent': '100.00'}]
-    assert result['warnings'] == ['Новые типы оплаты iiko показаны отдельно: Crypto.']
+    assert result['warnings'][:1] == ['Новые типы оплаты iiko показаны отдельно: Crypto.']

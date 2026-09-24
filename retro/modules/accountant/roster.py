@@ -106,7 +106,9 @@ class MonthlyEmployee:
     def json(self):
         return dict(id=self.id, external_key=self.external_key, name=self.name, role=self.role,
                     salary=str(self.salary), schedule=self.schedule, card=str(self.card),
-                    cash=str(self.cash), advances=str(self.advances), remaining=str(self.remaining))
+                    cash=str(self.cash), advances=str(self.advances), remaining=str(self.remaining),
+                    accounting_basis='manual_current_register',
+                    warning='Ручной текущий реестр: поля выплат и остатка не сверены с движениями; месяц не задан.')
 
 
 class RosterStore:
@@ -161,6 +163,39 @@ class RosterStore:
                 connection.execute(
                     'CREATE UNIQUE INDEX IF NOT EXISTS accountant_monthly_external_key '
                     'ON accountant_monthly_employees(external_key) WHERE external_key IS NOT NULL')
+            # Preserve values used for previous calendar days. The initial version
+            # is a baseline, not a reconstruction of changes before this migration.
+            connection.executescript('''
+                CREATE TABLE IF NOT EXISTS accountant_employee_versions (
+                    employee_id INTEGER NOT NULL, effective_day TEXT NOT NULL,
+                    source_row INTEGER NOT NULL, name TEXT NOT NULL, role TEXT NOT NULL,
+                    group_name TEXT NOT NULL, rate TEXT, hikvision_id TEXT,
+                    deleted INTEGER NOT NULL DEFAULT 0,
+                    PRIMARY KEY(employee_id, effective_day)
+                );
+                INSERT OR IGNORE INTO accountant_employee_versions
+                    SELECT id,'0001-01-01',source_row,name,role,group_name,rate,hikvision_id,0
+                    FROM accountant_employees WHERE id NOT IN
+                        (SELECT employee_id FROM accountant_employee_versions);
+                CREATE TRIGGER IF NOT EXISTS accountant_employee_insert_history
+                AFTER INSERT ON accountant_employees BEGIN
+                    INSERT INTO accountant_employee_versions VALUES
+                        (NEW.id,'0001-01-01',NEW.source_row,NEW.name,NEW.role,
+                         NEW.group_name,NEW.rate,NEW.hikvision_id,0);
+                END;
+                CREATE TRIGGER IF NOT EXISTS accountant_employee_update_history
+                AFTER UPDATE ON accountant_employees BEGIN
+                    INSERT OR REPLACE INTO accountant_employee_versions VALUES
+                        (NEW.id,date('now','+5 hours'),NEW.source_row,NEW.name,NEW.role,
+                         NEW.group_name,NEW.rate,NEW.hikvision_id,0);
+                END;
+                CREATE TRIGGER IF NOT EXISTS accountant_employee_delete_history
+                AFTER DELETE ON accountant_employees BEGIN
+                    INSERT OR REPLACE INTO accountant_employee_versions VALUES
+                        (OLD.id,date('now','+5 hours'),OLD.source_row,OLD.name,OLD.role,
+                         OLD.group_name,OLD.rate,OLD.hikvision_id,1);
+                END;
+            ''')
 
 
     def import_xlsx(self, source: Path, *, replace: bool = False) -> dict[str, int]:
@@ -170,7 +205,7 @@ class RosterStore:
                 raise ValueError('В файле нет листа «ЗП».')
             sheet = workbook['ЗП']
             rows = []
-            for cells in sheet.iter_rows(min_row=5, max_row=78, min_col=1, max_col=4):
+            for cells in sheet.iter_rows(min_row=5, min_col=1, max_col=4):
                 number, name, role, raw_rate = (cell.value for cell in cells)
                 if not isinstance(number, int) or not isinstance(name, str) or not name.strip():
                     continue
@@ -201,6 +236,9 @@ class RosterStore:
                         if replace:
                             preserve_link = (normalized_hikvision_name(current[1]) ==
                                              normalized_hikvision_name(row[1]))
+                            if not preserve_link:
+                                raise ValueError('Строка импорта относится к другому сотруднику. '
+                                                 'Нельзя заменять человека под прежним ID.')
                             connection.execute(
                                 'UPDATE accountant_employees SET name=?, role=?, group_name=?, rate=?, '
                                 'hikvision_id=CASE WHEN ? THEN hikvision_id ELSE NULL END '
@@ -211,10 +249,21 @@ class RosterStore:
                             existing += 1
         return {'imported': imported, 'existing': existing}
 
-    def list(self) -> list[Employee]:
+    def list(self, day=None) -> list[Employee]:
         with closing(self._open()) as connection:
-            rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id '
-                                      'FROM accountant_employees ORDER BY source_row').fetchall()
+            if day is None:
+                rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id '
+                                          'FROM accountant_employees ORDER BY source_row').fetchall()
+            else:
+                rows = connection.execute('''
+                    SELECT employee_id,source_row,name,role,group_name,rate,
+                        COALESCE((SELECT e.hikvision_id FROM accountant_employees e
+                                  WHERE e.id=v.employee_id),v.hikvision_id)
+                    FROM accountant_employee_versions v WHERE deleted=0 AND effective_day=(
+                        SELECT MAX(effective_day) FROM accountant_employee_versions h
+                        WHERE h.employee_id=v.employee_id AND h.effective_day<=?)
+                    ORDER BY source_row
+                ''', (day.isoformat(),)).fetchall()
         return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None, row[6]) for row in rows]
 
     def link_hikvision_people(self, people: tuple[HikvisionPerson, ...]) -> dict[str, int]:

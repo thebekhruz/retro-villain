@@ -29,6 +29,8 @@ function updateButtons() {
   const needsCash = !entry && !income || entry?.kind === "transfer";
   const unpaid = !entry && $('expense-paid').value === '0';
   $("other-expense-form").querySelector("button").disabled = needsCash && !unpaid && current.ledger.cash_balance === null;
+  $('payroll-confirm-form').querySelector('button').disabled = current.ledger.payroll_confirmed || current.payroll.unknown_count > 0 || !current.employees.length;
+  $('salary-payment-form').querySelector('button').disabled = !current.ledger.accruals.some(row => Number(row.debt) > 0) || current.ledger.cash_balance === null;
   $('debt-payment-form').querySelector('button').disabled = !current.ledger.manual_debts.length || current.ledger.cash_balance === null;
   $('cash-opening-form').querySelector('button').disabled = current.ledger.cash_opening !== null || current.expected_cashier === null;
 }
@@ -90,7 +92,7 @@ function renderStaff(data) {
 }
 function renderLedger(data) {
   const l = data.ledger, confirmed = l.payroll_confirmed, hasCashierData = l.cash_balance !== null;
-  const cashierDay = previousDay(data.date);
+  const cashierDay = data.date;
   $('cashier-transfer-label').textContent = 'Касса за ' + formattedDay(cashierDay);
   $('expected-cashier').textContent = l.cash_flow.missing_day
     ? (data.expected_cashier === null ? 'Передача кассы за ' + formattedDay(cashierDay) + ' ещё не записана. ' : 'Для переноса остатка не хватает передачи кассы на ' + formattedDay(l.cash_flow.missing_day) + '. ') + (data.cashier_error || '')
@@ -103,7 +105,9 @@ function renderLedger(data) {
   const unpaidDay = l.accruals.filter(r => r.work_day === data.date).reduce((sum, r) => sum + Number(r.debt), 0);
   $('payroll-draft-total').textContent = money(confirmed ? unpaidDay : data.payroll.draft_total);
   $('payroll-state').textContent = confirmed ? 'Осталось выплатить за выбранную смену' : 'Предварительно · ' + data.payroll.unknown_count + ' не рассчитаны';
-  $('payroll-paid-total').textContent = money(l.salary_recorded_on_day);
+  $('payroll-paid-total').textContent = money(l.salary_paid_on_day);
+  $('salary-unallocated-note').textContent = 'Без привязки к начислениям: ' + money(l.salary_unallocated_on_day) + '. Эти расходы не погашают долг сотрудника.';
+  options($('salary-accrual'), l.accruals.filter(row => Number(row.debt) > 0).map(row => ({id:row.id,label:row.name + ' · ' + row.work_day + ' · долг ' + money(row.debt)})), 'Выберите сотрудника');
   $('payroll-debt-total').textContent = money(l.salary_debt);
   $('manual-debt-total').textContent = money(l.manual_debt_total);
   const debtTotal = Number(l.salary_debt) + Number(l.manual_debt_total);
@@ -124,7 +128,7 @@ function renderLedger(data) {
   $('reserves-lines').hidden = reservesKnown === 0;
   $('reserves-empty').hidden = reservesKnown > 0;
   $('monthly-balance').textContent = money(reserves.monthly.total);
-  $('monthly-note').textContent = reserves.monthly.month + ' · сумма ставок сотрудников из файла «ЗП»';
+  $('monthly-note').textContent = 'Текущие ставки реестра; не остаток долга за выбранный месяц';
   const journal = $('finance-journal'); journal.replaceChildren();
   const breakdown = {};
   async function mutateHandover(method, day, body) {
@@ -255,9 +259,10 @@ function status(text) { const box = $('connection'); if (box) box.textContent = 
 
 async function loadDay() {
   const day = selectedDay();
-  if (!day || !$('accountant-date').checkValidity()) { $('entrances-download').disabled = true; message('Выберите сегодняшний или прошедший день.', true); return; }
   const sequence = ++requestNo;
   current = null; updateButtons();
+  $("finance-layout").hidden = true;
+  if (!day || !$('accountant-date').checkValidity()) { $('entrances-download').disabled = true; message('Выберите сегодняшний или прошедший день.', true); return; }
   $("finance-layout").setAttribute("aria-busy", "true");
   $('entrances-day').textContent = formattedDay(day);
   const isToday = day === today, isYesterday = day === previousDay(today);
@@ -272,7 +277,7 @@ async function loadDay() {
     const response = await fetch('/api/accountant/day?date=' + encodeURIComponent(day), {cache: 'no-store'}), data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить данные.');
     if (sequence !== requestNo) return;
-    current = data; renderStaff(data); renderLedger(data); message('');
+    current = data; renderStaff(data); renderLedger(data); $("finance-layout").hidden = false; message('');
     status('Данные за ' + formattedDay(day));
   } catch (error) { if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); } }
   finally { if (RetroState.shouldReleaseBusy(sequence, requestNo)) $('finance-layout').setAttribute('aria-busy', 'false'); }
@@ -286,7 +291,7 @@ function submit(id, endpoint, body, success) {
     try {
       const payload = body(new FormData(form));
       const target = typeof endpoint === 'function' ? endpoint(new FormData(form)) : endpoint;
-      const response = await fetch(target, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+      const response = await RetroFinancialWrite(target, {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить. Проверьте поля.');
       form.reset(); if (id === 'other-expense-form') categoryChanged(); await loadDay(); message(success);
@@ -300,6 +305,8 @@ submit('other-expense-form', f => special[f.get('item_code')] ? '/api/accountant
   return entry ? {date: selectedDay(), amount: f.get('amount'), note: f.get('note'), account: entry.account, kind: entry.kind}
     : {date: selectedDay(), amount: f.get('amount'), paid_amount: f.get('paid_amount') === '' ? null : f.get('paid_amount'), item_code: f.get('item_code'), note: f.get('note')};
 }, 'Операция сохранена. Остатки пересчитаны.');
+submit('payroll-confirm-form', '/api/accountant/payroll/confirm', f => ({date:selectedDay(),approver:f.get('approver')}), 'Начисления сохранены.');
+submit('salary-payment-form', '/api/accountant/salary-payments', f => ({date:selectedDay(),accrual_id:Number(f.get('accrual_id')),amount:f.get('amount')}), 'Выплата зарплаты сохранена, долг уменьшен.');
 submit('debt-payment-form', '/api/accountant/debts/pay', f => ({date:selectedDay(),debt_id:Number(f.get('debt_id')),amount:f.get('amount')}), 'Выплата по долгу сохранена.');
 submit('reserve-opening-form', '/api/accountant/reserves', f => ({date:selectedDay(),account:f.get('account'),kind:'opening',amount:f.get('amount'),note:f.get('note')}), 'Начальный остаток сохранён на выбранную дату.');
 submit('cash-opening-form', '/api/accountant/cash-opening', f => ({date:selectedDay(),amount:f.get('amount'),note:f.get('note')}), 'Начальный остаток бухгалтера сохранён.');

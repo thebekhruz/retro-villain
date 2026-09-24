@@ -194,11 +194,11 @@ def _page(canvas, document):
 
 def _metric_table(snapshot, styles):
     metrics = [
-        ('Всего', snapshot.get('cash_total', 0)),
-        ('Retro', _group_revenue(snapshot, 'retro')),
-        ('Oxbridge', _group_revenue(snapshot, 'oxbridge')),
-        ('Банкет', _group_revenue(snapshot, 'banquet')),
-        ('Яндекс', snapshot.get('yandex_revenue', 0)),
+        ('Продажи', snapshot.get('cash_total', 0)),
+        ('Retro · меню', _group_revenue(snapshot, 'retro')),
+        ('Школа · меню', _group_revenue(snapshot, 'oxbridge')),
+        ('Банкет · меню', _group_revenue(snapshot, 'banquet')),
+        ('Яндекс · оплаты', snapshot.get('yandex_revenue', 0)),
     ]
     cells = []
     for label, value in metrics:
@@ -305,6 +305,13 @@ def render_report_pdf(snapshot, analysis):
         Paragraph('Выручка по направлениям, сум', styles['subtitle']),
         Spacer(1, 2 * mm),
         _metric_table(snapshot, styles),
+        Paragraph(_text('Карточки округлены. Точные суммы, сум: продажи ' + str(snapshot.get('cash_total', '—'))
+                  + '; меню после исключений ' + str(snapshot.get('menu_revenue', '—'))
+                  + '; оплаты Яндекс ' + str(snapshot.get('yandex_revenue', '—'))
+                  + '. Исключены из меню: ' + ', '.join(f'{key}: {value}' for key, value in snapshot.get('excluded_revenue', {}).items())
+                  + '. Вне банкетной выборки: ' + str(snapshot.get('scope_excluded_revenue', '—'))
+                  + '. Банкет — только блюда с меткой «БЕХРУЗ». Версия расчёта: '
+                  + str(snapshot.get('calculation_version', 'историческая'))), styles['subtitle']),
         Paragraph('Вывод Claude', styles['section']),
         Paragraph(_text(analysis.get('summary', 'Вывод не сформирован.')), styles['body']),
     ]

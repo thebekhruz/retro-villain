@@ -30,7 +30,7 @@ def read_rows(path: Path) -> list[dict]:
         sheet = workbook.active
         values = sheet.iter_rows(values_only=True)
         headers = [str(value).strip() if value is not None else '' for value in next(values)]
-        return [{key: (dict(zip(headers, row)).get(key) or '') for key in FIELDS}
+        return [{key: ('' if dict(zip(headers, row)).get(key) is None else dict(zip(headers, row))[key]) for key in FIELDS}
                 for row in values]
     finally:
         workbook.close()
@@ -57,8 +57,9 @@ def import_rows(store: RosterStore, rows: list[dict]) -> tuple[int, int]:
         cleaned.append((key or None, values))
 
     created = updated = 0
-    for key, values in cleaned:
-        with closing(store._open()) as connection:
+    with closing(store._open()) as connection, connection:
+        connection.execute('BEGIN IMMEDIATE')
+        for key, values in cleaned:
             if key:
                 matches = connection.execute(
                     'SELECT id FROM accountant_monthly_employees WHERE external_key = ?', (key,)).fetchall()
@@ -66,14 +67,22 @@ def import_rows(store: RosterStore, rows: list[dict]) -> tuple[int, int]:
                 matches = connection.execute(
                     'SELECT id FROM accountant_monthly_employees WHERE name = ? COLLATE NOCASE',
                     (values['name'],)).fetchall()
-        if len(matches) > 1:
-            raise ValueError('В базе найдено несколько сотрудников с одинаковым именем; добавьте внешний ключ.')
-        if matches:
-            store.update_monthly(matches[0][0], **values)
-            updated += 1
-        else:
-            store.add_monthly(external_key=key, **values)
-            created += 1
+            if len(matches) > 1:
+                raise ValueError('В базе найдено несколько сотрудников с одинаковым именем; добавьте внешний ключ.')
+            name, role, schedule, money = store._monthly_values(**values)
+            record = (name, role, str(money['salary']), schedule, str(money['card']),
+                      str(money['cash']), str(money['advances']), str(money['remaining']))
+            if matches:
+                connection.execute(
+                    'UPDATE accountant_monthly_employees SET name=?,role=?,salary=?,schedule=?,'
+                    'card=?,cash=?,advances=?,remaining=? WHERE id=?', (*record, matches[0][0]))
+                updated += 1
+            else:
+                connection.execute(
+                    'INSERT INTO accountant_monthly_employees '
+                    '(name,role,salary,schedule,card,cash,advances,remaining,external_key) '
+                    'VALUES (?,?,?,?,?,?,?,?,?)', (*record, key))
+                created += 1
     return created, updated
 
 

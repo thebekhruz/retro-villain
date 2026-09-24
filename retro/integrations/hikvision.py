@@ -171,14 +171,19 @@ def parse_events_page(raw: str, source: str = 'main-entry') -> IsapiPage[Hikvisi
         raise HikvisionError('invalid_response')
     events = []
     for item in raw_items:
-        if not isinstance(item, dict) or _integer(item.get('major')) != 5 \
-                or _integer(item.get('minor')) != 75:
+        if not isinstance(item, dict):
+            raise HikvisionError('invalid_response')
+        major, minor = _integer(item.get('major'), None), _integer(item.get('minor'), None)
+        if major is None or minor is None:
+            raise HikvisionError('invalid_response')
+        if major != 5 or minor != 75:
             continue
         serial_no = str(item.get('serialNo', '')).strip()
         employee_no = str(item.get('employeeNoString', item.get('employeeNo', ''))).strip()
         occurred_at = _event_time(item.get('time'))
-        if not serial_no or not employee_no or occurred_at is None:
-            continue
+        if (not serial_no or serial_no == 'None' or not employee_no
+                or employee_no == 'None' or occurred_at is None):
+            raise HikvisionError('invalid_response')
         events.append(HikvisionEvent(source, serial_no, employee_no, occurred_at))
     matches = _integer(search.get('numOfMatches'), len(raw_items))
     return IsapiPage(tuple(events), str(search.get('responseStatusStrg', '')).upper() == 'MORE',

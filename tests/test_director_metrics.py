@@ -27,6 +27,7 @@ def test_yandex_overlaps_cash_direction_without_double_counting():
     rows = [sale(order_id=f'o-{offset}', item=f'Плов {offset}',
                  payment='Яндекс Еда' if offset == 0 else 'UzCard',
                  register='Kassa-FiscalBox1' if offset % 2 == 0 else 'GL-Kassa-Oksbrich',
+                 section='Ресторан' if offset % 2 == 0 else 'Зал',
                  day=date(2026, 9, 8) + timedelta(days=offset))
             for offset in range(10)]
     snapshot = build_snapshot(rows, CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
@@ -92,7 +93,8 @@ def test_empty_category_map_includes_all_groups_and_explicit_map_still_fails_clo
     excluded = build_snapshot([sale(category='Контейнеры', day=day, order_id=str(offset))
                                for offset, day in enumerate(days)], {'Десерты': 'dessert'},
                               date(2026, 9, 8), date(2026, 9, 17), excluded_groups={'Контейнеры'})
-    assert excluded.cash_total == Decimal(0)
+    assert excluded.cash_total == Decimal('2000000')
+    assert excluded.json()['menu_revenue'] == '0'
 
 
 def test_authoritative_yandex_payments_are_not_reduced_by_excluded_dish_groups():
@@ -103,7 +105,8 @@ def test_authoritative_yandex_payments_are_not_reduced_by_excluded_dish_groups()
         rows, {}, date(2026, 9, 8), date(2026, 9, 17),
         excluded_groups={'ДОСТАВКА ЯНДЕКС'}, yandex_revenue=Decimal('28004000'))
 
-    assert snapshot.cash_total == Decimal(0)
+    assert snapshot.cash_total == Decimal('2000000')
+    assert snapshot.json()['menu_revenue'] == '0'
     assert snapshot.item_metrics['yandex'] == {}
     assert snapshot.yandex_revenue == Decimal('28004000')
 
