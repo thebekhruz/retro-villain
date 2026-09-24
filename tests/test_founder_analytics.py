@@ -171,6 +171,7 @@ def test_costs_follow_selected_directions_include_zero_sales_and_refunds():
     report = build_analytics(rows, [], day, day, 'day', ('retro',))
     assert report['cost_totals'] == {'retro': '37', 'school': '10', 'banquet': '0', 'selected': '37'}
     assert report['totals']['selected'] == '80'
+    assert report['gross_profit_totals'] == {'retro': '43', 'school': '40', 'banquet': '0', 'selected': '43'}
 
 
 def test_missing_cost_is_not_presented_as_zero():
@@ -180,3 +181,13 @@ def test_missing_cost_is_not_presented_as_zero():
     assert report['cost_totals']['selected'] is None
     assert report['cost_totals']['retro'] is None
     assert report['cost_totals']['school'] == '0'
+    assert report['gross_profit_totals']['selected'] is None
+    assert report['gross_profit_totals']['retro'] is None
+    assert report['gross_profit_totals']['school'] == '0'
+
+
+def test_gross_profit_preserves_losses_and_decimal_precision():
+    day = date(2026, 9, 22)
+    rows = [RevenueRow(day, 'Kassa-FiscalBox1', 'Ресторан', 'Плов', Decimal('10.01'), Decimal('15.03'))]
+    report = build_analytics(rows, [], day, day, 'day', ('retro',))
+    assert report['gross_profit_totals']['selected'] == '-5.02'

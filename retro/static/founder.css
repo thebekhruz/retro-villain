@@ -270,3 +270,5 @@
 @media(prefers-reduced-motion:reduce){.ai-chat-drawer,.ai-chat-toggle{transition:none}.ai-chat-messages{scroll-behavior:auto}}
 
 .founder-metrics .cost-line{margin-top:12px;line-height:1.5;font-variant-numeric:tabular-nums}
+
+.founder-metrics .profit-line{margin-top:8px;font-weight:600;font-size:14px;line-height:1.5;font-variant-numeric:tabular-nums}
