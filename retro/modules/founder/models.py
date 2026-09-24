@@ -227,6 +227,12 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
             'selected': None if missing_cost.intersection(directions) else _amount(
                 sum((costs[direction] for direction in directions), Decimal(0))),
         },
+        'gross_profit_totals': {
+            **{direction: None if direction in missing_cost else _amount(totals[direction] - costs[direction])
+               for direction in DIRECTIONS},
+            'selected': None if missing_cost.intersection(directions) else _amount(
+                selected_total - sum((costs[direction] for direction in directions), Decimal(0))),
+        },
         'revenue_series': revenue_series,
         'payment_summary': summary,
         'payment_series': payment_series,
