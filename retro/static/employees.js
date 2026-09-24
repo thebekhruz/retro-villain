@@ -61,7 +61,7 @@ function attendanceHealth(value) {
 }
 function render(data) {
   const health = attendanceHealth(data.attendance);
-  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health;
+  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health + (data.date !== today ? ' Исторический реестр: изменения доступны на сегодняшнюю дату.' : '');
   $('employees-attendance-status').textContent = health;
   $('employees-stats').replaceChildren(
     stat('Всего в реестре', data.roster_count, false),
@@ -103,16 +103,16 @@ function render(data) {
         else if (index === 5) cell.className = 'employee-arrival-time';
         else if (index === 2 && row.rate === null) cell.append(text('span', 'roster-missing', value));
         if (!cell.hasChildNodes()) cell.textContent = value;
-        if (index < 4) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
+        if (index < 4 && data.date === today) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
         tr.append(cell);
       });
       const actions = document.createElement('td');
       actions.dataset.label = columns[6];
       const edit = text('button', 'edit-monthly', 'Изменить');
-      edit.type = 'button';
+      edit.type = 'button'; edit.disabled = data.date !== today;
       edit.addEventListener('click', () => editEmployeeRow(row, tr, data.groups.map(item => item.name)));
       const remove = document.createElement('button');
-      remove.type = 'button'; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
+      remove.type = 'button'; remove.disabled = data.date !== today; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
       remove.title = 'Удалить сотрудника';
       remove.addEventListener('click', () => confirmDelete(row, tr, actions));
       actions.append(edit, remove); tr.append(actions);
@@ -356,7 +356,7 @@ async function loadDay() {
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить сотрудников.');
     if (sequence !== requestNo) return;
     current = data;
-    $('employees-add').disabled = false;
+    $('employees-add').disabled = day !== today;
     render(data);
     message('');
     status('Данные за ' + formattedDay(day));

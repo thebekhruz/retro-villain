@@ -204,9 +204,12 @@ def test_roster_keeps_past_rate_and_deleted_employee(tmp_path):
     roster.update(person.id, rate='200', group_name='Кухня', reason='Новая ставка')
     assert roster.list(yesterday)[0].rate == 100
     assert roster.list()[0].rate == 200
+    from retro.integrations.hikvision import HikvisionPerson
+    roster.link_hikvision_people((HikvisionPerson('7', person.name),))
     roster.delete(person.id)
     assert roster.list() == []
     assert roster.list(yesterday)[0].name == 'Тест'
+    assert roster.list(yesterday)[0].hikvision_id == '7'
 
 
 def test_monthly_import_keeps_numeric_zero_and_is_atomic(tmp_path):

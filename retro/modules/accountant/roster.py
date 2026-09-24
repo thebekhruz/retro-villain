@@ -257,8 +257,11 @@ class RosterStore:
             else:
                 rows = connection.execute('''
                     SELECT employee_id,source_row,name,role,group_name,rate,
-                        COALESCE((SELECT e.hikvision_id FROM accountant_employees e
-                                  WHERE e.id=v.employee_id),v.hikvision_id)
+                        COALESCE(v.hikvision_id,
+                            (SELECT e.hikvision_id FROM accountant_employees e WHERE e.id=v.employee_id),
+                            (SELECT h.hikvision_id FROM accountant_employee_versions h
+                             WHERE h.employee_id=v.employee_id AND h.hikvision_id IS NOT NULL
+                             ORDER BY h.effective_day DESC LIMIT 1))
                     FROM accountant_employee_versions v WHERE deleted=0 AND effective_day=(
                         SELECT MAX(effective_day) FROM accountant_employee_versions h
                         WHERE h.employee_id=v.employee_id AND h.effective_day<=?)
