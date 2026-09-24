@@ -5,6 +5,13 @@
  *  назад. Право входа знает только сервер, поэтому спрашиваем его и гасим
  *  пункты, в которые не пустят: ссылка перестаёт быть ссылкой, под пальцем
  *  появляется замок, а по нажатию рядом объясняется причина. */
+/** Настройки панели спрашиваем один раз на страницу: меню и сам модуль
+ *  просили их по отдельности, и каждая страница открывалась двумя
+ *  одинаковыми запросами подряд. */
+globalThis.RetroConfig = fetch('/api/config', {headers: {accept: 'application/json'}, cache: 'no-store'})
+  .then(response => (response.ok ? response.json() : Promise.reject(
+    new Error('Не удалось загрузить настройки панели.'))));
+
 (() => {
   const nav = document.querySelector('.sidebar nav');
   if (!nav) return;
@@ -41,8 +48,7 @@
     timer = setTimeout(() => hint.classList.remove('is-shown'), 4000);
   }
 
-  fetch('/api/config', { headers: { accept: 'application/json' } })
-    .then(response => (response.ok ? response.json() : null))
+  globalThis.RetroConfig
     .then(config => {
       if (!config || !Array.isArray(config.modules)) return;
       const byPath = new Map(config.modules.map(module => [module.path, module]));

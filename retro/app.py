@@ -20,7 +20,7 @@ from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import LatestReportRunner, SnapshotCache, today_tashkent
-from retro.modules.director.store import DirectorReportStore
+from retro.modules.director.store import DirectorReportStore, PeriodCache
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
@@ -140,6 +140,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         app.state.hikvision_poller = None
     director_path = director_db_path or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
+    app.state.director_cache = PeriodCache()
     founder_path = founder_db_path or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
     app.state.claude = ClaudeClient(settings, transport=claude_transport)

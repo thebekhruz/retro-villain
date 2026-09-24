@@ -217,7 +217,7 @@ function show(data) {
   $('updated').textContent = `${data.demo ? 'Пример сформирован' : 'Обновлено'} в ${time} · Ташкент`;
   showHandover();
 }
-async function load() {
+async function load(force = false) {
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
   $('refresh').disabled = false; document.body.classList.remove('loading'); $('metrics').setAttribute('aria-busy','false');
@@ -235,7 +235,9 @@ async function load() {
   $('metrics').setAttribute('aria-busy','true');document.body.classList.add('loading');
   $('refresh').disabled = true;message('Загружаем отчёт из ' + (demo ? 'демонстрационного примера…' : 'iiko…'));
   try {
-    const response = await request(`/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}`, controller.signal);
+    const response = await request(
+      `/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}${force ? '&refresh=1' : ''}`,
+      controller.signal);
     const data = await response.json();
     if (current !== generation) return;
     show(data);message('');
@@ -327,7 +329,7 @@ async function deleteExpense(id, day, button) {
     }
   }
 }
-$('refresh').addEventListener('click',load);
+$('refresh').addEventListener('click', () => load(true));
 $('download').addEventListener('click',async()=>{
   if (!snapshot) return;
   const data = snapshot, current = generation;
@@ -345,10 +347,10 @@ $('download').addEventListener('click',async()=>{
 });
 (async()=>{
   try {
-    config = await (await request('/api/config')).json();
+    config = await globalThis.RetroConfig;
     period = RetroPeriod.mount({
       host: $('period-host'), today: config.today, modes: ['day'],
-      day: config.today, dayInputId: 'report-date', onChange: load,
+      day: config.today, dayInputId: 'report-date', onChange: () => load(),
     });
     $('demo-banner').hidden=!demo;$('setup').hidden=config.configured||demo;
     if (demo) {

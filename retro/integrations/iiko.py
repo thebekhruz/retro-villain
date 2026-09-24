@@ -248,10 +248,6 @@ class IikoClient:
                 if not isinstance(auth.get('token'), str) or not auth['token']:
                     raise DataError('iiko не подтвердил авторизацию.')
                 client.headers['Authorization'] = 'Bearer ' + auth['token']
-                breakdown_rows = await self._olap(client, day,
-                                                  ['CashRegisterName', 'RestaurantSection'],
-                                                  ['DishDiscountSumInt'])
-                breakdown = build_revenue_breakdown(breakdown_rows)
                 scope = [
                     dict(field='CashRegisterName', filterType='value_list',
                          valueList=[RETRO_REGISTER], inclusiveList=True),
@@ -260,13 +256,20 @@ class IikoClient:
                     dict(field='OperationType', filterType='value_list',
                          valueList=['PAYMENT'], inclusiveList=True),
                 ]
-                total = await self._olap(client, day, ['OpenDate.Typed'],
-                                         ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope)
-                payments = await self._olap(client, day, ['PayTypes'],
-                                            ['DishDiscountSumInt'], scope)
+                # Четыре независимых отчёта шли друг за другом, и день кассира
+                # собирался шесть секунд вместо полутора: каждый ждал, пока iiko
+                # досчитает предыдущий. Зависимостей между ними нет.
+                breakdown_rows, total, payments, shifts_data = await asyncio.gather(
+                    self._olap(client, day, ['CashRegisterName', 'RestaurantSection'],
+                               ['DishDiscountSumInt']),
+                    self._olap(client, day, ['OpenDate.Typed'],
+                               ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope),
+                    self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], scope),
+                    self._post(client, '/api/cash/shift/list_period',
+                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()}),
+                )
+                breakdown = build_revenue_breakdown(breakdown_rows)
                 snapshot = build_snapshot(day, total, payments, revenue_breakdown=breakdown)
-                shifts_data = await self._post(client, '/api/cash/shift/list_period',
-                                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()})
                 shifts = shifts_data.get('shifts')
                 if not isinstance(shifts, list):
                     raise DataError('iiko не вернул список кассовых смен.')
@@ -297,13 +300,21 @@ class IikoClient:
                 # уходил отдельный отчёт и месяц собирался минутами. Окно
                 # ограничено сверху — на диапазоне в три недели с восемью
                 # измерениями iiko отвечает пятисоткой.
-                rows = []
+                windows = []
                 window_start = start
                 while window_start <= end:
                     window_end = min(end, window_start + timedelta(days=DIRECTOR_RANGE_CHUNK_DAYS - 1))
-                    rows.extend(director_rows_from_range(await self._olap_range(
-                        client, window_start, window_end, DIRECTOR_RANGE_GROUPS, DIRECTOR_FIELDS)))
+                    windows.append((window_start, window_end))
                     window_start = window_end + timedelta(days=1)
+                # Окна независимы, поэтому идут разом: месяц по очереди
+                # собирался восемь секунд, а это ровно то ожидание, из-за
+                # которого страницу считают зависшей.
+                answers = await asyncio.gather(*(
+                    self._olap_range(client, first, last, DIRECTOR_RANGE_GROUPS, DIRECTOR_FIELDS)
+                    for first, last in windows))
+                rows = []
+                for answer in answers:
+                    rows.extend(director_rows_from_range(answer))
                 return build_director_snapshot(rows, self.settings.director_categories, start, end,
                                                excluded_groups=self.settings.director_excluded_groups)
         except (httpx.HTTPError, TimeoutError) as error:

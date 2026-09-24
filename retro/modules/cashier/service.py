@@ -232,9 +232,10 @@ class SnapshotCache:
             raise DataError('Снимок устарел или относится к другой дате. Обновите данные.')
         return snapshot
 
-    def latest_for_day(self, day):
+    def latest_for_day(self, day, max_age=None):
+        limit = self.ttl if max_age is None else min(self.ttl, max_age)
         for created, snapshot in reversed(self.entries.values()):
-            if snapshot.day == day and not snapshot.demo and monotonic() - created <= self.ttl:
+            if snapshot.day == day and not snapshot.demo and monotonic() - created <= limit:
                 return snapshot
         return None
 

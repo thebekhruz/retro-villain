@@ -224,14 +224,23 @@ function periodQuery() {
   return '?start=' + encodeURIComponent(chosen.start) + '&end=' + encodeURIComponent(chosen.end);
 }
 
-async function loadSnapshot() {
+/** Пока считается новый период, прежние цифры на экране — чужие: они
+ *  относятся к другому диапазону. Гасим их, иначе кажется, что страница
+ *  уже готова, а потом числа скачком меняются сами. */
+function busy(on) {
+  const workspace = document.querySelector('.workspace');
+  if (workspace) workspace.setAttribute('aria-busy', String(Boolean(on)));
+}
+
+async function loadSnapshot(force) {
   if (period && !period.valid()) {
     $('state').textContent = 'Поправьте даты периода.';
     return;
   }
+  busy(true);
   $('state').textContent = 'Загружаем данные…';
   try {
-    const snapshot = await request('/api/director/report' + periodQuery());
+    const snapshot = await request('/api/director/report' + periodQuery() + (force ? '&refresh=1' : ''));
     $('setup').hidden = true;
     renderSnapshot(snapshot);
     $('state').textContent = 'Данные за период получены';
@@ -240,6 +249,8 @@ async function loadSnapshot() {
     $('state').textContent = error.message;
     if (error.status === 503) showSetup(error.message);
     else $('connection').textContent = 'Нет данных';
+  } finally {
+    busy(false);
   }
 }
 
@@ -323,7 +334,7 @@ async function loadReports() {
   }
 }
 
-$('refresh').addEventListener('click', () => { loadSnapshot(); loadAttendance(); });
+$('refresh').addEventListener('click', () => { loadSnapshot(true); loadAttendance(); });
 
 $('generate').addEventListener('click', async () => {
   const button = $('generate');
@@ -394,14 +405,16 @@ let period = null;
 (async function start() {
   let today = new Date().toISOString().slice(0, 10);
   try {
-    const config = await request('/api/config');
+    const config = await globalThis.RetroConfig;
     if (config && config.today) today = config.today;
   } catch (error) {
     $('state').textContent = error.message;
   }
   period = RetroPeriod.mount({
     host: $('period-host'), today: today, modes: ['range'], preset: '10',
-    onChange: loadSnapshot,
+    // Обработчику контрол передаёт выбранный период, и он попадал в
+    // аргумент «перечитать мимо кеша»: смена периода каждый раз лезла в iiko.
+    onChange: () => loadSnapshot(),
   });
   loadSnapshot();
   loadAttendance();

@@ -49,13 +49,21 @@ def period_or_422(start: date | None, end: date | None, days: int | None = None)
 
 
 async def director_snapshot(request: Request, start: date | None, end: date | None,
-                            days: int | None = None):
+                            days: int | None = None, refresh: bool = False):
     start, end = period_or_422(start, end, days)
+    cache = request.app.state.director_cache
+    key = (start.isoformat(), end.isoformat())
+    if not refresh:
+        ready = cache.get(key)
+        if ready is not None:
+            return ready
     try:
         async with request.app.state.iiko_lock:
             snapshot = await request.app.state.iiko.load_director_report(
                 today_tashkent(), start=start, end=end)
-        return snapshot.json()
+        report = snapshot.json()
+        cache.put(key, report)
+        return report
     except DataError as error:
         log_safe_failure('director-route', error, operation='report',
                          request_id=request.state.request_id)
@@ -69,9 +77,10 @@ async def today(request: Request):
 
 @router.get('/report')
 async def report_for_period(request: Request, start: date | None = None,
-                            end: date | None = None, days: int | None = None):
+                            end: date | None = None, days: int | None = None,
+                            refresh: bool = False):
     """Отчёт за выбранный период; без дат — последние закрытые дни."""
-    return await director_snapshot(request, start, end, days)
+    return await director_snapshot(request, start, end, days, refresh)
 
 
 @router.get('/reports')

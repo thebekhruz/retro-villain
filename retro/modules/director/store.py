@@ -1,4 +1,6 @@
 import hashlib
+from collections import OrderedDict
+from time import monotonic
 import json
 import sqlite3
 from pathlib import Path
@@ -100,3 +102,31 @@ class DirectorReportStore:
     def _row(row):
         return dict(id=row[0], created_at=row[1], period_start=row[2], period_end=row[3],
                     snapshot=json.loads(row[4]), analysis=json.loads(row[5]), pdf_sha256=row[6])
+
+
+class PeriodCache:
+    """Готовый отчёт за период, чтобы каждый заход не пересобирал его в iiko.
+
+    Закрытые дни в iiko почти не меняются, а сборка периода занимает секунды:
+    без кеша переключение между модулями каждый раз ждало заново. Кнопка
+    «Обновить» кеш обходит.
+    """
+
+    def __init__(self, ttl=900, limit=16):
+        self.ttl, self.limit = ttl, limit
+        self.entries = OrderedDict()
+
+    def get(self, key):
+        entry = self.entries.get(key)
+        if entry is None:
+            return None
+        created, value = entry
+        if monotonic() - created > self.ttl:
+            del self.entries[key]
+            return None
+        return value
+
+    def put(self, key, value):
+        self.entries[key] = (monotonic(), value)
+        while len(self.entries) > self.limit:
+            self.entries.popitem(last=False)

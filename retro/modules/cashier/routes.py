@@ -110,10 +110,25 @@ def delete_receipt(request: Request, receipt_id: int, date: date):
     return Response(status_code=204)
 
 
+# Закрытый день в iiko уже не меняется, поэтому его снимок живёт до конца
+# срока кеша. Сегодняшняя смена идёт, и её мы перечитываем чаще.
+OPEN_DAY_FRESHNESS = 60
+
+
 @router.get('/day')
-async def day_report(request: Request, date: date | None = None, demo: bool = False):
+async def day_report(request: Request, date: date | None = None, demo: bool = False,
+                     refresh: bool = False):
     day = selected_day(date)
     state = request.app.state
+    if not demo and not refresh:
+        # Каждый заход на страницу заново собирал отчёт в iiko, хотя тот же
+        # день только что грузили. Кнопка «Обновить» приходит с refresh=1 и
+        # кеш обходит.
+        cached = state.cache.latest_for_day(
+            day, OPEN_DAY_FRESHNESS if day == today_tashkent() else None)
+        if cached is not None:
+            return {**cached.json(),
+                    'expense_policy_configured': state.expenses.policy_configured()}
     try:
         if demo:
             result = demo_snapshot(day)
