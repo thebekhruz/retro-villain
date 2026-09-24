@@ -204,7 +204,7 @@ def olap_range_body(store_id, start, end, groups, fields, extra_filters=()):
                 includeVoidTransactions=False, includeNonBusinessPaymentTypes=False)
 
 
-def founder_rows_from_olap(rows, *, payments=False, dish_filter='all'):
+def founder_rows_from_olap(rows, *, payments=False, dish_filter='all', include_cost=False):
     if dish_filter not in {'all', 'exclude_banquet', 'banquet_only'}:
         raise ValueError('unknown founder dish filter')
     group_count = 5 if payments else 4
@@ -240,7 +240,8 @@ def founder_rows_from_olap(rows, *, payments=False, dish_filter='all'):
             result.append(PaymentRow(
                 day, values[1], values[2], values[3], values[4], amount))
         else:
-            result.append(RevenueRow(day, values[1], values[2], values[3], amount))
+            cost = number(cell(row, group_count + 1)) if include_cost else None
+            result.append(RevenueRow(day, values[1], values[2], values[3], amount, cost))
 
     if not isinstance(rows, list):
         raise DataError('iiko вернул некорректную структуру аналитики.')
@@ -428,8 +429,6 @@ class IikoClient:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
         if self.settings.base_url != IIKO_ORIGIN:
             raise DataError('Разрешён только сервер Retro Milliy.')
-        payment_scope = [dict(field='OperationType', filterType='value_list',
-                              valueList=['PAYMENT'], inclusiveList=True)]
         try:
             async with self._client() as client:
                 payment_groups = [
@@ -438,7 +437,6 @@ class IikoClient:
                 ]
                 revenue_groups = payment_groups[:-1]
                 revenue = []
-                full_revenue = []
                 payments = []
                 chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
 
@@ -446,13 +444,9 @@ class IikoClient:
                     async with chunk_limit:
                         return await gather_reads(
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                             ['DishDiscountSumInt'], payment_scope),
-                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt']),
                             self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                             ['DishDiscountSumInt'], payment_scope),
-                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
-                                             ['DishDiscountSumInt']),
+                                             ['DishDiscountSumInt', 'ProductCostBase.ProductCost']),
                         )
 
                 chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
@@ -460,23 +454,14 @@ class IikoClient:
                     load_chunk(chunk_start, chunk_end)
                     for chunk_start, chunk_end in chunks
                 ))
-                for regular_payment_rows, banquet_payment_rows, regular_revenue, banquet_revenue in chunk_rows:
-                    regular_payments = founder_rows_from_olap(
-                        regular_payment_rows, payments=True,
-                        dish_filter='exclude_banquet')
-                    banquet_payments = founder_rows_from_olap(
-                        banquet_payment_rows, payments=True,
-                        dish_filter='banquet_only')
-                    payments.extend(regular_payments)
-                    payments.extend(banquet_payments)
-                    full_revenue.extend(founder_rows_from_olap(banquet_revenue))
-                    revenue.extend(founder_rows_from_olap(regular_revenue, dish_filter='exclude_banquet'))
-                    revenue.extend(founder_rows_from_olap(banquet_revenue, dish_filter='banquet_only'))
+                for payment_rows, sales_rows in chunk_rows:
+                    payments.extend(founder_rows_from_olap(payment_rows, payments=True))
+                    revenue.extend(founder_rows_from_olap(sales_rows, include_cost=True))
                 result = build_analytics(revenue, payments, start, end, granularity, directions)
                 from retro.modules.founder.models import classify_direction
                 sales = {name: Decimal(0) for name in ('retro', 'school', 'banquet')}
                 excluded = Decimal(0)
-                for row in full_revenue:
+                for row in revenue:
                     group = classify_direction(row.register, row.section, row.item)
                     if group is None:
                         excluded += row.amount
@@ -484,12 +469,13 @@ class IikoClient:
                         sales[group] += row.amount
                 result['sales_totals'] = {key: str(value) for key, value in sales.items()}
                 result['scope_excluded_revenue'] = str(excluded)
-                result['calculation_version'] = '2026-09-24'
+                result['calculation_version'] = '2026-09-24-founder-sales-cost'
                 result['scope_note'] = (
-                    'График: обычные заказы — операция «Оплата», без зачтённых авансов; '
-                    'банкет — все операции блюд с меткой «БЕХРУЗ». '
-                    'Это согласованная выборка, а не все продажи или поступления денег. '
-                    'Сверка — с отдельным отчётом без разбивки по типам оплаты.')
+                    'Выручка включает продажи, оплаченные авансом; новые авансы за будущие '
+                    'заказы не добавляются. Банкет — только блюда с меткой «БЕХРУЗ». '
+                    'Себестоимость iiko учитывает те же направления, включая позиции '
+                    'без выручки; группы меню не исключаются. '
+                    'Способы оплаты показывают распределение продаж, а не поступления денег.')
                 return result
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')

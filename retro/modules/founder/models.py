@@ -30,6 +30,7 @@ class RevenueRow:
     section: str
     item: str
     amount: Decimal
+    cost: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -125,6 +126,8 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
     revenue_by_group = defaultdict(lambda: defaultdict(Decimal))
     payment_by_group = defaultdict(lambda: defaultdict(lambda: defaultdict(Decimal)))
     totals = {direction: Decimal(0) for direction in DIRECTIONS}
+    costs = {direction: Decimal(0) for direction in DIRECTIONS}
+    missing_cost = set()
     payment_totals = defaultdict(Decimal)
     seen_payments = set()
     unknown_payments = set()
@@ -140,6 +143,10 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         group = _period_start(row.day, start, granularity)
         revenue_by_group[group][direction] += row.amount
         totals[direction] += row.amount
+        if row.cost is None:
+            missing_cost.add(direction)
+        else:
+            costs[direction] += row.cost
         daily_revenue[row.day, direction] += row.amount
 
     for row in payment_rows:
@@ -214,6 +221,12 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         'currency': 'UZS',
         'totals': {**{direction: _amount(totals[direction]) for direction in DIRECTIONS},
                    'selected': _amount(selected_total)},
+        'cost_totals': {
+            **{direction: None if direction in missing_cost else _amount(costs[direction])
+               for direction in DIRECTIONS},
+            'selected': None if missing_cost.intersection(directions) else _amount(
+                sum((costs[direction] for direction in directions), Decimal(0))),
+        },
         'revenue_series': revenue_series,
         'payment_summary': summary,
         'payment_series': payment_series,

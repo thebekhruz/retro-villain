@@ -245,7 +245,7 @@ def test_founder_independent_report_detects_mismatch():
         if 'PayTypes' in groups:
             values += ['Демо', 100]
         else:
-            values += [110]
+            values += [110, 40]
         return [{f'field{i}': {'value': value} for i, value in enumerate(values)}]
 
     client._client = no_http
