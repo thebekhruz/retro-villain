@@ -63,6 +63,18 @@ def test_sales_and_zero_revenue_purposes_reconcile_for_items_and_waiters():
     assert report.json()['item_metrics']['all']['Плов']['breakdown']['chef']['cost'] == '2800481.30'
 
 
+def test_director_json_rounds_money_and_keeps_published_gross_exact():
+    day = date(2026, 9, 8)
+    snapshot = build_snapshot([
+        sale(day=day, revenue=Decimal('100.005'), cost=Decimal('60.16999999')),
+    ], set(), day, date(2026, 9, 17))
+
+    metric = snapshot.json()['item_metrics']['all']['Плов']
+    assert metric['revenue'] == '100.01'
+    assert metric['cost'] == '60.17'
+    assert metric['gross_profit'] == '39.84'
+
+
 @pytest.mark.parametrize('purpose,revenue,expected', [
     ('  Счёт Шефа  ', '0', 'chef'), ('ДЕГУСТАЦИЯ', '0', 'tasting'),
     ('', '0', 'other_zero'), ('Комплимент', '0', 'other_zero'),
@@ -94,7 +106,7 @@ def test_empty_category_map_includes_all_groups_and_explicit_map_still_fails_clo
                                for offset, day in enumerate(days)], {'Десерты': 'dessert'},
                               date(2026, 9, 8), date(2026, 9, 17), excluded_groups={'Контейнеры'})
     assert excluded.cash_total == Decimal('2000000')
-    assert excluded.json()['menu_revenue'] == '0'
+    assert excluded.json()['menu_revenue'] == '0.00'
 
 
 def test_authoritative_yandex_payments_are_not_reduced_by_excluded_dish_groups():
@@ -106,7 +118,7 @@ def test_authoritative_yandex_payments_are_not_reduced_by_excluded_dish_groups()
         excluded_groups={'ДОСТАВКА ЯНДЕКС'}, yandex_revenue=Decimal('28004000'))
 
     assert snapshot.cash_total == Decimal('2000000')
-    assert snapshot.json()['menu_revenue'] == '0'
+    assert snapshot.json()['menu_revenue'] == '0.00'
     assert snapshot.item_metrics['yandex'] == {}
     assert snapshot.yandex_revenue == Decimal('28004000')
 

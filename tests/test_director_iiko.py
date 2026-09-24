@@ -128,7 +128,7 @@ def test_director_loads_yandex_headline_from_payment_report_not_excluded_group()
     assert result.period_start == date(2026, 9, 13)
     assert result.period_end == date(2026, 9, 22)
     assert result.cash_total == Decimal('650000')
-    assert result.json()['excluded_revenue'] == {'ДОСТАВКА ЯНДЕКС': '650000'}
+    assert result.json()['excluded_revenue'] == {'ДОСТАВКА ЯНДЕКС': '650000.00'}
     assert result.yandex_revenue == Decimal('28004000')
     assert len(payment_calls) == 2
     assert payment_calls[0] == ({
