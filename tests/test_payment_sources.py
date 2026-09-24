@@ -67,7 +67,7 @@ def test_export_shows_unified_qr_and_sums_all_nine_payment_sources():
     summary = workbook['отчет']
     assert [summary.cell(r, 3).value for r in range(3, 12)] == NAMES
     assert summary['D10'].value == 37000
-    assert summary['C12'].value == 'ИТОГО ВЫРУЧКА:'
+    assert summary['C12'].value == 'ИТОГО ОПЛАТЫ:'
     assert summary['D12'].value == '=SUM(D3:D11)'
     assert summary['C13'].value == 'РАСХОДЫ КАССЫ'
     assert summary['C11'].style_id == summary['C10'].style_id

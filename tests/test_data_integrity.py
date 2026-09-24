@@ -245,7 +245,7 @@ def test_founder_independent_report_detects_mismatch():
     async def olap(_client, start, end, groups, fields, extra_filters=()):
         values = [DAY.isoformat(), 'Kassa-FiscalBox1', 'Ресторан', 'Плов']
         if 'PayTypes' in groups:
-            values += ['Демо', 100]
+            values += ['Демо'] + (['Оплата'] if 'OperationType' in groups else []) + [100]
         else:
             values += [110, 40]
         return [{f'field{i}': {'value': value} for i, value in enumerate(values)}]
