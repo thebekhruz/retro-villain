@@ -79,9 +79,9 @@ def test_founder_range_uses_payment_sales_plus_only_tagged_banquet_dishes():
         'retro': '100', 'school': '40', 'banquet': '60', 'selected': '200'}
     assert result['payment_total'] == '200'
     assert result['reconciled'] is True
-    assert len(requests) == 2
+    assert len(requests) == 4
     assert sum(any(item.get('field') == 'OperationType' for item in body['filters'])
-               for body in requests) == 1
+               for body in requests) == 2
     for body in requests:
         assert body['filters'][0] == {
             'filterType': 'date_range', 'dateFrom': '2026-09-01', 'dateTo': '2026-09-01',
@@ -130,12 +130,9 @@ def test_founder_large_range_is_split_before_requesting_iiko():
 
     assert result['totals']['selected'] == '220'
     assert result['payment_total'] == '220'
-    assert requests == [
-        (date(2026, 1, 1), date(2026, 1, 31)),
-        (date(2026, 1, 1), date(2026, 1, 31)),
-        (date(2026, 2, 1), date(2026, 2, 1)),
-        (date(2026, 2, 1), date(2026, 2, 1)),
-    ]
+    assert requests == ([(date(2026, 1, 1), date(2026, 1, 31))] * 4
+                        + [(date(2026, 2, 1), date(2026, 2, 1))] * 4)
+
 
 
 def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
@@ -164,5 +161,5 @@ def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
         ('retro', 'school', 'banquet')))
 
     assert result['period'] == {'start': '2026-01-01', 'end': '2026-09-22'}
-    assert len(calls) == 18
-    assert max_active == 4
+    assert len(calls) == 36
+    assert max_active == 8

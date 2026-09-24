@@ -61,7 +61,7 @@ function attendanceHealth(value) {
 }
 function render(data) {
   const health = attendanceHealth(data.attendance);
-  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health;
+  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health + (data.date !== today ? ' Исторический реестр: изменения доступны на сегодняшнюю дату.' : '');
   $('employees-attendance-status').textContent = health;
   $('employees-stats').replaceChildren(
     stat('Всего в реестре', data.roster_count, false),
@@ -73,6 +73,8 @@ function render(data) {
   );
   const container = $('employees-groups');
   container.replaceChildren();
+  renderMonthly(data.monthly_employees || []);
+  $('monthly-employees').prepend(text('p', '', 'Текущий ручной реестр без истории по месяцам. Суммы выплат и остатка не сверены с бухгалтерскими движениями.'));
   if (!data.employees.length) {
     container.append(emptyState('◫', 'В реестре пока нет сотрудников. Добавьте первого кнопкой «Добавить сотрудника» — роль, ставку и группу можно будет поправить прямо в списке.'));
     return;
@@ -101,16 +103,16 @@ function render(data) {
         else if (index === 5) cell.className = 'employee-arrival-time';
         else if (index === 2 && row.rate === null) cell.append(text('span', 'roster-missing', value));
         if (!cell.hasChildNodes()) cell.textContent = value;
-        if (index < 4) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
+        if (index < 4 && data.date === today) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
         tr.append(cell);
       });
       const actions = document.createElement('td');
       actions.dataset.label = columns[6];
       const edit = text('button', 'edit-monthly', 'Изменить');
-      edit.type = 'button';
+      edit.type = 'button'; edit.disabled = data.date !== today;
       edit.addEventListener('click', () => editEmployeeRow(row, tr, data.groups.map(item => item.name)));
       const remove = document.createElement('button');
-      remove.type = 'button'; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
+      remove.type = 'button'; remove.disabled = data.date !== today; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
       remove.title = 'Удалить сотрудника';
       remove.addEventListener('click', () => confirmDelete(row, tr, actions));
       actions.append(edit, remove); tr.append(actions);
@@ -122,7 +124,6 @@ function render(data) {
     details.append(scroll);
     container.append(details);
   });
-  renderMonthly(data.monthly_employees || []);
 }
 function editEmployeeRow(row, tableRow, groups) {
   if (tableRow.querySelector('input,select')) return;
@@ -149,7 +150,7 @@ function editEmployeeRow(row, tableRow, groups) {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.detail || 'Не удалось сохранить сотрудника.');
-      await loadDay(); message('Изменение сотрудника сохранено.');
+      await loadDay(); message('Изменение сохранено с сегодняшнего дня. Прошлые даты используют прежние данные.');
     } catch (error) { message(error.message, true); }
   });
   cells[6].replaceChildren(save, cancel); cells[0].querySelector('input').focus();
@@ -257,7 +258,7 @@ async function saveEmployee(row, field, value) {
   });
   const result = await response.json();
   if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить сотрудника.');
-  await loadDay(); message('Изменение сотрудника сохранено.');
+  await loadDay(); message('Изменение сохранено с сегодняшнего дня. Прошлые даты используют прежние данные.');
 }
 function editCell(row, cell, field, groups) {
   if (cell.querySelector('input')) return;
@@ -341,8 +342,13 @@ function status(text) { const box = $('connection'); if (box) box.textContent = 
 
 async function loadDay() {
   const day = $('employees-date').value;
-  if (!day || !$('employees-date').checkValidity()) { message('Выберите сегодняшний или прошедший день.', true); return; }
   const sequence = ++requestNo;
+  current = null;
+  ['employees-groups','employees-stats','monthly-employees'].forEach(id => $(id).replaceChildren());
+  $('employees-summary').textContent = 'Данные не загружены';
+  $('employees-add').disabled = true;
+  if (!day || !$('employees-date').checkValidity()) { message('Выберите сегодняшний или прошедший день.', true); return; }
+  $('employees-summary').textContent = 'Загрузка данных за ' + formattedDay(day);
   $('back-accountant').href = '/accountant?date=' + encodeURIComponent(day);
   try {
     const response = await fetch('/api/accountant/staff?date=' + encodeURIComponent(day), {cache: 'no-store'});
@@ -350,6 +356,7 @@ async function loadDay() {
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить сотрудников.');
     if (sequence !== requestNo) return;
     current = data;
+    $('employees-add').disabled = day !== today;
     render(data);
     message('');
     status('Данные за ' + formattedDay(day));

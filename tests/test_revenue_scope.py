@@ -59,11 +59,11 @@ def test_live_report_uses_only_retro_payments_and_keeps_three_way_breakdown():
     assert result.json()['revenue_breakdown'] == {
         'retro': '32124000', 'school': '3970000',
         'bekhruz_banquet': '22190000', 'total': '58284000'}
-    assert len(requests) == 6
+    assert len(requests) == 8
     breakdown = requests[0]
     assert breakdown['storeIds'] == [123]
     assert not any(f.get('field') == 'CashRegisterName' for f in breakdown['filters'])
-    for body in requests[2:]:
+    for body in requests[2:6]:
         filters = {f['field']: f for f in body['filters']}
         assert filters['CashRegisterName']['valueList'] == ['Kassa-FiscalBox1']
         assert filters['RestaurantSection']['valueList'] == ['Бехруз (Свадьба)']

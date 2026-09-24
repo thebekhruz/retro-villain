@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app.js" defer></script>
+  <script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -39,13 +39,13 @@
       <div class="panel handover-panel">
         <p class="eyebrow">ФИНАНСОВЫЙ ОТДЕЛ</p><h2>К передаче</h2>
         <p id="handover-number" class="handover-number"><span id="handover">—</span><small>сум</small></p>
-        <div class="inflow-summary"><span>Общий приход · все способы оплаты</span><strong><span id="total-inflow">—</span> сум</strong></div>
+        <div class="inflow-summary"><span>Приход всей кассы, включая банкет · все способы оплаты</span><strong><span id="total-inflow">—</span> сум</strong></div>
         <div class="handover-rule"><span>Демо · iiko</span><strong id="demo-cash">—</strong></div>
         <div class="handover-rule"><span>Предоплаты наличными · iiko</span><strong id="cash-prepay">—</strong></div>
         <div class="handover-rule"><span>Прочие поступления · вручную</span><strong id="handover-receipts">—</strong></div>
         <div class="handover-rule"><span>Расходы наличными · включая зарплату</span><strong id="handover-expenses">0</strong></div>
         <div class="handover-divider"></div>
-        <p class="handover-note">Расчётная сумма. Безналичные предоплаты не добавляются к наличным. Фактическую передачу пока не отмечаем.</p>
+        <p class="handover-note">Расчётная сумма для сверки фактической наличности. Предоплаты — разница итогов смены и продаж, не подтверждённый реестр авансов. «Наличные (Инкасса QR)» не входят в эту передачу.</p>
       </div>
       <div class="shift-left">
       <div class="panel day-figures" id="metrics" aria-busy="false" aria-label="Показатели дня">

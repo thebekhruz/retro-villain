@@ -63,8 +63,8 @@ def test_other_expense_and_shoh_procurement_are_separate_cash_outflows(tmp_path)
 
 def test_daily_summary_shows_carried_balance_as_opening_income(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
-    store.daily_summary(WORKDAY, Decimal('500000'))
-    store.daily_summary(NEXT_DAY, Decimal('200000'))
+    store.record_handover(WORKDAY, Decimal('500000'))
+    store.record_handover(NEXT_DAY, Decimal('200000'))
     result = store.daily_summary(NEXT_DAY, None)
     assert result['cash_flow']['opening_balance'] == '500000'
     assert result['movements'][0]['type'] == 'opening'
@@ -73,9 +73,9 @@ def test_daily_summary_shows_carried_balance_as_opening_income(tmp_path):
 
 def test_other_receipt_increases_current_and_next_day_cash(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
-    store.daily_summary(WORKDAY, Decimal('100000'))
+    store.record_handover(WORKDAY, Decimal('100000'))
     store.add_income(WORKDAY, 'income_other', 'Возврат долга', '25000')
-    store.daily_summary(NEXT_DAY, Decimal('50000'))
+    store.record_handover(NEXT_DAY, Decimal('50000'))
     today = store.daily_summary(WORKDAY, Decimal('100000'))
     tomorrow = store.daily_summary(NEXT_DAY, Decimal('50000'))
     assert today['cash_balance'] == Decimal('125000')

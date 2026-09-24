@@ -87,7 +87,11 @@ TOOL_DEFINITIONS = (
             'Напрямую запросить детальный read-only OLAP-отчёт iiko по продажам. '
             'Доступны даты, кассы, отделения, способы оплаты, блюда, группы блюд, '
             'официанты, заказы и типы операций; метрики включают количество, выручку, '
-            'себестоимость и число заказов. Выбирай только нужные измерения и узкий период.'
+            'себестоимость и число заказов. Выбирай только нужные измерения и узкий период. '
+            'При PayTypes/OperationType себестоимость недоступна из-за повторов в iiko. '
+            'Число заказов и себестоимость единицы нельзя складывать. Усечённая выдача '
+            'не подходит для общих итогов или полного рейтинга. Для продолжения передай '
+            'next_offset как offset и revision из первой страницы; не смешивай версии отчёта.'
         ),
         'input_schema': {
             'type': 'object',
@@ -100,6 +104,8 @@ TOOL_DEFINITIONS = (
                     'minItems': 1, 'maxItems': 4, 'uniqueItems': True,
                 },
                 'limit': {'type': 'integer', 'minimum': 1, 'maximum': 200},
+                'offset': {'type': 'integer', 'minimum': 0, 'maximum': 100000},
+                'revision': {'type': 'string'},
             },
             'required': ['start', 'end', 'dimensions', 'limit'],
             'additionalProperties': False,
@@ -225,8 +231,9 @@ class FounderChatTools:
         if name == 'get_employee_attendance':
             return await asyncio.to_thread(self._attendance, arguments)
         if name == 'get_iiko_sales_details':
-            if not isinstance(arguments, dict) or set(arguments) != {
-                    'start', 'end', 'dimensions', 'limit'}:
+            if (not isinstance(arguments, dict)
+                    or not {'start', 'end', 'dimensions', 'limit'} <= set(arguments)
+                    or set(arguments) - {'start', 'end', 'dimensions', 'limit', 'offset', 'revision'}):
                 raise DataError('Инструмент iiko получил неполные параметры.')
             start = _parse_date(arguments['start'], 'start')
             end = _parse_date(arguments['end'], 'end')
@@ -246,7 +253,8 @@ class FounderChatTools:
             if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
                 raise DataError('Лимит строк iiko должен быть от 1 до 200.')
             return await load_iiko(self.app.state, 'load_sales_details',
-                                   start, end, tuple(dimensions), limit=limit)
+                                   start, end, tuple(dimensions), limit=limit,
+                                   **{key: arguments[key] for key in ('offset', 'revision') if key in arguments})
         if name == 'get_cashier_day':
             return await self._cashier_day(arguments)
         if name == 'get_accounting_day':

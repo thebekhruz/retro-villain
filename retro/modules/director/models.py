@@ -29,7 +29,7 @@ BREAKDOWN_KEYS = ('sales', 'chef', 'tasting', 'other_zero')
 
 
 def sale_kind(row):
-    if row.revenue > 0:
+    if row.revenue != 0:
         return 'sales'
     purpose = ' '.join((row.non_cash_payment_type or '').casefold().replace('ё', 'е').split())
     return {'счет шефа': 'chef', 'дегустация': 'tasting'}.get(purpose, 'other_zero')
@@ -61,6 +61,10 @@ class DirectorSnapshot:
     yandex_revenue: Decimal
     item_metrics: dict[str, dict[str, ItemMetric]]
     waiter_metrics: dict[str, ItemMetric]
+    excluded_revenue: dict[str, Decimal] = field(default_factory=dict)
+    scope_excluded_revenue: Decimal = Decimal(0)
+    yandex_menu_revenue: Decimal = Decimal(0)
+    excluded_groups: tuple[str, ...] = ()
 
     def json(self):
         def metric(value):
@@ -72,6 +76,12 @@ class DirectorSnapshot:
             return result
         return dict(period_start=self.period_start.isoformat(), period_end=self.period_end.isoformat(),
                     cash_total=str(self.cash_total), yandex_revenue=str(self.yandex_revenue),
+                    calculation_version='2026-09-24', source_cache_max_age_seconds=60, report_cache_max_age_seconds=300,
+                    menu_revenue=str(sum((v.revenue for v in self.item_metrics['all'].values()), Decimal(0))),
+                    excluded_revenue={key: str(value) for key, value in self.excluded_revenue.items()},
+                    excluded_groups=list(self.excluded_groups),
+                    scope_excluded_revenue=str(self.scope_excluded_revenue),
+                    yandex_menu_revenue=str(self.yandex_menu_revenue),
                     item_metrics={group: {name: metric(value) for name, value in values.items()}
                                   for group, values in self.item_metrics.items()},
                     waiter_metrics={name: metric(value) for name, value in self.waiter_metrics.items()})
@@ -83,15 +93,8 @@ def completed_period(today: date):
 
 
 def direction(row):
-    if isinstance(row.item, str) and 'бехруз' in row.item.casefold():
-        return 'banquet'
-    if row.register == SCHOOL_REGISTER:
-        return 'oxbridge'
-    if row.register == RETRO_REGISTER and row.section == BANQUET_SECTION:
-        return None
-    if row.register == RETRO_REGISTER and 'бехруз' not in row.section.casefold():
-        return 'retro'
-    raise DataError('В iiko появилась неизвестная касса или отделение.')
+    group = classify_direction(row.register, row.section, row.item)
+    return 'oxbridge' if group == 'school' else group
 
 
 def payment_total(rows, payment_name):
@@ -108,11 +111,13 @@ def payment_total(rows, payment_name):
 
 def build_snapshot(rows, categories, period_start, period_end, *, excluded_groups=frozenset(),
                    yandex_revenue=None):
+    if period_end - period_start != timedelta(days=9):
+        raise DataError('Период отчёта директора должен составлять десять дней.')
     expected_days = {period_start + timedelta(days=index) for index in range(10)}
     values = list(rows)
     days = {row.day for row in values}
-    if days != expected_days:
-        raise DataError('iiko не вернул все десять дней для отчёта директора.')
+    if not days <= expected_days:
+        raise DataError('iiko вернул продажи вне периода отчёта директора.')
     def new_bucket():
         return {kind: [Decimal(0), Decimal(0), Decimal(0)] for kind in BREAKDOWN_KEYS}
 
@@ -133,8 +138,16 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
     cash_total = Decimal(0)
     yandex_total = Decimal(0)
     waiters = defaultdict(new_bucket)
+    excluded_revenue = defaultdict(Decimal)
+    scope_excluded = Decimal(0)
     for row in values:
+        group = direction(row)
+        if group is None:
+            scope_excluded += row.revenue
+            continue
+        cash_total += row.revenue
         if row.category in excluded_groups:
+            excluded_revenue[row.category] += row.revenue
             continue
         if categories and row.category not in categories:
             raise DataError(f'Для категории iiko «{row.category}» не настроен тип отчёта.')
@@ -142,26 +155,19 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
             raise DataError('iiko не указал название блюда.')
         if not row.waiter.strip():
             raise DataError('iiko не указал официанта для позиции.')
-        if min(row.quantity, row.revenue, row.cost) < 0:
-            raise DataError('iiko вернул отрицательное значение позиции.')
-        group = direction(row)
-        if group is None:
-            continue
         names = ['all', group]
         payment = PAYMENT_ALIASES.get(row.payment_type, row.payment_type)
         if payment == 'Яндекс Еда':
             names.append('yandex')
             yandex_total += row.revenue
-        cash_total += row.revenue
         kind = sale_kind(row)
         add(waiters[row.waiter], kind, row)
         for name in names:
             add(metrics[name][row.item], kind, row)
-    if yandex_revenue is not None:
-        if yandex_revenue < 0:
-            raise DataError('iiko вернул отрицательную сумму оплат Яндекс Еды.')
-        yandex_total = yandex_revenue
-    return DirectorSnapshot(period_start, period_end, cash_total, yandex_total,
+    return DirectorSnapshot(period_start, period_end, cash_total,
+                            yandex_revenue if yandex_revenue is not None else yandex_total,
                             {group: {item: finish(amounts) for item, amounts in items.items()}
                              for group, items in metrics.items()},
-                            {name: finish(amounts) for name, amounts in waiters.items()})
+                            {name: finish(amounts) for name, amounts in waiters.items()},
+                            dict(excluded_revenue), scope_excluded, yandex_total,
+                            tuple(sorted(excluded_groups)))

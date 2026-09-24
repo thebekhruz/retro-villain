@@ -43,7 +43,7 @@ def test_same_snapshot_rerenders_locally_without_second_claude_call(tmp_path):
     first = asyncio.run(service.generate(date(2026, 9, 18)))
     second = asyncio.run(service.generate(date(2026, 9, 18)))
 
-    assert first['id'] == second['id']
+    assert first['id'] != second['id']
     assert claude.calls == 1
     assert store.get_pdf(first['id']).startswith(b'%PDF-')
 

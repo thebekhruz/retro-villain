@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import date, timedelta
+from dataclasses import replace
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Request
@@ -39,16 +40,25 @@ def money_json(summary: dict) -> dict:
             for key, value in summary.items()}
 
 
-def attendance_payroll(request: Request, day: date, roster, exceptions):
+def attendance_payroll(request: Request, day: date, roster, exceptions, *, frozen_pay=False):
     snapshot = request.app.state.attendance.snapshot(day, roster)
-    return snapshot, draft_payroll(day, roster, exceptions, snapshot.rows)
+    rows = draft_payroll(day, roster, exceptions, snapshot.rows)
+    if not frozen_pay:
+        return snapshot, rows
+    saved = {row['employee_id']: row for row in request.app.state.accountant_finance.accruals(day)
+             if row['work_day'] == day.isoformat()}
+    rows = [replace(row, rate=Decimal(saved[row.employee_id]['rate']),
+                    payable=Decimal(saved[row.employee_id]['amount']))
+            if row.employee_id in saved else row for row in rows]
+    return snapshot, rows
 
 
 async def cashier_handover(request: Request, day: date) -> Decimal | None:
     """Use manual handovers when enabled; otherwise retain the iiko fallback."""
     finance = request.app.state.accountant_finance
-    if request.app.state.settings.manual_handover_only:
-        return await asyncio.to_thread(finance.handover_for_day, day)
+    recorded = await asyncio.to_thread(finance.handover_for_day, day)
+    if recorded is not None or request.app.state.settings.manual_handover_only:
+        return recorded
     state = request.app.state
     snapshot = state.cache.latest_for_day(day)
     if state.settings.configured:
@@ -100,9 +110,9 @@ def staff_view(request: Request, date: date | None = None):
 
 
 def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
-    roster = request.app.state.accountant_roster.list()
+    roster = request.app.state.accountant_roster.list(day)
     finance = request.app.state.accountant_finance
-    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
+    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day), frozen_pay=not staff_only)
     if staff_only:
         return dict(demo=False, date=day.isoformat(), source='Hikvision ISAPI',
                     attendance=attendance.health, employees=[row.json() for row in rows],
@@ -130,10 +140,11 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
         item['draft_total'] += row.payable or Decimal(0)
     group_items = [dict(item, shift_cost=str(item['shift_cost']),
                         draft_total=str(item['draft_total'])) for item in groups.values()]
-    needed = summary['salary_debt'] if summary['payroll_confirmed'] else draft_total
-    shortfall = max(Decimal(0), needed - (summary['cash_balance'] or Decimal(0)))
+    needed = summary['salary_debt'] + (Decimal(0) if summary['payroll_confirmed'] else draft_total)
+    shortfall = (max(Decimal(0), needed - summary['cash_balance'])
+                 if summary['cash_balance'] is not None and not any(row.payable is None for row in rows) else None)
     scenarios = [dict(group=item['name'], saving=item['shift_cost'],
-                      covers_shortfall=Decimal(item['shift_cost']) >= shortfall and shortfall > 0)
+                      covers_shortfall=shortfall is not None and Decimal(item['shift_cost']) >= shortfall and shortfall > 0)
                  for item in group_items]
     reserves = finance.reserves(day)
     reserves['monthly']['total'] = str(request.app.state.accountant_roster.monthly_total())
@@ -153,7 +164,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                 reserves=reserves,
                 expected_cashier=str(cashier_amount) if cashier_amount is not None else None,
                 cashier_error=cashier_error,
-                scenarios=dict(shortfall=str(shortfall), groups=scenarios,
+                scenarios=dict(shortfall=str(shortfall) if shortfall is not None else None, groups=scenarios,
                                note='Только оценка будущей смены; уже начисленный долг не уменьшается.'))
 
 
@@ -270,7 +281,7 @@ def delete_employee(request: Request, employee_id: int):
 @router.post('/exceptions', status_code=201)
 def add_exception(request: Request, body: ExceptionInput):
     day = selected_day(body.date)
-    roster = request.app.state.accountant_roster.list()
+    roster = request.app.state.accountant_roster.list(day)
     employee = next((item for item in roster if item.id == body.employee_id), None)
     if employee is None:
         raise HTTPException(404, 'Сотрудник не найден.')
@@ -299,7 +310,7 @@ class ConfirmInput(BaseModel):
 def confirm_payroll(request: Request, body: ConfirmInput):
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
-    roster = request.app.state.accountant_roster.list()
+    roster = request.app.state.accountant_roster.list(day)
     _, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
     if any(row.status == 'unavailable' for row in rows):
         raise HTTPException(409, 'Данные Hikvision за этот день неполные. Начисление не подтверждено.')
@@ -323,7 +334,7 @@ def add_handover(request: Request, body: OpeningInput):
     try:
         amount = amount_value(body.amount, allow_zero=True)
         note = required_text(body.note, 'примечание к приходу')
-        request.app.state.accountant_finance.record_handover(day, amount)
+        request.app.state.accountant_finance.record_handover(day, amount, create_only=True)
     except LedgerError as error:
         finance_error(error)
     return dict(demo=True, date=day.isoformat(), amount=str(amount), note=note)
@@ -348,7 +359,10 @@ def update_handover(request: Request, handover_date: date, body: OpeningInput):
 @router.delete('/handover/{handover_date}', status_code=204)
 def delete_handover(request: Request, handover_date: date):
     day = selected_day(handover_date)
-    request.app.state.accountant_finance.delete_handover(day)
+    try:
+        request.app.state.accountant_finance.delete_handover(day)
+    except LedgerError as error:
+        finance_error(error)
 
 
 class ReserveInput(OpeningInput):
@@ -471,7 +485,7 @@ def add_finance_income(request: Request, body: FinanceExpenseInput):
         amount = amount_value(body.amount, allow_zero=True)
         note = required_text(body.note, 'назначение')
         if body.item_code == 'income_cashier':
-            entry_id = request.app.state.accountant_finance.record_handover(day, amount)
+            entry_id = request.app.state.accountant_finance.record_handover(day, amount, add=True)
         else:
             entry_id = request.app.state.accountant_finance.add_income(day, body.item_code, note, amount)
     except LedgerError as error:
@@ -530,8 +544,8 @@ def download_employees(request: Request, date: date, scope: str):
     if scope not in ('late', 'all'):
         raise HTTPException(422, 'Выберите опоздавших или всех сотрудников.')
     finance = request.app.state.accountant_finance
-    roster = request.app.state.accountant_roster.list()
-    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
+    roster = request.app.state.accountant_roster.list(day)
+    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day), frozen_pay=True)
     selected = [row for row in rows if row.status == 'late'] if scope == 'late' else rows
     data = export_employees(day, selected, scope, attendance.health)
     name = f'Retro-{"late" if scope == "late" else "employees"}-{day.isoformat()}.xlsx'
@@ -560,9 +574,10 @@ async def add_procurement(request: Request, body: ProcurementInput):
 
 @router.get('/entrances/export')
 def download_entrances(request: Request, date: date):
+    day = date
     if date > today_tashkent():
         raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
-    roster = request.app.state.accountant_roster.list()
+    roster = request.app.state.accountant_roster.list(day)
     attendance, rows = attendance_payroll(request, date, roster, set())
     entries = tuple(Entrance(row.name, row.occurred_at) for row in rows
                     if row.status in ('on_time', 'late') and row.occurred_at is not None)

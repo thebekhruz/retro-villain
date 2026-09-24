@@ -11,6 +11,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
 from retro.report_cache import ReportCache, load_iiko
+from retro.financial_requests import FinancialRequests
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient
 from retro.integrations.bookings import BookingAnalyticsClient
@@ -153,6 +154,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention,
         loader=lambda today: load_iiko(app.state, 'load_director_report', today, timeout=150))
 
+    app.state.financial_requests = FinancialRequests(Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3').with_name('financial-requests.sqlite3'))
+
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):
         request.state.request_id = secrets.token_hex(8)
@@ -188,7 +191,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             validate_mutation_origin(request)
         except ValueError as error:
             return JSONResponse({'detail': str(error)}, 403)
-        response = await call_next(request)
+        response = await app.state.financial_requests.dispatch(request, call_next)
         response.headers['Cache-Control'] = (
             'private, no-cache' if request.url.path.startswith('/static/') else 'no-store')
         response.headers['X-Content-Type-Options'] = 'nosniff'

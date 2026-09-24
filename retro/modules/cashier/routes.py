@@ -1,4 +1,6 @@
 import asyncio
+import hashlib
+import json
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -12,6 +14,11 @@ from .export import export_report
 from .service import DataError, demo_snapshot, today_tashkent
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
+
+
+def entries_revision(items):
+    return hashlib.sha256(json.dumps([item.json() for item in items],
+                                     sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 class ExpenseInput(BaseModel):
@@ -41,6 +48,7 @@ def list_expenses(request: Request, date: date):
     day = selected_day(date)
     expenses = request.app.state.expenses.list(day)
     return dict(date=day.isoformat(), expenses=[item.json() for item in expenses],
+                revision=entries_revision(expenses),
                 total=str(sum((item.amount for item in expenses), 0)),
                 expense_policy_configured=request.app.state.expenses.policy_configured())
 
@@ -91,6 +99,7 @@ def list_receipts(request: Request, date: date):
     day = selected_day(date)
     receipts = request.app.state.expenses.list_receipts(day)
     return dict(date=day.isoformat(), receipts=[item.json() for item in receipts],
+                revision=entries_revision(receipts),
                 total=str(sum((item.amount for item in receipts), 0)))
 
 
@@ -135,7 +144,8 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
 
 @router.get('/export')
 def download_report(request: Request, date: date,
-                    snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$')):
+                    snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$'),
+                    expense_revision: str | None = None, receipt_revision: str | None = None):
     day = selected_day(date)
     try:
         snapshot = request.app.state.cache.get(snapshot_id, day)
@@ -143,6 +153,9 @@ def download_report(request: Request, date: date,
         raise HTTPException(409, str(error)) from None
     expenses = [] if snapshot.demo else request.app.state.expenses.list(day)
     receipts = [] if snapshot.demo else request.app.state.expenses.list_receipts(day)
+    if ((expense_revision is not None and expense_revision != entries_revision(expenses))
+            or (receipt_revision is not None and receipt_revision != entries_revision(receipts))):
+        raise HTTPException(409, 'Расходы или поступления изменились. Обновите день перед скачиванием.')
     data = export_report(snapshot, expenses, receipts)
     prefix = 'DEMO-' if snapshot.demo else ''
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

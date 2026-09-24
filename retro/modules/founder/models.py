@@ -128,6 +128,8 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
     payment_totals = defaultdict(Decimal)
     seen_payments = set()
     unknown_payments = set()
+    daily_revenue = defaultdict(Decimal)
+    daily_payments = defaultdict(Decimal)
 
     for row in revenue_rows:
         if not start <= row.day <= end:
@@ -138,6 +140,7 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         group = _period_start(row.day, start, granularity)
         revenue_by_group[group][direction] += row.amount
         totals[direction] += row.amount
+        daily_revenue[row.day, direction] += row.amount
 
     for row in payment_rows:
         if not start <= row.day <= end:
@@ -153,17 +156,26 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         group = _period_start(row.day, start, granularity)
         payment_by_group[group][direction][payment_name] += row.amount
         if direction in directions:
+            daily_payments[row.day, direction] += row.amount
             payment_totals[payment_name] += row.amount
             seen_payments.add(payment_name)
 
     selected_total = sum((totals[direction] for direction in directions), Decimal(0))
     payment_total = sum(payment_totals.values(), Decimal(0))
     discrepancy = payment_total - selected_total
-    reconciled = abs(discrepancy) <= Decimal(1)
+    daily_discrepancies = [dict(date=day.isoformat(), direction=direction,
+                               amount=str(daily_payments[day, direction] - daily_revenue[day, direction]))
+                          for day, direction in sorted(daily_revenue.keys() | daily_payments.keys())
+                          if direction in directions and abs(
+                              daily_payments[day, direction] - daily_revenue[day, direction]) > Decimal(1)]
+    reconciled = abs(discrepancy) <= Decimal(1) and not daily_discrepancies
     warnings = [] if reconciled else [
         f'Оплаты расходятся с выручкой на {abs(discrepancy)} сум. '
         'Данные не считаются сверенными.'
     ]
+    if daily_discrepancies:
+        warnings.append(f'Расхождения по дням/направлениям: {len(daily_discrepancies)}. '
+                        'Встречные расхождения не погашают друг друга при сверке.')
     if unknown_payments:
         warnings.append(
             'Новые типы оплаты iiko показаны отдельно: ' +
@@ -198,6 +210,7 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         'directions': list(directions),
         'includes_current_day': start <= today <= end,
         'updated_at': now.isoformat(),
+        'source_cache_max_age_seconds': 60,
         'currency': 'UZS',
         'totals': {**{direction: _amount(totals[direction]) for direction in DIRECTIONS},
                    'selected': _amount(selected_total)},
@@ -206,6 +219,7 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         'payment_series': payment_series,
         'payment_total': _amount(payment_total),
         'discrepancy': _amount(discrepancy),
+        'daily_discrepancies': daily_discrepancies,
         'reconciled': reconciled,
         'warnings': warnings,
     }

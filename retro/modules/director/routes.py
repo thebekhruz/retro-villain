@@ -31,7 +31,7 @@ def attendance(request: Request, date: date | None = None):
     day = date or today_tashkent()
     if day > today_tashkent():
         raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
-    roster = request.app.state.accountant_roster.list()
+    roster = request.app.state.accountant_roster.list(day)
     snapshot = request.app.state.attendance.snapshot(day, roster)
     rows = draft_payroll(day, roster, set(), snapshot.rows)
     arrived = [row for row in rows if row.status in ('on_time', 'late')]

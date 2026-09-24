@@ -16,12 +16,10 @@ class DirectorReportStore:
                 id TEXT PRIMARY KEY, created_at TEXT NOT NULL, period_start TEXT NOT NULL,
                 period_end TEXT NOT NULL, snapshot_json TEXT NOT NULL, analysis_json TEXT NOT NULL,
                 pdf_sha256 TEXT NOT NULL, pdf BLOB NOT NULL)''')
-            connection.execute(
-                'DELETE FROM director_reports WHERE rowid NOT IN '
-                '(SELECT MAX(rowid) FROM director_reports GROUP BY period_start, period_end)')
-            connection.execute(
-                'CREATE UNIQUE INDEX IF NOT EXISTS director_report_period '
-                'ON director_reports(period_start, period_end)')
+            connection.execute('DROP INDEX IF EXISTS director_report_period')
+            connection.execute('CREATE INDEX IF NOT EXISTS director_report_period_versions '
+                               'ON director_reports(period_start, period_end, created_at)')
+
 
     def _connect(self):
         connection = sqlite3.connect(self.path)
@@ -36,23 +34,15 @@ class DirectorReportStore:
             raise ValueError('Срок хранения отчётов должен быть положительным числом.')
         with self._connect() as connection:
             connection.execute('BEGIN IMMEDIATE')
-            existing = connection.execute(
-                'SELECT id FROM director_reports WHERE period_start=? AND period_end=?',
-                (snapshot['period_start'], snapshot['period_end'])).fetchone()
-            report_id = existing[0] if existing else uuid4().hex
-            values = (created_at, json.dumps(snapshot, ensure_ascii=False, sort_keys=True),
-                      json.dumps(analysis, ensure_ascii=False, sort_keys=True),
-                      hashlib.sha256(pdf).hexdigest(), pdf, report_id)
-            if existing:
-                connection.execute(
-                    'UPDATE director_reports SET created_at=?,snapshot_json=?,analysis_json=?,pdf_sha256=?,pdf=? '
-                    'WHERE id=?', values)
-            else:
-                connection.execute(
-                    'INSERT INTO director_reports '
-                    '(created_at,snapshot_json,analysis_json,pdf_sha256,pdf,id,period_start,period_end) '
-                    'VALUES (?,?,?,?,?,?,?,?)',
-                    values[:-1] + (report_id, snapshot['period_start'], snapshot['period_end']))
+            report_id = uuid4().hex
+            connection.execute(
+                'INSERT INTO director_reports '
+                '(created_at,snapshot_json,analysis_json,pdf_sha256,pdf,id,period_start,period_end) '
+                'VALUES (?,?,?,?,?,?,?,?)',
+                (created_at, json.dumps(snapshot, ensure_ascii=False, sort_keys=True),
+                 json.dumps(analysis, ensure_ascii=False, sort_keys=True),
+                 hashlib.sha256(pdf).hexdigest(), pdf, report_id,
+                 snapshot['period_start'], snapshot['period_end']))
             keep = [row[0] for row in connection.execute(
                 'SELECT id FROM director_reports ORDER BY period_end DESC, created_at DESC, id DESC '
                 'LIMIT ?', (retention,))]
@@ -74,7 +64,7 @@ class DirectorReportStore:
         with self._connect() as connection:
             row = connection.execute(
                 'SELECT id,created_at,period_start,period_end,snapshot_json,analysis_json,pdf_sha256 '
-                'FROM director_reports WHERE period_start=? AND period_end=?',
+                'FROM director_reports WHERE period_start=? AND period_end=? ORDER BY created_at DESC, rowid DESC LIMIT 1',
                 (period_start, period_end),
             ).fetchone()
         return self._row(row) if row else None

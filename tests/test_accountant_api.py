@@ -108,14 +108,14 @@ def test_accountant_income_and_expense_can_be_updated(tmp_path):
         assert next(item for item in movements if item['id'] == expense['id'])['description'] == 'Аренда помещения · Новая аренда'
 
 
-def test_manual_mode_does_not_carry_balance_into_historical_dates(tmp_path):
+def test_manual_mode_uses_same_carry_for_display_and_spending(tmp_path):
     with demo_client(tmp_path) as client:
         client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
         first = DAY - timedelta(days=1)
         client.post('/api/accountant/handover', json={'date': first.isoformat(), 'amount': '900000', 'note': 'Вчера'})
         client.post('/api/accountant/handover', json={'date': DAY.isoformat(), 'amount': '100000', 'note': 'Сегодня'})
         historical = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
-        assert historical['ledger']['cash_flow']['opening_balance'] == '0'
+        assert historical['ledger']['cash_flow']['opening_balance'] == '900000'
 
 
 def test_verified_accountant_start_reconciles_september_report_and_carries_forward(tmp_path, monkeypatch):
@@ -140,7 +140,7 @@ def test_verified_accountant_start_reconciles_september_report_and_carries_forwa
         assert day['ledger']['cash_flow']['opening_balance'] == '104000'
         assert day['ledger']['cash_flow']['received_from_cashier'] == '15992000'
         assert day['ledger']['cash_flow']['closing_balance'] == '234000'
-        assert day['ledger']['movements'][1]['description'] == 'Касса за 16.09.2026'
+        assert day['ledger']['movements'][1]['description'] == 'Касса за 17.09.2026'
 
         tomorrow = client.get('/api/accountant/day', params={'date': next_day.isoformat()}).json()
         assert tomorrow['ledger']['cash_flow']['opening_balance'] == '234000'
@@ -214,7 +214,7 @@ def test_missing_handover_in_rollforward_stays_unknown(tmp_path):
         for day in (first_day, DAY):
             client.app.state.cache.put(replace(demo_snapshot(day), demo=False,
                                                payments=(Payment('Демо', Decimal('1350000')),)))
-        client.get('/api/accountant/day', params={'date': first_day.isoformat()})
+        client.app.state.accountant_finance.record_handover(first_day, Decimal('1000000'))
         missing = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         assert missing['ledger']['cash_balance'] is None
         assert missing['ledger']['cash_flow']['missing_day'] == (DAY - timedelta(days=1)).isoformat()
@@ -226,7 +226,7 @@ def test_verified_initial_cash_balance_is_carried_once(tmp_path):
         for day in (first_day, DAY):
             client.app.state.cache.put(replace(demo_snapshot(day), demo=False,
                                                payments=(Payment('Демо', Decimal('1350000')),)))
-        client.get('/api/accountant/day', params={'date': first_day.isoformat()})
+        client.app.state.accountant_finance.record_handover(first_day, Decimal('1000000'))
         response = client.post('/api/accountant/cash-opening', json={
             'date': first_day.isoformat(), 'amount': '500000', 'note': 'Пересчёт'} )
         assert response.status_code == 201
@@ -272,6 +272,9 @@ def test_day_uses_attendance_source_defaults_to_yesterday_and_does_not_touch_cas
 
 def test_confirmed_payroll_becomes_debt_then_partial_payment_reduces_cash(tmp_path):
     with demo_client(tmp_path) as client:
+        for employee in client.app.state.accountant_roster.list():
+            if employee.hikvision_id is None:
+                client.app.state.accountant_finance.grant_exception(employee.id, DAY, 'Проверено', 'Финансы')
         confirmed = client.post('/api/accountant/payroll/confirm', json={
             'date': DAY.isoformat(), 'approver': 'Финансы'})
         assert confirmed.status_code == 200
@@ -326,7 +329,8 @@ def test_missing_rate_can_be_corrected_and_host_does_not_disable_accountant(tmp_
             'rate': '310000', 'group': 'Уборка', 'reason': 'Новая ставка'})
         assert corrected.status_code == 200
         updated = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
-        assert updated['employees'][0]['rate'] == '310000'
+        assert updated['employees'][0]['rate'] == '250000'
+        assert client.app.state.accountant_roster.list()[0].rate == Decimal('310000')
         assert client.get('/accountant', headers={'host': 'dashboard.example.com'}).status_code == 200
         assert client.get('/accountant/employees', headers={'host': 'dashboard.example.com'}).status_code == 200
         assert client.get('/api/accountant/day', headers={'host': 'dashboard.example.com'}).status_code == 200
@@ -337,13 +341,13 @@ def test_missing_rate_can_be_corrected_and_host_does_not_disable_accountant(tmp_
 
 def test_employee_registry_can_edit_name_role_and_salary(tmp_path):
     with demo_client(tmp_path) as client:
-        employee = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['employees'][0]
+        employee = client.get('/api/accountant/day', params={'date': today_tashkent().isoformat()}).json()['employees'][0]
         updated = client.patch(f'/api/accountant/employees/{employee["employee_id"]}', json={
             'name': 'Новое имя', 'role': 'официант', 'rate': '275000',
             'reason': 'Обновление реестра'})
         assert updated.status_code == 200
         person = next(item for item in client.get('/api/accountant/day',
-                         params={'date': DAY.isoformat()}).json()['employees']
+                         params={'date': today_tashkent().isoformat()}).json()['employees']
                        if item['employee_id'] == employee['employee_id'])
         assert person['name'] == 'Новое имя'
         assert person['role'] == 'официант'
@@ -432,6 +436,9 @@ def test_employee_exports_split_late_and_everyone_without_claiming_real_hikvisio
 
 def test_daily_cash_starts_from_cashier_handover_without_manual_confirmation(tmp_path):
     with demo_client(tmp_path) as client:
+        for employee in client.app.state.accountant_roster.list():
+            if employee.hikvision_id is None:
+                client.app.state.accountant_finance.grant_exception(employee.id, DAY, 'Проверено', 'Финансы')
         snapshot = replace(demo_snapshot(DAY), demo=False,
                            payments=(Payment('Демо', Decimal('1000000')),),
                            cash_prepayment=Decimal(0))

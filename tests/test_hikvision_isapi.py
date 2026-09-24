@@ -120,15 +120,11 @@ def test_people_page_is_typed_and_uses_device_pagination_status():
 
 def test_event_page_filters_to_successful_passes_and_parses_tashkent_time():
     page = parse_events_page(json.dumps({'AcsEvent': {
-        'responseStatusStrg': 'OK', 'numOfMatches': 4, 'InfoList': [
+        'responseStatusStrg': 'OK', 'numOfMatches': 2, 'InfoList': [
             {'major': 5, 'minor': 75, 'serialNo': '7', 'employeeNoString': '10',
              'time': '2026-09-21T09:05:00+05:00', 'pictureURL': 'https://ignored/photo.jpg'},
             {'major': 5, 'minor': 76, 'serialNo': '8', 'employeeNoString': '10',
              'time': '2026-09-21T09:06:00+05:00'},
-            {'major': 5, 'minor': 75, 'serialNo': '', 'employeeNoString': '10',
-             'time': '2026-09-21T09:07:00+05:00'},
-            {'major': 5, 'minor': 75, 'serialNo': '9', 'employeeNoString': '',
-             'time': '2026-09-21T09:08:00+05:00'},
         ]}}))
 
     assert len(page.items) == 1

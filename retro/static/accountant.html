@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/accountant.js" defer></script>
+  <script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/accountant.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -163,7 +163,10 @@
           <div class="rail-line"><span>Подтверждённые смены</span><b id="payroll-debt-total">—</b></div>
           <div class="rail-line"><span>Зарплата за смену</span><b id="payroll-draft-total">—</b></div>
           <div class="rail-line"><span>Выплачено за день</span><b id="payroll-paid-total">—</b></div>
-          <div class="rail-line"><span>Месячная ЗП · остаток</span><b id="monthly-balance">—</b></div>
+          <p id="salary-unallocated-note"></p>
+          <form id="payroll-confirm-form"><label>Кто подтвердил<input name="approver" required maxlength="160"></label><button type="submit" class="button secondary">Подтвердить начисления смены</button></form>
+          <form id="salary-payment-form"><label>Начисление сотрудника<select id="salary-accrual" name="accrual_id" required></select></label><label>Выплатить, сум<input name="amount" type="number" min="0.01" step="0.01" required></label><button type="submit" class="button secondary">Выплатить зарплату</button></form>
+          <div class="rail-line"><span>Месячная ЗП · ставки</span><b id="monthly-balance">—</b></div>
           <p class="rail-foot"><span id="payroll-state">Ожидает расчёта</span><span id="monthly-note">План не задан</span>
             <a href="#balance-settings" class="rail-link" data-open="balance-settings">Настроить план ↗</a></p>
         </section>

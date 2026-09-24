@@ -37,7 +37,7 @@ def debt_summary(store, day):
 
 
 def record_debt(store, day, item_code, note, total, paid, cashier_amount):
-    if item_code not in ITEMS:
+    if item_code not in ITEMS or ITEMS[item_code][0] == 'income':
         raise LedgerError('Выберите наименование затрат из справочника.')
     note = required_text(note, 'наименование расхода')
     total_value = amount_value(total)
@@ -48,6 +48,7 @@ def record_debt(store, day, item_code, note, total, paid, cashier_amount):
     with closing(store._open()) as connection:
         connection.execute('BEGIN IMMEDIATE')
         try:
+            store._validate_salary_expense(connection, day, item_code)
             if paid_value and store.available_cash(connection, day, cashier_amount) < paid_value:
                 raise LedgerError('На выбранный день недостаточно денег от кассира.')
             now = datetime.now().isoformat()
@@ -73,10 +74,7 @@ def record_debt(store, day, item_code, note, total, paid, cashier_amount):
                              store._row_dict(connection, 'accountant_movements', movement_id))
                 record_audit(connection, 'debt_payment', payment_id, 'create', None,
                              store._row_dict(connection, 'accountant_debt_payments', payment_id))
-                if cashier_amount is not None:
-                    store._check_known_future_balances(connection, day)
-                else:
-                    store._check_future_balances(connection, day)
+                store._check_cash_balances(connection, day)
             connection.commit()
             return debt_id
         except Exception:
