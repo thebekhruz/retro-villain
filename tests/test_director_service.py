@@ -10,7 +10,7 @@ class IikoStub:
     def __init__(self, snapshot):
         self.snapshot = snapshot
 
-    async def load_director_report(self, today):
+    async def load_director_report(self, today, *, start=None, end=None):
         return SimpleNamespace(json=lambda: dict(self.snapshot))
 
 

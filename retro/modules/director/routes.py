@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.director.models import resolve_period
 
 router = APIRouter(prefix='/api/director', tags=['director'])
 
@@ -39,16 +40,38 @@ def attendance(request: Request, date: date | None = None):
     }
 
 
-@router.get('/today')
-async def today(request: Request):
+def period_or_422(start: date | None, end: date | None, days: int | None = None):
+    """Границы периода проверяем до запроса в iiko: ошибка выбора — не сбой связи."""
+    try:
+        return resolve_period(today_tashkent(), start, end, days)
+    except DataError as error:
+        raise HTTPException(422, str(error)) from None
+
+
+async def director_snapshot(request: Request, start: date | None, end: date | None,
+                            days: int | None = None):
+    start, end = period_or_422(start, end, days)
     try:
         async with request.app.state.iiko_lock:
-            snapshot = await request.app.state.iiko.load_director_report(today_tashkent())
+            snapshot = await request.app.state.iiko.load_director_report(
+                today_tashkent(), start=start, end=end)
         return snapshot.json()
     except DataError as error:
-        log_safe_failure('director-route', error, operation='today',
+        log_safe_failure('director-route', error, operation='report',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+
+
+@router.get('/today')
+async def today(request: Request):
+    return await director_snapshot(request, None, None)
+
+
+@router.get('/report')
+async def report_for_period(request: Request, start: date | None = None,
+                            end: date | None = None, days: int | None = None):
+    """Отчёт за выбранный период; без дат — последние закрытые дни."""
+    return await director_snapshot(request, start, end, days)
 
 
 @router.get('/reports')
@@ -57,12 +80,16 @@ def reports(request: Request):
 
 
 @router.post('/reports', status_code=201)
-async def create_report(request: Request):
+async def create_report(request: Request, start: date | None = None, end: date | None = None,
+                        days: int | None = None):
     if request.app.state.director_lock.locked():
         raise HTTPException(429, 'Другой анализ уже формируется.')
+    start, end = period_or_422(start, end, days)
     try:
         async with request.app.state.director_lock:
-            return await asyncio.wait_for(request.app.state.director_service.generate(today_tashkent()), timeout=180)
+            return await asyncio.wait_for(
+                request.app.state.director_service.generate(today_tashkent(), start=start, end=end),
+                timeout=180)
     except TimeoutError as error:
         log_safe_failure('director-route', error, operation='create_report',
                          request_id=request.state.request_id)

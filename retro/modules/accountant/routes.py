@@ -143,6 +143,17 @@ async def day_view(request: Request, date: date | None = None):
                                note='Только оценка будущей смены; уже начисленный долг не уменьшается.'))
 
 
+@router.get('/period')
+def period_view(request: Request, start: date, end: date):
+    """Свод по журналу за диапазон дней: только локальные записи, без iiko."""
+    if end > today_tashkent():
+        raise HTTPException(422, 'Выберите период по сегодняшний день включительно.')
+    try:
+        return request.app.state.accountant_finance.period_summary(start, end)
+    except LedgerError as error:
+        finance_error(error)
+
+
 class ExceptionInput(BaseModel):
     date: date
     employee_id: int

@@ -8,8 +8,8 @@ class DirectorService:
     def __init__(self, iiko, claude, store, retention=24):
         self.iiko, self.claude, self.store, self.retention = iiko, claude, store, retention
 
-    async def generate(self, today):
-        snapshot = await self.iiko.load_director_report(today)
+    async def generate(self, today, *, start=None, end=None):
+        snapshot = await self.iiko.load_director_report(today, start=start, end=end)
         snapshot_json = snapshot.json()
         existing = self.store.get_for_period(
             snapshot_json['period_start'], snapshot_json['period_end'])

@@ -216,10 +216,22 @@ function showSetup(message) {
   $('connection').textContent = 'Меню не настроено';
 }
 
+/** Период спрашиваем у общего контрола: он же проверяет границы, поэтому
+ *  сюда доходит только диапазон, который сервер примет. */
+function periodQuery() {
+  const chosen = period ? period.state() : null;
+  if (!chosen) return '';
+  return '?start=' + encodeURIComponent(chosen.start) + '&end=' + encodeURIComponent(chosen.end);
+}
+
 async function loadSnapshot() {
+  if (period && !period.valid()) {
+    $('state').textContent = 'Поправьте даты периода.';
+    return;
+  }
   $('state').textContent = 'Загружаем данные…';
   try {
-    const snapshot = await request('/api/director/today');
+    const snapshot = await request('/api/director/report' + periodQuery());
     $('setup').hidden = true;
     renderSnapshot(snapshot);
     $('state').textContent = 'Данные за период получены';
@@ -319,7 +331,7 @@ $('generate').addEventListener('click', async () => {
   button.classList.add('is-busy');
   $('state').textContent = 'Собираем данные iiko и готовим разбор…';
   try {
-    await request('/api/director/reports', { method: 'POST' });
+    await request('/api/director/reports' + periodQuery(), { method: 'POST' });
     $('state').textContent = 'Отчёт сохранён в архиве';
     await loadReports();
   } catch (error) {
@@ -377,6 +389,21 @@ $('menu-more').addEventListener('click', () => {
   renderMenu();
 });
 
-loadSnapshot();
-loadAttendance();
-loadReports();
+let period = null;
+
+(async function start() {
+  let today = new Date().toISOString().slice(0, 10);
+  try {
+    const config = await request('/api/config');
+    if (config && config.today) today = config.today;
+  } catch (error) {
+    $('state').textContent = error.message;
+  }
+  period = RetroPeriod.mount({
+    host: $('period-host'), today: today, modes: ['range'], preset: '10',
+    onChange: loadSnapshot,
+  });
+  loadSnapshot();
+  loadAttendance();
+  loadReports();
+})();

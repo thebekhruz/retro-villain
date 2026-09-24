@@ -1,5 +1,5 @@
 import asyncio
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from urllib.parse import quote
 
@@ -10,7 +10,9 @@ from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
-from retro.modules.director.models import SalesRow, build_snapshot as build_director_snapshot, completed_period
+from retro.modules.director.models import (
+    SalesRow, build_snapshot as build_director_snapshot, resolve_period,
+)
 from retro.modules.founder.models import (
     PaymentRow, RevenueRow, build_analytics, is_banquet_item,
 )
@@ -19,6 +21,9 @@ from retro.modules.founder.models import (
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
                    'DishGroup', 'WaiterName', 'UniqOrderId.Id']
 DIRECTOR_FIELDS = ['DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost']
+DIRECTOR_RANGE_GROUPS = ['OpenDate.Typed'] + DIRECTOR_GROUPS
+# Больше двух недель за раз iiko по этим измерениям не отдаёт.
+DIRECTOR_RANGE_CHUNK_DAYS = 10
 IIKO_DETAIL_DIMENSIONS = (
     'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'PayTypes',
     'DishName', 'DishGroup', 'WaiterName', 'UniqOrderId.Id', 'OperationType',
@@ -29,15 +34,20 @@ IIKO_DETAIL_FIELDS = (
 )
 
 
-def director_rows_from_olap(day, rows):
-    """Flatten iiko's nested grouped-table response into safe typed sale rows."""
+def director_rows_from_olap(day, rows, *, dated=False):
+    """Flatten iiko's nested grouped-table response into safe typed sale rows.
+
+    С ``dated=True`` первым измерением идёт дата продажи: так весь период
+    берётся одним запросом OLAP вместо запроса на каждый день.
+    """
+    group_count = len(DIRECTOR_GROUPS) + (1 if dated else 0)
     result = []
 
     def visit(row, inherited):
         if not isinstance(row, dict):
             raise DataError('iiko вернул некорректную строку отчёта директора.')
         values = list(inherited)
-        while len(values) < len(DIRECTOR_GROUPS):
+        while len(values) < group_count:
             index = len(values)
             field = row.get(f'field{index}')
             if not isinstance(field, dict) or 'value' not in field:
@@ -48,9 +58,17 @@ def director_rows_from_olap(day, rows):
             for child in children:
                 visit(child, values)
             return
-        if len(values) != len(DIRECTOR_GROUPS):
+        if len(values) != group_count:
             raise DataError('iiko не вернул все измерения продажи.')
-        quantity, revenue, unit_cost = (number(cell(row, index)) for index in range(7, 10))
+        quantity, revenue, unit_cost = (number(cell(row, index))
+                                        for index in range(group_count, group_count + 3))
+        row_day = day
+        if dated:
+            try:
+                row_day = date.fromisoformat(values[0])
+            except (TypeError, ValueError):
+                raise DataError('iiko вернул некорректную дату продажи.') from None
+            values = values[1:]
         register, section, payment_type, item, category, waiter, order_id = values
         # У части продаж группа блюда в iiko пустая. Без имени такую строку
         # нельзя ни отнести к типу отчёта, ни исключить — отчёт падал целиком
@@ -58,12 +76,19 @@ def director_rows_from_olap(day, rows):
         # любая другая группа.
         if not isinstance(category, str) or not category.strip():
             category = 'Без группы'
-        result.append(SalesRow(day, register, section, payment_type, item, category,
+        result.append(SalesRow(row_day, register, section, payment_type, item, category,
                                quantity, revenue, quantity * unit_cost, waiter, order_id))
 
+    if not isinstance(rows, list):
+        raise DataError('iiko вернул некорректную структуру отчёта директора.')
     for row in rows:
         visit(row, [])
     return result
+
+
+def director_rows_from_range(rows):
+    """Период целиком: даты приходят измерением, день берётся из строки."""
+    return director_rows_from_olap(None, rows, dated=True)
 
 
 def cash_prepay_from_shifts(day, sales, payments, shifts):
@@ -253,10 +278,10 @@ class IikoClient:
             log_upstream_failure('iiko', error, operation='load_cashier')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
-    async def load_director_report(self, today):
+    async def load_director_report(self, today, *, start=None, end=None, days=None):
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
-        start, end = completed_period(today)
+        start, end = resolve_period(today, start, end, days)
         headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
                    'Content-Type': 'application/json'}
         try:
@@ -268,13 +293,17 @@ class IikoClient:
                 if not isinstance(auth.get('token'), str) or not auth['token']:
                     raise DataError('iiko не подтвердил авторизацию.')
                 client.headers['Authorization'] = 'Bearer ' + auth['token']
+                # Период берём окнами, а не по одному дню: на каждый день
+                # уходил отдельный отчёт и месяц собирался минутами. Окно
+                # ограничено сверху — на диапазоне в три недели с восемью
+                # измерениями iiko отвечает пятисоткой.
                 rows = []
-                day = start
-                while day <= end:
-                    rows.extend(director_rows_from_olap(
-                        day, await self._olap(client, day, DIRECTOR_GROUPS, DIRECTOR_FIELDS)))
-                    from datetime import timedelta
-                    day += timedelta(days=1)
+                window_start = start
+                while window_start <= end:
+                    window_end = min(end, window_start + timedelta(days=DIRECTOR_RANGE_CHUNK_DAYS - 1))
+                    rows.extend(director_rows_from_range(await self._olap_range(
+                        client, window_start, window_end, DIRECTOR_RANGE_GROUPS, DIRECTOR_FIELDS)))
+                    window_start = window_end + timedelta(days=1)
                 return build_director_snapshot(rows, self.settings.director_categories, start, end,
                                                excluded_groups=self.settings.director_excluded_groups)
         except (httpx.HTTPError, TimeoutError) as error:

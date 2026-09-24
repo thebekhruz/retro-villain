@@ -26,7 +26,10 @@
 .controls-actions .button{width:auto}
 
 /* ── Сетка страницы ───────────────────────────────────────────────────────── */
-.finance-layout{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;align-items:start}
+/* Рельса карточек уехала: остаток и обязательства теперь идут листом
+   над журналом, во всю ширину. Колонка осталась одна. */
+.finance-layout{display:grid;grid-template-columns:minmax(0,1fr);gap:24px;align-items:start;
+  max-width:var(--sheet-width);margin:0 auto}
 .finance-main{display:grid;gap:20px;min-width:0}
 .finance-rail{display:grid;gap:16px;align-content:start;position:sticky;top:20px;
   max-height:calc(100vh - 40px);overflow:auto;padding-right:4px;scrollbar-width:thin}
@@ -103,16 +106,11 @@
 
 /* ── Журнал операций: строки-плитки вместо разлинованной таблицы ──────────── */
 .expense-table-scroll{overflow-x:auto;margin-top:22px}
-.expense-table{width:100%;min-width:540px;font-size:14px;border-spacing:0 8px;border-collapse:separate}
-.expense-table th{background:none;text-align:left;color:var(--muted);font-size:11.5px;
-  letter-spacing:1.1px;text-transform:uppercase;font-weight:600;padding:0 14px 6px}
-.expense-table td{border:0;background:#f7f9f4;padding:14px;vertical-align:middle;
-  line-height:1.5;overflow-wrap:anywhere}
-.expense-table td:first-child{border-radius:12px 0 0 12px}
-.expense-table td:last-child{border-radius:0 12px 12px 0;text-align:right;white-space:nowrap;
-  font-weight:600;font-variant-numeric:tabular-nums}
-.expense-table td small{display:block;font-size:11.5px;font-weight:400;color:var(--muted)}
-.expense-table td.is-empty{background:none;padding:0;border-radius:0}
+/* Журнал — такой же лист, как и остальные таблицы панели: рамка вместо
+   отдельных карточек-строк, иначе бухгалтер читает две разные таблицы
+   на одной странице. */
+.expense-table{width:100%;min-width:540px}
+.expense-table td.is-empty{background:none;padding:0}
 
 .operation-actions{display:inline-flex;gap:5px;margin-left:8px;vertical-align:middle}
 .operation-actions button{border:1px solid #dbe3d8;border-radius:6px;background:#fff;
@@ -257,20 +255,22 @@
   .employees-stats{grid-template-columns:1fr 1fr}
 }
 
-@media(max-width:560px){
-  /* Журнал на телефоне: четыре колонки не помещаются, а прятать сумму за
-     горизонтальной прокруткой нельзя — строка разворачивается в карточку. */
-  .expense-table{min-width:0;display:block;border-spacing:0}
-  .expense-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}
-  .expense-table tbody,.expense-table tr,.expense-table td{display:block;width:100%}
-  .expense-table tr{background:#f7f9f4;border-radius:12px;padding:8px 4px;margin-bottom:8px}
-  .expense-table td{background:none;border-radius:0!important;padding:7px 12px;text-align:left}
-  .expense-table td::before{content:attr(data-label);display:block;margin-bottom:3px;
-    font-size:11px;letter-spacing:1px;text-transform:uppercase;color:var(--muted);font-weight:600}
-  .expense-table td:last-child{text-align:left;white-space:normal}
-  .expense-table tr.is-empty-row{background:none;padding:0;margin:0}
-  .expense-table td.is-empty::before{content:none}
+@media(max-width:700px){
+  /* Раньше строка журнала разворачивалась в карточку. Бухгалтер сверяет её
+     со своей книгой построчно, поэтому таблица остаётся таблицей и
+     листается вбок — как и остальные таблицы модуля. */
+  .expense-table{min-width:580px}
 }
 
 /* Пустое состояние внутри двухколоночного списка смен занимает всю ширину. */
 .late-details .staff-list .empty-state{grid-column:1/-1}
+
+/* Обязательства тревожат цветом только когда долг есть. */
+#debt-card.is-owed td{background:#fff8f2}
+#debt-card.is-owed tr.is-total td{background:#fdf0e4;color:#8f4a26}
+
+/* Журнал живёт по правилам общего листа; свои остаются только ширины
+   колонок и место под кнопки строки. */
+.expense-table td small{display:block;font-size:10px;color:var(--muted);margin-top:4px;font-variant-numeric:normal}
+.expense-table td:first-child,.expense-table td:nth-child(2),.expense-table td:nth-child(3){text-align:left;white-space:normal}
+.expense-table th:first-child,.expense-table th:nth-child(2),.expense-table th:nth-child(3){text-align:left}

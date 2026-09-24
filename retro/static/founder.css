@@ -12,13 +12,16 @@
 .founder-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;
   border:1px solid var(--border);background:#fff;padding:13px 16px;border-radius:13px;margin-bottom:14px}
 .founder-filters .date-group{display:flex;flex-direction:column;gap:4px;min-width:150px;flex:0 1 auto}
-.founder-filters .field-label,.founder-filters legend,.select-group>span{
+/* Поле даты и подпись к нему задаёт общий лист стилей: здесь остаётся
+   только выпадающий список, которого больше нигде нет. */
+.founder-filters legend,.select-group>span{
   font-size:10px;font-weight:650;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
-.founder-filters input[type=date],.founder-filters select{
+.founder-filters input[type=date]{max-width:none}
+.founder-filters select{
   min-height:44px;width:100%;min-width:0;padding:0 12px;
   border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--ink);
-  font:600 13px/1 inherit;font-variant-numeric:tabular-nums;outline:0}
-.founder-filters input[type=date]:focus-visible,.founder-filters select:focus-visible{
+  font:600 13px/1 inherit;outline:0}
+.founder-filters select:focus-visible{
   border-color:var(--green2);box-shadow:0 0 0 3px rgba(35,87,74,.14)}
 .founder-filters select{padding-right:8px;cursor:pointer}
 .select-group{display:flex;flex-direction:column;gap:4px;min-width:150px}

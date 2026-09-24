@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app.js" defer></script>
+  <script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/period.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -17,7 +17,6 @@
   <div class="side-rule"></div>
   <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
   <nav aria-label="Модули"><a href="/" class="nav-active" aria-current="page"><span class="nav-icon">▤</span> Кассир <span class="nav-dot"></span></a><a href="/accountant" class="nav-link"><span class="nav-icon">◫</span> Бухгалтер</a><a href="/director" class="nav-link"><span class="nav-icon">◉</span> Директор</a><a href="/founder" class="nav-link"><span class="nav-icon">⌁</span> Учредитель</a></nav>
-  <div class="coming"><span>Модуль 03</span><small>Позже</small></div>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
@@ -25,8 +24,7 @@
   <div class="workspace">
     <div class="page-heading"><div><p class="eyebrow">ЕЖЕДНЕВНЫЙ ОБЗОР</p><h1>День в цифрах<span>.</span></h1><p class="subtitle">Только Retro: без школы и банкетного зала Бехруз.</p></div><div class="module-badge"><span>01</span><div>Модуль<small>Кассир</small></div></div></div>
     <section class="controls" aria-label="Период отчёта">
-      <div class="date-group"><label for="report-date">Дата отчёта</label><input id="report-date" type="date" required></div>
-      <div class="quick-days"><button id="today" class="chip" type="button">Сегодня</button><button id="yesterday" class="chip" type="button">Вчера</button></div>
+      <div id="period-host"></div>
       <button id="refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
       <button id="download" class="button primary" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Скачать отчёт <span class="file-type">XLSX</span></button>
     </section>

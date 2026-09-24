@@ -1,7 +1,7 @@
 const $ = id => document.getElementById(id);
 const number = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 const money = value => number.format(Number(value || 0)) + ' сум';
-let today, current, requestNo = 0, catalog = [], saving = false;
+let today, current, requestNo = 0, catalog = [], saving = false, period = null;
 const special = {
   reserve_dividends_transfer: {account: "dividends", kind: "transfer", label: "Отложить в сейф", impact: "Уменьшает деньги на расходы; увеличивает резерв дивидендов."},
   reserve_dividends_withdrawal: {account: "dividends", kind: "withdrawal", label: "Выдать собственнику из сейфа", impact: "Уменьшает только резерв дивидендов. Повторного списания из кассы нет."},
@@ -56,7 +56,10 @@ function emptyState(glyph, text, extra) {
   return box;
 }
 function options(select, items, placeholder) { const old = select.value; select.replaceChildren(new Option(placeholder, '')); items.forEach(x => select.add(new Option(x.label, String(x.id)))); if (items.some(x => String(x.id) === old)) select.value = old; }
-const selectedDay = () => $('accountant-date').value;
+/** День берём у общего контрола периода: второй копии выбора на
+ *  странице быть не должно, иначе они расходятся. */
+const selection = () => (period ? period.state() : null);
+const selectedDay = () => { const value = selection(); return value && value.mode === 'day' ? value.day : ''; };
 
 function attendanceHealth(value) {
   const status = value?.status || 'starting';
@@ -246,25 +249,109 @@ function renderLedger(data) {
     tr.append(td); journal.append(tr);
   }
   const target = $('expense-breakdown'); target.replaceChildren();
-  Object.entries(breakdown).forEach(([label, value]) => {const row=node('div','rail-line');row.append(node('span','',label),node('b','',money(value)));target.append(row);});
-  if (!target.children.length) target.append(emptyState('◔', 'Расходов за день ещё нет.', 'compact'));
+  const spent = Object.entries(breakdown);
+  const head = node('tr', 'is-section');
+  head.append(node('td', '', 'На что ушли деньги'), node('td'));
+  target.append(head);
+  if (!spent.length) {
+    const row = node('tr', 'is-muted');
+    row.append(node('td', '', 'Расходов за день ещё нет'), node('td', '', '0'));
+    target.append(row);
+  }
+  spent.forEach(([label, value]) => {
+    const row = node('tr');
+    row.append(node('td', '', label), node('td', '', money(value)));
+    target.append(row);
+  });
   updateButtons();
 }
 
 function status(text) { const box = $('connection'); if (box) box.textContent = text; }
 
+/** Период: журнал бухгалтера, сведённый по статьям и по дням. Формы в этом
+ *  режиме недоступны — запись всегда относится к конкретному дню. */
+function renderPeriod(data) {
+  const rows = $('period-rows');
+  rows.replaceChildren();
+  const line = (label, value, options) => {
+    const settings = options || {};
+    const row = node('tr', settings.kind || '');
+    const first = node('td');
+    first.append(node('span', 'row-name', label));
+    if (settings.note) first.append(node('span', 'row-note', settings.note));
+    // Сумма идёт сразу за названием: на телефоне таблица листается вбок, и
+    // счётчик операций не должен занимать место главной цифры.
+    row.append(first, node('td', '', value),
+               node('td', '', settings.count === undefined ? '' : String(settings.count)));
+    return row;
+  };
+  rows.append(line('Приход', '', {kind: 'is-section'}));
+  (data.income || []).forEach(item => rows.append(line(item.label, money(item.amount), {count: item.count})));
+  if (!(data.income || []).length) rows.append(line('Поступлений за период нет', '0', {kind: 'is-muted'}));
+  rows.append(line('Итого приход', money(data.income_total), {kind: 'is-total'}));
+  rows.append(line('Расход', '', {kind: 'is-section'}));
+  (data.expense || []).forEach(item => rows.append(line(item.label, money(item.amount), {count: item.count})));
+  if (!(data.expense || []).length) rows.append(line('Расходов за период нет', '0', {kind: 'is-muted'}));
+  rows.append(line('Итого расход', money(data.expense_total), {kind: 'is-total'}));
+  rows.append(line('Остатки', '', {kind: 'is-section'}));
+  rows.append(line('На начало периода', data.opening_balance === null ? 'Не рассчитан' : money(data.opening_balance),
+    {note: data.missing_day ? 'Не хватает передачи кассы за ' + formattedDay(data.missing_day) : ''}));
+  rows.append(line('На конец периода', data.closing_balance === null ? 'Не рассчитан' : money(data.closing_balance),
+    {kind: 'is-grand'}));
+
+  const days = $('period-day-rows');
+  days.replaceChildren();
+  (data.days || []).forEach(row => {
+    const tr = node('tr');
+    tr.append(node('td', '', formattedDay(row.day)), node('td', '', money(row.received)),
+      node('td', '', money(row.other_receipts)), node('td', '', money(row.salary_paid)),
+      node('td', '', money(row.outflows)),
+      node('td', '', row.closing === null ? 'Не рассчитан' : money(row.closing)));
+    days.append(tr);
+  });
+  $('period-label').textContent = RetroPeriod.label(data.period_start, data.period_end) +
+    ' · ' + data.period_days + ' дн.';
+  $('period-days').textContent = data.operations + ' ' +
+    (data.movements_truncated ? 'операций, показаны первые 1000' : 'операций');
+}
+
+async function loadPeriod() {
+  const chosen = selection();
+  if (!chosen || !period.valid()) { message('Поправьте даты периода.', true); return; }
+  const sequence = ++requestNo;
+  message('');
+  try {
+    const response = await fetch('/api/accountant/period?start=' + encodeURIComponent(chosen.start) +
+      '&end=' + encodeURIComponent(chosen.end), {cache: 'no-store'});
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || 'Не удалось собрать период.');
+    if (sequence !== requestNo) return;
+    renderPeriod(data);
+    status('Свод за ' + RetroPeriod.label(data.period_start, data.period_end));
+  } catch (error) {
+    if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); }
+  }
+}
+
+/** Один вход для контрола периода: день — обычная страница, период — свод. */
+function reload() {
+  const chosen = selection();
+  if (!chosen) return;
+  const range = chosen.mode === 'range';
+  $('day-view').hidden = range;
+  $('period-view').hidden = !range;
+  return range ? loadPeriod() : loadDay();
+}
+
+
 async function loadDay() {
   const day = selectedDay();
-  if (!day || !$('accountant-date').checkValidity()) { $('entrances-download').disabled = true; message('Выберите сегодняшний или прошедший день.', true); return; }
+  if (!day) { $('entrances-download').disabled = true; message('Выберите сегодняшний или прошедший день.', true); return; }
   const sequence = ++requestNo;
   current = null; updateButtons();
   $("finance-layout").setAttribute("aria-busy", "true");
   $('entrances-day').textContent = formattedDay(day);
-  const isToday = day === today, isYesterday = day === previousDay(today);
-  $('accountant-today').classList.toggle('active', isToday);
-  $('accountant-today').setAttribute('aria-pressed', String(isToday));
-  $('accountant-yesterday').classList.toggle('active', isYesterday);
-  $('accountant-yesterday').setAttribute('aria-pressed', String(isYesterday));
+  $('sheet-day').textContent = formattedDay(day);
   $('entrances-download').disabled = false;
   $('all-employees-link').href = '/accountant/employees?date=' + encodeURIComponent(day);
   $('employees-menu').href = '/accountant/employees?date=' + encodeURIComponent(day);
@@ -308,10 +395,7 @@ $('expense-category').addEventListener('change', categoryChanged);
 $('expense-item').addEventListener('change', expenseImpact);
 $('expense-paid').addEventListener('input', updateButtons);
 document.querySelectorAll('[data-open]').forEach(link => link.addEventListener('click', () => { $(link.dataset.open).open = true; }));
-$('accountant-date').addEventListener('change', loadDay);
-$('accountant-refresh').addEventListener('click', loadDay);
-$('accountant-today').addEventListener('click', () => { $('accountant-date').value = today; loadDay(); });
-$('accountant-yesterday').addEventListener('click', () => { $('accountant-date').value = previousDay(today); loadDay(); });
+$('accountant-refresh').addEventListener('click', reload);
 $('entrances-download').addEventListener('click', async () => {
   const day = selectedDay(); if (!day) return; $('entrances-download').disabled = true;
   try {
@@ -329,14 +413,17 @@ $('entrances-download').addEventListener('click', async () => {
     if (!response.ok) throw new Error('Не удалось определить текущую дату.');
     today = (await response.json()).today;
     const requested = new URLSearchParams(location.search).get('date');
-    $('accountant-date').max = today;
-    $('accountant-date').value = requested && requested <= today ? requested : previousDay(today);
+    period = RetroPeriod.mount({
+      host: $('period-host'), today: today, modes: ['day', 'range'], mode: 'day',
+      day: requested && requested <= today ? requested : previousDay(today),
+      preset: '7', dayInputId: 'accountant-date', onChange: reload,
+    });
     const catalogResponse = await fetch('/api/accountant/expenses/catalog', {cache: 'no-store'});
     if (!catalogResponse.ok) throw new Error('Не удалось загрузить наименования затрат.');
     catalog = (await catalogResponse.json()).groups;
     catalog.push({code: 'reserves', label:'Резервы и подотчёт', items:Object.entries(special).map(([code,value])=>({code,label:value.label}))});
     catalog.forEach(group => $('expense-category').add(new Option(group.label, group.code)));
     categoryChanged();
-    await loadDay();
+    await reload();
   } catch (error) { message(error.message, true); }
 })();

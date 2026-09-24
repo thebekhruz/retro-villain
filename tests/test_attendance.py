@@ -49,7 +49,10 @@ def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
     assert 'Скачать опоздавших' in accountant.text
     assert 'name="item_code"' in accountant.text
     assert 'Подтвердить получение' not in accountant.text
-    assert 'id="accountant-date"' in accountant.text
+    # День выбирается общим контролом периода: разметку поля рисует period.js,
+    # на странице стоит только его место и сам скрипт.
+    assert 'id="period-host"' in accountant.text
+    assert '/static/period.js' in accountant.text
     assert 'id="entrances-download"' in accountant.text
     assert 'Зарплата к выплате' not in cashier.text
     assert 'href="/accountant"' in cashier.text

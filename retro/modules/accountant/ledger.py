@@ -700,6 +700,107 @@ class FinanceStore:
                     accruals=accruals, payroll_confirmed=bool(confirmed),
                     payroll_approver=confirmed[0] if confirmed else None)
 
+    # Статьи, по которым деньги приходят в кассу бухгалтера. Всё остальное
+    # из движений — расход: так свод сходится с остатком на конец периода.
+    INCOME_KINDS = ('opening', 'cashier_transfer', 'other_receipt')
+    KIND_LABELS = {'opening': 'Остаток на начало учёта', 'cashier_transfer': 'Касса от кассира',
+                   'other_receipt': 'Прочие поступления', 'other_expense': 'Прочие расходы',
+                   'procurement_advance': 'Выдано на закуп', 'salary_payment': 'Выплата зарплаты',
+                   'reserve_transfer': 'Переводы в резервы'}
+
+    def period_summary(self, start: date, end: date) -> dict:
+        """Свод за диапазон дней: статьи прихода и расхода, движение по дням."""
+        if start > end:
+            raise LedgerError('Начало периода позже его конца.')
+        if (end - start).days + 1 > 366:
+            raise LedgerError('Период длиннее года бухгалтерия не сводит.')
+        income, expense, opening_rows, rows, movements = {}, {}, {}, [], []
+
+        def collect(bucket, item, amount):
+            code = item.get('item_code')
+            group, label = ITEMS.get(code, (None, None))
+            key = code or item['type']
+            entry = bucket.setdefault(key, dict(code=key, group=group or item['type'],
+                                                label=label or self.KIND_LABELS.get(item['type'], 'Прочее'),
+                                                amount=Decimal(0), count=0))
+            entry['amount'] += amount
+            entry['count'] += 1
+
+        with closing(self._open()) as connection:
+            handovers = {row[0]: Decimal(row[1]) for row in connection.execute(
+                'SELECT day, amount FROM accountant_handover_days WHERE day >= ? AND day <= ?',
+                (start.isoformat(), end.isoformat()))}
+            transfers = {}
+            for entry_id, day_value, note, amount in connection.execute(
+                    "SELECT id, day, note, amount FROM accountant_reserves "
+                    "WHERE kind = 'transfer' AND day >= ? AND day <= ? ORDER BY day, id",
+                    (start.isoformat(), end.isoformat())):
+                transfers.setdefault(day_value, []).append(
+                    dict(id=entry_id, type='reserve_transfer', operation='reserve_transfer',
+                         description=note, amount=amount, day=day_value, item_code=None))
+            # Остаток считаем той же дорогой, что и дневная страница: перенос
+            # подтверждённых передач кассы, а не простая сумма движений.
+            positions = {}
+            day = start
+            while day <= end:
+                positions[day.isoformat()] = self.cash_position(connection, day)
+                day = date.fromordinal(day.toordinal() + 1)
+
+        day = start
+        while day <= end:
+            key = day.isoformat()
+            daily = self.summary(day)['movements'] + transfers.get(key, [])
+            received = handovers.get(key, Decimal(0))
+            other_receipts = salary_paid = outflows = Decimal(0)
+            for item in daily:
+                amount = Decimal(item['amount'])
+                if item['type'] == 'opening':
+                    # Начальный остаток — не приход за период: в итог прихода
+                    # он не попадает, иначе деньги считаются дважды.
+                    collect(opening_rows, item, amount)
+                elif item['type'] in self.INCOME_KINDS:
+                    collect(income, item, amount)
+                    if item['type'] == 'other_receipt':
+                        other_receipts += amount
+                elif item['type'] == 'cashier_transfer':
+                    continue
+                else:
+                    collect(expense, item, amount)
+                    outflows += amount
+                    if item['type'] == 'salary_payment':
+                        salary_paid += amount
+                movements.append(item)
+            if received:
+                collect(income, dict(type='cashier_transfer', item_code='income_cashier'), received)
+                movements.append(dict(id=None, type='cashier_transfer', operation='cashier_transfer',
+                                      description='Касса от кассира', amount=str(received),
+                                      day=key, item_code='income_cashier'))
+            _, remaining, missing, _ = positions[key]
+            rows.append(dict(day=key, received=str(received), other_receipts=str(other_receipts),
+                             salary_paid=str(salary_paid), outflows=str(outflows),
+                             closing=str(remaining) if remaining is not None else None,
+                             missing_day=missing, operations=len(daily) + bool(received)))
+            day = date.fromordinal(day.toordinal() + 1)
+
+        def listed(bucket):
+            values = sorted(bucket.values(), key=lambda item: item['amount'], reverse=True)
+            return [dict(item, amount=str(item['amount'])) for item in values]
+
+        opening_value, _, opening_missing, _ = positions[start.isoformat()]
+        _, closing_value, closing_missing, _ = positions[end.isoformat()]
+        income_total = sum((item['amount'] for item in income.values()), Decimal(0))
+        expense_total = sum((item['amount'] for item in expense.values()), Decimal(0))
+        return dict(period_start=start.isoformat(), period_end=end.isoformat(),
+                    period_days=(end - start).days + 1,
+                    opening_balance=str(opening_value) if opening_value is not None else None,
+                    closing_balance=str(closing_value) if closing_value is not None else None,
+                    missing_day=closing_missing or opening_missing,
+                    income=listed(income), expense=listed(expense),
+                    opening_entries=listed(opening_rows),
+                    income_total=str(income_total), expense_total=str(expense_total),
+                    days=rows, movements=movements[:1000],
+                    movements_truncated=len(movements) > 1000, operations=len(movements))
+
     def daily_summary(self, day: date, cashier_amount: Decimal | None, *, carry_history: bool = True,
                       carry_start: date | None = None) -> dict:
         """Verified carried cash plus today's handover less actual cash outflows."""

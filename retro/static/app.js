@@ -6,6 +6,9 @@ const count = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
 const colors = ['#24594b','#91a786','#d2b77b','#b2c3aa','#81968c','#ddd2b6','#6b8074'];
 const demo = new URLSearchParams(location.search).get('demo') === '1';
 let config, snapshot = null, financeData = null, receiptData = null, generation = 0, controller;
+let period = null;
+/** Единственный источник выбранного дня на странице. */
+const selectedDay = () => (period ? period.state().day : '');
 
 function message(text, error = false) {
   $('message').textContent = text;
@@ -14,16 +17,6 @@ function message(text, error = false) {
 }
 function formattedDay(day) {
   return new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'long', year:'numeric', timeZone:'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
-}
-function previousDay(day) {
-  const value = new Date(day + 'T12:00:00Z');
-  value.setUTCDate(value.getUTCDate()-1);
-  return value.toISOString().slice(0,10);
-}
-function offsetDay(day, offset) {
-  const value = new Date(day + 'T12:00:00Z');
-  value.setUTCDate(value.getUTCDate() - offset);
-  return value.toISOString().slice(0,10);
 }
 function clearUsdRate(day) {
   $('usd-day').textContent = formattedDay(day);
@@ -58,7 +51,7 @@ async function loadUsdRate(day, current, signal) {
 }
 $('usd-balance-save').addEventListener('click', async () => {
   try {
-    const data = await RetroState.responseJson(await request('/api/cashier/usd-balance', undefined, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:$('report-date').value, amount:$('usd-balance').value})}));
+    const data = await RetroState.responseJson(await request('/api/cashier/usd-balance', undefined, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:selectedDay(), amount:$('usd-balance').value})}));
     $('usd-balance').value = data.amount;
     $('usd-balance-status').textContent = 'Сохранено';
   } catch (error) { $('usd-balance-status').textContent = error.message; }
@@ -229,15 +222,12 @@ async function load() {
   controller?.abort(); controller = new AbortController();
   $('refresh').disabled = false; document.body.classList.remove('loading'); $('metrics').setAttribute('aria-busy','false');
   clearSnapshot(); clearFinance(); message('');
-  const day = $('report-date').value;
-  if (!config || !day || !$('report-date').checkValidity()) { message('Выберите корректную дату.', true); return; }
+  const day = selectedDay();
+  if (!config || !day) { message('Выберите корректную дату.', true); return; }
   clearUsdRate(day);
   $('period-label').textContent = formattedDay(day);
   $('export-date').textContent = formattedDay(day);
   $('expenses-day').textContent = '· ' + formattedDay(day);
-  $('today').classList.toggle('active', day === config.today);
-  $('yesterday').classList.toggle('active', day === previousDay(config.today));
-  document.querySelectorAll('.date-chip').forEach(button => button.classList.toggle('active', button.dataset.date === day));
   loadExpenses(day, current, controller.signal);
   loadReceipts(day, current, controller.signal);
   loadUsdRate(day, current, controller.signal);
@@ -257,7 +247,7 @@ async function load() {
 }
 $('expense-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const day = $('report-date').value, current = generation;
+  const day = selectedDay(), current = generation;
   if (demo || !day || !$('expense-form').reportValidity()) return;
   const button = $('expense-save'); button.disabled = true;
   $('expense-feedback').textContent = '';
@@ -280,7 +270,7 @@ $('expense-form').addEventListener('submit', async event => {
 });
 $('receipt-form').addEventListener('submit', async event => {
   event.preventDefault();
-  const day = $('report-date').value, current = generation;
+  const day = selectedDay(), current = generation;
   if (demo || !day || !$('receipt-form').reportValidity()) return;
   const button = $('receipt-save'); button.disabled = true;
   $('receipt-feedback').textContent = '';
@@ -337,21 +327,7 @@ async function deleteExpense(id, day, button) {
     }
   }
 }
-$('report-date').addEventListener('change',load);
 $('refresh').addEventListener('click',load);
-$('today').addEventListener('click',()=>{if(config){$('report-date').value=config.today;load();}});
-$('yesterday').addEventListener('click',()=>{if(config){$('report-date').value=previousDay(config.today);load();}});
-function addRecentDateButtons() {
-  const container = document.querySelector('.quick-days');
-  for (let offset = 2; offset <= 8; offset++) {
-    const day = offsetDay(config.today, offset);
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'chip date-chip'; button.dataset.date = day;
-    button.textContent = new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'short', timeZone:'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace('.', '');
-    button.addEventListener('click', () => { $('report-date').value = day; load(); });
-    container.append(button);
-  }
-}
 $('download').addEventListener('click',async()=>{
   if (!snapshot) return;
   const data = snapshot, current = generation;
@@ -370,8 +346,10 @@ $('download').addEventListener('click',async()=>{
 (async()=>{
   try {
     config = await (await request('/api/config')).json();
-    $('report-date').max=config.today;$('report-date').value=config.today;
-    addRecentDateButtons();
+    period = RetroPeriod.mount({
+      host: $('period-host'), today: config.today, modes: ['day'],
+      day: config.today, dayInputId: 'report-date', onChange: load,
+    });
     $('demo-banner').hidden=!demo;$('setup').hidden=config.configured||demo;
     if (demo) {
       for (const input of $('expense-form').querySelectorAll('input, button')) input.disabled = true;
