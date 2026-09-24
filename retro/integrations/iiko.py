@@ -24,7 +24,7 @@ from retro.modules.director.models import (
     SalesRow, build_snapshot as build_director_snapshot, completed_period, payment_total,
 )
 from retro.modules.founder.models import (
-    PaymentRow, RevenueRow, build_analytics, is_banquet_item,
+    PaymentRow, RevenueRow, build_analytics, build_sales_bridge, is_banquet_item,
 )
 
 
@@ -209,10 +209,13 @@ def olap_range_body(store_id, start, end, groups, fields, extra_filters=()):
                 includeVoidTransactions=False, includeNonBusinessPaymentTypes=False)
 
 
-def founder_rows_from_olap(rows, *, payments=False, dish_filter='all', include_cost=False):
+def founder_rows_from_olap(rows, *, payments=False, dish_filter='all', include_cost=False,
+                           include_operation=False):
     if dish_filter not in {'all', 'exclude_banquet', 'banquet_only'}:
         raise ValueError('unknown founder dish filter')
-    group_count = 5 if payments else 4
+    if include_operation and not payments:
+        raise ValueError("operation requires payment dimensions")
+    group_count = (6 if include_operation else 5) if payments else 4
     result = []
 
     def visit(row, inherited):
@@ -243,7 +246,8 @@ def founder_rows_from_olap(rows, *, payments=False, dish_filter='all', include_c
             return
         if payments:
             result.append(PaymentRow(
-                day, values[1], values[2], values[3], values[4], amount))
+                day, values[1], values[2], values[3], values[4], amount,
+                values[5] if include_operation else ""))
         else:
             cost = number(cell(row, group_count + 1)) if include_cost else None
             result.append(RevenueRow(day, values[1], values[2], values[3], amount, cost))
@@ -516,6 +520,7 @@ class IikoClient:
                 revenue_groups = payment_groups[:-1]
                 revenue = []
                 payments = []
+                operations = []
                 internal_costs = {name: Decimal(0) for name in FOUNDER_INTERNAL_COST_TYPES}
                 chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
 
@@ -530,6 +535,9 @@ class IikoClient:
                                 client, chunk_start, chunk_end,
                                 ['OpenDate.Typed', 'NonCashPaymentType'],
                                 ['ProductCostBase.ProductCost']),
+                            self._olap_range(client, chunk_start, chunk_end,
+                                             [*payment_groups, 'OperationType'],
+                                             ['DishDiscountSumInt']),
                         )
 
                 chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
@@ -538,12 +546,22 @@ class IikoClient:
                     gather_reads(*(load_chunk(chunk_start, chunk_end)
                                    for chunk_start, chunk_end in chunks)),
                 )
-                for payment_rows, sales_rows, internal_rows in chunk_rows:
+                for payment_rows, sales_rows, internal_rows, operation_rows in chunk_rows:
                     payments.extend(founder_rows_from_olap(payment_rows, payments=True))
                     revenue.extend(founder_rows_from_olap(sales_rows, include_cost=True))
+                    operations.extend(founder_rows_from_olap(
+                        operation_rows, payments=True, include_operation=True))
                     for name, amount in founder_internal_costs_from_olap(internal_rows).items():
                         internal_costs[name] += amount
                 result = build_analytics(revenue, payments, start, end, granularity, directions)
+                result['sales_bridge'] = build_sales_bridge(
+                    payments, operations, start, end, granularity, directions)
+                if not result['sales_bridge']['reconciled']:
+                    result['reconciled'] = False
+                    result['warnings'].append('Разбивка оплат и зачтённых авансов не прошла сверку.')
+                if result['sales_bridge']['unknown_operations']:
+                    result['warnings'].append('Другие операции требуют проверки: ' +
+                        ', '.join(result['sales_bridge']['unknown_operations']))
                 result['olap_product_cost_totals'] = result.pop('cost_totals')
                 result['olap_sales_margin_totals'] = result.pop('gross_profit_totals')
                 from retro.modules.founder.models import classify_direction
@@ -562,7 +580,7 @@ class IikoClient:
                     'tasting': str(internal_costs['Дегустация']),
                     'chef_account': str(internal_costs['Счет Шефа']),
                 }
-                result['calculation_version'] = '2026-09-24-founder-pnl-cost'
+                result['calculation_version'] = '2026-09-24-sales-bridge'
                 result['scope_note'] = (
                     'Выручка включает продажи, оплаченные авансом; новые авансы за будущие '
                     'заказы не добавляются. Банкет — только блюда с меткой «БЕХРУЗ». '

@@ -25,6 +25,18 @@ def node(index, value, children=None, amount=None, cost=None):
     return result
 
 
+
+def add_operation_dimension(rows):
+    for row in rows:
+        if row.get('children'):
+            add_operation_dimension(row['children'])
+        elif 'field4' in row:
+            amount = row.pop('field5')['value']
+            # The 50 cash portion of the first fixture is a redeemed advance.
+            operation = 'Предоплата' if amount == 50 else 'Оплата'
+            row['children'] = [node(5, operation, amount=amount)]
+
+
 def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
     requests = []
 
@@ -84,6 +96,8 @@ def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
                                        node(2, 'Бехруз (Свадьба)', banquet)]),
             node(1, 'GL-Kassa-Oksbrich', [node(2, 'Зал', school)]),
         ])]
+        if 'OperationType' in body['groupFields']:
+            add_operation_dimension(rows)
         return httpx.Response(200, json={'result': {'rows': rows}})
 
     source = IikoClient(Settings(login='test', password='test', store_id=123),
@@ -104,7 +118,10 @@ def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
     assert result['payment_total'] == '250'
     assert result['reconciled'] is True
     assert result['scope_excluded_revenue'] == '940'
-    assert len(requests) == 3
+    assert len(requests) == 4
+    assert result['sales_bridge']['totals'] == {
+        "paid": "200.00", "prepaid": "50.00", "other": "0.00", "sales": "250.00"}
+    assert result["sales_bridge"]["reconciled"]
     for body in requests:
         assert body['filters'][0] == {
             'filterType': 'date_range', 'dateFrom': '2026-09-01', 'dateTo': '2026-09-01',
@@ -153,6 +170,8 @@ def test_founder_large_range_is_split_before_requesting_iiko():
         rows = [node(0, start.isoformat(), [
             node(1, 'Kassa-FiscalBox1', [node(2, 'Ресторан', leaves)]),
         ])]
+        if 'OperationType' in body['groupFields']:
+            add_operation_dimension(rows)
         return httpx.Response(200, json={'result': {'rows': rows}})
 
     source = IikoClient(Settings(login='test', password='test', store_id=123),
@@ -163,8 +182,8 @@ def test_founder_large_range_is_split_before_requesting_iiko():
     assert result['totals']['selected'] == '220'
     assert result['payment_total'] == '220'
     assert result['olap_product_cost_totals']['selected'] == '86'
-    assert requests == ([(date(2026, 1, 1), date(2026, 1, 31))] * 3
-                        + [(date(2026, 2, 1), date(2026, 2, 1))] * 3)
+    assert requests == ([(date(2026, 1, 1), date(2026, 1, 31))] * 4
+                        + [(date(2026, 2, 1), date(2026, 2, 1))] * 4)
 
 
 
@@ -199,8 +218,8 @@ def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
         ('retro', 'school', 'banquet')))
 
     assert result['period'] == {'start': '2026-01-01', 'end': '2026-09-22'}
-    assert len(calls) == 27
-    assert max_active == 6
+    assert len(calls) == 36
+    assert max_active == 8
 
 
 @pytest.mark.parametrize('cost', [None, '40', float('nan')])

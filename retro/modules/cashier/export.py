@@ -41,6 +41,7 @@ def export_report(snapshot, expenses=(), receipts=()):
                     cell.value = None
     sheet['A1'] = datetime.combine(snapshot.day, datetime.min.time())
     sheet['A1'].number_format = 'dd.mm.yyyy'
+    sheet['A2'] = 'ОПЛАТЫ ПРОДАЖ'
     sheet['B2'] = snapshot.revenue
     sheet['B2'].number_format = MONEY
     for label, pos in [('Количество чеков', 'A25'), ('Средний чек', 'A26')]:
@@ -63,7 +64,7 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['A39'] = ('ДЕМОНСТРАЦИЯ — НЕ ОТЧЁТ iiko' if snapshot.demo else
                     'Сформировано из iiko • только Retro, без школы и зала Бехруз')
     amounts = {p.name: p.amount for p in snapshot.payments}
-    sheet['C2'] = 'ВЫРУЧКА ПО ТИПАМ ОПЛАТЫ'
+    sheet['C2'] = 'ОПЛАТЫ ПРОДАЖ ПО СПОСОБАМ'
     sheet['C2'].font = Font(name='Calibri', size=11, bold=True)
     sheet['C2'].alignment = Alignment(wrap_text=True, vertical='center')
     sheet.row_dimensions[2].height = 30
@@ -74,7 +75,7 @@ def export_report(snapshot, expenses=(), receipts=()):
         sheet.cell(row, 4, amounts[name]).number_format = MONEY
         sheet.row_dimensions[row].height = 30 if len(name) > 28 else 22
     payment_total_row = 3 + len(PAYMENT_SOURCES)
-    total_label = sheet.cell(payment_total_row, 3, 'ИТОГО ВЫРУЧКА:')
+    total_label = sheet.cell(payment_total_row, 3, 'ИТОГО ОПЛАТЫ:')
     total_amount = sheet.cell(payment_total_row, 4, f'=SUM(D3:D{payment_total_row - 1})')
     total_label._style = total_label_style
     total_amount._style = total_amount_style
@@ -108,10 +109,10 @@ def export_report(snapshot, expenses=(), receipts=()):
     detail['A1'] = 'Retro Milliy — оплаты'
     detail['A2'] = datetime.combine(snapshot.day, datetime.min.time())
     detail['A2'].number_format = 'dd.mm.yyyy'
-    detail['A3'], detail['B3'] = 'Продажи после скидок', snapshot.revenue
+    detail['A3'], detail['B3'] = 'Оплаты продаж без зачёта авансов', snapshot.revenue
     detail['A4'], detail['B4'] = 'Количество чеков', snapshot.receipt_count
     detail['A5'], detail['B5'] = 'Средний чек', snapshot.average_receipt
-    detail['A7'], detail['B7'], detail['C7'] = 'Тип оплаты', 'Выручка, сум', 'Доля'
+    detail['A7'], detail['B7'], detail['C7'] = 'Тип оплаты', 'Оплаты продаж, сум', 'Доля'
     for index, payment in enumerate(snapshot.payments, 8):
         text(detail.cell(index, 1), payment.name)
         detail.cell(index, 2, payment.amount)

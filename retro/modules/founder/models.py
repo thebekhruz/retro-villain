@@ -41,6 +41,7 @@ class PaymentRow:
     item: str
     payment: str
     amount: Decimal
+    operation: str = ""
 
 
 def is_banquet_item(item):
@@ -241,4 +242,66 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         'daily_discrepancies': daily_discrepancies,
         'reconciled': reconciled,
         'warnings': warnings,
+    }
+
+
+def build_sales_bridge(payment_rows, operation_rows, start, end, granularity, directions):
+    """Explain sales without treating redeemed advances as fresh cash receipts.
+
+    Operation detail is checked against the separately grouped payment report
+    for every day, direction and payment method; opposite errors cannot cancel.
+    Unknown operations remain visible and never masquerade as advances.
+    """
+    _validate_inputs(start, end, granularity, directions)
+    kinds = {'Оплата': 'paid', 'PAYMENT': 'paid',
+             'Предоплата': 'prepaid', 'PREPAYMENT': 'prepaid'}
+    expected, actual = defaultdict(Decimal), defaultdict(Decimal)
+    amounts = {key: Decimal(0) for key in ('paid', 'prepaid', 'other')}
+    by_payment = defaultdict(lambda: defaultdict(Decimal))
+    by_period = defaultdict(lambda: defaultdict(Decimal))
+    unknown = set()
+    for row in payment_rows:
+        direction = classify_direction(row.register, row.section, row.item)
+        if direction in directions:
+            name = PAYMENT_ALIASES.get(row.payment, row.payment)
+            expected[row.day, direction, name] += row.amount
+    for row in operation_rows:
+        if not start <= row.day <= end:
+            raise DataError('iiko вернул операцию вне выбранного периода.')
+        direction = classify_direction(row.register, row.section, row.item)
+        if direction not in directions:
+            continue
+        name = PAYMENT_ALIASES.get(row.payment, row.payment)
+        actual[row.day, direction, name] += row.amount
+        kind = kinds.get(row.operation, 'other')
+        if kind == 'other' and row.amount:
+            unknown.add(row.operation or 'Без названия')
+        amounts[kind] += row.amount
+        by_payment[name][kind] += row.amount
+        by_period[_period_start(row.day, start, granularity)][kind] += row.amount
+    differences = [dict(date=key[0].isoformat(), direction=key[1], payment=key[2],
+                        amount=str(actual[key] - expected[key]))
+                   for key in sorted(expected.keys() | actual.keys())
+                   if abs(actual[key] - expected[key]) > Decimal(1)]
+    discrepancy = sum(actual.values(), Decimal(0)) - sum(expected.values(), Decimal(0))
+
+    def money(value):
+        return str(value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+    def values(bucket):
+        parts = {key: bucket.get(key, Decimal(0)).quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+                 for key in ('paid', 'prepaid', 'other')}
+        return {**{key: str(value) for key, value in parts.items()},
+                'sales': money(sum(parts.values(), Decimal(0)))}
+    return {
+        'totals': values(amounts),
+        'payments': [dict(name=name, **values(bucket)) for name, bucket in sorted(by_payment.items())
+                     if any(bucket.values())],
+        'series': [dict(start=first.isoformat(), end=last.isoformat(), **values(by_period[first]))
+                   for first, last in _periods(start, end, granularity)],
+        'reconciled': not differences and abs(discrepancy) <= Decimal(1),
+        'discrepancy': money(discrepancy),
+        'differences': differences,
+        'unknown_operations': sorted(unknown),
+        'note': 'Оплаты продаж и зачёт авансов относятся к дате заказа. Новые авансы за будущие '
+                'заказы сюда не входят. Поступления денег за смену смотрите в модуле кассира.',
     }

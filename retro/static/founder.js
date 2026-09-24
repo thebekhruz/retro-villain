@@ -105,7 +105,31 @@ function renderSeriesTable(){
   const body=document.createElement('tbody');starts.forEach(start=>{const revenue=analyticsRows.get(start),payment=paymentRows.get(start),booking=bookingRows.get(start),tr=document.createElement('tr');const values=[revenuePeriod(revenue||booking),revenue?.values.retro,revenue?.values.school,revenue?.values.banquet,revenue?.total,...payments.map(name=>payment?.values[name]),booking?.values.bookings,booking?.values.guests,booking?.values.cancelled];values.forEach((value,index)=>{const cell=document.createElement(index===0?'th':'td');if(index===0)cell.scope='row';cell.textContent=value===undefined?'—':index===0?value:money.format(Number(value));tr.append(cell)});body.append(tr)});table.append(body);target.append(table)
 }
 
+function renderSalesBridge(data){
+  const bridge=data.sales_bridge;
+  if(!bridge){$('sales-bridge-equation').textContent='Расшифровка оплат пока недоступна. Обновите отчёт.';return}
+  const labels={paid:'Оплаты продаж',prepaid:'Зачтённые авансы',other:'Другие операции',sales:'Продажи'};
+  ['paid','prepaid','other'].forEach(key=>$('sales-'+key).textContent=exactMoney.format(Number(bridge.totals[key])));
+  $('sales-full').textContent=exactMoney.format(Number(data.totals.selected));
+  $('sales-other-card').hidden=!Number(bridge.totals.other)&&!bridge.unknown_operations.length;
+  $('sales-bridge-scope').textContent=data.directions.map(key=>directionMeta[key].label).join(' · ')+' · '+data.period.start+' — '+data.period.end;
+  const terms=['paid','prepaid',...((Number(bridge.totals.other)||bridge.unknown_operations.length)?['other']:[])];
+  const equation=terms.map(key=>labels[key]+': '+exactMoney.format(Number(bridge.totals[key]))).join(' + ');
+  const difference=Number(data.totals.selected)-Number(bridge.totals.sales);
+  $('sales-bridge-equation').textContent=equation+' = '+exactMoney.format(Number(bridge.totals.sales))+' сум.'+
+    (difference?' Разница с отдельным отчётом продаж: '+exactMoney.format(difference)+' сум.':'')+
+    (bridge.reconciled&&data.reconciled?' Разбивка сверена с отчётом продаж.':' Разбивка НЕ сверена — требуется проверка.');
+  const target=$('sales-bridge-table');target.replaceChildren();
+  const table=document.createElement('table');table.className='series-table';
+  const head=document.createElement('thead'),header=document.createElement('tr');
+  ['Способ оплаты',...terms.map(key=>labels[key]),'Всего продаж'].forEach(label=>{const th=document.createElement('th');th.scope='col';th.textContent=label;header.append(th)});
+  head.append(header);table.append(head);const body=document.createElement('tbody');
+  bridge.payments.forEach(row=>{const tr=document.createElement('tr');[row.name,...terms.map(key=>row[key]),row.sales].forEach((value,index)=>{const cell=document.createElement(index?'td':'th');if(!index)cell.scope='row';cell.textContent=index?exactMoney.format(Number(value)):value;tr.append(cell)});body.append(tr)});
+  table.append(body);target.append(table);
+}
+
 function render(data){
+  renderSalesBridge(data);
   lastAnalytics=data;
   $('pnl-sales').textContent=exactMoney.format(Number(data.pnl.sales));
   $('pnl-cost').textContent=exactMoney.format(Number(data.pnl.cost));
@@ -121,8 +145,8 @@ function render(data){
   $('expense-dashboard-total').textContent=exactMoney.format(Number(data.dashboard_expenses.total));
   $('internal-tasting').textContent=exactMoney.format(Number(data.internal_costs.tasting));
   $('internal-chef').textContent=exactMoney.format(Number(data.internal_costs.chef_account));
-  ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
-  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Оплаты сверены · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices.join(' '),!data.reconciled)
+  ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`article[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
+  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Распределение продаж сверено · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices.join(' '),!data.reconciled)
 }
 
 async function load(options = {}) {
@@ -156,7 +180,7 @@ async function load(options = {}) {
 }
 
 async function start(){try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
-function clearResults(){lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';['pnl-sales','pnl-cost','pnl-profit','pnl-net-profit','net-profit-final','pnl-operating-expenses','pnl-other-expenses','pnl-other-income','expense-cashier','expense-accountant','expense-dashboard-total','internal-tasting','internal-chef'].forEach(id=>$(id).textContent='—');$('expense-accountant-detail').textContent='зарплата: — · прочие: —';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
+function clearResults(){['sales-paid','sales-prepaid','sales-other','sales-full'].forEach(id=>$(id).textContent='—');$('sales-other-card').hidden=true;$('sales-bridge-table').replaceChildren();$('sales-bridge-equation').textContent='';$('sales-bridge-scope').textContent='Выбранные направления · даты заказа';lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`article[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';['pnl-sales','pnl-cost','pnl-profit','pnl-net-profit','net-profit-final','pnl-operating-expenses','pnl-other-expenses','pnl-other-income','expense-cashier','expense-accountant','expense-dashboard-total','internal-tasting','internal-chef'].forEach(id=>$(id).textContent='—');$('expense-accountant-detail').textContent='зарплата: — · прочие: —';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
 function invalidatePending(){controller?.abort();controller=null;gate.invalidate();setLoading(false);clearResults();$('updated').textContent='Фильтры изменены · нажмите «Показать»';setMessage('Фильтры изменены. Нажмите «Показать», чтобы загрузить новую выборку.')}
 ['start','end','granularity'].forEach(id=>$(id).addEventListener('change',invalidatePending));document.querySelectorAll('input[name=direction]').forEach(input=>input.addEventListener('change',invalidatePending));
 $('filters').addEventListener('submit',event=>{event.preventDefault();document.querySelectorAll('[data-period]').forEach(button=>button.classList.remove('is-active'));load({refresh:true})});document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.toggle('is-active',item===button));const period=FounderLogic.quickPeriod(button.dataset.period,$('end').max);$('start').value=period.start;$('end').value=period.end;load()}));start();
