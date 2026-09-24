@@ -88,6 +88,16 @@ class ExpenseStore:
     def total(self, day: date):
         return sum((item.amount for item in self.list(day)), Decimal(0))
 
+    def total_between(self, start: date, end: date):
+        if start > end:
+            raise ValueError('expense range start must not exceed end')
+        with closing(self._open()) as connection:
+            rows = connection.execute(
+                'SELECT amount FROM cashier_expenses WHERE day >= ? AND day <= ?',
+                (start.isoformat(), end.isoformat()),
+            ).fetchall()
+        return sum((Decimal(row[0]) for row in rows), Decimal(0))
+
     @staticmethod
     def _values(description, amount):
         name = description.strip() if isinstance(description, str) else ''

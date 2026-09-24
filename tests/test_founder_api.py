@@ -82,6 +82,30 @@ def test_founder_api_parses_inclusive_period_granularity_and_directions():
         (date(2026, 9, 1), date(2026, 9, 8), 'week', ('retro', 'banquet'))]
 
 
+def test_founder_api_combines_cashier_and_accountant_expenses_without_mutating_pnl(tmp_path):
+    source = FounderIiko({'pnl': {'net_profit': '1000'}, 'scope_note': 'iiko.'})
+    app = create_app(
+        Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
+        accountant_db_path=tmp_path / 'accountant.sqlite3')
+    app.state.iiko = source
+    app.state.expenses.add(date(2026, 9, 1), 'Расход кассы', '125.50')
+    app.state.expenses.add(date(2026, 9, 9), 'Вне периода', '999')
+    app.state.accountant_finance.add_opening(date(2026, 9, 1), '1000', 'Остаток')
+    app.state.accountant_finance.add_expense(
+        date(2026, 9, 2), 'admin_it', 'Сервис', '200')
+
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        response = client.get('/api/founder/analytics', params={
+            'start': '2026-09-01', 'end': '2026-09-08'})
+
+    assert response.status_code == 200
+    assert response.json()['pnl']['net_profit'] == '1000'
+    assert response.json()['dashboard_expenses'] == {
+        'cashier': '125.50', 'accountant_other': '200',
+        'accountant_salary': '0', 'accountant': '200', 'total': '325.50'}
+    assert response.json()['net_profit_after_dashboard_expenses'] == '674.50'
+
+
 def test_founder_api_rejects_future_oversized_and_unknown_filters():
     source = FounderIiko()
     with client_with(source) as client:

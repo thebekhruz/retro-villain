@@ -35,12 +35,20 @@ def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
         if request.url.path == '/api/kpi/dashboard/get-data':
             assert body == {
                 'dateFrom': '2026-09-01', 'dateTo': '2026-09-01',
-                'metricCodes': ['PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS'],
+                'metricCodes': [
+                    'PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS', 'PL_EXP_TOTAL',
+                    'PL_PROFIT_MAIN', 'PL_OTH_INCOME_TOTAL', 'PL_OTH_EXP_TOTAL',
+                    'PL_PROFIT_NET'],
                 'storeIds': [123], 'dataType': 'DATA_SUMMARY_BY_PERIODS'}
             return httpx.Response(200, json={'data': {
                 'PL_SALES_TOTAL': {'2026-09-01-2026-09-01': 250},
                 'PL_COS_TOTAL': {'2026-09-01-2026-09-01': 82.5},
                 'PL_PROFIT_GROSS': {'2026-09-01-2026-09-01': 167.5},
+                'PL_EXP_TOTAL': {'2026-09-01-2026-09-01': 10},
+                'PL_PROFIT_MAIN': {'2026-09-01-2026-09-01': 157.5},
+                'PL_OTH_INCOME_TOTAL': {'2026-09-01-2026-09-01': 2},
+                'PL_OTH_EXP_TOTAL': {'2026-09-01-2026-09-01': 4},
+                'PL_PROFIT_NET': {'2026-09-01-2026-09-01': 155.5},
             }})
         groups = body['groupFields']
         assert not any(item.get('field') == 'OperationType' for item in body['filters'])
@@ -88,7 +96,10 @@ def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
     assert result['olap_product_cost_totals'] == {
         'retro': '50', 'school': '17', 'banquet': '20', 'selected': '87'}
     assert 'cost_totals' not in result
-    assert result['pnl'] == {'sales': '250', 'cost': '82.5', 'gross_profit': '167.5'}
+    assert result['pnl'] == {
+        'sales': '250', 'cost': '82.5', 'gross_profit': '167.5',
+        'operating_expenses': '10', 'operating_profit': '157.5',
+        'other_income': '2', 'other_expenses': '4', 'net_profit': '155.5'}
     assert result['internal_costs'] == {'tasting': '5', 'chef_account': '12.25'}
     assert result['payment_total'] == '250'
     assert result['reconciled'] is True
@@ -115,6 +126,11 @@ def test_founder_large_range_is_split_before_requesting_iiko():
                 'PL_SALES_TOTAL': {'period': 220},
                 'PL_COS_TOTAL': {'period': 86},
                 'PL_PROFIT_GROSS': {'period': 134},
+                'PL_EXP_TOTAL': {'period': 0},
+                'PL_PROFIT_MAIN': {'period': 134},
+                'PL_OTH_INCOME_TOTAL': {'period': 0},
+                'PL_OTH_EXP_TOTAL': {'period': 0},
+                'PL_PROFIT_NET': {'period': 134},
             }})
         period = body['filters'][0]
         start = date.fromisoformat(period['dateFrom'])
@@ -174,7 +190,9 @@ def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
 
     source._olap_range = fake_olap_range
     async def fake_pnl(client, start, end):
-        return {'sales': '0', 'cost': '0', 'gross_profit': '0'}
+        return {'sales': '0', 'cost': '0', 'gross_profit': '0',
+                'operating_expenses': '0', 'operating_profit': '0',
+                'other_income': '0', 'other_expenses': '0', 'net_profit': '0'}
     source._founder_pnl = fake_pnl
     result = asyncio.run(source.load_founder_analytics(
         date(2026, 1, 1), date(2026, 9, 22), 'month',
@@ -198,6 +216,11 @@ def test_founder_pnl_and_internal_cost_parsers_preserve_decimal_precision():
         'PL_SALES_TOTAL': {'day-1': 38453100, 'day-2': 40070500},
         'PL_COS_TOTAL': {'day-1': 12515128.92, 'day-2': 17211349.18},
         'PL_PROFIT_GROSS': {'day-1': 25937971.08, 'day-2': 22859150.82},
+        'PL_EXP_TOTAL': {'day-1': 0, 'day-2': 0},
+        'PL_PROFIT_MAIN': {'day-1': 25937971.08, 'day-2': 22859150.82},
+        'PL_OTH_INCOME_TOTAL': {'day-1': 0, 'day-2': 0},
+        'PL_OTH_EXP_TOTAL': {'day-1': 145108.47, 'day-2': 0},
+        'PL_PROFIT_NET': {'day-1': 25792862.61, 'day-2': 22859150.82},
     })
     internal = founder_internal_costs_from_olap([
         node(0, '2026-09-22', [node(1, 'Дегустация', amount=Decimal('90829.32470417733')),
@@ -206,7 +229,10 @@ def test_founder_pnl_and_internal_cost_parsers_preserve_decimal_precision():
     ])
 
     assert pnl == {
-        'sales': '78523600', 'cost': '29726478.10', 'gross_profit': '48797121.90'}
+        'sales': '78523600', 'cost': '29726478.10', 'gross_profit': '48797121.90',
+        'operating_expenses': '0', 'operating_profit': '48797121.90',
+        'other_income': '0', 'other_expenses': '145108.47',
+        'net_profit': '48652013.43'}
     assert str(internal['Дегустация']) == '90829.32470417733'
     assert str(internal['Счет Шефа']) == '1152506.2785995671'
 
@@ -217,4 +243,9 @@ def test_founder_rejects_inconsistent_pnl():
             'PL_SALES_TOTAL': {'period': 100},
             'PL_COS_TOTAL': {'period': 40},
             'PL_PROFIT_GROSS': {'period': 50},
+            'PL_EXP_TOTAL': {'period': 0},
+            'PL_PROFIT_MAIN': {'period': 50},
+            'PL_OTH_INCOME_TOTAL': {'period': 0},
+            'PL_OTH_EXP_TOTAL': {'period': 0},
+            'PL_PROFIT_NET': {'period': 50},
         })

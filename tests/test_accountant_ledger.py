@@ -61,6 +61,22 @@ def test_other_expense_and_shoh_procurement_are_separate_cash_outflows(tmp_path)
         'opening', 'other_expense', 'procurement_advance']
 
 
+def test_accountant_expense_total_between_counts_paid_expenses_and_salaries(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.add_opening(WORKDAY, '1000000', 'Начальный остаток')
+    store.add_expense(WORKDAY, 'ops_rent', 'Аренда', '100000')
+    store.give_procurement(WORKDAY, 'Шох', 'Аванс', '50000')
+    store.confirm_payroll(WORKDAY, [payroll_row(amount='200000')], 'Финансы')
+    accrual_id = store.accruals(WORKDAY)[0]['id']
+    store.pay_salary(accrual_id, NEXT_DAY, '80000')
+
+    assert store.expense_totals_between(WORKDAY, NEXT_DAY) == {
+        'other': Decimal('100000'), 'salary': Decimal('80000'),
+        'total': Decimal('180000')}
+    with pytest.raises(ValueError):
+        store.expense_totals_between(NEXT_DAY, WORKDAY)
+
+
 def test_daily_summary_shows_carried_balance_as_opening_income(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
     store.record_handover(WORKDAY, Decimal('500000'))

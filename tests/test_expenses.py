@@ -53,6 +53,18 @@ def test_expenses_survive_reopening_and_are_scoped_to_day(tmp_path):
     assert reopened.list(DAY)[0].description == 'Напитки'
 
 
+def test_cashier_expense_total_between_uses_inclusive_dates(tmp_path):
+    store = ExpenseStore(tmp_path / 'cashier.sqlite3')
+    store.add(DAY - timedelta(days=1), 'До периода', '10')
+    store.add(DAY, 'Первый день', '20.25')
+    store.add(DAY + timedelta(days=1), 'Второй день', '30.75')
+    store.add(DAY + timedelta(days=2), 'После периода', '40')
+
+    assert store.total_between(DAY, DAY + timedelta(days=1)) == Decimal('51.00')
+    with pytest.raises(ValueError):
+        store.total_between(DAY, DAY - timedelta(days=1))
+
+
 def test_empty_day_has_no_implicit_salary(tmp_path):
     store = ExpenseStore(tmp_path / 'cashier.sqlite3')
     for day in (DAY, date(2026, 4, 25)):
