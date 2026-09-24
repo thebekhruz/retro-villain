@@ -67,21 +67,26 @@ class DirectorSnapshot:
     excluded_groups: tuple[str, ...] = ()
 
     def json(self):
+        def money(value):
+            return str(value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+
         def metric(value):
-            result = dict(quantity=str(value.quantity), revenue=str(value.revenue), cost=str(value.cost),
-                        gross_profit=str(value.gross_profit), margin_percent=str(value.margin_percent)
+            revenue = value.revenue.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+            cost = value.cost.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+            result = dict(quantity=str(value.quantity), revenue=str(revenue), cost=str(cost),
+                        gross_profit=str(revenue - cost), margin_percent=str(value.margin_percent)
                         if value.margin_percent is not None else None)
             if value.breakdown:
                 result['breakdown'] = {key: metric(part) for key, part in value.breakdown.items()}
             return result
         return dict(period_start=self.period_start.isoformat(), period_end=self.period_end.isoformat(),
-                    cash_total=str(self.cash_total), yandex_revenue=str(self.yandex_revenue),
+                    cash_total=money(self.cash_total), yandex_revenue=money(self.yandex_revenue),
                     calculation_version='2026-09-24', source_cache_max_age_seconds=60, report_cache_max_age_seconds=300,
-                    menu_revenue=str(sum((v.revenue for v in self.item_metrics['all'].values()), Decimal(0))),
-                    excluded_revenue={key: str(value) for key, value in self.excluded_revenue.items()},
+                    menu_revenue=money(sum((v.revenue for v in self.item_metrics['all'].values()), Decimal(0))),
+                    excluded_revenue={key: money(value) for key, value in self.excluded_revenue.items()},
                     excluded_groups=list(self.excluded_groups),
-                    scope_excluded_revenue=str(self.scope_excluded_revenue),
-                    yandex_menu_revenue=str(self.yandex_menu_revenue),
+                    scope_excluded_revenue=money(self.scope_excluded_revenue),
+                    yandex_menu_revenue=money(self.yandex_menu_revenue),
                     item_metrics={group: {name: metric(value) for name, value in values.items()}
                                   for group, values in self.item_metrics.items()},
                     waiter_metrics={name: metric(value) for name, value in self.waiter_metrics.items()})

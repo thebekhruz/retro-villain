@@ -173,8 +173,8 @@ def test_director_totals_show_exclusions_and_share_classifier():
     report = build_snapshot([sale(), sale(category='Контейнеры', revenue=D(10))], {},
                             DAY, DAY + timedelta(days=9), excluded_groups={'Контейнеры'})
     assert report.cash_total == 110
-    assert report.json()['menu_revenue'] == '100'
-    assert report.json()['excluded_revenue'] == {'Контейнеры': '10'}
+    assert report.json()['menu_revenue'] == '100.00'
+    assert report.json()['excluded_revenue'] == {'Контейнеры': '10.00'}
     with pytest.raises(DataError, match='касса'):
         build_snapshot([sale(register='unknown', item='Бехруз')], {}, DAY, DAY + timedelta(days=9))
 
@@ -185,8 +185,10 @@ def test_ai_uses_actual_direction_amounts_and_preserves_free_consumption():
                             sale(revenue=D(0), non_cash_payment_type='Дегустация')], {},
                            DAY, DAY + timedelta(days=9))
     candidates = compact_analysis_input(report.json())['review_candidates']
-    assert {row['direction']: row['revenue'] for row in candidates} == {'retro': '70', 'oxbridge': '30'}
-    assert next(row for row in candidates if row['direction'] == 'retro')['breakdown']['tasting']['cost'] == '40'
+    assert {row['direction']: row['revenue'] for row in candidates} == {
+        'retro': '70.00', 'oxbridge': '30.00'}
+    assert next(row for row in candidates if row['direction'] == 'retro')[
+        'breakdown']['tasting']['cost'] == '40.00'
 
 
 @pytest.mark.parametrize('field,value', [('time', 'broken'), ('employeeNoString', ''), ('serialNo', None)])

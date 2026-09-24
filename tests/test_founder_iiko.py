@@ -97,9 +97,9 @@ def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
         'retro': '50', 'school': '17', 'banquet': '20', 'selected': '87'}
     assert 'cost_totals' not in result
     assert result['pnl'] == {
-        'sales': '250', 'cost': '82.5', 'gross_profit': '167.5',
-        'operating_expenses': '10', 'operating_profit': '157.5',
-        'other_income': '2', 'other_expenses': '4', 'net_profit': '155.5'}
+        'sales': '250.00', 'cost': '82.50', 'gross_profit': '167.50',
+        'operating_expenses': '10.00', 'operating_profit': '157.50',
+        'other_income': '2.00', 'other_expenses': '4.00', 'net_profit': '155.50'}
     assert result['internal_costs'] == {'tasting': '5', 'chef_account': '12.25'}
     assert result['payment_total'] == '250'
     assert result['reconciled'] is True
@@ -229,12 +229,31 @@ def test_founder_pnl_and_internal_cost_parsers_preserve_decimal_precision():
     ])
 
     assert pnl == {
-        'sales': '78523600', 'cost': '29726478.10', 'gross_profit': '48797121.90',
-        'operating_expenses': '0', 'operating_profit': '48797121.90',
-        'other_income': '0', 'other_expenses': '145108.47',
+        'sales': '78523600.00', 'cost': '29726478.10', 'gross_profit': '48797121.90',
+        'operating_expenses': '0.00', 'operating_profit': '48797121.90',
+        'other_income': '0.00', 'other_expenses': '145108.47',
         'net_profit': '48652013.43'}
     assert str(internal['Дегустация']) == '90829.32470417733'
     assert str(internal['Счет Шефа']) == '1152506.2785995671'
+
+
+def test_founder_pnl_rounds_iiko_calculation_tails_to_currency_precision():
+    pnl = founder_pnl_from_kpi({
+        'PL_SALES_TOTAL': {'period': 100},
+        'PL_COS_TOTAL': {'period': Decimal('60.16999999')},
+        'PL_PROFIT_GROSS': {'period': Decimal('39.83000001')},
+        'PL_EXP_TOTAL': {'period': 0},
+        'PL_PROFIT_MAIN': {'period': Decimal('39.83000001')},
+        'PL_OTH_INCOME_TOTAL': {'period': 0},
+        'PL_OTH_EXP_TOTAL': {'period': Decimal('1.23499999')},
+        'PL_PROFIT_NET': {'period': Decimal('38.59500002')},
+    })
+
+    assert pnl == {
+        'sales': '100.00', 'cost': '60.17', 'gross_profit': '39.83',
+        'operating_expenses': '0.00', 'operating_profit': '39.83',
+        'other_income': '0.00', 'other_expenses': '1.23',
+        'net_profit': '38.60'}
 
 
 def test_founder_rejects_inconsistent_pnl():

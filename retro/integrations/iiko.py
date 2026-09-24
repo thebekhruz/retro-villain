@@ -7,7 +7,7 @@ from time import monotonic
 from collections import defaultdict
 from dataclasses import replace
 from datetime import date, timedelta
-from decimal import Decimal
+from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import quote
 
 import httpx
@@ -306,6 +306,14 @@ def founder_pnl_from_kpi(data):
             or abs(totals['PL_PROFIT_MAIN'] + totals['PL_OTH_INCOME_TOTAL']
                    - totals['PL_OTH_EXP_TOTAL'] - totals['PL_PROFIT_NET']) > Decimal('.01')):
         raise DataError('Показатели отчёта iiko о прибылях и убытках не сходятся.')
+    # iiko can expose sub-kopek calculation tails in JSON even though its P&L
+    # report is stated to two decimal places. Keep the raw values for the
+    # reconciliation above, then publish every monetary total at that same
+    # currency precision so long ranges cannot leak binary/calculation dust.
+    totals = {
+        metric: value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+        for metric, value in totals.items()
+    }
     return {
         'sales': str(totals['PL_SALES_TOTAL']),
         'cost': str(totals['PL_COS_TOTAL']),
