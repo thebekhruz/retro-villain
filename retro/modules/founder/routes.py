@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime, timedelta, timezone
+from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from pydantic import BaseModel, Field
@@ -66,9 +67,31 @@ async def analytics(
     if not selected or len(set(selected)) != len(selected) or any(item not in DIRECTIONS for item in selected):
         raise HTTPException(422, 'Выберите известные направления без повторов.')
     try:
-        return await load_iiko(request.app.state, 'load_founder_analytics',
+        data = await load_iiko(request.app.state, 'load_founder_analytics',
                                start, end, granularity, selected, refresh=refresh,
                                request=request, timeout=180)
+        if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
+            return data
+        cashier, accountant = await asyncio.gather(
+            asyncio.to_thread(request.app.state.expenses.total_between, start, end),
+            asyncio.to_thread(
+                request.app.state.accountant_finance.expense_totals_between, start, end),
+        )
+        manual_total = cashier + accountant['total']
+        result = dict(data)
+        result['dashboard_expenses'] = {
+            'cashier': str(cashier),
+            'accountant_other': str(accountant['other']),
+            'accountant_salary': str(accountant['salary']),
+            'accountant': str(accountant['total']),
+            'total': str(manual_total),
+        }
+        result['net_profit_after_dashboard_expenses'] = str(
+            Decimal(data['pnl']['net_profit']) - manual_total)
+        result['scope_note'] = data.get('scope_note', '') + (
+            ' Чистая прибыль после расходов дэшборда равна чистой прибыли iiko '
+            'минус расходы кассы и бухгалтерии за выбранные даты.')
+        return result
     except TimeoutError as error:
         log_safe_failure('founder-route', error, operation='analytics',
                          request_id=request.state.request_id)

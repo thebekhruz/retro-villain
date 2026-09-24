@@ -43,7 +43,10 @@ IIKO_DETAIL_FIELDS = (
 )
 FOUNDER_OLAP_MAX_DAYS = 31
 FOUNDER_OLAP_CHUNK_CONCURRENCY = 2
-FOUNDER_PNL_METRICS = ('PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS')
+FOUNDER_PNL_METRICS = (
+    'PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS', 'PL_EXP_TOTAL',
+    'PL_PROFIT_MAIN', 'PL_OTH_INCOME_TOTAL', 'PL_OTH_EXP_TOTAL', 'PL_PROFIT_NET',
+)
 FOUNDER_INTERNAL_COST_TYPES = ('Дегустация', 'Счет Шефа')
 
 
@@ -296,13 +299,22 @@ def founder_pnl_from_kpi(data):
         if not isinstance(periods, dict) or not periods:
             raise DataError('iiko не вернул показатель отчёта о прибылях и убытках.')
         totals[metric] = sum((number(value) for value in periods.values()), Decimal(0))
-    if abs(totals['PL_SALES_TOTAL'] - totals['PL_COS_TOTAL']
-           - totals['PL_PROFIT_GROSS']) > Decimal('.01'):
+    if (abs(totals['PL_SALES_TOTAL'] - totals['PL_COS_TOTAL']
+            - totals['PL_PROFIT_GROSS']) > Decimal('.01')
+            or abs(totals['PL_PROFIT_GROSS'] - totals['PL_EXP_TOTAL']
+                   - totals['PL_PROFIT_MAIN']) > Decimal('.01')
+            or abs(totals['PL_PROFIT_MAIN'] + totals['PL_OTH_INCOME_TOTAL']
+                   - totals['PL_OTH_EXP_TOTAL'] - totals['PL_PROFIT_NET']) > Decimal('.01')):
         raise DataError('Показатели отчёта iiko о прибылях и убытках не сходятся.')
     return {
         'sales': str(totals['PL_SALES_TOTAL']),
         'cost': str(totals['PL_COS_TOTAL']),
         'gross_profit': str(totals['PL_PROFIT_GROSS']),
+        'operating_expenses': str(totals['PL_EXP_TOTAL']),
+        'operating_profit': str(totals['PL_PROFIT_MAIN']),
+        'other_income': str(totals['PL_OTH_INCOME_TOTAL']),
+        'other_expenses': str(totals['PL_OTH_EXP_TOTAL']),
+        'net_profit': str(totals['PL_PROFIT_NET']),
     }
 
 

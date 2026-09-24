@@ -79,8 +79,21 @@
 .accounting-metrics article::before{background:#6f8b82}
 .accounting-metrics article.cost::before{background:#a27445}
 .accounting-metrics article.profit::before{background:#143e35}
+.accounting-metrics article.net::before{background:#52786f}
+.accounting-metrics article.final{background:#143e35;border-color:#143e35;color:#fff}
+.accounting-metrics article.final span,.accounting-metrics article.final small{color:#b9cdbc}
+.accounting-metrics article.final strong{color:var(--gold)}
 .accounting-metrics article.internal::before{background:#c7a866}
 .accounting-metrics strong{font-size:clamp(21px,1.75vw,28px)}
+.expense-panel{margin-top:8px}
+.expense-metrics{grid-template-columns:repeat(4,minmax(0,1fr));margin:20px 0 0}
+.expense-metrics article{min-height:122px;padding:18px 20px}
+.expense-metrics article::before{background:#a27445}
+.expense-metrics article.income::before{background:#52786f}
+.expense-metrics article.manual::before{background:#d8b977}
+.expense-metrics article.internal::before{background:#c7a866}
+.expense-metrics article.total-expense{background:#fffaf0;border-color:#e7d9b4}
+.expense-metrics strong{font-size:clamp(20px,1.6vw,26px)}
 
 /* ── Панели ───────────────────────────────────────────────────────────── */
 .founder-panel{padding:24px 26px;margin-bottom:20px}

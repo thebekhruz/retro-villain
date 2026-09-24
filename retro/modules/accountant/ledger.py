@@ -141,6 +141,21 @@ class FinanceStore:
         from .reserves import reserve_summary
         return reserve_summary(self, day)
 
+    def expense_totals_between(self, start: date, end: date):
+        """Return paid expenses recorded by accounting, excluding cash transfers."""
+        if start > end:
+            raise ValueError('expense range start must not exceed end')
+        with closing(self._open()) as connection:
+            movements = sum((Decimal(row[0]) for row in connection.execute(
+                "SELECT amount FROM accountant_movements WHERE day >= ? AND day <= ? "
+                "AND kind = 'other_expense'",
+                (start.isoformat(), end.isoformat()))), Decimal(0))
+            salaries = sum((Decimal(row[0]) for row in connection.execute(
+                'SELECT amount FROM accountant_salary_payments '
+                'WHERE paid_day >= ? AND paid_day <= ?',
+                (start.isoformat(), end.isoformat()))), Decimal(0))
+        return {'other': movements, 'salary': salaries, 'total': movements + salaries}
+
     def reserve_entry(self, day, account, kind, amount, note, *, cashier_amount=None):
         from .reserves import add_reserve_entry
         return add_reserve_entry(self, day, account, kind, amount, note, cashier_amount)
