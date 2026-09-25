@@ -102,18 +102,22 @@ function clearFinance() {
   showHandover();
 }
 function showHandover() {
-  const demoAmount = snapshot ? Number(snapshot.payments.find(p => p.name === 'Демо')?.amount || 0) : null;
+  const demoAmount = CashierLogic.cashPayment(snapshot);
   const cashPrepay = snapshot ? Number(snapshot.cash_prepayment || 0) : null;
   $('demo-cash').textContent = demoAmount === null ? '—' : money.format(demoAmount);
-  $('cash-prepay').textContent = cashPrepay === null ? '—' : money.format(cashPrepay);
-  $('total-inflow').textContent = snapshot && receiptData ?
-    money.format(Number(snapshot.register_received_total ?? (Number(snapshot.revenue) + Number(snapshot.new_prepayment || 0))) + Number(receiptData.total)) : '—';
-  if (!financeData || !receiptData || demoAmount === null) {
+  const prepayText = cashPrepay === null ? '—' : money.format(cashPrepay);
+  // Предоплаты показаны и карточкой сверху, и строкой в расчёте передачи.
+  $('cash-prepay').textContent = prepayText;
+  $('card-prepay').textContent = prepayText;
+  const inflow = CashierLogic.totalInflow(snapshot, receiptData && receiptData.total);
+  $('total-inflow').textContent = inflow === null ? '—' : money.format(inflow);
+  const result = CashierLogic.handover(snapshot,
+    financeData && financeData.total, receiptData && receiptData.total);
+  if (result === null) {
     $('handover').textContent = '—';
     $('handover-number').classList.remove('is-negative');
     return;
   }
-  const result = demoAmount + cashPrepay + Number(receiptData.total) - Number(financeData.total);
   $('handover').textContent = money.format(result);
   $('handover-number').classList.toggle('is-negative', result < 0);
 }
@@ -214,6 +218,11 @@ function show(data) {
     // Способы без единой транзакции остаются в списке (видно, что их
     // проверяли), но гаснут и не спорят за внимание с теми, где были деньги.
     if (Number(payment.amount) === 0) row.classList.add('is-zero');
+    if (payment.name === CashierLogic.CASH_PAYMENT) {
+      const tag = document.createElement('span'); tag.className = 'payment-tag';
+      tag.textContent = '→ бухгалтеру'; name.append(' ', tag);
+      row.classList.add('is-cash');
+    }
     value.append(share); row.append(dot,name,bar,value); $('payments').append(row);
     if (positiveTotal > 0 && Number(payment.amount) > 0) {
       const segment = document.createElement('span');segment.style.setProperty('--color',color);segment.style.width = (Number(payment.amount)/positiveTotal*100)+'%';$('composition').append(segment);
@@ -236,9 +245,12 @@ async function load(options = {}) {
   $('period-label').textContent = formattedDay(day);
   $('export-date').textContent = formattedDay(day);
   $('expenses-day').textContent = '· ' + formattedDay(day);
-  $('today').classList.toggle('active', day === config.today);
-  $('yesterday').classList.toggle('active', day === previousDay(config.today));
-  document.querySelectorAll('.date-chip').forEach(button => button.classList.toggle('active', button.dataset.date === day));
+  const isToday = day === config.today, isYesterday = day === previousDay(config.today);
+  $('today').classList.toggle('is-active', isToday);
+  $('today').setAttribute('aria-pressed', String(isToday));
+  $('yesterday').classList.toggle('is-active', isYesterday);
+  $('yesterday').setAttribute('aria-pressed', String(isYesterday));
+  $('day-next').disabled = day >= config.today;
   loadExpenses(day, current, controller.signal);
   loadReceipts(day, current, controller.signal);
   loadUsdRate(day, current, controller.signal);
@@ -342,17 +354,6 @@ $('report-date').addEventListener('change',load);
 $('refresh').addEventListener('click',()=>load({refresh:true}));
 $('today').addEventListener('click',()=>{if(config){$('report-date').value=config.today;load();}});
 $('yesterday').addEventListener('click',()=>{if(config){$('report-date').value=previousDay(config.today);load();}});
-function addRecentDateButtons() {
-  const container = document.querySelector('.quick-days');
-  for (let offset = 2; offset <= 8; offset++) {
-    const day = offsetDay(config.today, offset);
-    const button = document.createElement('button');
-    button.type = 'button'; button.className = 'chip date-chip'; button.dataset.date = day;
-    button.textContent = new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'short', timeZone:'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace('.', '');
-    button.addEventListener('click', () => { $('report-date').value = day; load(); });
-    container.append(button);
-  }
-}
 $('download').addEventListener('click',async()=>{
   if (!snapshot || !financeData || !receiptData) return;
   const data = snapshot, current = generation;
@@ -372,7 +373,6 @@ $('download').addEventListener('click',async()=>{
   try {
     config = await globalThis.RetroConfig;
     $('report-date').max=config.today;$('report-date').value=config.today;
-    addRecentDateButtons();
     $('demo-banner').hidden=!demo;$('setup').hidden=config.configured||demo;
     if (demo) {
       for (const input of $('expense-form').querySelectorAll('input, button')) input.disabled = true;
@@ -386,27 +386,16 @@ $('download').addEventListener('click',async()=>{
   } catch(error){message(error.message,true);}
 })();
 
-// ── Вкладки операций кассы ───────────────────────────────────────────────────
-// Только показ и скрытие готовых панелей: обработчики форм, запросы и подсчёты
-// не меняются — за раз кассиру нужна одна форма, а не обе сразу.
-(function opsTabs() {
-  const tabs = [
-    { tab: 'tab-expenses', pane: 'pane-expenses' },
-    { tab: 'tab-receipts', pane: 'pane-receipts' },
-  ];
-  const select = (active) => {
-    tabs.forEach(({ tab, pane }) => {
-      const on = tab === active;
-      const tabEl = document.getElementById(tab);
-      const paneEl = document.getElementById(pane);
-      if (!tabEl || !paneEl) return;
-      tabEl.classList.toggle('is-active', on);
-      tabEl.setAttribute('aria-selected', String(on));
-      paneEl.hidden = !on;
-    });
-  };
-  tabs.forEach(({ tab }) => {
-    const el = document.getElementById(tab);
-    if (el) el.addEventListener('click', () => select(tab));
-  });
-})();
+// ── Дата-навигация ──────────────────────────────────────────────────────────
+// Стрелки листают по одному дню; вперёд дальше сегодняшнего не уходим —
+// отчёта за будущий день не существует.
+function stepDay(offset) {
+  const current = $('report-date').value;
+  if (!current) return;
+  const next = offsetDay(current, -offset);
+  if (offset > 0 && config && next > config.today) return;
+  $('report-date').value = next;
+  load();
+}
+$('day-prev').addEventListener('click', () => stepDay(-1));
+$('day-next').addEventListener('click', () => stepDay(1));
