@@ -431,7 +431,7 @@ def test_employee_exports_split_late_and_everyone_without_claiming_real_hikvisio
             'date': DAY.isoformat(), 'scope': 'invalid'}).status_code == 422
         page = client.get('/accountant/employees')
         assert page.status_code == 200
-        assert 'Все сотрудники' in page.text
+        assert 'Сотрудники' in page.text
 
 
 def test_daily_cash_starts_from_cashier_handover_without_manual_confirmation(tmp_path):

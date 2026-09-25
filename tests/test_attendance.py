@@ -69,8 +69,8 @@ def test_attendance_frontend_has_real_source_and_unavailable_states():
         assert '-DEMO.xlsx' not in source
         assert 'Проходы демонстрационные' not in source
     assert 'unavailable' in employees_js
-    assert "'Статус', 'Пришёл', 'Действия'" in employees_js
-    assert 'formattedArrival(row.first_entry)' in employees_js
+    assert "unavailable: 'Нет данных'" in employees_js
+    assert 'arrivalText(row.first_entry)' in employees_js
     assert "timeZone: 'Asia/Tashkent'" in employees_js
     assert 'демо Hikvision' not in director_html
 
