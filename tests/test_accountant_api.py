@@ -497,3 +497,66 @@ def test_accountant_page_still_shows_staff_when_iiko_is_unavailable(tmp_path):
         assert len(data['employees']) == 20
         assert data['ledger']['cash_balance'] is None
         assert data['cashier_error'] == 'iiko временно недоступен'
+
+
+def test_payroll_month_groups_accruals_into_employee_by_day_cells(tmp_path):
+    """Ведомость месяца собирается одним запросом вместо тридцати."""
+    with demo_client(tmp_path) as client:
+        days = (DAY - timedelta(days=1), DAY)
+        # Подтвердить смену можно только когда у всех есть ставка и проход,
+        # поэтому привязываем весь реестр и раскладываем входы на оба дня.
+        roster = client.app.state.accountant_roster.list()
+        client.app.state.accountant_roster.link_hikvision_people(tuple(
+            HikvisionPerson(f'all-{employee.id}', employee.name) for employee in roster))
+        for day in days:
+            for employee in client.app.state.accountant_roster.list():
+                client.app.state.attendance_store.ingest(HikvisionEvent(
+                    'retro-main-entry', f'serial-{employee.id}', employee.hikvision_id,
+                    datetime(day.year, day.month, day.day, 9, employee.id % 50, tzinfo=TZ)),
+                    employee.id)
+        client.app.state.attendance_store.record_success(
+            'retro-main-entry', at=datetime(2026, 9, 17, 0, 5, tzinfo=TZ),
+            cursor_at=datetime(2026, 9, 17, 0, 5, tzinfo=TZ),
+            covered_from=datetime(2026, 9, 1, 0, 0, tzinfo=TZ),
+            covered_through=datetime(2026, 9, 17, 0, 0, tzinfo=TZ))
+        for day in days:
+            client.app.state.cache.put(replace(demo_snapshot(day), demo=False,
+                                               payments=(Payment('Демо', Decimal('9000000')),)))
+            assert client.post('/api/accountant/handover', json={
+                'date': day.isoformat(), 'amount': '9000000', 'note': 'Касса'}).status_code == 201
+            assert client.post('/api/accountant/payroll/confirm', json={
+                'date': day.isoformat(), 'approver': 'Тимур'}).status_code == 200
+
+        month = client.get('/api/accountant/payroll/month', params={'month': DAY.strftime('%Y-%m')})
+        assert month.status_code == 200
+        data = month.json()
+        assert data['first'] == DAY.replace(day=1).isoformat()
+        assert data['last'] == '2026-09-30'
+        assert len(data['days']) == 30
+        assert data['shift'], 'ожидаем сотрудников со сменами'
+
+        person = data['shift'][0]
+        # Ячейки разложены по дням смен, и каждая знает своё начисление.
+        assert set(person['cells']) == {(DAY - timedelta(days=1)).isoformat(), DAY.isoformat()}
+        assert all(cell['accrual_id'] for cell in person['cells'].values())
+        assert Decimal(person['accrued']) == sum(
+            Decimal(cell['amount']) for cell in person['cells'].values())
+        assert Decimal(person['paid']) + Decimal(person['debt']) == Decimal(person['accrued'])
+
+        # Выплата попадает и в ячейку своего дня, и в итог дня по кассе.
+        accrual_id = person['cells'][DAY.isoformat()]['accrual_id']
+        owed = person['cells'][DAY.isoformat()]['debt']
+        assert client.post('/api/accountant/salary-payments', json={
+            'date': DAY.isoformat(), 'accrual_id': accrual_id, 'amount': owed}).status_code == 201
+        after = client.get('/api/accountant/payroll/month',
+                           params={'month': DAY.strftime('%Y-%m')}).json()
+        paid_cell = after['shift'][0]['cells'][DAY.isoformat()]
+        assert paid_cell['debt'] == '0'
+        assert paid_cell['paid'] == owed
+        assert after['paid_per_day'][DAY.isoformat()] == owed
+
+
+def test_payroll_month_rejects_a_malformed_or_future_month(tmp_path):
+    with demo_client(tmp_path) as client:
+        assert client.get('/api/accountant/payroll/month', params={'month': 'сентябрь'}).status_code == 422
+        assert client.get('/api/accountant/payroll/month', params={'month': '2099-01'}).status_code == 422

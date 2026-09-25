@@ -7,7 +7,7 @@
 from pathlib import Path
 
 STATIC = Path(__file__).resolve().parent.parent / 'retro' / 'static'
-DASHBOARDS = ('index.html', 'accountant.html', 'employees.html',
+DASHBOARDS = ('index.html', 'accountant.html', 'employees.html', 'payroll.html',
               'director.html', 'founder.html')
 
 

@@ -19,7 +19,7 @@
   <!-- У бухгалтера три экрана, поэтому они вложены в свой пункт, а не лежат
        вперемешку с модулями: так видно, где ты внутри модуля. -->
   <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a>
-    <div class="rm-subnav"><a href="/accountant" class="is-current">Финансы дня<span class="nav-dot"></span></a><a href="/accountant/employees">Сотрудники</a></div>
+    <div class="rm-subnav"><a href="/accountant" class="is-current">Финансы дня<span class="nav-dot"></span></a><a href="/accountant/payroll">Зарплаты · месяц</a><a href="/accountant/employees">Сотрудники</a></div>
     <a href="/director" class="nav-link"><span class="nav-icon">◉</span> Директор</a><a href="/founder" class="nav-link"><span class="nav-icon">⌁</span> Учредитель</a></nav>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
@@ -40,6 +40,7 @@
           <button id="accountant-yesterday" class="date-nav-chip" type="button" aria-pressed="false">Вчера</button>
         </div>
         <button id="accountant-refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
+        <a id="payroll-menu" class="button secondary" href="/accountant/payroll">Ведомость месяца <span aria-hidden="true">→</span></a>
         <a id="employees-menu" class="button secondary" href="/accountant/employees">Сотрудники <span aria-hidden="true">→</span></a>
       </div>
     </div>
@@ -159,6 +160,7 @@
             <span class="rm-section-titles"><span class="eyebrow">ОКЛАДЫ · ЧАСТИЧНАЯ ВЫПЛАТА</span><strong>Оклады, выданные сегодня</strong></span>
             <span class="rm-section-sum" id="salary-sum">—</span>
           </summary>
+          <p class="rm-section-note"><a class="text-link" href="/accountant/payroll">Вся ведомость месяца →</a></p>
           <div id="salary-today" class="salary-today" aria-live="polite"></div>
           <form id="salary-payment-form" class="salary-entry">
             <div class="field"><label for="salary-accrual">Начисление сотрудника</label><select id="salary-accrual" name="accrual_id" required></select></div>

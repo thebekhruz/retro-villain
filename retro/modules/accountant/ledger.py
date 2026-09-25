@@ -463,6 +463,52 @@ class FinanceStore:
                 connection.rollback()
                 raise
 
+    def payroll_month(self, first: date, last: date) -> dict:
+        """Shift accruals and their payments for a whole month, in one pass.
+
+        The monthly sheet needs a cell per employee and day. Asking for each day
+        separately meant thirty round trips over the same two tables, so the
+        range is read once and grouped here.
+        """
+        from .reserves import is_monthly_salary  # reserves импортирует ledger
+        with closing(self._open()) as connection:
+            accruals = connection.execute(
+                'SELECT id, work_day, employee_id, employee_name, group_name, '
+                'attendance_status, rate, amount FROM accountant_accruals '
+                'WHERE work_day >= ? AND work_day <= ? ORDER BY employee_name, work_day',
+                (first.isoformat(), last.isoformat())).fetchall()
+            payments = defaultdict(Decimal)
+            paid_per_day = defaultdict(Decimal)
+            for accrual_id, paid_day, amount in connection.execute(
+                    'SELECT p.accrual_id, p.paid_day, p.amount FROM accountant_salary_payments p '
+                    'JOIN accountant_accruals a ON a.id = p.accrual_id '
+                    'WHERE a.work_day >= ? AND a.work_day <= ?',
+                    (first.isoformat(), last.isoformat())):
+                payments[accrual_id] += Decimal(amount)
+                paid_per_day[paid_day] += Decimal(amount)
+            # Оклады за месяц: расход по зарплате, не привязанный к начислению.
+            # Разбивки по сотрудникам в данных нет — только общая сумма.
+            monthly_paid = sum((Decimal(row[0]) for row in connection.execute(
+                'SELECT amount, item_code FROM accountant_movements '
+                "WHERE day >= ? AND day <= ? AND kind = 'other_expense'",
+                (first.isoformat(), last.isoformat())) if is_monthly_salary(row[1])), Decimal(0))
+        people = {}
+        for row in accruals:
+            person = people.setdefault(row[3], dict(
+                employee_id=row[2], name=row[3], group=row[4], rate=str(row[6]), cells={}))
+            paid = payments[row[0]]
+            person['cells'][row[1]] = dict(
+                accrual_id=row[0], status=row[5], amount=str(row[7]),
+                paid=str(paid), debt=str(Decimal(row[7]) - paid))
+        for person in people.values():
+            cells = person['cells'].values()
+            person['accrued'] = str(sum((Decimal(c['amount']) for c in cells), Decimal(0)))
+            person['paid'] = str(sum((Decimal(c['paid']) for c in cells), Decimal(0)))
+            person['debt'] = str(sum((Decimal(c['debt']) for c in cells), Decimal(0)))
+        return dict(shift=sorted(people.values(), key=lambda item: item['name']),
+                    paid_per_day={day: str(amount) for day, amount in paid_per_day.items()},
+                    monthly_paid=str(monthly_paid))
+
     def accruals(self, day: date) -> list[dict]:
         with closing(self._open()) as connection:
             rows = connection.execute('SELECT id, work_day, employee_id, employee_name, group_name, '

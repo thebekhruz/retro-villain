@@ -255,6 +255,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def accountant_employees():
         return FileResponse(STATIC / 'employees.html')
 
+    @app.get('/accountant/payroll')
+    def accountant_payroll():
+        return FileResponse(STATIC / 'payroll.html')
+
     @app.get('/director')
     def director():
         return FileResponse(STATIC / 'director.html')

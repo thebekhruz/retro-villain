@@ -201,6 +201,27 @@ class MonthlyEmployeeInput(BaseModel):
     remaining: str = '0'
 
 
+@router.get('/payroll/month')
+def payroll_month(request: Request, month: str):
+    """Ведомость месяца: сотрудник × день, одним запросом вместо тридцати."""
+    try:
+        first = date.fromisoformat(month + '-01')
+    except ValueError:
+        raise HTTPException(422, 'Укажите месяц в виде ГГГГ-ММ.') from None
+    if first > today_tashkent().replace(day=1):
+        raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
+    last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    data = request.app.state.accountant_finance.payroll_month(first, last)
+    roster = request.app.state.accountant_roster
+    # Оклады остаются ручным реестром: разбивки выплат по дням в данных нет,
+    # поэтому отдаём их как есть, вместе с собственным предупреждением модели.
+    return dict(demo=False, month=month, first=first.isoformat(), last=last.isoformat(),
+                days=[(first + timedelta(days=offset)).isoformat()
+                      for offset in range((last - first).days + 1)],
+                monthly=[row.json() for row in roster.list_monthly()],
+                monthly_total=str(roster.monthly_total()), **data)
+
+
 @router.patch('/employees/{employee_id}')
 def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInput):
     try:
