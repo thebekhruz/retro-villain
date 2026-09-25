@@ -3,15 +3,7 @@
 /* Шапка страницы: дата-навигация + действия */
 .employees-workspace .page-heading{align-items:flex-end}
 .emp-head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
-.date-nav{display:flex;align-items:center;height:48px;border:1px solid var(--border);background:#fff;border-radius:11px;padding:0 4px}
-.date-nav-arrow{width:36px;height:38px;border:0;background:transparent;border-radius:8px;color:#53675c;font-size:18px}
-.date-nav-arrow:hover:not(:disabled){background:#f3f5f0}
-.date-nav-label{display:flex;flex-direction:column;gap:2px;padding:0 10px;min-width:148px}
-.date-nav-label span{font-size:10px;color:var(--muted)}
-.date-nav-label strong{font-size:14px;font-weight:600;text-transform:capitalize}
-.date-nav-sep{width:1px;height:26px;background:var(--border);margin:0 4px}
-.date-nav-chip{border:0;border-radius:7px;padding:9px 11px;font-size:12px;background:transparent;color:#718075}
-.date-nav-chip.is-active{background:#edf2e9;color:var(--green);font-weight:600}
+/* .date-nav переехала в style.css — её же просят «Финансы дня» и «Кассир». */
 .emp-head-actions .button{min-height:48px;margin-left:0}
 .emp-head-actions .primary>span{color:var(--gold);font-size:18px}
 

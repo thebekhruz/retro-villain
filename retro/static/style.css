@@ -535,4 +535,243 @@ table.sheet-table{width:100%;border-collapse:collapse;font-size:13px}
 input[type=number]{appearance:textfield;-moz-appearance:textfield}
 input[type=number]::-webkit-outer-spin-button,
 input[type=number]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+
+/* ═════════════════════════════════════════════════════════════════════════
+   ДИЗАЙН-СИСТЕМА ui_solid1 (T-376, Фаза 0)
+
+   Прототипы задают одни и те же паттерны на всех восьми экранах: карточки-
+   фильтры, статус-таблетки, сворачиваемые секции, грид-таблицы, боковой
+   drawer, мобильная раскладка с нижними вкладками. Раньше это жило инлайном
+   в макете, а в проде — копиями в accountant.css / director.css / founder.css.
+   Держим один слой с префиксом `rm-`, чтобы 2a/2b/5a/6a/7/3a переиспользовали
+   его, а не расходились по пиксель-значениям.
+   ═════════════════════════════════════════════════════════════════════════ */
+
+:root{
+  /* Линии и подложки таблиц — в макете их ровно три градации. */
+  --line-soft:#f0f3ec;--line-mid:#e7ece3;--head-bg:#f5f7f1;--panel-2:#fbfcf9;
+  /* Текст: --muted (#5b675f) слишком тёмный для подписей макета. */
+  --muted-2:#7d8881;--muted-3:#88978a;--ink-2:#607368;
+  /* Статусы: пара «цвет текста + подложка» на каждое состояние. */
+  --ok:#4a8056;--ok-bg:#edf5eb;
+  --late:#ab445e;--late-bg:#fde9ed;
+  --idle:#737f74;--idle-bg:#ebeeea;
+  --warn:#906c2b;--warn-bg:#fbf0d7;
+  --danger:#a33f2b;--danger-bg:#fff0eb;
+  /* Золотой акцент в светлом исполнении (карточки «требуют внимания»). */
+  --accent-soft:#fbf7ed;--accent-line:#eddfbe;
+  --phone-bg:#f3f4ee;
+}
+
+/* ── Числа ───────────────────────────────────────────────────────────────
+   Суммы обязаны быть монospace-цифрами, иначе колонки «прыгают» при
+   пересчёте. Утилита вместо повторения свойства в каждом блоке. */
+.rm-num{font-variant-numeric:tabular-nums}
+
+/* ── Дата-навигация ‹ › · Сегодня · Вчера ────────────────────────────────
+   Пришла из редизайна «Сотрудников» (1a); «Финансы дня» и «Кассир» листают
+   дни тем же жестом, поэтому правила живут здесь, а не в employees.css. */
+.date-nav{display:flex;align-items:center;height:48px;border:1px solid var(--border);background:#fff;border-radius:11px;padding:0 4px}
+.date-nav-arrow{width:36px;height:38px;border:0;background:transparent;border-radius:8px;color:#53675c;font-size:18px}
+.date-nav-arrow:hover:not(:disabled){background:#f3f5f0}
+.date-nav-label{display:flex;flex-direction:column;gap:2px;padding:0 10px;min-width:148px}
+.date-nav-label span{font-size:10px;color:var(--muted)}
+.date-nav-label strong{font-size:14px;font-weight:600;text-transform:capitalize}
+.date-nav-sep{width:1px;height:26px;background:var(--border);margin:0 4px}
+.date-nav-chip{border:0;border-radius:7px;padding:9px 11px;font-size:12px;background:transparent;color:#718075}
+.date-nav-chip.is-active{background:#edf2e9;color:var(--green);font-weight:600}
+
+/* ── Карточки-показатели, они же фильтры ─────────────────────────────────
+   Клик по карточке фильтрует таблицу под ней (1a уже так работает). Сетку
+   задаёт экран через --cards, потому что раскладки разные: 1.35fr+4×1fr у
+   сотрудников, 5 равных у ведомости, 1.6fr+2×1fr у кассира. */
+.rm-cards{display:grid;grid-template-columns:var(--cards,repeat(auto-fit,minmax(0,1fr)));gap:14px}
+.rm-card{position:relative;overflow:hidden;min-width:0;display:block;width:100%;text-align:left;
+  background:#fff;border:1px solid var(--border);border-radius:18px;padding:22px 20px 18px;color:var(--ink)}
+button.rm-card{cursor:pointer}
+button.rm-card:hover{background:var(--panel-2)}
+.rm-card.is-active{border-color:var(--green);box-shadow:inset 0 0 0 1px var(--green)}
+.rm-card-label{font-size:12px;color:#748376;display:flex;justify-content:space-between;gap:8px}
+.rm-card-value{display:flex;align-items:baseline;gap:7px;margin:18px 0 14px;font-variant-numeric:tabular-nums}
+.rm-card-value strong{font-size:32px;font-weight:600;letter-spacing:-1px;white-space:nowrap}
+.rm-card-value small{font-size:13px;color:#909b8e}
+.rm-card-foot{font-size:10px;color:var(--muted-2);display:flex;align-items:center;gap:7px}
+/* Зелёная «главная» карточка с золотым кольцом — герой блока показателей. */
+.rm-card--hero{background:var(--green);border-color:var(--green);color:#fff}
+.rm-card--hero:after{content:"";position:absolute;width:210px;height:210px;border:1px solid #d8b97714;
+  border-radius:100%;top:-120px;right:-90px;box-shadow:0 0 0 24px #d8b97707,0 0 0 50px #d8b97704;pointer-events:none}
+.rm-card--hero .rm-card-label,.rm-card--hero .rm-card-foot{color:#c5d3c9}
+.rm-card--hero .rm-card-value small{color:#acbcae}
+.rm-card--warn{background:var(--accent-soft);border-color:var(--accent-line)}
+.rm-card--warn .rm-card-label,.rm-card--warn .rm-card-foot{color:#7a6a45}
+.rm-card--warn .rm-card-value strong{color:var(--warn)}
+.rm-card--warn.is-active{border-color:var(--warn);box-shadow:inset 0 0 0 1px var(--warn)}
+.rm-card--late .rm-card-value strong{color:var(--late)}
+/* Тонкий прогресс внутри карточки («на месте 18/23»). */
+.rm-bar{height:4px;border-radius:2px;background:#edf1e8;overflow:hidden}
+.rm-bar>span{display:block;height:100%;background:#24594b}
+.rm-card--hero .rm-bar{background:#ffffff1a}
+.rm-card--hero .rm-bar>span{background:var(--gold)}
+
+/* ── Статус-таблетка ────────────────────────────────────────────────────
+   Одна форма на все экраны: точка + подпись. Цвет задаёт класс состояния,
+   точка наследует currentColor, поэтому дополнительных правил не нужно. */
+.rm-pill{display:inline-flex;align-items:center;gap:5px;padding:5px 9px;border-radius:20px;
+  font-size:10px;font-weight:650;white-space:nowrap;border:0;background:var(--idle-bg);color:var(--idle)}
+.rm-pill:before{content:"";width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.rm-pill.on_time{background:var(--ok-bg);color:var(--ok)}
+.rm-pill.late{background:var(--late-bg);color:var(--late)}
+.rm-pill.missing{background:var(--idle-bg);color:var(--idle)}
+.rm-pill.unlinked{background:var(--warn-bg);color:var(--warn)}
+/* «Без Hikvision» — не статус прохода, а отсутствие источника: пунктир. */
+.rm-flag-nohik{display:inline-flex;align-items:center;gap:5px;padding:2px 6px;border-radius:5px;
+  border:1px dashed #c9b27a;background:#f7f3e8;color:#7a6a45;font-size:9px;font-weight:650;white-space:nowrap}
+
+/* ── Аватар-инициалы ────────────────────────────────────────────────────── */
+.rm-avatar{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:10px;
+  background:#e9f0e6;color:#52735d;font-size:11px;font-weight:700;letter-spacing:.4px}
+.rm-avatar.is-warn{background:var(--warn-bg);color:var(--warn)}
+.rm-avatar.is-lg{width:48px;height:48px;border-radius:13px;font-size:14px}
+
+/* ── Сворачиваемая секция ───────────────────────────────────────────────
+   Финансы дня — это пять длинных блоков; открытыми одновременно они не
+   влезают. Заголовок-кнопка сам показывает итог секции, чтобы закрытую
+   секцию не приходилось открывать ради одной цифры. */
+.rm-section{background:#fff;border:1px solid var(--border);border-radius:18px;overflow:hidden}
+.rm-section-head{width:100%;display:flex;align-items:center;gap:14px;padding:18px;
+  border:0;background:none;text-align:left;color:inherit}
+.rm-section-chevron{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:8px;
+  background:#f3f5f0;color:#53675c;font-size:14px;transition:transform .15s}
+[aria-expanded=false] .rm-section-chevron{transform:rotate(-90deg)}
+.rm-section-titles{min-width:0}
+.rm-section-titles .eyebrow{margin:0 0 7px}
+.rm-section-titles strong{display:block;font-size:20px;font-weight:550;letter-spacing:-.4px}
+.rm-section-sum{margin-left:auto;font-size:12px;color:var(--ink-2);white-space:nowrap;font-variant-numeric:tabular-nums}
+.rm-section-note{font-size:11px;color:#809084;margin:-8px 18px 14px 62px}
+
+/* ── Грид-таблица ───────────────────────────────────────────────────────
+   Колонок много и они разной природы (текст / время / таблетка / сумма /
+   поле ввода), поэтому не <table>, а грид: каждый экран задаёт свои
+   --cols, разметка и отзывчивость остаются общими. */
+.rm-table-head,.rm-table-row{display:grid;grid-template-columns:var(--cols);gap:10px}
+.rm-table-head{padding:9px 18px;background:var(--head-bg);border-top:1px solid var(--line-mid);
+  color:#71827d;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.rm-table-row{align-items:center;padding:10px 18px;border-top:1px solid var(--line-soft);background:#fff}
+.rm-table-row.is-clickable{cursor:pointer}
+.rm-table-row.is-clickable:hover{background:var(--accent-soft)}
+.rm-table-row.is-selected{background:#f8f1e0}
+.rm-table-row.is-flagged{background:#fffaf5}
+.rm-table-foot{display:grid;grid-template-columns:var(--cols);gap:10px;align-items:baseline;
+  padding:14px 18px;border-top:1px solid #dfe6db;background:var(--panel-2);font-variant-numeric:tabular-nums}
+/* Строка-добавление: инпуты в сетке таблицы, чтобы поля стояли под своими колонками. */
+.rm-table-new{display:grid;grid-template-columns:var(--cols);gap:10px;align-items:center;
+  padding:10px 18px;border-top:1px solid var(--line-mid);background:#f9fbf7}
+.rm-table-new input,.rm-table-new select{min-width:0;height:36px;border:1px solid #dbe3d8;border-radius:7px;
+  padding:0 10px;background:#fff;color:#203d33;font-size:12px}
+.rm-table-new .num,.rm-table-row .num,.rm-table-head .num,.rm-table-foot .num{text-align:right}
+.rm-table-new input.num{text-align:right}
+.rm-group-head{display:flex;align-items:baseline;justify-content:space-between;gap:10px;
+  padding:16px 18px 8px;border-top:1px solid var(--line-mid)}
+.rm-group-head strong{font-size:12px;font-weight:650;color:#285140}
+.rm-group-head span{font-size:11px;color:#728476;font-variant-numeric:tabular-nums}
+/* Денежное поле прямо в строке (выдача за смену, ячейки ведомости). */
+.rm-cell-input{width:100%;height:34px;border:1px solid #dbe3d8;border-radius:7px;text-align:right;
+  padding:0 10px;background:#fff;color:var(--ink);font-size:13px;font-weight:600;font-variant-numeric:tabular-nums}
+.rm-cell-input.is-filled{border-color:#b8cdbb;background:#f6faf4}
+.rm-cell-note{font-size:10px;text-align:right;margin-top:2px;color:var(--muted-2)}
+.rm-row-x{width:26px;height:26px;border:0;border-radius:7px;background:#f7f1ee;color:#a46a65;font-size:15px;line-height:1}
+.rm-row-add{width:30px;height:30px;border:0;border-radius:8px;background:var(--green);color:var(--gold);font-size:18px;line-height:1}
+.rm-auto-tag{flex:none;border-radius:6px;background:#eef3e9;color:#4d7959;padding:3px 7px;font-size:10px}
+
+/* ── Чекбокс-отметка выдачи ─────────────────────────────────────────────── */
+.rm-check{width:20px;height:20px;padding:0;border-radius:6px;border:1.5px solid #c3cfc2;
+  background:#fff;color:#fff;font-size:12px;line-height:1}
+.rm-check.is-on{border-color:var(--green);background:var(--green)}
+
+/* ── Боковой drawer ─────────────────────────────────────────────────────
+   Создание/правка живёт в панели справа, а не в модальном окне: список
+   остаётся виден, и понятно, какую строку правишь. */
+.rm-aside{position:sticky;top:20px;display:grid;gap:14px;align-content:start}
+.rm-drawer{background:#fff;border:1px solid var(--border);border-radius:18px;padding:22px;
+  box-shadow:0 10px 30px #143e3512}
+.rm-drawer-head{display:flex;justify-content:space-between;align-items:center;gap:10px;margin-bottom:16px}
+.rm-drawer-close{width:30px;height:30px;border:0;border-radius:8px;background:#f3f5f0;color:#53675c;font-size:16px}
+.rm-field{display:grid;gap:6px;font-size:11px;color:#64776c}
+.rm-field input,.rm-field select{height:42px;border:1px solid #dbe3d8;border-radius:8px;padding:0 12px;
+  background:#fff;color:#203d33;font-size:13px}
+.rm-field input[type=number]{font-variant-numeric:tabular-nums}
+.rm-feedback{min-height:16px;margin:0;font-size:11px;color:#4f795c}
+.rm-feedback.is-error{color:#aa4656}
+
+/* ── Сайдбар-подменю ────────────────────────────────────────────────────
+   У бухгалтера три экрана (Финансы дня / Зарплаты / Сотрудники); в макете
+   они вложены в пункт «Бухгалтер», а не лежат плоским списком. */
+.rm-subnav{display:grid;gap:2px;margin:0 0 6px 26px;padding-left:12px;border-left:1px solid #ffffff1c}
+.rm-subnav a{display:flex;align-items:center;padding:10px 12px;border-radius:8px;font-size:13px;color:#a4b8ab}
+.rm-subnav a:hover{background:#ffffff0b;color:#e9f0e8}
+.rm-subnav a.is-current{color:#fff;background:#ffffff12;border:1px solid #ffffff17}
+
+/* ── ДЕМО-бейдж в шапке ─────────────────────────────────────────────────
+   Компактная форма вместо баннера во всю ширину: ставим только там, где
+   данных реально нет, и не отодвигаем контент страницы. */
+.rm-demo{display:inline-flex;align-items:center;gap:8px;padding:5px 10px 5px 5px;border-radius:8px;
+  background:#f7edda;border:1px solid #e7d6ad;color:#665437;font-size:11px;white-space:nowrap}
+.rm-demo strong{letter-spacing:1.5px;color:#173c33;background:#ecd4a0;border-radius:5px;padding:4px 7px;font-size:9px}
+
+/* ── Подвал экрана ──────────────────────────────────────────────────────── */
+.rm-footer{display:flex;justify-content:space-between;gap:10px;font-size:9px;letter-spacing:.5px;
+  color:#9ba392;padding-top:30px}
+.rm-footer span span{padding:0 8px;color:#c2c9bb}
+
+/* ── Мобильная оболочка (6a директор, 7a учредитель, 3a закуп) ───────────
+   Это не «сжатый десктоп», а отдельная раскладка: полноэкранная колонка,
+   зелёный герой сверху и вкладки, прижатые к низу под большой палец. */
+.rm-phone{min-height:100vh;display:flex;flex-direction:column;background:var(--phone-bg);color:var(--ink)}
+.rm-phone-body{flex:1;display:flex;flex-direction:column;gap:12px;padding:16px 16px 10px}
+.rm-phone-hero{position:relative;overflow:hidden;background:var(--green);color:#fff;border-radius:22px;padding:18px}
+.rm-phone-hero:after{content:"";position:absolute;width:200px;height:200px;border-radius:50%;
+  border:1px solid #d8b97722;right:-90px;top:-100px;box-shadow:0 0 0 26px #d8b9770a;pointer-events:none}
+.rm-phone-hero>*{position:relative}
+.rm-phone-card{background:#fff;border-radius:20px;padding:14px 16px}
+.rm-phone-mark{display:grid;place-items:center;width:44px;height:44px;flex:none;border-radius:14px;
+  background:var(--green);color:var(--gold);font-family:Georgia,serif;font-size:24px}
+.rm-tabs{position:sticky;bottom:0;display:flex;gap:6px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));
+  background:#fffffff2;border-top:1px solid var(--border);backdrop-filter:blur(8px)}
+.rm-tab{flex:1;min-height:52px;border:0;border-radius:14px;background:none;color:#718075;
+  display:flex;flex-direction:column;align-items:center;justify-content:center;gap:3px;font-size:10px}
+.rm-tab.is-active{background:#edf2e9;color:var(--green);font-weight:650}
+.rm-tab-icon{font-size:19px;line-height:1}
+/* Центральная вкладка AI — главный вход у директора, поэтому выделена. */
+.rm-tab--ai{background:var(--green);color:var(--gold)}
+.rm-tab--ai.is-active{background:var(--green);color:var(--gold)}
+
+/* ── AI-чат (боковая колонка 7b, вкладка 6a) ─────────────────────────── */
+.rm-chat{display:flex;flex-direction:column;gap:8px;padding:14px 16px;overflow:auto}
+.rm-msg{max-width:92%;padding:10px 12px;font-size:13px;line-height:1.45;white-space:pre-wrap}
+.rm-msg.is-ai{align-self:flex-start;border-radius:14px 14px 14px 4px;background:#fff;border:1px solid var(--line-mid)}
+.rm-msg.is-user{align-self:flex-end;border-radius:14px 14px 4px 14px;background:var(--green);color:#fff;white-space:normal}
+.rm-prompt{align-self:flex-start;text-align:left;border:1px solid #e2c98e;border-radius:12px;
+  background:var(--accent-soft);color:#7a5a22;padding:7px 10px;font-size:12px;font-weight:600}
+.rm-chat-form{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border)}
+.rm-chat-form input{flex:1;min-width:0;height:42px;border:1px solid #dbe3d8;border-radius:21px;
+  padding:0 14px;background:#fff;color:var(--ink);font-size:13px}
+.rm-chat-send{width:42px;height:42px;flex:none;border:0;border-radius:50%;background:var(--green);color:var(--gold);font-size:16px}
+
+/* ── Отзывчивость общего слоя ───────────────────────────────────────────── */
+@media(max-width:1180px){
+  .rm-cards{grid-template-columns:var(--cards-md,repeat(auto-fit,minmax(160px,1fr)))}
+}
+@media(max-width:900px){
+  .rm-aside{position:static}
+}
+@media(max-width:650px){
+  .rm-cards{grid-template-columns:var(--cards-sm,1fr 1fr)}
+  /* Шапку грид-таблицы на телефоне прячем: строки перестраиваются в карточки,
+     и колоночные подписи над ними теряют смысл. */
+  .rm-table-head{display:none}
+  .rm-table-row,.rm-table-foot,.rm-table-new{grid-template-columns:var(--cols-sm,minmax(0,1fr) auto);
+    gap:6px 12px;padding:14px 16px}
+  .rm-section-head{padding:16px}
+  .rm-section-note{margin-left:16px}
+  .rm-drawer{padding:18px}
 }
