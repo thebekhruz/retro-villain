@@ -10,8 +10,8 @@ class DirectorService:
         self.iiko, self.claude, self.store, self.retention = iiko, claude, store, retention
         self.loader = loader or iiko.load_director_report
 
-    async def generate(self, today):
-        snapshot = await self.loader(today)
+    async def generate(self, today, *, start=None, end=None):
+        snapshot = await self.loader(today, start=start, end=end)
         snapshot_json = snapshot.json()
         existing = await asyncio.to_thread(self.store.get_for_period,
             snapshot_json['period_start'], snapshot_json['period_end'])

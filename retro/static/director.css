@@ -302,3 +302,9 @@
   .menu-table td.metric-cell[data-label="Выручка"]{order:3}
   .menu-table td.metric-cell[data-label="Прибыль итоговая"]{border-top:1px solid var(--border);margin-top:4px;padding-top:8px}
 }
+/* Пока грузится новый период, прежние цифры гаснут: иначе человек читает
+   чужой диапазон как готовый ответ, а через секунды числа меняются сами.
+   Управление остаётся живым — период можно переключить снова. */
+.workspace[aria-busy=true] > section:not(.controls):not(.setup),
+.workspace[aria-busy=true] > details{opacity:.45;pointer-events:none}
+.workspace > section,.workspace > details{transition:opacity .15s ease}

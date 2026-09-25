@@ -9,6 +9,7 @@ from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.director.models import resolve_period
 from retro.modules.director.tools import DirectorChatTools
 
 router = APIRouter(prefix='/api/director', tags=['director'])
@@ -53,6 +54,14 @@ def attendance(request: Request, date: date | None = None):
     }
 
 
+def period_or_422(start: date | None, end: date | None, days: int | None = None):
+    """Проверенный период либо ранний 422 — до всякого обращения к iiko."""
+    try:
+        return resolve_period(today_tashkent(), start, end, days)
+    except DataError as error:
+        raise HTTPException(422, str(error)) from None
+
+
 @router.get('/today')
 async def today(request: Request, refresh: bool = False):
     try:
@@ -63,6 +72,22 @@ async def today(request: Request, refresh: bool = False):
         raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
     except DataError as error:
         log_safe_failure('director-route', error, operation='today',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
+@router.get('/report')
+async def report_for_period(request: Request, start: date | None = None, end: date | None = None,
+                            days: int | None = None, refresh: bool = False):
+    start, end = period_or_422(start, end, days)
+    try:
+        snapshot = await load_iiko(request.app.state, 'load_director_report', today_tashkent(),
+                                   start=start, end=end, refresh=refresh, request=request, timeout=150)
+        return snapshot.json()
+    except TimeoutError:
+        raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
+    except DataError as error:
+        log_safe_failure('director-route', error, operation='report',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
@@ -114,12 +139,16 @@ def clear_chat(request: Request):
 
 
 @router.post('/reports', status_code=201)
-async def create_report(request: Request):
+async def create_report(request: Request, start: date | None = None, end: date | None = None,
+                        days: int | None = None):
     if request.app.state.director_lock.locked():
         raise HTTPException(429, 'Другой анализ уже формируется.')
+    start, end = period_or_422(start, end, days)
     try:
         async with request.app.state.director_lock:
-            return await asyncio.wait_for(request.app.state.director_service.generate(today_tashkent()), timeout=180)
+            return await asyncio.wait_for(
+                request.app.state.director_service.generate(today_tashkent(), start=start, end=end),
+                timeout=180)
     except TimeoutError as error:
         log_safe_failure('director-route', error, operation='create_report',
                          request_id=request.state.request_id)

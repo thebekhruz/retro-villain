@@ -21,7 +21,7 @@ from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
 from retro.modules.director.models import (
-    SalesRow, build_snapshot as build_director_snapshot, completed_period, payment_total,
+    SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
 )
 from retro.modules.founder.models import (
     PaymentRow, RevenueRow, build_analytics, build_sales_bridge, is_banquet_item,
@@ -42,6 +42,9 @@ IIKO_DETAIL_FIELDS = (
     'ProductCostBase.OneItem', 'UniqOrderId.OrdersCount',
 )
 FOUNDER_OLAP_MAX_DAYS = 31
+# Директорский отчёт идёт по восьми измерениям — iiko отдаёт такой запрос
+# только окном около десяти дней; на трёх неделях он уже отвечает 500.
+DIRECTOR_RANGE_MAX_DAYS = 10
 FOUNDER_OLAP_CHUNK_CONCURRENCY = 2
 FOUNDER_PNL_METRICS = (
     'PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS', 'PL_EXP_TOTAL',
@@ -109,6 +112,15 @@ def director_rows_from_olap(day, rows, *, split_payments=True, payment_details=F
     for row in rows:
         visit(row, [])
     return result
+
+
+def director_rows_from_range(rows):
+    """Период целиком: дата приходит первым измерением OLAP, день — из строки.
+
+    Себестоимость берётся как суммарная по строке (ProductCostBase.ProductCost),
+    как во всём директорском модуле, а не как цена за единицу × количество.
+    """
+    return director_rows_from_olap(None, rows)
 
 
 def reconcile_director_costs(payment_rows, cost_rows):
@@ -469,28 +481,45 @@ class IikoClient:
         finally:
             refresh_source.reset(fresh_token)
 
-    async def load_director_report(self, today):
+    async def load_director_report(self, today, *, start=None, end=None, days=None):
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
-        start, end = completed_period(today)
+        start, end = resolve_period(today, start, end, days)
+        payment_groups = [
+            'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
+            'PayTypes',
+        ]
+        payment_scope = [dict(field='OperationType', filterType='value_list',
+                              valueList=['PAYMENT'], inclusiveList=True)]
         try:
             async with self._client() as client:
-                payment_groups = [
-                    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
-                    'PayTypes',
-                ]
-                payment_scope = [dict(field='OperationType', filterType='value_list',
-                                      valueList=['PAYMENT'], inclusiveList=True)]
-                payment_rows, cost_rows, regular_rows, banquet_rows = await gather_reads(
-                    self._olap_range(client, start, end, ['OpenDate.Typed', *DIRECTOR_DETAIL_GROUPS],
-                                     DIRECTOR_FIELDS),
-                    self._olap_range(client, start, end, ['OpenDate.Typed', *DIRECTOR_COST_GROUPS],
-                                     DIRECTOR_FIELDS),
-                    self._olap_range(client, start, end, payment_groups,
-                                     ['DishDiscountSumInt'], payment_scope),
-                    self._olap_range(client, start, end, payment_groups,
-                                     ['DishDiscountSumInt']),
-                )
+                # Период берём окнами: на восьми измерениях iiko отдаёт 500 уже
+                # на трёх неделях. Окна независимы по дням, поэтому идут разом,
+                # но их число ограничено, чтобы не завалить iiko запросами.
+                chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
+
+                async def load_chunk(chunk_start, chunk_end):
+                    async with chunk_limit:
+                        return await gather_reads(
+                            self._olap_range(client, chunk_start, chunk_end,
+                                             ['OpenDate.Typed', *DIRECTOR_DETAIL_GROUPS], DIRECTOR_FIELDS),
+                            self._olap_range(client, chunk_start, chunk_end,
+                                             ['OpenDate.Typed', *DIRECTOR_COST_GROUPS], DIRECTOR_FIELDS),
+                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                             ['DishDiscountSumInt'], payment_scope),
+                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                             ['DishDiscountSumInt']),
+                        )
+
+                answers = await asyncio.gather(*(
+                    load_chunk(chunk_start, chunk_end)
+                    for chunk_start, chunk_end in date_chunks(start, end, max_days=DIRECTOR_RANGE_MAX_DAYS)))
+                payment_rows, cost_rows, regular_rows, banquet_rows = [], [], [], []
+                for chunk_payments, chunk_costs, chunk_regular, chunk_banquet in answers:
+                    payment_rows.extend(chunk_payments)
+                    cost_rows.extend(chunk_costs)
+                    regular_rows.extend(chunk_regular)
+                    banquet_rows.extend(chunk_banquet)
                 rows = reconcile_director_costs(
                     director_rows_from_olap(None, payment_rows, payment_details=True),
                     director_rows_from_olap(None, cost_rows, split_payments=False))
