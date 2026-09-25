@@ -1,7 +1,7 @@
 """Accountant-owned attendance and daily cash endpoints."""
 
 import asyncio
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from dataclasses import replace
 from decimal import Decimal
 
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
 
 from .attendance import Entrance, export_entrances
@@ -386,6 +386,10 @@ def delete_handover(request: Request, handover_date: date):
         finance_error(error)
 
 
+class ShokhAcceptInput(BaseModel):
+    date: date
+
+
 class ReserveInput(OpeningInput):
     account: str
     kind: str
@@ -591,6 +595,37 @@ async def add_procurement(request: Request, body: ProcurementInput):
     except LedgerError as error:
         finance_error(error)
     return dict(demo=True, id=entry_id)
+
+
+@router.get('/shokh/purchases')
+def shokh_purchases(request: Request, date: date | None = None):
+    """Покупки Шоха за день — бухгалтеру для проверки и приёмки."""
+    day = selected_day(date)
+    return dict(demo=False, date=day.isoformat(),
+                purchases=request.app.state.shokh.purchases(day))
+
+
+@router.post('/shokh/purchases/{purchase_id}/accept')
+def accept_shokh_purchase(request: Request, purchase_id: int, body: ShokhAcceptInput):
+    """Принять покупку: подотчёт уменьшается, касса второй раз не списывается.
+
+    Наличные ушли из кассы, когда выдавали подотчёт. Приёмка лишь переносит
+    сумму из «на руках у Шоха» в расход по накладной.
+    """
+    day = selected_day(body.date)
+    purchase = request.app.state.shokh.purchase(purchase_id)
+    if purchase is None:
+        raise HTTPException(404, 'Покупка не найдена.')
+    if purchase['accepted_at'] is not None:
+        raise HTTPException(409, 'Покупка уже принята.')
+    try:
+        request.app.state.accountant_finance.reserve_entry(
+            day, 'shoh', 'withdrawal', purchase['total'],
+            f"Закуп: {purchase['item']} · {purchase['point']}")
+    except LedgerError as error:
+        finance_error(error)
+    request.app.state.shokh.accept(purchase_id, datetime.now(TZ))
+    return dict(demo=False, purchase=request.app.state.shokh.purchase(purchase_id))
 
 
 @router.get('/entrances/export')

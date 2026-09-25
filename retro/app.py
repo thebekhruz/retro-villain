@@ -20,6 +20,8 @@ from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
 from retro.modules.cashier.routes import router as cashier_router
 from retro.modules.accountant.routes import router as accountant_router
+from retro.modules.shokh.routes import router as shokh_router
+from retro.modules.shokh.store import ShokhStore
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
@@ -43,7 +45,7 @@ PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js
                 '/static/favicon-32.png', '/static/apple-touch-icon.png'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
-              'admin': '/', 'all': '/'}
+              'shokh': '/shokh', 'admin': '/', 'all': '/'}
 FULL_ACCESS_ROLES = {'admin', 'all'}
 
 
@@ -61,6 +63,8 @@ def panel_for_path(path: str) -> str | None:
         return 'director'
     if path == '/founder' or path.startswith('/founder/') or path.startswith('/api/founder/'):
         return 'founder'
+    if path == '/shokh' or path.startswith('/shokh/') or path.startswith('/api/shokh/'):
+        return 'shokh'
     return None
 
 
@@ -131,6 +135,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(accountant_path)
     app.state.attendance_store = AttendanceStore(accountant_path)
+    # Закуп живёт в той же базе, что подотчёт бухгалтера: они про одни деньги.
+    app.state.shokh = ShokhStore(accountant_path)
     app.state.attendance = AttendanceService(
         app.state.attendance_store,
         source=settings.hikvision.source if settings.hikvision else 'retro-main-entry',
@@ -259,6 +265,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def accountant_payroll():
         return FileResponse(STATIC / 'payroll.html')
 
+    @app.get('/shokh')
+    def shokh_page():
+        return FileResponse(STATIC / 'shokh.html')
+
     @app.get('/director')
     def director():
         return FileResponse(STATIC / 'director.html')
@@ -268,7 +278,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         return FileResponse(STATIC / 'founder.html')
 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
-                    ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'))
+                    ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),
+                    ('shokh', 'Закуп', '/shokh'))
 
     @app.get('/api/config')
     def config(request: Request):
@@ -289,6 +300,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     app.include_router(cashier_router)
     app.include_router(accountant_router)
+    app.include_router(shokh_router)
     app.include_router(director_router)
     app.include_router(founder_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')

@@ -372,3 +372,31 @@
   .shift-confirm{flex-direction:column;align-items:stretch}
   .shift-confirm .button{width:100%}
 }
+
+/* ── Покупки Шоха внутри секции подотчёта ─────────────────────────────── */
+.shoh-buys-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+  padding:16px 18px 8px;border-top:1px solid var(--line-mid)}
+.shoh-buys-head strong{font-size:12px;font-weight:650;color:#285140}
+.shoh-buys-head span{font-size:11px;color:var(--muted-2)}
+.shoh-buy-cols{--cols:48px 92px minmax(0,1fr) 70px 96px 100px 150px}
+.shoh-buy-photo{width:30px;height:30px;flex:none;border-radius:7px;object-fit:cover;background:#e9f0e6}
+.shoh-buy-item{display:flex;align-items:center;gap:9px;min-width:0}
+.shoh-buy-item>span:last-child{font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.shoh-no-photo{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:7px;
+  border:1px dashed #e0a58a;color:#b0663a;font-size:12px}
+.shoh-buy-price{text-align:right}
+.shoh-buy-price b{display:block;font-weight:550}
+.shoh-buy-price small{display:block;font-size:10px;color:var(--muted-3)}
+.shoh-buy-price.is-above b{color:#b0663a}
+.shoh-buy-check{display:flex;flex-wrap:wrap;align-items:center;gap:4px 6px;min-width:0;font-size:11px}
+.shoh-flag-text{font-size:10px;font-weight:650;color:var(--warn);white-space:nowrap}
+.shoh-accept{border:1px solid #dbe3d8;background:#fff;color:#35624e;border-radius:6px;
+  padding:4px 7px;font-size:10px}
+.shoh-accept:hover:not(:disabled){background:#f1f5ed}
+.shoh-norm{color:var(--ok)}
+.shoh-accepted{color:var(--muted-2)}
+@media(max-width:650px){
+  .shoh-buy-cols{--cols-sm:minmax(0,1fr) auto}
+  .rm-table-row.shoh-buy-cols>*:nth-child(1),.rm-table-row.shoh-buy-cols>*:nth-child(2),
+  .rm-table-row.shoh-buy-cols>*:nth-child(4),.rm-table-row.shoh-buy-cols>*:nth-child(5){display:none}
+}

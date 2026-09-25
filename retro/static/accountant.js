@@ -223,6 +223,7 @@ function renderShoh(data) {
   $('shoh-balance').textContent = known ? number.format(Number(shoh.balance)) : 'Не задан';
   $('shoh-sum').textContent = known ? 'на руках ' + money(shoh.balance) : 'начальный остаток не задан';
 
+  renderShohBuys(data.date);
   const list = $('shoh-entries'); list.replaceChildren();
   const todayEntries = shoh.entries;
   todayEntries.forEach(entry => {
@@ -233,6 +234,79 @@ function renderShoh(data) {
     list.append(row);
   });
   if (!todayEntries.length) list.append(emptyState('◇', 'За этот день движений по подотчёту не было.', 'compact'));
+}
+
+/* ── Покупки Шоха: проверка и приёмка ────────────────────────────────────
+   Приёмка уменьшает подотчёт и кассу второй раз не списывает: наличные ушли
+   ещё при выдаче под отчёт. Поэтому это отдельное действие, а не расход. */
+async function renderShohBuys(day) {
+  const box = $('shoh-buys');
+  box.replaceChildren();
+  let rows = [];
+  try {
+    const response = await fetch('/api/accountant/shokh/purchases?date=' + encodeURIComponent(day),
+      {cache: 'no-store'});
+    if (!response.ok) throw new Error('Не удалось загрузить покупки закупа.');
+    rows = (await response.json()).purchases;
+  } catch (error) {
+    box.append(node('p', 'rm-section-note', error.message));
+    return;
+  }
+  const pending = rows.filter(row => row.accepted_at === null).length;
+  $('shoh-buys-count').textContent = rows.length
+    ? rows.length + ' покупок · ждут приёмки ' + pending
+    : 'Шох ещё не вносил покупки за этот день';
+  if (!rows.length) {
+    box.append(node('p', 'rm-section-note', 'Покупок за этот день нет.'));
+    return;
+  }
+  rows.forEach(row => {
+    const line = node('div', 'rm-table-row shoh-buy-cols' + (row.price_above_usual ? ' is-flagged' : ''));
+    line.append(node('span', 'muted', row.created_at.slice(11, 16)),
+      node('span', 'muted', row.point));
+    const item = node('div', 'shoh-buy-item');
+    if (row.has_photo) {
+      const image = document.createElement('img');
+      image.className = 'shoh-buy-photo'; image.alt = 'Фото покупки';
+      image.loading = 'lazy'; image.src = '/api/shokh/photo/' + row.id;
+      item.append(image);
+    } else {
+      const mark = node('span', 'shoh-no-photo', '⊘');
+      mark.title = 'Без фото';
+      item.append(mark);
+    }
+    item.append(node('span', '', row.item));
+    const price = node('div', 'shoh-buy-price rm-num' + (row.price_above_usual ? ' is-above' : ''));
+    price.append(node('b', '', number.format(Number(row.price))));
+    if (row.usual_price !== null) price.append(node('small', '', 'обычно ' + number.format(Number(row.usual_price))));
+    const check = node('div', 'shoh-buy-check');
+    if (row.accepted_at !== null) {
+      check.append(node('span', 'shoh-accepted', 'принято бухгалтером'));
+    } else {
+      if (row.price_above_usual) check.append(node('span', 'shoh-flag-text',
+        'дороже обычного' + (row.price_delta_percent ? ' на ' + Math.round(Number(row.price_delta_percent)) + '%' : '')));
+      else check.append(node('span', 'shoh-norm', '✓ в норме'));
+      const accept = node('button', 'shoh-accept', 'Принять');
+      accept.type = 'button';
+      accept.addEventListener('click', async () => {
+        accept.disabled = true;
+        try {
+          const response = await RetroFinancialWrite(
+            '/api/accountant/shokh/purchases/' + row.id + '/accept',
+            {method: 'POST', headers: {'Content-Type': 'application/json'},
+             body: JSON.stringify({date: day})});
+          const result = await response.json();
+          if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось принять покупку.');
+          await loadDay();
+          message('Покупка принята: ' + row.item + ' · ' + money(row.total));
+        } catch (error) { accept.disabled = false; message(error.message, true); }
+      });
+      check.append(accept);
+    }
+    line.append(item, node('div', 'num rm-num', row.quantity + ' ' + row.unit), price,
+      node('strong', 'num rm-num', number.format(Number(row.total))), check);
+    box.append(line);
+  });
 }
 
 /* ── Оклады, выданные сегодня ───────────────────────────────────────────── */
