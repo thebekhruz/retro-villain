@@ -638,11 +638,14 @@ button.rm-card:hover{background:var(--panel-2)}
    влезают. Заголовок-кнопка сам показывает итог секции, чтобы закрытую
    секцию не приходилось открывать ради одной цифры. */
 .rm-section{background:#fff;border:1px solid var(--border);border-radius:18px;overflow:hidden}
+/* Секции — нативный <details>: состояние «открыто» держит браузер, клавиатура и
+   скринридер работают без нашего JS. Маркер прячем, свою стрелку крутим сами. */
 .rm-section-head{width:100%;display:flex;align-items:center;gap:14px;padding:18px;
-  border:0;background:none;text-align:left;color:inherit}
+  border:0;background:none;text-align:left;color:inherit;cursor:pointer;list-style:none}
+.rm-section-head::-webkit-details-marker{display:none}
 .rm-section-chevron{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:8px;
   background:#f3f5f0;color:#53675c;font-size:14px;transition:transform .15s}
-[aria-expanded=false] .rm-section-chevron{transform:rotate(-90deg)}
+.rm-section:not([open]) .rm-section-chevron,[aria-expanded=false] .rm-section-chevron{transform:rotate(-90deg)}
 .rm-section-titles{min-width:0}
 .rm-section-titles .eyebrow{margin:0 0 7px}
 .rm-section-titles strong{display:block;font-size:20px;font-weight:550;letter-spacing:-.4px}

@@ -3,46 +3,86 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#143e35">
-  <title>Бухгалтер · Retro Milliy</title>
+  <title>Финансы дня · Retro Milliy</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/accountant.js" defer></script>
+  <script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/accountant.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
   <a href="/" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
   <div class="side-rule"></div>
   <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
-  <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a><a href="/director" class="nav-link"><span class="nav-icon">◉</span> Директор</a><a href="/founder" class="nav-link"><span class="nav-icon">⌁</span> Учредитель</a></nav>
-  <div class="coming"><span>Модуль 03</span><small>Позже</small></div>
+  <!-- У бухгалтера три экрана, поэтому они вложены в свой пункт, а не лежат
+       вперемешку с модулями: так видно, где ты внутри модуля. -->
+  <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a>
+    <div class="rm-subnav"><a href="/accountant" class="is-current">Финансы дня<span class="nav-dot"></span></a><a href="/accountant/employees">Сотрудники</a></div>
+    <a href="/director" class="nav-link"><span class="nav-icon">◉</span> Директор</a><a href="/founder" class="nav-link"><span class="nav-icon">⌁</span> Учредитель</a></nav>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Финансовый отдел</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Финансы дня</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace accountant-workspace">
-    <div class="page-heading"><div><p class="eyebrow">МОДУЛЬ 02 · ФИНАНСОВЫЙ ОТДЕЛ</p><h1>Финансы под контролем<span>.</span></h1><p class="subtitle">Остаток и обязательства — сразу. Записи по дню — ниже.</p></div><div class="module-badge"><span>02</span><div>Модуль<small>Финансы</small></div></div></div>
-    <div id="attendance-banner" class="accountant-demo-banner" role="note"><strong>HIKVISION</strong><span id="attendance-banner-text">Проверяем состояние подключения…</span></div>
-    <section class="controls" aria-label="День проходов">
-      <div class="date-group"><label for="accountant-date">Дата</label><input id="accountant-date" type="date" required></div>
-      <div class="quick-days"><button id="accountant-today" class="chip" type="button" aria-pressed="false">Сегодня</button><button id="accountant-yesterday" class="chip" type="button" aria-pressed="false">Вчера</button></div>
-      <div class="controls-actions">
-        <button id="accountant-refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить день</button>
-        <a id="employees-menu" class="button secondary" href="/accountant/employees">Сотрудники · зарплаты</a>
+    <div class="page-heading">
+      <div><p class="eyebrow">МОДУЛЬ 02 · ФИНАНСОВЫЙ ОТДЕЛ</p><h1>Финансы дня<span>.</span></h1></div>
+      <div class="emp-head-actions">
+        <!-- Дни листают стрелками, но поле выбора остаётся: бухгалтер часто
+             правит давний день, и до него быстрее дойти датой, чем стрелками. -->
+        <div class="date-nav" role="group" aria-label="День выплат">
+          <button id="accountant-prev" class="date-nav-arrow" type="button" aria-label="Предыдущий день">‹</button>
+          <div class="date-nav-label"><label for="accountant-date">День выплат</label><input id="accountant-date" type="date" required></div>
+          <button id="accountant-next" class="date-nav-arrow" type="button" aria-label="Следующий день">›</button>
+          <span class="date-nav-sep"></span>
+          <button id="accountant-today" class="date-nav-chip" type="button" aria-pressed="false">Сегодня</button>
+          <button id="accountant-yesterday" class="date-nav-chip" type="button" aria-pressed="false">Вчера</button>
+        </div>
+        <button id="accountant-refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
+        <a id="employees-menu" class="button secondary" href="/accountant/employees">Сотрудники <span aria-hidden="true">→</span></a>
       </div>
-    </section>
+    </div>
+    <div id="attendance-banner" class="accountant-demo-banner" role="note"><strong>HIKVISION</strong><span id="attendance-banner-text">Проверяем состояние подключения…</span></div>
     <p id="accountant-message" class="notice" role="status" aria-live="polite" hidden></p>
     <div class="finance-layout" id="finance-layout">
       <!-- Рельса со сводкой идёт в разметке второй, но на узких экранах правило
            order поднимает её над формами: открывают страницу ради остатка. -->
       <div class="finance-main">
-        <section class="panel accountant-panel expense-workbook" aria-labelledby="finance-expenses-title">
-          <div class="accountant-panel-head">
-            <div><p class="eyebrow">ЖУРНАЛ БУХГАЛТЕРА</p><h2 id="finance-expenses-title">Операции за день</h2>
-            <p class="accountant-help">Категория → тип → наименование → сумма. Сохранённая строка сразу пересчитывает остатки справа.</p></div>
+
+        <!-- ── Смены: выдача за отработанный день ─────────────────────────
+             Главное действие дня — раздать деньги за вчерашнюю смену, поэтому
+             секция стоит первой и открыта. Сумма выдачи вводится в строке
+             сотрудника, а не отдельной формой: так видно, кому уже выдали. -->
+        <details class="rm-section" id="shift-section" open>
+          <summary class="rm-section-head">
+            <span class="rm-section-chevron" aria-hidden="true">⌄</span>
+            <span class="rm-section-titles"><span class="eyebrow">СМЕННЫЕ · ВЫДАЧА ЗА СМЕНУ</span><strong id="shift-title">Смена —</strong></span>
+            <span class="rm-section-sum" id="shift-sum">—</span>
+          </summary>
+          <div id="hik-strip" class="hik-strip" hidden>
+            <span class="rm-flag-nohik">⊘ Без Hikvision</span>
+            <span id="hik-strip-text"></span>
           </div>
+          <div class="rm-tabs-row" id="shift-tabs" role="group" aria-label="Фильтр смены"></div>
+          <div class="rm-table-head shift-cols"><span></span><span>Сотрудник</span><span>Вход</span><span>Статус</span><span class="num">Начислено</span><span class="num">Выдано сегодня</span></div>
+          <div id="shift-rows" aria-live="polite"></div>
+          <div class="rm-table-foot shift-cols"><span></span><span class="muted">Итого за смену</span><span></span><span id="shift-paid-count" class="muted"></span><strong id="shift-accrued" class="num">—</strong><strong id="shift-paid" class="num">—</strong></div>
+          <div class="shift-actions">
+            <form id="payroll-confirm-form" class="shift-confirm"><label for="payroll-approver">Кто подтвердил<input id="payroll-approver" name="approver" required maxlength="160" placeholder="Фамилия"></label><button type="submit" class="button secondary">Подтвердить начисления смены</button></form>
+            <button id="pay-all" class="button primary" type="button"><span aria-hidden="true">✓</span> Выдать всем</button>
+          </div>
+          <p id="shift-note" class="rm-section-note"></p>
+        </details>
+
+        <!-- ── Журнал: каждое списание отдельной строкой ─────────────────── -->
+        <details class="rm-section" id="journal-section" open>
+          <summary class="rm-section-head">
+            <span class="rm-section-chevron" aria-hidden="true">⌄</span>
+            <span class="rm-section-titles"><span class="eyebrow">ЖУРНАЛ · ВСЕ СПИСАНИЯ ДНЯ</span><strong>Операции за день</strong></span>
+            <span class="rm-section-sum" id="journal-sum">—</span>
+          </summary>
+          <p class="rm-section-note">Каждый расход — отдельной строкой. Зарплаты и касса попадают сюда сами.</p>
           <form id="other-expense-form" class="expense-entry">
             <div class="field">
               <label for="expense-category">Категория</label>
@@ -91,13 +131,43 @@
               <button class="button secondary" type="submit">Записать выплату</button>
             </form>
           </div>
-        </section>
+        </details>
 
-        <section class="panel accountant-panel" aria-labelledby="staff-title">
-          <div class="accountant-panel-head"><div><p class="eyebrow">КОМАНДА · ПОСЛЕ 10:00</p><h2 id="staff-title">Опоздавшие сотрудники</h2><p id="staff-summary" class="accountant-help">Загружаем список…</p></div><span id="attendance-chip" class="accountant-chip">Hikvision: проверка</span></div>
-          <details id="late-details" class="late-details"><summary>Показать или скрыть опоздавших</summary><div id="late-list" class="staff-list" aria-live="polite"></div></details>
-          <div class="accountant-panel-foot"><p>Входы за <span id="entrances-day">—</span> · <span id="attendance-footnote">проверяем Hikvision…</span></p><div class="accountant-actions"><a id="all-employees-link" class="button secondary" href="/accountant/employees">Все сотрудники</a><button id="entrances-download" class="button attendance-button" type="button">Скачать опоздавших <span class="attendance-file-type">XLSX</span></button></div></div>
-        </section>
+        <!-- ── Закуп под отчёт ───────────────────────────────────────────
+             Баланс Шоха собирается из выдач и принятых закупок. Список самих
+             покупок с фото появится, когда заведём модуль закупа (3a). -->
+        <details class="rm-section" id="shoh-section">
+          <summary class="rm-section-head">
+            <span class="rm-section-chevron" aria-hidden="true">⌄</span>
+            <span class="rm-section-titles"><span class="eyebrow">ЗАКУП · ПОДОТЧЁТ</span><strong>Баланс Шох</strong></span>
+            <span class="rm-section-sum" id="shoh-sum">—</span>
+          </summary>
+          <div class="shoh-cards">
+            <div class="shoh-card"><span>На начало дня</span><strong id="shoh-start" class="rm-num">—</strong></div>
+            <div class="shoh-card"><span>+ Выдано сегодня</span><strong id="shoh-given" class="rm-num">—</strong></div>
+            <div class="shoh-card"><span>− Принято закупок</span><strong id="shoh-spent" class="rm-num">—</strong></div>
+            <div class="shoh-card is-hero"><span>= На руках у Шоха</span><strong id="shoh-balance" class="rm-num">—</strong></div>
+          </div>
+          <div id="shoh-entries" class="shoh-entries"></div>
+          <p class="rm-section-note">Выдачу под отчёт и принятые накладные записывают в «Операциях за день» — категории «Закуп» и «Резервы и подотчёт».</p>
+        </details>
+
+        <!-- ── Оклады: выплата частями в течение месяца ───────────────────── -->
+        <details class="rm-section" id="salary-section">
+          <summary class="rm-section-head">
+            <span class="rm-section-chevron" aria-hidden="true">⌄</span>
+            <span class="rm-section-titles"><span class="eyebrow">ОКЛАДЫ · ЧАСТИЧНАЯ ВЫПЛАТА</span><strong>Оклады, выданные сегодня</strong></span>
+            <span class="rm-section-sum" id="salary-sum">—</span>
+          </summary>
+          <div id="salary-today" class="salary-today" aria-live="polite"></div>
+          <form id="salary-payment-form" class="salary-entry">
+            <div class="field"><label for="salary-accrual">Начисление сотрудника</label><select id="salary-accrual" name="accrual_id" required></select></div>
+            <div class="field"><label for="salary-amount">Выплатить, сум</label><input id="salary-amount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"></div>
+            <button type="submit" class="button secondary">Выплатить зарплату</button>
+          </form>
+          <p id="salary-unallocated-note" class="rm-section-note"></p>
+          <div class="rm-section-note"><span>Ставки реестра · <b id="monthly-balance">—</b></span> <span id="monthly-note"></span></div>
+        </details>
 
         <!-- Ручной приход и начальные остатки — разовые действия. Свёрнуты,
              чтобы не занимать экран, который открывают ради остатка дня. -->
@@ -131,13 +201,21 @@
               <p class="accountant-help">Подтверждённый остаток на начало выбранного дня, до его операций. Это не новый приход и не списание из кассы. Для Шоха укажите остаток до первой записанной выдачи.</p>
               <form id="reserve-opening-form" class="accountant-form">
                 <div class="field"><label for="reserve-account">Что учитываем</label><select id="reserve-account" name="account" required><option value="dividends">Дивиденды в сейфе · сум</option><option value="usd">Реальные доллары · USD</option><option value="shoh">Деньги у Шоха · сум</option></select></div>
-                <div class="field"><label for="reserve-amount">Остаток в указанной валюте</label><input id="reserve-amount" name="amount" type="number" inputmode="decimal" min="0" step="0.01" required placeholder="0"></div>
+                <div class="field"><label for="reserve-amount">Остаток в указанной валюте</label><input id="reserve-amount" name="amount" type="number" inputmode="decimal" min="0.01" step="0.01" required placeholder="0"></div>
                 <div class="field"><label for="reserve-reason">Основание сверки</label><input id="reserve-reason" name="note" required maxlength="160" placeholder="Пересчёт сейфа / документ"></div>
                 <button class="button secondary" type="submit">Сохранить начальный остаток</button>
               </form>
             </section>
           </div>
         </details>
+
+        <!-- Опоздавшие: список для разбора, не для начисления. Внизу, потому
+             что деньги от него не зависят — штраф не начисляется. -->
+        <section class="panel accountant-panel" aria-labelledby="staff-title">
+          <div class="accountant-panel-head"><div><p class="eyebrow">КОМАНДА · ПОСЛЕ 10:00</p><h2 id="staff-title">Опоздавшие сотрудники</h2><p id="staff-summary" class="accountant-help">Загружаем список…</p></div><span id="attendance-chip" class="accountant-chip">Hikvision: проверка</span></div>
+          <details id="late-details" class="late-details"><summary>Показать или скрыть опоздавших</summary><div id="late-list" class="staff-list" aria-live="polite"></div></details>
+          <div class="accountant-panel-foot"><p>Входы за <span id="entrances-day">—</span> · <span id="attendance-footnote">проверяем Hikvision…</span></p><div class="accountant-actions"><a id="all-employees-link" class="button secondary" href="/accountant/employees">Все сотрудники</a><button id="entrances-download" class="button attendance-button" type="button">Скачать опоздавших <span class="attendance-file-type">XLSX</span></button></div></div>
+        </section>
       </div>
 
       <aside class="finance-rail" aria-label="Остатки и обязательства">
@@ -152,30 +230,34 @@
           <small>Резерв в сейфе и USD сюда не включены.</small>
         </section>
 
+        <!-- ── Проверки ───────────────────────────────────────────────────
+             Считаются на клиенте из данных дня: выдача без входа, сумма мимо
+             ставки, переплата, невыданные смены, уход остатка в минус. Клик
+             по пункту подсвечивает виновную строку. -->
+        <section class="rail-card checks-card" id="checks-card" aria-labelledby="checks-title">
+          <div class="checks-head"><p class="eyebrow" id="checks-title">ПРОВЕРКИ</p><span id="checks-badge" class="checks-badge">—</span></div>
+          <div id="finance-checks"></div>
+        </section>
+
         <!-- Обязательства собраны в одну карточку: тремя отдельными они занимали
              столько же места, сколько остаток дня, хотя отвечают на один вопрос.
              Тревожная окраска включается классом is-owed только при долге. -->
         <section class="rail-card debt" id="debt-card" aria-labelledby="debt-card-title">
-          <p class="eyebrow" id="debt-card-title">ОБЯЗАТЕЛЬСТВА</p>
+          <p class="eyebrow" id="debt-card-title">ДОЛГИ К ОПЛАТЕ</p>
           <strong id="all-debt-total">—</strong>
           <p id="debt-card-note">Долги к оплате на конец дня.</p>
           <div class="rail-line"><span>Расходы вручную</span><b id="manual-debt-total">—</b></div>
           <div class="rail-line"><span>Подтверждённые смены</span><b id="payroll-debt-total">—</b></div>
           <div class="rail-line"><span>Зарплата за смену</span><b id="payroll-draft-total">—</b></div>
           <div class="rail-line"><span>Выплачено за день</span><b id="payroll-paid-total">—</b></div>
-          <p id="salary-unallocated-note"></p>
-          <form id="payroll-confirm-form"><label>Кто подтвердил<input name="approver" required maxlength="160"></label><button type="submit" class="button secondary">Подтвердить начисления смены</button></form>
-          <form id="salary-payment-form"><label>Начисление сотрудника<select id="salary-accrual" name="accrual_id" required></select></label><label>Выплатить, сум<input name="amount" type="number" min="0.01" step="0.01" required></label><button type="submit" class="button secondary">Выплатить зарплату</button></form>
-          <div class="rail-line"><span>Месячная ЗП · ставки</span><b id="monthly-balance">—</b></div>
-          <p class="rail-foot"><span id="payroll-state">Ожидает расчёта</span><span id="monthly-note">План не задан</span>
-            <a href="#balance-settings" class="rail-link" data-open="balance-settings">Настроить план ↗</a></p>
+          <p class="rail-foot"><span id="payroll-state">Ожидает расчёта</span></p>
         </section>
 
         <section class="rail-card reserves" aria-labelledby="reserves-title">
-          <p class="eyebrow" id="reserves-title">РЕЗЕРВЫ</p>
+          <p class="eyebrow" id="reserves-title">РЕЗЕРВЫ · НЕ ВХОДЯТ В ОСТАТОК</p>
           <div id="reserves-lines">
-            <div class="rail-line"><span>Деньги у Шоха</span><b id="shoh-balance">—</b></div>
-            <div class="rail-line"><span>Реальные доллары</span><b id="usd-balance">—</b></div>
+            <div class="rail-line"><span>На руках у Шоха · подотчёт</span><b id="shoh-balance-rail">—</b></div>
+            <div class="rail-line"><span>Реальные доллары · от кассира</span><b id="usd-balance">—</b></div>
             <div class="rail-line"><span>Дивиденды в сейфе</span><b id="dividends-balance">—</b></div>
             <p>Начальный остаток плюс движения за день. Доллары — фактические, не эквивалент сумов.</p>
           </div>

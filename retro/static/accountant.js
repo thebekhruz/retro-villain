@@ -2,6 +2,7 @@ const $ = id => document.getElementById(id);
 const number = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 const money = value => number.format(Number(value || 0)) + ' сум';
 let today, current, requestNo = 0, catalog = [], saving = false;
+let shiftTab = 'all';
 const special = {
   reserve_dividends_transfer: {account: "dividends", kind: "transfer", label: "Отложить в сейф", impact: "Уменьшает деньги на расходы; увеличивает резерв дивидендов."},
   reserve_dividends_withdrawal: {account: "dividends", kind: "withdrawal", label: "Выдать собственнику из сейфа", impact: "Уменьшает только резерв дивидендов. Повторного списания из кассы нет."},
@@ -24,13 +25,26 @@ function expenseImpact() {
 function updateButtons() {
   const ready = current && current.date === selectedDay() && !saving;
   document.querySelectorAll(".finance-layout form button[type=submit]").forEach(b => b.disabled = !ready);
-  if (!ready) return;
+  if (!ready) {
+    $('pay-all').disabled = true;
+    document.querySelectorAll('.shift-pay').forEach(input => input.disabled = true);
+    return;
+  }
+  // Без данных кассира за день выплата всё равно упадёт на сервере, поэтому
+  // запираем и строки, и «Выдать всем» — одним правилом, а не по-разному.
+  const noCash = current.ledger.cash_balance === null;
+  document.querySelectorAll('.shift-pay').forEach(input => {
+    input.disabled = noCash || input.dataset.locked === '1';
+    if (noCash) input.title = 'Нет данных кассира за этот день — выплату записать нельзя';
+  });
   const code = $("expense-item").value, entry = special[code], income = incomeCodes.includes(code);
   const needsCash = !entry && !income || entry?.kind === "transfer";
   const unpaid = !entry && $('expense-paid').value === '0';
   $("other-expense-form").querySelector("button").disabled = needsCash && !unpaid && current.ledger.cash_balance === null;
   $('payroll-confirm-form').querySelector('button').disabled = current.ledger.payroll_confirmed || current.payroll.unknown_count > 0 || !current.employees.length;
-  $('salary-payment-form').querySelector('button').disabled = !current.ledger.accruals.some(row => Number(row.debt) > 0) || current.ledger.cash_balance === null;
+  const payable = current.ledger.accruals.some(row => Number(row.debt) > 0);
+  $('salary-payment-form').querySelector('button').disabled = !payable || current.ledger.cash_balance === null;
+  $('pay-all').disabled = !payable || current.ledger.cash_balance === null;
   $('debt-payment-form').querySelector('button').disabled = !current.ledger.manual_debts.length || current.ledger.cash_balance === null;
   $('cash-opening-form').querySelector('button').disabled = current.ledger.cash_opening !== null || current.expected_cashier === null;
 }
@@ -45,9 +59,12 @@ function categoryChanged() {
 }
 
 function previousDay(day) { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() - 1); return d.toISOString().slice(0, 10); }
+function nextDay(day) { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + 1); return d.toISOString().slice(0, 10); }
 // Точку в конце подписи ставит сама подпись, поэтому «г.» тут лишнее:
 // иначе на экране выходит «2026 г.. Hikvision синхронизирован».
 function formattedDay(day) { return new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace(/\s*г\.$/, ''); }
+function shortDay(day) { return new Intl.DateTimeFormat('ru-RU', {weekday: 'short', day: 'numeric', month: 'long', timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')); }
+function entryTime(value) { return value ? new Date(value).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'}) : '—'; }
 function message(value, error = false) { const n = $('accountant-message'); n.textContent = value; n.hidden = !value; n.setAttribute('role', error ? 'alert' : 'status'); }
 function node(tag, cls, value) { const n = document.createElement(tag); if (cls) n.className = cls; if (value !== undefined) n.textContent = value; return n; }
 // Единое пустое состояние: знак, объяснение и, если есть, следующий шаг.
@@ -72,6 +89,216 @@ function attendanceHealth(value) {
   return {short: state[0], detail: state[1]};
 }
 
+const STATUS_TEXT = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки', unavailable: 'Нет данных'};
+
+// Оплата строкой: у выдачи есть ключ идемпотентности, поэтому двойной клик или
+// перезагрузка посреди запроса не выдаст зарплату дважды.
+async function payAccrual(accrualId, amount) {
+  const response = await RetroFinancialWrite('/api/accountant/salary-payments', {
+    method: 'POST', headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({date: selectedDay(), accrual_id: Number(accrualId), amount: String(amount)})
+  });
+  const result = await response.json();
+  if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось записать выплату.');
+}
+
+/* ── Смена: кому и сколько выдаём за отработанный день ──────────────────
+   До подтверждения начислений платить нечему, поэтому показываем реестр с
+   предварительным расчётом. После подтверждения появляются начисления с
+   долгом, и выдачу вводят прямо в строке. */
+function renderShift(data) {
+  const l = data.ledger, confirmed = l.payroll_confirmed;
+  const container = $('shift-rows');
+  container.replaceChildren();
+  $('shift-title').textContent = 'Смена ' + shortDay(data.date);
+
+  const shift = AccountantLogic.shiftRows(data);
+  const {stale, own, rows} = shift;
+
+  const tabs = AccountantLogic.shiftTabs(rows);
+  if (!tabs.some(([key]) => key === shiftTab)) shiftTab = 'all';
+  const tabsBox = $('shift-tabs'); tabsBox.replaceChildren();
+  tabs.forEach(([key, label, count]) => {
+    const button = node('button', 'emp-tab' + (shiftTab === key ? ' is-active' : ''), label);
+    button.type = 'button';
+    button.append(node('small', '', String(count)));
+    button.addEventListener('click', () => { shiftTab = key; renderShift(data); });
+    tabsBox.append(button);
+  });
+
+  const shown = rows.filter(row => AccountantLogic.matchesTab(row, shiftTab));
+
+  shown.forEach(row => {
+    const line = node('div', 'rm-table-row shift-cols');
+    if (row.id !== null) line.dataset.accrual = String(row.id);
+    // Отметка «выдано полностью»: один клик вместо набора суммы вручную.
+    const mark = node('button', 'rm-check' + (row.debt !== null && Number(row.debt) === 0 ? ' is-on' : ''),
+      row.debt !== null && Number(row.debt) === 0 ? '✓' : '');
+    mark.type = 'button';
+    mark.title = 'Отметить выдачу полностью';
+    mark.disabled = row.id === null || !(Number(row.debt) > 0) || l.cash_balance === null;
+    if (l.cash_balance === null && Number(row.debt) > 0) mark.title = 'Нет данных кассира за этот день';
+    mark.classList.add('shift-mark');
+    mark.addEventListener('click', async () => {
+      try { await payAccrual(row.id, row.debt); await loadDay(); message('Выдано: ' + row.name + ' · ' + money(row.debt)); }
+      catch (error) { message(error.message, true); }
+    });
+
+    const who = node('div', 'emp-cell-who');
+    const text = node('div', 'emp-who-text');
+    const name = node('div', 'emp-who-name', row.name);
+    if (row.noHik) { const flag = node('span', 'rm-flag-nohik', '⊘ без Hikvision'); flag.title = 'Не зарегистрирован в Hikvision — присутствие отмечается вручную'; name.append(' ', flag); }
+    text.append(name, node('div', 'emp-who-role', row.role + (row.day !== data.date ? ' · смена ' + row.day.split('-').reverse().join('.') : '')));
+    who.append(node('span', 'rm-avatar', row.name.split(' ').map(w => w[0]).slice(0, 2).join('').toUpperCase()), text);
+
+    const time = node('div', 'emp-cell-entry');
+    time.append(node('div', 'emp-entry-time' + (row.status === 'late' ? ' is-late' : row.first_entry ? '' : ' is-none'),
+      row.showEntry ? entryTime(row.first_entry) : '·'));
+
+    const statusCell = node('div', 'emp-cell-status');
+    statusCell.append(node('span', 'rm-pill ' + (row.status || 'unavailable'), STATUS_TEXT[row.status] || '—'));
+
+    const accrued = node('div', 'emp-cell-num rm-num' + (row.rate === null ? ' is-missing' : ''),
+      row.rate === null ? 'Нет ставки' : row.accrued === null ? 'Не рассчитано' : number.format(Number(row.accrued)));
+
+    const payCell = node('div', 'shift-pay-cell');
+    if (row.id === null) {
+      payCell.append(node('span', 'rm-cell-note', confirmed ? '' : 'после подтверждения'));
+    } else {
+      const input = node('input', 'rm-cell-input shift-pay');
+      input.type = 'number'; input.min = '0'; input.step = '0.01'; input.placeholder = '—';
+      input.setAttribute('aria-label', 'Выдать сейчас · ' + row.name);
+      // Выдавать поверх закрытого долга нечего: иначе это переплата, которую
+      // тот же экран потом покажет как ошибку. Поле запираем, не прячем.
+      if (!(Number(row.debt) > 0)) {
+        input.dataset.locked = '1';
+        input.disabled = true;
+        input.title = row.status === 'missing' ? 'Входа нет — начисление 0 сум' : 'Долг закрыт';
+      }
+      const commit = async () => {
+        const value = input.value.trim();
+        if (!value || Number(value) <= 0) return;
+        input.disabled = true;
+        try { await payAccrual(row.id, value); await loadDay(); message('Выплата записана: ' + row.name + ' · ' + money(value)); }
+        catch (error) { input.disabled = false; message(error.message, true); }
+      };
+      input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); commit(); } });
+      input.addEventListener('blur', commit);
+      const owed = Number(row.debt);
+      payCell.append(input, node('div', 'rm-cell-note' + (owed > 0 ? ' is-owed' : ''),
+        owed > 0 ? 'долг ' + number.format(owed) : 'выдано ' + number.format(Number(row.paid))));
+    }
+    line.append(mark, who, time, statusCell, accrued, payCell);
+    container.append(line);
+  });
+  if (!shown.length) container.append(emptyState('▤', confirmed ? 'В этом срезе никого нет.' : 'Реестр за этот день пуст.'));
+
+  const totals = shift.totals;
+  $('shift-accrued').textContent = number.format(totals.accrued);
+  $('shift-paid').textContent = number.format(totals.paid);
+  $('shift-paid-count').textContent = confirmed ? totals.settled + ' из ' + totals.count + ' выдано' : '';
+  $('shift-sum').textContent = totals.owed > 0 ? 'к выдаче ' + money(totals.owed)
+    : confirmed ? 'всё выдано' : 'предварительно ' + money(data.payroll.draft_total);
+  $('shift-note').textContent = (confirmed
+    ? 'Введите сумму в строке или отметьте галочкой, чтобы выдать долг целиком.'
+    : 'Начисления за смену ещё не подтверждены: ' + data.payroll.unknown_count + ' сотрудников без расчёта.')
+    + (totals.staleOwed > 0 ? ' Сверху показан долг прошлых смен — ' + money(totals.staleOwed) + '.' : '');
+  $('payroll-confirm-form').hidden = confirmed;
+
+  const noHik = rows.filter(row => row.noHik).length;
+  $('hik-strip').hidden = !noHik;
+  if (noHik) $('hik-strip-text').textContent = 'Присутствие ' + noHik + ' сотрудников отмечается вручную: их нет в Hikvision.';
+}
+
+/* ── Подотчёт Шоха ────────────────────────────────────────────────────
+   Баланс собирается из выдач (deposit) и принятых накладных (withdrawal),
+   поэтому «на начало дня» считаем по записям прошлых дней, а не отдельным
+   запросом. Список покупок с фото появится вместе с модулем закупа. */
+function renderShoh(data) {
+  const shoh = data.reserves.shoh;
+  const {known, start, given, accepted} = AccountantLogic.shohPosition(shoh);
+  $('shoh-start').textContent = known ? number.format(start) : 'Не задан';
+  $('shoh-given').textContent = number.format(given);
+  $('shoh-spent').textContent = number.format(accepted);
+  $('shoh-balance').textContent = known ? number.format(Number(shoh.balance)) : 'Не задан';
+  $('shoh-sum').textContent = known ? 'на руках ' + money(shoh.balance) : 'начальный остаток не задан';
+
+  const list = $('shoh-entries'); list.replaceChildren();
+  const todayEntries = shoh.entries;
+  todayEntries.forEach(entry => {
+    const row = node('div', 'shoh-entry');
+    row.append(node('span', 'shoh-entry-kind', entry.kind === 'deposit' ? 'Выдано' : entry.kind === 'opening' ? 'Начальный остаток' : 'Принята закупка'),
+      node('span', 'shoh-entry-note', entry.note || '—'),
+      node('strong', 'rm-num', (entry.kind === 'withdrawal' ? '−' : '+') + number.format(Number(entry.amount))));
+    list.append(row);
+  });
+  if (!todayEntries.length) list.append(emptyState('◇', 'За этот день движений по подотчёту не было.', 'compact'));
+}
+
+/* ── Оклады, выданные сегодня ───────────────────────────────────────────── */
+function renderSalary(data) {
+  const l = data.ledger;
+  const paidToday = l.movements.filter(item => item.type === 'salary_payment');
+  const box = $('salary-today'); box.replaceChildren();
+  paidToday.forEach(item => {
+    const row = node('div', 'salary-row');
+    row.append(node('span', 'salary-row-name', item.description),
+      node('strong', 'rm-num', number.format(Number(item.amount))));
+    box.append(row);
+  });
+  if (!paidToday.length) box.append(emptyState('◇', 'Сегодня оклады не выдавались.', 'compact'));
+  const total = paidToday.reduce((sum, item) => sum + Number(item.amount), 0);
+  $('salary-sum').textContent = total ? money(total) : 'ничего не выдано';
+}
+
+/* ── Проверки ──────────────────────────────────────────────────────────
+   Считаем на клиенте по данным дня: сервер отдаёт факты, а не заключения.
+   Клик по пункту подсвечивает строку, из-за которой он появился. */
+function renderChecks(data) {
+  // Какие проверки вообще возможны — решает accountant-logic.js; здесь только
+  // подписи и переход к виновной строке.
+  const TEXT = {
+    'Остаток ушёл в минус': f => 'На конец дня ' + money(f.amount) + '.',
+    'Невыданные смены': f => 'Долг с прошлых дней ' + money(f.amount) + '.',
+    'Без ставки': f => 'Этим сотрудникам смена не начисляется, пока не укажете ставку.',
+    'Смена не подтверждена': () => 'Расчёт готов — подтвердите начисления, чтобы выдавать деньги.',
+    'Неоплаченные расходы': f => 'Долг поставщикам ' + money(f.amount) + '.',
+    'Касса не передана': () => 'Передачи от кассира за ' + formattedDay(data.date) + ' ещё нет.'
+  };
+  const items = AccountantLogic.dayChecks(data).map(item => ({
+    level: item.level, accrualId: item.accrualId,
+    text: item.text + (item.sub.count ? ': ' + item.sub.count : ''),
+    sub: (TEXT[item.text] || (() => ''))(item.sub)
+  }));
+
+  const box = $('finance-checks'); box.replaceChildren();
+  const badge = $('checks-badge');
+  const bad = items.filter(i => i.level === 'bad').length;
+  badge.textContent = items.length ? items.length : 'чисто';
+  badge.classList.toggle('is-bad', bad > 0);
+  badge.classList.toggle('is-clean', !items.length);
+  $('checks-card').classList.toggle('is-clean', !items.length);
+  if (!items.length) { box.append(node('p', 'checks-ok', 'Ошибок не найдено.')); return; }
+  items.forEach(item => {
+    const button = node('button', 'check-item', undefined);
+    button.type = 'button';
+    button.append(node('span', 'check-dot is-' + item.level));
+    const body = node('span', 'check-body');
+    body.append(node('span', 'check-text', item.text), node('span', 'check-sub', item.sub));
+    button.append(body);
+    if (item.accrualId != null) button.addEventListener('click', () => {
+      $('shift-section').open = true;
+      const row = document.querySelector('[data-accrual="' + item.accrualId + '"]');
+      if (!row) return;
+      row.scrollIntoView({block: 'center', behavior: 'smooth'});
+      row.classList.add('is-flagged');
+      setTimeout(() => row.classList.remove('is-flagged'), 2200);
+    });
+    else button.disabled = true;
+    box.append(button);
+  });
+}
+
 function renderStaff(data) {
   const rows = data.employees.filter(row => row.status === 'late'), container = $('late-list');
   const health = attendanceHealth(data.attendance);
@@ -85,7 +312,7 @@ function renderStaff(data) {
   rows.forEach(row => {
       const card = node('article', 'staff-row is-' + row.status), identity = node('div'), detail = node('div', 'staff-line');
       identity.append(node('div', 'staff-name', row.name), node('div', 'staff-role', row.role + (row.rate === null ? ' · Нет ставки' : ' · ' + money(row.rate))));
-      const entry = row.first_entry ? new Date(row.first_entry).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'}) : '—';
+      const entry = entryTime(row.first_entry);
       detail.append(node('span', '', 'Вход: ' + entry + (row.exception ? ' · разовое разрешение' : '')), node('strong', '', row.payable === null ? 'Не рассчитано' : money(row.payable)));
       card.append(identity, node('span', 'staff-status late', 'Опоздал'), detail); container.append(card);
   });
@@ -123,7 +350,10 @@ function renderLedger(data) {
   for (const account of ['dividends', 'usd', 'shoh']) {
     const value = reserves[account].balance;
     if (value !== null) reservesKnown += 1;
-    $(account + '-balance').textContent = value === null ? 'Не задан' : account === 'usd' ? number.format(Number(value)) + ' USD' : money(value);
+    const text = value === null ? 'Не задан' : account === 'usd' ? number.format(Number(value)) + ' USD' : money(value);
+    // Подотчёт Шоха показан дважды: карточкой в своей секции и строкой резервов.
+    const target = account === 'shoh' ? $('shoh-balance-rail') : $(account + '-balance');
+    if (target) target.textContent = text;
   }
   $('reserves-lines').hidden = reservesKnown === 0;
   $('reserves-empty').hidden = reservesKnown > 0;
@@ -157,7 +387,6 @@ function renderLedger(data) {
     input.focus();
   }
   function editOperation(item, cells, actions) {
-    const category = itemInfo(item.item_code).category;
     const typeCell = cells[1], nameCell = cells[2], totalCell = cells[3];
     const categorySelect = document.createElement('select');
     catalog.forEach(group => categorySelect.add(new Option(group.label, group.code)));
@@ -249,6 +478,8 @@ function renderLedger(data) {
     td.append(emptyState('▤', 'За этот день операций ещё нет. Записи из формы выше появятся в этом списке.'));
     tr.append(td); journal.append(tr);
   }
+  const dayOut = Number(l.cash_flow.salary_paid) + Number(l.cash_flow.other_outflows);
+  $('journal-sum').textContent = dayOut ? 'списано ' + money(dayOut) : 'списаний нет';
   const target = $('expense-breakdown'); target.replaceChildren();
   Object.entries(breakdown).forEach(([label, value]) => {const row=node('div','rail-line');row.append(node('span','',label),node('b','',money(value)));target.append(row);});
   if (!target.children.length) target.append(emptyState('◔', 'Расходов за день ещё нет.', 'compact'));
@@ -266,10 +497,11 @@ async function loadDay() {
   $("finance-layout").setAttribute("aria-busy", "true");
   $('entrances-day').textContent = formattedDay(day);
   const isToday = day === today, isYesterday = day === previousDay(today);
-  $('accountant-today').classList.toggle('active', isToday);
+  $('accountant-today').classList.toggle('is-active', isToday);
   $('accountant-today').setAttribute('aria-pressed', String(isToday));
-  $('accountant-yesterday').classList.toggle('active', isYesterday);
+  $('accountant-yesterday').classList.toggle('is-active', isYesterday);
   $('accountant-yesterday').setAttribute('aria-pressed', String(isYesterday));
+  $('accountant-next').disabled = day >= today;
   $('entrances-download').disabled = false;
   $('all-employees-link').href = '/accountant/employees?date=' + encodeURIComponent(day);
   $('employees-menu').href = '/accountant/employees?date=' + encodeURIComponent(day);
@@ -277,7 +509,12 @@ async function loadDay() {
     const response = await fetch('/api/accountant/day?date=' + encodeURIComponent(day), {cache: 'no-store'}), data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить данные.');
     if (sequence !== requestNo) return;
-    current = data; renderStaff(data); renderLedger(data); $("finance-layout").hidden = false; message('');
+    current = data;
+    renderStaff(data); renderLedger(data); renderShift(data); renderShoh(data); renderSalary(data); renderChecks(data);
+    // Строки смены создаются после renderLedger, поэтому состояние кнопок и
+    // полей пересчитываем в конце — иначе новые поля остаются активными.
+    updateButtons();
+    $("finance-layout").hidden = false; message('');
     status('Данные за ' + formattedDay(day));
   } catch (error) { if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); } }
   finally { if (RetroState.shouldReleaseBusy(sequence, requestNo)) $('finance-layout').setAttribute('aria-busy', 'false'); }
@@ -311,12 +548,29 @@ submit('debt-payment-form', '/api/accountant/debts/pay', f => ({date:selectedDay
 submit('reserve-opening-form', '/api/accountant/reserves', f => ({date:selectedDay(),account:f.get('account'),kind:'opening',amount:f.get('amount'),note:f.get('note')}), 'Начальный остаток сохранён на выбранную дату.');
 submit('cash-opening-form', '/api/accountant/cash-opening', f => ({date:selectedDay(),amount:f.get('amount'),note:f.get('note')}), 'Начальный остаток бухгалтера сохранён.');
 submit('handover-form', '/api/accountant/handover', f => ({date:selectedDay(),amount:f.get('amount'),note:f.get('note')}), 'Приход от кассира сохранён.');
+// «Выдать всем» закрывает долги по одной выплате за раз: серверу нужен свой
+// accrual_id на каждую, а частичный успех лучше полного отката вслепую.
+$('pay-all').addEventListener('click', async () => {
+  if (!current || saving) return;
+  const owed = current.ledger.accruals.filter(row => Number(row.debt) > 0);
+  if (!owed.length) return;
+  if (!confirm('Выдать ' + owed.length + ' сотрудникам на ' + money(owed.reduce((s, r) => s + Number(r.debt), 0)) + '?')) return;
+  saving = true; updateButtons();
+  let done = 0;
+  try {
+    for (const row of owed) { await payAccrual(row.id, row.debt); done += 1; }
+    message('Выдано ' + done + ' сотрудникам.');
+  } catch (error) { message('Выдано ' + done + ' из ' + owed.length + '. ' + error.message, true); }
+  finally { saving = false; await loadDay(); }
+});
 $('expense-category').addEventListener('change', categoryChanged);
 $('expense-item').addEventListener('change', expenseImpact);
 $('expense-paid').addEventListener('input', updateButtons);
 document.querySelectorAll('[data-open]').forEach(link => link.addEventListener('click', () => { $(link.dataset.open).open = true; }));
 $('accountant-date').addEventListener('change', loadDay);
 $('accountant-refresh').addEventListener('click', loadDay);
+$('accountant-prev').addEventListener('click', () => { $('accountant-date').value = previousDay(selectedDay()); loadDay(); });
+$('accountant-next').addEventListener('click', () => { const day = nextDay(selectedDay()); if (day <= today) { $('accountant-date').value = day; loadDay(); } });
 $('accountant-today').addEventListener('click', () => { $('accountant-date').value = today; loadDay(); });
 $('accountant-yesterday').addEventListener('click', () => { $('accountant-date').value = previousDay(today); loadDay(); });
 $('entrances-download').addEventListener('click', async () => {
