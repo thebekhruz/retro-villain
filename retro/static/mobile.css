@@ -26,6 +26,15 @@ input[type=date]{min-height:44px}
   .controls{grid-template-columns:repeat(2,minmax(0,1fr));align-items:stretch}
   .controls>*{min-width:0}
   .controls .date-group{grid-column:1 / -1}
+  /* Контрол периода — одна ячейка сетки управления, но внутри он сам
+     раскладывается в строки: режим, даты, быстрые периоды. */
+  #period-host{grid-column:1 / -1}
+  .period{width:100%}
+  .period-modes{width:100%}
+  .period-mode{flex:1;min-height:44px}
+  .period-pane{width:100%}
+  .period-pane .date-group{flex:1 1 140px}
+  .period-pane .quick-days{width:100%;flex-wrap:nowrap}
   .controls .button{width:100%}
   .quick-days{grid-column:1 / -1;border-left:0;padding-left:0;
     flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;
@@ -142,4 +151,46 @@ input[type=date]{min-height:44px}
   .ai-chat-close,#ai-chat-send{min-width:44px;min-height:44px}
   .ai-chat-form-foot button{min-height:44px;padding:0 10px}
   .ai-chat-toggle{min-height:52px;min-width:52px}
+}
+
+
+/* ── Листы с цифрами на телефоне ──────────────────────────────────────────── */
+@media(max-width:700px){
+  /* Поля листа режем, но строки не ломаем в карточки: бухгалтер сверяет
+     их с Excel, и «название — сумма» читается на любой ширине. */
+  .sheet{border-radius:11px}
+  .sheet-head,.sheet-tools,.sheet-foot{padding-left:16px;padding-right:16px}
+  .sheet-head h2{font-size:16px}
+  .sheet-table th,.sheet-table td{padding:10px 16px;font-size:12.5px}
+  .sheet-table .row-note{font-size:11px}
+  /* Шапка не липнет: на телефоне она перекрывает первую строку при
+     прокрутке внутри самой таблицы. */
+  .sheet-table thead th{position:static}
+  .sheet-foot{flex-direction:column;align-items:flex-start;gap:6px}
+}
+
+@media(max-width:700px){
+  /* На телефоне три колонки формы не помещаются: сумма и кнопка уходят
+     под поле назначения. */
+  .sheet .expense-form{grid-template-columns:minmax(0,1fr) 130px}
+  .sheet .expense-save{grid-column:1/-1}
+  .cell-entry{flex-wrap:wrap;justify-content:flex-end}
+  .cell-entry input{width:110px}
+}
+
+@media(max-width:700px){
+  /* Бухгалтер смотрит панель с компьютера, но заглядывает и с телефона.
+     Широкую таблицу там не ужимают до нечитаемости — её листают вбок,
+     а первая колонка держится у края, иначе непонятно, чья это строка. */
+  .sheet-table.is-scrollable{min-width:580px}
+  /* Ширину названия ограничиваем: иначе первая колонка съедала экран, а
+     сумма — то, ради чего таблицу и открыли — оставалась за краем. */
+  .sheet-table.is-scrollable th:first-child,
+  .sheet-table.is-scrollable td:first-child{position:sticky;left:0;z-index:2;background:#fff;
+    width:168px;min-width:168px;max-width:168px;box-shadow:1px 0 0 #eef1ea}
+  .sheet-table.is-scrollable thead th:first-child{background:#f3f6f0}
+  .sheet-table.is-scrollable tr.is-section td:first-child{background:#f6f8f3}
+  .sheet-table.is-scrollable tr.is-total td:first-child{background:#fcfdfa}
+  .sheet-table.is-scrollable tr.is-grand td:first-child{background:var(--green)}
+  .sheet-scroll{scroll-padding-left:0;overscroll-behavior-x:contain}
 }

@@ -232,14 +232,38 @@ function showSetup(message) {
 }
 
 let snapshotController = null, snapshotRequest = 0;
+
+/** Период спрашиваем у общего контрола: он же проверяет границы, поэтому
+ *  сюда доходит только диапазон, который сервер примет. */
+function periodQuery() {
+  const chosen = period ? period.state() : null;
+  if (!chosen) return '';
+  return '?start=' + encodeURIComponent(chosen.start) + '&end=' + encodeURIComponent(chosen.end);
+}
+
+/** Пока считается новый период, прежние цифры на экране — чужие: они
+ *  относятся к другому диапазону. Гасим их, иначе кажется, что страница
+ *  уже готова, а потом числа скачком меняются сами. */
+function busy(on) {
+  const workspace = document.querySelector('.workspace');
+  if (workspace) workspace.setAttribute('aria-busy', String(Boolean(on)));
+}
+
 async function loadSnapshot(refresh = false) {
+  if (period && !period.valid()) {
+    $('state').textContent = 'Поправьте даты периода.';
+    return;
+  }
   snapshotController?.abort();
   snapshotController = new AbortController();
   const requestId = ++snapshotRequest;
+  busy(true);
   $('refresh').disabled = true;
   $('state').textContent = 'Загружаем данные…';
   try {
-    const snapshot = await request('/api/director/today?refresh=' + (refresh === true),
+    const query = periodQuery();
+    const refreshParam = refresh === true ? (query ? '&refresh=1' : '?refresh=1') : '';
+    const snapshot = await request('/api/director/report' + query + refreshParam,
                                    {signal: snapshotController.signal});
     if (requestId !== snapshotRequest) return;
     $('setup').hidden = true;
@@ -252,7 +276,7 @@ async function loadSnapshot(refresh = false) {
     if (error.status === 503) showSetup(error.message);
     else $('connection').textContent = 'Нет данных';
   } finally {
-    if (requestId === snapshotRequest) $('refresh').disabled = false;
+    if (requestId === snapshotRequest) { $('refresh').disabled = false; busy(false); }
   }
 }
 
@@ -344,7 +368,7 @@ $('generate').addEventListener('click', async () => {
   button.classList.add('is-busy');
   $('state').textContent = 'Собираем данные iiko и готовим разбор…';
   try {
-    await request('/api/director/reports', { method: 'POST' });
+    await request('/api/director/reports' + periodQuery(), { method: 'POST' });
     $('state').textContent = 'Отчёт сохранён в архиве';
     await loadReports();
   } catch (error) {
@@ -402,6 +426,23 @@ $('menu-more').addEventListener('click', () => {
   renderMenu();
 });
 
-loadSnapshot();
-loadAttendance();
-loadReports();
+let period = null;
+
+(async function start() {
+  let today = new Date().toISOString().slice(0, 10);
+  try {
+    const config = await globalThis.RetroConfig;
+    if (config && config.today) today = config.today;
+  } catch (error) {
+    $('state').textContent = error.message;
+  }
+  period = RetroPeriod.mount({
+    host: $('period-host'), today: today, modes: ['range'], preset: '10',
+    // Обработчику контрол передаёт выбранный период, и он попадал в
+    // аргумент «перечитать мимо кеша»: смена периода каждый раз лезла в iiko.
+    onChange: () => loadSnapshot(),
+  });
+  loadSnapshot();
+  loadAttendance();
+  loadReports();
+})();
