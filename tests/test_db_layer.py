@@ -269,3 +269,32 @@ def test_schema_no_longer_creates_sqlite_triggers(tmp_path):
             "SELECT name FROM sqlite_master WHERE type = 'trigger' "
             "AND name LIKE 'accountant_employee_%'")]
     assert triggers == []
+
+
+# ── Страховка от молчаливой потери данных ───────────────────────────────────
+
+def test_hosting_without_storage_refuses_to_start():
+    """На хостинге без Postgres и без диска подниматься нельзя.
+
+    Молчаливый откат на файлы внутри контейнера уже терял реестр и начисления:
+    выкат выглядел успешным, данные исчезали. Упавший выкат видно сразу.
+    """
+    from retro.config import require_durable_storage
+    railway = {'RAILWAY_ENVIRONMENT': 'production'}
+    with pytest.raises(ValueError, match='Негде хранить данные'):
+        require_durable_storage('', railway)
+
+
+def test_postgres_or_an_explicit_disk_are_both_accepted():
+    from retro.config import require_durable_storage
+    railway = {'RAILWAY_ENVIRONMENT': 'production'}
+    # Postgres — основной путь.
+    require_durable_storage('postgresql://host/db', railway)
+    # Диск, подключённый осознанно, тоже годится.
+    require_durable_storage('', {**railway, 'RETRO_DATA_DIR': '/data'})
+
+
+def test_local_machine_keeps_working_on_files():
+    """Локальная разработка и тесты не должны требовать ни Postgres, ни диска."""
+    from retro.config import require_durable_storage
+    require_durable_storage('', {'HOME': '/home/user'})

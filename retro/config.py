@@ -74,6 +74,8 @@ class Settings:
     @classmethod
     def from_env(cls):
         load_dotenv(ROOT / 'build' / '.env', override=False)
+        database_url = os.getenv('DATABASE_URL', '').strip()
+        require_durable_storage(database_url)
         base = os.getenv('IIKO_SERVER_URL', IIKO_ORIGIN).rstrip('/')
         if base != IIKO_ORIGIN:
             raise ValueError('IIKO_SERVER_URL должен указывать на сервер Retro Milliy.')
@@ -129,7 +131,7 @@ class Settings:
             booking_broadcast_token=broadcast_token,
             hikvision=hikvision,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
-            database_url=os.getenv('DATABASE_URL', '').strip(),
+            database_url=database_url,
             report_retention=int(retention_value),
         )
 
@@ -188,6 +190,38 @@ def parse_director_categories(value: str) -> dict[str, str]:
             raise ValueError('IIKO_DIRECTOR_CATEGORIES содержит некорректную категорию.')
         result[name] = kind
     return result
+
+
+
+def hosting_without_disk(environ=None) -> bool:
+    """Похоже ли, что мы на хостинге, где файловая система не переживает выкат.
+
+    Railway проставляет свои переменные в каждом окружении. Локальная машина их
+    не имеет, поэтому разработка и тесты продолжают работать на файлах.
+    """
+    values = os.environ if environ is None else environ
+    return any(key.startswith('RAILWAY_') for key in values)
+
+
+def require_durable_storage(database_url: str, environ=None) -> None:
+    """Не дать подняться на хостинге без места, где данные переживут выкат.
+
+    Молчаливый откат на файлы внутри контейнера уже приводил к потере реестра
+    и начислений: выкат выглядел успешным, а данные исчезали. Упавший выкат
+    видно сразу и он исправим, потерянные деньги — нет. Поэтому здесь ошибка,
+    а не предупреждение.
+    """
+    values = os.environ if environ is None else environ
+    if database_url or not hosting_without_disk(values):
+        return
+    if values.get('RETRO_DATA_DIR', '').strip():
+        # Каталог задали явно — значит подключили диск и отвечают за это сами.
+        return
+    raise ValueError(
+        'Негде хранить данные: не задан ни DATABASE_URL, ни RETRO_DATA_DIR. '
+        'На хостинге файлы внутри контейнера исчезают при каждом выкате вместе '
+        'с реестром сотрудников, начислениями и закупом. Подключите Postgres '
+        '(тогда DATABASE_URL появится сам) либо диск и укажите RETRO_DATA_DIR.')
 
 
 def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
