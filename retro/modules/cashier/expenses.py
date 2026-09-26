@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .service import DataError
+from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 
 @dataclass(frozen=True)
@@ -33,14 +34,13 @@ class SeedResult:
 
 class ExpenseStore:
     def __init__(self, path: Path):
-        self.path = Path(path)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         self._initialize()
 
     def _open(self):
-        secure_directory(self.path.parent)
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def _initialize(self):
         with closing(self._open()) as connection:
@@ -53,8 +53,7 @@ class ExpenseStore:
                     amount TEXT NOT NULL,
                     operation_key TEXT
                 )''')
-                columns = {
-                    row[1] for row in connection.execute('PRAGMA table_info(cashier_expenses)')}
+                columns = table_columns(connection, 'cashier_expenses')
                 if 'operation_key' not in columns:
                     connection.execute(
                         'ALTER TABLE cashier_expenses ADD COLUMN operation_key TEXT')

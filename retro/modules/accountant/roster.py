@@ -15,8 +15,10 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 from retro.integrations.hikvision import HikvisionPerson
+from retro.modules.cashier.service import today_tashkent
 
 
 GROUPS = {
@@ -118,14 +120,13 @@ class MonthlyEmployee:
 
 class RosterStore:
     def __init__(self, path: Path):
-        self.path = Path(path)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         self._initialize()
 
     def _open(self):
-        secure_directory(self.path.parent)
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def _initialize(self):
         with closing(self._open()) as connection, connection:
@@ -161,13 +162,11 @@ class RosterStore:
                 advances TEXT NOT NULL DEFAULT '0',
                 remaining TEXT NOT NULL DEFAULT '0'
             )''')
-            employee_columns = {row[1] for row in connection.execute(
-                'PRAGMA table_info(accountant_employees)')}
+            employee_columns = table_columns(connection, 'accountant_employees')
             if 'manual_attendance' not in employee_columns:
                 connection.execute('ALTER TABLE accountant_employees '
                                    'ADD COLUMN manual_attendance INTEGER NOT NULL DEFAULT 0')
-            columns = {row[1] for row in connection.execute(
-                'PRAGMA table_info(accountant_monthly_employees)')}
+            columns = table_columns(connection, 'accountant_monthly_employees')
             if 'external_key' not in columns:
                 connection.execute('ALTER TABLE accountant_monthly_employees ADD COLUMN external_key TEXT')
                 connection.execute(
@@ -187,26 +186,38 @@ class RosterStore:
                     SELECT id,'0001-01-01',source_row,name,role,group_name,rate,hikvision_id,0
                     FROM accountant_employees WHERE id NOT IN
                         (SELECT employee_id FROM accountant_employee_versions);
-                CREATE TRIGGER IF NOT EXISTS accountant_employee_insert_history
-                AFTER INSERT ON accountant_employees BEGIN
-                    INSERT INTO accountant_employee_versions VALUES
-                        (NEW.id,'0001-01-01',NEW.source_row,NEW.name,NEW.role,
-                         NEW.group_name,NEW.rate,NEW.hikvision_id,0);
-                END;
-                CREATE TRIGGER IF NOT EXISTS accountant_employee_update_history
-                AFTER UPDATE ON accountant_employees BEGIN
-                    INSERT OR REPLACE INTO accountant_employee_versions VALUES
-                        (NEW.id,date('now','+5 hours'),NEW.source_row,NEW.name,NEW.role,
-                         NEW.group_name,NEW.rate,NEW.hikvision_id,0);
-                END;
-                CREATE TRIGGER IF NOT EXISTS accountant_employee_delete_history
-                AFTER DELETE ON accountant_employees BEGIN
-                    INSERT OR REPLACE INTO accountant_employee_versions VALUES
-                        (OLD.id,date('now','+5 hours'),OLD.source_row,OLD.name,OLD.role,
-                         OLD.group_name,OLD.rate,OLD.hikvision_id,1);
-                END;
+                -- Историю ставок ведёт сам код (_stamp_version), а не триггеры:
+                -- они были на диалекте SQLite и в Postgres не переносятся, а
+                -- один денежный инвариант не должен жить в двух вариантах.
+                -- У существующих баз триггеры сносим, иначе история писалась бы
+                -- дважды.
+                DROP TRIGGER IF EXISTS accountant_employee_insert_history;
+                DROP TRIGGER IF EXISTS accountant_employee_update_history;
+                DROP TRIGGER IF EXISTS accountant_employee_delete_history;
             ''')
 
+
+    # ── История ставок ─────────────────────────────────────────────────────
+    # `list(day)` читает версию с наибольшим effective_day <= день, поэтому
+    # каждая правка реестра обязана оставить снимок на день правки. Раньше это
+    # делали три триггера SQLite; теперь — этот метод, вызываемый из всех путей
+    # записи в одной с ними транзакции.
+
+    def _stamp_version(self, connection, employee_id: int, *, deleted: bool = False,
+                       day: str | None = None) -> None:
+        """Записать текущее состояние сотрудника в историю на указанный день."""
+        effective = day or today_tashkent().isoformat()
+        connection.execute(
+            'INSERT INTO accountant_employee_versions '
+            '(employee_id, effective_day, source_row, name, role, group_name, rate, '
+            ' hikvision_id, deleted) '
+            'SELECT id, ?, source_row, name, role, group_name, rate, hikvision_id, ? '
+            'FROM accountant_employees WHERE id = ? '
+            'ON CONFLICT(employee_id, effective_day) DO UPDATE SET '
+            'source_row=excluded.source_row, name=excluded.name, role=excluded.role, '
+            'group_name=excluded.group_name, rate=excluded.rate, '
+            'hikvision_id=excluded.hikvision_id, deleted=excluded.deleted',
+            (effective, 1 if deleted else 0, employee_id))
 
     def import_xlsx(self, source: Path, *, replace: bool = False) -> dict[str, int]:
         workbook = load_workbook(source, read_only=True, data_only=True)
@@ -230,17 +241,27 @@ class RosterStore:
             with connection:
                 if replace:
                     source_rows = {row[0] for row in rows}
+                    placeholders = ','.join('?' for _ in source_rows)
+                    # Снимок «удалён» снимаем до удаления, пока строки ещё есть.
+                    for (gone_id,) in connection.execute(
+                            'SELECT id FROM accountant_employees WHERE source_row NOT IN (%s)'
+                            % placeholders, tuple(source_rows)).fetchall():
+                        self._stamp_version(connection, gone_id, deleted=True)
                     connection.execute('DELETE FROM accountant_employees WHERE source_row NOT IN (%s)' %
-                                       ','.join('?' for _ in source_rows), tuple(source_rows))
+                                       placeholders, tuple(source_rows))
                 for row in rows:
                     cursor = connection.execute(
                         'SELECT id,name FROM accountant_employees WHERE source_row = ?',
                         (row[0],))
                     current = cursor.fetchone()
                     if current is None:
-                        connection.execute(
+                        new_id = connection.execute(
                             'INSERT INTO accountant_employees '
-                            '(source_row, name, role, group_name, rate) VALUES (?, ?, ?, ?, ?)', row)
+                            '(source_row, name, role, group_name, rate) VALUES (?, ?, ?, ?, ?)',
+                            row).lastrowid
+                        # Импорт задаёт исходное состояние, поэтому версия с
+                        # начала времён: прошлые дни должны видеть сотрудника.
+                        self._stamp_version(connection, new_id, day='0001-01-01')
                         imported += 1
                     else:
                         if replace:
@@ -254,6 +275,7 @@ class RosterStore:
                                 'hikvision_id=CASE WHEN ? THEN hikvision_id ELSE NULL END '
                                 'WHERE source_row=?',
                                 (row[1], row[2], row[3], row[4], preserve_link, row[0]))
+                            self._stamp_version(connection, current[0])
                             imported += 1
                         else:
                             existing += 1
@@ -290,6 +312,8 @@ class RosterStore:
             changed = connection.execute(
                 'UPDATE accountant_employees SET manual_attendance = ? WHERE id = ?',
                 (1 if manual else 0, employee_id)).rowcount
+            if changed:
+                self._stamp_version(connection, employee_id)
         if not changed:
             raise ValueError('Сотрудник не найден.')
         return next(person for person in self.list() if person.id == employee_id)
@@ -337,6 +361,7 @@ class RosterStore:
                 except sqlite3.IntegrityError:
                     changed = 0
                 if changed:
+                    self._stamp_version(connection, candidates[0].id)
                     result['linked'] += 1
                     already_ids.add(person.employee_no)
                 else:
@@ -390,16 +415,19 @@ class RosterStore:
                     connection.execute(
                         'UPDATE accountant_employees SET hikvision_id=? WHERE id=?',
                         (person.employee_no, employee_id))
+                    self._stamp_version(connection, employee_id)
                     linked_ids.add(person.employee_no)
                     result['linked'] += 1
                     continue
-                connection.execute(
+                # last_insert_rowid() есть только в SQLite; слой отдаёт номер
+                # через lastrowid на обоих диалектах.
+                new_id = connection.execute(
                     'INSERT INTO accountant_employees '
                     '(source_row,name,role,group_name,rate,hikvision_id) VALUES (?,?,?,?,NULL,?)',
                     (next_source_row, person.name.strip(), UNASSIGNED_ROLE,
-                     UNASSIGNED_GROUP, person.employee_no))
-                by_name[key] = [(connection.execute('SELECT last_insert_rowid()').fetchone()[0],
-                                 person.employee_no)]
+                     UNASSIGNED_GROUP, person.employee_no)).lastrowid
+                self._stamp_version(connection, new_id, day='0001-01-01')
+                by_name[key] = [(new_id, person.employee_no)]
                 linked_ids.add(person.employee_no)
                 next_source_row += 1
                 result['created'] += 1
@@ -505,10 +533,15 @@ class RosterStore:
                 'VALUES (?, ?, ?, ?, ?)',
                 (source_row, name, role, group_name,
                  str(parsed_rate) if parsed_rate is not None else None)).lastrowid
+            # Новый сотрудник действует с начала времён: иначе прошлые дни его
+            # не увидят, а начисления за них уже закрыты.
+            self._stamp_version(connection, employee_id, day='0001-01-01')
         return next(person for person in self.list() if person.id == employee_id)
 
     def delete(self, employee_id: int):
         with closing(self._open()) as connection, connection:
+            # Снимок снимаем до удаления: после него строки уже нет.
+            self._stamp_version(connection, employee_id, deleted=True)
             deleted = connection.execute('DELETE FROM accountant_employees WHERE id = ?',
                                          (employee_id,)).rowcount
         if not deleted:
@@ -544,6 +577,7 @@ class RosterStore:
                                    'WHERE id = ?', (name, role,
                                    str(parsed_rate) if parsed_rate is not None else None,
                                    derived_group, employee_id))
+                self._stamp_version(connection, employee_id)
                 connection.execute('INSERT INTO accountant_roster_audit '
                                    '(employee_id, changed_at, reason, old_rate, new_rate, old_group, new_group) '
                                    'VALUES (?, ?, ?, ?, ?, ?, ?)',

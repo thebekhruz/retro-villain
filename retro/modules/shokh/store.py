@@ -12,6 +12,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
+from retro.db import as_database
 from retro.runtime import secure_directory, secure_file
 
 # Телефонное фото редко больше пяти мегабайт; ограничение защищает базу от
@@ -77,8 +78,9 @@ def _text(value, *, name, limit=120):
 
 class ShokhStore:
     def __init__(self, path):
-        self.path = Path(path)
-        secure_directory(self.path.parent)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         with closing(self._open()) as connection:
             connection.executescript('''
                 CREATE TABLE IF NOT EXISTS shokh_trips (
@@ -109,10 +111,7 @@ class ShokhStore:
             ''')
 
     def _open(self):
-        connection = sqlite3.connect(self.path)
-        secure_file(self.path)
-        connection.execute('PRAGMA foreign_keys = ON')
-        return connection
+        return self.db.connect()
 
     # ── Поездки ────────────────────────────────────────────────────────────
     def open_trip(self, day: date, at: datetime) -> int:

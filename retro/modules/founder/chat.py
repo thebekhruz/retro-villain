@@ -3,14 +3,16 @@
 import sqlite3
 from pathlib import Path
 
+from retro.db import as_database
 from retro.runtime import secure_directory, secure_file
 from retro.schema import migrate_schema
 
 
 class FounderChatStore:
     def __init__(self, path):
-        self.path = Path(path)
-        secure_directory(self.path.parent)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         with self._connect() as connection:
             connection.execute('''CREATE TABLE IF NOT EXISTS founder_chat_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -25,9 +27,7 @@ class FounderChatStore:
             migrate_schema(connection, 'founder')
 
     def _connect(self):
-        connection = sqlite3.connect(self.path)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def list(self, owner, limit=100):
         if not isinstance(limit, int) or not 1 <= limit <= 100:

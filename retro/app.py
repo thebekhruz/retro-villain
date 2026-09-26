@@ -13,6 +13,7 @@ from pydantic import BaseModel
 from retro.report_cache import ReportCache, load_iiko
 from retro.financial_requests import FinancialRequests
 from retro.config import Settings
+from retro.db import Database
 from retro.integrations.iiko import IikoClient
 from retro.integrations.bookings import BookingAnalyticsClient
 from retro.integrations.broadcasts import BookingBroadcastClient
@@ -129,10 +130,13 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.reports = ReportCache()
     app.state.director_lock = asyncio.Lock()
     app.state.cache = SnapshotCache()
-    database_path = expense_db_path or settings.data_dir / 'cashier.sqlite3'
+    # В Postgres все таблицы живут в одной базе; в SQLite — каждый модуль в
+    # своём файле, как было. Явно переданные пути (тесты, скрипты) сильнее.
+    shared = Database(settings.database_url) if settings.database_url else None
+    database_path = expense_db_path or shared or settings.data_dir / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
-    accountant_path = accountant_db_path or settings.data_dir / 'accountant.sqlite3'
+    accountant_path = accountant_db_path or shared or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(accountant_path)
     app.state.attendance_store = AttendanceStore(accountant_path)
@@ -155,16 +159,18 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             app.state.attendance_store)
     else:
         app.state.hikvision_poller = None
-    director_path = director_db_path or settings.data_dir / 'director.sqlite3'
+    director_path = director_db_path or shared or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
-    founder_path = founder_db_path or settings.data_dir / 'founder.sqlite3'
+    founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
         app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention,
         loader=lambda today: load_iiko(app.state, 'load_director_report', today, timeout=150))
 
-    app.state.financial_requests = FinancialRequests(Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3').with_name('financial-requests.sqlite3'))
+    app.state.financial_requests = FinancialRequests(
+        shared or Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3')
+        .with_name('financial-requests.sqlite3'))
 
     @app.middleware('http')
     async def security_middleware(request: Request, call_next):

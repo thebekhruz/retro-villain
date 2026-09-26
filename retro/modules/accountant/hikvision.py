@@ -10,6 +10,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from retro.integrations.hikvision import HikvisionEvent
+from retro.db import as_database
 from retro.runtime import secure_directory, secure_file
 
 from .payroll import AttendanceRow
@@ -59,14 +60,13 @@ def _datetime(value: str | None) -> datetime | None:
 
 class AttendanceStore:
     def __init__(self, path: Path):
-        self.path = Path(path)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         self._initialize()
 
     def _open(self):
-        secure_directory(self.path.parent)
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def _initialize(self):
         with closing(self._open()) as connection, connection:

@@ -12,6 +12,7 @@ import httpx
 
 from retro.modules.cashier.service import DataError
 from retro.logging_config import log_upstream_failure
+from retro.db import as_database
 from retro.runtime import secure_directory, secure_file
 
 CBU_ORIGIN = 'https://cbu.uz'
@@ -37,16 +38,15 @@ class UsdRate:
 
 class UsdRates:
     def __init__(self, path: Path, *, transport=None):
-        self.path = Path(path)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         self.transport = transport
         self.lock = asyncio.Lock()
         self._initialize()
 
     def _open(self):
-        secure_directory(self.path.parent)
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def _initialize(self):
         with closing(self._open()) as connection, connection:

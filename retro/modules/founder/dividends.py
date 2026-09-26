@@ -12,6 +12,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from retro.modules.cashier.service import TZ
+from retro.db import as_database
 from retro.runtime import secure_directory, secure_file
 
 MAX_TARGET = Decimal('1000000000000')
@@ -33,8 +34,9 @@ def target_value(value) -> Decimal:
 
 class DividendTargetStore:
     def __init__(self, path):
-        self.path = Path(path)
-        secure_directory(self.path.parent)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         with closing(self._open()) as connection, connection:
             connection.executescript('''
                 CREATE TABLE IF NOT EXISTS founder_dividend_targets (
@@ -54,9 +56,7 @@ class DividendTargetStore:
             ''')
 
     def _open(self):
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def get(self, week: str) -> dict | None:
         """Цель недели; если на неделю не ставили — последняя из прошлых.

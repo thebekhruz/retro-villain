@@ -4,5 +4,7 @@ httpx==0.28.1
 python-dotenv==1.2.3
 # Загрузка фото покупок закупа приходит multipart-формой.
 python-multipart==0.0.32
+# Рабочие данные живут в Postgres: на Railway у приложения нет диска.
+psycopg[binary]==3.3.6
 openpyxl==3.1.5
 reportlab==5.0.1
