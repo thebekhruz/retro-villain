@@ -337,7 +337,8 @@ function renderChecks(data) {
     'Без ставки': f => 'Этим сотрудникам смена не начисляется, пока не укажете ставку.',
     'Смена не подтверждена': () => 'Расчёт готов — подтвердите начисления, чтобы выдавать деньги.',
     'Неоплаченные расходы': f => 'Долг поставщикам ' + money(f.amount) + '.',
-    'Касса не передана': () => 'Передачи от кассира за ' + formattedDay(data.date) + ' ещё нет.'
+    'Касса не передана': () => 'Передачи от кассира за ' + formattedDay(data.date) + ' ещё нет.',
+    'Отстаём от недельных дивидендов': f => 'До плана к этому дню не хватает ' + money(Math.round(f.amount)) + '.'
   };
   const items = AccountantLogic.dayChecks(data).map(item => ({
     level: item.level, accrualId: item.accrualId,
@@ -371,6 +372,52 @@ function renderChecks(data) {
     else button.disabled = true;
     box.append(button);
   });
+}
+
+/* ── Дивиденды · неделя ────────────────────────────────────────────────
+   Сумму ставит учредитель; бухгалтер видит цель, отставание от плана и
+   рекомендацию на сегодня, а вносит её обычной строкой «Отложить в сейф». */
+function renderDividends(data) {
+  const week = data.dividends_week, card = $('dividends-card');
+  card.hidden = !week;
+  if (!week) return;
+  const target = week.target === null ? null : Number(week.target), set = Number(week.collected);
+  const dm = iso => iso.slice(8, 10) + '.' + iso.slice(5, 7);
+  $('dividends-week').textContent = dm(week.start) + '–' + dm(week.end);
+  $('dividends-target').textContent = target === null ? 'не задано' : money(target);
+  const source = week.target_source;
+  $('dividends-changed').textContent = !source ? 'Учредитель ещё не поставил сумму на неделю.' : source.inherited
+    ? 'Как на прошлой неделе' : 'изменено учредителем ' + new Date(source.changed_at).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'});
+  $('dividends-fill').style.width = target ? Math.min(100, set / target * 100) + '%' : '0%';
+  $('dividends-pace').hidden = !target;
+  $('dividends-pace').style.left = target ? Math.min(100, Number(week.pace) / target * 100) + '%' : '0';
+  $('dividends-set').textContent = 'Отложено ' + number.format(set);
+  $('dividends-left').textContent = target ? 'осталось ' + number.format(Number(week.left)) : '';
+  const status = $('dividends-status');
+  status.textContent = target === null ? '' : week.done ? 'Недельная сумма собрана' : week.behind
+    ? 'Отстаём от плана на ' + money(Math.round(Number(week.due) - set)) : 'Идём по плану';
+  status.className = 'dividends-status ' + (week.behind ? 'is-behind' : 'is-ok');
+  $('dividends-today').textContent = Number(week.collected_today) ? 'Сегодня отложено: ' + money(week.collected_today) : 'Сегодня ещё не откладывали';
+  const suggest = week.suggest_today === null ? 0 : Number(week.suggest_today);
+  $('dividends-hint').textContent = target && Number(week.left) > 0
+    ? 'Рекомендуем сегодня ' + money(suggest) + ' · до выдачи ' + week.days_left + ' ' + (week.days_left === 1 ? 'день' : week.days_left < 5 ? 'дня' : 'дней')
+    : target ? 'Выдача ' + formattedDay(week.payout_day) : '';
+  $('dividends-fill-button').hidden = !(target && Number(week.left) > 0);
+  card.classList.toggle('is-behind', Boolean(week.behind));
+}
+
+function prefillDividends() {
+  const week = current && current.dividends_week;
+  if (!week) return;
+  $('expense-category').value = 'reserves';
+  categoryChanged();
+  $('expense-item').value = 'reserve_dividends_transfer';
+  expenseImpact();
+  $('expense-note').value = 'Дивиденды в сейф · неделя ' + week.week;
+  $('expense-amount').value = week.suggest_today === null ? '' : String(Math.round(Number(week.suggest_today)));
+  $('journal-section').open = true;
+  $('other-expense-form').scrollIntoView({block: 'center', behavior: 'smooth'});
+  $('expense-amount').focus({preventScroll: true});
 }
 
 function renderStaff(data) {
@@ -584,7 +631,7 @@ async function loadDay() {
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить данные.');
     if (sequence !== requestNo) return;
     current = data;
-    renderStaff(data); renderLedger(data); renderShift(data); renderShoh(data); renderSalary(data); renderChecks(data);
+    renderStaff(data); renderLedger(data); renderShift(data); renderShoh(data); renderSalary(data); renderChecks(data); renderDividends(data);
     // Строки смены создаются после renderLedger, поэтому состояние кнопок и
     // полей пересчитываем в конце — иначе новые поля остаются активными.
     updateButtons();
@@ -638,6 +685,7 @@ $('pay-all').addEventListener('click', async () => {
   finally { saving = false; await loadDay(); }
 });
 $('expense-category').addEventListener('change', categoryChanged);
+$('dividends-fill-button').addEventListener('click', prefillDividends);
 $('expense-item').addEventListener('change', expenseImpact);
 $('expense-paid').addEventListener('input', updateButtons);
 document.querySelectorAll('[data-open]').forEach(link => link.addEventListener('click', () => { $(link.dataset.open).open = true; }));
