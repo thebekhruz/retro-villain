@@ -3,6 +3,7 @@ from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from uuid import UUID
 
@@ -13,6 +14,10 @@ from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
 from retro.modules.founder.tools import FounderChatTools
 from retro.integrations.broadcasts import BroadcastConflict
+from retro.modules.director.models import completed_period
+from retro.modules.founder import cabinet, overview
+from retro.modules.founder.dividends import DividendTargetError
+from retro.modules.founder.export import month_workbook
 
 
 router = APIRouter(prefix='/api/founder', tags=['founder'])
@@ -216,3 +221,103 @@ async def chat(request: Request, body: ChatInput):
 @router.delete('/chat', status_code=204)
 def clear_chat(request: Request):
     request.app.state.founder_chat_store.clear(_chat_owner(request))
+
+
+# ── Кабинет учредителя (ui_solid1 7a/7b) ────────────────────────────────────
+
+class DividendTargetInput(BaseModel):
+    week: str = Field(min_length=8, max_length=8)
+    amount: str = Field(min_length=1, max_length=20)
+
+
+def _week_monday(week):
+    try:
+        return overview.parse_week(week)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+
+
+@router.get('/dividends/weekly')
+def dividend_target(request: Request, week: str | None = None):
+    today = today_tashkent()
+    if week is None:
+        day = today
+    else:
+        monday = _week_monday(week)
+        if monday > today:
+            raise HTTPException(422, 'Будущая неделя ещё не началась.')
+        # Для прошлой недели считаем по её воскресенью: неделя уже закрыта.
+        day = min(today, monday + timedelta(days=6))
+    return cabinet.dividend_summary(request.app.state, day)
+
+
+@router.post('/dividends/weekly')
+def set_dividend_target(request: Request, body: DividendTargetInput):
+    monday = _week_monday(body.week)
+    today = today_tashkent()
+    if monday + timedelta(days=6) < today:
+        raise HTTPException(422, 'Прошедшую неделю изменить нельзя: бухгалтер уже закрыл её.')
+    if monday > today + timedelta(days=7):
+        raise HTTPException(422, 'Цель ставится на текущую или следующую неделю.')
+    try:
+        request.app.state.dividend_targets.set(body.week, body.amount,
+                                               getattr(request.state, 'dashboard_user', None))
+    except DividendTargetError as error:
+        raise HTTPException(422, str(error)) from None
+    return cabinet.dividend_summary(request.app.state, max(today, monday))
+
+
+@router.get('/day')
+async def founder_day(request: Request, date: date | None = None):
+    return await cabinet.founder_day(request, cabinet.selected_day(date))
+
+
+@router.get('/week')
+async def founder_week(request: Request, date: date | None = None):
+    return await cabinet.founder_week(request, cabinet.selected_day(date))
+
+
+@router.get('/forecast')
+async def founder_forecast(request: Request, date: date | None = None):
+    return await cabinet.founder_forecast(request, cabinet.selected_day(date))
+
+
+@router.get('/chef-account')
+async def chef_account(request: Request, date: date | None = None):
+    return await cabinet.founder_chef(request, cabinet.selected_day(date))
+
+
+@router.get('/spending')
+def spending(request: Request, date: date | None = None):
+    return cabinet.founder_spending(request.app.state, cabinet.selected_day(date))
+
+
+@router.get('/dishes')
+async def dishes(request: Request, days: int = Query(7, ge=1, le=30)):
+    """Блюда за последние закрытые дни — тот же отчёт iiko, что у директора."""
+    start, end = completed_period(today_tashkent(), days)
+    snapshot, error = await cabinet.iiko_or_error(
+        request, 'load_director_report', today_tashkent(), start=start, end=end,
+        operation='dishes', timeout=150)
+    if snapshot is None:
+        raise HTTPException(503, error)
+    return snapshot.json()
+
+
+@router.get('/export/month')
+async def export_month(request: Request, month: str | None = None):
+    today = today_tashkent()
+    try:
+        first = date.fromisoformat((month or today.isoformat()[:7]) + '-01')
+    except ValueError:
+        raise HTTPException(422, 'Укажите месяц в виде ГГГГ-ММ.') from None
+    if first > today:
+        raise HTTPException(422, 'Будущий месяц ещё не начался.')
+    last = min(today, cabinet.month_bounds(first)[1])
+    rows, error = await cabinet.iiko_or_error(request, 'load_daily_orders', first, last,
+                                              operation='export_month', timeout=120)
+    orders = overview.register_days(rows) if rows is not None else None
+    data = await asyncio.to_thread(month_workbook, request.app.state, first, last, orders, error)
+    return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition':
+                             f'attachment; filename="Retro-accountant-{first.isoformat()[:7]}.xlsx"'})

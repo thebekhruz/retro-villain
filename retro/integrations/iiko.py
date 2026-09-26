@@ -18,7 +18,7 @@ from retro.report_cache import ReportCache, refresh_source
 from retro.config import IIKO_ORIGIN
 from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
-    BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
+    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
 )
 from retro.modules.director.models import (
     SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
@@ -387,6 +387,70 @@ def detail_rows_from_olap(rows, dimensions, *, limit, offset=0):
     return records, total_rows
 
 
+def olap_leaves(rows, group_count, what):
+    """Листья сгруппированного отчёта iiko: (значения измерений, строка метрик)."""
+    leaves = []
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError(f'iiko вернул некорректную строку отчёта «{what}».')
+        values = list(inherited)
+        while len(values) < group_count:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != group_count:
+            raise DataError(f'iiko не вернул все измерения отчёта «{what}».')
+        leaves.append((values, row))
+
+    if not isinstance(rows, list):
+        raise DataError(f'iiko вернул некорректную структуру отчёта «{what}».')
+    for row in rows:
+        visit(row, [])
+    return leaves
+
+
+def daily_orders_from_olap(rows):
+    """Чеки и выручка по дням и кассам. Касса школы — Oxbridge, основная — Retro."""
+    registers = {RETRO_REGISTER: 'retro', SCHOOL_REGISTER: 'school'}
+    result = []
+    for (day, register), row in olap_leaves(rows, 2, 'чеки по дням'):
+        if register not in registers:
+            raise DataError('В iiko появилась неизвестная касса. Разделение выручки требует проверки.')
+        try:
+            date.fromisoformat(day)
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату в отчёте по чекам.') from None
+        result.append(dict(day=day, direction=registers[register],
+                           orders=int(number(cell(row, 2))), revenue=str(number(cell(row, 3)))))
+    return result
+
+
+def chef_bills_from_olap(rows):
+    """Счета «Счёт Шефа» по одному на заказ: сумма по меню и себестоимость.
+
+    Официантов в заказе бывает несколько — перечисляем всех, кто его вёл."""
+    bills = {}
+    for (day, order_id, table, waiter), row in olap_leaves(rows, 4, 'Счёт Шефа'):
+        try:
+            date.fromisoformat(day)
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату Счёта Шефа.') from None
+        bill = bills.setdefault(order_id, dict(day=day, order_id=order_id, table=table,
+                                               waiters=[], amount=Decimal(0), cost=Decimal(0)))
+        if waiter and waiter not in bill['waiters']:
+            bill['waiters'].append(waiter)
+        bill['amount'] += number(cell(row, 4))
+        bill['cost'] += number(cell(row, 5))
+    return [dict(bill, amount=str(bill['amount']), cost=str(bill['cost'].quantize(
+        Decimal('.01'), rounding=ROUND_HALF_UP))) for bill in bills.values()]
+
 class IikoClient:
     def __init__(self, settings, *, transport=None, poll_delay=1):
         self.settings, self.transport, self.poll_delay = settings, transport, poll_delay
@@ -621,6 +685,45 @@ class IikoClient:
                 return result
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_founder')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def load_daily_orders(self, start, end):
+        """Чеки и выручка по дням для Retro и Oxbridge — без банкетного зала.
+
+        Два измерения iiko отдаёт быстро даже за два месяца, поэтому этим
+        отчётом считается прогноз по дням недели."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        scope = [dict(field='RestaurantSection', filterType='value_list',
+                      valueList=[BANQUET_SECTION], inclusiveList=False)]
+        try:
+            async with self._client() as client:
+                answers = await gather_reads(*(
+                    self._olap_range(client, chunk_start, chunk_end,
+                                     ['OpenDate.Typed', 'CashRegisterName'],
+                                     ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope)
+                    for chunk_start, chunk_end in date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS)))
+                return [row for answer in answers for row in daily_orders_from_olap(answer)]
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_daily_orders')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def load_chef_bills(self, start, end):
+        """Счета, закрытые типом оплаты «Счёт Шефа», — по заказам, со столом."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        scope = [dict(field='NonCashPaymentType', filterType='value_list',
+                      valueList=['Счет Шефа'], inclusiveList=True)]
+        try:
+            async with self._client() as client:
+                answers = await gather_reads(*(
+                    self._olap_range(client, chunk_start, chunk_end,
+                                     ['OpenDate.Typed', 'UniqOrderId.Id', 'TableNum', 'WaiterName'],
+                                     ['DishSumInt', 'ProductCostBase.ProductCost'], scope)
+                    for chunk_start, chunk_end in date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS)))
+                return [row for answer in answers for row in chef_bills_from_olap(answer)]
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_chef_bills')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
     async def _founder_pnl(self, client, start, end):

@@ -18,7 +18,8 @@ from retro.runtime import secure_directory, secure_file
 PATHS = {'/api/cashier/expenses', '/api/cashier/receipts', '/api/cashier/usd-balance'} | {
     '/api/accountant/' + suffix for suffix in (
         'handover', 'incomes', 'expenses', 'reserves', 'cash-opening', 'monthly-plan',
-        'salary-payments', 'debts/pay', 'procurement', 'payroll/confirm')}
+        'salary-payments', 'debts/pay', 'procurement', 'payroll/confirm')} | {
+    '/api/founder/dividends/weekly'}
 
 
 class FinancialRequests:

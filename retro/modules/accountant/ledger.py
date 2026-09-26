@@ -156,6 +156,38 @@ class FinanceStore:
                 (start.isoformat(), end.isoformat()))), Decimal(0))
         return {'other': movements, 'salary': salaries, 'total': movements + salaries}
 
+    def cash_flows_between(self, start: date, end: date) -> list[dict]:
+        """Все движения денег бухгалтера за период одной выборкой — для недели
+        и месяца учредителя. Зарплатные выплаты идут со своей группой, по ней
+        видно, сменная это выплата или оклад; перевод в сейф — отдельной строкой,
+        потому что только он и есть отложенные дивиденды."""
+        if start > end:
+            raise ValueError('cash flow range start must not exceed end')
+        bounds = (start.isoformat(), end.isoformat())
+        with closing(self._open()) as connection:
+            rows = [dict(day=row[0], type=row[1], item_code=row[2], amount=row[3],
+                         description=row[4])
+                    for row in connection.execute(
+                        'SELECT day, kind, item_code, amount, description FROM accountant_movements '
+                        "WHERE day >= ? AND day <= ? AND kind IN "
+                        "('other_expense','procurement_advance','other_receipt','cashier_transfer') "
+                        'ORDER BY day, id', bounds)]
+            rows += [dict(day=row[0], type='salary_payment', item_code=None, amount=row[1],
+                          group=row[2])
+                     for row in connection.execute(
+                         'SELECT p.paid_day, p.amount, a.group_name FROM accountant_salary_payments p '
+                         'JOIN accountant_accruals a ON a.id = p.accrual_id '
+                         'WHERE p.paid_day >= ? AND p.paid_day <= ? ORDER BY p.paid_day, p.id', bounds)]
+            rows += [dict(day=row[0], type='reserve_transfer', item_code=None, amount=row[1])
+                     for row in connection.execute(
+                         "SELECT day, amount FROM accountant_reserves WHERE kind = 'transfer' "
+                         "AND account = 'dividends' AND day >= ? AND day <= ? ORDER BY day, id", bounds)]
+            handovers = {row[0]: row[1] for row in connection.execute(
+                'SELECT day, amount FROM accountant_handover_days WHERE day >= ? AND day <= ?', bounds)}
+        rows += [dict(day=day, type='handover', item_code=None, amount=amount)
+                 for day, amount in handovers.items()]
+        return sorted(rows, key=lambda row: row['day'])
+
     def reserve_entry(self, day, account, kind, amount, note, *, cashier_amount=None):
         from .reserves import add_reserve_entry
         return add_reserve_entry(self, day, account, kind, amount, note, cashier_amount)

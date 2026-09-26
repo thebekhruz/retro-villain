@@ -30,6 +30,7 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.modules.founder.chat import FounderChatStore
+from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
@@ -137,6 +138,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.attendance_store = AttendanceStore(accountant_path)
     # Закуп живёт в той же базе, что подотчёт бухгалтера: они про одни деньги.
     app.state.shokh = ShokhStore(accountant_path)
+    # Недельную цель дивидендов ставит учредитель, а видит бухгалтер: храним
+    # рядом с резервом `dividends`, в который эти деньги и откладываются.
+    app.state.dividend_targets = DividendTargetStore(accountant_path)
     app.state.attendance = AttendanceService(
         app.state.attendance_store,
         source=settings.hikvision.source if settings.hikvision else 'retro-main-entry',
@@ -271,10 +275,22 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     @app.get('/director')
     def director():
+        # Телефон директора (6a). Прежний десктопный отчёт с полной таблицей
+        # блюд и PDF-архивом остаётся рядом, на /director/report.
+        return FileResponse(STATIC / 'director-app.html')
+
+    @app.get('/director/report')
+    def director_report():
         return FileResponse(STATIC / 'director.html')
 
     @app.get('/founder')
     def founder():
+        # Кабинет учредителя (7a на телефоне, 7b на компьютере). Аналитика
+        # iiko, брони и рассылки живут на /founder/analytics.
+        return FileResponse(STATIC / 'founder-cabinet.html')
+
+    @app.get('/founder/analytics')
+    def founder_analytics():
         return FileResponse(STATIC / 'founder.html')
 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
