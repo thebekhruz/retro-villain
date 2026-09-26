@@ -417,7 +417,9 @@ async function saveDraft() {
       await fetchDay(); message('Изменение сохранено с сегодняшнего дня.');
     } else {
       const payload = {name, role: d.role.trim(), rate, group: d.group};
-      const response = await fetch('/api/accountant/employees', {
+      // Создание — через RetroFinancialWrite: у сотрудника есть ставка, и повтор
+      // после потерянного ответа иначе завёл бы второго человека.
+      const response = await RetroFinancialWrite('/api/accountant/employees', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить.');
@@ -515,7 +517,7 @@ function addMonthlyRow() {
   row.querySelector('[data-cancel]').addEventListener('click', () => row.remove());
   row.addEventListener('submit', async event => {
     event.preventDefault(); if (!row.reportValidity()) return;
-    const response = await fetch('/api/accountant/monthly-employees', {
+    const response = await RetroFinancialWrite('/api/accountant/monthly-employees', {
       method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.fromEntries(new FormData(row)))});
     const result = await response.json();
     if (!response.ok) return message(result.detail || 'Не удалось добавить сотрудника.', true);
