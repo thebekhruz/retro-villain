@@ -444,8 +444,9 @@ $('summary-home').addEventListener('click', async () => { await loadHome(); show
 fetch('/api/config', {headers: {accept: 'application/json'}})
   .then(response => (response.ok ? response.json() : null))
   .then(config => {
+    // Сервер отдаёт только открытые этой учётной записи модули.
     const others = config && Array.isArray(config.modules)
-      && config.modules.some(module => module.path !== '/shokh' && module.available);
+      && config.modules.some(module => module.path !== '/shokh');
     if (others) document.getElementById('shokh-back').hidden = false;
   })
   .catch(() => {});

@@ -1,6 +1,7 @@
 import asyncio
 import base64
 import binascii
+import posixpath
 import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -54,6 +55,57 @@ FULL_ACCESS_ROLES = {'admin', 'all'}
 class LoginInput(BaseModel):
     username: str
     password: str
+
+
+# Статика модулей: файл → панели, которым он нужен. Раньше /static/ отдавался
+# любой вошедшей роли целиком, и кассир открывал /static/accountant.html или
+# /static/director-app.js — чужие окна и их логику. Файлы, которых здесь нет,
+# общие (каркас, меню, словари, выход, иконки): их получает любой вошедший.
+# Новый файл модуля вписывать сюда — tests/test_module_access.py сверяет
+# таблицу с тем, что реально подключают страницы.
+STATIC_PANELS: dict[str, frozenset[str]] = {
+    name: frozenset(panels) for name, panels in {
+        # Кассир
+        'index.html': {'cashier'}, 'app.js': {'cashier'}, 'cashier-logic.js': {'cashier'},
+        'cashier.css': {'cashier'},
+        # Бухгалтер: финансы дня, сотрудники, ведомость
+        'accountant.html': {'accountant'}, 'employees.html': {'accountant'},
+        'payroll.html': {'accountant'}, 'accountant.js': {'accountant'},
+        'employees.js': {'accountant'}, 'payroll.js': {'accountant'},
+        'payroll-logic.js': {'accountant'}, 'accountant.css': {'accountant'},
+        'employees.css': {'accountant'}, 'payroll.css': {'accountant'},
+        # Расчёты бухгалтерии читают экраны директора и учредителя
+        'accountant-logic.js': {'accountant', 'director', 'founder'},
+        # Директор
+        'director.html': {'director'}, 'director-app.html': {'director'},
+        'director.js': {'director'}, 'director-app.js': {'director'},
+        'director.css': {'director'}, 'ai-chat.css': {'director'}, 'period.js': {'director'},
+        # Общее у директора и учредителя: телефонный каркас, чат, разметка ответов
+        'director-app.css': {'director', 'founder'}, 'director-logic.js': {'director', 'founder'},
+        'ai-chat.js': {'director', 'founder'}, 'founder-chat.js': {'director', 'founder'},
+        'founder-markdown.js': {'director', 'founder'},
+        # Учредитель
+        'founder.html': {'founder'}, 'founder-cabinet.html': {'founder'},
+        'founder.js': {'founder'}, 'founder-cabinet.js': {'founder'},
+        'founder-logic.js': {'founder'}, 'founder-cabinet-logic.js': {'founder'},
+        'founder-broadcast.js': {'founder'}, 'founder-broadcast-logic.js': {'founder'},
+        'founder.css': {'founder'}, 'founder-cabinet.css': {'founder'},
+        # Закуп · Шох
+        'shokh.html': {'shokh'}, 'shokh.js': {'shokh'}, 'shokh-logic.js': {'shokh'},
+        'shokh.css': {'shokh'},
+    }.items()
+}
+
+
+def static_panels(path: str) -> frozenset[str] | None:
+    """Панели, которым открыт файл /static/…; None — файл общий.
+
+    Имя приводим к виду, в котором его найдёт диск: «a/../accountant.html»
+    и «Accountant.html» (на регистронезависимой ФС) — тот же файл."""
+    if not path.startswith('/static/'):
+        return None
+    name = posixpath.normpath(path[len('/static/'):]).lstrip('/').lower()
+    return STATIC_PANELS.get(name)
 
 
 def panel_for_path(path: str) -> str | None:
@@ -198,8 +250,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             return JSONResponse({'detail': 'Для просмотра отчётов требуется вход.'}, 401,
                                 headers={'WWW-Authenticate': 'Basic realm="Retro Milliy", charset="UTF-8"', 'Cache-Control': 'no-store'})
         required_panel = panel_for_path(request.url.path)
-        if (required_panel and not public and role not in FULL_ACCESS_ROLES
-                and role != required_panel):
+        allowed_panels = static_panels(request.url.path)
+        if not public and role not in FULL_ACCESS_ROLES and (
+                (required_panel and role != required_panel)
+                or (allowed_panels is not None and role not in allowed_panels)):
             return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
         request.state.dashboard_role = role
         request.state.dashboard_user = identity.username if identity else None
@@ -301,21 +355,17 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
                     ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),
-                    ('shokh', 'Закуп', '/shokh'))
+                    ('shokh', 'Закуп · Шох', '/shokh'))
 
     @app.get('/api/config')
     def config(request: Request):
-        # Меню рисуется на клиенте, а право входа знает только сервер.
-        # Отдаём его вместе с причиной: закрытый модуль должен выглядеть
-        # закрытым, а не открывать страницу с отказом.
+        # Меню рисуется на клиенте, а право входа знает только сервер. Чужие
+        # модули не отдаём вовсе: роль не должна даже знать, какие окна есть
+        # у других (раньше они приходили погашенными, с замком).
         role = getattr(request.state, 'dashboard_role', 'all')
-        modules = []
-        for panel, name, path in MODULE_NAMES:
-            reason = ''
-            if role not in FULL_ACCESS_ROLES and role != panel:
-                reason = 'Доступно другой учётной записи'
-            modules.append(dict(id=panel, name=name, path=path,
-                                available=not reason, reason=reason))
+        modules = [dict(id=panel, name=name, path=path, available=True)
+                   for panel, name, path in MODULE_NAMES
+                   if role in FULL_ACCESS_ROLES or role == panel]
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
                     role=role, modules=modules, planned_modules=0)
