@@ -217,6 +217,20 @@
     }
   }
 
+  // Модуль сменил подсказку уже переведённого элемента («Передано … при
+  // расчёте …»): старый русский оригинал больше не верен. Наша собственная
+  // запись перевода тоже приходит сюда — её узнаём по совпадению и пропускаем.
+  function retranslateAttribute(element, name) {
+    if (!(element instanceof Element) || element.closest(OFF)) return;
+    const mark = 'ru' + name.replace(/[^a-z]/gi, '');
+    const value = element.getAttribute(name);
+    if (element.dataset[mark] !== undefined) {
+      if (value === (translate(element.dataset[mark]) ?? element.dataset[mark])) return;
+      delete element.dataset[mark];
+    }
+    if (value !== null) applyToAttributes(element, true);
+  }
+
   function walk(root, toUzbek) {
     if (root.nodeType === Node.TEXT_NODE) {
       applyToTextNode(root, toUzbek);
@@ -273,8 +287,12 @@
       for (const record of records) {
         record.addedNodes.forEach(node => walk(node, true));
         if (record.type === 'characterData') applyToTextNode(record.target, true);
+        if (record.type === 'attributes') retranslateAttribute(record.target, record.attributeName);
       }
-    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    }).observe(document.body, {
+      childList: true, subtree: true, characterData: true,
+      attributes: true, attributeFilter: ATTRIBUTES,
+    });
   }
 
   globalThis.RetroI18n = { apply, choose, saved, translate };

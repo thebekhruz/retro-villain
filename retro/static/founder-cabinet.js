@@ -412,7 +412,9 @@
     rows.slice(0, 5).forEach((row, index) => {
       const line = node('div', 'fo-dish');
       const margin = row.margin === null ? '—' : Math.round(row.margin) + '%';
-      line.append(node('span', '', String(index + 1)), node('strong', '', row.name),
+      const dish = node('strong', '', row.name);
+      dish.dataset.i18n = 'off';  // название из iiko не переводим
+      line.append(node('span', '', String(index + 1)), dish,
         node('span', '', Math.round(row.quantity) + ' шт'), node('b', '', short(row.revenue)),
         node('small', director.lowMargin(row) ? 'm-low' : 'm-ok', margin));
       target.append(line);
