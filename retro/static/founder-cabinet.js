@@ -147,11 +147,13 @@
       if (!response.ok) throw new Error(body.detail || 'Не удалось сохранить сумму.');
       state.data.dividends = body;
       editor.message = 'Сохранено. Бухгалтер видит новую сумму в «Финансах дня».';
+      globalThis.RetroToast?.show(editor.message);
       editor.error = false;
       editor.saving = false;
       renderDividends(body);
     } catch (error) {
       editor.message = error.message;
+      globalThis.RetroToast?.show(error.message, 'error');
       editor.error = true;
       editor.saving = false;
       renderEditor();

@@ -123,7 +123,11 @@
 .shokh-segment{flex:1;height:5px;border-radius:3px;background:#dfe5da;transition:background .3s}
 .shokh-segment.is-on{background:var(--green)}
 .shokh-flow-body{flex:1;padding:6px 16px 16px}
-.shokh-step{display:grid;gap:14px;align-content:start}
+/* Колонка шага не шире экрана: без minmax(0,…) сетка брала ширину самой
+   длинной строки внутри, и шаг «Количество и цена» уезжал до 627 точек —
+   «+» и поле цены оказывались за краем телефона. */
+.shokh-step{display:grid;grid-template-columns:minmax(0,1fr);gap:14px;align-content:start}
+.shokh-step>*{min-width:0}
 .shokh-step h1{font-size:28px;font-weight:650;letter-spacing:-.8px;margin:0}
 .shokh-step-top span{font-size:12px;color:var(--muted-2)}
 .shokh-step-top h1{margin-top:2px}
@@ -147,6 +151,8 @@
   background:#edf2e9;color:var(--green);font-size:18px;font-weight:750}
 .shokh-point-name{font-size:17px;font-weight:650;overflow-wrap:anywhere}
 .shokh-items{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+/* Пустая история — подпись на всю строку, а не в одну колонку из двух. */
+.shokh-items>.shokh-note{grid-column:1/-1;margin:0}
 .shokh-item{min-height:62px;border-radius:16px;border:1px solid #dbe3d8;background:#fff;
   color:var(--ink);padding:10px 12px;text-align:left}
 .shokh-item.is-active{border-color:var(--green);background:#eaf1e6}

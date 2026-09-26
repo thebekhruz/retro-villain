@@ -768,3 +768,28 @@ button.rm-card:hover{background:var(--panel-2)}
   .rm-section-note{margin-left:16px}
   .rm-drawer{padding:18px}
 }
+
+/* ── Тост: итог действия внизу экрана (feedback.js) ──────────────────────
+   Виден при любой прокрутке, над нижними вкладками и кнопкой закупа.
+   Успех — зелёный, уходит сам; ошибка — красная, держится до закрытия. */
+.rm-toast{position:fixed;left:50%;bottom:calc(env(safe-area-inset-bottom) + 18px);z-index:90;
+  display:flex;align-items:center;gap:12px;width:min(440px,calc(100vw - 24px));padding:12px 10px 12px 14px;
+  border-radius:14px;background:var(--green,#143e35);color:#fff;font-size:14px;line-height:1.4;
+  box-shadow:0 14px 40px rgba(20,62,53,.28);transform:translateX(-50%)}
+.rm-toast.is-in{animation:rm-toast-in .22s ease-out}
+.rm-toast.is-error{background:#8d3548;box-shadow:0 14px 40px rgba(141,53,72,.3)}
+.rm-toast-icon{display:grid;place-items:center;flex:none;width:26px;height:26px;border-radius:50%;
+  background:#ffffff26;font-weight:700;font-size:14px}
+.rm-toast-text{flex:1;min-width:0;overflow-wrap:anywhere}
+.rm-toast-close{flex:none;width:36px;height:36px;border:0;border-radius:10px;background:transparent;
+  color:#ffffffcc;font-size:22px;line-height:1}
+.rm-toast-close:hover{background:#ffffff1a}
+body:has(.rm-tabs) .rm-toast,body:has(.dir-tabs) .rm-toast{bottom:calc(env(safe-area-inset-bottom) + 92px)}
+body:has(#screen-flow:not([hidden])) .rm-toast,body:has(#screen-home:not([hidden])) .rm-toast{bottom:calc(env(safe-area-inset-bottom) + 104px)}
+@keyframes rm-toast-in{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
+@media(prefers-reduced-motion:reduce){.rm-toast.is-in{animation:none}}
+
+/* Подсказка под полем суммы: «= 1 500 000 сум», чтобы не потерять ноль. */
+.rm-money-hint{display:block;min-height:16px;margin-top:4px;font-size:12px;font-weight:600;
+  color:var(--green,#143e35);font-variant-numeric:tabular-nums}
+.rm-money-hint:empty{min-height:0;margin:0}

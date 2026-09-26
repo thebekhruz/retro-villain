@@ -65,7 +65,7 @@ function nextDay(day) { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.g
 function formattedDay(day) { return new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace(/\s*г\.$/, ''); }
 function shortDay(day) { return new Intl.DateTimeFormat('ru-RU', {weekday: 'short', day: 'numeric', month: 'long', timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')); }
 function entryTime(value) { return value ? new Date(value).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'}) : '—'; }
-function message(value, error = false) { const n = $('accountant-message'); n.textContent = value; n.hidden = !value; n.setAttribute('role', error ? 'alert' : 'status'); }
+function message(value, error = false) { const n = $('accountant-message'); n.textContent = value; n.hidden = !value; n.setAttribute('role', error ? 'alert' : 'status'); globalThis.RetroToast?.show(value, error ? 'error' : 'ok'); }
 function node(tag, cls, value) { const n = document.createElement(tag); if (cls) n.className = cls; if (value !== undefined) n.textContent = value; return n; }
 // Единое пустое состояние: знак, объяснение и, если есть, следующий шаг.
 function emptyState(glyph, text, extra) {
@@ -609,11 +609,16 @@ function renderLedger(data) {
 
 function status(text) { const box = $('connection'); if (box) box.textContent = text; }
 
+// День, который сейчас на экране. Перезагрузку того же дня (после записи)
+// делаем на месте: раньше раскладка пряталась, страница схлопывалась, и
+// бухгалтер после «Записать» внизу журнала оказывался в самом верху.
+let shownDay = null;
+
 async function loadDay() {
   const day = selectedDay();
   const sequence = ++requestNo;
   current = null; updateButtons();
-  $("finance-layout").hidden = true;
+  if (day !== shownDay) $("finance-layout").hidden = true;
   if (!day || !$('accountant-date').checkValidity()) { $('entrances-download').disabled = true; message('Выберите сегодняшний или прошедший день.', true); return; }
   $("finance-layout").setAttribute("aria-busy", "true");
   $('entrances-day').textContent = formattedDay(day);
@@ -635,7 +640,7 @@ async function loadDay() {
     // Строки смены создаются после renderLedger, поэтому состояние кнопок и
     // полей пересчитываем в конце — иначе новые поля остаются активными.
     updateButtons();
-    $("finance-layout").hidden = false; message('');
+    $("finance-layout").hidden = false; shownDay = day; message('');
     status('Данные за ' + formattedDay(day));
   } catch (error) { if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); } }
   finally { if (RetroState.shouldReleaseBusy(sequence, requestNo)) $('finance-layout').setAttribute('aria-busy', 'false'); }
@@ -653,6 +658,8 @@ function submit(id, endpoint, body, success) {
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить. Проверьте поля.');
       form.reset(); if (id === 'other-expense-form') categoryChanged(); await loadDay(); message(success);
+      // Следующая строка: курсор в первое поле, без прыжка экрана.
+      form.querySelector('select:not([disabled]), input:not([type=hidden]):not([disabled])')?.focus({preventScroll: true});
     } catch (error) { message(error.message, true); } finally { saving = false; updateButtons(); }
   });
 }

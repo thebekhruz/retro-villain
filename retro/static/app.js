@@ -11,6 +11,7 @@ function message(text, error = false) {
   $('message').textContent = text;
   $('message').hidden = !text;
   $('message').setAttribute('role', error ? 'alert' : 'status');
+  globalThis.RetroToast?.show(text, error ? 'error' : 'ok');
 }
 function formattedDay(day) {
   return new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'long', year:'numeric', timeZone:'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
@@ -61,7 +62,8 @@ $('usd-balance-save').addEventListener('click', async () => {
     const data = await RetroState.responseJson(await request('/api/cashier/usd-balance', undefined, {method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:$('report-date').value, amount:$('usd-balance').value})}));
     $('usd-balance').value = data.amount;
     $('usd-balance-status').textContent = 'Сохранено';
-  } catch (error) { $('usd-balance-status').textContent = error.message; }
+    globalThis.RetroToast?.show('Доллары в кассе сохранены');
+  } catch (error) { $('usd-balance-status').textContent = error.message; globalThis.RetroToast?.show(error.message, 'error'); }
 });
 async function request(url, signal, options = {}) {
   const sender = options.method === 'POST' ? RetroFinancialWrite : fetch;
@@ -147,6 +149,7 @@ async function loadReceipts(day, current, signal) {
     if (current === generation && error.name !== 'AbortError') {
       $('receipt-feedback').textContent = error.message;
       $('receipt-feedback').classList.add('is-error');
+      globalThis.RetroToast?.show(error.message, 'error');
     }
   }
 }
@@ -187,6 +190,7 @@ async function loadExpenses(day, current, signal) {
     if (current === generation && error.name !== 'AbortError') {
       $('expense-feedback').textContent = error.message;
       $('expense-feedback').classList.add('is-error');
+      globalThis.RetroToast?.show(error.message, 'error');
     }
   }
 }
@@ -281,13 +285,14 @@ $('expense-form').addEventListener('submit', async event => {
       body:JSON.stringify({date:day, description:$('expense-description').value, amount:$('expense-amount').value})
     });
     if (current !== generation) return;
-    $('expense-description').value = ''; $('expense-amount').value = '';
+    $('expense-description').value = ''; $('expense-amount').value = ''; $('expense-amount').dispatchEvent(new Event('input', {bubbles: true}));
     await loadExpenses(day, current, controller.signal);
-    $('expense-feedback').textContent = 'Расход сохранён';
+    $('expense-feedback').textContent = 'Расход сохранён'; globalThis.RetroToast?.show('Расход сохранён'); $('expense-description').focus({preventScroll: true});
   } catch (error) {
     if (current === generation) {
       $('expense-feedback').textContent = error.message;
       $('expense-feedback').classList.add('is-error');
+      globalThis.RetroToast?.show(error.message, 'error');
     }
   } finally { button.disabled = demo; }
 });
@@ -304,13 +309,14 @@ $('receipt-form').addEventListener('submit', async event => {
       body:JSON.stringify({date:day, description:$('receipt-description').value, amount:$('receipt-amount').value})
     });
     if (current !== generation) return;
-    $('receipt-description').value = ''; $('receipt-amount').value = '';
+    $('receipt-description').value = ''; $('receipt-amount').value = ''; $('receipt-amount').dispatchEvent(new Event('input', {bubbles: true}));
     await loadReceipts(day, current, controller.signal);
-    $('receipt-feedback').textContent = 'Поступление сохранено';
+    $('receipt-feedback').textContent = 'Поступление сохранено'; globalThis.RetroToast?.show('Поступление сохранено'); $('receipt-description').focus({preventScroll: true});
   } catch (error) {
     if (current === generation) {
       $('receipt-feedback').textContent = error.message;
       $('receipt-feedback').classList.add('is-error');
+      globalThis.RetroToast?.show(error.message, 'error');
     }
   } finally { button.disabled = demo; }
 });
