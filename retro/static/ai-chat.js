@@ -20,6 +20,8 @@
       const node = document.createElement('div');
       node.className = 'rm-msg ' + (role === 'assistant' ? 'is-ai' : 'is-user');
       if (role === 'assistant' && root.FounderMarkdown) {
+        // Ответ модели приходит по-русски; переводчик по кускам делал из него смесь языков.
+        node.dataset.i18n = 'off';
         const rendered = root.FounderMarkdown.render(document, content);
         node.append(rendered.node);
         node.classList.toggle('has-table', rendered.hasTable);
@@ -60,6 +62,8 @@
       form.querySelectorAll('button,input,textarea').forEach(node => { node.disabled = true; });
       bubble('user', question);
       const pending = bubble('assistant', 'AI смотрит данные…');
+      // Заглушка — наша подпись, а не ответ модели: её переводим.
+      delete pending.dataset.i18n;
       pending.classList.add('is-pending');
       setStatus('');
       try {

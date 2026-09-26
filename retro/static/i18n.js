@@ -105,18 +105,81 @@
     return next === value ? null : next;
   }
 
+  /* Строки с числом внутри, у которых в узбекском другой порядок слов:
+     «39% выручки Retro» → «Retro tushumining 39%». Кусками их не собрать,
+     поэтому словарь кладёт рядом шаблоны: регулярное выражение на всю
+     строку и замену с $1, $2… */
+  function template(key) {
+    for (const [pattern, replacement] of globalThis.RetroTemplatesUz || []) {
+      if (pattern.test(key)) return key.replace(pattern, replacement);
+    }
+    return null;
+  }
+
+  /* Дни недели, месяцы без числа и единицы после чисел. Их рисуют скрипты
+     вокруг данных («Пн», «сб, 26 сентября», «5,9 млн», «31 из ≈147 чеков»),
+     и словарь их не видит: ключ короче трёх букв или склеен с цифрой. */
+  const RU_BEFORE = '(?<![А-Яа-яЁё])';
+  const RU_AFTER = '(?![А-Яа-яЁё])';
+  const word = (ru, flags = 'g') => new RegExp(RU_BEFORE + ru.replace(/\./g, '\\.') + RU_AFTER, flags);
+  const WORDS = [
+    ['понедельник', 'dushanba'], ['вторник', 'seshanba'], ['среда', 'chorshanba'], ['четверг', 'payshanba'],
+    ['пятница', 'juma'], ['суббота', 'shanba'], ['воскресенье', 'yakshanba'],
+    ['Понедельник', 'Dushanba'], ['Вторник', 'Seshanba'], ['Среда', 'Chorshanba'], ['Четверг', 'Payshanba'],
+    ['Пятница', 'Juma'], ['Суббота', 'Shanba'], ['Воскресенье', 'Yakshanba'],
+    ['в понедельник', 'dushanba kuni'], ['во вторник', 'seshanba kuni'], ['в среду', 'chorshanba kuni'],
+    ['в четверг', 'payshanba kuni'], ['в пятницу', 'juma kuni'], ['в субботу', 'shanba kuni'],
+    ['в воскресенье', 'yakshanba kuni'],
+    ['Пн', 'Du'], ['Вт', 'Se'], ['Ср', 'Ch'], ['Чт', 'Pa'], ['Пт', 'Ju'], ['Сб', 'Sh'], ['Вс', 'Ya'],
+    ['пн', 'du'], ['вт', 'se'], ['ср', 'ch'], ['чт', 'pa'], ['пт', 'ju'], ['сб', 'sh'], ['вс', 'ya'],
+    ['январь', 'yanvar'], ['февраль', 'fevral'], ['март', 'mart'], ['апрель', 'aprel'], ['май', 'may'],
+    ['июнь', 'iyun'], ['июль', 'iyul'], ['август', 'avgust'], ['сентябрь', 'sentabr'], ['октябрь', 'oktabr'],
+    ['ноябрь', 'noyabr'], ['декабрь', 'dekabr'],
+    ['ЯНВАРЬ', 'YANVAR'], ['ФЕВРАЛЬ', 'FEVRAL'], ['МАРТ', 'MART'], ['АПРЕЛЬ', 'APREL'], ['МАЙ', 'MAY'],
+    ['ИЮНЬ', 'IYUN'], ['ИЮЛЬ', 'IYUL'], ['АВГУСТ', 'AVGUST'], ['СЕНТЯБРЬ', 'SENTABR'], ['ОКТЯБРЬ', 'OKTABR'],
+    ['НОЯБРЬ', 'NOYABR'], ['ДЕКАБРЬ', 'DEKABR'],
+  ].sort((a, b) => b[0].length - a[0].length).map(([ru, uz]) => [word(ru), uz]);
+  const UNITS = [
+    [/(\d)\s*млрд(?![А-Яа-яЁё])/g, '$1 mlrd'],
+    [/(\d)\s*млн(?![А-Яа-яЁё])/g, '$1 mln'],
+    [/(\d)\s*тыс\.?(?![А-Яа-яЁё])/g, '$1 ming'],
+    [/(\d)\s*шт(?![А-Яа-яЁё])/g, '$1 dona'],
+    [/(\d)\s*(чеков|чека|чек)(?![А-Яа-яЁё])/g, '$1 chek'],
+    [/(\d)\s*(позиций|позиции|позиция)(?![А-Яа-яЁё])/g, '$1 pozitsiya'],
+    [/(\d)\s*(дней|дня|день)(?![А-Яа-яЁё])/g, '$1 kun'],
+    [/(\d)\s*(недель|недели|неделя)(?![А-Яа-яЁё])/g, '$1 hafta'],
+    [/(\d)\s*(сотрудников|сотрудника|сотрудник)(?![А-Яа-яЁё])/g, '$1 xodim'],
+    [/(\d)\s+из\s+(≈?\d)/g, '$1 / $2'],
+    [/(^|[\s(])маржа(?![А-Яа-яЁё])/g, '$1marja'],
+  ];
+
+  function words(value) {
+    let next = value;
+    for (const [pattern, uz] of UNITS) next = next.replace(pattern, uz);
+    for (const [pattern, uz] of WORDS) next = next.replace(pattern, uz);
+    return next === value ? null : next;
+  }
+
   function translate(value) {
     const key = value.trim();
     if (!key) return null;
-    const whole = dictionary()[key] || pieces(key);
+    const whole = dictionary()[key] || template(key) || pieces(key);
     // Пробелы вокруг строки сохраняем: в разметке они держат отступы.
     const next = whole ? value.replace(key, whole) : value;
-    return dates(next) || (whole ? next : null);
+    const dated = dates(next);
+    const polished = words(dated || next);
+    return polished || dated || (whole ? next : null);
   }
+
+  /* Ответы AI и прочий текст, который пишет сервер, переводчик не трогает:
+     по кускам из него выходила смесь двух языков. Такие узлы помечены
+     data-i18n="off". */
+  const OFF = '[data-i18n="off"]';
 
   function applyToTextNode(node, toUzbek) {
     if (!node.nodeValue || !node.nodeValue.trim()) return;
     if (node.parentElement && SKIP.has(node.parentElement.tagName)) return;
+    if (node.parentElement && node.parentElement.closest(OFF)) return;
     if (toUzbek) {
       if (node[RU_ORIGINAL] === undefined) {
         const next = translate(node.nodeValue);
@@ -133,6 +196,7 @@
   }
 
   function applyToAttributes(element, toUzbek) {
+    if (element.closest(OFF)) return;
     for (const name of ATTRIBUTES) {
       if (!element.hasAttribute(name)) continue;
       // Ключи dataset не терпят дефисов: 'aria-label' ронял весь проход,
@@ -169,9 +233,14 @@
 
   let current = 'ru';
 
+  let titleRu = null;
+
   function apply(language) {
     current = language === 'uz' ? 'uz' : 'ru';
     document.documentElement.lang = current;
+    // Заголовок вкладки тоже подпись: «Финансы дня · Retro Milliy».
+    if (titleRu === null) titleRu = document.title;
+    document.title = current === 'uz' ? (translate(titleRu) || titleRu) : titleRu;
     walk(document.body, current === 'uz');
     document.querySelectorAll('[data-lang]').forEach(button => {
       const active = button.dataset.lang === current;
@@ -206,7 +275,7 @@
     }).observe(document.body, { childList: true, subtree: true, characterData: true });
   }
 
-  globalThis.RetroI18n = { apply, choose, saved };
+  globalThis.RetroI18n = { apply, choose, saved, translate };
   if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', start, { once: true });
   } else {

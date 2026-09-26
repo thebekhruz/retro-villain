@@ -376,6 +376,8 @@
       chip.append(node('b', '', short(num(row.amount))));
       return chip;
     }));
+    // Без покупок подпись «Больше всего потрачено на» повисала без продолжения.
+    $('z-top-title').hidden = !shokh.top_items.length;
     if (!shokh.top_items.length) top.append(node('span', '', 'Шох ещё не записывал покупки'));
   }
 
