@@ -15,11 +15,16 @@ from fastapi.responses import JSONResponse, Response
 from retro.runtime import secure_directory, secure_file
 
 
+# Создание сотрудника тоже сюда: у новой записи есть ставка, и дубль,
+# появившийся из повтора после потерянного ответа, начислится на следующей
+# смене как отдельный человек. Правок ставки (PATCH) и удаления (DELETE) это
+# не касается — они идемпотентны по смыслу, а сторож смотрит только POST.
 PATHS = {'/api/cashier/expenses', '/api/cashier/receipts', '/api/cashier/usd-balance'} | {
     '/api/accountant/' + suffix for suffix in (
         'handover', 'incomes', 'expenses', 'reserves', 'cash-opening', 'monthly-plan',
-        'salary-payments', 'debts/pay', 'procurement', 'payroll/confirm')} | {
-    '/api/founder/dividends/weekly'}
+        'salary-payments', 'debts/pay', 'procurement', 'payroll/confirm',
+        'employees', 'monthly-employees')} | {
+    '/api/founder/dividends/weekly', '/api/director/team'}
 
 
 class FinancialRequests:

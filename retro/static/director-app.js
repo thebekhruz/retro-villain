@@ -34,7 +34,13 @@
   }
 
   async function request(url, options) {
-    const response = await fetch(url, options);
+    // Создание сотрудника идёт через RetroFinancialWrite: у новой записи есть
+    // ставка, и повтор после потерянного ответа иначе завёл бы второго
+    // человека. Чтение, правка и удаление идут обычным fetch — сторож на
+    // сервере смотрит только POST, а PATCH и DELETE идемпотентны по смыслу.
+    const send = (options && options.method === 'POST' && globalThis.RetroFinancialWrite)
+      ? globalThis.RetroFinancialWrite : fetch;
+    const response = await send(url, options);
     if (!response.ok) {
       const body = await response.json().catch(() => ({}));
       const error = new Error(body.detail || 'Не удалось получить данные.');

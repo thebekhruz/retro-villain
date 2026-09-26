@@ -322,3 +322,53 @@ def test_pocket_formula_lives_in_one_place_only():
     assert 'pocket_position' in cabinet
     # Признак вернувшейся копии: самостоятельный пересчёт непринятых покупок.
     assert "accepted_at'] is None" not in cabinet
+
+
+def test_repeating_employee_creation_with_one_key_does_not_add_a_second_person(tmp_path):
+    """Потерянный ответ не должен рождать второго сотрудника со ставкой.
+
+    Дубль в реестре начислился бы на следующем подтверждении смены как
+    отдельный человек, поэтому создание идёт под ключом операции.
+    """
+    from uuid import uuid4
+    with client(tmp_path) as c:
+        before = len(c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()['employees'])
+        body = {'name': 'Шерзод Усманов', 'role': 'повар', 'rate': '260000', 'group': 'Кухня'}
+        key = {'Idempotency-Key': str(uuid4())}
+
+        first = c.post('/api/accountant/employees', json=body, headers=key)
+        assert first.status_code == 201
+        # Клиент не увидел ответа и повторил запрос тем же ключом.
+        again = c.post('/api/accountant/employees', json=body, headers=key)
+        assert again.status_code == 201
+        assert again.json() == first.json(), 'повтор обязан вернуть тот же ответ, а не создать нового'
+
+        staff = c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()['employees']
+        assert len(staff) == before + 1
+        assert sum(row['name'] == 'Шерзод Усманов' for row in staff) == 1
+
+
+def test_two_real_namesakes_can_both_be_added(tmp_path):
+    """Однофамильцы — не дубли: под своим ключом добавляется каждый.
+
+    Поэтому уникальность имени в базе не вводим: она запретила бы законный
+    случай, а от повтора защищает ключ операции.
+    """
+    from uuid import uuid4
+    with client(tmp_path) as c:
+        body = {'name': 'Жасур Алиев', 'role': 'официант', 'rate': '200000',
+                'group': 'Обслуживание зала'}
+        assert c.post('/api/accountant/employees', json=body,
+                      headers={'Idempotency-Key': str(uuid4())}).status_code == 201
+        assert c.post('/api/accountant/employees', json=body,
+                      headers={'Idempotency-Key': str(uuid4())}).status_code == 201
+        staff = c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()['employees']
+        assert sum(row['name'] == 'Жасур Алиев' for row in staff) == 2
+
+
+def test_registry_creation_is_guarded_by_the_request_journal():
+    """Пути реестра должны быть в списке сторожа, иначе ключ игнорируется."""
+    from retro.financial_requests import PATHS
+    assert '/api/accountant/employees' in PATHS
+    assert '/api/accountant/monthly-employees' in PATHS
+    assert '/api/director/team' in PATHS
