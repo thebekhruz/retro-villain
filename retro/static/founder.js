@@ -9,7 +9,9 @@ const gate=FounderLogic.requestGate();let controller=null,lastAnalytics=null,las
 
 function svg(name,attrs={}){const node=document.createElementNS('http://www.w3.org/2000/svg',name);Object.entries(attrs).forEach(([key,value])=>node.setAttribute(key,value));return node}
 function selectedDirections(){return [...document.querySelectorAll('input[name=direction]:checked')].map(input=>input.value)}
-function setMessage(text,error=false){const node=$('message');node.hidden=!text;node.textContent=text||'';node.classList.toggle('is-error',error)}
+// Пояснения — по одному предложению в своём узле: переводчик сопоставляет строку целиком,
+// и склеенный абзац из нескольких пояснений на узбекском оставался русским.
+function setMessage(text,error=false){const node=$('message'),parts=(Array.isArray(text)?text:[text]).filter(Boolean);node.hidden=!parts.length;node.replaceChildren(...parts.flatMap((part,index)=>{const span=document.createElement('span');span.textContent=part;return index?[' ',span]:[span]}));node.classList.toggle('is-error',error)}
 function setLoading(value){document.querySelectorAll('.founder-metrics').forEach(node=>node.setAttribute('aria-busy',String(value)));$('refresh').disabled=value}
 
 function revenuePeriod(group){
@@ -146,7 +148,7 @@ function render(data){
   $('internal-tasting').textContent=exactMoney.format(Number(data.internal_costs.tasting));
   $('internal-chef').textContent=exactMoney.format(Number(data.internal_costs.chef_account));
   ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`article[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
-  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Распределение продаж сверено · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices.join(' '),!data.reconciled)
+  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Распределение продаж сверено · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices,!data.reconciled)
 }
 
 async function load(options = {}) {

@@ -16,6 +16,7 @@ function message(text, error = false) {
   box.textContent = text; box.hidden = !text;
   box.classList.toggle('is-error', error);
   box.setAttribute('role', error ? 'alert' : 'status');
+  globalThis.RetroToast?.show(text, error ? 'error' : 'ok');
 }
 function node(tag, cls, text) {
   const element = document.createElement(tag);
@@ -315,7 +316,8 @@ async function beginTrip() {
   try {
     const data = await api('/trip', {method: 'POST'});
     state.tripId = data.trip_id;
-    state.tripStartedAt = new Date().toISOString();
+    // Время начала — с сервера: продолженный закуп не начинает отсчёт с нуля.
+    state.tripStartedAt = data.started_at || new Date().toISOString();
     startTimer();
   } catch (error) { message(error.message, true); }
 }

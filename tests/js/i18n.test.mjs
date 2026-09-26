@@ -38,3 +38,19 @@ test('советы директора переводятся, название �
     translate('«Сет Ретро на 5-6 чел.» хорошо продаётся, но маржа 35% — не ставьте его в акции.'),
     "«Сет Ретро на 5-6 чел.» yaxshi sotilmoqda, lekin marjasi 35% — uni aksiyaga qo'ymang.");
 });
+
+test('вход и отказы сервера переводятся целиком', () => {
+  assert.equal(translate('Неверный логин или пароль.'), "Login yoki parol noto'g'ri.");
+  assert.equal(translate('Эта панель недоступна для вашей учётной записи.'), 'Bu panel sizning hisobingiz uchun ochiq emas.');
+  assert.equal(translate('Укажите цену числом.'), 'Narxni raqam bilan kiriting.');
+  assert.equal(translate('Слишком большая сумма.'), 'Summa juda katta.');
+});
+
+test('подписи с данными внутри — шаблонами, данные не трогаем', () => {
+  assert.equal(translate('Удалить расход «Хлеб для зала»'), "«Хлеб для зала» xarajatini o'chirish");
+  assert.equal(
+    translate('Оплаты расходятся с выручкой на 12 500 сум. Данные не считаются сверенными.'),
+    "To'lovlar tushumdan 12 500 so'mga farq qiladi. Ma'lumotlar solishtirilgan hisoblanmaydi.");
+  assert.equal(translate('Новые типы оплаты iiko показаны отдельно: Перечисления.'),
+    "iiko'ning yangi to'lov turlari alohida ko'rsatilgan: Перечисления.");
+});

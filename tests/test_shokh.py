@@ -372,3 +372,14 @@ def test_registry_creation_is_guarded_by_the_request_journal():
     assert '/api/accountant/employees' in PATHS
     assert '/api/accountant/monthly-employees' in PATHS
     assert '/api/director/team' in PATHS
+
+
+def test_reopened_trip_keeps_its_real_start_for_the_timer(tmp_path):
+    """Закуп, брошенный на середине, продолжается: клиент получает то же время
+    начала, и таймер на экране совпадает с итогом закупа."""
+    with client(tmp_path) as c:
+        first = c.post('/api/shokh/trip', params={'date': DAY.isoformat()}).json()
+        again = c.post('/api/shokh/trip', params={'date': DAY.isoformat()}).json()
+    assert again['trip_id'] == first['trip_id']
+    assert again['started_at'] == first['started_at']
+    assert first['started_at'].endswith('+05:00')

@@ -43,6 +43,7 @@ function message(value, error = false) {
   item.textContent = value;
   item.hidden = !value;
   item.setAttribute('role', error ? 'alert' : 'status');
+  globalThis.RetroToast?.show(value, error ? 'error' : 'ok');
 }
 function status(value) { const box = $('connection'); if (box) box.textContent = value; }
 function attendanceHealth(value) {

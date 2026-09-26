@@ -40,6 +40,14 @@ function text(tag, className, value) {
   return node;
 }
 
+/** Название из iiko или имя сотрудника: переводчик его не трогает, иначе
+ *  «Шашлык сет на 6 человек» превращается в «… на 6 kishi». */
+function dataName(tag, value) {
+  const node = text(tag, '', value);
+  node.dataset.i18n = 'off';
+  return node;
+}
+
 /** Цвет маржи: зелёный — норма, охра — ниже трети, красный — торгуем в минус.
  *  Пороги грубые намеренно: точное значение рядом цифрой. */
 function marginCell(value) {
@@ -58,7 +66,7 @@ function marginCell(value) {
 function highlightRow(row, index, valueText, noteText) {
   const node = text('div', 'highlight-row');
   const name = text('div', 'highlight-name');
-  name.append(text('strong', '', row.name), text('span', '', noteText));
+  name.append(dataName('strong', row.name), text('span', '', noteText));
   const value = text('div', 'highlight-value');
   value.append(text('strong', '', valueText), text('span', '', percent(row.margin)));
   node.append(text('span', 'highlight-rank', String(index + 1)), name, value);
@@ -88,7 +96,7 @@ function menuRow(row, groupTotals) {
   const fill = document.createElement('span');
   fill.style.width = (logic.shareOf(row, groupTotals) * 100).toFixed(1) + '%';
   share.append(fill);
-  cell.append(text('strong', '', row.name), share);
+  cell.append(dataName('strong', row.name), share);
   first.append(cell);
   // Подпись колонки едет с ячейкой: на телефоне таблица разворачивается
   // в карточки, и шапка там не видна.
@@ -189,7 +197,7 @@ function renderWaiters(metrics) {
   rows.forEach(row => {
     const tr = document.createElement('tr');
     const name = document.createElement('td');
-    name.append(text('strong', '', row.name));
+    name.append(dataName('strong', row.name));
     const last = document.createElement('td');
     last.dataset.label = 'Маржа';
     last.append(marginCell(row.margin));
@@ -310,7 +318,7 @@ async function loadAttendance() {
         ? new Date(row.first_entry).toLocaleTimeString('ru-RU',
           { hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent' })
         : '—';
-      item.append(text('b', '', row.name), text('span', '', time));
+      item.append(dataName('b', row.name), text('span', '', time));
       if (index >= LATE_PREVIEW) item.classList.add('is-folded');
       target.append(item);
     });

@@ -7,6 +7,7 @@ function message(value, error = false) {
   const box = $('payroll-message');
   box.textContent = value; box.hidden = !value;
   box.setAttribute('role', error ? 'alert' : 'status');
+  globalThis.RetroToast?.show(value, error ? 'error' : 'ok');
 }
 function node(tag, cls, value) {
   const element = document.createElement(tag);
@@ -140,11 +141,15 @@ function renderMonthly(data) {
     || 'Оклады ведутся вручную и не разложены по дням: выплаты по ним видны в «Операциях за день».';
 }
 
+// Месяц на экране. После выдачи по ячейке тот же месяц перерисовываем на
+// месте, иначе таблица пряталась и страница прыгала к началу.
+let shownMonth = null;
+
 async function load() {
   const month = $('month-input').value;
   const sequence = ++requestNo;
   if (!month) { message('Выберите месяц.', true); return; }
-  $('payroll-body').hidden = true;
+  if (month !== shownMonth) $('payroll-body').hidden = true;
   $('month-title').textContent = monthLabel(month);
   $('month-title').append(node('span', '', '.'));
   $('crumb-month').textContent = 'Зарплаты · ' + monthLabel(month);
@@ -158,7 +163,7 @@ async function load() {
     if (sequence !== requestNo) return;
     current = data;
     renderTotals(data); renderSheet(data); renderMonthly(data);
-    $('payroll-body').hidden = false;
+    $('payroll-body').hidden = false; shownMonth = month;
     message('');
     $('connection').textContent = 'Ведомость за ' + monthLabel(month);
   } catch (error) {

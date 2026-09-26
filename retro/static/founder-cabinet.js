@@ -147,11 +147,13 @@
       if (!response.ok) throw new Error(body.detail || 'Не удалось сохранить сумму.');
       state.data.dividends = body;
       editor.message = 'Сохранено. Бухгалтер видит новую сумму в «Финансах дня».';
+      globalThis.RetroToast?.show(editor.message);
       editor.error = false;
       editor.saving = false;
       renderDividends(body);
     } catch (error) {
       editor.message = error.message;
+      globalThis.RetroToast?.show(error.message, 'error');
       editor.error = true;
       editor.saving = false;
       renderEditor();
@@ -410,7 +412,9 @@
     rows.slice(0, 5).forEach((row, index) => {
       const line = node('div', 'fo-dish');
       const margin = row.margin === null ? '—' : Math.round(row.margin) + '%';
-      line.append(node('span', '', String(index + 1)), node('strong', '', row.name),
+      const dish = node('strong', '', row.name);
+      dish.dataset.i18n = 'off';  // название из iiko не переводим
+      line.append(node('span', '', String(index + 1)), dish,
         node('span', '', Math.round(row.quantity) + ' шт'), node('b', '', short(row.revenue)),
         node('small', director.lowMargin(row) ? 'm-low' : 'm-ok', margin));
       target.append(line);

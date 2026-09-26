@@ -268,7 +268,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Referrer-Policy'] = 'no-referrer'
         response.headers['X-Request-ID'] = request.state.request_id
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        # blob: — превью фото закупа: снимок с камеры показывается до отправки
+        # через URL.createObjectURL, без него Шох видел битую картинку.
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         return response
 
     @app.get('/')

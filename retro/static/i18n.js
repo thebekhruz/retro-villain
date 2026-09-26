@@ -130,6 +130,7 @@
     ['в понедельник', 'dushanba kuni'], ['во вторник', 'seshanba kuni'], ['в среду', 'chorshanba kuni'],
     ['в четверг', 'payshanba kuni'], ['в пятницу', 'juma kuni'], ['в субботу', 'shanba kuni'],
     ['в воскресенье', 'yakshanba kuni'],
+    ['кг', 'kg'], ['шт', 'dona'],
     ['Пн', 'Du'], ['Вт', 'Se'], ['Ср', 'Ch'], ['Чт', 'Pa'], ['Пт', 'Ju'], ['Сб', 'Sh'], ['Вс', 'Ya'],
     ['пн', 'du'], ['вт', 'se'], ['ср', 'ch'], ['чт', 'pa'], ['пт', 'ju'], ['сб', 'sh'], ['вс', 'ya'],
     ['январь', 'yanvar'], ['февраль', 'fevral'], ['март', 'mart'], ['апрель', 'aprel'], ['май', 'may'],
@@ -144,6 +145,7 @@
     [/(\d)\s*млн(?![А-Яа-яЁё])/g, '$1 mln'],
     [/(\d)\s*тыс\.?(?![А-Яа-яЁё])/g, '$1 ming'],
     [/(\d)\s*шт(?![А-Яа-яЁё])/g, '$1 dona'],
+    [/(\d)\s*кг(?![А-Яа-яЁё])/g, '$1 kg'],
     [/(\d)\s*(чеков|чека|чек)(?![А-Яа-яЁё])/g, '$1 chek'],
     [/(\d)\s*(позиций|позиции|позиция)(?![А-Яа-яЁё])/g, '$1 pozitsiya'],
     [/(\d)\s*(дней|дня|день)(?![А-Яа-яЁё])/g, '$1 kun'],
@@ -215,6 +217,20 @@
     }
   }
 
+  // Модуль сменил подсказку уже переведённого элемента («Передано … при
+  // расчёте …»): старый русский оригинал больше не верен. Наша собственная
+  // запись перевода тоже приходит сюда — её узнаём по совпадению и пропускаем.
+  function retranslateAttribute(element, name) {
+    if (!(element instanceof Element) || element.closest(OFF)) return;
+    const mark = 'ru' + name.replace(/[^a-z]/gi, '');
+    const value = element.getAttribute(name);
+    if (element.dataset[mark] !== undefined) {
+      if (value === (translate(element.dataset[mark]) ?? element.dataset[mark])) return;
+      delete element.dataset[mark];
+    }
+    if (value !== null) applyToAttributes(element, true);
+  }
+
   function walk(root, toUzbek) {
     if (root.nodeType === Node.TEXT_NODE) {
       applyToTextNode(root, toUzbek);
@@ -271,8 +287,12 @@
       for (const record of records) {
         record.addedNodes.forEach(node => walk(node, true));
         if (record.type === 'characterData') applyToTextNode(record.target, true);
+        if (record.type === 'attributes') retranslateAttribute(record.target, record.attributeName);
       }
-    }).observe(document.body, { childList: true, subtree: true, characterData: true });
+    }).observe(document.body, {
+      childList: true, subtree: true, characterData: true,
+      attributes: true, attributeFilter: ATTRIBUTES,
+    });
   }
 
   globalThis.RetroI18n = { apply, choose, saved, translate };

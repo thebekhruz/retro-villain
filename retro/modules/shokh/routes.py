@@ -70,7 +70,13 @@ def catalog(request: Request):
 @router.post('/trip', status_code=201)
 def start_trip(request: Request, date_: date | None = Query(None, alias='date')):
     day = _day(date_)
-    return dict(trip_id=request.app.state.shokh.open_trip(day, _now()), date=day.isoformat())
+    store = request.app.state.shokh
+    trip_id = store.open_trip(day, _now())
+    # Незакрытый закуп дня продолжается, а не начинается заново. Время начала
+    # отдаём клиенту: иначе таймер на экране шёл с нуля, а итог закупа считал
+    # от настоящего начала — «00:06, успеваете», а потом «52:34, дольше плана».
+    return dict(trip_id=trip_id, date=day.isoformat(),
+                started_at=store.trip(trip_id)['started_at'])
 
 
 @router.post('/trip/{trip_id}/finish')
