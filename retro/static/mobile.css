@@ -301,3 +301,27 @@ details[open]>summary::before{transform:rotate(90deg)}
   .sidebar nav .rm-subnav a{flex:0 0 auto;white-space:nowrap;padding:9px 12px;font-size:12px;min-height:40px}
   .sidebar nav .rm-subnav .nav-dot{display:none}
 }
+
+/* ── T-381 · страница не прыгает при загрузке ──────────────────────────────
+   Пока модуль ждёт ответ сервера, рабочая область пустая, и подвал стоял
+   посреди экрана; пришли данные — подвал уезжал вниз, а с ним и всё, что
+   под пальцем (сдвиг вёрстки 0,08–0,12 у «Финансов дня»). Рабочая область
+   теперь не ниже экрана, подвал прижат к её низу и сразу за краем экрана. */
+/* Только у кассы и бухгалтерии: у отчёта директора и аналитики учредителя
+   соседние отступы схлопываются, во flex они сложились бы и раздвинули блоки,
+   а прыжков при загрузке там и не было. */
+:is(.cashier-workspace,.accountant-workspace,.employees-workspace,.payroll-workspace){display:flex;flex-direction:column;min-height:100svh}
+:is(.cashier-workspace,.accountant-workspace,.employees-workspace,.payroll-workspace)>*{flex-shrink:0}
+:is(.cashier-workspace,.accountant-workspace,.employees-workspace,.payroll-workspace)>footer{margin-top:auto}
+
+@media(max-width:650px){
+  /* Статус в шапке телефона меняется с «Загружаем данные…» на «Данные за
+     25 сентября 2026» и уходит во вторую строку — шапка вырастала и
+     сдвигала страницу. Две строки держим сразу. */
+  .topbar-actions .top-status{min-height:2.7em;align-items:center}
+}
+
+/* Совет AI у директора: пока грузится, в списке одна строка «Смотрим
+   меню…», потом три совета — всё ниже уезжало на 175 точек. Место под
+   советы занято заранее. */
+.dir-tips-list:has(> li.is-muted:only-child){min-height:196px}
