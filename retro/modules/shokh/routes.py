@@ -13,12 +13,9 @@ from fastapi.responses import Response
 from retro.modules.cashier.service import TZ, today_tashkent
 from .gamification import (level_for, purchase_xp, quests, spent, streak, total_xp,
                            trip_bonus, trip_minutes, week_marks, FAST_TRIP_MINUTES)
-from .store import MAX_PHOTO_BYTES, ShokhError, UNITS
+from .store import MAX_PHOTO_BYTES, ShokhError, UNITS, pocket_position
 
 router = APIRouter(prefix='/api/shokh')
-
-# Раньше этой даты закупа в системе не было; служит нижней границей выборок.
-FIRST_DAY = date(2020, 1, 1)
 
 
 def _day(value: date | None) -> date:
@@ -37,26 +34,8 @@ def _fail(error: ShokhError):
 
 
 def _pocket(request: Request, day: date) -> dict:
-    """Сколько наличных у Шоха на руках.
-
-    Бухгалтерский подотчёт (`reserves.shoh.balance`) = выдано − принятые
-    накладные. Покупки, которые Шох записал, но бухгалтер ещё не принял, из
-    подотчёта не вычтены, хотя денег на руках уже нет. Поэтому:
-
-        на руках = подотчёт по бухгалтерии − непринятые покупки
-
-    Так обходимся теми данными, что уже отдаёт карточка «Баланс Шох», и два
-    экрана не спорят о сумме.
-    """
-    store = request.app.state.shokh
-    accounting = request.app.state.accountant_finance.reserves(day)['shoh']['balance']
-    # Непринятым может быть и вчерашнее, поэтому смотрим всю историю до дня.
-    history = store.purchases_between(FIRST_DAY, day)
-    pending = sum((Decimal(row['total']) for row in history if row['accepted_at'] is None),
-                  Decimal(0))
-    return dict(accounting_balance=accounting,
-                pocket=None if accounting is None else str(Decimal(accounting) - pending),
-                pending=str(pending))
+    """Деньги на руках у Шоха. Формула — в store.pocket_position, одна на всех."""
+    return pocket_position(request.app.state.shokh, request.app.state.accountant_finance, day)
 
 
 @router.get('/home')

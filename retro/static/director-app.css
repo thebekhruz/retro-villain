@@ -201,3 +201,11 @@
   .dir-head-actions{width:100%;justify-content:space-between}
   .dir-kpi strong{font-size:19px}
 }
+
+/* Цифры не должны подрагивать при обновлении: моноширинные цифры на всём
+   экране, а не только там, где узлу достался класс .rm-num. Суммы здесь часто
+   идут внутри текста («маржа 40% · 1,2 млн сум»), и расставлять класс на каждый
+   такой узел вручную легко забыть. */
+.director-app,
+.director-app input,
+.director-app button{font-variant-numeric:tabular-nums}

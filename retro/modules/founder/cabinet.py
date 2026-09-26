@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.expenses import cash_to_finance
 from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
 from . import overview
@@ -171,11 +172,10 @@ def founder_spending(state, day: date):
     first, _ = month_bounds(day)
     flows = state.accountant_finance.cash_flows_between(first, day)
     purchases = state.shokh.purchases_between(first, day)
-    reserves = state.accountant_finance.reserves(day)
-    accounting = reserves['shoh']['balance']
-    pending = sum((Decimal(row['total']) for row in state.shokh.purchases_between(date(2020, 1, 1), day)
-                   if row['accepted_at'] is None), Decimal(0))
-    pocket = None if accounting is None else money(Decimal(accounting) - pending)
+    # «На руках у Шоха» считает store.pocket_position — та же формула, что на
+    # экране закупа; своей копии здесь быть не должно.
+    position = pocket_position(state.shokh, state.accountant_finance, day)
+    pocket = None if position['pocket'] is None else money(position['pocket'])
     return dict(month=first.isoformat()[:7], through=day.isoformat(),
                 expenses=overview.expense_categories(flows),
                 shokh=overview.shokh_month(purchases, flows, pocket=pocket))

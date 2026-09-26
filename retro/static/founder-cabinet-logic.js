@@ -10,7 +10,9 @@
   const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   const DIVIDEND_PRESETS = [5e6, 8e6, 10e6, 15e6, 20e6];
-  const DIVIDEND_STEP = 500000;
+  // Шаг кнопок ± в редакторе недельной цели. Не путать с шагом округления
+  // совета на сервере (DIVIDEND_SUGGEST_STEP в overview.py) — тот мельче.
+  const DIVIDEND_EDIT_STEP = 500000;
   const CHEF_LIMIT = 400000;
 
   function num(value) {
@@ -135,7 +137,7 @@
 
   /** Шаг редактора цели: ±500 000, не ниже нуля. */
   function stepTarget(value, direction) {
-    return Math.max(0, (Number(value) || 0) + direction * DIVIDEND_STEP);
+    return Math.max(0, (Number(value) || 0) + direction * DIVIDEND_EDIT_STEP);
   }
 
   function parseAmount(text) {
@@ -197,7 +199,8 @@
     return opening + handover - out;
   }
 
-  return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_STEP, CHEF_LIMIT, num, sum, short, plural, dm, dayWords,
+  // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
+  return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
     accountantIssues, chefAlerts, eveningCash};
 });
