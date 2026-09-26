@@ -45,6 +45,10 @@ class Settings:
     booking_broadcast_token: str = field(default='', repr=False)
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
     data_dir: Path = ROOT / 'build'
+    # Строка подключения Postgres. Пустая — работаем на файловом SQLite
+    # (локальная разработка и тесты). На Railway диска нет, поэтому в
+    # продакшене она обязательна: иначе базы исчезнут на выкате.
+    database_url: str = ''
     report_retention: int = 24
 
     @property
@@ -125,6 +129,7 @@ class Settings:
             booking_broadcast_token=broadcast_token,
             hikvision=hikvision,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
+            database_url=os.getenv('DATABASE_URL', '').strip(),
             report_retention=int(retention_value),
         )
 

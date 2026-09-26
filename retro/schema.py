@@ -2,7 +2,7 @@
 
 import sqlite3
 from decimal import Decimal, InvalidOperation
-from retro.db import table_columns
+from retro.db import table_columns, table_exists
 
 
 class SchemaError(RuntimeError):
@@ -36,10 +36,9 @@ NUMERIC_COLUMNS = {
 }
 
 
-def _table_exists(connection: sqlite3.Connection, table: str) -> bool:
-    return connection.execute(
-        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)
-    ).fetchone() is not None
+def _table_exists(connection, table: str) -> bool:
+    # sqlite_master есть только в SQLite; слой знает оба каталога.
+    return table_exists(connection, table)
 
 
 def _validate_numeric_rows(connection: sqlite3.Connection, database_kind: str) -> None:

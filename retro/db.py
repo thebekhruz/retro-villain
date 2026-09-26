@@ -269,6 +269,16 @@ def table_columns(connection, table: str) -> set:
     return {row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')}
 
 
+def table_exists(connection, table: str) -> bool:
+    """Есть ли таблица. В SQLite это `sqlite_master`, в Postgres — каталог."""
+    if isinstance(connection, PostgresConnection):
+        return connection.execute(
+            'SELECT 1 FROM information_schema.tables '
+            'WHERE table_schema = current_schema() AND table_name = ?', (table,)).fetchone() is not None
+    return connection.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone() is not None
+
+
 def as_database(target) -> Database:
     """Путь, строка подключения или уже готовая `Database`.
 
