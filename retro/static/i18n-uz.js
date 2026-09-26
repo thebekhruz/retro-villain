@@ -1091,6 +1091,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "Завершить закуп": "Xaridni yakunlash",
   "Задания на сегодня": "Bugungi vazifalar",
   "Закуп · Retro Milliy": "Xarid · Retro Milliy",
+  "Закуп · Шох": "Xarid · Shoh",
+  "‹ Панель": "‹ Panel",
   "Закуп за 15 минут": "15 daqiqada xarid",
   "ЗАКУП ЗАВЕРШЁН": "XARID YAKUNLANDI",
   "Записано!": "Yozildi!",

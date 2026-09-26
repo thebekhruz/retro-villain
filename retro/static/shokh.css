@@ -26,6 +26,7 @@
   border:1px solid #d8b97766;color:#e8cf95;font-size:12px;font-weight:650;white-space:nowrap}
 .shokh-logout{border-color:#ffffff33;background:#ffffff14;color:#e9f0e8;min-height:32px;padding:6px 10px}
 .shokh-logout:hover:not(:disabled){background:#ffffff22}
+.shokh-back{display:inline-flex;align-items:center;margin-right:auto;text-decoration:none}
 .shokh-balance{margin-top:22px}
 .shokh-balance>span{font-size:12px;color:#a9bfb1}
 .shokh-balance>strong{display:block;font-size:40px;font-weight:650;letter-spacing:-1.5px;margin-top:4px}

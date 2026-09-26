@@ -30,6 +30,9 @@
       <!-- Закуп ведёт местный сотрудник, поэтому язык и выход — на своей строке,
            а не втиснуты в приветствие. -->
       <div class="shokh-hero-actions">
+        <!-- Шох живёт в закупе, а учредитель или администратор заходят сюда из
+             меню панели — им нужна дорога назад. Ссылку показывает скрипт. -->
+        <a id="shokh-back" class="logout-button shokh-logout shokh-back" href="/" hidden>‹ Панель</a>
         <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
         <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
       </div>

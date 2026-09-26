@@ -438,3 +438,14 @@ $('summary-home').addEventListener('click', async () => { await loadHome(); show
     show('home');
   } catch (error) { message(error.message, true); }
 })();
+
+// «‹ Панель» — только тем, кому открыт ещё какой-то модуль. У самого Шоха
+// других модулей нет, и ссылка вела бы его по кругу обратно в закуп.
+fetch('/api/config', {headers: {accept: 'application/json'}})
+  .then(response => (response.ok ? response.json() : null))
+  .then(config => {
+    const others = config && Array.isArray(config.modules)
+      && config.modules.some(module => module.path !== '/shokh' && module.available);
+    if (others) document.getElementById('shokh-back').hidden = false;
+  })
+  .catch(() => {});
