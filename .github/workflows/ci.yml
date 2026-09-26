@@ -10,6 +10,23 @@ permissions:
 jobs:
   test:
     runs-on: ubuntu-24.04
+    # Рабочие данные живут в Postgres, поэтому тесты слоя доступа обязаны
+    # гоняться против настоящего сервера. Без него они пропускались молча,
+    # и расхождения диалектов (DDL, PRAGMA, sqlite_master) находились бы
+    # только в продакшене.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: test
+          POSTGRES_DB: retro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready --health-interval 5s
+          --health-timeout 5s --health-retries 10
+    env:
+      RETRO_TEST_POSTGRES_URL: postgresql://postgres:test@127.0.0.1:5432/retro
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38
@@ -21,6 +38,13 @@ jobs:
           node-version: '22'
       - run: python -m pip install --upgrade pip
       - run: python -m pip install -r requirements-dev.txt
+      - name: Postgres-тесты не должны пропускаться молча
+        run: |
+          python - <<'PY'
+          import os, sys
+          if not os.getenv('RETRO_TEST_POSTGRES_URL'):
+              sys.exit('RETRO_TEST_POSTGRES_URL не задан: половина тестов слоя пропустится.')
+          PY
       - run: python -m pytest -q
       - run: python -m compileall -q retro scripts
       - run: find retro/static -name '*.js' -print0 | xargs -0 -n1 node --check

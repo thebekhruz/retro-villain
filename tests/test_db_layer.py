@@ -4,6 +4,7 @@ Postgres-часть включается переменной RETRO_TEST_POSTGRE
 SQLite всё равно идут — набор не должен требовать поднятого сервера.
 """
 import os
+import sys
 from decimal import Decimal
 
 import pytest
@@ -298,3 +299,85 @@ def test_local_machine_keeps_working_on_files():
     """Локальная разработка и тесты не должны требовать ни Postgres, ни диска."""
     from retro.config import require_durable_storage
     require_durable_storage('', {'HOME': '/home/user'})
+
+
+# ── Перенос данных в Postgres ───────────────────────────────────────────────
+
+@needs_postgres
+def test_migration_moves_rows_money_and_photos_then_verifies(tmp_path):
+    """Перенос обязан сойтись по строкам и суммам, а фото выжить байт в байт."""
+    import subprocess
+    from datetime import date, datetime
+    from retro.modules.accountant.ledger import FinanceStore
+    from retro.modules.shokh.store import ShokhStore
+
+    source = tmp_path / 'accountant.sqlite3'
+    finance, shokh = FinanceStore(source), ShokhStore(source)
+    finance.record_handover(date(2026, 9, 16), Decimal('9000000'))
+    photo = b'\x89PNG\r\n\x1a\n' + bytes(range(48))
+    shokh.add_purchase(date(2026, 9, 16), datetime(2026, 9, 16, 10, 0), point='Базар',
+                       item='Лук', unit='кг', quantity='10', price='3200',
+                       photo=photo, photo_type='image/png')
+
+    target = Database(POSTGRES_URL)
+    with target.cursor() as connection:
+        connection.execute('DROP SCHEMA public CASCADE')
+        connection.execute('CREATE SCHEMA public')
+        connection.commit()
+
+    done = subprocess.run(
+        [sys.executable, 'scripts/migrate_to_postgres.py', '--target', POSTGRES_URL,
+         '--accountant', str(source), '--apply'],
+        capture_output=True, text=True, env={**os.environ, 'PYTHONPATH': '.'})
+    assert done.returncode == 0, done.stdout + done.stderr
+    assert 'суммы совпали' in done.stdout
+
+    # Деньги и фото на месте.
+    moved = ShokhStore(target).purchases(date(2026, 9, 16))
+    assert [(row['item'], row['total']) for row in moved] == [('Лук', '32000.00')]
+    assert ShokhStore(target).photo(moved[0]['id'])[0] == photo
+    with target.cursor() as connection:
+        assert connection.execute(
+            'SELECT amount FROM accountant_handover_days').fetchone()[0] == '9000000'
+
+    # Счётчик номеров сдвинут: новая запись не сталкивается с перенесённой.
+    fresh = ShokhStore(target).add_purchase(
+        date(2026, 9, 17), datetime(2026, 9, 17, 9, 0), point='Базар', item='Мясо',
+        unit='кг', quantity='5', price='80000')
+    assert fresh['id'] > moved[0]['id']
+
+    # Повторный запуск поверх данных запрещён: иначе начисления удвоятся.
+    again = subprocess.run(
+        [sys.executable, 'scripts/migrate_to_postgres.py', '--target', POSTGRES_URL,
+         '--accountant', str(source), '--apply'],
+        capture_output=True, text=True, env={**os.environ, 'PYTHONPATH': '.'})
+    assert again.returncode == 1
+    assert 'не пуст' in again.stdout
+
+
+@needs_postgres
+def test_dry_run_changes_nothing(tmp_path):
+    import subprocess
+    from datetime import date
+    from retro.modules.cashier.expenses import ExpenseStore
+
+    source = tmp_path / 'cashier.sqlite3'
+    ExpenseStore(source).add(date(2026, 9, 16), 'Такси', '50000')
+    target = Database(POSTGRES_URL)
+    with target.cursor() as connection:
+        connection.execute('DROP SCHEMA public CASCADE')
+        connection.execute('CREATE SCHEMA public')
+        connection.commit()
+
+    done = subprocess.run(
+        [sys.executable, 'scripts/migrate_to_postgres.py', '--target', POSTGRES_URL,
+         '--cashier', str(source), '--dry-run'],
+        capture_output=True, text=True, env={**os.environ, 'PYTHONPATH': '.'})
+    assert done.returncode == 0
+    assert 'ничего не изменено' in done.stdout
+    # Схему dry-run тоже не создаёт.
+    with target.cursor() as connection:
+        tables = connection.execute(
+            "SELECT COUNT(*) FROM information_schema.tables "
+            "WHERE table_schema = 'public'").fetchone()[0]
+    assert tables == 0
