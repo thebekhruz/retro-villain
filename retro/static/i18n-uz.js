@@ -1093,6 +1093,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "Закуп · Retro Milliy": "Xarid · Retro Milliy",
   "Закуп · Шох": "Xarid · Shoh",
   "‹ Панель": "‹ Panel",
+  "Вернуться на экран директора": "Direktor ekraniga qaytish",
+  "Поступления за смену и наличные к передаче видны у кассира.": "Smena tushumlari va topshiriladigan naqd pul kassirda ko'rinadi.",
   "Закуп за 15 минут": "15 daqiqada xarid",
   "ЗАКУП ЗАВЕРШЁН": "XARID YAKUNLANDI",
   "Записано!": "Yozildi!",

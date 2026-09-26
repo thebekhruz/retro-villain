@@ -463,16 +463,6 @@ footer{font-size:11.5px}
 .primary .file-type,.primary .attendance-file-type{color:#b9cdbc}
 .staff-status.unavailable{color:#68746b;background:#eef1ed}
 
-/* Модуль, в который не пустят, выглядит закрытым: тусклый, с перечёркнутым
-   кружком и без указателя-руки. Причина показывается под меню по нажатию. */
-.nav-link.is-locked,.nav-active.is-locked{opacity:.45;cursor:not-allowed}
-.nav-link.is-locked:hover{background:transparent;border-color:transparent}
-.nav-lock{margin-left:auto;font-size:14px;color:#c8a97e}
-.nav-lock-hint{margin:10px 0 0;padding:9px 12px;border-radius:9px;background:#ffffff14;
-  color:#e4ecdf;font-size:12px;line-height:1.45;opacity:0;max-height:0;overflow:hidden;
-  transition:opacity .2s ease}
-.nav-lock-hint.is-shown{opacity:1;max-height:120px}
-
 /* Переключатель языка в шапке: две короткие кнопки, активная подсвечена.
    Панелью пользуются и те, кому по-узбекски привычнее. */
 .lang-switch{display:flex;gap:2px;padding:3px;border:1px solid #cad5cc;border-radius:9px;background:#fff}

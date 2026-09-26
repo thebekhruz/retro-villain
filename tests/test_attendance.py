@@ -52,7 +52,9 @@ def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
     assert 'id="accountant-date"' in accountant.text
     assert 'id="entrances-download"' in accountant.text
     assert 'Зарплата к выплате' not in cashier.text
-    assert 'href="/accountant"' in cashier.text
+    # T-383: в разметке кассы чужих модулей нет — пункт «Бухгалтер» дорисует
+    # меню, только если он открыт этой учётной записи (здесь — полный доступ).
+    assert 'href="/accountant"' not in cashier.text
     assert any(item['id'] == 'accountant' and item['available'] for item in modules)
     assert 'Планирование смен' not in accountant.text
     assert 'scenario-groups' not in accountant.text
