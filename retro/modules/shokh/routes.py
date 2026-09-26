@@ -4,15 +4,14 @@
 «на руках у Шоха» = выдано бухгалтером − записанные покупки, а бухгалтерский
 подотчёт уменьшается отдельно, когда бухгалтер принимает накладную.
 """
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from decimal import Decimal
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, Request, UploadFile
 from fastapi.responses import Response
 
 from retro.modules.cashier.service import TZ, today_tashkent
-from .gamification import (level_for, purchase_xp, quests, spent, streak, total_xp,
-                           trip_bonus, trip_minutes, week_marks, FAST_TRIP_MINUTES)
+from .trips import spent, trip_minutes
 from .store import MAX_PHOTO_BYTES, ShokhError, UNITS, pocket_position
 
 router = APIRouter(prefix='/api/shokh')
@@ -44,20 +43,12 @@ def home(request: Request, date_: date | None = Query(None, alias='date')):
     store = request.app.state.shokh
     today_rows = store.purchases(day)
     trips = store.trips(day)
-    history = store.purchases_between(day - timedelta(days=60), day)
-    days = {row['day'] for row in history}
-    xp = total_xp(history, [trip for trip in trips])
     return dict(
         demo=False, date=day.isoformat(),
         **_pocket(request, day),
         purchases=today_rows,
         spent_today=str(spent(today_rows)),
-        level=level_for(xp),
-        streak=streak({date.fromisoformat(value) for value in days}, day),
-        week=week_marks({date.fromisoformat(value) for value in days}, day),
-        quests=quests(today_rows, trips),
-        trips=[dict(trip, minutes=trip_minutes(trip), bonus=trip_bonus(trip)) for trip in trips],
-        fast_trip_minutes=FAST_TRIP_MINUTES)
+        trips=[dict(trip, minutes=trip_minutes(trip)) for trip in trips])
 
 
 @router.get('/catalog')
@@ -88,9 +79,8 @@ def finish_trip(request: Request, trip_id: int):
     trip = store.trip(trip_id)
     rows = [row for row in store.purchases(date.fromisoformat(trip['day']))
             if row['trip_id'] == trip_id]
-    return dict(trip=dict(trip, minutes=trip_minutes(trip), bonus=trip_bonus(trip)),
-                purchases=rows, spent=str(spent(rows)),
-                xp=sum(purchase_xp(row)['total'] for row in rows) + trip_bonus(trip))
+    return dict(trip=dict(trip, minutes=trip_minutes(trip)),
+                purchases=rows, spent=str(spent(rows)))
 
 
 @router.post('/purchase', status_code=201)
@@ -114,7 +104,7 @@ async def add_purchase(request: Request,
             photo=content, photo_type=content_type, trip_id=trip_id)
     except ShokhError as error:
         _fail(error)
-    return dict(purchase=row, xp=purchase_xp(row), **_pocket(request, day))
+    return dict(purchase=row, **_pocket(request, day))
 
 
 @router.get('/photo/{purchase_id}')

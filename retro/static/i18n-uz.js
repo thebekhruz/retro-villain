@@ -1691,3 +1691,9 @@ Object.assign(globalThis.RetroDictionaryUz, {
 globalThis.RetroTemplatesUz.push(
   [/^Все продажи выбранных направлений: (.+?) сум; вне банкетной выборки: (.+?) сум\.$/, "Tanlangan yo'nalishlarning barcha savdolari: $1 so'm; banket tanlovidan tashqari: $2 so'm."],
 );
+
+/* T-385 · закуп Шоха без опыта. */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Итог закупа": "Xarid yakuni",
+  "Точка, товар, фото и цена": "Do'kon, mahsulot, foto va narx",
+});

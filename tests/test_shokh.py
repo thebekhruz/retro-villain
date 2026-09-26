@@ -1,4 +1,4 @@
-"""Закуп Шоха: журнал покупок, фото, опыт и приёмка бухгалтером."""
+"""Закуп Шоха: журнал покупок, фото, время закупа и приёмка бухгалтером."""
 
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -9,8 +9,7 @@ from fastapi.testclient import TestClient
 from retro.app import create_app
 from retro.config import Settings, parse_dashboard_panel_users
 from retro.modules.cashier.service import TZ
-from retro.modules.shokh.gamification import (level_for, purchase_xp, quests, streak,
-                                              total_xp, trip_bonus, week_marks)
+from retro.modules.shokh.trips import trip_minutes
 from retro.modules.shokh.store import ShokhError, ShokhStore
 
 DAY = date(2026, 9, 16)
@@ -131,73 +130,27 @@ def test_the_first_ever_purchase_of_an_item_is_not_suspicious(tmp_path):
     assert row['price_above_usual'] is False
 
 
-# ── Опыт, уровни, серия ───────────────────────────────────────────────────
+# ── Время закупа ──────────────────────────────────────────────────────────
 
-def test_experience_rewards_a_photo_and_a_fair_price(tmp_path):
-    plain = dict(has_photo=False, usual_price=None, price_above_usual=False)
-    assert purchase_xp(plain)['total'] == 30
-    assert purchase_xp(dict(plain, has_photo=True))['total'] == 40
-    # Премия за цену — только когда есть с чем сравнивать.
-    assert purchase_xp(dict(plain, usual_price='5000'))['total'] == 40
-    assert purchase_xp(dict(plain, usual_price='5000', price_above_usual=True))['total'] == 30
-    assert purchase_xp(dict(plain, has_photo=True, usual_price='5000'))['total'] == 50
+def test_trip_minutes_count_only_a_finished_trip():
+    done = dict(started_at='2026-09-16T09:00:00+05:00', finished_at='2026-09-16T09:12:00+05:00')
+    assert trip_minutes(done) == 12
+    assert trip_minutes(dict(done, finished_at=None)) is None
 
 
-def test_fast_trip_earns_the_bonus_and_a_slow_one_does_not():
-    quick = dict(started_at='2026-09-16T09:00:00+05:00', finished_at='2026-09-16T09:12:00+05:00')
-    slow = dict(started_at='2026-09-16T09:00:00+05:00', finished_at='2026-09-16T09:40:00+05:00')
-    open_trip = dict(started_at='2026-09-16T09:00:00+05:00', finished_at=None)
-    assert trip_bonus(quick) == 50
-    assert trip_bonus(slow) == 0
-    # Незакрытая поездка бонус ещё не заработала.
-    assert trip_bonus(open_trip) == 0
-
-
-def test_level_grows_with_experience_and_reports_what_is_left():
-    assert level_for(0)['level'] == 1
-    assert level_for(0)['title'] == 'Новичок закупа'
-    second = level_for(400)
-    assert second['level'] == 2
-    assert second['to_next'] == 500
-    assert 0 < second['progress'] < 1
-    top = level_for(99999)
-    assert top['next_at'] is None
-    assert top['to_next'] == 0
-    assert top['progress'] == 1.0
-
-
-def test_streak_counts_back_from_today_or_yesterday():
-    days = {date(2026, 9, 14), date(2026, 9, 15), date(2026, 9, 16)}
-    assert streak(days, date(2026, 9, 16)) == 3
-    # Утром закупа ещё не было — серия не должна обнуляться до конца дня.
-    assert streak(days, date(2026, 9, 17)) == 3
-    # А через день без закупа серия действительно прервалась.
-    assert streak(days, date(2026, 9, 18)) == 0
-    assert streak(set(), date(2026, 9, 16)) == 0
-
-
-def test_week_marks_cover_seven_days_and_point_at_today():
-    marks = week_marks({date(2026, 9, 16)}, date(2026, 9, 16))
-    assert len(marks) == 7
-    assert marks[-1]['today'] is True and marks[-1]['active'] is True
-    assert sum(mark['active'] for mark in marks) == 1
-
-
-def test_quests_track_purchases_photos_and_speed():
-    rows = [dict(has_photo=True), dict(has_photo=True), dict(has_photo=False)]
-    trips = [dict(started_at='2026-09-16T09:00:00+05:00', finished_at='2026-09-16T09:10:00+05:00')]
-    by_key = {item['key']: item for item in quests(rows, trips)}
-    assert by_key['three']['complete'] is True
-    assert by_key['photos']['done'] == 2 and by_key['photos']['complete'] is False
-    assert by_key['fast']['complete'] is True
-    # Пустой день не выдаёт «все с фото» за отсутствие покупок.
-    assert {item['key']: item['complete'] for item in quests([], [])}['photos'] is False
-
-
-def test_total_experience_adds_trip_bonuses_to_purchases():
-    rows = [dict(has_photo=True, usual_price=None, price_above_usual=False)]
-    trips = [dict(started_at='2026-09-16T09:00:00+05:00', finished_at='2026-09-16T09:05:00+05:00')]
-    assert total_xp(rows, trips) == 40 + 50
+def test_purchase_and_trip_answers_carry_no_experience(tmp_path):
+    """Опыт, уровни, задания и серию дней убрали: в ответах их быть не должно."""
+    with client(tmp_path) as c:
+        trip = c.post('/api/shokh/trip', params={'date': DAY.isoformat()}).json()
+        row = purchase(c, trip_id=str(trip['trip_id'])).json()
+        home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
+        done = c.post(f"/api/shokh/trip/{trip['trip_id']}/finish").json()
+    gamified = {'xp', 'level', 'quests', 'streak', 'week', 'fast_trip_minutes'}
+    assert not gamified & set(row)
+    assert not gamified & set(home)
+    assert not gamified & set(done)
+    assert 'bonus' not in done['trip']
+    assert done['spent'] == '108000.00'
 
 
 # ── Деньги: подотчёт и приёмка ────────────────────────────────────────────

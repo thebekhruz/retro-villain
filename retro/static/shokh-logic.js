@@ -1,6 +1,5 @@
-/* Расчёты закупа без DOM: шаги, итог покупки, сравнение с обычной ценой и
-   предпросмотр опыта. Награды повторяют серверные (modules/shokh/gamification),
-   потому что экран обещает их до отправки. */
+/* Расчёты закупа без DOM: шаги, итог покупки, сравнение с обычной ценой,
+   остаток на руках и время закупа. */
 (function(root,factory){
   const api=factory();
   if(typeof module==='object'&&module.exports)module.exports=api;
@@ -8,8 +7,6 @@
 })(typeof globalThis!=='undefined'?globalThis:this,function(){
 
   const STEPS=['point','item','amount','confirm'];
-  const XP_PURCHASE=30, XP_PHOTO=10, XP_FAIR_PRICE=10, XP_FAST_TRIP=50;
-  const FAST_TRIP_MINUTES=15;
 
   function number(value){
     const text=String(value==null?'':value).replace(',','.').trim();
@@ -55,17 +52,6 @@
     return {kind:'same',delta:0,text:'Как обычно'};
   }
 
-  /* Сколько опыта даст покупка. Премию за цену считаем только когда есть с чем
-     сравнивать — как на сервере. */
-  function xpPreview(draft,usual){
-    const parts=[{label:'Покупка',xp:XP_PURCHASE}];
-    if(draft.hasPhoto)parts.push({label:'Фото',xp:XP_PHOTO});
-    const hint=priceHint(draft,usual);
-    if(usual!=null&&(hint.kind==='below'||hint.kind==='same'))
-      parts.push({label:'Цена в норме',xp:XP_FAIR_PRICE});
-    return {parts,total:parts.reduce((sum,part)=>sum+part.xp,0)};
-  }
-
   /* Сколько осталось на руках после покупки. Может уйти в минус — значит,
      записали больше, чем выдали, и это надо увидеть, а не спрятать. */
   function pocketAfter(pocket,draft){
@@ -79,10 +65,6 @@
     const started=new Date(startedAt).getTime(), current=new Date(now).getTime();
     if(!Number.isFinite(started)||!Number.isFinite(current))return null;
     return Math.max(0,(current-started)/60000);
-  }
-  function tripOnTime(startedAt,now){
-    const minutes=tripElapsedMinutes(startedAt,now);
-    return minutes!==null&&minutes<=FAST_TRIP_MINUTES;
   }
   function clock(minutes){
     if(minutes==null)return '—';
@@ -101,6 +83,6 @@
     return advanced>0?Math.round(waiting/advanced*100):0;
   }
 
-  return {STEPS,FAST_TRIP_MINUTES,XP_FAST_TRIP,number,total,stepReady,nextStep,previousStep,
-          priceHint,xpPreview,pocketAfter,tripElapsedMinutes,tripOnTime,clock,reportedShare};
+  return {STEPS,number,total,stepReady,nextStep,previousStep,
+          priceHint,pocketAfter,tripElapsedMinutes,clock,reportedShare};
 });
