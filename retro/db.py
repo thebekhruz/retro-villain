@@ -61,6 +61,13 @@ def needs_do_nothing(sql: str) -> bool:
         and 'ON CONFLICT' not in sql.upper()
 
 
+def without_comments(sql: str) -> str:
+    """SQL без ведущих строк-комментариев: по началу команды принимаются решения."""
+    lines = [line for line in sql.strip().splitlines()
+             if not line.strip().startswith('--')]
+    return '\n'.join(lines).strip()
+
+
 def statements(script: str):
     """`executescript` → отдельные команды. Точка с запятой внутри строк не
     встречается в нашем DDL, поэтому хватает простого разбиения."""
@@ -106,12 +113,18 @@ class PostgresConnection:
         if needs_do_nothing(sql):
             sql = sql.rstrip().rstrip(';') + ' ON CONFLICT DO NOTHING'
         text = to_postgres(sql)
-        stripped = text.strip().upper()
+        # Решения принимаем по самой команде, а не по комментарию перед ней.
+        stripped = without_comments(text).upper()
         if stripped.startswith('CREATE TABLE'):
             self._remember_table(sql)
         if stripped.startswith('BEGIN IMMEDIATE'):
             text = 'BEGIN'
         if stripped.startswith('PRAGMA'):
+            return _Empty()
+        # Триггеры истории ставок существовали только в SQLite-базах, и их
+        # сносит миграция. В Postgres сносить нечего, а синтаксис там иной
+        # (нужен ON таблица), поэтому такие команды просто пропускаем.
+        if stripped.startswith('DROP TRIGGER'):
             return _Empty()
         # `lastrowid` в psycopg не работает, поэтому у таблиц с автономером
         # добираем номер через RETURNING и отдаём его тем же полем.

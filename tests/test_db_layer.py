@@ -4,6 +4,7 @@ Postgres-часть включается переменной RETRO_TEST_POSTGRE
 SQLite всё равно идут — набор не должен требовать поднятого сервера.
 """
 import os
+from decimal import Decimal
 
 import pytest
 
@@ -170,3 +171,101 @@ def test_rollback_undoes_the_whole_operation_on_both_dialects(tmp_path, label):
             ('2026-09-16', '500000'))
         connection.rollback()
         assert connection.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 0
+
+
+# ── История ставок без триггеров ────────────────────────────────────────────
+
+def roster_for(tmp_path, label):
+    """Реестр на выбранном диалекте, с чистой схемой."""
+    from retro.modules.accountant.roster import RosterStore
+    if label == 'postgres':
+        if not POSTGRES_URL:
+            pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
+        database = Database(POSTGRES_URL)
+        with database.cursor() as connection:
+            for table in ('accountant_employee_versions', 'accountant_roster_audit',
+                          'accountant_monthly_employees', 'accountant_employees'):
+                connection.execute(f'DROP TABLE IF EXISTS {table} CASCADE')
+            connection.commit()
+        return RosterStore(database)
+    return RosterStore(tmp_path / 'roster.sqlite3')
+
+
+@pytest.mark.parametrize('label', ['sqlite', 'postgres'])
+def test_history_is_written_by_code_on_both_dialects(tmp_path, label):
+    """Историю ставок ведёт код, а не триггеры SQLite.
+
+    `list(day)` берёт версию с наибольшим effective_day <= день, поэтому старая
+    ставка обязана сохраниться за прошлые дни: начисления за них уже закрыты.
+    """
+    from datetime import date, timedelta
+    roster = roster_for(tmp_path, label)
+    person = roster.add(name='Жасур Алиев', role='официант', rate='200000',
+                        group_name='Обслуживание зала')
+
+    # Новый сотрудник виден и в прошлом: иначе прошлые смены его потеряют.
+    past = date(2026, 1, 1)
+    assert [p.name for p in roster.list(past)] == ['Жасур Алиев']
+    assert roster.list(past)[0].rate == Decimal('200000')
+
+    roster.update(person.id, name='Жасур Алиев', role='официант', rate='275000',
+                  group_name='Обслуживание зала', reason='Повышение')
+
+    # Сегодня — новая ставка, в прошлом — прежняя.
+    assert roster.list()[0].rate == Decimal('275000')
+    assert roster.list(past)[0].rate == Decimal('200000')
+
+    roster.delete(person.id)
+    assert roster.list() == []
+    # Удалённый остаётся в прошлом: смены до удаления он отработал.
+    assert [p.name for p in roster.list(past)] == ['Жасур Алиев']
+    # А на завтра его уже нет.
+    assert roster.list(date.today() + timedelta(days=1)) == []
+
+
+@pytest.mark.parametrize('label', ['sqlite', 'postgres'])
+def test_no_write_path_loses_history(tmp_path, label):
+    """Каждый путь записи обязан оставить версию.
+
+    Раньше это гарантировали триггеры на любой INSERT/UPDATE/DELETE. Теперь —
+    вызовы в коде, и пропущенный путь тихо перестал бы вести историю.
+    """
+    from retro.integrations.hikvision import HikvisionPerson
+    roster = roster_for(tmp_path, label)
+    first = roster.add(name='Азиз Каримов', role='менеджер', rate='400000',
+                       group_name='Управление')
+    second = roster.add(name='Лола Нурматова', role='техперсонал', rate='140000',
+                        group_name='Уборка')
+
+    def versions(employee_id):
+        with roster._open() as connection:
+            return connection.execute(
+                'SELECT COUNT(*) FROM accountant_employee_versions WHERE employee_id = ?',
+                (employee_id,)).fetchone()[0]
+
+    assert versions(first.id) == 1 and versions(second.id) == 1
+
+    # Привязка Hikvision — тоже правка реестра.
+    roster.link_hikvision_people((HikvisionPerson('hik-1', 'Азиз Каримов'),))
+    assert versions(first.id) >= 1
+    with roster._open() as connection:
+        linked = connection.execute(
+            'SELECT hikvision_id FROM accountant_employee_versions '
+            'WHERE employee_id = ? ORDER BY effective_day DESC LIMIT 1',
+            (first.id,)).fetchone()[0]
+    assert linked == 'hik-1', 'привязка должна попасть в историю'
+
+    # Ручная отметка присутствия.
+    roster.set_manual_attendance(second.id, True)
+    assert versions(second.id) >= 1
+
+
+def test_schema_no_longer_creates_sqlite_triggers(tmp_path):
+    """Триггеры должны быть снесены: иначе на SQLite история писалась бы дважды."""
+    from retro.modules.accountant.roster import RosterStore
+    roster = RosterStore(tmp_path / 'roster.sqlite3')
+    with roster._open() as connection:
+        triggers = [row[0] for row in connection.execute(
+            "SELECT name FROM sqlite_master WHERE type = 'trigger' "
+            "AND name LIKE 'accountant_employee_%'")]
+    assert triggers == []
