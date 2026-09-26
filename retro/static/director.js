@@ -205,7 +205,12 @@ function renderSnapshot(snapshot) {
   view.expanded = false;
   const all = logic.totals(snapshot.item_metrics.all || {});
   $('report-period').textContent = logic.periodLabel(snapshot.period_start, snapshot.period_end);
-  $('cash-note').textContent = 'Продажи до исключений меню. Меню: ' + sums(snapshot.menu_revenue ?? all.revenue) + '; исключены группы: ' + Object.entries(snapshot.excluded_revenue || {}).map(([name, amount]) => name + ' ' + sums(amount)).join(', ') + '. Вне банкетной выборки: ' + sums(snapshot.scope_excluded_revenue || 0) + '. Яндекс: оплаты ' + sums(snapshot.yandex_revenue) + ', меню ' + sums(snapshot.yandex_menu_revenue || 0) + '.';
+  // Пустой список исключённых групп раньше давал «исключены группы: .» — теперь
+  // эта часть появляется только когда что-то действительно исключено.
+  const excludedGroups = Object.entries(snapshot.excluded_revenue || {});
+  $('cash-note').textContent = 'Продажи до исключений меню. Меню: ' + sums(snapshot.menu_revenue ?? all.revenue)
+    + (excludedGroups.length ? '; исключены группы: ' + excludedGroups.map(([name, amount]) => name + ' ' + sums(amount)).join(', ') : '')
+    + '. Вне банкетной выборки: ' + sums(snapshot.scope_excluded_revenue || 0) + '. Яндекс: оплаты ' + sums(snapshot.yandex_revenue) + ', меню ' + sums(snapshot.yandex_menu_revenue || 0) + '.';
   $('cash').textContent = money.format(Math.round(logic.amount(snapshot.cash_total)));
   // В трёх узких плитках «сум» у каждого числа не помещается и рвёт строку:
   // единица измерения стоит один раз, у главной цифры над ними.

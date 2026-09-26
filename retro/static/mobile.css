@@ -194,3 +194,97 @@ input[type=date]{min-height:44px}
   .sheet-table.is-scrollable tr.is-grand td:first-child{background:var(--green)}
   .sheet-scroll{scroll-padding-left:0;overscroll-behavior-x:contain}
 }
+
+
+/* ── T-381 · аудит дизайна глазами ─────────────────────────────────────────
+   Всё, что вылезло при просмотре каждого модуля на телефоне (390) и на
+   компьютере (1440) после редизайна ui_solid1. Правила общие: одна и та же
+   деталь в разных модулях выглядит одинаково. */
+
+/* Поле даты внутри плашки ‹ дата › . У «Сотрудников» там подпись и текст,
+   а у кассы, «Финансов дня» и ведомости — настоящее поле ввода. Его общая
+   рамка высотой 44 не влезала в плашку высотой 48: подпись выпадала
+   наверх, поле торчало за край. Внутри плашки поле без своей рамки. */
+.date-nav{min-width:0}
+.date-nav-label{justify-content:center}
+.date-nav-label label{font-size:10px;line-height:1.2;color:var(--muted)}
+.date-nav-label input[type=date],.date-nav-label input[type=month]{min-height:0;height:22px;width:100%;max-width:none;
+  padding:0;border:0;border-radius:4px;background:transparent;box-shadow:none;color:var(--ink);
+  font:600 14px/22px inherit;font-variant-numeric:tabular-nums}
+.date-nav-label input:focus-visible{outline:2px solid #c5a359;outline-offset:2px;box-shadow:none}
+.date-nav-chip[aria-pressed=true]{background:#edf2e9;color:var(--green);font-weight:600}
+
+/* Шапка страницы: заголовок слева, действия забирают остаток строки и
+   встают в ряд. Раньше блок действий сжимался до ширины самой длинной
+   кнопки, и у «Финансов дня» кнопки выстраивались столбиком. */
+.page-heading{gap:20px 28px}
+/* Базовые правила блока действий жили в employees.css, а он подключён только
+   у «Сотрудников». У кассы, «Финансов дня» и ведомости блок был обычным
+   блоком: дата, «Обновить» и ссылки падали друг под друга. */
+.emp-head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.emp-head-actions .button{min-height:48px;margin-left:0}
+.page-heading>.emp-head-actions{flex:1 1 auto;min-width:0}
+/* Заголовок не отдаёт место кнопкам: «Финансы / дня.» в две строки
+   читалось как два слова. Кнопкам проще перейти на вторую строку. */
+.page-heading>div:first-child{flex:0 0 auto}
+@media(min-width:651px){.page-heading h1{white-space:nowrap}}
+
+/* Вкладки-фильтры (Все · К выдаче · Опоздали…) у «Финансов дня» брали
+   стили из файла «Сотрудников», которого на этой странице нет, и
+   показывались голыми кнопками «Всео». Теперь стиль общий. */
+.rm-tabs-row{display:flex;flex-wrap:wrap;gap:4px}
+.emp-tab{border:0;border-radius:7px;padding:8px 10px;font-size:12px;display:inline-flex;gap:6px;align-items:baseline;
+  background:transparent;color:#718075;min-height:36px}
+.emp-tab:hover:not(.is-active){background:#f3f5f0}
+.emp-tab.is-active{background:#edf2e9;color:var(--green);font-weight:600}
+.emp-tab small{font-size:10px;opacity:.7}
+
+/* Кнопка-ссылка «Сбросить фильтры» — кнопка, а выглядела системной. */
+button.text-link{border:0;border-bottom:1px solid #a8bda1;border-radius:0;background:none;color:var(--ink);
+  padding:0 0 3px;font:600 12px/1.4 inherit;cursor:pointer}
+
+/* Подпись формата файла «XLSX» наследовала размер значка кнопки (21 точка)
+   и спорила с самим словом «Скачать». */
+.button .file-type,.button .attendance-file-type{font-size:10px;line-height:1;letter-spacing:.5px;color:inherit;opacity:.55}
+
+/* Большие суммы в узких карточках учредителя (пять в ряд) обрезались:
+   «1 507 496 800,0…». Размер цифр теперь от ширины самой карточки. */
+.founder-metrics article{container-type:inline-size}
+.founder-metrics strong{font-size:clamp(17px,10.5cqi,32px);white-space:nowrap}
+
+/* Плавающая кнопка помощника стоит в углу поверх страницы. Запас снизу,
+   чтобы последнюю карточку можно было докрутить из-под неё. */
+body:has(.ai-chat-toggle) .workspace{padding-bottom:96px}
+
+/* Раскрывающаяся «Разбивка по способам оплаты» — с системным треугольником
+   и шрифтом браузера. Приводим к виду остальных ссылок панели. */
+details>summary{cursor:pointer;list-style:none;display:inline-flex;align-items:center;gap:8px;min-height:36px;
+  font-size:13px;font-weight:600;color:#315e4c}
+details>summary::-webkit-details-marker{display:none}
+details>summary::before{content:"›";display:inline-block;font-size:16px;transition:transform .15s}
+details[open]>summary::before{transform:rotate(90deg)}
+
+@media(max-width:650px){
+  /* Заголовок над действиями, а не рядом: рядом ему доставалась треть
+     экрана («Финансы / дня.» в две строки), а дата уезжала за край. */
+  .workspace .page-heading{flex-direction:column;align-items:stretch}
+  /* Ведомость: у листа нет своих полей, общее правило телефона добавляло
+     их и оставляло белую полосу слева от легенды. */
+  .accountant-panel.sheet-panel{padding-left:0;padding-right:0}
+  .page-heading>.emp-head-actions{justify-content:stretch}
+  .emp-head-actions .date-nav{flex:1 1 100%}
+  .emp-head-actions .date-nav-label{min-width:0;flex:1}
+  .emp-head-actions .button{flex:1 1 140px;width:auto;min-width:0}
+  .emp-head-actions .date-nav-arrow{width:32px}
+  .emp-head-actions .date-nav-chip{padding:8px 9px}
+  .emp-head-actions .date-nav-sep{margin:0 2px}
+
+  /* Подменю модуля (Финансы дня · Зарплаты · Сотрудники, Телефон · Полный
+     отчёт) было колонкой внутри строки меню и растягивало шапку вниз.
+     Теперь это продолжение той же строки чипов сразу за активным модулем. */
+  .sidebar nav{align-items:center}
+  .sidebar nav .rm-subnav{order:-1;display:flex;flex:0 0 auto;gap:4px;margin:0;padding:0 0 0 6px;
+    border-left:1px solid #ffffff26}
+  .sidebar nav .rm-subnav a{flex:0 0 auto;white-space:nowrap;padding:9px 12px;font-size:12px;min-height:40px}
+  .sidebar nav .rm-subnav .nav-dot{display:none}
+}

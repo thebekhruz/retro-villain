@@ -23,6 +23,8 @@
     let content;
     if(item.role==='assistant'&&window.FounderMarkdown){const rendered=window.FounderMarkdown.render(document,item.content);content=rendered.node;article.classList.toggle('has-table',rendered.hasTable)}
     else{content=document.createElement('p');content.textContent=item.content}
+    // Ответ модели приходит по-русски: переводчик по кускам делал из него смесь языков.
+    if(item.role==='assistant'&&!item.pending)content.dataset.i18n='off';
     article.append(label,content);messages.append(article);empty.hidden=true;scrollBottom();return article;
   }
   async function request(url,options={}){
@@ -51,7 +53,7 @@
     const question=input.value.trim();if(!question||busy)return;
     busy=true;send.disabled=true;input.disabled=true;setStatus('Помощник формирует ответ…');bubble({role:'user',content:question});
     input.value='';resizeInput();
-    const pending=bubble({role:'assistant',content:'Думаю…'});pending.classList.add('is-pending');
+    const pending=bubble({role:'assistant',content:'Думаю…',pending:true});pending.classList.add('is-pending');
     try{
       const data=await request(endpoint,{method:'POST',body:JSON.stringify({message:question})});
       pending.remove();bubble(data.message);setStatus('');
