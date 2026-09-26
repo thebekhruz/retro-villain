@@ -83,11 +83,16 @@ class Employee:
     group_name: str
     rate: Decimal | None
     hikvision_id: str | None
+    # «Нет в Hikvision · отмечать вручную»: человек проходит мимо турникета
+    # (охрана, уборка). Привязку к устройству такой сотрудник не получает, и
+    # его день отмечает бухгалтер, как у любого непривязанного.
+    manual_attendance: bool = False
 
     def json(self):
         return dict(id=self.id, name=self.name, role=self.role, group=self.group_name,
                     rate=str(self.rate) if self.rate is not None else None,
-                    hikvision_registered=self.hikvision_id is not None)
+                    hikvision_registered=self.hikvision_id is not None,
+                    manual_attendance=self.manual_attendance)
 
 
 @dataclass(frozen=True)
@@ -156,6 +161,11 @@ class RosterStore:
                 advances TEXT NOT NULL DEFAULT '0',
                 remaining TEXT NOT NULL DEFAULT '0'
             )''')
+            employee_columns = {row[1] for row in connection.execute(
+                'PRAGMA table_info(accountant_employees)')}
+            if 'manual_attendance' not in employee_columns:
+                connection.execute('ALTER TABLE accountant_employees '
+                                   'ADD COLUMN manual_attendance INTEGER NOT NULL DEFAULT 0')
             columns = {row[1] for row in connection.execute(
                 'PRAGMA table_info(accountant_monthly_employees)')}
             if 'external_key' not in columns:
@@ -252,7 +262,8 @@ class RosterStore:
     def list(self, day=None) -> list[Employee]:
         with closing(self._open()) as connection:
             if day is None:
-                rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id '
+                rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id, '
+                                          'manual_attendance '
                                           'FROM accountant_employees ORDER BY source_row').fetchall()
             else:
                 rows = connection.execute('''
@@ -261,13 +272,27 @@ class RosterStore:
                             (SELECT e.hikvision_id FROM accountant_employees e WHERE e.id=v.employee_id),
                             (SELECT h.hikvision_id FROM accountant_employee_versions h
                              WHERE h.employee_id=v.employee_id AND h.hikvision_id IS NOT NULL
-                             ORDER BY h.effective_day DESC LIMIT 1))
+                             ORDER BY h.effective_day DESC LIMIT 1)),
+                        COALESCE((SELECT e.manual_attendance FROM accountant_employees e
+                                  WHERE e.id=v.employee_id), 0)
                     FROM accountant_employee_versions v WHERE deleted=0 AND effective_day=(
                         SELECT MAX(effective_day) FROM accountant_employee_versions h
                         WHERE h.employee_id=v.employee_id AND h.effective_day<=?)
                     ORDER BY source_row
                 ''', (day.isoformat(),)).fetchall()
-        return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None, row[6]) for row in rows]
+        # Ручная отметка сильнее привязки: турникет такого человека не видит,
+        # и его вход не должен ни засчитываться, ни считаться прогулом.
+        return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None,
+                         None if row[7] else row[6], bool(row[7])) for row in rows]
+
+    def set_manual_attendance(self, employee_id: int, manual: bool) -> Employee:
+        with closing(self._open()) as connection, connection:
+            changed = connection.execute(
+                'UPDATE accountant_employees SET manual_attendance = ? WHERE id = ?',
+                (1 if manual else 0, employee_id)).rowcount
+        if not changed:
+            raise ValueError('Сотрудник не найден.')
+        return next(person for person in self.list() if person.id == employee_id)
 
     def link_hikvision_people(self, people: tuple[HikvisionPerson, ...]) -> dict[str, int]:
         """Link only two-sided unique exact normalized names; never overwrite IDs."""
@@ -276,7 +301,7 @@ class RosterStore:
         already_ids = {employee.hikvision_id for employee in employees if employee.hikvision_id}
         unlinked_by_name: dict[str, list[Employee]] = {}
         for employee in employees:
-            if employee.hikvision_id is None:
+            if employee.hikvision_id is None and not employee.manual_attendance:
                 key = normalized_hikvision_name(employee.name)
                 if key:
                     unlinked_by_name.setdefault(key, []).append(employee)
@@ -439,6 +464,18 @@ class RosterStore:
                 'advances=?,remaining=? WHERE id=?',
                 (name, role, str(money['salary']), schedule, str(money['card']), str(money['cash']),
                  str(money['advances']), str(money['remaining']), employee_id)).rowcount
+        if not changed:
+            raise ValueError('Сотрудник не найден.')
+        return next(item for item in self.list_monthly() if item.id == employee_id)
+
+    def update_monthly_basics(self, employee_id: int, *, name: str, role: str,
+                              salary: str) -> MonthlyEmployee:
+        """Имя, должность и оклад без касания выплат, которые ведёт бухгалтер."""
+        name, role, _, money = self._monthly_values(name=name, role=role, salary=salary)
+        with closing(self._open()) as connection, connection:
+            changed = connection.execute(
+                'UPDATE accountant_monthly_employees SET name=?,role=?,salary=? WHERE id=?',
+                (name, role, str(money['salary']), employee_id)).rowcount
         if not changed:
             raise ValueError('Сотрудник не найден.')
         return next(item for item in self.list_monthly() if item.id == employee_id)

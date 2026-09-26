@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime, timezone
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -9,6 +10,7 @@ from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.accountant.roster import GROUPS, UNASSIGNED_GROUP, group_for
 from retro.modules.director.models import resolve_period
 from retro.modules.director.tools import DirectorChatTools
 
@@ -173,3 +175,138 @@ def pdf(request: Request, report_id: str):
     if value is None:
         raise HTTPException(404, 'Отчёт не найден.')
     return Response(value, media_type='application/pdf', headers={'Content-Disposition': 'attachment; filename="Retro-director-report.pdf"'})
+
+
+# ── Телефон директора (ui_solid1 6a) ────────────────────────────────────────
+# Директор правит тот же реестр, что бухгалтер в «Сотрудниках»: отдельной
+# копии нет, поэтому новая ставка сразу видна в «Финансах дня» и ведомости.
+
+class TeamInput(BaseModel):
+    type: Literal['shift', 'monthly']
+    name: str = Field(min_length=1, max_length=160)
+    role: str = Field(min_length=1, max_length=80)
+    amount: str = Field(min_length=1, max_length=20)
+    manual_attendance: bool = False
+
+
+class TeamUpdateInput(BaseModel):
+    name: str = Field(min_length=1, max_length=160)
+    role: str = Field(min_length=1, max_length=80)
+    amount: str = Field(min_length=1, max_length=20)
+    manual_attendance: bool | None = None
+
+
+def _group(role, current=None):
+    """Группа по должности. Незнакомая должность не сбрасывает группу,
+    которую бухгалтер уже выбрал руками («Шашлычник» в «Кухне»)."""
+    try:
+        return group_for(role)
+    except ValueError:
+        return current or UNASSIGNED_GROUP
+
+
+def _amount(value):
+    return value.replace(' ', '').replace(' ', '')
+
+
+@router.get('/team')
+def team(request: Request, date: date | None = None):
+    day = date or today_tashkent()
+    if day > today_tashkent():
+        raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
+    state = request.app.state
+    roster = state.accountant_roster.list(day)
+    snapshot = state.attendance.snapshot(day, roster)
+    rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows)
+    by_id = {employee.id: employee for employee in roster}
+    shift = [dict(row.json(), manual_attendance=by_id[row.employee_id].manual_attendance,
+                  hikvision_registered=by_id[row.employee_id].hikvision_id is not None)
+             for row in rows]
+    return dict(demo=False, date=day.isoformat(), attendance=snapshot.health,
+                shift=shift, monthly=[row.json() for row in state.accountant_roster.list_monthly()],
+                roles=sorted(set(GROUPS) | {'повар', 'кондитер'}),
+                counts=dict(late=sum(row['status'] == 'late' for row in shift),
+                            missing=sum(row['status'] == 'missing' for row in shift),
+                            no_hikvision=sum(not row['hikvision_registered'] for row in shift)))
+
+
+@router.post('/team', status_code=201)
+def add_team_member(request: Request, body: TeamInput):
+    roster = request.app.state.accountant_roster
+    try:
+        if body.type == 'monthly':
+            return dict(employee=roster.add_monthly(
+                name=body.name, role=body.role, salary=_amount(body.amount)).json())
+        employee = roster.add(name=body.name, role=body.role, rate=_amount(body.amount),
+                              group_name=_group(body.role))
+        if body.manual_attendance:
+            employee = roster.set_manual_attendance(employee.id, True)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    return dict(employee=employee.json())
+
+
+@router.patch('/team/shift/{employee_id}')
+def update_shift_member(request: Request, employee_id: int, body: TeamUpdateInput):
+    roster = request.app.state.accountant_roster
+    current = next((person for person in roster.list() if person.id == employee_id), None)
+    if current is None:
+        raise HTTPException(404, 'Сотрудник не найден.')
+    try:
+        employee = roster.update(employee_id, name=body.name, role=body.role,
+                                 rate=_amount(body.amount),
+                                 group_name=_group(body.role, current.group_name),
+                                 reason='Изменено директором')
+        if body.manual_attendance is not None and body.manual_attendance != employee.manual_attendance:
+            employee = roster.set_manual_attendance(employee_id, body.manual_attendance)
+    except ValueError as error:
+        raise HTTPException(404 if 'не найден' in str(error) else 422, str(error)) from None
+    return dict(employee=employee.json())
+
+
+@router.delete('/team/shift/{employee_id}', status_code=204)
+def delete_shift_member(request: Request, employee_id: int):
+    try:
+        request.app.state.accountant_roster.delete(employee_id)
+    except ValueError as error:
+        raise HTTPException(404, str(error)) from None
+
+
+@router.patch('/team/monthly/{employee_id}')
+def update_monthly_member(request: Request, employee_id: int, body: TeamUpdateInput):
+    # Выплаты в реестре окладов ведёт бухгалтер — директор меняет только имя,
+    # должность и оклад. Пишем одним UPDATE по трём полям, чтобы выплата,
+    # записанная бухгалтером в ту же секунду, не затёрлась старыми цифрами.
+    try:
+        employee = request.app.state.accountant_roster.update_monthly_basics(
+            employee_id, name=body.name, role=body.role, salary=_amount(body.amount))
+    except ValueError as error:
+        raise HTTPException(404 if 'не найден' in str(error) else 422, str(error)) from None
+    return dict(employee=employee.json())
+
+
+@router.delete('/team/monthly/{employee_id}', status_code=204)
+def delete_monthly_member(request: Request, employee_id: int):
+    try:
+        request.app.state.accountant_roster.delete_monthly(employee_id)
+    except ValueError as error:
+        raise HTTPException(404, str(error)) from None
+
+
+@router.get('/cash-today')
+async def cash_today(request: Request):
+    """Касса дня так, как её видит кассир: выручка по заведениям, чеки, «Демо»."""
+    from retro.modules.founder.cabinet import cashier_day
+
+    cashier, error = await cashier_day(request, today_tashkent())
+    if cashier is None:
+        raise HTTPException(503, error)
+    return dict(date=today_tashkent().isoformat(), **cashier)
+
+
+@router.get('/accounting/day')
+async def accounting_day(request: Request, date: date | None = None):
+    """Отчёт бухгалтера за день, только чтение: из него экран считает ошибки."""
+    from retro.modules.accountant.routes import day_view
+
+    return await day_view(request, date or today_tashkent())

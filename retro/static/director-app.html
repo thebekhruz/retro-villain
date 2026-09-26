@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143e35">
+  <title>Директор · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/director-app.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/period.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/director-app.js" defer></script>
+</head>
+<body class="director-app">
+<aside class="sidebar">
+  <a href="/" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+  <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-link"><span class="nav-icon">◫</span> Бухгалтер</a><a href="/director" class="nav-active" aria-current="page"><span class="nav-icon">◉</span> Директор <span class="nav-dot"></span></a><a href="/founder" class="nav-link"><span class="nav-icon">⌁</span> Учредитель</a></nav>
+  <div class="rm-subnav"><a href="/director" class="is-current">Телефон директора</a><a href="/director/report">Полный отчёт · ПК</a></div>
+  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
+</aside>
+<main class="dir-main">
+<div class="rm-phone dir-phone">
+  <div class="rm-phone-body dir-body">
+    <header class="dir-head">
+      <span class="rm-phone-mark" aria-hidden="true">R</span>
+      <div class="dir-hello"><span id="today-label">Сегодня</span><strong id="screen-title">Салом, директор</strong></div>
+      <div class="dir-head-actions">
+        <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+        <button id="logout" class="logout-button dir-logout" type="button">Выйти</button>
+      </div>
+    </header>
+    <p id="state" class="dir-state" role="status" aria-live="polite" hidden></p>
+
+    <!-- ── Сегодня ─────────────────────────────────────────────────────── -->
+    <section id="tab-home" class="dir-screen" aria-label="Сегодня">
+      <article class="rm-phone-hero dir-tips">
+        <div class="dir-tips-head"><span class="dir-spark" aria-hidden="true">✦</span><span>AI · ЧТО СДЕЛАТЬ СЕГОДНЯ</span></div>
+        <ol id="tips" class="dir-tips-list"><li class="is-muted">Смотрим меню за неделю…</li></ol>
+        <button id="ask-tip" class="dir-tips-ask" type="button">Спросить AI подробнее →</button>
+      </article>
+      <div class="dir-pair">
+        <article class="rm-phone-card dir-kpi"><span>Касса Retro сегодня</span><strong id="kassa" class="rm-num">—</strong><small id="kassa-sub">iiko</small></article>
+        <article class="rm-phone-card dir-kpi"><span>Остаток у бухгалтера</span><strong id="cash" class="rm-num">—</strong><small id="cash-sub">на конец дня</small></article>
+      </div>
+      <article class="rm-phone-card">
+        <div class="dir-card-head"><strong>Отчёт бухгалтера</strong><span id="err-badge" class="dir-badge">—</span></div>
+        <div id="err-list" class="dir-issues"></div>
+        <button id="ask-err" class="dir-link" type="button" hidden>Что важнее всего? · AI →</button>
+      </article>
+      <article class="rm-phone-card">
+        <strong class="dir-card-title">Команда сегодня</strong>
+        <div class="dir-team-counts">
+          <button type="button" class="dir-count is-late" data-team-filter="late"><strong id="late-n">—</strong><span>опоздали</span></button>
+          <button type="button" class="dir-count" data-team-filter="missing"><strong id="miss-n">—</strong><span>не пришли</span></button>
+          <button type="button" class="dir-count is-nohik" data-team-filter="nohik"><strong id="nohik-n">—</strong><span>без Hikvision</span></button>
+        </div>
+        <p id="attendance-note" class="dir-note"></p>
+      </article>
+    </section>
+
+    <!-- ── Меню ────────────────────────────────────────────────────────── -->
+    <section id="tab-menu" class="dir-screen" aria-label="Меню" hidden>
+      <h1 class="dir-h1">Меню</h1>
+      <label class="visually-hidden" for="menu-query">Найти блюдо</label>
+      <input id="menu-query" class="dir-search" type="search" placeholder="Найти блюдо: плов, манты…" autocomplete="off">
+      <div class="dir-segment" role="group" aria-label="Период">
+        <button type="button" data-days="3">3 дня</button><button type="button" data-days="7" class="is-active">7 дней</button><button type="button" data-days="30">30 дней</button>
+      </div>
+      <p id="menu-period" class="dir-note"></p>
+      <div id="menu-found" class="dir-found" hidden></div>
+      <div id="menu-browse">
+        <div class="dir-chips" role="group" aria-label="Заведение">
+          <button type="button" data-venue="all" class="is-active">Все</button><button type="button" data-venue="retro">Retro</button><button type="button" data-venue="oxbridge">Oxbridge</button><button type="button" data-venue="banquet">Бехруз</button>
+        </div>
+        <div class="dir-views" role="group" aria-label="Срез">
+          <button type="button" data-view="top" class="is-active">Лидеры</button><button type="button" data-view="weak">Слабые</button><button type="button" data-view="lowm">Низкая маржа</button><button type="button" data-view="notb">Нет в Бехрузе</button>
+        </div>
+        <article class="rm-phone-card dir-menu-card">
+          <div class="dir-menu-title"><strong id="view-title">Продаются лучше всего</strong><span id="view-note"></span></div>
+          <div id="menu-list" class="dir-menu-list"></div>
+          <p class="dir-note">Нажмите на блюдо — AI расскажет подробно. ↑↓ — последние 3 дня к среднему за 30.</p>
+        </article>
+        <a class="dir-link dir-full" href="/director/report">Вся таблица блюд, прибыль и PDF-отчёты →</a>
+      </div>
+    </section>
+
+    <!-- ── AI ──────────────────────────────────────────────────────────── -->
+    <section id="tab-ai" class="dir-screen dir-chat-screen" aria-label="AI-помощник" hidden>
+      <div class="dir-chat-head"><span class="dir-spark is-lg" aria-hidden="true">✦</span><div><strong>AI-помощник</strong><span>Меню, продажи, команда, отчёт бухгалтера</span></div></div>
+      <div id="chat-messages" class="rm-chat dir-chat" aria-live="polite">
+        <div class="rm-msg is-ai">Салом! Я вижу продажи Retro, Oxbridge и Бехруза, маржу блюд, опоздания и отчёт бухгалтера. Спросите про любое блюдо или что сделать сегодня.</div>
+      </div>
+      <div id="chat-prompts" class="dir-prompts">
+        <button type="button" class="rm-prompt">Что продвигать сегодня вечером?</button>
+        <button type="button" class="rm-prompt">Какие блюда съедают маржу?</button>
+        <button type="button" class="rm-prompt">Кто сегодня опоздал?</button>
+        <button type="button" class="rm-prompt">Сравни Retro и Oxbridge за неделю</button>
+      </div>
+      <p id="chat-status" class="dir-note" role="status" aria-live="polite"></p>
+      <form id="chat-form" class="rm-chat-form dir-chat-form">
+        <label for="chat-input" class="visually-hidden">Вопрос помощнику</label>
+        <input id="chat-input" maxlength="4000" placeholder="Спросите про блюдо, продажи, команду…" autocomplete="off">
+        <button class="rm-chat-send" type="submit" aria-label="Отправить">↑</button>
+      </form>
+    </section>
+
+    <!-- ── Команда ─────────────────────────────────────────────────────── -->
+    <section id="tab-team" class="dir-screen" aria-label="Команда" hidden>
+      <div class="dir-team-top"><h1 class="dir-h1">Команда</h1><button id="team-add" class="dir-add" type="button"><span>+</span> Добавить</button></div>
+      <p id="team-toast" class="dir-toast" role="status" aria-live="polite" hidden></p>
+      <form id="team-editor" class="rm-phone-card dir-editor" hidden>
+        <div class="dir-card-head"><strong id="editor-title">Новый сотрудник</strong><button id="editor-close" class="dir-close" type="button" aria-label="Закрыть">×</button></div>
+        <div id="editor-type" class="dir-segment is-compact" role="group" aria-label="Тип оплаты">
+          <button type="button" data-type="shift" class="is-active">Смена</button><button type="button" data-type="monthly">Оклад</button>
+        </div>
+        <label class="dir-field">Имя<input id="editor-name" maxlength="160" placeholder="Фамилия Имя" autocomplete="off" required></label>
+        <label class="dir-field">Должность<input id="editor-role" maxlength="80" placeholder="официант, повар…" list="team-roles" autocomplete="off" required></label>
+        <datalist id="team-roles"></datalist>
+        <label class="dir-field"><span id="editor-amount-label">Ставка за смену, сум</span><input id="editor-amount" class="rm-num is-big" inputmode="numeric" autocomplete="off" required></label>
+        <button id="editor-manual" class="dir-check" type="button" aria-pressed="false"><span class="dir-check-box" aria-hidden="true"></span>Нет в Hikvision · отмечать вручную</button>
+        <p id="editor-error" class="dir-error" role="alert"></p>
+        <button id="editor-save" class="dir-primary" type="submit">Сохранить</button>
+        <div id="editor-delete-zone" hidden>
+          <button id="editor-delete" class="dir-danger-link" type="button">Удалить сотрудника</button>
+          <div id="editor-confirm" class="dir-confirm" hidden><button id="editor-keep" type="button">Оставить</button><button id="editor-delete-yes" class="is-danger" type="button">Да, удалить</button></div>
+        </div>
+      </form>
+      <article class="rm-phone-card">
+        <div class="dir-card-head"><strong>Официанты · продажи за 7 дней</strong><span class="dir-muted">все заведения</span></div>
+        <div id="waiters" class="dir-waiters"></div>
+        <button id="ask-waiters" class="dir-link" type="button">✦ Почему такая разница? · AI →</button>
+      </article>
+      <div id="team-days" class="dir-segment" role="group" aria-label="День"><button type="button" data-day="today" class="is-active">Сегодня</button><button type="button" data-day="yesterday">Вчера</button></div>
+      <div id="team-filters" class="dir-chips" role="group" aria-label="Фильтр"></div>
+      <div id="team-list" class="rm-phone-card dir-team-list"></div>
+      <p class="dir-note">Правки видны бухгалтеру сразу: это тот же реестр, что в «Сотрудниках» и «Финансах дня».</p>
+    </section>
+  </div>
+
+  <nav class="rm-tabs dir-tabs" role="tablist" aria-label="Разделы директора">
+    <button type="button" class="rm-tab is-active" role="tab" aria-selected="true" data-tab="home"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span>Сегодня</button>
+    <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="menu"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 5h14M5 12h14M5 19h9"/></svg></span>Меню</button>
+    <button type="button" class="rm-tab rm-tab--ai" role="tab" aria-selected="false" data-tab="ai"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" class="is-filled"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg></span>AI</button>
+    <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="team"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 11a3 3 0 100-6 3 3 0 000 6zM3 20c0-3.3 2.7-5 6-5s6 1.7 6 5M16 11a3 3 0 100-6M18 20c0-2.3-1-3.8-3-4.6"/></svg></span>Команда</button>
+  </nav>
+</div>
+</main>
+</body>
+</html>

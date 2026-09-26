@@ -1,0 +1,203 @@
+/* Директор · телефон (ui_solid1 6a). Одна колонка под большой палец:
+   вкладки внизу, AI в центре. На компьютере колонка встаёт посередине рядом
+   с обычным меню модулей — это тот же телефонный экран, а не растянутый.
+   Общие детали (.rm-phone*, .rm-tabs, .rm-chat) живут в style.css. */
+
+.director-app{background:var(--phone-bg)}
+.dir-main{display:flex;justify-content:center;background:var(--phone-bg);min-height:100vh}
+.dir-phone{width:100%;max-width:480px;min-height:100vh}
+.dir-body{padding:calc(16px + env(safe-area-inset-top)) 16px 16px}
+.dir-screen{display:flex;flex-direction:column;gap:12px}
+
+/* ── Шапка ─────────────────────────────────────────────────────────────── */
+.dir-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}
+.dir-hello{flex:1;min-width:0}
+.dir-hello span{display:block;font-size:12px;color:var(--muted-2)}
+.dir-hello strong{display:block;font-size:19px;font-weight:650;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-head-actions{display:flex;align-items:center;gap:6px}
+.dir-head-actions .lang-switch{margin:0}
+.dir-logout{min-height:36px;padding:6px 10px}
+.dir-state{margin:0;padding:10px 12px;border-radius:12px;background:var(--accent-soft);border:1px solid var(--accent-line);
+  color:#7a6a45;font-size:12px;line-height:1.45}
+.dir-state.is-error{background:var(--late-bg);border-color:#f0c9d2;color:#8d3548}
+
+/* ── Совет AI ──────────────────────────────────────────────────────────── */
+.dir-tips{padding:18px}
+.dir-tips-head{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:650;color:#e8cf95;letter-spacing:.5px}
+.dir-spark{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:50%;background:var(--gold);color:var(--green);font-size:13px}
+.dir-spark.is-lg{width:40px;height:40px;font-size:18px}
+.dir-tips-list{list-style:none;margin:4px 0 0;padding:0;counter-reset:tip}
+.dir-tips-list li{display:flex;gap:10px;margin-top:12px;font-size:13px;line-height:1.45;color:#e9f0e8;counter-increment:tip}
+.dir-tips-list li:before{content:counter(tip);flex:none;color:var(--gold);font-weight:700}
+.dir-tips-list li.is-muted{color:#a9bfb1}
+.dir-tips-list li.is-muted:before{content:none}
+.dir-tips-ask{width:100%;min-height:44px;margin-top:16px;border:1px solid #d8b97766;border-radius:14px;background:#ffffff0f;
+  color:#e8cf95;font-size:13px;font-weight:600}
+
+/* ── Карточки «Сегодня» ────────────────────────────────────────────────── */
+.dir-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+.dir-kpi{border-radius:18px;padding:14px;min-width:0}
+.dir-kpi span{display:block;font-size:11px;color:var(--muted-2)}
+.dir-kpi strong{display:block;font-size:22px;font-weight:650;letter-spacing:-.5px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-kpi strong.is-negative{color:var(--late)}
+.dir-kpi small{display:block;font-size:10px;color:#9aa69b;margin-top:3px}
+.dir-card-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.dir-card-head strong{font-size:15px;font-weight:600}
+.dir-card-title{display:block;font-size:15px;font-weight:600;margin-bottom:12px}
+.dir-badge{padding:4px 9px;border-radius:20px;background:#f1f3ee;color:var(--idle);font-size:11px;font-weight:650;white-space:nowrap}
+.dir-badge.is-bad{background:#fde9ed;color:var(--late)}
+.dir-badge.is-ok{background:var(--ok-bg);color:var(--ok)}
+.dir-issues>div{display:flex;gap:10px;padding:10px 0 0;margin-top:10px;border-top:1px solid #eef1ea}
+.dir-issues i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px;background:#d2a54a}
+.dir-issues i.is-bad{background:var(--late)}
+.dir-issues strong{display:block;font-size:13px;font-weight:600;line-height:1.35}
+.dir-issues small{display:block;font-size:11px;color:var(--muted-3);margin-top:2px}
+.dir-link{display:inline-flex;align-items:center;min-height:40px;margin-top:4px;border:0;background:none;padding:0;
+  color:#315e4c;font-size:12px;font-weight:600;text-align:left}
+.dir-full{margin:2px 4px 0}
+.dir-note{margin:0;font-size:11px;line-height:1.5;color:#9aa69b}
+.dir-muted{font-size:10px;color:#9aa69b}
+.dir-team-counts{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.dir-count{border:0;border-radius:14px;background:#f1f3ee;padding:12px 10px;text-align:left;color:var(--ink);min-height:44px}
+.dir-count strong{display:block;font-size:24px;font-weight:650}
+.dir-count span{display:block;font-size:11px;color:#737f74;margin-top:2px}
+.dir-count.is-late{background:#fff0f2}
+.dir-count.is-late strong{color:var(--late)}
+.dir-count.is-late span{color:#9b4b5a}
+.dir-count.is-nohik{border:1px dashed #c9b27a;background:#f7f3e8}
+.dir-count.is-nohik strong,.dir-count.is-nohik span{color:#7a6a45}
+.dir-attendance-note{margin-top:10px}
+
+/* ── Меню ─────────────────────────────────────────────────────────────── */
+.dir-h1{font-size:28px;font-weight:650;letter-spacing:-.8px;margin:0}
+.dir-search{height:50px;border:1px solid #dbe3d8;border-radius:16px;padding:0 16px;background:#fff;color:var(--ink);font-size:15px;width:100%}
+.dir-segment{display:flex;padding:3px;border-radius:12px;background:#e6eae1}
+.dir-segment button{flex:1;min-height:40px;border:0;border-radius:9px;background:transparent;color:#718075;font-size:13px;font-weight:600}
+.dir-segment button.is-active{background:#fff;color:var(--green);box-shadow:0 1px 3px #0000001a}
+.dir-segment.is-compact{margin-top:12px;background:#f1f3ee}
+.dir-chips{display:flex;gap:6px;overflow-x:auto;-webkit-overflow-scrolling:touch;padding-bottom:2px}
+.dir-chips button{flex:none;min-height:36px;border:1px solid #dbe3d8;border-radius:20px;padding:7px 12px;font-size:12px;font-weight:600;
+  background:#fff;color:#35624e;white-space:nowrap}
+.dir-chips button.is-active{background:var(--green);border-color:var(--green);color:#fff}
+.dir-views{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
+.dir-views button{min-height:40px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--ink-2);font-size:12px;font-weight:650}
+.dir-views button.is-active{background:#fbf0d7;border-color:#e2c98e;color:#7a5a22}
+#menu-browse{display:flex;flex-direction:column;gap:10px}
+.dir-menu-card{padding:6px 16px 10px}
+.dir-menu-title{padding:10px 0 4px}
+.dir-menu-title strong{font-size:14px;font-weight:600}
+.dir-menu-title span{display:block;font-size:10px;color:#9aa69b;margin-top:2px}
+.dir-menu-list{display:grid}
+.dir-dish{width:100%;display:block;border:0;border-top:1px solid #eef1ea;background:none;padding:11px 0;text-align:left;color:var(--ink)}
+.dir-dish-line{display:flex;align-items:baseline;gap:10px}
+.dir-rank{width:16px;flex:none;font-size:12px;font-weight:700;color:#b6a37a}
+.dir-dish-name{flex:1;min-width:0}
+.dir-dish-name strong{display:block;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.dir-dish-name small{display:block;font-size:10px;color:var(--muted-3);margin-top:1px}
+.dir-dish-qty{text-align:right;flex:none}
+.dir-dish-qty strong{display:block;font-size:14px;font-weight:650}
+.dir-dish-qty small{display:block;font-size:10px}
+.is-up{color:var(--ok)}
+.is-down{color:#b0663a}
+.m-low{color:#b0663a}.m-mid{color:var(--warn)}.m-ok{color:var(--ok)}
+.dir-dish-bar{display:block;height:4px;border-radius:2px;background:#f1f3ee;margin:8px 0 0 26px;overflow:hidden}
+.dir-dish-bar span{display:block;height:100%;border-radius:2px;background:#24594b}
+.dir-found{display:grid;gap:10px}
+.dir-found-card{border-radius:18px}
+.dir-found-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.dir-found-head strong{font-size:15px;font-weight:600}
+.dir-found-head small{display:block;font-size:11px;color:var(--muted-3);margin-top:2px}
+.dir-found-head b{font-size:18px;font-weight:650;white-space:nowrap}
+.dir-split{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.dir-split div{background:#f5f7f1;border-radius:10px;padding:8px;min-width:0}
+.dir-split span{display:block;font-size:10px;color:var(--muted-2)}
+.dir-split strong{display:block;font-size:14px;font-weight:650;margin-top:2px}
+.dir-split .is-zero{color:#b3bdb1}
+
+/* ── AI ───────────────────────────────────────────────────────────────── */
+.dir-chat-screen{min-height:calc(100vh - 170px)}
+.dir-chat-head{display:flex;align-items:center;gap:10px}
+.dir-chat-head strong{display:block;font-size:18px;font-weight:650}
+.dir-chat-head span{display:block;font-size:11px;color:var(--muted-2)}
+.dir-chat{padding:0;overflow:visible;flex:1}
+.dir-chat .rm-msg{font-size:14px;border-radius:18px 18px 18px 6px}
+.dir-chat .rm-msg.is-user{border-radius:18px 18px 6px 18px}
+.rm-msg.is-pending{color:var(--muted-3)}
+.rm-msg p{margin:0 0 8px}.rm-msg p:last-child{margin:0}
+.rm-msg ul,.rm-msg ol{margin:4px 0 8px;padding-left:18px}
+.rm-msg table{border-collapse:collapse;font-size:12px;margin:6px 0}
+.rm-msg td,.rm-msg th{border:1px solid var(--line-mid);padding:4px 6px;text-align:left}
+.rm-msg.has-table{max-width:100%;overflow-x:auto}
+.dir-prompts{display:flex;flex-direction:column;gap:6px}
+.dir-chat-form{position:sticky;bottom:84px;margin:0 -16px;padding:8px 16px;border-top:0;background:var(--phone-bg)}
+.dir-chat-form input{height:48px;border-radius:24px;font-size:14px}
+.dir-chat-form .rm-chat-send{width:48px;height:48px}
+#chat-status.is-error{color:var(--late)}
+
+/* ── Команда ───────────────────────────────────────────────────────────── */
+.dir-team-top{display:flex;justify-content:space-between;align-items:center}
+.dir-add{min-height:40px;border:0;border-radius:12px;background:var(--green);color:#fff;font-size:13px;font-weight:600;padding:0 14px}
+.dir-add span{color:var(--gold)}
+.dir-toast{margin:0;padding:10px 12px;border-radius:12px;background:var(--ok-bg);color:#3f7a50;font-size:12px}
+.dir-toast.is-error{background:var(--late-bg);color:#8d3548}
+.dir-editor{padding:16px;box-shadow:0 10px 30px #143e351a;border:1px solid #d8b97766}
+.dir-editor .dir-card-head strong{font-size:16px;font-weight:650}
+.dir-close{width:32px;height:32px;border:0;border-radius:50%;background:#f1f3ee;color:#53675c;font-size:16px}
+.dir-field{display:grid;gap:5px;margin-top:12px;font-size:11px;color:var(--ink-2)}
+.dir-field input{height:46px;border:1px solid #dbe3d8;border-radius:12px;padding:0 12px;background:#fff;color:var(--ink);font-size:15px;min-width:0}
+.dir-field input.is-big{height:52px;font-size:22px;font-weight:650}
+.dir-check{display:flex;align-items:center;gap:10px;margin-top:14px;min-height:40px;border:0;background:none;padding:0;color:var(--ink);font-size:13px;text-align:left}
+.dir-check-box{display:grid;place-items:center;width:22px;height:22px;flex:none;border-radius:6px;border:1.5px solid #c9b27a;color:#fff;font-size:12px}
+.dir-check[aria-pressed=true] .dir-check-box{background:#c9b27a}
+.dir-check[aria-pressed=true] .dir-check-box:after{content:"✓"}
+.dir-error{min-height:14px;margin:8px 0 0;font-size:11px;color:var(--late)}
+.dir-primary{width:100%;min-height:50px;margin-top:4px;border:0;border-radius:14px;background:var(--green);color:#fff;font-size:15px;font-weight:650}
+.dir-danger-link{width:100%;min-height:40px;margin-top:8px;border:0;background:none;color:#a96039;font-size:13px}
+.dir-confirm{display:flex;gap:8px;margin-top:8px}
+.dir-confirm button{flex:1;min-height:42px;border:1px solid #dbe3d8;border-radius:12px;background:#fff;color:#35624e;font-size:13px}
+.dir-confirm button.is-danger{border:0;background:var(--late);color:#fff;font-weight:600}
+.dir-waiters>div{padding:10px 0;border-top:1px solid #eef1ea;margin-top:8px}
+.dir-waiter-line{display:flex;align-items:baseline;gap:8px}
+.dir-waiter-line>span:first-child{width:14px;font-size:12px;font-weight:700;color:#b6a37a}
+.dir-waiter-line>strong:nth-child(2){flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-waiter-line>b{font-size:14px;font-weight:650;white-space:nowrap}
+.dir-waiters .rm-bar{margin:7px 0 0 22px}
+.dir-waiters small{display:block;font-size:10px;color:var(--muted-3);margin:4px 0 0 22px}
+.dir-team-list{padding:4px 14px}
+.dir-person{width:100%;display:flex;align-items:center;gap:10px;border:0;border-top:1px solid #eef1ea;background:none;padding:11px 0;text-align:left;color:var(--ink);min-height:56px}
+.dir-person:first-child{border-top:0}
+.dir-person-main{flex:1;min-width:0}
+.dir-person-name{display:flex;align-items:center;gap:6px}
+.dir-person-name strong{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-person-main>small{display:block;font-size:11px;color:var(--muted-3);margin-top:2px}
+.dir-person .rm-bar{margin-top:7px}
+.dir-paid{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin-top:4px;color:var(--ink-2)}
+.dir-paid .is-rest{color:var(--warn)}
+.dir-pill{flex:none;padding:4px 8px;border-radius:20px;font-size:10px;font-weight:650;background:#ebeeea;color:#737f74;white-space:nowrap}
+.dir-pill.on_time{background:var(--ok-bg);color:var(--ok)}
+.dir-pill.late{background:#fde9ed;color:var(--late)}
+.dir-pill.unlinked,.dir-pill.manual{background:#f7f3e8;color:#7a6a45}
+.dir-pill.monthly{background:#eef3e9;color:#4d7959}
+.dir-chevron{color:#b3bdb1;font-size:16px}
+.dir-empty{padding:18px 4px;font-size:13px;color:var(--muted-3);text-align:center}
+
+/* ── Вкладки ───────────────────────────────────────────────────────────── */
+.dir-tabs{z-index:5}
+.rm-tab-icon svg{width:22px;height:22px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.rm-tab-icon svg.is-filled{fill:currentColor;stroke:none;width:20px;height:20px}
+.dir-tabs .rm-tab--ai{flex:1}
+.dir-tabs .rm-tab--ai:not(.is-active){background:#1f4f43}
+
+@media(max-width:650px){
+  /* На телефоне меню модулей не нужно: директор работает в своём экране,
+     выход и язык — в шапке. Раньше полоса меню съедала верх экрана. */
+  .director-app .sidebar{display:none}
+  .dir-main{margin:0;width:100%}
+  .dir-phone{max-width:none}
+}
+@media(max-width:400px){
+  /* Язык и выход уходят на свою строку, но не прячутся: узбекский нужен
+     и на самом узком телефоне. */
+  .dir-head-actions{width:100%;justify-content:space-between}
+  .dir-kpi strong{font-size:19px}
+}

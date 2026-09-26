@@ -244,6 +244,20 @@
           <div id="finance-checks"></div>
         </section>
 
+        <!-- Цель ставит учредитель в своём кабинете. Деньги откладываются
+             обычной операцией «Отложить в сейф» — второго способа списания нет. -->
+        <section class="rail-card dividends-card" id="dividends-card" aria-labelledby="dividends-title" hidden>
+          <p class="eyebrow" id="dividends-title">ДИВИДЕНДЫ · НЕДЕЛЯ <span id="dividends-week">—</span></p>
+          <div class="dividends-target"><span>Запрошено учредителем</span><strong id="dividends-target" class="rm-num">—</strong></div>
+          <p class="dividends-changed" id="dividends-changed"></p>
+          <div class="dividends-bar"><span id="dividends-fill"></span><i id="dividends-pace" title="План к этому дню"></i></div>
+          <div class="dividends-foot rm-num"><span id="dividends-set">Отложено —</span><span id="dividends-left"></span></div>
+          <p class="dividends-status" id="dividends-status"></p>
+          <p class="dividends-today" id="dividends-today"></p>
+          <p class="dividends-hint" id="dividends-hint"></p>
+          <button id="dividends-fill-button" class="dividends-fill" type="button">Внести в «Операции за день» ←</button>
+        </section>
+
         <!-- Обязательства собраны в одну карточку: тремя отдельными они занимали
              столько же места, сколько остаток дня, хотя отвечают на один вопрос.
              Тревожная окраска включается классом is-owed только при долге. -->

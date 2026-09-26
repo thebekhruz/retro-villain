@@ -13,6 +13,7 @@ from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
+from retro.modules.founder.cabinet import dividend_summary
 
 from .attendance import Entrance, export_entrances
 from .employee_export import export_employees
@@ -164,6 +165,8 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                 reserves=reserves,
                 expected_cashier=str(cashier_amount) if cashier_amount is not None else None,
                 cashier_error=cashier_error,
+                # Цель учредителя на неделю и сколько уже отложено в сейф.
+                dividends_week=dividend_summary(request.app.state, day),
                 scenarios=dict(shortfall=str(shortfall) if shortfall is not None else None, groups=scenarios,
                                note='Только оценка будущей смены; уже начисленный долг не уменьшается.'))
 
@@ -181,6 +184,7 @@ class EmployeeUpdateInput(BaseModel):
     rate: str | None
     group: str | None = None
     reason: str
+    manual_attendance: bool | None = None
 
 
 class EmployeeCreateInput(BaseModel):
@@ -228,6 +232,9 @@ def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInpu
         employee = request.app.state.accountant_roster.update(
             employee_id, name=body.name, role=body.role, rate=body.rate,
             group_name=body.group, reason=body.reason)
+        if body.manual_attendance is not None and body.manual_attendance != employee.manual_attendance:
+            employee = request.app.state.accountant_roster.set_manual_attendance(
+                employee_id, body.manual_attendance)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(demo=True, employee=employee.json())

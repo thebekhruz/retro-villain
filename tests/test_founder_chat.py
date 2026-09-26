@@ -395,7 +395,8 @@ def test_founder_accounts_have_separate_api_histories_and_cashier_is_forbidden(t
 def test_founder_page_exposes_accessible_chat_drawer(tmp_path):
     app = create_app(Settings(data_dir=tmp_path))
     with TestClient(app, client=('127.0.0.1', 50000)) as client:
-        page = client.get('/founder')
+        # Выдвижной чат — у аналитики; в кабинете чат стоит колонкой справа.
+        page = client.get('/founder/analytics')
 
     assert 'id="ai-chat-toggle"' in page.text
     assert 'aria-controls="ai-chat-drawer"' in page.text

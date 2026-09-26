@@ -8,7 +8,8 @@ from pathlib import Path
 
 STATIC = Path(__file__).resolve().parent.parent / 'retro' / 'static'
 DASHBOARDS = ('index.html', 'accountant.html', 'employees.html', 'payroll.html',
-              'director.html', 'founder.html', 'shokh.html')
+              'director.html', 'founder.html', 'shokh.html',
+              'director-app.html', 'founder-cabinet.html')
 
 
 def markup(page: str) -> str:

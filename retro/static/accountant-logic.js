@@ -102,6 +102,10 @@
       add('warn','Неоплаченные расходы',{amount:ledger.manual_debt_total});
     if(data.expected_cashier===null)
       add('warn','Касса не передана',{});
+    // Недельную цель ставит учредитель; отставание — повод отложить сегодня.
+    const dividends=data.dividends_week;
+    if(dividends&&dividends.behind)
+      add('warn','Отстаём от недельных дивидендов',{amount:Number(dividends.due)-Number(dividends.collected)});
     return items;
   }
 
