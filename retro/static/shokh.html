@@ -1,0 +1,214 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143e35">
+  <title>Закуп · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/shokh.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/shokh-logic.js" defer></script><script src="/static/shokh.js" defer></script>
+</head>
+<body class="shokh-body">
+<div class="rm-phone">
+  <p id="shokh-message" class="shokh-message" role="status" aria-live="polite" hidden></p>
+
+  <!-- ── Главная ─────────────────────────────────────────────────────── -->
+  <section id="screen-home" class="shokh-screen">
+    <header class="shokh-hero rm-phone-hero">
+      <div class="shokh-hero-top">
+        <span class="shokh-mark" aria-hidden="true">Ш</span>
+        <div class="shokh-hello">
+          <strong>Салом, Шох</strong>
+          <span id="home-date">Закуп</span>
+        </div>
+        <span class="shokh-level-chip">Ур. <b id="home-level">—</b></span>
+      </div>
+      <!-- Закуп ведёт местный сотрудник, поэтому язык и выход — на своей строке,
+           а не втиснуты в приветствие. -->
+      <div class="shokh-hero-actions">
+        <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+        <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
+      </div>
+      <div class="shokh-balance">
+        <span>На руках</span>
+        <strong id="home-pocket" class="rm-num">—</strong>
+        <small id="home-pocket-note">сум</small>
+      </div>
+      <div class="shokh-progress">
+        <span id="home-reported">Отчитались за — денег на руках</span>
+        <div class="rm-bar"><span id="home-reported-bar" style="width:0%"></span></div>
+      </div>
+    </header>
+
+    <div class="shokh-body-scroll">
+      <article class="rm-phone-card shokh-level">
+        <div class="shokh-level-head"><strong id="home-level-title">—</strong><span id="home-xp">—</span></div>
+        <div class="rm-bar is-gold"><span id="home-xp-bar" style="width:0%"></span></div>
+        <p id="home-xp-next" class="shokh-note"></p>
+        <div class="shokh-week-row">
+          <div id="home-week" class="shokh-week"></div>
+          <div class="shokh-streak"><strong id="home-streak">—</strong><span>без пропусков</span></div>
+        </div>
+      </article>
+
+      <article class="rm-phone-card">
+        <strong class="shokh-card-title">Задания на сегодня</strong>
+        <div id="home-quests" class="shokh-quests"></div>
+      </article>
+
+      <article class="rm-phone-card" id="home-pending-card" hidden>
+        <strong class="shokh-card-title">Ждёт проверки бухгалтера</strong>
+        <p class="shokh-note" id="home-pending-note"></p>
+      </article>
+
+      <article class="rm-phone-card">
+        <strong class="shokh-card-title">Покупки за день <span id="home-spent" class="shokh-spent"></span></strong>
+        <div id="home-purchases" class="shokh-purchases"></div>
+      </article>
+    </div>
+
+    <div class="shokh-cta">
+      <button id="start-purchase" class="shokh-primary" type="button">
+        <span class="shokh-plus" aria-hidden="true">+</span>
+        <span><b>Новый закуп</b><small id="cta-note">Уложитесь в 15 минут — +50 XP</small></span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Флоу из четырёх шагов ───────────────────────────────────────── -->
+  <section id="screen-flow" class="shokh-screen" hidden>
+    <header class="shokh-flow-head">
+      <button id="flow-close" class="shokh-round" type="button" aria-label="Закрыть">×</button>
+      <div class="shokh-step-label">Шаг <b id="flow-step-no">1</b> из 4 · <span id="flow-step-name">Точка</span></div>
+      <span id="flow-timer" class="shokh-timer">⏱ 00:00</span>
+    </header>
+    <div id="flow-segments" class="shokh-segments" aria-hidden="true"></div>
+
+    <div class="shokh-flow-body">
+      <!-- Шаг 1: точка -->
+      <div id="step-point" class="shokh-step">
+        <h1>Где закупаете?</h1>
+        <p class="shokh-note">Нажмите на точку — сразу перейдём к товару</p>
+        <div id="point-list" class="shokh-points"></div>
+        <label class="shokh-field"><span>Другая точка</span>
+          <input id="point-other" type="text" maxlength="80" placeholder="Название точки">
+        </label>
+      </div>
+
+      <!-- Шаг 2: товар и фото -->
+      <div id="step-item" class="shokh-step" hidden>
+        <button id="item-back-point" class="shokh-chip" type="button"><span id="item-point-label">—</span> · сменить</button>
+        <h1>Что купили?</h1>
+        <input id="item-search" type="search" maxlength="120" placeholder="Поиск: помидоры, лук, мясо…" class="shokh-search">
+        <p id="item-chosen" class="shokh-chosen" hidden></p>
+        <div id="item-list-title" class="shokh-list-title">Частые товары</div>
+        <div id="item-list" class="shokh-items"></div>
+        <button id="item-add-custom" class="shokh-dashed" type="button" hidden></button>
+        <label class="shokh-photo">
+          <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+          <div id="photo-empty" class="shokh-photo-empty">
+            <span class="shokh-photo-icon" aria-hidden="true">
+              <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
+            </span>
+            <span><b>Сфотографируйте товар или чек</b><small>Бухгалтер увидит фото рядом с покупкой</small></span>
+            <span class="shokh-xp-tag">+10 XP</span>
+          </div>
+          <div id="photo-filled" class="shokh-photo-filled" hidden>
+            <img id="photo-preview" alt="Фото покупки">
+            <span class="shokh-retake">Переснять</span>
+          </div>
+        </label>
+      </div>
+
+      <!-- Шаг 3: количество и цена -->
+      <div id="step-amount" class="shokh-step" hidden>
+        <div class="shokh-step-top"><span id="amount-point">—</span><h1 id="amount-item">—</h1></div>
+        <article class="rm-phone-card">
+          <div class="shokh-row-head"><span>Сколько</span><div id="unit-switch" class="shokh-switch"></div></div>
+          <div class="shokh-stepper">
+            <button id="qty-minus" class="shokh-step-btn" type="button" aria-label="Меньше">−</button>
+            <input id="qty-input" type="text" inputmode="decimal" placeholder="0" aria-label="Количество">
+            <button id="qty-plus" class="shokh-step-btn is-dark" type="button" aria-label="Больше">+</button>
+          </div>
+          <div id="qty-quick" class="shokh-quick"></div>
+        </article>
+        <article class="rm-phone-card">
+          <div class="shokh-row-head"><span>Цена за единицу</span><span id="usual-price" class="shokh-note"></span></div>
+          <div class="shokh-price"><input id="price-input" type="text" inputmode="numeric" placeholder="0" aria-label="Цена"><span>сум</span></div>
+          <p id="price-hint" class="shokh-price-hint"></p>
+        </article>
+        <article class="rm-phone-card is-dark">
+          <div><span>Итого</span><small id="amount-formula"></small></div>
+          <strong id="amount-total" class="rm-num">0</strong>
+        </article>
+      </div>
+
+      <!-- Шаг 4: подтверждение -->
+      <div id="step-confirm" class="shokh-step" hidden>
+        <h1>Всё верно?</h1>
+        <article class="rm-phone-card shokh-summary">
+          <img id="confirm-photo" alt="Фото покупки" hidden>
+          <div class="shokh-summary-row"><span>Точка</span><strong id="confirm-point">—</strong></div>
+          <div class="shokh-summary-row"><span>Товар</span><strong id="confirm-item">—</strong></div>
+          <div class="shokh-summary-row"><span>Расчёт</span><strong id="confirm-formula">—</strong></div>
+          <div class="shokh-summary-row is-total"><span>Итого</span><strong id="confirm-total" class="rm-num">—</strong></div>
+        </article>
+        <article class="rm-phone-card shokh-after">
+          <span>На руках после</span><strong id="confirm-after" class="rm-num">—</strong>
+        </article>
+        <div id="confirm-xp" class="shokh-xp-row"></div>
+        <p id="confirm-warning" class="shokh-warning"></p>
+      </div>
+    </div>
+
+    <div class="shokh-flow-nav">
+      <button id="flow-back" class="shokh-secondary" type="button">Назад</button>
+      <button id="flow-next" class="shokh-primary is-flat" type="button">Далее</button>
+    </div>
+  </section>
+
+  <!-- ── Записано ────────────────────────────────────────────────────── -->
+  <section id="screen-done" class="shokh-screen is-dark" hidden>
+    <div class="shokh-done">
+      <span class="shokh-done-mark" aria-hidden="true">✓</span>
+      <strong class="shokh-done-title">Записано!</strong>
+      <span id="done-item" class="shokh-done-item">—</span>
+      <span id="done-xp" class="shokh-done-xp">—</span>
+      <div id="done-parts" class="shokh-done-parts"></div>
+      <div class="shokh-done-pocket"><span>На руках<small id="done-before"></small></span><strong id="done-pocket" class="rm-num">—</strong></div>
+      <p id="done-trip" class="shokh-note"></p>
+      <div class="shokh-done-actions">
+        <button id="done-more" class="shokh-primary is-gold" type="button">Ещё покупка</button>
+        <button id="done-finish" class="shokh-ghost" type="button">Завершить закуп</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ── Итог закупа ─────────────────────────────────────────────────── -->
+  <section id="screen-summary" class="shokh-screen" hidden>
+    <div class="shokh-body-scroll shokh-summary-screen">
+      <div><p class="eyebrow">ЗАКУП ЗАВЕРШЁН</p><h1 class="shokh-h1">Отличная работа</h1></div>
+      <article class="rm-phone-card shokh-time">
+        <div><span>Время закупа</span><div class="shokh-time-value"><strong id="sum-time" class="rm-num">—</strong><small id="sum-target">из 15:00</small></div></div>
+        <span id="sum-badge" class="shokh-badge">—</span>
+      </article>
+      <div class="shokh-sum-grid">
+        <div class="rm-phone-card"><span>Товаров</span><strong id="sum-count">—</strong></div>
+        <div class="rm-phone-card"><span>Потрачено</span><strong id="sum-total" class="rm-num">—</strong></div>
+        <div class="rm-phone-card is-gold"><span>Опыт</span><strong id="sum-xp">—</strong></div>
+      </div>
+      <article class="rm-phone-card">
+        <div class="shokh-level-head"><strong id="sum-level">—</strong><span id="sum-xp-text">—</span></div>
+        <div class="rm-bar is-gold"><span id="sum-xp-bar" style="width:0%"></span></div>
+      </article>
+      <article class="rm-phone-card"><div id="sum-list" class="shokh-purchases"></div></article>
+      <button id="summary-home" class="shokh-primary is-flat" type="button">На главную</button>
+    </div>
+  </section>
+</div>
+</body>
+</html>

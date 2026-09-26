@@ -189,7 +189,9 @@ def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
     if not value.strip():
         return {}
     required_roles = {'cashier', 'accountant', 'director', 'founder'}
-    allowed_roles = required_roles | {'admin'}
+    # `shokh` — необязательная роль: закуп подключают отдельно, и уже
+    # настроенные развёртывания не должны падать из-за её отсутствия.
+    allowed_roles = required_roles | {'admin', 'shokh'}
     result = {}
     roles = set()
     for raw_entry in value.split(';'):

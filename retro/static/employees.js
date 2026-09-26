@@ -1,41 +1,42 @@
 const $ = id => document.getElementById(id);
-const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0)) + ' сум';
+const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0));
+const sum = value => money(value) + ' сум';
 const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки', unavailable: 'Нет данных'};
-const columns = ['Имя', 'Роль', 'Зарплата / ставка', 'Группа', 'Статус', 'Пришёл', 'Действия'];
-// Точку в конце подписи ставит сама подпись, поэтому «г.» тут лишнее:
-// иначе на экране выходит «2026 г.. Hikvision синхронизирован».
-const formattedDay = day => new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'long', year: 'numeric',
-  timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00')).replace(/\s*г\.$/, '');
-const formattedArrival = value => value ? new Intl.DateTimeFormat('ru-RU', {
-  hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Tashkent'
-}).format(new Date(value)) : '—';
 let today, current, requestNo = 0;
+// UI-состояние живёт отдельно от данных API: карточки-фильтры, вкладка группы, поиск и открытый drawer.
+const ui = {filter: 'all', tab: 'all', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false};
 
-function text(tag, className, value) {
-  const item = document.createElement(tag);
-  if (className) item.className = className;
-  item.textContent = value;
-  return item;
+const formattedDay = day => new Intl.DateTimeFormat('ru-RU', {weekday: 'short', day: 'numeric', month: 'long',
+  timeZone: 'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
+const arrivalText = value => value ? new Intl.DateTimeFormat('ru-RU', {hour: '2-digit', minute: '2-digit',
+  hour12: false, timeZone: 'Asia/Tashkent'}).format(new Date(value)) : '—';
+// Минуты от полуночи по Ташкенту — нужны, чтобы показать «+N мин» после 10:00.
+function arrivalMinutes(value) {
+  if (!value) return null;
+  const parts = new Intl.DateTimeFormat('en-GB', {hour: '2-digit', minute: '2-digit', hour12: false,
+    timeZone: 'Asia/Tashkent'}).formatToParts(new Date(value));
+  const hour = Number(parts.find(p => p.type === 'hour').value);
+  const minute = Number(parts.find(p => p.type === 'minute').value);
+  return hour * 60 + minute;
 }
-// Единое пустое состояние — такое же, как в журнале бухгалтера.
-function emptyState(glyph, value) {
-  const box = text('div', 'empty-state', '');
-  const sign = text('span', '', glyph);
-  sign.setAttribute('aria-hidden', 'true');
-  box.append(sign, text('p', '', value));
-  return box;
-}
-// Склонение по-русски: «1 сотрудник», «2 сотрудника», «5 сотрудников».
+const initials = name => name.trim().split(/\s+/).map(word => word[0] || '').slice(0, 2).join('').toUpperCase();
 function plural(count, forms) {
   const tail = Math.abs(count) % 100, unit = tail % 10;
   if (tail > 10 && tail < 20) return forms[2];
   if (unit > 1 && unit < 5) return forms[1];
   return unit === 1 ? forms[0] : forms[2];
 }
-function stat(label, value, flagged) {
-  const card = text('div', 'employees-stat' + (flagged && value > 0 ? ' is-flagged' : ''), '');
-  card.append(text('span', '', label), text('strong', '', String(value)));
-  return card;
+function text(tag, className, value) {
+  const item = document.createElement(tag);
+  if (className) item.className = className;
+  if (value != null) item.textContent = value;
+  return item;
+}
+function el(tag, className, attrs) {
+  const item = document.createElement(tag);
+  if (className) item.className = className;
+  Object.assign(item, attrs || {});
+  return item;
 }
 function message(value, error = false) {
   const item = $('employees-message');
@@ -43,151 +44,418 @@ function message(value, error = false) {
   item.hidden = !value;
   item.setAttribute('role', error ? 'alert' : 'status');
 }
-function options(select, items, placeholder) {
-  const old = select.value;
-  select.replaceChildren(new Option(placeholder, ''));
-  items.forEach(item => select.add(new Option(item.label, item.id)));
-  if (items.some(item => String(item.id) === old)) select.value = old;
-}
+function status(value) { const box = $('connection'); if (box) box.textContent = value; }
 function attendanceHealth(value) {
-  const status = value?.status || 'starting';
   const states = {
     ok: 'Hikvision синхронизирован.',
     starting: 'Hikvision подключается; отсутствие входа пока не считается прогулом.',
     stale: 'Данные Hikvision устарели; отсутствие входа не считается прогулом.',
-    not_configured: 'Hikvision не настроен; отсутствие входа не считается прогулом.'
+    not_configured: 'Проходы Hikvision смоделированы; реальный турникет ресторана пока не подключён.'
   };
-  return states[status] || 'Hikvision недоступен; отсутствие входа не считается прогулом.';
+  return states[value?.status || 'starting'] || 'Hikvision недоступен; отсутствие входа не считается прогулом.';
 }
-function render(data) {
-  const health = attendanceHealth(data.attendance);
-  $('employees-summary').textContent = 'Статусы и расчёт за ' + formattedDay($('employees-date').value) + '. ' + health + (data.date !== today ? ' Исторический реестр: изменения доступны на сегодняшнюю дату.' : '');
-  $('employees-attendance-status').textContent = health;
-  $('employees-stats').replaceChildren(
-    stat('Всего в реестре', data.roster_count, false),
-    stat('Опоздали после 10:00', data.payroll.late_count, true),
-    stat('Не пришли', data.payroll.missing_count, true),
-    stat('Без привязки Hikvision', data.payroll.unlinked_count, false),
-    stat('Нет данных источника', data.payroll.unavailable_count, true),
-    stat('Без ставки', data.missing_rates, true)
+
+// Начисление за смену считаем как в прототипе: нет ставки/привязки — не начисляется, не пришёл — 0.
+function payFor(row) {
+  if (row.rate == null || row.rate === '') return null;
+  if (row.status === 'missing') return 0;
+  if (row.status === 'unlinked' || row.status === 'unavailable') return null;
+  const rate = Number(row.rate);
+  return Number.isFinite(rate) ? rate : null;
+}
+// rate из API приходит строкой ('180000') либо null — приводим к числу для расчётов и сумм.
+function people() {
+  return (current?.employees || []).map(row => ({
+    ...row,
+    rate: row.rate == null || row.rate === '' ? null : Number(row.rate),
+    min: arrivalMinutes(row.first_entry),
+    pay: payFor(row)
+  }));
+}
+function groupOrder() {
+  const known = (current?.groups || []).map(item => item.name);
+  const seen = new Set(known);
+  people().forEach(row => { if (row.group && !seen.has(row.group)) { seen.add(row.group); known.push(row.group); } });
+  return known;
+}
+const editable = () => current && current.date === today;
+
+function loadDay() { return fetchDay(); }
+
+// ── Отрисовка ────────────────────────────────────────────────────────────────
+function render() {
+  const all = people();
+  const present = all.filter(p => p.status === 'on_time' || p.status === 'late');
+  const late = all.filter(p => p.status === 'late');
+  const missing = all.filter(p => p.status === 'missing');
+  const noRate = all.filter(p => p.rate == null);
+  const unlinked = all.filter(p => p.status === 'unlinked' || p.status === 'unavailable');
+  const attention = all.filter(p => p.rate == null || p.status === 'unlinked' || p.status === 'unavailable');
+  const accrued = all.reduce((total, p) => total + (p.pay || 0), 0);
+  const total = all.length || 1;
+
+  $('employees-attendance-status').textContent = attendanceHealth(current.attendance);
+  renderStats({accrued, present, late, missing, attention, noRate, unlinked, total: all.length});
+  renderTabs(all);
+  renderRegistry(all);
+  renderAside(all, {attention});
+  renderMonthly(current.monthly_employees || []);
+}
+
+function statCard({key, label, accent, value, unit, footer, progress, filterable}) {
+  const active = filterable && ui.filter === key;
+  const tag = filterable ? 'button' : 'div';
+  const card = el(tag, 'emp-stat' + (accent ? ' emp-stat--' + accent : '') + (active ? ' is-active' : ''),
+    filterable ? {type: 'button'} : {});
+  if (filterable) {
+    card.dataset.filter = key;
+    card.addEventListener('click', () => { ui.filter = ui.filter === key ? 'all' : key; render(); });
+  }
+  card.append(text('span', 'emp-stat-label', label));
+  const figure = text('div', 'emp-stat-value', null);
+  figure.append(text('strong', null, String(value)));
+  if (unit) figure.append(text('small', null, unit));
+  card.append(figure);
+  if (progress != null) {
+    const track = text('div', 'emp-stat-bar', null);
+    track.append(el('span', null, {style: 'width:' + progress + '%'}));
+    card.append(track);
+  } else if (footer != null) {
+    card.append(text('div', 'emp-stat-foot', footer));
+  }
+  return card;
+}
+function renderStats(s) {
+  const box = $('employees-stats');
+  const pct = Math.round(s.present.length / (s.total || 1) * 100);
+  box.replaceChildren(
+    statCard({label: 'К начислению за день', accent: 'accrued', value: money(s.accrued), unit: 'сум',
+      footer: s.total + ' в реестре · ' + s.noRate.length + ' без ставки'}),
+    statCard({key: 'present', filterable: true, label: 'На месте', value: s.present.length + ' / ' + s.total,
+      progress: pct}),
+    statCard({key: 'late', filterable: true, accent: 'late', label: 'Опоздали', value: s.late.length,
+      footer: 'Вход после 10:00'}),
+    statCard({key: 'missing', filterable: true, label: 'Не пришли', value: s.missing.length,
+      footer: 'Начисление 0 сум'}),
+    statCard({key: 'attention', filterable: true, accent: 'attention', label: 'Требуют внимания', value: s.attention.length,
+      footer: 'Без ставки ' + s.noRate.length + ' · без привязки ' + s.unlinked.length})
   );
+}
+function renderTabs(all) {
+  const box = $('employees-tabs');
+  const tabs = [{key: 'all', label: 'Все', count: all.length}];
+  groupOrder().forEach(name => {
+    const count = all.filter(p => p.group === name).length;
+    if (count) tabs.push({key: name, label: name, count});
+  });
+  box.replaceChildren(...tabs.map(tab => {
+    const button = el('button', 'emp-tab' + (ui.tab === tab.key ? ' is-active' : ''), {type: 'button', role: 'tab'});
+    button.append(text('span', null, tab.label), text('small', null, String(tab.count)));
+    button.addEventListener('click', () => { ui.tab = tab.key; render(); });
+    return button;
+  }));
+}
+function matches(row) {
+  const q = ui.q.trim().toLowerCase();
+  if (ui.tab !== 'all' && row.group !== ui.tab) return false;
+  if (q && !(row.name.toLowerCase().includes(q) || (row.role || '').toLowerCase().includes(q))) return false;
+  if (ui.filter === 'present') return row.status === 'on_time' || row.status === 'late';
+  if (ui.filter === 'late') return row.status === 'late';
+  if (ui.filter === 'missing') return row.status === 'missing';
+  if (ui.filter === 'attention') return row.rate == null || row.status === 'unlinked' || row.status === 'unavailable';
+  return true;
+}
+function registryRow(row) {
+  const line = el('div', 'emp-row' + (ui.sel === row.employee_id ? ' is-selected' : ''), {});
+  line.addEventListener('click', () => openDrawer(row.employee_id));
+  // Сотрудник
+  const who = text('div', 'emp-cell-who', null);
+  who.append(text('span', 'emp-avatar', initials(row.name)));
+  const idBox = text('div', 'emp-who-text', null);
+  idBox.append(text('div', 'emp-who-name', row.name), text('div', 'emp-who-role', row.role));
+  who.append(idBox);
+  // Первый вход
+  const entry = text('div', 'emp-cell-entry', null);
+  const time = text('div', 'emp-entry-time', arrivalText(row.first_entry));
+  if (row.status === 'late') time.classList.add('is-late');
+  else if (row.min == null) time.classList.add('is-none');
+  entry.append(time);
+  if (row.status === 'late' && row.min != null) entry.append(text('div', 'emp-entry-late', '+' + (row.min - 600) + ' мин'));
+  // Статус
+  const statusCell = text('div', 'emp-cell-status', null);
+  statusCell.append(text('span', 'staff-status ' + row.status, statuses[row.status] || row.status));
+  // Ставка
+  const rate = text('div', 'emp-cell-num' + (row.rate == null ? ' is-missing' : ''),
+    row.rate == null ? 'Нет ставки' : money(row.rate));
+  // Начислено
+  const pay = text('div', 'emp-cell-num emp-cell-pay' + (row.pay ? '' : ' is-none'),
+    row.pay == null ? '—' : money(row.pay));
+  line.append(who, entry, statusCell, rate, pay);
+  return line;
+}
+function renderRegistry(all) {
   const container = $('employees-groups');
   container.replaceChildren();
-  renderMonthly(data.monthly_employees || []);
-  $('monthly-employees').prepend(text('p', '', 'Текущий ручной реестр без истории по месяцам. Суммы выплат и остатка не сверены с бухгалтерскими движениями.'));
-  if (!data.employees.length) {
-    container.append(emptyState('◫', 'В реестре пока нет сотрудников. Добавьте первого кнопкой «Добавить сотрудника» — роль, ставку и группу можно будет поправить прямо в списке.'));
+  const shown = all.filter(matches);
+  $('employees-shown').textContent = shown.length + ' ' + plural(shown.length, ['сотрудник', 'сотрудника', 'сотрудников']);
+  const filterNames = {present: 'На месте', late: 'Опоздали', missing: 'Не пришли', attention: 'Требуют внимания'};
+  const clear = $('employees-clear-filter');
+  if (ui.filter !== 'all') {
+    clear.hidden = false;
+    clear.textContent = filterNames[ui.filter] || '';
+    clear.append(text('span', 'emp-filter-x', '×'));
+  } else clear.hidden = true;
+
+  if (!shown.length) {
+    const empty = text('div', 'empty-state', null);
+    empty.append(text('p', null, 'Никого не нашли под текущими фильтрами.'));
+    const reset = text('button', 'text-link', 'Сбросить фильтры');
+    reset.type = 'button';
+    reset.addEventListener('click', () => { ui.filter = 'all'; ui.tab = 'all'; ui.q = ''; $('employees-search').value = ''; render(); });
+    empty.append(reset);
+    container.append(empty);
     return;
   }
-  const roles = [...new Set(data.employees.map(row => row.role))].sort((left, right) => left.localeCompare(right, 'ru'));
-  roles.forEach(role => {
-    const details = document.createElement('details');
-    details.className = 'employee-group';
-    details.open = true;
-    const summary = document.createElement('summary');
-    const people = data.employees.filter(row => row.role === role);
-    summary.append(text('strong', '', role), text('span', '', people.length + ' чел.'));
-    details.append(summary);
-    const table = document.createElement('table');
-    table.className = 'employee-roster-table';
-    table.innerHTML = '<thead><tr><th scope="col">Имя</th><th scope="col">Роль</th><th scope="col">Зарплата / ставка</th><th scope="col">Группа</th><th scope="col">Статус</th><th scope="col">Пришёл</th><th scope="col">Действия</th></tr></thead>';
-    const body = document.createElement('tbody');
-    people.sort((left, right) => left.name.localeCompare(right.name, 'ru')).forEach(row => {
-      const tr = document.createElement('tr');
-      const values = [row.name, row.role, row.rate === null ? 'Нет ставки' : money(row.rate), row.group,
-        statuses[row.status] || row.status, formattedArrival(row.first_entry)];
-      values.forEach((value, index) => {
-        const cell = document.createElement('td');
-        cell.dataset.label = columns[index];
-        if (index === 4) cell.append(text('span', 'staff-status ' + row.status, value));
-        else if (index === 5) cell.className = 'employee-arrival-time';
-        else if (index === 2 && row.rate === null) cell.append(text('span', 'roster-missing', value));
-        if (!cell.hasChildNodes()) cell.textContent = value;
-        if (index < 4 && data.date === today) cell.addEventListener('dblclick', () => editCell(row, cell, ['name', 'role', 'rate', 'group'][index], data.groups.map(item => item.name)));
-        tr.append(cell);
-      });
-      const actions = document.createElement('td');
-      actions.dataset.label = columns[6];
-      const edit = text('button', 'edit-monthly', 'Изменить');
-      edit.type = 'button'; edit.disabled = data.date !== today;
-      edit.addEventListener('click', () => editEmployeeRow(row, tr, data.groups.map(item => item.name)));
-      const remove = document.createElement('button');
-      remove.type = 'button'; remove.disabled = data.date !== today; remove.className = 'employee-delete'; remove.textContent = 'Удалить';
-      remove.title = 'Удалить сотрудника';
-      remove.addEventListener('click', () => confirmDelete(row, tr, actions));
-      actions.append(edit, remove); tr.append(actions);
-      body.append(tr);
-    });
-    table.append(body);
-    const scroll = text('div', 'employee-roster-scroll', '');
-    scroll.append(table);
-    details.append(scroll);
-    container.append(details);
+  groupOrder().forEach(name => {
+    const rows = shown.filter(p => p.group === name).sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    if (!rows.length) return;
+    const head = text('div', 'emp-group-head', null);
+    const groupTotal = rows.reduce((total, p) => total + (p.pay || 0), 0);
+    const left = text('div', 'emp-group-name', null);
+    left.append(text('strong', null, name), text('span', null, rows.length + ' чел.'));
+    head.append(left, text('span', 'emp-group-total', sum(groupTotal)));
+    container.append(head);
+    rows.forEach(row => container.append(registryRow(row)));
   });
 }
-function editEmployeeRow(row, tableRow, groups) {
-  if (tableRow.querySelector('input,select')) return;
-  const cells = [...tableRow.querySelectorAll('td')];
-  const fields = ['name', 'role', 'rate', 'group'];
-  fields.forEach((field, index) => {
-    const input = field === 'group' ? document.createElement('select') : document.createElement('input');
-    if (field === 'group') groups.forEach(group => input.add(new Option(group, group)));
-    else input.type = field === 'rate' ? 'number' : 'text';
-    if (field === 'rate') { input.min = '0'; input.step = '0.01'; }
-    input.value = row[field] || ''; input.className = 'employee-cell-input';
-    cells[index].replaceChildren(input);
+
+// ── Боковая панель (drawer) ──────────────────────────────────────────────────
+function openDrawer(id) {
+  const row = people().find(p => p.employee_id === id);
+  if (!row) return;
+  ui.sel = id;
+  ui.confirm = false; ui.feedback = ''; ui.fbErr = false;
+  ui.draft = {name: row.name, role: row.role, rate: row.rate == null ? '' : String(row.rate), group: row.group, reason: ''};
+  render();
+}
+function openNew() {
+  const groups = groupOrder();
+  ui.sel = 'new'; ui.confirm = false; ui.feedback = ''; ui.fbErr = false;
+  ui.draft = {name: '', role: '', rate: '', group: groups[0] || '', reason: ''};
+  render();
+  const nameInput = document.querySelector('.emp-drawer input[name=name]');
+  if (nameInput) nameInput.focus();
+}
+function closeDrawer() { ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; render(); }
+function setDraft(key, value) { ui.draft[key] = value; ui.feedback = ''; }
+
+function fieldLabel(labelText, input) {
+  const label = text('label', 'emp-field', null);
+  label.append(text('span', null, labelText), input);
+  return label;
+}
+function renderAside(all, ctx) {
+  const box = $('employees-aside');
+  box.replaceChildren();
+  if (ui.sel == null) { box.append(attentionCard(ctx.attention), groupSummaryCard(all)); return; }
+  box.append(drawerCard());
+}
+function attentionCard(attention) {
+  const card = text('section', 'panel emp-side-card', null);
+  card.append(text('p', 'eyebrow emp-side-eyebrow', 'ТРЕБУЮТ ВНИМАНИЯ'), text('h2', 'emp-side-title', 'Не начисляется'));
+  if (!attention.length) { card.append(text('p', 'accountant-help', 'Все привязаны и со ставкой.')); return card; }
+  attention.forEach(row => {
+    const item = el('button', 'emp-side-row', {type: 'button'});
+    item.addEventListener('click', () => openDrawer(row.employee_id));
+    item.append(text('span', 'emp-avatar is-warn', initials(row.name)));
+    const info = text('span', 'emp-side-info', null);
+    info.append(text('span', 'emp-side-name', row.name),
+      text('span', 'emp-side-reason', row.rate == null ? 'Нет ставки' : 'Нет привязки Hikvision'));
+    item.append(info, text('span', 'emp-side-chevron', '›'));
+    card.append(item);
   });
-  const save = text('button', 'edit-monthly', 'Сохранить'); save.type = 'button';
-  const cancel = text('button', 'employee-delete', 'Отмена'); cancel.type = 'button';
-  cancel.addEventListener('click', loadDay);
-  save.addEventListener('click', async () => {
-    const values = fields.map((field, index) => cells[index].querySelector('input,select').value.trim());
-    const payload = {name: values[0], role: values[1], rate: values[2] || null,
-      group: values[3], reason: 'Изменение в реестре сотрудников'};
-    try {
-      const response = await fetch('/api/accountant/employees/' + encodeURIComponent(row.employee_id), {
-        method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)
-      });
+  return card;
+}
+function groupSummaryCard(all) {
+  const card = text('section', 'panel emp-side-card', null);
+  card.append(text('p', 'eyebrow emp-side-eyebrow', 'ПО ГРУППАМ · НА МЕСТЕ'));
+  groupOrder().forEach(name => {
+    const rows = all.filter(p => p.group === name);
+    if (!rows.length) return;
+    const present = rows.filter(p => p.status === 'on_time' || p.status === 'late').length;
+    const totalPay = rows.reduce((total, p) => total + (p.pay || 0), 0);
+    const line = text('div', 'emp-summary-row', null);
+    line.append(text('span', 'emp-summary-name', name),
+      text('span', 'emp-summary-presence', present + '/' + rows.length),
+      text('strong', 'emp-summary-total', money(totalPay)));
+    card.append(line);
+  });
+  return card;
+}
+function drawerCard() {
+  const isEdit = ui.sel !== 'new';
+  const selP = isEdit ? people().find(p => p.employee_id === ui.sel) : null;
+  const d = ui.draft;
+  const card = text('section', 'panel emp-side-card emp-drawer', null);
+
+  const head = text('div', 'emp-drawer-head', null);
+  head.append(text('p', 'eyebrow emp-side-eyebrow', isEdit ? 'СОТРУДНИК' : 'НОВЫЙ СОТРУДНИК'));
+  const close = el('button', 'emp-drawer-close', {type: 'button', textContent: '×', title: 'Закрыть'});
+  close.addEventListener('click', closeDrawer);
+  head.append(close);
+  card.append(head);
+
+  if (selP) {
+    const idRow = text('div', 'emp-drawer-id', null);
+    idRow.append(text('span', 'emp-avatar is-lg', initials(selP.name)));
+    const box = text('div', null, null);
+    box.append(text('div', 'emp-drawer-name', selP.name), text('div', 'emp-drawer-sub', selP.role + ' · ' + selP.group));
+    idRow.append(box);
+    card.append(idRow);
+
+    const facts = text('div', 'emp-drawer-facts', null);
+    const top = text('div', 'emp-drawer-facts-top', null);
+    top.append(text('span', 'staff-status ' + selP.status, statuses[selP.status] || selP.status),
+      text('span', 'emp-drawer-entry', selP.min == null ? 'Входа нет' : 'Первый вход ' + arrivalText(selP.first_entry)));
+    facts.append(top);
+    const payRow = text('div', 'emp-drawer-pay', null);
+    payRow.append(text('span', null, 'К начислению'),
+      text('strong', selP.pay ? '' : 'is-none', selP.pay == null ? '—' : sum(selP.pay)));
+    facts.append(payRow);
+    const notes = {on_time: 'Пришёл до 10:00 — ставка начисляется полностью.', late: 'Опоздание не уменьшает ставку.',
+      missing: 'Входа нет — начисление 0 сум.', unlinked: 'Нет привязки Hikvision — начисление заблокировано.',
+      unavailable: 'Нет данных источника — начисление заблокировано.'};
+    facts.append(text('p', 'emp-drawer-note', selP.rate == null ? 'Ставка не указана — не начисляется.' : notes[selP.status] || ''));
+    card.append(facts);
+  }
+
+  const form = text('div', 'emp-drawer-form', null);
+  const nameInput = el('input', null, {name: 'name', value: d.name, placeholder: 'Фамилия Имя', maxLength: 160});
+  nameInput.addEventListener('input', event => setDraft('name', event.target.value));
+  form.append(fieldLabel('Имя', nameInput));
+
+  const roleInput = el('input', null, {name: 'role', value: d.role, placeholder: 'Должность', maxLength: 80,
+    autocomplete: 'off'});
+  roleInput.setAttribute('list', 'emp-roles');
+  roleInput.addEventListener('input', event => setDraft('role', event.target.value));
+  form.append(fieldLabel('Должность', roleInput));
+  const datalist = el('datalist', null, {id: 'emp-roles'});
+  [...new Set(people().map(p => p.role).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'))
+    .forEach(role => datalist.append(new Option(role, role)));
+  form.append(datalist);
+
+  const groupSelect = el('select', null, {name: 'group'});
+  groupOrder().forEach(name => groupSelect.add(new Option(name, name, false, name === d.group)));
+  groupSelect.addEventListener('change', event => setDraft('group', event.target.value));
+  form.append(fieldLabel('Группа', groupSelect));
+
+  const rateInput = el('input', null, {name: 'rate', type: 'number', min: '0', step: '0.01',
+    value: d.rate, placeholder: 'Не указана'});
+  rateInput.addEventListener('input', event => setDraft('rate', event.target.value));
+  form.append(fieldLabel('Ставка за смену, сум', rateInput));
+
+  if (isEdit) {
+    const reasonInput = el('input', null, {name: 'reason', value: d.reason,
+      placeholder: 'Например, новая ставка с сентября', maxLength: 200});
+    reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
+    form.append(fieldLabel('Причина изменения', reasonInput));
+  }
+
+  const feedback = text('p', 'emp-drawer-feedback', ui.feedback);
+  feedback.style.color = ui.fbErr ? '#aa4656' : '#4f795c';
+  form.append(feedback);
+
+  const actions = text('div', 'emp-drawer-actions', null);
+  const save = el('button', 'button primary', {type: 'button', textContent: isEdit ? 'Сохранить' : 'Добавить в реестр'});
+  save.disabled = !editable();
+  save.addEventListener('click', () => saveDraft());
+  const cancel = el('button', 'button secondary', {type: 'button', textContent: 'Отмена'});
+  cancel.addEventListener('click', closeDrawer);
+  actions.append(save, cancel);
+  form.append(actions);
+  card.append(form);
+
+  if (!editable()) card.append(text('p', 'emp-drawer-note', 'Изменения доступны только на сегодняшнюю дату.'));
+
+  if (isEdit && editable()) card.append(deleteBlock());
+  return card;
+}
+function deleteBlock() {
+  const box = text('div', 'emp-drawer-delete', null);
+  if (!ui.confirm) {
+    const ask = el('button', 'emp-delete-link', {type: 'button', textContent: 'Удалить из реестра'});
+    ask.addEventListener('click', () => { ui.confirm = true; render(); });
+    box.append(ask);
+    return box;
+  }
+  box.append(text('span', 'emp-delete-q', 'Удалить сотрудника?'));
+  const keep = el('button', 'emp-delete-keep', {type: 'button', textContent: 'Оставить'});
+  keep.addEventListener('click', () => { ui.confirm = false; render(); });
+  const remove = el('button', 'emp-delete-yes', {type: 'button', textContent: 'Удалить'});
+  remove.addEventListener('click', () => doDelete());
+  box.append(keep, remove);
+  return box;
+}
+
+// ── Запись ───────────────────────────────────────────────────────────────────
+async function saveDraft() {
+  const d = ui.draft, name = d.name.trim();
+  if (!name) { ui.feedback = 'Укажите имя.'; ui.fbErr = true; return render(); }
+  if (!d.role.trim()) { ui.feedback = 'Укажите должность.'; ui.fbErr = true; return render(); }
+  if (d.rate !== '' && Number(d.rate) <= 0) { ui.feedback = 'Ставка должна быть больше нуля.'; ui.fbErr = true; return render(); }
+  // API ждёт ставку строкой (rate: str | None) — число pydantic не принимает.
+  const rate = d.rate === '' ? null : String(d.rate).trim();
+  const isEdit = ui.sel !== 'new';
+  if (isEdit && !d.reason.trim()) { ui.feedback = 'Укажите причину — она попадёт в историю изменений.'; ui.fbErr = true; return render(); }
+  try {
+    if (isEdit) {
+      const payload = {name, role: d.role.trim(), rate, group: d.group, reason: d.reason.trim()};
+      const response = await fetch('/api/accountant/employees/' + encodeURIComponent(ui.sel), {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();
-      if (!response.ok) throw new Error(result.detail || 'Не удалось сохранить сотрудника.');
-      await loadDay(); message('Изменение сохранено с сегодняшнего дня. Прошлые даты используют прежние данные.');
-    } catch (error) { message(error.message, true); }
-  });
-  cells[6].replaceChildren(save, cancel); cells[0].querySelector('input').focus();
+      if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить.');
+      await fetchDay(); message('Изменение сохранено с сегодняшнего дня.');
+    } else {
+      const payload = {name, role: d.role.trim(), rate, group: d.group};
+      const response = await fetch('/api/accountant/employees', {
+        method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
+      const result = await response.json();
+      if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить.');
+      ui.sel = null; ui.draft = null;
+      await fetchDay(); message('Новый сотрудник добавлен.');
+    }
+  } catch (error) { ui.feedback = error.message; ui.fbErr = true; render(); }
 }
-function renderMonthly(people) {
+async function doDelete() {
+  try {
+    const response = await fetch('/api/accountant/employees/' + encodeURIComponent(ui.sel), {method: 'DELETE'});
+    if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось удалить.'); }
+    ui.sel = null; ui.draft = null; ui.confirm = false;
+    await fetchDay(); message('Сотрудник удалён.');
+  } catch (error) { ui.feedback = error.message; ui.fbErr = true; render(); }
+}
+
+// ── Месячная зарплата (без изменений логики) ─────────────────────────────────
+function renderMonthly(list) {
   const container = $('monthly-employees');
   container.replaceChildren();
-  if (!people.length) {
-    container.append(text('p', 'accountant-help', 'Сотрудников с месячным окладом пока нет.'));
-    return;
-  }
+  if (!list.length) { container.append(text('p', 'accountant-help', 'Сотрудников с месячным окладом пока нет.')); return; }
   const table = document.createElement('table');
   table.className = 'employee-roster-table monthly-roster-table';
   table.innerHTML = '<thead><tr><th>Имя</th><th>Должность</th><th>Оклад</th><th>График</th><th>На карту</th><th>Наличные</th><th>Авансы</th><th>Остаток</th><th>Действия</th></tr></thead>';
   const body = document.createElement('tbody');
-  people.forEach(row => {
+  list.forEach(row => {
     const tr = document.createElement('tr');
-    [row.name, row.role, money(row.salary), row.schedule, money(row.card), money(row.cash),
-      money(row.advances), money(row.remaining)].forEach(value => tr.append(text('td', '', value)));
+    [row.name, row.role, sum(row.salary), row.schedule, sum(row.card), sum(row.cash), sum(row.advances), sum(row.remaining)]
+      .forEach(value => tr.append(text('td', '', value)));
     const actions = document.createElement('td');
-    const edit = text('button', 'edit-monthly', 'Изменить');
-    edit.type = 'button';
+    const edit = text('button', 'edit-monthly', 'Изменить'); edit.type = 'button';
     edit.addEventListener('click', () => editMonthlyRow(row, tr));
-    const remove = text('button', 'employee-delete', 'Удалить');
-    remove.type = 'button';
+    const remove = text('button', 'employee-delete', 'Удалить'); remove.type = 'button';
     remove.addEventListener('click', () => confirmMonthlyDelete(row, actions));
     actions.append(edit, remove); tr.append(actions); body.append(tr);
   });
   table.append(body); container.append(table);
-}
-async function saveMonthly(row, values) {
-  const response = await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(row.id), {
-    method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(values)
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(result.detail || 'Не удалось сохранить месячную зарплату.');
-  await loadDay(); message('Месячный оклад сохранён.');
 }
 function editMonthlyRow(row, tableRow) {
   if (tableRow.querySelector('input')) return;
@@ -201,16 +469,20 @@ function editMonthlyRow(row, tableRow) {
     input.value = row[field]; input.name = field; input.className = 'employee-cell-input';
     cells[index].replaceChildren(input);
   });
-  const actions = cells[8];
   const save = text('button', 'edit-monthly', 'Сохранить'); save.type = 'button';
   const cancel = text('button', 'employee-delete', 'Отмена'); cancel.type = 'button';
-  cancel.addEventListener('click', loadDay);
+  cancel.addEventListener('click', fetchDay);
   save.addEventListener('click', async () => {
     const values = Object.fromEntries(fields.map((field, index) => [field, cells[index].querySelector('input').value]));
-    try { await saveMonthly(row, values); } catch (error) { message(error.message, true); }
+    try {
+      const response = await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(row.id), {
+        method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(values)});
+      const result = await response.json();
+      if (!response.ok) throw new Error(result.detail || 'Не удалось сохранить месячную зарплату.');
+      await fetchDay(); message('Месячный оклад сохранён.');
+    } catch (error) { message(error.message, true); }
   });
-  actions.replaceChildren(save, cancel);
-  cells[0].querySelector('input').focus();
+  cells[8].replaceChildren(save, cancel); cells[0].querySelector('input').focus();
 }
 function confirmMonthlyDelete(row, actions) {
   if (actions.querySelector('.employee-delete-confirm')) return;
@@ -218,99 +490,13 @@ function confirmMonthlyDelete(row, actions) {
   menu.append(text('span', '', 'Удалить сотрудника?'));
   const keep = text('button', '', 'Оставить'); keep.type = 'button';
   const remove = text('button', 'is-danger', 'Удалить'); remove.type = 'button';
-  keep.addEventListener('click', loadDay);
+  keep.addEventListener('click', fetchDay);
   remove.addEventListener('click', async () => {
     const response = await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(row.id), {method: 'DELETE'});
     if (!response.ok) return message('Не удалось удалить сотрудника.', true);
-    await loadDay(); message('Сотрудник удалён.');
+    await fetchDay(); message('Сотрудник удалён.');
   });
   menu.append(keep, remove); actions.replaceChildren(menu);
-}
-function confirmDelete(row, tableRow, actions) {
-  if (actions.querySelector('.employee-delete-confirm')) return;
-  const menu = document.createElement('div'); menu.className = 'employee-delete-confirm';
-  menu.append(text('span', '', 'Удалить сотрудника?'));
-  const keep = document.createElement('button'); keep.type = 'button'; keep.textContent = 'Оставить';
-  const remove = document.createElement('button'); remove.type = 'button'; remove.className = 'is-danger'; remove.textContent = 'Удалить';
-  menu.append(keep, remove); actions.replaceChildren(menu);
-  keep.addEventListener('click', () => { actions.replaceChildren(); actions.append(tableRow.querySelector('.employee-delete') || makeDeleteButton(row, tableRow, actions)); });
-  remove.addEventListener('click', async () => {
-    remove.disabled = true;
-    try {
-      const response = await fetch('/api/accountant/employees/' + encodeURIComponent(row.employee_id), {method: 'DELETE'});
-      if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось удалить сотрудника.'); }
-      await loadDay(); message('Сотрудник удалён.');
-    } catch (error) { message(error.message, true); }
-  });
-}
-function makeDeleteButton(row, tableRow, actions) {
-  const button = document.createElement('button');
-  button.type = 'button'; button.className = 'employee-delete'; button.textContent = 'Удалить';
-  button.title = 'Удалить сотрудника'; button.addEventListener('click', () => confirmDelete(row, tableRow, actions));
-  return button;
-}
-async function saveEmployee(row, field, value) {
-  const updated = {name: row.name, role: row.role, rate: row.rate, group: row.group,
-    reason: 'Изменение в реестре сотрудников'};
-  updated[field] = value;
-  const response = await fetch('/api/accountant/employees/' + encodeURIComponent(row.employee_id), {
-    method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(updated)
-  });
-  const result = await response.json();
-  if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить сотрудника.');
-  await loadDay(); message('Изменение сохранено с сегодняшнего дня. Прошлые даты используют прежние данные.');
-}
-function editCell(row, cell, field, groups) {
-  if (cell.querySelector('input')) return;
-  const input = field === 'group' ? document.createElement('select') : document.createElement('input');
-  if (field === 'group') groups.forEach(group => input.add(new Option(group, group)));
-  input.type = field === 'rate' ? 'number' : 'text';
-  input.min = field === 'rate' ? '0' : undefined;
-  input.step = field === 'rate' ? '0.01' : undefined;
-  input.value = field === 'rate' ? row.rate || '' : row[field];
-  input.className = 'employee-cell-input';
-  cell.replaceChildren(input); input.focus(); if (input.select) input.select();
-  let finished = false;
-  const finish = async save => {
-    if (finished) return; finished = true;
-    const value = input.value.trim();
-    if (!save || (field !== 'rate' && !value) || (field === 'rate' && value && Number(value) <= 0)) {
-      await loadDay(); return;
-    }
-    try { await saveEmployee(row, field, field === 'rate' ? value || null : value); }
-    catch (error) { message(error.message, true); await loadDay(); }
-  };
-  input.addEventListener('keydown', event => {
-    if (event.key === 'Enter') finish(true);
-    if (event.key === 'Escape') finish(false);
-  });
-  input.addEventListener('blur', () => finish(true));
-}
-function addEmployeeRow(data) {
-  if (!data || document.querySelector('.employee-add-row')) return;
-  const row = document.createElement('form'); row.className = 'employee-add-row';
-  row.setAttribute('aria-label', 'Новый сотрудник');
-  row.innerHTML = '<input name="name" required maxlength="160" placeholder="Имя" aria-label="Имя">' +
-    '<input name="role" required maxlength="80" placeholder="Роль" aria-label="Роль">' +
-    '<input name="rate" type="number" min="0" step="0.01" placeholder="Зарплата / ставка" aria-label="Зарплата или ставка, сум">' +
-    '<select name="group" required aria-label="Группа"><option value="">Группа</option></select>' +
-    '<button class="button primary" type="submit">Добавить</button>' +
-    '<button class="button secondary" type="button" data-cancel>Отмена</button>';
-  data.groups.forEach(group => row.elements.group.add(new Option(group.name, group.name)));
-  $('employees-groups').prepend(row);
-  row.addEventListener('submit', async event => {
-    event.preventDefault(); if (!row.reportValidity()) return;
-    const fields = new FormData(row);
-    try {
-      const response = await fetch('/api/accountant/employees', {method: 'POST', headers: {'Content-Type': 'application/json'},
-        body: JSON.stringify({name: fields.get('name'), role: fields.get('role'), rate: fields.get('rate') || null, group: fields.get('group')})});
-      const result = await response.json();
-      if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить сотрудника.');
-      await loadDay(); message('Новый сотрудник добавлен.');
-    } catch (error) { message(error.message, true); }
-  });
-  row.querySelector('[data-cancel]').addEventListener('click', () => row.remove());
-  row.elements.name.focus();
 }
 function addMonthlyRow() {
   if (document.querySelector('.monthly-add-row')) return;
@@ -330,45 +516,52 @@ function addMonthlyRow() {
   row.addEventListener('submit', async event => {
     event.preventDefault(); if (!row.reportValidity()) return;
     const response = await fetch('/api/accountant/monthly-employees', {
-      method: 'POST', headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify(Object.fromEntries(new FormData(row)))
-    });
+      method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(Object.fromEntries(new FormData(row)))});
     const result = await response.json();
     if (!response.ok) return message(result.detail || 'Не удалось добавить сотрудника.', true);
-    await loadDay(); message('Сотрудник с месячной зарплатой добавлен.');
+    await fetchDay(); message('Сотрудник с месячной зарплатой добавлен.');
   });
 }
-function status(text) { const box = $('connection'); if (box) box.textContent = text; }
 
-async function loadDay() {
-  const day = $('employees-date').value;
+// ── День / загрузка ──────────────────────────────────────────────────────────
+const shift = (day, delta) => { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10); };
+let day;
+function setDay(next) { if (!next || next > today) return; day = next; fetchDay(); }
+function paintDayControls() {
+  $('day-label').textContent = day ? formattedDay(day) : '—';
+  $('day-next').disabled = !day || day >= today;
+  const yesterday = shift(today, -1);
+  $('day-today').classList.toggle('is-active', day === today);
+  $('day-yesterday').classList.toggle('is-active', day === yesterday);
+}
+async function fetchDay() {
+  if (!day) return;
   const sequence = ++requestNo;
-  current = null;
-  ['employees-groups','employees-stats','monthly-employees'].forEach(id => $(id).replaceChildren());
-  $('employees-summary').textContent = 'Данные не загружены';
-  $('employees-add').disabled = true;
-  if (!day || !$('employees-date').checkValidity()) { message('Выберите сегодняшний или прошедший день.', true); return; }
-  $('employees-summary').textContent = 'Загрузка данных за ' + formattedDay(day);
-  $('back-accountant').href = '/accountant?date=' + encodeURIComponent(day);
+  paintDayControls();
+  status('Загрузка данных за ' + formattedDay(day));
   try {
     const response = await fetch('/api/accountant/staff?date=' + encodeURIComponent(day), {cache: 'no-store'});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить сотрудников.');
     if (sequence !== requestNo) return;
     current = data;
-    $('employees-add').disabled = day !== today;
-    render(data);
+    if (data.date !== today && ui.sel != null) closeDrawer();
+    render();
     message('');
     status('Данные за ' + formattedDay(day));
   } catch (error) { if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); } }
 }
-$('employees-date').addEventListener('change', loadDay);
-$('employees-refresh').addEventListener('click', loadDay);
-$('employees-add').addEventListener('click', () => addEmployeeRow(current));
+
+$('day-prev').addEventListener('click', () => setDay(shift(day, -1)));
+$('day-next').addEventListener('click', () => setDay(shift(day, 1)));
+$('day-today').addEventListener('click', () => setDay(today));
+$('day-yesterday').addEventListener('click', () => setDay(shift(today, -1)));
+$('employees-search').addEventListener('input', event => { ui.q = event.target.value; renderRegistry(people()); });
+$('employees-clear-filter').addEventListener('click', () => { ui.filter = 'all'; render(); });
+$('employees-add').addEventListener('click', openNew);
 $('monthly-add').addEventListener('click', addMonthlyRow);
 $('employees-download').addEventListener('click', async () => {
-  const day = $('employees-date').value;
-  if (!day || !$('employees-date').checkValidity()) return;
+  if (!day) return;
   const button = $('employees-download');
   button.disabled = true;
   try {
@@ -376,21 +569,18 @@ $('employees-download').addEventListener('click', async () => {
     if (!response.ok) throw new Error('Не удалось скачать файл сотрудников.');
     const url = URL.createObjectURL(await response.blob());
     const link = document.createElement('a');
-    link.href = url;
-    link.download = 'Retro-employees-' + day + '.xlsx';
-    document.body.append(link);
-    link.click();
-    link.remove();
+    link.href = url; link.download = 'Retro-employees-' + day + '.xlsx';
+    document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
     message('Полный список скачан.');
   } catch (error) { message(error.message, true); } finally { button.disabled = false; }
 });
+
 (async () => {
   try {
     today = (await globalThis.RetroConfig).today;
     const requested = new URLSearchParams(location.search).get('date');
-    $('employees-date').max = today;
-    $('employees-date').value = requested && requested <= today ? requested : today;
-    await loadDay();
+    day = requested && requested <= today ? requested : today;
+    await fetchDay();
   } catch (error) { message(error.message, true); }
 })();

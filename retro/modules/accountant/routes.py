@@ -1,7 +1,7 @@
 """Accountant-owned attendance and daily cash endpoints."""
 
 import asyncio
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from dataclasses import replace
 from decimal import Decimal
 
@@ -11,7 +11,7 @@ from pydantic import BaseModel
 
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
 
 from .attendance import Entrance, export_entrances
@@ -201,6 +201,27 @@ class MonthlyEmployeeInput(BaseModel):
     remaining: str = '0'
 
 
+@router.get('/payroll/month')
+def payroll_month(request: Request, month: str):
+    """Ведомость месяца: сотрудник × день, одним запросом вместо тридцати."""
+    try:
+        first = date.fromisoformat(month + '-01')
+    except ValueError:
+        raise HTTPException(422, 'Укажите месяц в виде ГГГГ-ММ.') from None
+    if first > today_tashkent().replace(day=1):
+        raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
+    last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    data = request.app.state.accountant_finance.payroll_month(first, last)
+    roster = request.app.state.accountant_roster
+    # Оклады остаются ручным реестром: разбивки выплат по дням в данных нет,
+    # поэтому отдаём их как есть, вместе с собственным предупреждением модели.
+    return dict(demo=False, month=month, first=first.isoformat(), last=last.isoformat(),
+                days=[(first + timedelta(days=offset)).isoformat()
+                      for offset in range((last - first).days + 1)],
+                monthly=[row.json() for row in roster.list_monthly()],
+                monthly_total=str(roster.monthly_total()), **data)
+
+
 @router.patch('/employees/{employee_id}')
 def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInput):
     try:
@@ -363,6 +384,10 @@ def delete_handover(request: Request, handover_date: date):
         request.app.state.accountant_finance.delete_handover(day)
     except LedgerError as error:
         finance_error(error)
+
+
+class ShokhAcceptInput(BaseModel):
+    date: date
 
 
 class ReserveInput(OpeningInput):
@@ -570,6 +595,37 @@ async def add_procurement(request: Request, body: ProcurementInput):
     except LedgerError as error:
         finance_error(error)
     return dict(demo=True, id=entry_id)
+
+
+@router.get('/shokh/purchases')
+def shokh_purchases(request: Request, date: date | None = None):
+    """Покупки Шоха за день — бухгалтеру для проверки и приёмки."""
+    day = selected_day(date)
+    return dict(demo=False, date=day.isoformat(),
+                purchases=request.app.state.shokh.purchases(day))
+
+
+@router.post('/shokh/purchases/{purchase_id}/accept')
+def accept_shokh_purchase(request: Request, purchase_id: int, body: ShokhAcceptInput):
+    """Принять покупку: подотчёт уменьшается, касса второй раз не списывается.
+
+    Наличные ушли из кассы, когда выдавали подотчёт. Приёмка лишь переносит
+    сумму из «на руках у Шоха» в расход по накладной.
+    """
+    day = selected_day(body.date)
+    purchase = request.app.state.shokh.purchase(purchase_id)
+    if purchase is None:
+        raise HTTPException(404, 'Покупка не найдена.')
+    if purchase['accepted_at'] is not None:
+        raise HTTPException(409, 'Покупка уже принята.')
+    try:
+        request.app.state.accountant_finance.reserve_entry(
+            day, 'shoh', 'withdrawal', purchase['total'],
+            f"Закуп: {purchase['item']} · {purchase['point']}")
+    except LedgerError as error:
+        finance_error(error)
+    request.app.state.shokh.accept(purchase_id, datetime.now(TZ))
+    return dict(demo=False, purchase=request.app.state.shokh.purchase(purchase_id))
 
 
 @router.get('/entrances/export')

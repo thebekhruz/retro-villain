@@ -7,8 +7,8 @@ STATIC = Path(__file__).resolve().parent.parent / 'retro' / 'static'
 # Страница входа в этот список не входит: она открывается до входа, и всё,
 # что она грузит, должно быть в списке публичных путей приложения. Своей
 # вёрстки у неё одна карточка по центру, правила рабочей области ей не нужны.
-PAGES = ['index.html', 'accountant.html', 'employees.html',
-         'director.html', 'founder.html']
+PAGES = ['index.html', 'accountant.html', 'employees.html', 'payroll.html',
+         'director.html', 'founder.html', 'shokh.html']
 
 
 def stylesheets(page: str) -> list[str]:

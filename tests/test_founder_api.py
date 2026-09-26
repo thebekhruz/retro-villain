@@ -136,8 +136,11 @@ def test_founder_page_and_module_are_exposed():
     assert 'Учредитель' in page.text
     # В ответе появились путь и причина отказа: меню рисует закрытый модуль
     # серым, а не ведёт на страницу с отказом.
-    assert config['modules'][-1] == {'id': 'founder', 'name': 'Учредитель',
-                                     'path': '/founder', 'available': True, 'reason': ''}
+    # Ищем модуль по id, а не по месту в списке: меню пополняется новыми
+    # модулями, и позиция «учредителя» к смыслу проверки не относится.
+    founder_module = next(item for item in config['modules'] if item['id'] == 'founder')
+    assert founder_module == {'id': 'founder', 'name': 'Учредитель',
+                              'path': '/founder', 'available': True, 'reason': ''}
 
 
 def test_founder_booking_api_applies_period_and_granularity_without_directions():
