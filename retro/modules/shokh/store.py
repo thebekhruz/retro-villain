@@ -24,8 +24,34 @@ UNITS = ('кг', 'шт', 'л', 'уп')
 DEFAULT_POINTS = ('Базар', 'Оптовый склад', 'Магазин', 'Поставщик')
 
 
+# Раньше этой даты закупа в системе не было; нижняя граница выборок «за всё время».
+FIRST_DAY = date(2020, 1, 1)
+
+
 class ShokhError(Exception):
     """Ошибка ввода, которую нужно показать Шоху словами."""
+
+
+def pocket_position(shokh, finance, day: date) -> dict:
+    """Сколько наличных у Шоха на руках — одно место для всех экранов.
+
+    Бухгалтерский подотчёт (`reserves.shoh.balance`) = выдано − принятые
+    накладные. Покупки, которые Шох записал, но бухгалтер ещё не принял, из
+    подотчёта не вычтены, хотя денег на руках уже нет. Поэтому:
+
+        на руках = подотчёт по бухгалтерии − непринятые покупки
+
+    Считают по этой формуле и экран закупа, и кабинет учредителя. Правило про
+    деньги должно жить в одном файле, иначе копии со временем разойдутся.
+    """
+    accounting = finance.reserves(day)['shoh']['balance']
+    # Непринятым может быть и вчерашнее, поэтому смотрим всю историю до дня.
+    history = shokh.purchases_between(FIRST_DAY, day)
+    pending = sum((Decimal(row['total']) for row in history if row['accepted_at'] is None),
+                  Decimal(0))
+    return dict(accounting_balance=accounting,
+                pocket=None if accounting is None else str(Decimal(accounting) - pending),
+                pending=str(pending))
 
 
 def _money(value, *, name='сумма'):

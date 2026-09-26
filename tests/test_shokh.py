@@ -290,3 +290,35 @@ def test_the_purchase_module_belongs_to_the_shokh_role():
     assert panel_for_path('/api/shokh/home') == 'shokh'
     assert panel_for_path('/api/shokh/photo/1') == 'shokh'
     assert ROLE_PATHS['shokh'] == '/shokh'
+
+
+def test_both_screens_report_the_same_pocket_from_one_formula(tmp_path):
+    """«На руках у Шоха» считается в одном месте — store.pocket_position.
+
+    Раньше формула была скопирована в кабинет учредителя, и копии могли
+    разойтись. Тест держит их вместе: экран закупа и кабинет обязаны называть
+    одну и ту же сумму.
+    """
+    with client(tmp_path) as c:
+        advance(c, DAY, '900000')
+        purchase(c)
+        purchase(c, item='Лук', quantity='5', price='4000')
+
+        shokh_home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
+        cabinet = c.get('/api/founder/spending', params={'date': DAY.isoformat()}).json()
+
+        assert shokh_home['pocket'] == '772000.00'
+        # Кабинет округляет до копеек той же money(), поэтому сравниваем числом.
+        assert Decimal(cabinet['shokh']['pocket']) == Decimal(shokh_home['pocket'])
+        # И обе цифры сходятся с подотчётом минус непринятое.
+        assert (Decimal(shokh_home['accounting_balance']) - Decimal(shokh_home['pending'])
+                == Decimal(shokh_home['pocket']))
+
+
+def test_pocket_formula_lives_in_one_place_only():
+    """Копии формулы в кабинете быть не должно — иначе тест выше однажды солжёт."""
+    from pathlib import Path
+    cabinet = Path('retro/modules/founder/cabinet.py').read_text(encoding='utf-8')
+    assert 'pocket_position' in cabinet
+    # Признак вернувшейся копии: самостоятельный пересчёт непринятых покупок.
+    assert "accepted_at'] is None" not in cabinet

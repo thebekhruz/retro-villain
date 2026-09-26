@@ -16,7 +16,10 @@ from retro.modules.accountant.reserves import is_monthly_salary
 CHEF_BILL_LIMIT = Decimal(400000)
 # «Отстаём от плана»: собрано меньше 85 % того, что к этому дню положено.
 DIVIDEND_BEHIND_SHARE = Decimal('0.85')
-DIVIDEND_STEP = Decimal(50000)
+# Совет «отложить сегодня» округляем вверх до этого шага, чтобы не называть
+# сумму вида 1 285 714,29. Не путать с шагом кнопок ± в редакторе цели
+# (DIVIDEND_EDIT_STEP в founder-cabinet-logic.js) — тот в десять раз крупнее.
+DIVIDEND_SUGGEST_STEP = Decimal(50000)
 # Прогноз по дню недели — среднее за последние восемь таких же дней.
 FORECAST_WEEKS = 8
 WEEKDAYS = ('Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс')
@@ -144,7 +147,8 @@ def dividend_week(day: date, target, flows, *, free_cash=None):
     left = max(Decimal(0), target - collected)
     days_left = 8 - elapsed
     share = max(Decimal(0), target - before) / days_left
-    share = (share / DIVIDEND_STEP).to_integral_value(rounding=ROUND_CEILING) * DIVIDEND_STEP
+    share = (share / DIVIDEND_SUGGEST_STEP).to_integral_value(
+        rounding=ROUND_CEILING) * DIVIDEND_SUGGEST_STEP
     # Уже отложенное сегодня вычитаем, и больше остатка до цели не советуем.
     suggest = min(left, max(Decimal(0), share - today_amount))
     return {**result, 'pace': money(pace), 'due': money(due), 'left': money(left),
