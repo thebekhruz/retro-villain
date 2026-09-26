@@ -2,6 +2,7 @@
 
 import sqlite3
 from decimal import Decimal, InvalidOperation
+from retro.db import table_columns
 
 
 class SchemaError(RuntimeError):
@@ -45,7 +46,7 @@ def _validate_numeric_rows(connection: sqlite3.Connection, database_kind: str) -
     for table, configured_columns in NUMERIC_COLUMNS[database_kind].items():
         if not _table_exists(connection, table):
             continue
-        existing = {row[1] for row in connection.execute(f'PRAGMA table_info("{table}")')}
+        existing = table_columns(connection, table)
         columns = [column for column in configured_columns if column in existing]
         if not columns:
             continue

@@ -15,6 +15,7 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
+from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 from retro.integrations.hikvision import HikvisionPerson
 
@@ -118,14 +119,13 @@ class MonthlyEmployee:
 
 class RosterStore:
     def __init__(self, path: Path):
-        self.path = Path(path)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         self._initialize()
 
     def _open(self):
-        secure_directory(self.path.parent)
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def _initialize(self):
         with closing(self._open()) as connection, connection:
@@ -161,13 +161,11 @@ class RosterStore:
                 advances TEXT NOT NULL DEFAULT '0',
                 remaining TEXT NOT NULL DEFAULT '0'
             )''')
-            employee_columns = {row[1] for row in connection.execute(
-                'PRAGMA table_info(accountant_employees)')}
+            employee_columns = table_columns(connection, 'accountant_employees')
             if 'manual_attendance' not in employee_columns:
                 connection.execute('ALTER TABLE accountant_employees '
                                    'ADD COLUMN manual_attendance INTEGER NOT NULL DEFAULT 0')
-            columns = {row[1] for row in connection.execute(
-                'PRAGMA table_info(accountant_monthly_employees)')}
+            columns = table_columns(connection, 'accountant_monthly_employees')
             if 'external_key' not in columns:
                 connection.execute('ALTER TABLE accountant_monthly_employees ADD COLUMN external_key TEXT')
                 connection.execute(

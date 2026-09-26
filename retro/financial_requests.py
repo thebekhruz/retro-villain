@@ -12,6 +12,7 @@ from pathlib import Path
 from uuid import UUID
 
 from fastapi.responses import JSONResponse, Response
+from retro.db import as_database
 from retro.runtime import secure_directory, secure_file
 
 
@@ -29,17 +30,16 @@ PATHS = {'/api/cashier/expenses', '/api/cashier/receipts', '/api/cashier/usd-bal
 
 class FinancialRequests:
     def __init__(self, path):
-        self.path = Path(path)
-        secure_directory(self.path.parent)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         with closing(self._open()) as connection, connection:
             connection.execute('''CREATE TABLE IF NOT EXISTS financial_requests (
                 owner TEXT NOT NULL, key TEXT NOT NULL, fingerprint TEXT NOT NULL,
                 status INTEGER, body BLOB, PRIMARY KEY(owner,key))''')
 
     def _open(self):
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        return connection
+        return self.db.connect()
 
     def reserve(self, owner, key, fingerprint):
         with closing(self._open()) as connection, connection:

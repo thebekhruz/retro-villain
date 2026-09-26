@@ -10,6 +10,7 @@ from pathlib import Path
 from .payroll import PayrollRow
 from .expense_catalog import ITEMS
 from .audit import audit_entries as read_audit_entries, record_audit
+from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 
 
@@ -37,15 +38,13 @@ def required_text(value: str, label: str) -> str:
 
 class FinanceStore:
     def __init__(self, path: Path):
-        self.path = Path(path)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         self._initialize()
 
     def _open(self):
-        secure_directory(self.path.parent)
-        connection = sqlite3.connect(self.path, timeout=10)
-        secure_file(self.path)
-        connection.execute('PRAGMA foreign_keys=ON')
-        return connection
+        return self.db.connect()
 
     def _initialize(self):
         with closing(self._open()) as connection, connection:
@@ -130,7 +129,7 @@ class FinanceStore:
                     changed_at TEXT NOT NULL
                 );
             ''')
-            columns = {row[1] for row in connection.execute('PRAGMA table_info(accountant_movements)')}
+            columns = table_columns(connection, 'accountant_movements')
             if 'item_code' not in columns:
                 connection.execute('ALTER TABLE accountant_movements ADD COLUMN item_code TEXT')
             connection.execute('CREATE INDEX IF NOT EXISTS accountant_salary_accrual_day ON accountant_salary_payments(accrual_id, paid_day)')
