@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143e35">
+  <title>Учредитель · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/director-app.css">
+  <link rel="stylesheet" href="/static/founder-cabinet.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
+</head>
+<body class="founder-cabinet">
+<aside class="sidebar">
+  <a href="/" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+  <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-link"><span class="nav-icon">◫</span> Бухгалтер</a><a href="/director" class="nav-link"><span class="nav-icon">◉</span> Директор</a><a href="/founder" class="nav-active" aria-current="page"><span class="nav-icon">⌁</span> Учредитель <span class="nav-dot"></span></a></nav>
+  <p class="nav-label fo-nav-label">ОСНОВАТЕЛЬ</p>
+  <div class="rm-subnav fo-subnav"><a href="#fo-week" class="is-current">Деньги недели</a><a href="#fo-acc">Проверка бухгалтера</a><a href="#fo-exp">Расходы и закуп</a><a href="#fo-menu">Прогноз и блюда</a><a href="/founder/analytics">Аналитика iiko · брони · рассылки</a></div>
+  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro · Retro Oxbridge · Бехруз<small>Ташкент · UZS</small></div></div>
+</aside>
+<main class="fo-main">
+  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Учредитель</strong></span><div class="topbar-actions"><span class="top-status" id="updated">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+
+  <!-- ══ 7a · Телефон: сколько денег и сколько моих ══════════════════════ -->
+  <div class="fo-phone rm-phone">
+    <div class="rm-phone-body fo-phone-body">
+      <div id="fo-alerts" class="fo-alerts" aria-live="polite"></div>
+      <div class="fo-phone-head"><div><span id="fo-phone-date">Сегодня</span><strong>Мои деньги</strong></div><span class="rm-phone-mark" aria-hidden="true">R</span></div>
+
+      <article class="rm-phone-hero fo-div">
+        <div class="fo-div-top"><span>Дивиденды · неделя <b id="fo-div-range">—</b></span></div>
+        <div class="fo-div-sum"><strong id="fo-div-collected" class="rm-num">—</strong><span id="fo-div-of">из —</span></div>
+        <div class="fo-div-bar"><span id="fo-div-fill"></span><i id="fo-div-pace" title="План к этому дню"></i></div>
+        <div class="fo-div-foot"><span id="fo-div-status">—</span><span id="fo-div-payout"></span></div>
+        <button id="fo-div-toggle" class="fo-div-target" type="button" aria-expanded="false"><span><small>Моя сумма в неделю</small><b id="fo-div-target" class="rm-num">—</b></span><em id="fo-div-toggle-label">Изменить</em></button>
+        <div id="fo-div-editor-phone" class="fo-div-editor" hidden></div>
+      </article>
+
+      <article class="rm-phone-card">
+        <span class="fo-label">Демо-касса вчера · <span id="fo-y-date">—</span> · Retro</span>
+        <div class="fo-big"><strong id="fo-y-demo" class="rm-num">—</strong><small>сум</small></div>
+        <div class="fo-line"><span>Бухгалтер получил от кассира</span><b class="rm-num"><span id="fo-y-recv">—</span> <span id="fo-y-mark" class="fo-mark"></span></b></div>
+        <div class="fo-line"><span>У бухгалтера на утро</span><b id="fo-morning" class="rm-num fo-line-strong">—</b></div>
+      </article>
+
+      <article class="rm-phone-card">
+        <div class="fo-card-head"><strong>Сегодня · факт и прогноз</strong><span id="fo-t-checks">—</span></div>
+        <div class="fo-progress"><div class="fo-progress-line"><span>Retro</span><span><b id="fo-t-retro" class="rm-num">—</b> <i id="fo-t-retro-fc">/ ≈—</i></span></div><div class="rm-bar fo-bar-lg"><span id="fo-t-retro-bar"></span></div><small id="fo-t-demo" class="fo-gold"></small></div>
+        <div class="fo-progress"><div class="fo-progress-line"><span>Retro Oxbridge</span><span><b id="fo-t-ox" class="rm-num">—</b> <i id="fo-t-ox-fc">/ ≈—</i></span></div><div class="rm-bar fo-bar-lg is-light"><span id="fo-t-ox-bar"></span></div></div>
+        <p class="fo-hint">≈ — оценка по среднему этого дня недели за восемь недель.</p>
+      </article>
+
+      <article class="rm-phone-card">
+        <strong class="fo-card-title">Уйдёт сегодня</strong>
+        <div class="fo-tiles"><div><span>Зарплаты</span><b id="fo-out-sal" class="rm-num">—</b></div><div><span>Закуп</span><b id="fo-out-zak" class="rm-num">—</b></div><div><span>Прочее</span><b id="fo-out-oth" class="rm-num">—</b></div></div>
+        <div class="fo-line is-plain"><span>У бухгалтера к вечеру</span><b id="fo-evening" class="rm-num">—</b></div>
+      </article>
+
+      <article class="rm-phone-card">
+        <div class="fo-card-head"><strong id="fo-acc-line" class="fo-acc-line">—</strong><span class="fo-hint">подробно — на компьютере</span></div>
+        <div id="fo-chef-week"></div>
+      </article>
+    </div>
+  </div>
+
+  <!-- ══ 7b · Компьютер: всё ли работает правильно ═══════════════════════ -->
+  <div class="fo-desk">
+    <div class="fo-content">
+      <div class="fo-heading">
+        <div><p class="eyebrow">КАБИНЕТ ОСНОВАТЕЛЯ · НЕДЕЛЯ <span id="fo-week-label">—</span></p><h1>Общая картина<span>.</span></h1></div>
+        <div class="fo-excel"><a id="fo-excel" class="button primary" href="/api/founder/export/month" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg><span id="fo-excel-label">Отчёт бухгалтера · месяц</span><small>EXCEL</small></a><span>Деньги — журнал бухгалтера, выручка — iiko</span></div>
+      </div>
+
+      <section class="fo-kpis" aria-label="Неделя в цифрах">
+        <article class="fo-kpi"><span>Retro · неделя</span><strong id="k-retro" class="rm-num">—</strong><small id="k-retro-sub"></small></article>
+        <article class="fo-kpi"><span>Retro Oxbridge · неделя</span><strong id="k-ox" class="rm-num">—</strong><small id="k-ox-sub"></small></article>
+        <article class="fo-kpi is-gold"><span>Демо · только Retro</span><strong id="k-demo" class="rm-num">—</strong><small id="k-demo-sub"></small></article>
+        <article class="fo-kpi is-green"><span>Дивиденды · неделя</span><strong id="k-div" class="rm-num">—</strong><small id="k-div-sub"></small><div class="fo-kpi-bar"><span id="k-div-bar"></span></div><button id="k-div-edit" class="fo-kpi-link" type="button" aria-expanded="false">Изменить сумму</button></article>
+        <article class="fo-kpi"><span>Прогноз месяца · оба <em class="fo-estimate">оценка</em></span><strong id="k-month" class="rm-num">—</strong><small id="k-month-sub"></small></article>
+      </section>
+      <div id="fo-div-editor-desk" class="fo-div-editor is-desk" hidden></div>
+
+      <section id="fo-week" class="fo-panel fo-week">
+        <div class="fo-panel-head"><div><p class="eyebrow">КАК РАЗОШЛИСЬ ДЕНЬГИ</p><h2>Неделя по дням</h2></div><span class="fo-hint">≈ — прогноз по среднему для этого дня недели</span></div>
+        <div class="fo-week-scroll"><div id="fo-week-table" class="fo-week-table" role="table" aria-label="Неделя по дням"><p class="fo-empty">Собираем неделю из iiko и журнала бухгалтера…</p></div></div>
+      </section>
+
+      <div id="fo-acc" class="fo-grid">
+        <section class="fo-panel">
+          <div class="fo-panel-head"><div><p class="eyebrow is-red">ПРОВЕРКА БУХГАЛТЕРА</p><h2 id="fo-checks-title">—</h2></div><button id="fo-ask-checks" class="fo-ai-button" type="button">✦ Разобрать с AI</button></div>
+          <div id="fo-checks" class="dir-issues"></div>
+          <p id="fo-checks-more" class="fo-hint"></p>
+        </section>
+        <section class="fo-panel">
+          <div class="fo-panel-head"><div><p class="eyebrow">СЧЁТ ШЕФА · IIKO</p><h2 id="fo-chef-title">—</h2></div><span id="fo-chef-over" class="fo-red"></span></div>
+          <div id="fo-chef" class="fo-chef"></div>
+          <div class="fo-panel-foot"><span>Отмечаем счета больше 400 000</span><span id="fo-chef-month"></span></div>
+        </section>
+      </div>
+
+      <div id="fo-exp" class="fo-grid">
+        <section class="fo-panel">
+          <div class="fo-panel-head"><div><p class="eyebrow">КУДА УШЛИ ДЕНЬГИ · <span id="fo-exp-month">МЕСЯЦ</span></p><h2 id="fo-exp-total">—</h2></div></div>
+          <div id="fo-exp-list" class="fo-bars"></div>
+        </section>
+        <section class="fo-panel">
+          <p class="eyebrow">ЗАКУП · ШОХ · <span id="fo-shokh-month">МЕСЯЦ</span></p>
+          <div class="fo-tiles is-two"><div><span>Выдано наличными</span><b id="z-given" class="rm-num">—</b></div><div><span>Потрачено · записал Шох</span><b id="z-spent" class="rm-num">—</b></div><div><span>Напрямую поставщикам</span><b id="z-direct" class="rm-num">—</b></div><div class="is-dark"><span>На руках у Шоха</span><b id="z-pocket" class="rm-num">—</b></div></div>
+          <p id="z-flag-title" class="fo-flag-title">—</p>
+          <div id="z-flags" class="fo-flags"></div>
+          <p class="fo-hint">Больше всего потрачено на</p>
+          <div id="z-top" class="fo-chips"></div>
+        </section>
+      </div>
+
+      <div id="fo-menu" class="fo-grid is-even">
+        <section class="fo-panel">
+          <p class="eyebrow">ПРОГНОЗ · ДЕНЬ НЕДЕЛИ <em class="fo-estimate">оценка</em></p><h2>Средняя выручка и чеки</h2>
+          <div id="fo-forecast" class="fo-forecast"></div>
+          <p id="fo-forecast-note" class="fo-hint"></p>
+        </section>
+        <section class="fo-panel">
+          <p class="eyebrow">БЛЮДА · 7 ДНЕЙ · ВСЕ ЗАВЕДЕНИЯ</p><h2>Приносят больше всего</h2>
+          <div id="fo-dishes" class="fo-dishes"></div>
+          <p class="fo-low-title">Низкая маржа при хороших продажах</p>
+          <div id="fo-dishes-low" class="fo-chips is-warm"></div>
+        </section>
+      </div>
+      <footer class="rm-footer"><span>RETRO MILLIY <span>/</span> Кабинет основателя</span><span>Время Ташкента · UZS</span></footer>
+    </div>
+
+    <aside class="fo-chat" aria-label="AI-помощник">
+      <div class="fo-chat-inner">
+        <div class="fo-chat-head"><span class="dir-spark is-lg" aria-hidden="true">✦</span><div><strong>AI-помощник</strong><span>Видит все данные системы</span></div></div>
+        <div id="fo-chat-messages" class="rm-chat fo-chat-messages" aria-live="polite">
+          <div class="rm-msg is-ai">Я вижу кассу, Демо, передачи кассира, расходы, закуп, дивиденды, Счёт Шефа и продажи блюд. Спросите, всё ли правильно у бухгалтера, или куда ушли деньги.</div>
+        </div>
+        <div id="fo-chat-prompts" class="fo-prompts">
+          <button type="button" class="rm-prompt">Всё ли правильно у бухгалтера за неделю?</button>
+          <button type="button" class="rm-prompt">Сколько дивидендов реально забрать на этой неделе?</button>
+          <button type="button" class="rm-prompt">Куда ушло больше всего денег в этом месяце?</button>
+          <button type="button" class="rm-prompt">Почему растёт Счёт Шефа?</button>
+        </div>
+        <p id="fo-chat-status" class="dir-note fo-chat-status" role="status" aria-live="polite"></p>
+        <form id="fo-chat-form" class="rm-chat-form">
+          <label for="fo-chat-input" class="visually-hidden">Вопрос помощнику</label>
+          <input id="fo-chat-input" maxlength="4000" placeholder="Спросите про деньги, бухгалтера, блюда…" autocomplete="off">
+          <button class="rm-chat-send" type="submit" aria-label="Отправить">↑</button>
+        </form>
+      </div>
+    </aside>
+  </div>
+</main>
+</body>
+</html>
