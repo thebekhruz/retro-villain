@@ -67,7 +67,8 @@ def test_director_attendance_tool_never_exposes_payroll_fields(tmp_path):
 def test_director_page_exposes_scoped_accessible_chat(tmp_path):
     app = create_app(Settings(data_dir=tmp_path))
     with TestClient(app, client=('127.0.0.1', 50000)) as client:
-        page = client.get('/director')
+        # Выдвижной чат остался у полного отчёта; у телефона AI — своя вкладка.
+        page = client.get('/director/report')
 
     assert page.status_code == 200
     assert 'id="ai-chat-toggle"' in page.text

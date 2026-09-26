@@ -45,5 +45,5 @@ def test_every_dashboard_page_loads_the_menu_script():
     from pathlib import Path
     static = Path(__file__).resolve().parent.parent / 'retro' / 'static'
     for page in ('index.html', 'accountant.html', 'employees.html', 'payroll.html',
-                 'director.html', 'founder.html'):
+                 'director.html', 'founder.html', 'director-app.html', 'founder-cabinet.html'):
         assert 'nav.js' in (static / page).read_text(encoding='utf-8'), page
