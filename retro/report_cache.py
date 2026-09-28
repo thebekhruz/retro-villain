@@ -34,9 +34,7 @@ class ReportCache:
         now = self.clock()
         for expired in [name for name, (until, _, _) in self.entries.items() if until <= now]:
             self.entries.pop(expired)
-        if refresh:
-            self.entries.pop(key, None)
-        elif key in self.entries:
+        if not refresh and key in self.entries:
             self.entries.move_to_end(key)
             logging.getLogger('retro.performance').info('operation=%s cache=hit', label)
             return self.entries[key][1]
@@ -96,7 +94,8 @@ class ReportCache:
         self.entries.clear()
 
 
-async def load_iiko(state, method, *args, refresh=False, request=None, timeout=90, ttl=None, **kwargs):
+async def load_iiko(state, method, *args, refresh=False, request=None, timeout=90, ttl=None,
+                    allow_stale=False, **kwargs):
     cache = getattr(state, 'reports', None)
     if cache is None:
         state.reports = cache = ReportCache()
@@ -111,7 +110,14 @@ async def load_iiko(state, method, *args, refresh=False, request=None, timeout=9
 
     if ttl is None:
         ttl = 300 if method == 'load_director_report' else 30 if method == 'load' else 60
-    reader = asyncio.create_task(cache.get(key, operation, ttl=ttl, timeout=timeout, refresh=refresh, label=method))
+    days = getattr(state, 'cashier_days', None)
+    if method == 'load' and days is not None:
+        async def daily_read():
+            async with asyncio.timeout(timeout):
+                return await days.get(*args, refresh=refresh, allow_stale=allow_stale)
+        reader = asyncio.create_task(daily_read())
+    else:
+        reader = asyncio.create_task(cache.get(key, operation, ttl=ttl, timeout=timeout, refresh=refresh, label=method))
     try:
         if request is not None and hasattr(request, 'is_disconnected'):
             while not reader.done():

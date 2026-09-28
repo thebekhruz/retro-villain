@@ -104,6 +104,7 @@ function clearFinance() {
   showHandover();
 }
 function showHandover() {
+  $('download').disabled = !snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData;
   const demoAmount = CashierLogic.cashPayment(snapshot);
   const cashPrepay = snapshot ? Number(snapshot.cash_prepayment || 0) : null;
   $('demo-cash').textContent = demoAmount === null ? '—' : money.format(demoAmount);
@@ -147,6 +148,7 @@ async function loadReceipts(day, current, signal) {
     if (current === generation) showReceipts(data);
   } catch (error) {
     if (current === generation && error.name !== 'AbortError') {
+      receiptData = null; showHandover();
       $('receipt-feedback').textContent = error.message;
       $('receipt-feedback').classList.add('is-error');
       globalThis.RetroToast?.show(error.message, 'error');
@@ -188,6 +190,7 @@ async function loadExpenses(day, current, signal) {
     if (current === generation) showExpenses(data);
   } catch (error) {
     if (current === generation && error.name !== 'AbortError') {
+      financeData = null; showHandover();
       $('expense-feedback').textContent = error.message;
       $('expense-feedback').classList.add('is-error');
       globalThis.RetroToast?.show(error.message, 'error');
@@ -196,6 +199,8 @@ async function loadExpenses(day, current, signal) {
 }
 function show(data) {
   snapshot = data;
+  $('payments').replaceChildren();
+  $('composition').replaceChildren();
   $('revenue').textContent = money.format(Number(data.revenue));
   $('receipts').textContent = count.format(data.receipt_count);
   // Средний чек — целыми сумами: тийины не в обороте, а «146 428,57»
@@ -232,18 +237,24 @@ function show(data) {
       const segment = document.createElement('span');segment.style.setProperty('--color',color);segment.style.width = (Number(payment.amount)/positiveTotal*100)+'%';$('composition').append(segment);
     }
   });
-  $('download').disabled = false;
-  $('source-title').textContent = data.demo ? 'Демонстрационные данные' : 'Источник: iikoWeb';
-  const time = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tashkent'}).format(new Date(data.fetched_at));
-  $('updated').textContent = `${data.demo ? 'Пример сформирован' : 'Обновлено'} в ${time} · Ташкент`;
+  $('download').disabled = Boolean(data.stale || data.refreshing);
+  $('source-title').textContent = data.demo ? 'Демонстрационные данные' :
+    data.source === 'database' ? 'Сохранённый отчёт · iikoWeb' : 'Источник: iikoWeb';
+  const time = new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tashkent'}).format(new Date(data.fetched_at));
+  $('updated').textContent = `${data.demo ? 'Пример сформирован' : 'Данные на'} ${time} · Ташкент${data.stale ? ' · требуют обновления' : ''}`;
   showHandover();
 }
 async function load(options = {}) {
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
+  const signal = controller.signal;
   $('refresh').disabled = false; document.body.classList.remove('loading'); $('metrics').setAttribute('aria-busy','false');
-  clearSnapshot(); clearFinance(); message('');
   const day = $('report-date').value;
+  const keepSnapshot = snapshot?.date === day;
+  if (!keepSnapshot) clearSnapshot();
+  $('download').disabled = true;
+  if (!keepSnapshot) clearFinance();
+  message('');
   if (!config || !day || !$('report-date').checkValidity()) { message('Выберите корректную дату.', true); return; }
   clearUsdRate(day);
   $('period-label').textContent = formattedDay(day);
@@ -259,18 +270,44 @@ async function load(options = {}) {
   loadReceipts(day, current, controller.signal);
   loadUsdRate(day, current, controller.signal);
   if (!config.configured && !demo) return;
-  $('metrics').setAttribute('aria-busy','true');document.body.classList.add('loading');
-  $('refresh').disabled = true;message('Загружаем отчёт из ' + (demo ? 'демонстрационного примера…' : 'iiko…'));
+  $('metrics').setAttribute('aria-busy','true');
+  if (!keepSnapshot) document.body.classList.add('loading');
+  $('refresh').disabled = true;message(keepSnapshot ? 'Обновляем отчёт. На экране предыдущие данные…' : 'Загружаем отчёт…');
   try {
-    const response = await request(`/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}&refresh=${options.refresh === true}`, controller.signal);
-    const data = await response.json();
+    const endpoint = `/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}&allow_stale=true`;
+    const response = await request(`${endpoint}&refresh=${options.refresh === true}`, signal);
+    let data = await response.json();
     if (current !== generation) return;
-    show(data);message('');
+    show(data);
+    document.body.classList.remove('loading');
+    if (data.refreshing) message('Обновляем iiko. На экране последние сохранённые данные…');
+    for (let attempt = 0; data.refreshing && attempt < 45; attempt++) {
+      await waitForRefresh(signal);
+      data = await (await request(`${endpoint}&refresh=false`, signal)).json();
+      if (current !== generation) return;
+      show(data);
+    }
+    message(data.refresh_error || (data.refreshing ? 'Обновление продолжается. Повторите проверку позже.' :
+      data.stale ? 'Показаны последние сохранённые данные. Требуется обновление iiko.' : ''), Boolean(data.refresh_error || data.stale));
   } catch (error) {
-    if (current === generation && error.name !== 'AbortError') message(error.message, true);
+    if (current === generation && error.name !== 'AbortError') {
+      if (snapshot?.date === day) {
+        snapshot = {...snapshot, stale:true, refreshing:false};
+        show(snapshot);
+      }
+      message(error.message + (snapshot?.date === day ? ' На экране предыдущие данные.' : ''), true);
+    }
   } finally {
     if (current === generation) { $('refresh').disabled = false;document.body.classList.remove('loading');$('metrics').setAttribute('aria-busy','false'); }
   }
+}
+function waitForRefresh(signal) {
+  return new Promise((resolve, reject) => {
+    if (signal.aborted) { reject(new DOMException('Отменено', 'AbortError')); return; }
+    const abort = () => { clearTimeout(timer); reject(new DOMException('Отменено', 'AbortError')); };
+    const timer = setTimeout(() => { signal.removeEventListener('abort', abort); resolve(); }, 2000);
+    signal.addEventListener('abort', abort, {once:true});
+  });
 }
 $('expense-form').addEventListener('submit', async event => {
   event.preventDefault();
@@ -361,7 +398,7 @@ $('refresh').addEventListener('click',()=>load({refresh:true}));
 $('today').addEventListener('click',()=>{if(config){$('report-date').value=config.today;load();}});
 $('yesterday').addEventListener('click',()=>{if(config){$('report-date').value=previousDay(config.today);load();}});
 $('download').addEventListener('click',async()=>{
-  if (!snapshot || !financeData || !receiptData) return;
+  if (!snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData) return;
   const data = snapshot, current = generation;
   $('download').disabled=true;
   try {
@@ -373,7 +410,7 @@ $('download').addEventListener('click',async()=>{
     document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
     message('Отчёт скачан за '+formattedDay(data.date));
   } catch(error) { if(current===generation) message(error.message,true); }
-  finally {if(current===generation) $('download').disabled=!snapshot;}
+  finally {if(current===generation) showHandover();}
 });
 (async()=>{
   try {

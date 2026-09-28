@@ -3,6 +3,7 @@ import json
 import hashlib
 import logging
 from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from time import monotonic
 from collections import defaultdict
 from dataclasses import replace
@@ -27,6 +28,8 @@ from retro.modules.director.models import (
 from retro.modules.founder.models import (
     PaymentRow, RevenueRow, build_analytics, build_sales_bridge, is_banquet_item,
 )
+
+cashier_read = ContextVar('cashier_read', default=False)
 
 
 DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
@@ -501,6 +504,11 @@ class IikoClient:
         self._olap_cache = ReportCache(concurrency=4, limit=48, max_weight=12_000_000,
             weigh=lambda rows: len(json.dumps(rows, ensure_ascii=False).encode()))
         self._kpi_cache = ReportCache(concurrency=2, limit=16)
+        self._cashier_olap_cache = ReportCache(concurrency=4, limit=48)
+        # Keep the total source budget at four reports, reserving capacity for
+        # cashier while analytical reports can occupy at most three slots.
+        self._olap_slots = asyncio.Semaphore(4)
+        self._analytics_slots = asyncio.Semaphore(3)
         # Свой кэш, а не общий с P&L: смены — один дешёвый POST, и ставить
         # кассира в очередь за расчётами учредителя незачем.
         self._shift_cache = ReportCache(concurrency=4, limit=32)
@@ -534,6 +542,7 @@ class IikoClient:
 
     async def close(self):
         await self._olap_cache.close()
+        await self._cashier_olap_cache.close()
         await self._kpi_cache.close()
         await self._shift_cache.close()
         if self._http is not None:
@@ -552,6 +561,7 @@ class IikoClient:
         # ресурса. Кнопка обновления по-прежнему обходит кэш: она выставляет
         # refresh_source сама, и здесь он уважается.
         fresh_token = refresh_source.set(True if day >= today_tashkent() else refresh_source.get())
+        cashier_token = cashier_read.set(day >= today_tashkent())
         try:
             async with self._client() as client:
                 scope = [
@@ -594,6 +604,7 @@ class IikoClient:
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
         finally:
             refresh_source.reset(fresh_token)
+            cashier_read.reset(cashier_token)
 
     async def load_director_report(self, today, *, start=None, end=None, days=None):
         if not self.settings.configured:
@@ -915,11 +926,20 @@ class IikoClient:
     async def _olap_range(self, client, start, end, groups, fields, extra_filters=()):
         body = olap_range_body(self.settings.store_id, start, end, groups, fields, extra_filters)
         key = json.dumps(body, sort_keys=True, ensure_ascii=False)
-        return await self._olap_cache.get(
+        cache = self._cashier_olap_cache if cashier_read.get() else self._olap_cache
+        return await cache.get(
             key, lambda: self._fetch_olap(client, body), ttl=olap_ttl(end), timeout=90,
             refresh=refresh_source.get(), label="iiko_olap")
 
     async def _fetch_olap(self, client, body):
+        if cashier_read.get():
+            async with self._olap_slots:
+                return await self._fetch_olap_data(client, body)
+        async with self._analytics_slots:
+            async with self._olap_slots:
+                return await self._fetch_olap_data(client, body)
+
+    async def _fetch_olap_data(self, client, body):
         started = monotonic()
         init = await self._post(client, '/api/olap/init', body)
         fetch_id = init.get('fetchId') or init.get('data')

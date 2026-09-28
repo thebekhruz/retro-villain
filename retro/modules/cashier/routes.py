@@ -125,7 +125,8 @@ def delete_receipt(request: Request, receipt_id: int, date: date):
 
 
 @router.get('/day')
-async def day_report(request: Request, date: date | None = None, demo: bool = False, refresh: bool = False):
+async def day_report(request: Request, date: date | None = None, demo: bool = False,
+                     refresh: bool = False, allow_stale: bool = False):
     day = selected_day(date)
     state = request.app.state
     try:
@@ -135,7 +136,8 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
             # Закрытый день уже не меняется — держим его снимок дольше
             # тридцати секунд, иначе каждое открытие страницы идёт в iiko.
             result = await load_iiko(state, 'load', day, refresh=refresh, request=request,
-                                     ttl=CLOSED_DAY_TTL if day < today_tashkent() else None)
+                                     ttl=CLOSED_DAY_TTL if day < today_tashkent() else None,
+                                     allow_stale=allow_stale)
         state.cache.put(result)
         return {**result.json(),
                 'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured)}
@@ -158,6 +160,8 @@ def download_report(request: Request, date: date,
         snapshot = request.app.state.cache.get(snapshot_id, day)
     except DataError as error:
         raise HTTPException(409, str(error)) from None
+    if snapshot.stale or snapshot.refreshing:
+        raise HTTPException(409, 'Дождитесь обновления iiko перед скачиванием отчёта.')
     expenses = [] if snapshot.demo else request.app.state.expenses.list(day)
     receipts = [] if snapshot.demo else request.app.state.expenses.list_receipts(day)
     if ((expense_revision is not None and expense_revision != entries_revision(expenses))
