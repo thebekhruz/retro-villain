@@ -46,6 +46,21 @@ FOUNDER_OLAP_MAX_DAYS = 31
 # только окном около десяти дней; на трёх неделях он уже отвечает 500.
 DIRECTOR_RANGE_MAX_DAYS = 10
 FOUNDER_OLAP_CHUNK_CONCURRENCY = 2
+# Маршрут до iiko из прода рвётся: за сутки 27–28 сентября в логах 17
+# транспортных отказов на 40 успешных отчётов, медиана запроса 2.3 с при
+# максимуме 23.3 с. Общий бюджет на коннект и чтение это лечить не умеет:
+# потерянный SYN ждал столько же, сколько честно считающийся отчёт.
+IIKO_TIMEOUT = httpx.Timeout(connect=8, read=30, write=20, pool=8)
+# Повтор коннекта стоит один RTT, повтор чтения заново считает отчёт в iiko —
+# поэтому бюджеты разные. Худшая серия укладывается в 90 с ReportCache.
+IIKO_CONNECT_ATTEMPTS = 3
+IIKO_READ_ATTEMPTS = 2
+IIKO_RETRY_PAUSE = 0.5
+# Коннект не состоялся или соединение из пула оказалось мёртвым — повтор дёшев.
+IIKO_CHEAP_RETRY = (httpx.ConnectTimeout, httpx.ConnectError, httpx.PoolTimeout,
+                    httpx.CloseError, httpx.RemoteProtocolError)
+# Запрос ушёл и iiko над ним работает — повтор стоит ещё одного прогона отчёта.
+IIKO_COSTLY_RETRY = (httpx.ReadTimeout, httpx.WriteTimeout, httpx.ReadError, httpx.WriteError)
 FOUNDER_PNL_METRICS = (
     'PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS', 'PL_EXP_TOTAL',
     'PL_PROFIT_MAIN', 'PL_OTH_INCOME_TOTAL', 'PL_OTH_EXP_TOTAL', 'PL_PROFIT_NET',
@@ -470,7 +485,7 @@ class IikoClient:
                 base_url=IIKO_ORIGIN,
                 headers={'Accept': 'application/json', 'Accept-Language': 'ru_RU',
                          'Content-Type': 'application/json'},
-                timeout=25, follow_redirects=False, transport=self.transport,
+                timeout=IIKO_TIMEOUT, follow_redirects=False, transport=self.transport,
                 limits=httpx.Limits(max_connections=8, max_keepalive_connections=8))
         await self._authorize(self._http)
         yield self._http
@@ -795,12 +810,32 @@ class IikoClient:
             log_upstream_failure('iiko', error, operation='load_sales_details')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
+    async def _send(self, client, path, body):
+        """Один запрос к iiko, переживающий потерю пакетов на маршруте.
+
+        Повтор безопасен по построению: здесь ходят только чтения и задания
+        на отчёт (`auth/login`, `olap/init`, `olap/fetch/*`, `cash/shift/*`,
+        `kpi/dashboard/*`) — ничего, что меняло бы состояние в iiko."""
+        connect_left, read_left = IIKO_CONNECT_ATTEMPTS, IIKO_READ_ATTEMPTS
+        while True:
+            try:
+                return await client.post(path, json=body)
+            except IIKO_CHEAP_RETRY + IIKO_COSTLY_RETRY as error:
+                if isinstance(error, IIKO_COSTLY_RETRY):
+                    read_left -= 1
+                else:
+                    connect_left -= 1
+                if read_left <= 0 or connect_left <= 0:
+                    raise
+                log_upstream_failure('iiko', error, operation='retry')
+                await asyncio.sleep(IIKO_RETRY_PAUSE)
+
     async def _post(self, client, path, body, pending=False):
         sent_token = client.headers.get('Authorization')
-        response = await client.post(path, json=body)
+        response = await self._send(client, path, body)
         if response.status_code in (401, 403) and path != '/api/auth/login':
             await self._authorize(client, rejected_token=sent_token)
-            response = await client.post(path, json=body)
+            response = await self._send(client, path, body)
         if pending and response.status_code == 400 and 'data not found' in response.text.lower():
             return None
         if response.status_code in (401, 403):
