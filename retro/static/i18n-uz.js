@@ -1701,3 +1701,38 @@ Object.assign(globalThis.RetroDictionaryUz, {
 globalThis.RetroTemplatesUz.push(
   [/^Все продажи выбранных направлений: (.+?) сум; вне банкетной выборки: (.+?) сум\.$/, "Tanlangan yo'nalishlarning barcha savdolari: $1 so'm; banket tanlovidan tashqari: $2 so'm."],
 );
+
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Связь с iiko': 'iiko bilan aloqa',
+  'Загружаем справочники…': "Ma'lumotnomalar yuklanmoqda…",
+  'Загружаем справочники iiko…': "iiko ma'lumotnomalari yuklanmoqda…",
+  'Обновить данные': "Ma'lumotlarni yangilash",
+  'Поставщик iiko': 'iiko yetkazib beruvchisi',
+  'Склад поступления': 'Qabul ombori',
+  'Выберите из iiko': 'iiko dan tanlang',
+  'Выберите поставщика и склад для приходной накладной iiko.': 'iiko kirim hujjati uchun yetkazib beruvchi va omborni tanlang.',
+  'Место закупа (необязательно)': 'Xarid joyi (ixtiyoriy)',
+  'Поставщик / склад': 'Yetkazib beruvchi / ombor',
+  'Товары iiko': 'iiko mahsulotlari',
+  'Найдено в iiko': 'iiko da topildi',
+  'Сохранить в iiko': 'iiko da saqlash',
+  'Сохранено в iiko': 'iiko da saqlandi',
+  'Покупка записана, iiko не подтверждён': 'Xarid yozildi, iiko hali tasdiqlanmadi',
+  'Проверить iiko': 'iiko ni tekshirish',
+  'Повторить отправку': 'Qayta yuborish',
+  'Цена за единицу, включая НДС': 'Birlik narxi, QQS bilan',
+  'Ожидает подтверждения iiko. Не вводите покупку повторно.': 'iiko tasdig‘i kutilmoqda. Xaridni qayta kiritmang.',
+  'Товар не найден в iiko. Уточните название или добавьте его в справочник iiko.': "Mahsulot iiko da topilmadi. Nomini aniqlang yoki iiko ma'lumotnomasiga qo'shing.",
+  'Сохранение в iiko недоступно. Проверьте подключение и права на приходные накладные.': 'iiko da saqlash imkonsiz. Ulanish va kirim hujjatlari uchun ruxsatlarni tekshiring.',
+  'Предыдущая покупка найдена в журнале. Проверьте её статус iiko.': 'Oldingi xarid jurnalda topildi. Uning iiko holatini tekshiring.',
+  'Ответ предыдущей отправки не получен. Восстановлена та же покупка с защитой от дубля.': 'Oldingi yuborish javobi olinmadi. Takroriy yozuvdan himoyalangan xarid tiklandi.',
+  'Прикрепите прежнее фото и повторите сохранение этой покупки.': 'Oldingi suratni biriktiring va shu xaridni yana saqlang.',
+  'iiko ещё не подтвердил накладную.': 'iiko hali kirim hujjatini tasdiqlamadi.',
+  'iiko: проведение не подтверждено': "iiko: o'tkazish tasdiqlanmagan",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Подключено · товаров: (\d+) · складов: (\d+)$/, 'Ulangan · mahsulotlar: $1 · omborlar: $2'],
+  [/^Приходная накладная № (.+)$/, 'Kirim hujjati № $1'],
+  [/^iiko · накладная № (.+)$/, 'iiko · kirim hujjati № $1'],
+  [/^Арт\. (.+) · (.+)$/, 'Art. $1 · $2'],
+);

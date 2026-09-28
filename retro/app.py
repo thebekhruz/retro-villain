@@ -26,6 +26,8 @@ from retro.modules.cashier.routes import router as cashier_router
 from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.shokh.routes import router as shokh_router
 from retro.modules.shokh.store import ShokhStore
+from retro.modules.shokh.iiko import ProcurementIiko
+from retro.modules.shokh.sync import ProcurementSync
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
@@ -202,6 +204,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.attendance_store = AttendanceStore(accountant_path)
     # Закуп живёт в той же базе, что подотчёт бухгалтера: они про одни деньги.
     app.state.shokh = ShokhStore(accountant_path)
+    app.state.shokh_iiko = ProcurementIiko(app.state.iiko)
+    app.state.shokh_sync = ProcurementSync(app.state.shokh, app.state.shokh_iiko)
     # Недельную цель дивидендов ставит учредитель, а видит бухгалтер: храним
     # рядом с резервом `dividends`, в который эти деньги и откладываются.
     app.state.dividend_targets = DividendTargetStore(accountant_path)

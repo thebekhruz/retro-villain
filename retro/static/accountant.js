@@ -268,7 +268,7 @@ async function renderShohBuys(day) {
     if (row.has_photo) {
       const image = document.createElement('img');
       image.className = 'shoh-buy-photo'; image.alt = 'Фото покупки';
-      image.loading = 'lazy'; image.src = '/api/shokh/photo/' + row.id;
+      image.loading = 'lazy'; image.src = '/api/accountant/shokh/photo/' + row.id;
       item.append(image);
     } else {
       const mark = node('span', 'shoh-no-photo', '⊘');
@@ -280,6 +280,10 @@ async function renderShohBuys(day) {
     price.append(node('b', '', number.format(Number(row.price))));
     if (row.usual_price !== null) price.append(node('small', '', 'обычно ' + number.format(Number(row.usual_price))));
     const check = node('div', 'shoh-buy-check');
+    if (row.iiko && row.iiko.status !== 'legacy') {
+      check.append(node('span', '', row.iiko.status === 'synced'
+        ? 'iiko · № ' + row.iiko.number : 'iiko: проведение не подтверждено'));
+    }
     if (row.accepted_at !== null) {
       check.append(node('span', 'shoh-accepted', 'принято бухгалтером'));
     } else {
@@ -288,6 +292,7 @@ async function renderShohBuys(day) {
       else check.append(node('span', 'shoh-norm', '✓ в норме'));
       const accept = node('button', 'shoh-accept', 'Принять');
       accept.type = 'button';
+      accept.disabled = row.iiko && !['synced', 'legacy'].includes(row.iiko.status);
       accept.addEventListener('click', async () => {
         accept.disabled = true;
         try {

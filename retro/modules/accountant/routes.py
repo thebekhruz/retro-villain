@@ -609,7 +609,7 @@ def shokh_purchases(request: Request, date: date | None = None):
     """Покупки Шоха за день — бухгалтеру для проверки и приёмки."""
     day = selected_day(date)
     return dict(demo=False, date=day.isoformat(),
-                purchases=request.app.state.shokh.purchases(day))
+                purchases=request.app.state.shokh_sync.decorate(request.app.state.shokh.purchases(day)))
 
 
 @router.post('/shokh/purchases/{purchase_id}/accept')
@@ -625,13 +625,17 @@ def accept_shokh_purchase(request: Request, purchase_id: int, body: ShokhAcceptI
         raise HTTPException(404, 'Покупка не найдена.')
     if purchase['accepted_at'] is not None:
         raise HTTPException(409, 'Покупка уже принята.')
+    operation = request.app.state.shokh_sync.operation(purchase_id=purchase_id)
+    if operation and operation['status'] != 'synced':
+        raise HTTPException(409, 'Сначала подтвердите проведение накладной в iiko.')
+    from retro.modules.shokh.store import ShokhError
     try:
-        request.app.state.accountant_finance.reserve_entry(
-            day, 'shoh', 'withdrawal', purchase['total'],
-            f"Закуп: {purchase['item']} · {purchase['point']}")
-    except LedgerError as error:
-        finance_error(error)
-    request.app.state.shokh.accept(purchase_id, datetime.now(TZ))
+        accepted = request.app.state.shokh.accept_with_finance(purchase_id, day, datetime.now(TZ),
+                                                              request.app.state.accountant_finance)
+    except (LedgerError, ShokhError) as error:
+        raise HTTPException(422, str(error)) from None
+    if not accepted:
+        raise HTTPException(409, 'Покупка уже принята.')
     return dict(demo=False, purchase=request.app.state.shokh.purchase(purchase_id))
 
 
@@ -647,3 +651,9 @@ def download_entrances(request: Request, date: date):
     data = export_entrances(date, entries, attendance.health)
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="Retro-entrances-{date.isoformat()}.xlsx"'})
+
+
+@router.get('/shokh/photo/{purchase_id}')
+def shokh_photo(request: Request, purchase_id: int):
+    from retro.modules.shokh.routes import photo
+    return photo(request, purchase_id)
