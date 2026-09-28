@@ -5,7 +5,8 @@ from io import BytesIO
 import openpyxl
 import pytest
 
-from retro.modules.cashier.service import build_snapshot, DataError, today_tashkent
+from retro.modules.cashier.service import (build_snapshot, DataError, Payment,
+                                           demo_snapshot, today_tashkent)
 from retro.modules.cashier.export import export_report
 
 
@@ -82,3 +83,33 @@ def test_export_keeps_template_and_removes_historical_operations():
 def test_iiko_formula_names_are_rejected_before_export():
     with pytest.raises(DataError):
         build_snapshot(DAY, [row('2026-09-10', 1, 10)], [row('=1+2', 10)])
+
+
+def test_handover_formula_matches_the_one_shown_to_the_cashier():
+    """Сервер и экран считают передачу одинаково — иначе кассир сверяет не то.
+
+    Формулу на экране держит retro/static/cashier-logic.js; здесь прогоняем ту
+    же функцию в node и сравниваем с cash_to_finance на одних данных.
+    """
+    import json
+    import subprocess
+    from dataclasses import replace
+
+    from retro.modules.cashier.expenses import cash_to_finance
+
+    day = date(2026, 9, 16)
+    snapshot = replace(demo_snapshot(day), demo=False,
+                       payments=(Payment('Демо', Decimal('4000000')),
+                                 Payment('Карта', Decimal('12000000')),
+                                 Payment('Наличные (Инкасса QR)', Decimal('2000000'))),
+                       cash_prepayment=Decimal('500000'))
+    expenses, receipts = Decimal('300000'), Decimal('100000')
+    expected = cash_to_finance(snapshot, expenses, receipts)
+
+    script = (
+        "const logic=require('./retro/static/cashier-logic.js');"
+        f"console.log(JSON.stringify(logic.handover({json.dumps(snapshot.json())},"
+        f"'{expenses}','{receipts}')));"
+    )
+    result = subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
+    assert Decimal(str(json.loads(result.stdout))) == expected

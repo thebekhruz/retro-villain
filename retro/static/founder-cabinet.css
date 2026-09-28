@@ -1,0 +1,228 @@
+/* Кабинет учредителя (ui_solid1 7a / 7b).
+   Телефон отвечает на «сколько денег и сколько моих», компьютер — на «всё ли
+   работает правильно». Это две раскладки одной страницы: узкий экран видит
+   7a, широкий — 7b с AI-чатом справа. Общие детали — в style.css и
+   director-app.css (карточки телефона, чат, список замечаний). */
+
+.founder-cabinet{background:var(--paper)}
+.fo-main{min-height:100vh}
+.fo-phone{display:none}
+.fo-desk{display:grid;grid-template-columns:minmax(0,1fr) 340px;min-height:calc(100vh - 80px)}
+.fo-nav-label{margin:26px 0 10px}
+.fo-subnav{margin-left:0}
+.fo-content{min-width:0;padding:28px 28px 22px 32px;display:grid;gap:18px;align-content:start}
+.fo-hint{margin:0;font-size:11px;color:#9aa69b;line-height:1.45}
+.fo-empty{margin:0;padding:22px 18px;font-size:12px;color:var(--muted-3)}
+.fo-red{font-size:11px;font-weight:600;color:var(--late);white-space:nowrap}
+.fo-estimate{font-style:normal;margin-left:6px;padding:2px 6px;border-radius:5px;background:#f1ecdc;color:#7a5a22;
+  font-size:9px;font-weight:650;letter-spacing:1px;text-transform:uppercase;vertical-align:1px}
+.eyebrow.is-red{color:var(--late)}
+
+/* ── Шапка 7b ─────────────────────────────────────────────────────────── */
+.fo-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
+.fo-heading h1{font-size:34px;letter-spacing:-1.4px}
+.fo-excel{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
+.fo-excel .button small{color:var(--gold);font-size:9px;letter-spacing:1px}
+.fo-excel>span{font-size:10px;color:var(--muted-2)}
+
+/* ── KPI ──────────────────────────────────────────────────────────────── */
+.fo-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
+.fo-kpi{position:relative;background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;min-width:0}
+.fo-kpi>span{display:block;font-size:11px;color:#748376}
+.fo-kpi>strong{display:block;font-size:22px;font-weight:600;letter-spacing:-.5px;margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fo-kpi>small{display:block;font-size:10px;color:#9aa69b;margin-top:3px}
+.fo-kpi.is-gold{background:var(--accent-soft);border-color:var(--accent-line)}
+.fo-kpi.is-gold>span{color:#7a6a45}.fo-kpi.is-gold>strong{color:#7a5a22}.fo-kpi.is-gold>small{color:#9a8b66}
+.fo-kpi.is-green{background:var(--green);border-color:var(--green);color:#fff}
+.fo-kpi.is-green>span{color:#c5d3c9}
+.fo-kpi.is-green>strong{font-size:20px}
+.fo-kpi.is-green>small{color:#c5d3c9}
+.fo-kpi-bar{height:5px;border-radius:3px;background:#ffffff1a;overflow:hidden;margin-top:8px}
+.fo-kpi-bar span{display:block;height:100%;background:var(--gold);width:0}
+.fo-kpi-link{margin-top:8px;padding:0;border:0;background:none;color:#e8cf95;font-size:11px;font-weight:600;min-height:24px}
+
+/* ── Панели ───────────────────────────────────────────────────────────── */
+.fo-panel{background:#fff;border:1px solid var(--border);border-radius:18px;padding:18px;min-width:0}
+.fo-panel h2{font-size:19px}
+.fo-panel .eyebrow{margin-bottom:8px}
+.fo-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+.fo-panel-foot{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:var(--ink-2);margin-top:10px}
+.fo-grid{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(0,1fr);gap:18px}
+.fo-grid.is-even{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+.fo-ai-button{flex:none;min-height:36px;border:1px solid #e2c98e;border-radius:10px;background:var(--accent-soft);color:#7a5a22;font-size:12px;font-weight:600;padding:8px 12px}
+
+/* ── Неделя по дням ───────────────────────────────────────────────────── */
+.fo-week{padding:0;overflow:hidden}
+.fo-week .fo-panel-head{padding:18px 18px 12px;align-items:baseline}
+.fo-week-scroll{overflow-x:auto}
+.fo-week-table{min-width:760px}
+.fo-row{display:grid;grid-template-columns:170px repeat(7,minmax(0,1fr)) 96px;border-top:1px solid var(--line-soft);font-size:12px;font-variant-numeric:tabular-nums}
+.fo-row>*{padding:9px 6px;text-align:right;white-space:nowrap}
+.fo-row>:first-child{padding-left:14px;text-align:left;color:#35624e}
+.fo-row>:last-child{padding-right:14px;font-weight:650}
+.fo-row.is-head{background:var(--head-bg);border-top:1px solid var(--line-mid);font-size:10px;color:#71827d}
+.fo-row.is-head>*{padding:6px 4px;text-align:center;display:flex;flex-direction:column;gap:1px;justify-content:center}
+.fo-row.is-head>:first-child,.fo-row.is-head>:last-child{padding:9px 14px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.fo-row.is-head>:first-child{text-align:left}
+.fo-row.is-head>:last-child{text-align:right}
+.fo-row.is-head strong{font-size:11px}
+.fo-row.is-head span{font-size:9px}
+.fo-row.is-head .is-today{background:var(--green);color:#fff}
+.fo-row.is-head .is-future{color:#9aa69b}
+.fo-row.is-balance{background:var(--head-bg)}
+.fo-row.is-balance>*{font-weight:650}
+.fo-row .is-future{color:#9aa69b}
+.fo-row .is-none{color:#c2c9bb}
+.fo-row .is-bad{color:var(--late)}
+.fo-row.is-check{border-top:1px solid #dfe6db;background:var(--panel-2)}
+.fo-row.is-check>:first-child{font-weight:650}
+.fo-row.is-check>span{font-size:14px;font-weight:700}
+.fo-row.is-check .is-ok{color:var(--ok)}
+.fo-row.is-check .is-bad{color:var(--late)}
+.fo-row.is-check .is-wait{color:var(--warn)}
+
+/* ── Счёт Шефа, расходы, закуп ────────────────────────────────────────── */
+.fo-chef-row{display:grid;grid-template-columns:86px minmax(0,1fr) 90px;gap:8px;align-items:baseline;padding:9px 6px;border-top:1px solid #edf1e9;margin-top:4px;font-size:12px}
+.fo-chef-row>span:first-child{color:var(--muted-2);font-variant-numeric:tabular-nums}
+.fo-chef-row>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fo-chef-row small{color:var(--muted-3);font-size:12px}
+.fo-chef-row>b{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.fo-chef-row.is-over{background:#fff7f8}
+.fo-chef-row.is-over>b{color:var(--late)}
+.fo-bars>div{margin-top:10px}
+.fo-bars-line{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+.fo-bars-line span:last-child{white-space:nowrap}
+.fo-bars-line i{font-style:normal;color:#9aa69b}
+.fo-bars .rm-bar{height:6px;border-radius:3px;margin-top:5px;background:#f1f3ee}
+.fo-tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:6px;margin-top:10px}
+.fo-tiles.is-two{grid-template-columns:1fr 1fr;gap:8px}
+.fo-tiles>div{background:#f5f7f1;border-radius:12px;padding:9px 10px;min-width:0}
+.fo-tiles>div.is-dark{background:var(--green);color:#fff}
+.fo-tiles span{display:block;font-size:10px;color:var(--muted-2)}
+.fo-tiles .is-dark span{color:#c5d3c9}
+.fo-tiles b{display:block;font-size:15px;font-weight:650;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fo-flag-title{margin:12px 0 0;font-size:12px;font-weight:600;color:var(--warn)}
+.fo-flags>div{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid #edf1e9;margin-top:6px;font-size:12px}
+.fo-flags small{color:#b0663a;font-size:11px;white-space:nowrap}
+.fo-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.fo-chips span{padding:5px 9px;border-radius:20px;background:#f1f3ee;font-size:11px;white-space:nowrap}
+.fo-chips.is-warm span{background:#fff5ee;border:1px solid #efdccc;white-space:normal}
+.fo-chips b{font-weight:600}
+
+/* ── Прогноз и блюда ──────────────────────────────────────────────────── */
+.fo-forecast{display:grid;grid-template-columns:repeat(7,1fr);gap:8px;align-items:end;height:170px;margin-top:14px}
+.fo-forecast>div{display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:4px;height:100%;min-width:0}
+.fo-forecast span{font-size:10px;font-weight:600;white-space:nowrap}
+.fo-forecast i{display:block;width:100%;border-radius:6px 6px 2px 2px;background:#24594b}
+.fo-forecast .is-today i{background:var(--gold)}
+.fo-forecast strong{font-size:11px;color:var(--ink-2)}
+.fo-forecast .is-today strong{color:var(--warn)}
+.fo-forecast small{font-size:9px;color:#9aa69b;white-space:nowrap}
+.fo-dish{display:grid;grid-template-columns:18px minmax(0,1fr) 60px 70px 40px;gap:8px;align-items:baseline;padding:8px 0;border-top:1px solid #edf1e9;margin-top:4px;font-size:12px}
+.fo-dish>span:first-child{color:#b6a37a;font-weight:700}
+.fo-dish>strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fo-dish>span:nth-child(3),.fo-dish>b,.fo-dish>small{text-align:right;font-variant-numeric:tabular-nums}
+.fo-dish>span:nth-child(3){color:var(--muted-2)}
+.fo-dish>b{font-weight:600}
+.fo-dish>small{font-size:11px}
+.fo-low-title{margin:10px 0 0;font-size:11px;font-weight:600;color:#b0663a}
+
+/* ── AI-чат справа ────────────────────────────────────────────────────── */
+.fo-chat{border-left:1px solid var(--border);background:var(--panel-2);min-width:0}
+.fo-chat-inner{position:sticky;top:0;display:flex;flex-direction:column;height:100vh}
+.fo-chat-head{display:flex;align-items:center;gap:10px;padding:22px 18px 14px;border-bottom:1px solid var(--border)}
+.fo-chat-head strong{display:block;font-size:15px;font-weight:650}
+.fo-chat-head span:not(.dir-spark){display:block;font-size:11px;color:var(--muted-2)}
+.fo-chat-messages{flex:1;min-height:0}
+.fo-prompts{display:flex;flex-direction:column;gap:6px;padding:0 16px 8px}
+.fo-chat-status{padding:0 16px}
+#fo-chat-status.is-error{color:var(--late)}
+
+/* ── Дивиденды: карточка и редактор ───────────────────────────────────── */
+.fo-div-top{font-size:12px;color:#c5d3c9}
+.fo-div-top b{font-weight:500}
+.fo-div-sum{display:flex;align-items:baseline;gap:10px;margin-top:8px}
+.fo-div-sum strong{font-size:32px;font-weight:650;letter-spacing:-1px}
+.fo-div-sum span{font-size:12px;color:#a9bfb1}
+.fo-div-bar{position:relative;height:8px;border-radius:4px;background:#ffffff1a;margin-top:12px}
+.fo-div-bar span{display:block;height:100%;border-radius:4px;background:var(--gold);width:0;transition:width .4s}
+.fo-div-bar i{position:absolute;top:-3px;width:2px;height:14px;background:#fff;border-radius:1px;left:0;opacity:.7}
+.fo-div-foot{display:flex;justify-content:space-between;gap:10px;font-size:11px;color:#c5d3c9;margin-top:6px}
+.fo-div-foot .is-warn{color:#f0cf8a}
+.fo-div-target{width:100%;display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 12px;border:1px solid #d8b97766;border-radius:14px;background:#ffffff0f;color:#fff;text-align:left;min-height:48px}
+.fo-div-target>span{flex:1}
+.fo-div-target small{display:block;font-size:11px;color:#c5d3c9}
+.fo-div-target b{display:block;font-size:16px;font-weight:650;margin-top:2px}
+.fo-div-target em{font-style:normal;padding:7px 12px;border-radius:10px;background:var(--gold);color:var(--green);font-size:12px;font-weight:700}
+.fo-div-editor{margin-top:12px}
+.fo-div-editor.is-desk{background:var(--green);color:#fff;border-radius:16px;padding:16px;max-width:520px;margin:-6px 0 0 auto}
+.fo-stepper{display:flex;align-items:center;gap:8px}
+.fo-stepper button{width:44px;height:44px;flex:none;border:0;border-radius:12px;background:#ffffff1a;color:#fff;font-size:20px}
+.fo-stepper input{flex:1;min-width:0;height:46px;border:1px solid #ffffff33;border-radius:12px;background:#ffffff12;color:#fff;text-align:center;font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}
+.fo-presets{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.fo-presets button{min-height:34px;border:1px solid #ffffff33;border-radius:20px;padding:7px 11px;font-size:12px;font-weight:600;background:#fff;color:#35624e}
+.fo-presets button.is-active{background:var(--green);color:#fff;border-color:#d8b97799}
+.fo-feasible{margin:8px 0 0;font-size:11px;color:#c5d3c9}
+.fo-feasible.is-warn{color:#f0cf8a}
+.fo-save{width:100%;min-height:44px;margin-top:10px;border:0;border-radius:12px;background:var(--gold);color:var(--green);font-size:14px;font-weight:700}
+.fo-msg{margin:6px 0 0;min-height:14px;font-size:11px;color:#e8cf95}
+.fo-msg.is-error{color:#f4b8c3}
+
+/* ── Телефон 7a ───────────────────────────────────────────────────────── */
+.fo-phone-body{gap:10px;padding:14px 14px 34px}
+.fo-phone-head{display:flex;justify-content:space-between;align-items:center;padding:2px 2px 0}
+.fo-phone-head>div>span{display:block;font-size:11px;color:var(--muted-2)}
+.fo-phone-head>div>strong{display:block;font-size:20px;font-weight:650;margin-top:1px}
+.fo-phone .rm-phone-mark{width:40px;height:40px;border-radius:13px;font-size:22px}
+.fo-phone .rm-phone-hero{padding:16px}
+.fo-alerts{display:grid;gap:8px}
+.fo-alert{display:flex;gap:10px;align-items:flex-start;padding:12px;border-radius:20px;background:#ffffffe6;box-shadow:0 8px 24px #0000001f;border:1px solid #0000000d}
+.fo-alert-mark{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:9px;background:var(--green);color:var(--gold);font-family:Georgia,serif;font-size:19px}
+.fo-alert>div{flex:1;min-width:0}
+.fo-alert small{display:flex;justify-content:space-between;font-size:11px;color:var(--muted-2)}
+.fo-alert strong{display:block;font-size:14px;font-weight:650;margin-top:2px;color:var(--late)}
+.fo-alert p{margin:2px 0 0;font-size:12px;color:var(--ink-2)}
+.fo-alert button{border:0;background:none;color:#9aa69b;font-size:18px;padding:0 4px;min-width:32px;min-height:32px}
+.fo-label{display:block;font-size:12px;color:var(--muted-2)}
+.fo-big{display:flex;align-items:baseline;gap:6px;margin-top:4px}
+.fo-big strong{font-size:28px;font-weight:650;letter-spacing:-.8px}
+.fo-big small{font-size:12px;color:#9aa69b}
+.fo-line{display:flex;justify-content:space-between;gap:10px;padding:9px 0 0;margin-top:9px;border-top:1px solid #eef1ea;font-size:12px}
+.fo-line>span{color:var(--ink-2)}
+.fo-line b{font-weight:600}
+.fo-line.is-plain{border-top:0;padding-top:0;margin-top:10px}
+.fo-line-strong{font-size:15px;font-weight:650}
+.fo-mark.is-ok{color:var(--ok)}
+.fo-mark.is-bad{color:var(--late)}
+.fo-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.fo-card-head strong{font-size:14px;font-weight:600}
+.fo-card-head>span{font-size:11px;color:var(--muted-3)}
+.fo-card-title{display:block;font-size:14px;font-weight:600}
+.fo-progress{margin-top:10px}
+.fo-progress-line{display:flex;justify-content:space-between;gap:10px;font-size:12px}
+.fo-progress-line i{font-style:normal;color:#9aa69b}
+.fo-bar-lg{height:6px;border-radius:3px;margin-top:5px;background:#eef1ea}
+.fo-bar-lg.is-light>span{background:#91a786}
+.fo-gold{display:block;font-size:10px;color:#906c2b;margin-top:4px}
+.fo-acc-line{font-size:13px}
+.fo-acc-line.is-bad{color:var(--late)}
+.fo-acc-line.is-ok{color:var(--ok)}
+#fo-chef-week .fo-line b{color:var(--late)}
+
+/* ── Раскладки ────────────────────────────────────────────────────────── */
+@media(max-width:1180px){
+  .fo-desk{grid-template-columns:minmax(0,1fr) 300px}
+  .fo-grid,.fo-grid.is-even{grid-template-columns:minmax(0,1fr)}
+}
+/* Узкий экран — это телефон учредителя (7a): только важное, подробности
+   и чат ждут его на компьютере. */
+@media(max-width:900px){
+  .founder-cabinet .sidebar{display:none}
+  .fo-main{margin:0;width:100%}
+  .fo-desk{display:none}
+  .fo-phone{display:flex;min-height:auto;max-width:480px;margin:0 auto}
+  .founder-cabinet .topbar{height:auto;min-height:52px;padding:10px 14px;background:var(--phone-bg);border-bottom:0}
+  .founder-cabinet .breadcrumb{display:none}
+  .founder-cabinet .topbar-actions{width:100%;justify-content:space-between}
+  .founder-cabinet{background:var(--phone-bg)}
+}

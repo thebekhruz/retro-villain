@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from io import BytesIO
+from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import openpyxl
@@ -39,7 +40,9 @@ def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
         cashier = client.get('/')
         modules = client.get('/api/config').json()['modules']
     assert accountant.status_code == 200
-    assert 'ДЕМО' in accountant.text
+    assert 'ДЕМО' not in accountant.text
+    assert 'id="attendance-banner"' in accountant.text
+    assert 'id="attendance-chip"' in accountant.text
     assert 'Опоздавшие сотрудники' in accountant.text
     assert 'id="late-details"' in accountant.text
     assert 'href="/accountant/employees"' in accountant.text
@@ -49,10 +52,29 @@ def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
     assert 'id="accountant-date"' in accountant.text
     assert 'id="entrances-download"' in accountant.text
     assert 'Зарплата к выплате' not in cashier.text
-    assert 'href="/accountant"' in cashier.text
+    # T-383: в разметке кассы чужих модулей нет — пункт «Бухгалтер» дорисует
+    # меню, только если он открыт этой учётной записи (здесь — полный доступ).
+    assert 'href="/accountant"' not in cashier.text
     assert any(item['id'] == 'accountant' and item['available'] for item in modules)
     assert 'Планирование смен' not in accountant.text
     assert 'scenario-groups' not in accountant.text
+
+
+def test_attendance_frontend_has_real_source_and_unavailable_states():
+    root = Path(__file__).parents[1]
+    accountant_js = (root / 'retro/static/accountant.js').read_text(encoding='utf-8')
+    employees_js = (root / 'retro/static/employees.js').read_text(encoding='utf-8')
+    director_html = (root / 'retro/static/director.html').read_text(encoding='utf-8')
+
+    for source in (accountant_js, employees_js):
+        assert 'not_configured' in source
+        assert '-DEMO.xlsx' not in source
+        assert 'Проходы демонстрационные' not in source
+    assert 'unavailable' in employees_js
+    assert "unavailable: 'Нет данных'" in employees_js
+    assert 'arrivalText(row.first_entry)' in employees_js
+    assert "timeZone: 'Asia/Tashkent'" in employees_js
+    assert 'демо Hikvision' not in director_html
 
 
 def test_future_rows_mark_late_and_keep_names_as_text():

@@ -1,0 +1,151 @@
+/* Экран «Сотрудники» — редизайн ui_solid1 (1a). Переиспользует токены из style.css. */
+
+/* Шапка страницы: дата-навигация + действия */
+.employees-workspace .page-heading{align-items:flex-end}
+.emp-head-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+/* .date-nav переехала в style.css — её же просят «Финансы дня» и «Кассир». */
+.emp-head-actions .button{min-height:48px;margin-left:0}
+.emp-head-actions .primary>span{color:var(--gold);font-size:18px}
+
+/* Карточки-фильтры */
+.emp-stats{display:grid;grid-template-columns:1.35fr 1fr 1fr 1fr 1fr;gap:14px;margin-bottom:20px}
+.emp-stat{position:relative;overflow:hidden;text-align:left;min-width:0;border:1px solid var(--border);border-radius:18px;padding:22px 20px 18px;background:#fff;color:var(--ink);display:block;width:100%}
+button.emp-stat{cursor:pointer}
+button.emp-stat:hover{background:#fbfcf9}
+.emp-stat.is-active{border-color:var(--green);box-shadow:0 0 0 1px var(--green) inset}
+.emp-stat-label{font-size:12px;color:#748376}
+.emp-stat-value{display:flex;align-items:baseline;gap:7px;margin:18px 0 14px;font-variant-numeric:tabular-nums}
+.emp-stat-value strong{font-size:32px;font-weight:600;letter-spacing:-1px;white-space:nowrap}
+.emp-stat-value small{font-size:13px;color:#909b8e}
+.emp-stat-foot{font-size:10px;color:#7d8881;display:flex;align-items:center;gap:7px}
+.emp-stat-bar{height:4px;border-radius:2px;background:#edf1e8;overflow:hidden}
+.emp-stat-bar span{display:block;height:100%;background:#24594b}
+.emp-stat--accrued{background:var(--green);color:#fff}
+.emp-stat--accrued:after{content:"";position:absolute;width:210px;height:210px;border:1px solid #d8b97714;border-radius:100%;top:-120px;right:-90px;box-shadow:0 0 0 24px #d8b97707,0 0 0 50px #d8b97704;pointer-events:none}
+.emp-stat--accrued .emp-stat-label{color:#c5d3c9}
+.emp-stat--accrued .emp-stat-value small{color:#acbcae}
+.emp-stat--accrued .emp-stat-foot{color:#c9d4c8}
+.emp-stat--accrued .emp-stat-foot:before{content:"";width:5px;height:5px;border-radius:50%;background:var(--gold)}
+.emp-stat--late .emp-stat-value strong{color:#ab445e}
+.emp-stat--attention{background:#fbf7ed;border-color:#eddfbe}
+.emp-stat--attention.is-active{border-color:#906c2b;box-shadow:0 0 0 1px #906c2b inset}
+.emp-stat--attention .emp-stat-label,.emp-stat--attention .emp-stat-foot{color:#7a6a45}
+.emp-stat--attention .emp-stat-value strong{color:#906c2b}
+
+/* Раскладка: реестр + боковая панель */
+.emp-layout{display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:20px;align-items:start}
+.emp-registry-panel{padding:0;overflow:hidden}
+.emp-registry-head{display:flex;align-items:center;justify-content:space-between;gap:14px;padding:18px 18px 12px}
+.emp-registry-title{display:flex;align-items:baseline;gap:10px}
+.emp-registry-title h2{font-size:20px}
+.emp-registry-tools{display:flex;align-items:center;gap:8px}
+.emp-registry-tools input{width:250px;max-width:46vw;height:38px;border:1px solid var(--border);border-radius:9px;background:#fcfdf9;padding:0 12px;font-size:12px;color:var(--ink);outline:none}
+.emp-filter-tag{display:inline-flex;align-items:center;gap:7px;border:1px solid #dbe3d8;background:#f5f7f1;color:#35624e;border-radius:30px;padding:7px 10px 7px 12px;font-size:11px}
+.emp-filter-x{font-size:14px;line-height:1;color:#73917b}
+.emp-tabs{display:flex;flex-wrap:wrap;gap:4px;padding:0 14px 14px}
+.emp-tab{border:0;border-radius:7px;padding:8px 10px;font-size:12px;display:flex;gap:6px;align-items:baseline;background:transparent;color:#718075}
+.emp-tab.is-active{background:#edf2e9;color:var(--green);font-weight:600}
+.emp-tab small{font-size:10px;opacity:.7}
+.emp-registry-columns,.emp-row{display:grid;grid-template-columns:minmax(0,2.2fr) 100px 120px minmax(0,1fr) minmax(0,1fr);gap:12px}
+.emp-registry-columns{padding:10px 18px;background:#f5f7f1;border-top:1px solid #e7ece3;color:#71827d;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.emp-registry-columns .num,.emp-cell-num{text-align:right}
+.emp-group-head{display:flex;align-items:baseline;justify-content:space-between;padding:16px 18px 8px;border-top:1px solid #e7ece3}
+.emp-group-name{display:flex;align-items:baseline;gap:8px}
+.emp-group-name strong{font-size:12px;font-weight:650;color:#285140}
+.emp-group-name span{font-size:11px;color:#728476}
+.emp-group-total{font-size:11px;color:#728476;font-variant-numeric:tabular-nums}
+.emp-row{align-items:center;padding:10px 18px;border-top:1px solid #f0f3ec;cursor:pointer;background:#fff}
+.emp-row:hover{background:#fbf7ed}
+.emp-row.is-selected{background:#f8f1e0}
+.emp-cell-who{display:flex;align-items:center;gap:11px;min-width:0}
+.emp-avatar{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:10px;background:#e9f0e6;color:#52735d;font-size:11px;font-weight:700;letter-spacing:.4px}
+.emp-avatar.is-warn{background:#fbf0d7;color:#906c2b}
+.emp-avatar.is-lg{width:48px;height:48px;border-radius:13px;font-size:14px}
+.emp-who-text{min-width:0}
+.emp-who-name{font-size:13px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.emp-who-role{font-size:11px;color:#88978a;margin-top:2px}
+.emp-cell-entry{font-variant-numeric:tabular-nums}
+.emp-entry-time{font-size:13px;color:var(--ink)}
+.emp-entry-time.is-late{color:#ab445e}
+.emp-entry-time.is-none{color:#9da79d}
+.emp-entry-late{font-size:10px;color:#ab445e;margin-top:2px}
+.emp-cell-num{font-size:13px;font-variant-numeric:tabular-nums;color:var(--ink)}
+.emp-cell-num.is-missing{color:#a96039}
+.emp-cell-pay{font-weight:600;color:#1c4c3e}
+.emp-cell-pay.is-none{color:#9da79d;font-weight:400}
+.emp-registry-foot{padding:14px 18px;border-top:1px solid #e7ece3;font-size:11px;color:#809084;margin:0}
+.emp-registry-panel .empty-state{border-top:1px solid #e7ece3}
+.emp-registry-panel .monthly-roster-head{padding:20px 18px 0;border-top:1px solid #e7ece3;margin-top:6px}
+.emp-registry-panel .monthly-employees{padding:0 18px 18px}
+
+/* Боковая панель */
+.emp-aside{position:sticky;top:20px;display:grid;gap:14px;align-content:start}
+.emp-side-card{padding:22px}
+.emp-side-eyebrow{margin:0 0 9px}
+.emp-side-title{font-size:18px;font-weight:550;letter-spacing:-.3px;margin:0 0 12px}
+.emp-side-row{width:100%;display:flex;align-items:center;gap:11px;padding:11px 0;border:0;border-top:1px solid #edf1e9;background:none;text-align:left}
+.emp-side-row:first-of-type{border-top:0}
+.emp-side-row:hover{background:#fbfcf9}
+.emp-side-info{flex:1;min-width:0}
+.emp-side-name{display:block;font-size:12px;font-weight:600}
+.emp-side-reason{display:block;font-size:11px;color:#906c2b;margin-top:2px}
+.emp-side-chevron{color:#9aab9d;font-size:16px}
+.emp-summary-row{display:grid;grid-template-columns:minmax(0,1fr) 44px auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid #edf1e9;font-size:12px}
+.emp-summary-row:first-of-type{border-top:0}
+.emp-summary-name{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.emp-summary-presence{font-size:11px;color:var(--muted);font-variant-numeric:tabular-nums}
+.emp-summary-total{font-weight:550;font-variant-numeric:tabular-nums;text-align:right}
+
+/* Drawer */
+.emp-drawer{box-shadow:0 10px 30px #143e3512}
+.emp-drawer-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:16px}
+.emp-drawer-close{width:30px;height:30px;border:0;border-radius:8px;background:#f3f5f0;color:#53675c;font-size:16px}
+.emp-drawer-id{display:flex;align-items:center;gap:13px}
+.emp-drawer-name{font-size:17px;font-weight:600;letter-spacing:-.2px}
+.emp-drawer-sub{font-size:11px;color:#88978a;margin-top:3px}
+.emp-drawer-facts{margin:18px 0;padding:15px 16px;border-radius:12px;background:#f5f7f1}
+.emp-drawer-facts-top{display:flex;justify-content:space-between;align-items:center;gap:10px}
+.emp-drawer-entry{font-size:11px;color:#728476}
+.emp-drawer-pay{display:flex;align-items:baseline;gap:6px;margin-top:14px}
+.emp-drawer-pay span{font-size:11px;color:#728476;flex:1}
+.emp-drawer-pay strong{font-size:22px;font-weight:600;letter-spacing:-.5px;font-variant-numeric:tabular-nums;color:#143e35}
+.emp-drawer-pay strong.is-none{color:#9da79d}
+.emp-drawer-note{font-size:11px;line-height:1.5;color:#728476;margin:8px 0 0}
+.emp-drawer-form{display:grid;gap:12px}
+.emp-field{display:grid;gap:6px;font-size:11px;color:#64776c}
+.emp-field input,.emp-field select{height:42px;border:1px solid #dbe3d8;border-radius:8px;padding:0 12px;background:#fff;color:#203d33;font-size:13px}
+.emp-field input[type=number]{font-variant-numeric:tabular-nums}
+.emp-drawer-feedback{min-height:16px;margin:0;font-size:11px}
+.emp-drawer-actions{display:flex;gap:8px}
+.emp-drawer-actions .button{width:auto;flex:1;margin-left:0;min-height:44px}
+.emp-drawer-actions .secondary{flex:0 0 auto;padding:0 16px}
+.emp-drawer-delete{margin-top:18px;padding-top:14px;border-top:1px solid #edf1e9;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.emp-delete-link{border:0;background:none;padding:0;color:#a96039;font-size:12px}
+.emp-delete-q{font-size:12px;color:#7b6257;flex:1}
+.emp-delete-keep{border:1px solid #dbe3d8;border-radius:7px;background:#fff;color:#35624e;padding:7px 10px;font-size:11px}
+.emp-delete-yes{border:1px solid #e4cfc2;border-radius:7px;background:#fff0eb;color:#a33f2b;padding:7px 10px;font-size:11px}
+
+@media(max-width:1180px){
+  .emp-stats{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .emp-stat--accrued{grid-column:span 3}
+  .emp-layout{grid-template-columns:minmax(0,1fr) 300px}
+}
+@media(max-width:900px){
+  .emp-layout{grid-template-columns:1fr}
+  .emp-aside{position:static}
+}
+@media(max-width:650px){
+  .emp-head-actions{width:100%;justify-content:stretch}
+  .date-nav{flex:1 1 100%}
+  .emp-head-actions .button{flex:1}
+  .emp-stats{grid-template-columns:1fr 1fr}
+  .emp-stat--accrued{grid-column:span 2}
+  .emp-registry-columns{display:none}
+  .emp-row{grid-template-columns:1fr auto;gap:6px 12px;padding:14px 16px}
+  .emp-cell-entry{grid-row:2;font-size:12px}
+  .emp-cell-status{grid-row:2;justify-self:end}
+  .emp-cell-num{grid-column:2;text-align:right}
+  .emp-cell-pay{grid-row:1}
+  .emp-registry-tools input{max-width:none;width:100%}
+  .emp-registry-head{flex-wrap:wrap}
+}

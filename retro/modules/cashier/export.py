@@ -41,6 +41,7 @@ def export_report(snapshot, expenses=(), receipts=()):
                     cell.value = None
     sheet['A1'] = datetime.combine(snapshot.day, datetime.min.time())
     sheet['A1'].number_format = 'dd.mm.yyyy'
+    sheet['A2'] = 'ОПЛАТЫ ПРОДАЖ'
     sheet['B2'] = snapshot.revenue
     sheet['B2'].number_format = MONEY
     for label, pos in [('Количество чеков', 'A25'), ('Средний чек', 'A26')]:
@@ -48,11 +49,12 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['B25'] = snapshot.receipt_count
     sheet['B26'] = snapshot.average_receipt
     sheet['B26'].number_format = MONEY
-    sheet['A20'], sheet['B20'] = 'ИТОГО НОВЫЕ ПРЕДОПЛАТЫ', snapshot.new_prepayment
-    sheet['A21'], sheet['B21'] = 'ОБЩИЙ ПРИХОД', snapshot.revenue + snapshot.new_prepayment + receipt_total
+    sheet['A20'], sheet['B20'] = 'ОЦЕНКА НОВЫХ ПРЕДОПЛАТ', snapshot.new_prepayment
+    register_total = snapshot.register_received_total if snapshot.register_received_total is not None else snapshot.revenue + snapshot.new_prepayment
+    sheet['A21'], sheet['B21'] = 'ПРИХОД КАССЫ, ВКЛЮЧАЯ БАНКЕТ', register_total + receipt_total
     sheet['B20'].number_format = MONEY
     sheet['B21'].number_format = MONEY
-    sheet['A27'], sheet['B27'] = 'Новые предоплаты наличными · iiko', snapshot.cash_prepayment
+    sheet['A27'], sheet['B27'] = 'Оценка предоплат наличными · разница', snapshot.cash_prepayment
     sheet['A28'], sheet['B28'] = 'Расходы наличными (включая зарплату)', expense_total
     sheet['A29'], sheet['B29'] = 'К передаче в финансовый отдел', handover
     sheet['A30'], sheet['B30'] = 'Прочие поступления наличными', receipt_total
@@ -62,7 +64,7 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['A39'] = ('ДЕМОНСТРАЦИЯ — НЕ ОТЧЁТ iiko' if snapshot.demo else
                     'Сформировано из iiko • только Retro, без школы и зала Бехруз')
     amounts = {p.name: p.amount for p in snapshot.payments}
-    sheet['C2'] = 'ВЫРУЧКА ПО ТИПАМ ОПЛАТЫ'
+    sheet['C2'] = 'ОПЛАТЫ ПРОДАЖ ПО СПОСОБАМ'
     sheet['C2'].font = Font(name='Calibri', size=11, bold=True)
     sheet['C2'].alignment = Alignment(wrap_text=True, vertical='center')
     sheet.row_dimensions[2].height = 30
@@ -73,7 +75,7 @@ def export_report(snapshot, expenses=(), receipts=()):
         sheet.cell(row, 4, amounts[name]).number_format = MONEY
         sheet.row_dimensions[row].height = 30 if len(name) > 28 else 22
     payment_total_row = 3 + len(PAYMENT_SOURCES)
-    total_label = sheet.cell(payment_total_row, 3, 'ИТОГО ВЫРУЧКА:')
+    total_label = sheet.cell(payment_total_row, 3, 'ИТОГО ОПЛАТЫ:')
     total_amount = sheet.cell(payment_total_row, 4, f'=SUM(D3:D{payment_total_row - 1})')
     total_label._style = total_label_style
     total_amount._style = total_amount_style
@@ -107,10 +109,10 @@ def export_report(snapshot, expenses=(), receipts=()):
     detail['A1'] = 'Retro Milliy — оплаты'
     detail['A2'] = datetime.combine(snapshot.day, datetime.min.time())
     detail['A2'].number_format = 'dd.mm.yyyy'
-    detail['A3'], detail['B3'] = 'Продажи после скидок', snapshot.revenue
+    detail['A3'], detail['B3'] = 'Оплаты продаж без зачёта авансов', snapshot.revenue
     detail['A4'], detail['B4'] = 'Количество чеков', snapshot.receipt_count
     detail['A5'], detail['B5'] = 'Средний чек', snapshot.average_receipt
-    detail['A7'], detail['B7'], detail['C7'] = 'Тип оплаты', 'Выручка, сум', 'Доля'
+    detail['A7'], detail['B7'], detail['C7'] = 'Тип оплаты', 'Оплаты продаж, сум', 'Доля'
     for index, payment in enumerate(snapshot.payments, 8):
         text(detail.cell(index, 1), payment.name)
         detail.cell(index, 2, payment.amount)
@@ -124,6 +126,8 @@ def export_report(snapshot, expenses=(), receipts=()):
     detail.cell(end + 4, 1, 'Источник: https://retro3158.iikoweb.ru')
     detail.cell(end + 5, 1, 'Получено: ' + snapshot.fetched_at.strftime('%d.%m.%Y %H:%M') + ' (Ташкент)')
     detail.cell(end + 6, 1, 'Только касса Retro, без отделения «Бехруз (Свадьба)»; операции PAYMENT.')
+    detail.cell(end + 8, 1, 'Предоплаты — несверенная разница смены и продаж. Проверьте фактическую наличность.')
+    detail.cell(end + 9, 1, 'Наличные (Инкасса QR) не включены в передачу: учитываются отдельно.')
     if snapshot.demo:
         detail.cell(end + 7, 1, 'ДЕМОНСТРАЦИЯ. Данные вымышлены, не использовать для учёта.')
     detail.column_dimensions['A'].width = 68

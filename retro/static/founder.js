@@ -1,0 +1,188 @@
+const $=id=>document.getElementById(id);
+const money=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
+const exactMoney=new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2});
+const shortDate=value=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
+const directionMeta={retro:{label:'Retro',color:'#143e35'},school:{label:'Школа',color:'#52786f'},banquet:{label:'Банкет',color:'#a27445'}};
+const paymentColors=['#143e35','#d8b977','#52786f','#a27445','#769a83','#8c6f98','#ba7b67','#87909a','#b3a676'];
+const bookingMeta={bookings:{label:'Брони',color:'#143e35'},guests:{label:'Гости',color:'#d8b977'},cancelled:{label:'Отмены',color:'#ba7b67'}};
+const gate=FounderLogic.requestGate();let controller=null,lastAnalytics=null,lastBookings=null,lastQuery='';
+
+function svg(name,attrs={}){const node=document.createElementNS('http://www.w3.org/2000/svg',name);Object.entries(attrs).forEach(([key,value])=>node.setAttribute(key,value));return node}
+function selectedDirections(){return [...document.querySelectorAll('input[name=direction]:checked')].map(input=>input.value)}
+// Пояснения — по одному предложению в своём узле: переводчик сопоставляет строку целиком,
+// и склеенный абзац из нескольких пояснений на узбекском оставался русским.
+function setMessage(text,error=false){const node=$('message'),parts=(Array.isArray(text)?text:[text]).filter(Boolean);node.hidden=!parts.length;node.replaceChildren(...parts.flatMap((part,index)=>{const span=document.createElement('span');span.textContent=part;return index?[' ',span]:[span]}));node.classList.toggle('is-error',error)}
+function setLoading(value){document.querySelectorAll('.founder-metrics').forEach(node=>node.setAttribute('aria-busy',String(value)));$('refresh').disabled=value}
+
+function revenuePeriod(group){
+  const dated=value=>`${shortDate(value)}, ${FounderLogic.weekday(value)}`;
+  const period=group.start===group.end?dated(group.start):`${dated(group.start)} – ${dated(group.end)}`;
+  return period+(group.incomplete?' · день не завершён':'');
+}
+
+function revenueTooltip(group,directions){
+  const tooltip=document.createElement('div');tooltip.className='chart-tooltip';tooltip.hidden=true;
+  const period=document.createElement('strong');period.textContent=revenuePeriod(group);
+  const rows=document.createElement('div');rows.className='chart-tooltip-rows';
+  let total=0;
+  directions.forEach(direction=>{const value=Number(group.values[direction]||0);total+=value;const row=document.createElement('span');const label=document.createElement('i');label.style.background=directionMeta[direction].color;row.append(label,document.createTextNode(`${directionMeta[direction].label}: ${money.format(value)} сум`));rows.append(row)});
+  const sum=document.createElement('b');sum.textContent=`Всего: ${money.format(total)} сум`;
+  tooltip.append(period,rows,sum);return tooltip;
+}
+
+function paymentTooltip(group,payments){
+  const tooltip=document.createElement('div');tooltip.className='chart-tooltip payment-tooltip';tooltip.hidden=true;
+  const period=document.createElement('strong');period.textContent=revenuePeriod(group);
+  const rows=document.createElement('div');rows.className='chart-tooltip-rows';
+  let total=0;
+  payments.forEach((payment,index)=>{const value=Number(group.values[payment]||0);total+=value;const row=document.createElement('span');const label=document.createElement('i');label.style.background=paymentColors[index%paymentColors.length];row.append(label,document.createTextNode(`${payment}: ${money.format(value)} сум`));rows.append(row)});
+  const sum=document.createElement('b');sum.textContent=`Всего оплат: ${money.format(total)} сум`;
+  tooltip.append(period,rows,sum);return tooltip;
+}
+
+function renderRevenue(data){
+  const target=$('revenue-chart');target.replaceChildren();const directions=data.directions;
+  if(!data.revenue_series.length){const empty=document.createElement('div');empty.className='empty-chart';empty.textContent='За период нет временных групп.';target.append(empty);return}
+  const width=Math.max(720,data.revenue_series.length*58),height=230,pad={left:66,right:18,top:12,bottom:40};const plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom;
+  const chart=svg('svg',{viewBox:`0 0 ${width} ${height}`,'aria-hidden':'true'});chart.style.width=width+'px';const all=data.revenue_series.flatMap(group=>directions.map(direction=>Number(group.values[direction]||0)));const max=Math.max(1,...all),min=Math.min(0,...all),span=max-min;
+  for(let step=0;step<=4;step+=1){const y=pad.top+plotHeight*step/4;chart.append(svg('line',{x1:pad.left,y1:y,x2:width-pad.right,y2:y,class:'chart-grid'}));const label=svg('text',{x:pad.left-8,y:y+3,'text-anchor':'end',class:'chart-axis'});label.textContent=money.format(max-span*step/4);chart.append(label)}
+  const paths=FounderLogic.revenuePaths(data.revenue_series,directions,plotWidth,plotHeight);
+  directions.forEach(direction=>{const points=paths[direction].split(' ').map(pair=>{const [x,y]=pair.split(',').map(Number);return `${x+pad.left},${y+pad.top}`}).join(' ');chart.append(svg('polyline',{points,class:'chart-line',stroke:directionMeta[direction].color}));data.revenue_series.forEach((group,index)=>{const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const value=Number(group.values[direction]||0),y=pad.top+plotHeight-(value-min)*plotHeight/span;const point=svg('circle',{cx:x,cy:y,r:4,fill:directionMeta[direction].color,class:'chart-point'});const title=svg('title');title.textContent=`${directionMeta[direction].label}: ${money.format(value)} сум · ${revenuePeriod(group)}`;point.append(title);chart.append(point)})});
+  const labelEvery=Math.max(1,Math.ceil(data.revenue_series.length/6));data.revenue_series.forEach((group,index)=>{if(index%labelEvery!==0&&index!==data.revenue_series.length-1)return;const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const label=svg('text',{x,y:height-10,'text-anchor':'middle',class:'chart-axis'});label.textContent=shortDate(group.start)+(group.incomplete?' *':'');chart.append(label)});
+  const hoverLine=svg('line',{y1:pad.top,y2:pad.top+plotHeight,class:'chart-hover-line',visibility:'hidden'});chart.append(hoverLine);
+  const hoverLayer=svg('rect',{x:pad.left,y:pad.top,width:plotWidth,height:plotHeight,class:'chart-hover-layer',tabindex:'0','aria-label':'Наведите или коснитесь графика, чтобы увидеть суммы'});chart.append(hoverLayer);
+  const tooltip=revenueTooltip(data.revenue_series[0],directions);
+  const showTooltip=event=>{const bounds=chart.getBoundingClientRect();const chartX=(event.clientX-bounds.left)/bounds.width*width;const index=FounderLogic.nearestRevenueIndex(chartX-pad.left,plotWidth,data.revenue_series.length);const group=data.revenue_series[index];const x=data.revenue_series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(data.revenue_series.length-1);const next=revenueTooltip(group,directions);tooltip.replaceChildren(...next.childNodes);tooltip.hidden=false;tooltip.style.left=x+'px';tooltip.classList.toggle('is-left',x-target.scrollLeft>target.clientWidth*.62);hoverLine.setAttribute('visibility','visible');hoverLine.setAttribute('x1',x);hoverLine.setAttribute('x2',x)};
+  hoverLayer.addEventListener('pointermove',showTooltip);hoverLayer.addEventListener('pointerdown',showTooltip);hoverLayer.addEventListener('click',showTooltip);hoverLayer.addEventListener('pointerleave',()=>{tooltip.hidden=true;hoverLine.setAttribute('visibility','hidden')});
+  target.append(chart,tooltip);
+  const legend=$('revenue-legend');legend.replaceChildren();directions.forEach(direction=>{const item=document.createElement('span');const dot=document.createElement('i');dot.className='legend-dot';dot.style.background=directionMeta[direction].color;item.append(dot,document.createTextNode(directionMeta[direction].label));legend.append(item)})
+}
+
+function renderPayments(data){
+  const summary=$('payment-summary');summary.replaceChildren();data.payment_summary.forEach((payment,index)=>{const card=document.createElement('article');const label=document.createElement('span');label.textContent=payment.name;const amount=document.createElement('strong');amount.textContent=money.format(Number(payment.amount))+' сум';const share=document.createElement('small');share.textContent=payment.share_percent===null?'Доля не вычисляется при нулевом итоге':payment.share_percent+'% выборки';card.style.borderTop=`3px solid ${paymentColors[index%paymentColors.length]}`;card.append(label,amount,share);summary.append(card)});
+  if(!data.payment_summary.length){const empty=document.createElement('article');empty.textContent='Оплат за выбранный период нет.';summary.append(empty)}
+  const target=$('payment-chart');target.replaceChildren();if(!data.payment_series.length||!data.payment_summary.length){const empty=document.createElement('div');empty.className='empty-chart';empty.textContent='Нет данных для линейного графика.';target.append(empty);return}
+  const directions=data.directions,payments=data.payment_summary.map(item=>item.name),series=FounderLogic.paymentLineSeries(data.payment_series,directions,payments);const width=Math.max(720,series.length*58),height=255,pad={left:66,right:18,top:12,bottom:40},plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom;
+  const chart=svg('svg',{viewBox:`0 0 ${width} ${height}`,'aria-hidden':'true'});chart.style.width=width+'px';const all=series.flatMap(group=>payments.map(payment=>Number(group.values[payment]||0)));const max=Math.max(1,...all),min=Math.min(0,...all),span=max-min;
+  for(let step=0;step<=4;step+=1){const y=pad.top+plotHeight*step/4;chart.append(svg('line',{x1:pad.left,y1:y,x2:width-pad.right,y2:y,class:'chart-grid'}));const label=svg('text',{x:pad.left-8,y:y+3,'text-anchor':'end',class:'chart-axis'});label.textContent=money.format(max-span*step/4);chart.append(label)}
+  const paths=FounderLogic.revenuePaths(series,payments,plotWidth,plotHeight);
+  payments.forEach((payment,paymentIndex)=>{const color=paymentColors[paymentIndex%paymentColors.length];const points=paths[payment].split(' ').map(pair=>{const [x,y]=pair.split(',').map(Number);return `${x+pad.left},${y+pad.top}`}).join(' ');chart.append(svg('polyline',{points,class:'payment-line',stroke:color}));series.forEach((group,index)=>{const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1);const value=Number(group.values[payment]||0),y=pad.top+plotHeight-(value-min)*plotHeight/span;const point=svg('circle',{cx:x,cy:y,r:3,fill:color,class:'payment-point'});const title=svg('title');title.textContent=`${payment}: ${money.format(value)} сум · ${revenuePeriod(group)}`;point.append(title);chart.append(point)})});
+  const labelEvery=Math.max(1,Math.ceil(series.length/6));series.forEach((group,index)=>{if(index%labelEvery!==0&&index!==series.length-1)return;const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1);const label=svg('text',{x,y:height-10,'text-anchor':'middle',class:'chart-axis'});label.textContent=shortDate(group.start)+(group.incomplete?' *':'');chart.append(label)});
+  const hoverLine=svg('line',{y1:pad.top,y2:pad.top+plotHeight,class:'chart-hover-line',visibility:'hidden'});chart.append(hoverLine);const hoverLayer=svg('rect',{x:pad.left,y:pad.top,width:plotWidth,height:plotHeight,class:'chart-hover-layer'});chart.append(hoverLayer);const tooltip=paymentTooltip(series[0],payments);
+  const showTooltip=event=>{const bounds=chart.getBoundingClientRect();const chartX=(event.clientX-bounds.left)/bounds.width*width;const index=FounderLogic.nearestRevenueIndex(chartX-pad.left,plotWidth,series.length);const group=series[index];const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1);const next=paymentTooltip(group,payments);tooltip.replaceChildren(...next.childNodes);tooltip.hidden=false;tooltip.style.left=x+'px';tooltip.classList.toggle('is-left',x-target.scrollLeft>target.clientWidth*.62);hoverLine.setAttribute('visibility','visible');hoverLine.setAttribute('x1',x);hoverLine.setAttribute('x2',x)};
+  hoverLayer.addEventListener('pointermove',showTooltip);hoverLayer.addEventListener('pointerdown',showTooltip);hoverLayer.addEventListener('click',showTooltip);hoverLayer.addEventListener('pointerleave',()=>{tooltip.hidden=true;hoverLine.setAttribute('visibility','hidden')});target.append(chart,tooltip)
+}
+
+function bookingTooltip(group,keys){
+  const tooltip=document.createElement('div');tooltip.className='chart-tooltip';tooltip.hidden=true;const period=document.createElement('strong');period.textContent=revenuePeriod(group);const rows=document.createElement('div');rows.className='chart-tooltip-rows';keys.forEach(key=>{const row=document.createElement('span'),dot=document.createElement('i');dot.style.background=bookingMeta[key].color;row.append(dot,document.createTextNode(`${bookingMeta[key].label}: ${money.format(Number(group.values[key]||0))}`));rows.append(row)});tooltip.append(period,rows);return tooltip;
+}
+
+function renderBookingChart(data){
+  const target=$('booking-chart');target.replaceChildren();const keys=Object.keys(bookingMeta),series=data.series;if(!series.length){const empty=document.createElement('div');empty.className='empty-chart';empty.textContent='За период нет временных групп.';target.append(empty);return}const width=Math.max(720,series.length*58),height=255,pad={left:54,right:18,top:12,bottom:40},plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom;const chart=svg('svg',{viewBox:`0 0 ${width} ${height}`,'aria-hidden':'true'});chart.style.width=width+'px';const all=series.flatMap(group=>keys.map(key=>Number(group.values[key]||0))),max=Math.max(1,...all);
+  for(let step=0;step<=4;step+=1){const y=pad.top+plotHeight*step/4;chart.append(svg('line',{x1:pad.left,y1:y,x2:width-pad.right,y2:y,class:'chart-grid'}));const label=svg('text',{x:pad.left-8,y:y+3,'text-anchor':'end',class:'chart-axis'});label.textContent=money.format(max*(1-step/4));chart.append(label)}
+  const paths=FounderLogic.revenuePaths(series,keys,plotWidth,plotHeight);keys.forEach(key=>{const points=paths[key].split(' ').map(pair=>{const [x,y]=pair.split(',').map(Number);return `${x+pad.left},${y+pad.top}`}).join(' ');chart.append(svg('polyline',{points,class:'booking-line',stroke:bookingMeta[key].color}));series.forEach((group,index)=>{const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1),value=Number(group.values[key]||0),y=pad.top+plotHeight-value*plotHeight/max,point=svg('circle',{cx:x,cy:y,r:3.5,fill:bookingMeta[key].color,class:'booking-point'}),title=svg('title');title.textContent=`${bookingMeta[key].label}: ${money.format(value)} · ${revenuePeriod(group)}`;point.append(title);chart.append(point)})});const labelEvery=Math.max(1,Math.ceil(series.length/6));series.forEach((group,index)=>{if(index%labelEvery!==0&&index!==series.length-1)return;const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1),label=svg('text',{x,y:height-10,'text-anchor':'middle',class:'chart-axis'});label.textContent=shortDate(group.start)+(group.incomplete?' *':'');chart.append(label)});
+  const hoverLine=svg('line',{y1:pad.top,y2:pad.top+plotHeight,class:'chart-hover-line',visibility:'hidden'}),hoverLayer=svg('rect',{x:pad.left,y:pad.top,width:plotWidth,height:plotHeight,class:'chart-hover-layer'});chart.append(hoverLine,hoverLayer);const tooltip=bookingTooltip(series[0],keys);const showTooltip=event=>{const bounds=chart.getBoundingClientRect(),chartX=(event.clientX-bounds.left)/bounds.width*width,index=FounderLogic.nearestRevenueIndex(chartX-pad.left,plotWidth,series.length),group=series[index],x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1),next=bookingTooltip(group,keys);tooltip.replaceChildren(...next.childNodes);tooltip.hidden=false;tooltip.style.left=x+'px';tooltip.classList.toggle('is-left',x-target.scrollLeft>target.clientWidth*.62);hoverLine.setAttribute('visibility','visible');hoverLine.setAttribute('x1',x);hoverLine.setAttribute('x2',x)};hoverLayer.addEventListener('pointermove',showTooltip);hoverLayer.addEventListener('pointerdown',showTooltip);hoverLayer.addEventListener('click',showTooltip);hoverLayer.addEventListener('pointerleave',()=>{tooltip.hidden=true;hoverLine.setAttribute('visibility','hidden')});target.append(chart,tooltip);const legend=$('booking-legend');legend.replaceChildren();keys.forEach(key=>{const item=document.createElement('span'),dot=document.createElement('i');dot.className='legend-dot';dot.style.background=bookingMeta[key].color;item.append(dot,document.createTextNode(bookingMeta[key].label));legend.append(item)})
+}
+
+function renderBookings(data){
+  lastBookings=data;$('booking-total').textContent=money.format(Number(data.totals.bookings));$('booking-guests').textContent=money.format(Number(data.totals.guests));$('booking-unknown').textContent=money.format(Number(data.totals.unknown_guest_bookings));$('booking-cancelled').textContent=money.format(Number(data.totals.cancelled));renderBookingChart(data);const sources=$('booking-sources');sources.replaceChildren();data.sources.forEach(source=>{const card=document.createElement('article'),label=document.createElement('span'),total=document.createElement('strong'),detail=document.createElement('small');label.textContent=source.name;total.textContent=`${money.format(Number(source.bookings))} броней`;detail.textContent=`${money.format(Number(source.guests))} гостей · ${source.share_percent===null?'доля не вычисляется':source.share_percent+'%'}`;card.append(label,total,detail);sources.append(card)});if(!data.sources.length){const empty=document.createElement('article');empty.textContent='Источников за период нет.';sources.append(empty)}const coverage=data.coverage,started=new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Tashkent'}).format(new Date(coverage.history_started_at)),parts=[`Журнал ведётся с ${started}.`];if(!coverage.historical_data_complete)parts.push('История до запуска журнала неполная.');if(coverage.excluded_missing_date)parts.push(`Без даты визита исключено: ${money.format(Number(coverage.excluded_missing_date))}.`);const note=$('booking-coverage');note.textContent=parts.join(' ');note.classList.toggle('is-warning',!coverage.historical_data_complete||Boolean(coverage.excluded_missing_date));const status=$('booking-status');status.textContent='Telegram API подключён';status.classList.remove('is-error');renderSeriesTable()
+}
+
+function renderBookingError(message){
+  ['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-chart').replaceChildren();$('booking-legend').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='Основная аналитика iiko продолжает работать независимо.';const status=$('booking-status');status.textContent=message;status.classList.add('is-error')
+}
+
+function renderSeriesTable(){
+  const target=$('series-table');target.replaceChildren();
+  if(!lastAnalytics&&!lastBookings){target.textContent='Данные по периодам ещё не загружены.';return}
+  const analyticsRows=new Map((lastAnalytics?.revenue_series||[]).map(row=>[row.start,row]));
+  const paymentRows=new Map();
+  if(lastAnalytics){FounderLogic.paymentLineSeries(lastAnalytics.payment_series,lastAnalytics.directions,lastAnalytics.payment_summary.map(item=>item.name)).forEach(row=>paymentRows.set(row.start,row))}
+  const bookingRows=new Map((lastBookings?.series||[]).map(row=>[row.start,row]));
+  const starts=[...new Set([...analyticsRows.keys(),...bookingRows.keys()])].sort();
+  const payments=lastAnalytics?.payment_summary.map(item=>item.name)||[];
+  const table=document.createElement('table');table.className='series-table';
+  const head=document.createElement('thead'),header=document.createElement('tr');
+  ['Период','Retro','Школа','Банкет','Всего',...payments,'Брони','Гости','Отмены'].forEach(label=>{const th=document.createElement('th');th.scope='col';th.textContent=label;header.append(th)});head.append(header);table.append(head);
+  const body=document.createElement('tbody');starts.forEach(start=>{const revenue=analyticsRows.get(start),payment=paymentRows.get(start),booking=bookingRows.get(start),tr=document.createElement('tr');const values=[revenuePeriod(revenue||booking),revenue?.values.retro,revenue?.values.school,revenue?.values.banquet,revenue?.total,...payments.map(name=>payment?.values[name]),booking?.values.bookings,booking?.values.guests,booking?.values.cancelled];values.forEach((value,index)=>{const cell=document.createElement(index===0?'th':'td');if(index===0)cell.scope='row';cell.textContent=value===undefined?'—':index===0?value:money.format(Number(value));tr.append(cell)});body.append(tr)});table.append(body);target.append(table)
+}
+
+function renderSalesBridge(data){
+  const bridge=data.sales_bridge;
+  if(!bridge){$('sales-bridge-equation').textContent='Расшифровка оплат пока недоступна. Обновите отчёт.';return}
+  const labels={paid:'Оплаты продаж',prepaid:'Зачтённые авансы',other:'Другие операции',sales:'Продажи'};
+  ['paid','prepaid','other'].forEach(key=>$('sales-'+key).textContent=exactMoney.format(Number(bridge.totals[key])));
+  $('sales-full').textContent=exactMoney.format(Number(data.totals.selected));
+  $('sales-other-card').hidden=!Number(bridge.totals.other)&&!bridge.unknown_operations.length;
+  $('sales-bridge-scope').textContent=data.directions.map(key=>directionMeta[key].label).join(' · ')+' · '+data.period.start+' — '+data.period.end;
+  const terms=['paid','prepaid',...((Number(bridge.totals.other)||bridge.unknown_operations.length)?['other']:[])];
+  const equation=terms.map(key=>labels[key]+': '+exactMoney.format(Number(bridge.totals[key]))).join(' + ');
+  const difference=Number(data.totals.selected)-Number(bridge.totals.sales);
+  $('sales-bridge-equation').textContent=equation+' = '+exactMoney.format(Number(bridge.totals.sales))+' сум.'+
+    (difference?' Разница с отдельным отчётом продаж: '+exactMoney.format(difference)+' сум.':'')+
+    (bridge.reconciled&&data.reconciled?' Разбивка сверена с отчётом продаж.':' Разбивка НЕ сверена — требуется проверка.');
+  const target=$('sales-bridge-table');target.replaceChildren();
+  const table=document.createElement('table');table.className='series-table';
+  const head=document.createElement('thead'),header=document.createElement('tr');
+  ['Способ оплаты',...terms.map(key=>labels[key]),'Всего продаж'].forEach(label=>{const th=document.createElement('th');th.scope='col';th.textContent=label;header.append(th)});
+  head.append(header);table.append(head);const body=document.createElement('tbody');
+  bridge.payments.forEach(row=>{const tr=document.createElement('tr');[row.name,...terms.map(key=>row[key]),row.sales].forEach((value,index)=>{const cell=document.createElement(index?'td':'th');if(!index)cell.scope='row';cell.textContent=index?exactMoney.format(Number(value)):value;tr.append(cell)});body.append(tr)});
+  table.append(body);target.append(table);
+}
+
+function render(data){
+  renderSalesBridge(data);
+  lastAnalytics=data;
+  $('pnl-sales').textContent=exactMoney.format(Number(data.pnl.sales));
+  $('pnl-cost').textContent=exactMoney.format(Number(data.pnl.cost));
+  $('pnl-profit').textContent=exactMoney.format(Number(data.pnl.gross_profit));
+  $('pnl-net-profit').textContent=exactMoney.format(Number(data.pnl.net_profit));
+  $('net-profit-final').textContent=exactMoney.format(Number(data.net_profit_after_dashboard_expenses));
+  $('pnl-operating-expenses').textContent=exactMoney.format(Number(data.pnl.operating_expenses));
+  $('pnl-other-expenses').textContent=exactMoney.format(Number(data.pnl.other_expenses));
+  $('pnl-other-income').textContent=exactMoney.format(Number(data.pnl.other_income));
+  $('expense-cashier').textContent=exactMoney.format(Number(data.dashboard_expenses.cashier));
+  $('expense-accountant').textContent=exactMoney.format(Number(data.dashboard_expenses.accountant));
+  $('expense-accountant-detail').textContent='зарплата: '+exactMoney.format(Number(data.dashboard_expenses.accountant_salary))+' · прочие: '+exactMoney.format(Number(data.dashboard_expenses.accountant_other));
+  $('expense-dashboard-total').textContent=exactMoney.format(Number(data.dashboard_expenses.total));
+  $('internal-tasting').textContent=exactMoney.format(Number(data.internal_costs.tasting));
+  $('internal-chef').textContent=exactMoney.format(Number(data.internal_costs.chef_account));
+  ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`article[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
+  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Распределение продаж сверено · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices,!data.reconciled)
+}
+
+async function load(options = {}) {
+  const directions = selectedDirections();
+  if (!directions.length) { setMessage('Выберите хотя бы одно направление.', true); return; }
+  controller?.abort();
+  controller = new AbortController();
+  const signal = controller.signal, requestId = gate.next();
+  const params = new URLSearchParams({start:$('start').value, end:$('end').value,
+    granularity:$('granularity').value, directions:directions.join(',')});
+  const query = params.toString();
+  if (options.refresh === true && lastQuery === query) params.set('refresh', 'true');
+  setLoading(true); clearResults(); setMessage('');
+  const bookingParams = new URLSearchParams({start:$('start').value, end:$('end').value,
+    granularity:$('granularity').value});
+  const fetchJson = async (url, fallback) => RetroState.responseJson(await fetch(url, {signal}), fallback);
+  const analytics = fetchJson('/api/founder/analytics?' + params, 'Не удалось получить аналитику.')
+    .then(data => { if (gate.isCurrent(requestId)) { lastQuery=query; render(data); } })
+    .catch(error => {
+      if (!gate.isCurrent(requestId) || error.name === 'AbortError') return;
+      lastAnalytics=RetroState.analyticsAfterFailure(lastAnalytics); renderSeriesTable();
+      setMessage(error.message,true); $('updated').textContent='Источник iiko недоступен';
+    })
+    .finally(() => { if (gate.isCurrent(requestId)) setLoading(false); });
+  const bookings = fetchJson('/api/founder/bookings?' + bookingParams, 'Не удалось получить бронирования.')
+    .then(data => { if (gate.isCurrent(requestId)) renderBookings(data); })
+    .catch(error => {
+      if (gate.isCurrent(requestId) && error.name !== 'AbortError') renderBookingError(error.message);
+    });
+  await Promise.allSettled([analytics, bookings]);
+}
+
+async function start(){try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
+function clearResults(){['sales-paid','sales-prepaid','sales-other','sales-full'].forEach(id=>$(id).textContent='—');$('sales-other-card').hidden=true;$('sales-bridge-table').replaceChildren();$('sales-bridge-equation').textContent='';$('sales-bridge-scope').textContent='Выбранные направления · даты заказа';lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`article[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';['pnl-sales','pnl-cost','pnl-profit','pnl-net-profit','net-profit-final','pnl-operating-expenses','pnl-other-expenses','pnl-other-income','expense-cashier','expense-accountant','expense-dashboard-total','internal-tasting','internal-chef'].forEach(id=>$(id).textContent='—');$('expense-accountant-detail').textContent='зарплата: — · прочие: —';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
+function invalidatePending(){controller?.abort();controller=null;gate.invalidate();setLoading(false);clearResults();$('updated').textContent='Фильтры изменены · нажмите «Показать»';setMessage('Фильтры изменены. Нажмите «Показать», чтобы загрузить новую выборку.')}
+['start','end','granularity'].forEach(id=>$(id).addEventListener('change',invalidatePending));document.querySelectorAll('input[name=direction]').forEach(input=>input.addEventListener('change',invalidatePending));
+$('filters').addEventListener('submit',event=>{event.preventDefault();document.querySelectorAll('[data-period]').forEach(button=>button.classList.remove('is-active'));load({refresh:true})});document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.toggle('is-active',item===button));const period=FounderLogic.quickPeriod(button.dataset.period,$('end').max);$('start').value=period.start;$('end').value=period.end;load()}));start();

@@ -4,12 +4,15 @@ from datetime import datetime
 from decimal import Decimal
 
 from .ledger import LedgerError, amount_value, required_text
+from .audit import record_audit
 
-MONTHLY_CODES = (
-    'salary_fazilova', 'salary_arushanyants', 'salary_glukhova', 'salary_malitsyan',
-    'salary_sheraliev', 'salary_nazarov', 'salary_khudaiberganova', 'salary_radzhapova',
-    'salary_videographer',
-)
+SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}
+
+
+def is_monthly_salary(item_code):
+    return item_code == 'salary_monthly' or (
+        isinstance(item_code, str) and item_code.startswith('salary_')
+        and item_code not in SHIFT_SALARY_CODES)
 
 
 def _entries(connection, account, through=None):
@@ -56,6 +59,8 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount):
             cursor = connection.execute(
                 'INSERT INTO accountant_reserves (day, account, kind, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
                 (day.isoformat(), account, kind, str(value), note, datetime.now().isoformat()))
+            after = store._row_dict(connection, 'accountant_reserves', cursor.lastrowid)
+            record_audit(connection, 'reserve', cursor.lastrowid, 'create', None, after)
             rows = _entries(connection, account)
             for cutoff in {r['day'] for r in rows}:
                 balance = _balance([r for r in rows if r['day'] <= cutoff])
@@ -78,6 +83,8 @@ def set_monthly_plan(store, day, amount, note):
             with connection:
                 connection.execute('INSERT INTO accountant_monthly_plans VALUES (?, ?, ?, ?)',
                                    (day.isoformat()[:7], str(value), note, datetime.now().isoformat()))
+                record_audit(connection, 'monthly_plan', day.isoformat()[:7], 'create', None,
+                             dict(month=day.isoformat()[:7], amount=str(value), note=note))
         except Exception as error:
             import sqlite3
             if isinstance(error, sqlite3.IntegrityError):
@@ -99,7 +106,7 @@ def reserve_summary(store, day):
                                   (month,)).fetchone()
         paid = sum((Decimal(r[0]) for r in connection.execute(
             'SELECT amount, item_code FROM accountant_movements WHERE day >= ? AND day <= ? '
-            "AND kind = 'other_expense'", (month + '-01', day.isoformat())) if r[1] in MONTHLY_CODES), Decimal(0))
+            "AND kind = 'other_expense'", (month + '-01', day.isoformat())) if is_monthly_salary(r[1])), Decimal(0))
         result['monthly'] = dict(month=month, plan=plan[0] if plan else None, paid=str(paid),
                                  balance=str(Decimal(plan[0]) - paid) if plan else None)
     return result

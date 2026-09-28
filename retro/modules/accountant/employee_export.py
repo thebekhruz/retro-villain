@@ -15,11 +15,13 @@ INK = '21342E'
 PINK = 'FCE6E9'
 PALE = 'EAF0E9'
 STATUS = {'on_time': 'Вовремя', 'late': 'Опоздал',
-          'missing': 'Не пришёл', 'unlinked': 'Нет привязки'}
+          'missing': 'Не пришёл', 'unlinked': 'Нет привязки',
+          'unavailable': 'Данных нет'}
 
 
-def export_employees(day: date, rows: list[PayrollRow], scope: str) -> bytes:
-    """Export only supplied demo rows; the caller decides late versus all."""
+def export_employees(day: date, rows: list[PayrollRow], scope: str,
+                     health: dict | None = None) -> bytes:
+    """Export supplied real attendance rows; the caller decides late versus all."""
     workbook = Workbook()
     sheet = workbook.active
     sheet.title = 'Опоздавшие' if scope == 'late' else 'Все сотрудники'
@@ -30,7 +32,7 @@ def export_employees(day: date, rows: list[PayrollRow], scope: str) -> bytes:
         sheet.column_dimensions[column].width = width
     sheet.merge_cells('A1:G2')
     title = sheet['A1']
-    title.value = 'RETRO MILLIY / ДЕМО / ' + ('ОПОЗДАВШИЕ' if scope == 'late' else 'ВСЕ СОТРУДНИКИ')
+    title.value = 'RETRO MILLIY / ' + ('ОПОЗДАВШИЕ' if scope == 'late' else 'ВСЕ СОТРУДНИКИ')
     title.fill = PatternFill('solid', fgColor=GREEN)
     title.font = Font(name='Calibri', size=18, bold=True, color='FFFFFF')
     title.alignment = Alignment(vertical='center', indent=1)
@@ -51,7 +53,10 @@ def export_employees(day: date, rows: list[PayrollRow], scope: str) -> bytes:
             cell.alignment = Alignment(vertical='center', indent=1)
         sheet.row_dimensions[row_index].height = 24
     sheet.merge_cells('A5:G5')
-    sheet['A5'] = 'Демонстрационные проходы. Реальный Hikvision ресторана не подключён.'
+    source_status = (health or {}).get('status')
+    sheet['A5'] = ('Первый подтверждённый вход по Hikvision ISAPI.'
+                   if source_status in {'ok', 'stale'} else
+                   'Данные Hikvision неполные; «Данных нет» не означает отсутствие сотрудника.')
     sheet['A5'].font = Font(name='Calibri', size=10, italic=True, color='6D7F73')
     sheet['A5'].alignment = Alignment(vertical='center', indent=1)
     sheet.row_dimensions[5].height = 27

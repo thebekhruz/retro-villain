@@ -107,6 +107,19 @@ unlinked_spec.ds
 # Coverage
 coverage/
 
+# Runtime configuration and private data
+.env
+.env.*
+!config.env.example
+.venv/
+*.sqlite3
+*.sqlite3-*
+*.db
+backup/
+backups/
+generated-reports/
+*.pdf
+
 # Symbols
 app.*.symbols
 

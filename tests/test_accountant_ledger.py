@@ -61,10 +61,26 @@ def test_other_expense_and_shoh_procurement_are_separate_cash_outflows(tmp_path)
         'opening', 'other_expense', 'procurement_advance']
 
 
+def test_accountant_expense_total_between_counts_paid_expenses_and_salaries(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.add_opening(WORKDAY, '1000000', 'Начальный остаток')
+    store.add_expense(WORKDAY, 'ops_rent', 'Аренда', '100000')
+    store.give_procurement(WORKDAY, 'Шох', 'Аванс', '50000')
+    store.confirm_payroll(WORKDAY, [payroll_row(amount='200000')], 'Финансы')
+    accrual_id = store.accruals(WORKDAY)[0]['id']
+    store.pay_salary(accrual_id, NEXT_DAY, '80000')
+
+    assert store.expense_totals_between(WORKDAY, NEXT_DAY) == {
+        'other': Decimal('100000'), 'salary': Decimal('80000'),
+        'total': Decimal('180000')}
+    with pytest.raises(ValueError):
+        store.expense_totals_between(NEXT_DAY, WORKDAY)
+
+
 def test_daily_summary_shows_carried_balance_as_opening_income(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
-    store.daily_summary(WORKDAY, Decimal('500000'))
-    store.daily_summary(NEXT_DAY, Decimal('200000'))
+    store.record_handover(WORKDAY, Decimal('500000'))
+    store.record_handover(NEXT_DAY, Decimal('200000'))
     result = store.daily_summary(NEXT_DAY, None)
     assert result['cash_flow']['opening_balance'] == '500000'
     assert result['movements'][0]['type'] == 'opening'
@@ -73,9 +89,9 @@ def test_daily_summary_shows_carried_balance_as_opening_income(tmp_path):
 
 def test_other_receipt_increases_current_and_next_day_cash(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
-    store.daily_summary(WORKDAY, Decimal('100000'))
+    store.record_handover(WORKDAY, Decimal('100000'))
     store.add_income(WORKDAY, 'income_other', 'Возврат долга', '25000')
-    store.daily_summary(NEXT_DAY, Decimal('50000'))
+    store.record_handover(NEXT_DAY, Decimal('50000'))
     today = store.daily_summary(WORKDAY, Decimal('100000'))
     tomorrow = store.daily_summary(NEXT_DAY, Decimal('50000'))
     assert today['cash_balance'] == Decimal('125000')
@@ -102,6 +118,49 @@ def test_payment_cannot_exceed_employee_debt_even_if_cash_is_available(tmp_path)
     store.confirm_transfer(WORKDAY, NEXT_DAY, '1000000')
     with pytest.raises(LedgerError, match='долг'):
         store.pay_salary(store.accruals(WORKDAY)[0]['id'], NEXT_DAY, '270001')
+
+
+def test_editing_one_of_multiple_salary_payments_cannot_overpay_accrual(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.confirm_payroll(WORKDAY, [payroll_row(employee_id=1),
+                                    payroll_row(employee_id=2)], 'Финансы')
+    accrual_id = store.accruals(WORKDAY)[1]['id']
+    store.confirm_transfer(WORKDAY, NEXT_DAY, '1000000')
+    first_payment = store.pay_salary(accrual_id, NEXT_DAY, '10000')
+    store.pay_salary(accrual_id, NEXT_DAY, '100000')
+
+    with pytest.raises(LedgerError, match='начисленную'):
+        store.update_salary_payment(first_payment, NEXT_DAY, '200000')
+
+    assert store.accruals(NEXT_DAY)[1]['paid'] == '110000'
+
+
+def test_finance_operation_edit_rejects_a_client_supplied_different_date(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.confirm_payroll(WORKDAY, [payroll_row()], 'Финансы')
+    store.confirm_transfer(WORKDAY, NEXT_DAY, '1000000')
+    movement_id = store.add_expense(NEXT_DAY, 'admin_other', 'Ремонт', '100000')
+    payment_id = store.pay_salary(store.accruals(WORKDAY)[0]['id'], NEXT_DAY, '100000')
+
+    with pytest.raises(LedgerError, match='дату'):
+        store.update_movement(movement_id, WORKDAY, 'admin_other', 'Ремонт', '100000')
+    with pytest.raises(LedgerError, match='дату'):
+        store.update_salary_payment(payment_id, WORKDAY, '100000')
+
+
+def test_expense_above_cash_is_recorded_as_debt_instead_of_negative_cash(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.add_opening(WORKDAY, '100000', 'Остаток')
+
+    with pytest.raises(LedgerError, match='недостаточно'):
+        store.add_expense(WORKDAY, 'admin_other', 'Ремонт', '150000')
+
+    debt_id = store.record_debt(WORKDAY, 'admin_other', 'Ремонт', '150000', '100000')
+    summary = store.summary(WORKDAY)
+    debts = store.debt_summary(WORKDAY)
+    assert summary['cash_balance'] == Decimal(0)
+    assert debts['manual_debt_total'] == '50000'
+    assert debts['manual_debts'][0]['id'] == debt_id
 
 
 def test_backdated_expense_cannot_make_a_later_balance_negative(tmp_path):

@@ -1,0 +1,349 @@
+{
+  "type": "retro_data_audit",
+  "date": "2026-09-24",
+  "commit": "c31e697",
+  "method": "read-only live iiko plus isolated synthetic reproduction; no production ledger mutations",
+  "local_excluded_groups": [
+    "ДОСТАВКА ЯНДЕКС",
+    "Контейнеры"
+  ],
+  "period": {
+    "start": "2026-09-14",
+    "end": "2026-09-23"
+  },
+  "daily_waterfall": {
+    "2026-09-14": {
+      "raw_sales": "46513500.00",
+      "classified_sales": "46513500.00",
+      "founder_logic": "43003499.98",
+      "director_logic": "44356000.00",
+      "excluded": "2157500.00",
+      "regular_nonpayment": "3510000.02"
+    },
+    "2026-09-15": {
+      "raw_sales": "58284000.00",
+      "classified_sales": "38157357.00",
+      "founder_logic": "37857356.98",
+      "director_logic": "36773857.00",
+      "excluded": "1383500",
+      "regular_nonpayment": "300000.02",
+      "dropped": "20126643"
+    },
+    "2026-09-16": {
+      "raw_sales": "46866000.00",
+      "classified_sales": "46866000.00",
+      "founder_logic": "44865999.97",
+      "director_logic": "42600000.00",
+      "regular_nonpayment": "2000000.03",
+      "excluded": "4266000.00"
+    },
+    "2026-09-17": {
+      "raw_sales": "50267500.00",
+      "classified_sales": "50267500.00",
+      "founder_logic": "49467499.97",
+      "director_logic": "47765000.00",
+      "excluded": "2502500.00",
+      "regular_nonpayment": "800000.03"
+    },
+    "2026-09-18": {
+      "raw_sales": "52850500.00",
+      "classified_sales": "52850500.00",
+      "founder_logic": "48850499.98",
+      "director_logic": "47111500.00",
+      "regular_nonpayment": "4000000.02",
+      "excluded": "5739000.00"
+    },
+    "2026-09-19": {
+      "raw_sales": "66982000.00",
+      "classified_sales": "66982000.00",
+      "regular_nonpayment": "1300000.03",
+      "director_logic": "64372500.00",
+      "founder_logic": "65681999.97",
+      "excluded": "2609500.00"
+    },
+    "2026-09-20": {
+      "raw_sales": "51381500.00",
+      "classified_sales": "51381500.00",
+      "regular_nonpayment": "900000.00",
+      "director_logic": "49175000.00",
+      "founder_logic": "50481500.00",
+      "excluded": "2206500.00"
+    },
+    "2026-09-21": {
+      "raw_sales": "46267500.00",
+      "classified_sales": "46267500.00",
+      "founder_logic": "45967499.99",
+      "director_logic": "41554500.00",
+      "regular_nonpayment": "300000.01",
+      "excluded": "4713000.00"
+    },
+    "2026-09-22": {
+      "raw_sales": "38453100.00",
+      "classified_sales": "38453100.00",
+      "founder_logic": "37053099.99",
+      "director_logic": "37105100.00",
+      "regular_nonpayment": "1400000.01",
+      "excluded": "1348000.00"
+    },
+    "2026-09-23": {
+      "raw_sales": "40070500.00",
+      "classified_sales": "40070500.00",
+      "founder_logic": "39570499.97",
+      "director_logic": "37718500.00",
+      "excluded": "2352000.00",
+      "regular_nonpayment": "500000.03"
+    }
+  },
+  "excluded_group_revenue": {
+    "Контейнеры": "2905500.00",
+    "ДОСТАВКА ЯНДЕКС": "26372000"
+  },
+  "dropped_banquet_item_revenue": {
+    "Арбуз": "229262",
+    "Дыня": "229262",
+    "ЛИМОНАД цитрусовый ( 1 L) МИЛЛИЙ": "372551",
+    "ЛИМОНАД ягодный (1 л) МИЛЛИЙ": "372551",
+    "МИН ВОДА Гидролайф без газа 1 L МИЛЛИЙ": "160483",
+    "МИН ВОДА Гидролайф с газом 1 L МИЛЛИЙ": "160483",
+    "СВАДЬБА БРЫНЗА С ЗЕЛЕНЬЮ ": "756564",
+    "СВАДЬБА Говяжьи ребра от шефа": "3209666",
+    "СВАДЬБА ДЕСЕРТ НЕЖНОСТЬ": "859732",
+    "СВАДЬБА Лимон 100 гр": "343893",
+    "СВАДЬБА Мясная тарелка": "3714041",
+    "СВАДЬБА Напиток COCA COLA 1 L ": "336251",
+    "СВАДЬБА Напиток FANTA 1 L ": "305682",
+    "СВАДЬБА Нежная куриная грудка (Читир Тавук)": "687786",
+    "СВАДЬБА Разносолы": "412671",
+    "СВАДЬБА САМСА С МЯСОМ 1 шт ": "630470",
+    "СВАДЬБА Сок в ассортименте VIKO 1 L ": "298040",
+    "СВАДЬБА Суп с фрикадельками ": "1432887",
+    "СВАДЬБА Сырное Ассорти": "1719464",
+    "СВАДЬБА ФРУКТОВОЕ АССОРТИ": "2292619",
+    "СВАДЬБА Хайдари": "412671",
+    "СВАДЬБА Хлеб Ассорти": "387198",
+    "Салат со свеклой, фетой и апельсинами": "802416"
+  },
+  "founder_totals": {
+    "retro": "427609599.81",
+    "school": "33126500.00",
+    "banquet": "2063357",
+    "selected": "462799456.81"
+  },
+  "founder_reconciled": true,
+  "cashier_2026_09_23": {
+    "revenue": "35005500",
+    "cash_prepayment": "28050000",
+    "new_prepayment": "63250000",
+    "revenue_breakdown": {
+      "retro": "35505500",
+      "school": "4565000",
+      "bekhruz_banquet": "0",
+      "total": "40070500"
+    },
+    "payment_total": "35005500"
+  },
+  "filter_flags_2026_09_23": {
+    "default": {
+      "revenue": "40070500"
+    },
+    "nonbusiness": {
+      "revenue": "40070500"
+    },
+    "void": {
+      "revenue": "40070500"
+    },
+    "all_deleted": {
+      "revenue": "40070500"
+    }
+  },
+  "cash_shifts_2026_09_23": [
+    {
+      "cashRegNumber": 2,
+      "openDate": "2026-09-23T08:03:19",
+      "closeDate": "2026-09-23T18:29:47",
+      "payOrders": 4565000,
+      "salesCash": 2426000,
+      "salesCard": 2139000,
+      "salesCredit": 0
+    },
+    {
+      "cashRegNumber": 1,
+      "openDate": "2026-09-23T11:49:05",
+      "closeDate": "2026-09-23T23:16:42",
+      "payOrders": 98255500,
+      "salesCash": 44193500,
+      "salesCard": 54062000,
+      "salesCredit": 0
+    }
+  ],
+  "ai_raw_cost_by_dimensions": {
+    "DishName": {
+      "revenue": "40070500",
+      "quantity": "1099",
+      "cost": "17493353.73"
+    },
+    "DishName+PayTypes": {
+      "revenue": "40070500.00",
+      "quantity": "1099.000",
+      "cost": "22029061.7190233709595"
+    }
+  },
+  "production_ui": {
+    "director_total": "448472957",
+    "director_yandex_headline": "27031000",
+    "director_yandex_menu": "650000",
+    "director_items": 329,
+    "absent_unassigned_items": [
+      "Доставка",
+      "Компенсация ущерба за Бой Посуды"
+    ],
+    "founder_total_display": "462799457",
+    "founder_reconciled_label": "Оплаты сверены · 0 сум",
+    "deployed_backend_sha_verified": false,
+    "runtime_env_directly_verified": false
+  },
+  "reproductions": [
+    {
+      "case": "self_reconciliation_and_ignored_parent",
+      "parent": 1000,
+      "selected": 100,
+      "reconciled": true,
+      "discrepancy": "0"
+    },
+    {
+      "case": "empty_trading_day",
+      "rejected": "iiko не вернул все десять дней для отчёта директора."
+    },
+    {
+      "case": "negative_return",
+      "rejected": "iiko вернул отрицательное значение позиции."
+    },
+    {
+      "case": "quantity_rounding_not_reconciled",
+      "original": "1",
+      "allocated": "0.999",
+      "cost_preserved": true
+    },
+    {
+      "case": "different_direction_validation",
+      "director": "banquet",
+      "founder": "rejected"
+    },
+    {
+      "case": "unclassified_shift_excess_is_prepayment",
+      "shift_receipts": 150,
+      "scoped_sales": 100,
+      "labelled_new_prepayment": "50"
+    },
+    {
+      "case": "handover_excludes_fiscal_cash",
+      "two_cash_types": 150,
+      "handover": "100"
+    },
+    {
+      "case": "missing_rate_locks_payroll",
+      "payroll_confirmed": true,
+      "accrual": 0,
+      "after_rate_fixed": 0
+    },
+    {
+      "case": "handover_edit_bypasses_balance_check",
+      "closing": "-70"
+    },
+    {
+      "case": "manual_display_and_validation_differ",
+      "displayed_before": "10",
+      "allowed_payment": 80,
+      "displayed_after": "-70"
+    },
+    {
+      "case": "deleted_anchor_handover_hides_opening",
+      "confirmed_opening": 1000,
+      "displayed_closing": "10",
+      "missing_day": null
+    },
+    {
+      "case": "delete_expense_uses_legacy_balance",
+      "expected_after": 70,
+      "rejected": "Операция делает остаток отрицательным в последующие дни."
+    },
+    {
+      "case": "procurement_edit_makes_subledger_negative",
+      "shoh_balance": "-90"
+    },
+    {
+      "case": "handover_label_previous_day",
+      "accounting_day": "2026-09-14",
+      "journal_label": "Касса за 13.09.2026"
+    },
+    {
+      "case": "second_cashier_income_replaces_first",
+      "entered": [
+        100,
+        50
+      ],
+      "stored": "50"
+    },
+    {
+      "case": "generic_salary_does_not_settle_accrual",
+      "displayed_paid": "100",
+      "salary_debt": "100",
+      "cash_balance": "0"
+    },
+    {
+      "case": "expense_api_accepts_income_category",
+      "label": "Прочие поступления",
+      "closing": "90"
+    },
+    {
+      "case": "historical_draft_uses_current_rate",
+      "original": "100",
+      "after_rate_change": "200"
+    },
+    {
+      "case": "monthly_values_not_reconciled",
+      "monthly": {
+        "id": 1,
+        "external_key": null,
+        "name": "Тест",
+        "role": "менеджер",
+        "salary": "100",
+        "schedule": "",
+        "card": "100",
+        "cash": "100",
+        "advances": "0",
+        "remaining": "100"
+      }
+    },
+    {
+      "case": "xlsx_numeric_zero_becomes_empty",
+      "input_card": 0,
+      "parsed_card": "",
+      "rejected": "Сумма должна быть числом."
+    },
+    {
+      "case": "malformed_event_marked_as_complete_absence",
+      "sync_success": true,
+      "complete": true,
+      "employee_status": "missing"
+    },
+    {
+      "case": "ai_loses_direction_and_breakdown",
+      "candidate": {
+        "subject": "Одинаковое имя",
+        "direction": "oxbridge",
+        "quantity": "1",
+        "revenue": "100",
+        "cost": "10",
+        "gross_profit": "90",
+        "margin_percent": "90"
+      },
+      "school_revenue": "30",
+      "breakdown_sent": false
+    }
+  ],
+  "existing_tests": {
+    "python_passed": 399,
+    "javascript_passed": 15
+  }
+}

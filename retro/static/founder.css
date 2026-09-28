@@ -1,0 +1,292 @@
+/* Модуль учредителя. Каркас, типографика, кнопки и плитки берутся из style.css:
+   здесь только то, что есть лишь на этом экране. Правило простое — если цифра,
+   плашка или подпись встречается у кассира, директора или бухгалтера, она и тут
+   выглядит так же, а не по-своему. */
+
+.founder-workspace{max-width:1400px}
+
+/* ── Фильтры ────────────────────────────────────────────────────────────
+   Это тот же ряд управления, что у кассира: белая карточка с датами слева,
+   действие справа. Направления были тремя галочками — стали переключателями
+   одного роста с кнопками, потому что пальцем в галочку 13 px не попасть. */
+.founder-filters{display:flex;flex-wrap:wrap;align-items:flex-end;gap:10px;
+  border:1px solid var(--border);background:#fff;padding:13px 16px;border-radius:13px;margin-bottom:14px}
+.founder-filters .date-group{display:flex;flex-direction:column;gap:4px;min-width:150px;flex:0 1 auto}
+.founder-filters .field-label,.founder-filters legend,.select-group>span{
+  font-size:10px;font-weight:650;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+.founder-filters input[type=date],.founder-filters select{
+  min-height:44px;width:100%;min-width:0;padding:0 12px;
+  border:1px solid var(--border);border-radius:9px;background:#fff;color:var(--ink);
+  font:600 13px/1 inherit;font-variant-numeric:tabular-nums;outline:0}
+.founder-filters input[type=date]:focus-visible,.founder-filters select:focus-visible{
+  border-color:var(--green2);box-shadow:0 0 0 3px rgba(35,87,74,.14)}
+.founder-filters select{padding-right:8px;cursor:pointer}
+.select-group{display:flex;flex-direction:column;gap:4px;min-width:150px}
+.founder-filters>.button{min-height:46px;margin-left:auto}
+
+.founder-directions{display:flex;flex-direction:column;gap:4px;border:0;padding:0;margin:0;min-width:0}
+.founder-directions legend{padding:0;float:left;width:100%}
+.direction-set{display:flex;gap:6px;flex-wrap:wrap;clear:both;padding-top:4px}
+.direction-chip{display:inline-flex;align-items:center;gap:8px;position:relative;
+  min-height:44px;padding:10px 15px;border:1px solid var(--border);border-radius:999px;
+  background:#fff;color:#4f5d54;font-size:12px;white-space:nowrap;cursor:pointer;
+  transition:background .15s,border-color .15s}
+.direction-chip input{position:absolute;width:1px;height:1px;opacity:0;margin:0}
+.direction-chip::before{content:"";width:9px;height:9px;border-radius:50%;background:#cdd6cc;flex:0 0 auto}
+.direction-chip:hover{background:#f7f9f4}
+.direction-chip:has(input:checked){background:#edf2e9;border-color:#cfe0cd;color:var(--green);font-weight:600}
+.direction-chip:has(input:focus-visible){box-shadow:0 0 0 3px rgba(35,87,74,.16)}
+.direction-chip[data-direction=retro]:has(input:checked)::before{background:#143e35}
+.direction-chip[data-direction=school]:has(input:checked)::before{background:#52786f}
+.direction-chip[data-direction=banquet]:has(input:checked)::before{background:#a27445}
+
+/* Быстрые периоды — сегментный переключатель, как сортировка меню у директора:
+   выбранный сегмент белый на светлой подложке, а не чёрный прямоугольник. */
+.quick-periods{display:flex;gap:4px;flex-wrap:wrap;padding:4px;background:#f1f4ec;border-radius:9px;
+  width:max-content;max-width:100%;margin-bottom:20px}
+.quick-periods .chip{white-space:nowrap;flex:0 0 auto}
+.quick-periods .chip.is-active{background:#fff;color:var(--green);font-weight:600;
+  box-shadow:0 1px 2px rgba(20,62,53,.08)}
+
+/* ── Сообщение ─────────────────────────────────────────────────────────
+   Тот же жёлтый «.notice», что и на остальных экранах; красный — только ошибка. */
+.founder-message{padding:15px 18px;border-radius:10px;background:#fff3df;border:1px solid #eddfbe;
+  color:#785b2d;font-size:12px;line-height:1.6;margin:0 0 20px}
+.founder-message.is-error{background:#fff0ed;border-color:#edc4bc;color:#963f38}
+
+/* ── Итоги периода ─────────────────────────────────────────────────────
+   Карточки живут по шкале «героя» кассира: подпись-кикер, крупное число,
+   единица мелкой строкой. Цветная черта сверху совпадает с линией направления
+   на графике — глазу не приходится сверять легенду. */
+.founder-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:16px;margin-bottom:20px}
+.founder-metrics article{position:relative;display:flex;flex-direction:column;min-height:136px;
+  padding:20px 22px;background:#fff;border:1px solid var(--border);border-radius:var(--radius);overflow:hidden}
+.founder-metrics article::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:#dfe5dc}
+.founder-metrics article[data-direction=retro]::before{background:#143e35}
+.founder-metrics article[data-direction=school]::before{background:#52786f}
+.founder-metrics article[data-direction=banquet]::before{background:#a27445}
+.founder-metrics span{display:block;font-size:11px;font-weight:600;letter-spacing:.14em;text-indent:.14em;
+  text-transform:uppercase;color:var(--muted)}
+.founder-metrics strong{display:block;margin:auto 0 5px;font-size:clamp(24px,2.1vw,32px);font-weight:600;
+  letter-spacing:-1px;line-height:1;font-variant-numeric:tabular-nums}
+.founder-metrics small{display:block;font-size:12px;color:var(--muted)}
+.founder-metrics article.total{background:var(--green);border-color:var(--green);color:#fff}
+.founder-metrics .total::before{background:var(--gold)}
+.founder-metrics .total span{color:#a9c2b5}
+.founder-metrics .total strong{color:var(--gold)}
+.founder-metrics .total small{color:#b9cdbc}
+.accounting-metrics{grid-template-columns:repeat(5,minmax(0,1fr));margin-top:28px}
+.accounting-metrics article::before{background:#6f8b82}
+.accounting-metrics article.cost::before{background:#a27445}
+.accounting-metrics article.profit::before{background:#143e35}
+.accounting-metrics article.net::before{background:#52786f}
+.accounting-metrics article.final{background:#143e35;border-color:#143e35;color:#fff}
+.accounting-metrics article.final span,.accounting-metrics article.final small{color:#b9cdbc}
+.accounting-metrics article.final strong{color:var(--gold)}
+.accounting-metrics article.internal::before{background:#c7a866}
+.accounting-metrics strong{font-size:clamp(21px,1.75vw,28px)}
+.expense-panel{margin-top:8px}
+.expense-metrics{grid-template-columns:repeat(4,minmax(0,1fr));margin:20px 0 0}
+.expense-metrics article{min-height:122px;padding:18px 20px}
+.expense-metrics article::before{background:#a27445}
+.expense-metrics article.income::before{background:#52786f}
+.expense-metrics article.manual::before{background:#d8b977}
+.expense-metrics article.internal::before{background:#c7a866}
+.expense-metrics article.total-expense{background:#fffaf0;border-color:#e7d9b4}
+.expense-metrics strong{font-size:clamp(20px,1.6vw,26px)}
+
+/* ── Панели ───────────────────────────────────────────────────────────── */
+.founder-panel{padding:24px 26px;margin-bottom:20px}
+.founder-panel-head{display:flex;justify-content:space-between;align-items:flex-start;gap:18px}
+.founder-panel-head h2{font-size:20px;font-weight:550;letter-spacing:-.4px;margin:0}
+.founder-panel-head p:not(.eyebrow){font-size:12px;color:var(--muted);line-height:1.55;margin:6px 0 0;max-width:62ch}
+.founder-panel-head .eyebrow{margin-bottom:9px}
+
+/* ── Графики ──────────────────────────────────────────────────────────── */
+.chart-legend{display:flex;gap:13px;flex-wrap:wrap;justify-content:flex-end;font-size:11px;color:var(--muted)}
+.chart-legend span{display:flex;align-items:center;gap:6px;white-space:nowrap}
+.legend-dot{width:8px;height:8px;border-radius:50%}
+.chart-shell{height:280px;margin-top:18px;overflow-x:auto;position:relative}
+.chart-shell svg{display:block;min-width:720px;width:100%;height:100%}
+.chart-grid{stroke:#eef1ea;stroke-width:1}
+.chart-axis{fill:var(--muted);font-size:10px}
+.chart-line{fill:none;stroke-width:3;stroke-linecap:round;stroke-linejoin:round}
+.chart-point{stroke:#fff;stroke-width:2}
+.chart-hover-layer{fill:transparent;pointer-events:all;cursor:crosshair}
+.chart-hover-line{stroke:#91a39a;stroke-width:1;stroke-dasharray:4 4;pointer-events:none}
+.chart-tooltip{position:absolute;z-index:4;top:18px;transform:translateX(10px);min-width:190px;
+  padding:12px 13px;border-radius:10px;background:rgba(20,62,53,.96);color:#eef4ef;font-size:11px;
+  box-shadow:0 10px 24px rgba(16,40,33,.22);pointer-events:none}
+.chart-tooltip.is-left{transform:translateX(calc(-100% - 10px))}
+.chart-tooltip strong,.chart-tooltip b{display:block}
+.chart-tooltip strong{margin-bottom:8px;color:#dce8e1;font-weight:600}
+.chart-tooltip b{border-top:1px solid rgba(255,255,255,.2);margin-top:8px;padding-top:8px}
+.chart-tooltip-rows{display:grid;gap:5px}
+.chart-tooltip-rows span{display:flex;align-items:center;gap:7px}
+.chart-tooltip-rows i{width:7px;height:7px;border-radius:50%;flex:0 0 auto}
+.empty-chart{height:100%;display:flex;align-items:center;justify-content:center;
+  color:var(--muted);font-size:12px}
+
+/* ── Способы оплаты ───────────────────────────────────────────────────── */
+.payment-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:20px 0}
+.payment-summary article{padding:14px 16px;background:#f7f9f4;border-radius:13px;min-width:0}
+.payment-summary span{display:block;font-size:11px;color:var(--muted)}
+.payment-summary strong{display:block;font-size:17px;font-weight:600;margin-top:7px;
+  letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.payment-summary small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
+.payment-chart{position:relative;overflow-x:auto;border-top:1px solid #eef1ea;padding-top:18px}
+.payment-chart svg{display:block;height:270px}
+.payment-bar{shape-rendering:geometricPrecision}
+.payment-line{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+.payment-point{stroke:#fff;stroke-width:1.5}
+.payment-tooltip{width:min(390px,calc(100vw - 48px));min-width:0}
+.payment-tooltip .chart-tooltip-rows{grid-template-columns:1fr 1fr;column-gap:14px}
+
+/* Плашки состояния: сверка оплат и живость Telegram-источника. */
+.reconcile,.source-status{font-size:10.5px;font-weight:650;letter-spacing:.04em;border-radius:999px;
+  padding:7px 11px;background:#edf5ea;color:#3f6c53;white-space:nowrap}
+.reconcile.is-warning{background:#fff1dc;color:#8a5a16}
+.source-status.is-error{background:#fff0ed;color:#963f38}
+
+.founder-note{font-size:11px;color:var(--muted);line-height:1.6;margin:14px 0 0}
+.founder-note code{font:inherit;color:#385f4f}
+
+/* ── Брони из Telegram ────────────────────────────────────────────────── */
+.booking-metrics{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:20px 0 24px}
+.booking-metrics article{position:relative;padding:15px 16px;background:#f7f9f4;border-radius:13px;
+  overflow:hidden;min-width:0}
+.booking-metrics article::before{content:"";position:absolute;inset:0 0 auto;height:3px;background:#143e35}
+.booking-metrics article:nth-child(2)::before{background:#d8b977}
+.booking-metrics article:nth-child(3)::before{background:#52786f}
+.booking-metrics article.cancelled::before{background:#ba7b67}
+.booking-metrics span{display:block;font-size:11px;color:var(--muted)}
+.booking-metrics strong{display:block;font-size:21px;font-weight:600;letter-spacing:-.5px;
+  margin:10px 0 3px;font-variant-numeric:tabular-nums}
+.booking-metrics small{display:block;color:var(--muted);font-size:11px}
+.booking-chart-head,.booking-source-head{border-top:1px solid #eef1ea;padding-top:18px;margin-top:4px}
+.booking-chart-head{align-items:center}
+.booking-chart-head h3,.booking-source-head h3{font-size:15px;font-weight:600;letter-spacing:-.2px;margin:0}
+.booking-chart{position:relative;height:270px;overflow-x:auto;overflow-y:hidden}
+.booking-chart svg{display:block;height:270px}
+.booking-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
+.booking-point{stroke:#fff;stroke-width:1.5}
+.booking-sources{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:16px 0 0}
+.booking-sources article{padding:14px 16px;background:#f7f9f4;border-radius:13px;min-width:0}
+.booking-sources span{display:block;font-size:11px;color:var(--muted)}
+.booking-sources strong{display:block;font-size:17px;font-weight:600;margin:7px 0 3px;
+  letter-spacing:-.3px;font-variant-numeric:tabular-nums}
+.booking-sources small{display:block;color:var(--muted);font-size:11px}
+.booking-panel .founder-note.is-warning{color:#8a5a16;background:#fff8e8;border:1px solid #eddfbe;
+  border-radius:10px;padding:11px 13px}
+
+/* ── Подтверждённая Telegram-рассылка ─────────────────────────────── */
+.broadcast-panel{position:relative}.broadcast-audience{flex:0 0 auto;min-width:140px;padding:13px 16px;border-radius:14px;background:#edf5ea;text-align:right}.broadcast-audience strong{display:block;color:#173f36;font-size:25px;font-variant-numeric:tabular-nums}.broadcast-audience span,.broadcast-audience small{display:block;color:#62786c;font-size:10px}.broadcast-audience small{margin-top:4px;color:#8a978f}.broadcast-form{display:grid;gap:9px;margin-top:20px}.broadcast-form>label{color:#476257;font-size:11px;font-weight:700}.broadcast-form textarea{width:100%;box-sizing:border-box;resize:vertical;min-height:120px;padding:13px 14px;border:1px solid #d6e0d5;border-radius:12px;background:#fbfcfa;color:#173f36;font:500 13px/1.55 inherit}.broadcast-form textarea:focus{outline:3px solid rgba(82,120,111,.16);border-color:#77998d}.broadcast-form-foot{display:flex;align-items:center;justify-content:space-between;gap:14px;color:#87948c;font-size:10px}.broadcast-form-foot .button{margin-left:auto}.broadcast-confirm{margin-top:18px;padding:17px;border:1px solid #dbc999;border-radius:14px;background:#fffaf0}.broadcast-confirm[hidden]{display:none}.broadcast-confirm h3{margin:0 0 7px;color:#173f36;font-size:16px}.broadcast-confirm p{margin:0;color:#64756c;font-size:11px}.broadcast-confirm pre{max-height:240px;overflow:auto;margin:14px 0;padding:13px;border-radius:10px;background:#fff;border:1px solid #eadfc4;color:#294c41;font:500 12px/1.55 inherit;white-space:pre-wrap;overflow-wrap:anywhere}.broadcast-confirm>div{display:flex;justify-content:flex-end;gap:9px}.broadcast-result{margin:12px 0 0;padding:12px 14px;border-radius:10px;background:#edf5ea;color:#315e4c;font-size:12px}.broadcast-result[hidden]{display:none}.broadcast-panel .founder-note.is-error,.broadcast-result.is-error{color:#963f38;background:#fff0ed}
+
+.broadcast-form-foot>span{white-space:nowrap}
+.broadcast-recipients{margin-top:18px;padding:15px;border:1px solid #e0e7df;border-radius:14px;background:#fbfcfa}.broadcast-recipients-head{display:grid;grid-template-columns:minmax(150px,1fr) minmax(190px,280px) auto;gap:12px;align-items:center}.broadcast-recipients-head h3{margin:0 0 3px;color:#173f36;font-size:15px}.broadcast-recipients-head span{color:#718078;font-size:10px}.broadcast-recipients-head input{width:100%;min-height:42px;padding:0 12px;border:1px solid #d6e0d5;border-radius:10px;background:#fff;color:#173f36;font:500 12px/1 inherit}.broadcast-recipients-head>div:last-child{display:flex;gap:6px}.broadcast-recipients-head button{min-height:42px;padding:0 11px;border:1px solid #d6e0d5;border-radius:9px;background:#fff;color:#315e4c;font:650 10px/1 inherit}.broadcast-recipient-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:7px;max-height:260px;overflow:auto;margin-top:12px;padding-right:3px}.broadcast-recipient{display:grid;grid-template-columns:auto minmax(0,1fr);gap:9px;align-items:center;min-height:48px;padding:8px 10px;border:1px solid #e1e8e0;border-radius:10px;background:#fff;cursor:pointer}.broadcast-recipient:has(input:checked){border-color:#87a795;background:#eef5ed}.broadcast-recipient input{width:18px;height:18px;accent-color:#23574a}.broadcast-recipient strong,.broadcast-recipient small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.broadcast-recipient strong{color:#294c41;font-size:11px}.broadcast-recipient small{margin-top:3px;color:#89968e;font-size:9px}
+
+/* ── Таблица показателей ──────────────────────────────────────────────── */
+.series-table-wrap{overflow:auto;margin-top:18px;-webkit-overflow-scrolling:touch}
+.series-table{width:100%;border-collapse:collapse;font-size:12.5px;white-space:nowrap}
+.series-table th,.series-table td{padding:11px 13px;border-bottom:1px solid #eef1ea;text-align:right;
+  font-variant-numeric:tabular-nums}
+.series-table th:first-child,.series-table td:first-child{text-align:left;position:sticky;left:0;background:#fff}
+.series-table thead th{font-size:10px;font-weight:650;letter-spacing:.06em;text-transform:uppercase;
+  color:var(--muted);background:#f5f8f3}
+.series-table thead th:first-child{background:#f5f8f3}
+.series-table tbody th{font-weight:600;color:#315e4c}
+.series-table tbody tr:hover td,.series-table tbody tr:hover th{background:#fbfcf9}
+
+/* ── Пустые состояния ─────────────────────────────────────────────────
+   До первого ответа iiko половина экрана — это пустые прямоугольники там,
+   где будут графики. Пустой блок должен говорить, чего ждёт, а не молчать
+   на 280 пикселей; и место он занимает по написанному, а не по будущему
+   графику. Разметку не трогаем: блоки заполняет JS, пустыми они остаются
+   ровно до первых данных. */
+.chart-shell:empty,.payment-chart:empty,.booking-chart:empty{height:auto;min-height:118px;
+  border:1px dashed #e1e7de;border-radius:13px;background:#fbfcf9}
+.payment-chart:empty{border-top:1px dashed #e1e7de;padding-top:0;margin-top:18px}
+.chart-shell:empty::after,.payment-chart:empty::after,.booking-chart:empty::after,
+.booking-sources:empty::after{
+  content:"Данные появятся после первой выгрузки iiko";
+  display:flex;align-items:center;justify-content:center;height:118px;padding:0 16px;
+  color:var(--muted);font-size:12px;text-align:center}
+.booking-chart:empty::after{content:"Динамика появится, когда ответит бот бронирований"}
+.booking-sources:empty::after{content:"Источники появятся вместе с первыми бронями"}
+/* Пустая сводка оплат молчит: под ней уже стоит подпись пустого графика,
+   и две одинаковые плашки подряд читались бы как сбой. */
+.payment-summary:empty{display:none}
+.booking-sources:empty{display:block;min-height:118px;
+  border:1px dashed #e1e7de;border-radius:13px;background:#fbfcf9}
+.series-table-wrap:not(:has(table)){text-align:center;padding:26px 10px;color:var(--muted);font-size:12px}
+.reconcile:empty,.source-status:empty{display:none}
+
+/* Во время загрузки гаснут только данные: фильтры остаются живыми, чтобы
+   можно было передумать, не дожидаясь ответа iiko. */
+.founder-metrics[aria-busy="true"]{opacity:.55}
+
+/* ── Узкие экраны ─────────────────────────────────────────────────────── */
+@media(max-width:1180px){
+  .founder-metrics{grid-template-columns:1fr 1fr}
+  .chart-shell{height:260px}
+}
+@media(max-width:900px){
+  .founder-filters{gap:9px}
+  .founder-filters .date-group,.select-group{flex:1 1 150px}
+  .founder-filters>.button{margin-left:0;flex:1 1 100%}
+  .founder-panel{padding:20px 18px}
+  .booking-metrics{grid-template-columns:1fr 1fr}
+  .founder-panel-head{flex-direction:column;gap:12px}
+  .chart-legend{justify-content:flex-start}
+}
+@media(max-width:650px){
+  .founder-filters{padding:12px 13px}
+  .founder-filters .date-group,.select-group{flex:1 1 100%;min-width:0}
+  .direction-set{gap:5px}
+  .direction-chip{flex:1 1 auto;justify-content:center;padding:10px 12px}
+  .quick-periods{width:100%;flex-wrap:nowrap;overflow-x:auto;justify-content:flex-start}
+  .founder-metrics{gap:10px}
+  .founder-metrics article{min-height:112px;padding:16px 17px}
+  .founder-metrics strong{font-size:23px}
+  .founder-panel{padding:18px 15px}
+  .chart-shell{height:240px}
+  .payment-summary,.booking-sources{grid-template-columns:1fr 1fr;gap:9px}
+  .payment-summary article,.booking-sources article{padding:12px 13px}
+  .booking-chart,.booking-chart svg{height:230px}
+  .series-table{font-size:11.5px}
+  .series-table th,.series-table td{padding:9px 11px}
+  .broadcast-audience{width:100%;box-sizing:border-box;text-align:left}.broadcast-recipients-head{grid-template-columns:1fr}.broadcast-recipients-head>div:last-child{display:grid;grid-template-columns:1fr 1fr}.broadcast-recipient-list{grid-template-columns:1fr;max-height:300px}.broadcast-confirm>div{display:grid;grid-template-columns:1fr 1fr}.broadcast-confirm .button{width:100%}
+}
+@media(max-width:430px){
+  .founder-metrics{grid-template-columns:1fr}
+  .founder-metrics article{min-height:0}
+  .founder-metrics strong{font-size:26px;margin-top:14px}
+  .payment-summary,.booking-sources,.booking-metrics{grid-template-columns:1fr}
+  .founder-panel-head p:not(.eyebrow){font-size:11.5px}
+}
+
+/* Founder AI chat */
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.ai-chat-toggle{position:fixed;right:24px;bottom:24px;z-index:42;display:flex;align-items:center;gap:10px;border:0;border-radius:999px;padding:12px 17px 12px 13px;background:#143e35;color:#fff;box-shadow:0 12px 32px rgba(20,62,53,.28);font:700 12px/1 inherit;cursor:pointer;transition:transform .2s ease,box-shadow .2s ease,opacity .2s ease}
+.ai-chat-toggle:hover{transform:translateY(-2px);box-shadow:0 16px 38px rgba(20,62,53,.34)}.ai-chat-toggle:focus-visible,.ai-chat-close:focus-visible,.ai-chat-form button:focus-visible,.ai-chat-prompts button:focus-visible{outline:3px solid #d8b977;outline-offset:2px}
+.ai-chat-toggle svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ai-chat-backdrop{position:fixed;inset:0;z-index:48;background:rgba(11,32,27,.22);backdrop-filter:blur(2px)}
+.ai-chat-drawer{position:fixed;z-index:49;top:0;right:0;width:min(430px,100vw);height:100dvh;display:grid;grid-template-rows:auto 1fr auto auto;background:#fbfcfa;border-left:1px solid #dfe7df;box-shadow:-20px 0 50px rgba(20,62,53,.16);transform:translateX(105%);visibility:hidden;transition:transform .28s ease,visibility .28s}
+.ai-chat-drawer.is-open{transform:translateX(0);visibility:visible}.ai-chat-open{overflow:hidden}.ai-chat-open .ai-chat-toggle{opacity:0;pointer-events:none}
+.ai-chat-head{display:flex;align-items:center;gap:12px;padding:18px 18px 16px;border-bottom:1px solid #e5ebe4;background:#fff}.ai-chat-avatar{display:grid;place-items:center;width:44px;height:44px;border-radius:14px;background:#143e35;color:#d8b977;font:800 13px/1 inherit;box-shadow:inset 0 0 0 1px rgba(255,255,255,.12)}
+.ai-chat-head>div:nth-child(2){min-width:0}.ai-chat-head p{margin:0 0 3px;color:#8b987f;font-size:8px;font-weight:800;letter-spacing:.13em}.ai-chat-head h2{margin:0;color:#173f36;font-size:17px}.ai-chat-head span{display:flex;align-items:center;gap:5px;margin-top:4px;color:#6f7f75;font-size:10px}.ai-chat-head span i{width:6px;height:6px;border-radius:50%;background:#58a66f;box-shadow:0 0 0 3px #e8f5eb}
+.ai-chat-close{margin-left:auto;width:36px;height:36px;border:0;border-radius:50%;background:#f0f4ef;color:#567065;font:300 25px/1 inherit;cursor:pointer}.ai-chat-close:hover{background:#e5ece6;color:#173f36}
+.ai-chat-messages{min-height:0;overflow-y:auto;padding:22px 18px 12px;scroll-behavior:smooth}.ai-chat-empty{display:flex;min-height:100%;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:28px 18px;color:#566c62}.ai-chat-empty[hidden]{display:none}.ai-chat-spark{display:grid;place-items:center;width:52px;height:52px;border-radius:18px;background:#edf3ec;color:#a27445;font-size:23px}.ai-chat-empty h3{margin:15px 0 7px;color:#173f36;font-size:18px}.ai-chat-empty>p{max-width:300px;margin:0;font-size:12px;line-height:1.6;color:#76847c}
+.ai-chat-prompts{display:grid;gap:7px;width:100%;margin-top:22px}.ai-chat-prompts button{border:1px solid #dfe7df;border-radius:10px;padding:10px 12px;background:#fff;color:#315e4c;font:600 11px/1.35 inherit;text-align:left;cursor:pointer}.ai-chat-prompts button:hover{border-color:#bfcfbe;background:#f7faf6}
+.ai-chat-message{display:flex;flex-direction:column;align-items:flex-start;margin:0 0 15px}.ai-chat-message>span{margin:0 0 5px 3px;color:#829087;font-size:9px;font-weight:700}.ai-chat-message>p,.ai-chat-content{max-width:92%;margin:0;padding:11px 13px;border-radius:4px 14px 14px 14px;background:#fff;border:1px solid #e2e9e1;color:#294c41;font-size:12px;line-height:1.58;overflow-wrap:anywhere;box-shadow:0 3px 12px rgba(20,62,53,.045)}
+.ai-chat-content>p{margin:0 0 9px}.ai-chat-content>p:last-child{margin-bottom:0}.ai-chat-content h3,.ai-chat-content h4,.ai-chat-content h5,.ai-chat-content h6{margin:3px 0 9px;color:#173f36;font-size:13px;line-height:1.35}.ai-chat-content strong{color:#173f36}.ai-chat-content code{padding:1px 4px;border-radius:4px;background:#edf3ec;color:#7e4f29;font:600 .92em/1.4 ui-monospace,SFMono-Regular,monospace}.ai-chat-content ul,.ai-chat-content ol{margin:2px 0 9px;padding-left:20px}.ai-chat-content li+li{margin-top:4px}.ai-chat-content blockquote{margin:9px 0;padding:7px 10px;border-left:3px solid #d8b977;background:#faf6ed;color:#566c62}.ai-chat-content a{color:#356e5b;text-decoration-thickness:1px;text-underline-offset:2px}
+.ai-chat-message.has-table{width:100%}.ai-chat-message.has-table .ai-chat-content{width:100%;max-width:100%;box-sizing:border-box}.ai-chat-table-wrap{width:100%;margin:8px 0 10px;overflow:hidden;border:1px solid #dce6dc;border-radius:10px;background:#fff;box-shadow:0 4px 14px rgba(20,62,53,.06)}.ai-chat-table-wrap table{width:100%;border-collapse:collapse;font-size:10.5px;line-height:1.35}.ai-chat-table-wrap th,.ai-chat-table-wrap td{padding:8px 9px;border-bottom:1px solid #e8eee7;text-align:left;vertical-align:top}.ai-chat-table-wrap th{background:#edf3ec;color:#173f36;font-size:9.5px;font-weight:800;letter-spacing:.02em}.ai-chat-table-wrap tbody tr:nth-child(even){background:#f8faf7}.ai-chat-table-wrap tbody tr:last-child td{border-bottom:0}.ai-chat-table-wrap table.is-compact{table-layout:fixed}.ai-chat-table-wrap table.is-compact th:first-child,.ai-chat-table-wrap table.is-compact td:first-child{width:34%;font-weight:650}.ai-chat-table-wrap table.is-compact th:not(:first-child),.ai-chat-table-wrap table.is-compact td:not(:first-child){padding-inline:4px;white-space:nowrap;text-align:right}.ai-chat-table-wrap table.is-compact th{white-space:normal;overflow-wrap:anywhere;font-size:9px}.ai-chat-table-wrap table.is-wide thead{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}.ai-chat-table-wrap table.is-wide,.ai-chat-table-wrap table.is-wide tbody,.ai-chat-table-wrap table.is-wide tr,.ai-chat-table-wrap table.is-wide td{display:block;width:100%;box-sizing:border-box}.ai-chat-table-wrap table.is-wide tbody{display:grid;gap:8px;padding:8px;background:#f5f8f4}.ai-chat-table-wrap table.is-wide tr{overflow:hidden;border:1px solid #dfe7df;border-radius:8px;background:#fff}.ai-chat-table-wrap table.is-wide td{display:grid;grid-template-columns:minmax(92px,40%) minmax(0,1fr);gap:10px;padding:6px 8px;white-space:normal;text-align:right!important}.ai-chat-table-wrap table.is-wide td::before{content:attr(data-label);color:#718078;font-size:9px;font-weight:750;text-align:left}.ai-chat-table-wrap table.is-wide td:last-child{border-bottom:0}.ai-chat-table-wrap table.is-wide td:first-child{font-weight:650}
+.ai-chat-message.is-user{align-items:flex-end}.ai-chat-message.is-user>span{margin-left:0;margin-right:3px}.ai-chat-message.is-user>p{max-width:88%;white-space:pre-wrap;border:0;border-radius:14px 4px 14px 14px;background:#143e35;color:#fff;box-shadow:none}.ai-chat-message.is-pending .ai-chat-content,.ai-chat-message.is-pending>p{color:#849188;font-style:italic;animation:chat-pulse 1.2s ease-in-out infinite}@keyframes chat-pulse{50%{opacity:.55}}
+.ai-chat-status{min-height:16px;margin:0;padding:0 18px 5px;color:#738279;font-size:10px}.ai-chat-status.is-error{color:#9b433d}
+.ai-chat-form{padding:10px 18px 16px;border-top:1px solid #e5ebe4;background:#fff}.ai-chat-compose{display:flex;align-items:flex-end;gap:8px;border:1px solid #cfdbcf;border-radius:14px;padding:8px 8px 8px 12px;background:#fbfcfa;transition:border-color .2s,box-shadow .2s}.ai-chat-compose:focus-within{border-color:#77998d;box-shadow:0 0 0 3px rgba(82,120,111,.11)}.ai-chat-compose textarea{flex:1;resize:none;min-height:34px;max-height:120px;padding:7px 0;border:0;outline:0;background:transparent;color:#173f36;font:500 12px/1.5 inherit}.ai-chat-compose textarea::placeholder{color:#94a198}.ai-chat-compose button{display:grid;place-items:center;flex:0 0 36px;width:36px;height:36px;border:0;border-radius:10px;background:#143e35;color:#fff;cursor:pointer}.ai-chat-compose button:disabled{opacity:.45;cursor:wait}.ai-chat-compose svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.ai-chat-form-foot{display:flex;justify-content:space-between;gap:12px;margin-top:7px;color:#98a39b;font-size:8px}.ai-chat-form-foot button{border:0;padding:0;background:transparent;color:#7a8c82;font:600 9px/1 inherit;cursor:pointer}.ai-chat-form-foot button:hover{color:#9b433d}
+@media(max-width:650px){.ai-chat-toggle{right:14px;bottom:14px;padding:12px}.ai-chat-toggle span{display:none}.ai-chat-drawer{width:100vw;border-left:0}.ai-chat-head{padding-top:max(16px,env(safe-area-inset-top))}.ai-chat-form{padding-bottom:max(14px,env(safe-area-inset-bottom))}.ai-chat-form-foot>span{display:none}.ai-chat-message.has-table .ai-chat-content{padding:10px}.ai-chat-table-wrap{margin-inline:0}.ai-chat-table-wrap table.is-compact th:first-child,.ai-chat-table-wrap table.is-compact td:first-child{min-width:0}.ai-chat-table-wrap table.is-compact th:not(:first-child),.ai-chat-table-wrap table.is-compact td:not(:first-child){width:22%}}
+@media(prefers-reduced-motion:reduce){.ai-chat-drawer,.ai-chat-toggle{transition:none}.ai-chat-messages{scroll-behavior:auto}}
+
+.sales-bridge-metrics{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
+.sales-bridge-metrics article[hidden],.founder-metrics article[hidden]{display:none}

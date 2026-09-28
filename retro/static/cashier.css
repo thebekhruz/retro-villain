@@ -1,0 +1,121 @@
+/* Экран кассира (5a). Общий слой (.rm-*) лежит в style.css; здесь только то,
+   что специфично для смены: приход, состав оплат, ручной учёт и передача. */
+
+.cashier-workspace{padding-bottom:38px}
+
+/* ── Карточки прихода ─────────────────────────────────────────────────── */
+.cashier-cards{--cards:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);margin:0 0 20px}
+.cashier-cards .rm-card-value strong{font-size:clamp(24px,2.2vw,34px);overflow-wrap:anywhere}
+/* Полоса состава внутри зелёной карточки: белая подложка на прозрачном фоне. */
+.cashier-cards .composition{margin:14px 0 10px;background:#ffffff1f;height:10px}
+.cashier-card-split{display:flex;justify-content:space-between;gap:12px;
+  font-size:11px;color:#748376;border-top:1px solid var(--line-soft);padding-top:10px}
+.cashier-card-split b{font-weight:600;color:var(--ink)}
+
+/* ── Раскладка: работа слева, итог справа ─────────────────────────────── */
+.cashier-layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;align-items:start}
+.cashier-main{display:grid;gap:20px;min-width:0}
+.cashier-rail{gap:14px}
+/* Секции кассира не сворачиваются: на экране их всего три, и прятать нечего. */
+.rm-section-head.as-static{cursor:default;padding-bottom:10px}
+
+/* ── Состав оплат ─────────────────────────────────────────────────────── */
+.payments{padding:0 18px}
+.payment-row{display:grid;grid-template-columns:12px minmax(0,1.1fr) minmax(60px,.9fr) auto;
+  column-gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
+.payment-row:last-child{border-bottom:0}
+.payment-dot{width:8px;height:8px;border-radius:50%;background:var(--color)}
+.payment-name{line-height:1.45;overflow-wrap:anywhere}
+.payment-bar{display:block;height:6px;border-radius:3px;background:#f1f3ee;overflow:hidden}
+.payment-bar i{display:block;height:100%;border-radius:3px;background:var(--color)}
+.payment-value{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.payment-value small{display:block;font-weight:400;font-size:11px;color:var(--muted-2);margin-top:4px}
+.payment-row.is-zero{color:#a4afa3}
+.payment-row.is-zero .payment-bar{background:#f6f7f2}
+/* Наличные — единственная строка, которая физически уезжает бухгалтеру. */
+.payment-row.is-cash{background:#fbfcf9}
+.payment-tag{display:inline-block;padding:3px 7px;border-radius:6px;background:var(--green);
+  color:#e8cf95;font-size:10px;font-weight:650;white-space:nowrap;vertical-align:middle}
+#payments:empty+.rm-section-note{border-top:1px solid var(--line-mid);padding-top:14px}
+#payment-empty{border-top:1px solid var(--line-mid)}
+
+/* ── Ручной учёт: расходы и поступления рядом ─────────────────────────── */
+.cashier-ops{display:grid;grid-template-columns:1fr 1fr;gap:20px;min-width:0}
+.cashier-ops .rm-section{display:flex;flex-direction:column}
+.cashier-ops .expense-list{padding:0 18px}
+.cashier-ops .expense-empty{padding:14px 18px;margin:0;border-top:1px solid var(--line-mid);
+  color:var(--muted-2);font-size:12px}
+.expense-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;
+  padding:10px 0;border-bottom:1px solid var(--line-soft);font-size:12px}
+.expense-item:last-child{border-bottom:0}
+.expense-item-name{min-width:0;overflow-wrap:anywhere}
+.expense-item-value{font-weight:600;font-variant-numeric:tabular-nums}
+.expense-remove{width:30px;height:30px;border:0;border-radius:8px;background:#f7f1ee;
+  color:#a46a65;font-size:17px;line-height:1}
+.expense-remove:hover{background:#f8e8e4}
+.expense-automatic{border-radius:6px;background:#eef3e9;color:#4d7959;padding:4px 7px;font-size:10px}
+.cashier-form{display:grid;grid-template-columns:minmax(0,1fr) 116px auto;gap:10px;align-items:end;
+  padding:12px 18px;border-top:1px solid var(--line-mid);background:#f9fbf7;margin:auto 0 0}
+.cashier-form .expense-field{display:grid;gap:5px;min-width:0}
+.cashier-form label{font-size:10px;color:#78897b}
+.cashier-form input{width:100%;min-width:0;height:40px;border:1px solid #dfe6dc;border-radius:8px;
+  padding:0 10px;background:#fff;color:var(--ink);font-size:12px}
+.cashier-form input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
+.cashier-form .button{width:auto;min-height:40px}
+.expense-feedback{min-height:16px;margin:0;padding:0 18px;color:#4f795c;font-size:11px}
+.expense-feedback.is-error{color:#aa4656}
+.cashier-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
+  padding:12px 18px 14px;font-size:12px;color:var(--ink-2)}
+.cashier-total strong{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
+.cashier-total small{font-size:10px;font-weight:400}
+
+/* ── Передача и доллары ───────────────────────────────────────────────── */
+.cashier-rail .handover-panel{padding:22px}
+.cashier-rail .handover-number{margin:14px 0 18px}
+.cashier-rail .usd-card{padding:20px}
+.usd-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
+.usd-head .eyebrow{margin:0}
+.usd-aside-note{font-size:10px;color:var(--muted-2)}
+.cashier-rail .usd-balance-entry{display:grid;grid-template-columns:1fr auto;gap:8px;
+  align-items:end;padding:14px 0 0}
+.cashier-rail .usd-balance-entry label{grid-column:1/-1;font-size:11px;color:#687c6e}
+.cashier-rail .usd-balance-entry input{width:100%;height:42px;border:1px solid #dbe3d8;
+  border-radius:8px;padding:0 10px;background:#fff;color:#203d33;font:inherit;font-size:16px;
+  font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
+.cashier-rail .usd-balance-entry .button{width:auto;min-height:42px}
+.cashier-rail #usd-balance-status{grid-column:1/-1;font-size:11px;color:#557463;min-height:14px;padding:0}
+.usd-rates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.usd-rate{display:grid;gap:4px;padding:11px 12px;border:1px solid #e4e9e0;border-radius:11px;
+  background:#f8faf6;min-width:0}
+.usd-rate.restaurant{background:#eaf1e7;border-color:#dbe6d6}
+.usd-rate>span{font-size:10px;color:#687c6e}
+.usd-rate>strong{font-size:17px;line-height:1.2;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.usd-rate>small{font-size:9px;line-height:1.3;color:#748778}
+.usd-foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;
+  font-size:10px;color:#7a8b7d}
+.usd-foot a{color:#315e4c;text-decoration:underline;text-underline-offset:2px}
+.usd-status{margin:10px 0 0;color:#728674;font-size:11px}
+.usd-status:empty{display:none}
+.usd-status.is-error{color:#aa4656}
+
+@media(max-width:1180px){
+  .cashier-cards{--cards-md:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr)}
+  .cashier-layout{grid-template-columns:minmax(0,1fr) 290px;gap:16px}
+  .cashier-ops{gap:16px}
+}
+@media(max-width:900px){
+  .cashier-layout{grid-template-columns:1fr}
+  /* Итог смены поднимаем над ручным учётом: с телефона открывают ради него. */
+  .cashier-rail{order:-1;grid-template-columns:1fr 1fr}
+  .cashier-ops{grid-template-columns:1fr}
+}
+@media(max-width:650px){
+  .cashier-cards{--cards-sm:1fr}
+  .cashier-rail{grid-template-columns:1fr}
+  .cashier-form{grid-template-columns:minmax(0,1fr) 104px;padding:12px 16px}
+  .cashier-form .button{grid-column:1/-1;width:100%}
+  .payments{padding:0 16px}
+  .payment-row{grid-template-columns:12px minmax(0,1fr) auto;row-gap:6px}
+  .payment-bar{grid-column:2/-1;order:3}
+  .usd-rates{grid-template-columns:1fr}
+}

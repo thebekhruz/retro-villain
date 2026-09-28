@@ -11,6 +11,9 @@ from pathlib import Path
 import httpx
 
 from retro.modules.cashier.service import DataError
+from retro.logging_config import log_upstream_failure
+from retro.db import as_database
+from retro.runtime import secure_directory, secure_file
 
 CBU_ORIGIN = 'https://cbu.uz'
 DISCOUNT = Decimal('0.015')
@@ -35,23 +38,28 @@ class UsdRate:
 
 class UsdRates:
     def __init__(self, path: Path, *, transport=None):
-        self.path = Path(path)
+        self.db = as_database(path)
+        # .path остаётся для скриптов обслуживания и тестов
+        self.path = self.db.path
         self.transport = transport
         self.lock = asyncio.Lock()
+        self._initialize()
 
     def _open(self):
-        self.path.parent.mkdir(parents=True, exist_ok=True)
-        connection = sqlite3.connect(self.path, timeout=10)
-        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_rates (
-            day TEXT PRIMARY KEY,
-            source_date TEXT NOT NULL,
-            official_rate TEXT NOT NULL,
-            restaurant_rate TEXT NOT NULL
-        )''')
-        connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_balances (
-            day TEXT PRIMARY KEY, amount TEXT NOT NULL
-        )''')
-        return connection
+        return self.db.connect()
+
+    def _initialize(self):
+        with closing(self._open()) as connection, connection:
+            connection.execute('PRAGMA journal_mode=WAL')
+            connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_rates (
+                day TEXT PRIMARY KEY,
+                source_date TEXT NOT NULL,
+                official_rate TEXT NOT NULL,
+                restaurant_rate TEXT NOT NULL
+            )''')
+            connection.execute('''CREATE TABLE IF NOT EXISTS cashier_usd_balances (
+                day TEXT PRIMARY KEY, amount TEXT NOT NULL
+            )''')
 
     def balance(self, day: date):
         with closing(self._open()) as connection:
@@ -92,15 +100,15 @@ class UsdRates:
         return self._stored(rate.day)
 
     async def get(self, day: date):
-        saved = self._stored(day)
+        saved = await asyncio.to_thread(self._stored, day)
         if saved is not None:
             return saved
         async with self.lock:
-            saved = self._stored(day)
+            saved = await asyncio.to_thread(self._stored, day)
             if saved is not None:
                 return saved
             rate = await self._fetch(day)
-            return self._save(rate)
+            return await asyncio.to_thread(self._save, rate)
 
     async def _fetch(self, day: date):
         try:
@@ -110,7 +118,8 @@ class UsdRates:
                 response = await client.get(f'/ru/arkhiv-kursov-valyut/json/USD/{day.isoformat()}/')
                 response.raise_for_status()
                 payload = response.json()
-        except (httpx.HTTPError, ValueError):
+        except (httpx.HTTPError, ValueError) as error:
+            log_upstream_failure('cbu', error, operation='load_usd_rate')
             raise DataError('Не удалось получить курс USD от Центрального банка.') from None
         if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
             raise DataError('Центральный банк вернул некорректный курс USD.')

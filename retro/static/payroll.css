@@ -1,0 +1,94 @@
+/* Ведомость месяца (2b). Сетка «сотрудник × день»: тридцать с лишним колонок,
+   поэтому имя и итоги закреплены по краям, а прокручивается только середина. */
+
+.month-cards{--cards:repeat(4,minmax(0,1fr));margin-bottom:20px}
+
+.sheet-panel{padding:0;overflow:hidden}
+.sheet-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
+  flex-wrap:wrap;padding:18px}
+.sheet-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--ink-2);align-items:center}
+.sheet-legend span{display:flex;align-items:center;gap:6px}
+.cell-key{display:grid;place-items:center;width:22px;height:18px;border-radius:4px;
+  font-size:10px;font-style:normal;background:#f1f3ee;color:var(--muted-2)}
+.cell-key.is-paid{background:#fff;border:1px solid var(--border);color:var(--ok)}
+.cell-key.is-partial{background:#eef5ec;color:var(--ok)}
+.cell-key.is-owed{background:#fff5ee;border:1px solid #efdccc}
+.cell-key.is-late{background:#fff0f2}
+.cell-key.is-missing{background:#f1f3ee;color:#9da79d;font-size:9px}
+.cell-key.is-empty{background:repeating-linear-gradient(-45deg,#f6f7f2 0 3px,#eef1ea 3px 6px)}
+.sheet-hint{font-size:11px;color:var(--muted-2);margin:0}
+
+.sheet-scroll{overflow-x:auto;border-top:1px solid var(--line-mid);
+  -webkit-overflow-scrolling:touch}
+/* Первые две и последние две колонки закреплены, между ними — дни месяца.
+   Раскладку держит переменная, а не subgrid: без него строки схлопнулись бы
+   в одну колонку, а так сетка одинаково работает во всех браузерах. */
+.sheet-grid{--day-w:44px;
+  --sheet-cols:190px 84px repeat(var(--days),var(--day-w)) 104px 104px;
+  display:block;min-width:max-content}
+.sheet-row{display:grid;grid-template-columns:var(--sheet-cols);min-width:max-content;
+  border-top:1px solid var(--line-soft)}
+.sheet-row:first-child{border-top:0}
+.sheet-row.is-head{background:var(--head-bg);border-top:0;
+  position:sticky;top:0;z-index:3;font-size:10px;color:#71827d}
+.sheet-row.is-foot{border-top:1px solid #b5cbb8;background:var(--head-bg);font-size:11px}
+
+.sheet-name,.sheet-rate,.sheet-total,.sheet-day,.sheet-cell,.sheet-day-total{
+  min-width:0;display:flex;align-items:center;padding:0 8px;height:40px}
+.sheet-name{position:sticky;left:0;z-index:2;background:#fff;flex-direction:column;
+  align-items:flex-start;justify-content:center;gap:2px;padding:0 14px}
+.sheet-rate{position:sticky;left:190px;z-index:2;background:#fff;justify-content:flex-end;
+  border-right:1px solid var(--border);font-size:12px}
+.sheet-total{position:sticky;z-index:2;background:#fff;justify-content:flex-end;
+  font-size:12px;font-weight:600}
+.sheet-total:nth-last-child(2){right:104px;border-left:1px solid var(--border)}
+.sheet-total:last-child{right:0;padding-right:14px}
+.sheet-total.is-owed{color:#a96039}
+.is-head .sheet-name,.is-head .sheet-rate,.is-head .sheet-total,
+.is-foot .sheet-name,.is-foot .sheet-rate,.is-foot .sheet-total{background:var(--head-bg)}
+.is-head .sheet-name,.is-head .sheet-rate,.is-head .sheet-total{
+  font-weight:600;letter-spacing:.05em;text-transform:uppercase}
+.is-head .sheet-name{flex-direction:row;align-items:center}
+.is-foot .sheet-name{flex-direction:row;font-weight:650;color:#234a3a}
+.sheet-person{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:100%}
+.sheet-group{font-size:10px;color:var(--muted-3);white-space:nowrap;overflow:hidden;
+  text-overflow:ellipsis;max-width:100%}
+
+/* Шапка дня — кнопка перехода в день. */
+.sheet-day{flex-direction:column;justify-content:center;gap:0;border:0;border-right:1px solid #eef1ea;
+  background:var(--head-bg);color:#71827d;cursor:pointer;padding:0}
+.sheet-day:hover{background:#eaeee4;color:var(--green)}
+.sheet-day strong{font-size:12px;font-weight:600}
+.sheet-day span{font-size:9px}
+.sheet-day.is-weekend{color:#a98b8b}
+
+/* Ячейка смены. Цвет говорит о состоянии, клик выдаёт долг. */
+.sheet-cell{justify-content:center;border:0;border-right:1px solid #eef1ea;
+  font-size:11px;font-weight:600;background:#fff;color:var(--ink);padding:0}
+.sheet-cell:disabled{cursor:default}
+.sheet-cell.is-empty{background:repeating-linear-gradient(-45deg,#fbfcf9 0 3px,#f4f6f0 3px 6px)}
+.sheet-cell.is-missing{background:#f1f3ee;color:#9da79d;font-size:9px}
+.sheet-cell.is-paid{color:var(--ok)}
+.sheet-cell.is-partial{background:#eef5ec;color:var(--ok)}
+.sheet-cell.is-owed{background:#fff5ee;color:#a96039}
+.sheet-cell.is-late{background:#fff0f2;color:var(--late)}
+.sheet-cell.is-owed:hover,.sheet-cell.is-late:hover,.sheet-cell.is-partial:hover{
+  box-shadow:inset 0 0 0 2px var(--gold)}
+.sheet-day-total{justify-content:flex-end;border-right:1px solid #eef1ea;font-size:10px;
+  font-weight:600;padding:0 5px}
+.sheet-day-total.is-zero{color:#b7c0b9}
+
+.monthly-table-scroll{overflow-x:auto;margin-top:14px}
+#monthly-table{min-width:760px}
+
+@media(max-width:1180px){.month-cards{--cards-md:repeat(2,minmax(0,1fr))}}
+@media(max-width:650px){
+  .month-cards{--cards-sm:1fr 1fr}
+  /* На телефоне закреплять четыре колонки некуда — оставляем только имя. */
+  .sheet-grid{--day-w:38px;--sheet-cols:132px 0 repeat(var(--days),var(--day-w)) 88px 88px}
+  .sheet-rate{display:none}
+  .sheet-total:nth-last-child(2){right:88px}
+  .sheet-name{padding:0 10px}
+  .sheet-head{padding:16px}
+}

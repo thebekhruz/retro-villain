@@ -1,14 +1,24 @@
 import asyncio
+import hashlib
+import json
 from datetime import date
 
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.report_cache import load_iiko
+from retro.logging_config import log_safe_failure
+
 from .export import export_report
 from .service import DataError, demo_snapshot, today_tashkent
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
+
+
+def entries_revision(items):
+    return hashlib.sha256(json.dumps([item.json() for item in items],
+                                     sort_keys=True, ensure_ascii=False).encode()).hexdigest()
 
 
 class ExpenseInput(BaseModel):
@@ -38,7 +48,9 @@ def list_expenses(request: Request, date: date):
     day = selected_day(date)
     expenses = request.app.state.expenses.list(day)
     return dict(date=day.isoformat(), expenses=[item.json() for item in expenses],
-                total=str(sum((item.amount for item in expenses), 0)))
+                revision=entries_revision(expenses),
+                total=str(sum((item.amount for item in expenses), 0)),
+                expense_policy_configured=request.app.state.expenses.policy_configured())
 
 
 @router.get('/usd-rate')
@@ -47,6 +59,8 @@ async def usd_rate(request: Request, date: date):
     try:
         return (await request.app.state.usd_rates.get(day)).json()
     except DataError as error:
+        log_safe_failure('cashier-route', error, operation='usd_rate',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
 
@@ -85,6 +99,7 @@ def list_receipts(request: Request, date: date):
     day = selected_day(date)
     receipts = request.app.state.expenses.list_receipts(day)
     return dict(date=day.isoformat(), receipts=[item.json() for item in receipts],
+                revision=entries_revision(receipts),
                 total=str(sum((item.amount for item in receipts), 0)))
 
 
@@ -106,28 +121,31 @@ def delete_receipt(request: Request, receipt_id: int, date: date):
 
 
 @router.get('/day')
-async def day_report(request: Request, date: date | None = None, demo: bool = False):
+async def day_report(request: Request, date: date | None = None, demo: bool = False, refresh: bool = False):
     day = selected_day(date)
     state = request.app.state
     try:
         if demo:
             result = demo_snapshot(day)
         else:
-            if state.iiko_lock.locked():
-                raise HTTPException(429, 'Другой отчёт ещё загружается. Повторите через несколько секунд.')
-            async with state.iiko_lock:
-                result = await asyncio.wait_for(state.iiko.load(day), timeout=90)
+            result = await load_iiko(state, 'load', day, refresh=refresh, request=request)
         state.cache.put(result)
-        return result.json()
-    except TimeoutError:
+        return {**result.json(),
+                'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured)}
+    except TimeoutError as error:
+        log_safe_failure('cashier-route', error, operation='day_report',
+                         request_id=request.state.request_id)
         raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
     except DataError as error:
+        log_safe_failure('cashier-route', error, operation='day_report',
+                         request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
 
 @router.get('/export')
 def download_report(request: Request, date: date,
-                    snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$')):
+                    snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$'),
+                    expense_revision: str | None = None, receipt_revision: str | None = None):
     day = selected_day(date)
     try:
         snapshot = request.app.state.cache.get(snapshot_id, day)
@@ -135,6 +153,9 @@ def download_report(request: Request, date: date,
         raise HTTPException(409, str(error)) from None
     expenses = [] if snapshot.demo else request.app.state.expenses.list(day)
     receipts = [] if snapshot.demo else request.app.state.expenses.list_receipts(day)
+    if ((expense_revision is not None and expense_revision != entries_revision(expenses))
+            or (receipt_revision is not None and receipt_revision != entries_revision(receipts))):
+        raise HTTPException(409, 'Расходы или поступления изменились. Обновите день перед скачиванием.')
     data = export_report(snapshot, expenses, receipts)
     prefix = 'DEMO-' if snapshot.demo else ''
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',

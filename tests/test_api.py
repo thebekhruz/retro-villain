@@ -9,8 +9,8 @@ from fastapi.testclient import TestClient
 
 from retro.app import create_app
 from retro.config import Settings
-from retro.integrations.iiko import IikoClient, cash_prepay_from_shifts
-from retro.modules.cashier.service import DataError
+from retro.integrations.iiko import IikoClient, cash_prepay_from_shifts, detail_rows_from_olap
+from retro.modules.cashier.service import DataError, demo_snapshot
 import pytest
 
 
@@ -46,6 +46,105 @@ def test_invalid_and_future_dates_are_rejected():
         assert client.get('/api/cashier/day?date=2099-01-01').status_code == 422
 
 
+def test_new_daily_report_does_not_cancel_another_readers_report():
+    first_started = asyncio.Event()
+    first_cancelled = asyncio.Event()
+    release_first = asyncio.Event()
+
+    class IikoStub:
+        calls = []
+
+        async def load(self, day):
+            self.calls.append(day)
+            if len(self.calls) == 1:
+                first_started.set()
+                try:
+                    await release_first.wait()
+                except asyncio.CancelledError:
+                    first_cancelled.set()
+                    raise
+            return demo_snapshot(day)
+
+    async def scenario():
+        app = create_app(Settings())
+        app.state.iiko = IikoStub()
+        transport = httpx.ASGITransport(app=app, client=('127.0.0.1', 50000))
+        async with httpx.AsyncClient(transport=transport, base_url='http://127.0.0.1') as client:
+            old_request = asyncio.create_task(
+                client.get('/api/cashier/day?date=2026-09-10'))
+            await asyncio.wait_for(first_started.wait(), timeout=1)
+            new_response = await asyncio.wait_for(
+                client.get('/api/cashier/day?date=2026-09-11'), timeout=1)
+            assert not first_cancelled.is_set()
+            release_first.set()
+            old_response = await asyncio.wait_for(old_request, timeout=1)
+        return app.state.iiko.calls, old_response, new_response
+
+    calls, old_response, new_response = asyncio.run(scenario())
+
+    assert calls == [date(2026, 9, 10), date(2026, 9, 11)]
+    assert not first_cancelled.is_set()
+    assert old_response.status_code == 200
+    assert old_response.json()['date'] == '2026-09-10'
+    assert new_response.status_code == 200
+    assert new_response.json()['date'] == '2026-09-11'
+
+
+def test_iiko_detail_rows_keep_dimensions_metrics_and_report_truncation():
+    rows = [{
+        'field0': {'value': '2026-09-16'},
+        'children': [
+            {'field1': {'value': 'Стейк'}, 'field2': {'value': 2},
+             'field3': {'value': 500000}, 'field4': {'value': 120000},
+             'field5': {'value': 60000}, 'field6': {'value': 1}},
+            {'field1': {'value': 'Салат'}, 'field2': {'value': 3},
+             'field3': {'value': 210000}, 'field4': {'value': 30000},
+             'field5': {'value': 10000}, 'field6': {'value': 2}},
+        ],
+    }]
+
+    result, total = detail_rows_from_olap(
+        rows, ('OpenDate.Typed', 'DishName'), limit=1)
+
+    assert total == 2
+    assert result == [{
+        'dimensions': {'OpenDate.Typed': '2026-09-16', 'DishName': 'Стейк'},
+        'quantity': '2', 'revenue': '500000',
+        'product_cost_per_unit': '60000', 'product_cost_total': '120000',
+        'orders': '1',
+    }]
+
+
+def test_iiko_detail_report_uses_allowlisted_olap_dimensions_and_metrics():
+    captured = {}
+
+    def handler(request):
+        payload = __import__('json').loads(request.content) if request.content else {}
+        if request.url.path == '/api/auth/login':
+            return httpx.Response(200, json={'token': 'safe-token'})
+        captured['body'] = payload
+        if request.url.path == '/api/olap/init':
+            return httpx.Response(200, json={'fetchId': 'details-1'})
+        return httpx.Response(200, json={'result': {'rows': [{
+            'field0': {'value': 'Стейк'}, 'field1': {'value': 2},
+            'field2': {'value': 500000}, 'field3': {'value': 120000},
+            'field4': {'value': 60000}, 'field5': {'value': 1},
+        }]}})
+
+    source = IikoClient(
+        Settings(login='test', password='test', store_id=123),
+        transport=httpx.MockTransport(handler), poll_delay=0)
+    result = asyncio.run(source.load_sales_details(
+        date(2026, 9, 16), date(2026, 9, 16), ('DishName',), limit=25))
+
+    assert captured['body']['groupFields'] == ['DishName']
+    assert captured['body']['dataFields'] == [
+        'DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost',
+        'ProductCostBase.OneItem', 'UniqOrderId.OrdersCount']
+    assert result['rows'][0]['dimensions'] == {'DishName': 'Стейк'}
+    assert result['truncated'] is False
+
+
 def test_external_access_requires_configured_credentials():
     with TestClient(create_app(Settings()), client=('192.168.1.80', 50000)) as client:
         assert client.get('/api/config').status_code == 403
@@ -64,6 +163,39 @@ def test_lan_access_is_limited_to_allowed_network_and_password():
         assert client.get('/api/config', auth=('viewer', 'secret')).status_code == 200
     with TestClient(app, client=('10.10.12.1', 50000)) as client:
         assert client.get('/api/config', auth=('viewer', 'secret')).status_code == 403
+
+
+def test_pages_are_closed_without_login_and_served_after_it():
+    settings = Settings(dashboard_user='viewer', dashboard_password='secret')
+    app = create_app(settings)
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        for path in ('/', '/accountant', '/accountant/employees'):
+            # Страницу без входа отдавать нельзя: гостя уводит на форму входа,
+            # а не показывает содержимое с пустыми полями.
+            closed = client.get(path, follow_redirects=False)
+            assert closed.status_code == 303, path
+            assert closed.headers['location'] == '/login', path
+            wrong = client.get(path, auth=('viewer', 'wrong'), follow_redirects=False)
+            assert wrong.status_code == 303, path
+            page = client.get(path, auth=('viewer', 'secret'))
+            assert page.status_code == 200, path
+            assert page.headers['content-type'].startswith('text/html'), path
+    # Без настроенного пароля нелокальные запросы не получают и страницу.
+    with TestClient(create_app(Settings()), client=('192.168.1.80', 50000)) as client:
+        assert client.get('/').status_code == 403
+
+
+def test_finance_module_is_available_to_authorized_user_from_allowed_network():
+    settings = Settings(dashboard_panel_users={
+                            'bookkeeper': ('secret', 'accountant'),
+                            'cashier': ('secret', 'cashier'),
+                        },
+                        dashboard_allowed_network=ip_network('10.10.8.0/22'))
+    app = create_app(settings)
+    with TestClient(app, base_url='http://retro.local', client=('10.10.8.91', 50000)) as client:
+        assert client.get('/accountant', auth=('bookkeeper', 'secret')).status_code == 200
+        assert client.get('/accountant/employees', auth=('bookkeeper', 'secret')).status_code == 200
+        assert client.get('/accountant', auth=('cashier', 'secret')).status_code == 403
 
 
 def test_iiko_protocol_pending_poll_and_total_query():

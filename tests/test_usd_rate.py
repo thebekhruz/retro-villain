@@ -25,8 +25,11 @@ def test_usd_rate_is_for_selected_day_and_rounded_down_to_one_decimal(tmp_path):
             'discount_percent': '1.5',
         }
         page = client.get('/').text
+        # Кассир должен видеть оба курса и понимать, чем они отличаются.
+        # Скидка теперь подписана в самой метке курса, а не отдельной строкой.
         assert 'Официальный курс ЦБ' in page
-        assert 'Курс Retro Milliy' in page
+        assert 'Курс Retro' in page
+        assert '1,5%' in page
 
 
 def test_historical_rate_stays_unchanged_after_restart_and_source_change(tmp_path):

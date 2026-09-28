@@ -1,13 +1,213 @@
 import asyncio
-from decimal import Decimal
+import json
+import hashlib
+import logging
+from contextlib import asynccontextmanager
+from time import monotonic
+from collections import defaultdict
+from dataclasses import replace
+from datetime import date, timedelta
+from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import quote
 
 import httpx
 
+from retro.async_utils import gather_reads
+
+from retro.report_cache import ReportCache, refresh_source
 from retro.config import IIKO_ORIGIN
+from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
-    BANQUET_SECTION, RETRO_REGISTER, DataError, build_revenue_breakdown, build_snapshot, number,
+    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell,
+    number, today_tashkent,
 )
+from retro.modules.director.models import (
+    SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
+)
+from retro.modules.founder.models import (
+    PaymentRow, RevenueRow, build_analytics, build_sales_bridge, is_banquet_item,
+)
+
+
+DIRECTOR_GROUPS = ['CashRegisterName', 'RestaurantSection', 'PayTypes', 'DishName',
+                   'DishGroup', 'WaiterName', 'UniqOrderId.Id']
+DIRECTOR_COST_GROUPS = [field for field in DIRECTOR_GROUPS if field != 'PayTypes']
+DIRECTOR_DETAIL_GROUPS = DIRECTOR_GROUPS + ['NonCashPaymentType']
+DIRECTOR_FIELDS = ['DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost']
+IIKO_DETAIL_DIMENSIONS = (
+    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'PayTypes',
+    'DishName', 'DishGroup', 'WaiterName', 'UniqOrderId.Id', 'OperationType',
+)
+IIKO_DETAIL_FIELDS = (
+    'DishAmountInt', 'DishDiscountSumInt', 'ProductCostBase.ProductCost',
+    'ProductCostBase.OneItem', 'UniqOrderId.OrdersCount',
+)
+FOUNDER_OLAP_MAX_DAYS = 31
+# Директорский отчёт идёт по восьми измерениям — iiko отдаёт такой запрос
+# только окном около десяти дней; на трёх неделях он уже отвечает 500.
+DIRECTOR_RANGE_MAX_DAYS = 10
+FOUNDER_OLAP_CHUNK_CONCURRENCY = 2
+# Маршрут до iiko из прода рвётся: за сутки 27–28 сентября в логах 17
+# транспортных отказов на 40 успешных отчётов, медиана запроса 2.3 с при
+# максимуме 23.3 с. Общий бюджет на коннект и чтение это лечить не умеет:
+# потерянный SYN ждал столько же, сколько честно считающийся отчёт.
+IIKO_TIMEOUT = httpx.Timeout(connect=8, read=30, write=20, pool=8)
+# Повтор коннекта стоит один RTT, повтор чтения заново считает отчёт в iiko —
+# поэтому бюджеты разные. Худшая серия укладывается в 90 с ReportCache.
+IIKO_CONNECT_ATTEMPTS = 3
+IIKO_READ_ATTEMPTS = 2
+IIKO_RETRY_PAUSE = 0.5
+# Опрос готовности отчёта частым не делаем: замеры 28 сентября показали, что
+# запросы к iiko — дефицитный ресурс. Опрос раз в 0,35 с вместо секунды дал на
+# директорском отчёте вдвое больше запросов (88 против 43) и вдвое худшее время;
+# рост одновременных отчётов до шестнадцати добивал источник совсем (кассовый
+# день 17 с вместо 2,4 с). Поэтому интервал прежний, а меняется только потолок:
+# он считается по часам, а не по числу попыток. Пятнадцать попыток обрывали
+# отчёт на пятнадцатой секунде, хотя в логах прода встречаются честные 23 с —
+# такой отчёт теперь досчитывается, а не падает с ошибкой.
+IIKO_POLL_BUDGET = 30
+IIKO_POLL_MAX_ATTEMPTS = 40
+# Закрытый день в iiko сам по себе не меняется: правки вносит человек, и для них
+# есть кнопка обновления. Минутный TTL заставлял выкачивать один и тот же
+# сентябрь заново на каждом открытии страницы.
+OLAP_TTL_OPEN = 60
+OLAP_TTL_CLOSED = 15 * 60
+# Коннект не состоялся или соединение из пула оказалось мёртвым — повтор дёшев.
+IIKO_CHEAP_RETRY = (httpx.ConnectTimeout, httpx.ConnectError, httpx.PoolTimeout,
+                    httpx.CloseError, httpx.RemoteProtocolError)
+# Запрос ушёл и iiko над ним работает — повтор стоит ещё одного прогона отчёта.
+IIKO_COSTLY_RETRY = (httpx.ReadTimeout, httpx.WriteTimeout, httpx.ReadError, httpx.WriteError)
+FOUNDER_PNL_METRICS = (
+    'PL_SALES_TOTAL', 'PL_COS_TOTAL', 'PL_PROFIT_GROSS', 'PL_EXP_TOTAL',
+    'PL_PROFIT_MAIN', 'PL_OTH_INCOME_TOTAL', 'PL_OTH_EXP_TOTAL', 'PL_PROFIT_NET',
+)
+FOUNDER_INTERNAL_COST_TYPES = ('Дегустация', 'Счет Шефа')
+
+
+def olap_ttl(end, *, today=None):
+    """Отчёт про завершившиеся дни живёт дольше: его данные уже не меняются."""
+    return OLAP_TTL_OPEN if end >= (today or today_tashkent()) else OLAP_TTL_CLOSED
+
+
+def date_chunks(start, end, *, max_days):
+    """Yield inclusive ranges small enough for one iiko OLAP report."""
+    cursor = start
+    while cursor <= end:
+        chunk_end = min(end, cursor + timedelta(days=max_days - 1))
+        yield cursor, chunk_end
+        cursor = chunk_end + timedelta(days=1)
+
+
+def director_rows_from_olap(day, rows, *, split_payments=True, payment_details=False):
+    """Flatten iiko's nested grouped-table response into safe typed sale rows."""
+    result = []
+    groups = DIRECTOR_GROUPS if split_payments else DIRECTOR_COST_GROUPS
+    if payment_details:
+        groups = DIRECTOR_DETAIL_GROUPS
+    if day is None:
+        groups = ['OpenDate.Typed', *groups]
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку отчёта директора.')
+        values = list(inherited)
+        while len(values) < len(groups):
+            index = len(values)
+            field = row.get(f'field{index}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != len(groups):
+            raise DataError('iiko не вернул все измерения продажи.')
+        quantity, revenue, total_cost = (
+            number(cell(row, index)) for index in range(len(groups), len(groups) + 3))
+        row_day = day
+        if row_day is None:
+            try:
+                row_day = date.fromisoformat(values.pop(0))
+            except (ValueError, TypeError):
+                raise DataError('iiko вернул некорректную дату продажи.') from None
+        if not split_payments:
+            values.insert(2, '')
+        purpose = values.pop() if payment_details else ''
+        register, section, payment_type, item, category, waiter, order_id = values
+        # У части продаж группа блюда в iiko пустая. Без имени такую строку
+        # нельзя ни отнести к типу отчёта, ни исключить — отчёт падал целиком
+        # из-за девяти тысяч сум. Даём ей имя, и дальше она настраивается как
+        # любая другая группа.
+        if not isinstance(category, str) or not category.strip():
+            category = 'Без группы'
+        result.append(SalesRow(row_day, register, section, payment_type, item, category,
+                               quantity, revenue, total_cost, waiter, order_id, purpose or ''))
+
+    for row in rows:
+        visit(row, [])
+    return result
+
+
+def director_rows_from_range(rows):
+    """Период целиком: дата приходит первым измерением OLAP, день — из строки.
+
+    Себестоимость берётся как суммарная по строке (ProductCostBase.ProductCost),
+    как во всём директорском модуле, а не как цена за единицу × количество.
+    """
+    return director_rows_from_olap(None, rows)
+
+
+def reconcile_director_costs(payment_rows, cost_rows):
+    """Allocate unsplit iiko costs; PayTypes repeats cost for mixed payments.
+
+    Quantity is apportioned by iiko between payment types (to 3 decimals).
+    Normalize those weights, including zero-revenue dishes, and keep the
+    remainder on the largest share so the authoritative cost is conserved.
+    Never deduplicate by amount: equal costs can belong to different orders.
+    """
+    def key(row):
+        return (row.day, row.register, row.section, row.item, row.category,
+                row.waiter, row.order_id)
+
+    mismatch = 'Детализация оплат и себестоимости iiko не совпала. Обновите данные.'
+    grouped = defaultdict(list)
+    for row in payment_rows:
+        grouped[key(row)].append(row)
+    costs = {}
+    for row in cost_rows:
+        row_key = key(row)
+        if row_key in costs:
+            raise DataError(mismatch)
+        costs[row_key] = row
+    if grouped.keys() != costs.keys():
+        raise DataError(mismatch)
+    result = []
+    for row_key, parts in grouped.items():
+        source = costs[row_key]
+        quantity = sum((row.quantity for row in parts), Decimal(0))
+        revenue = sum((row.revenue for row in parts), Decimal(0))
+        if (source.quantity * source.cost < 0
+                or any(row.quantity * source.quantity < 0 for row in parts)
+                or abs(quantity - source.quantity) > Decimal('.001') * len(parts)
+                or abs(revenue - source.revenue) > Decimal('.01') * len(parts)
+                or (not quantity and source.cost)):
+            raise DataError(mismatch)
+        # Largest share receives the remainder, including Decimal division dust.
+        parts = sorted(parts, key=lambda row: abs(row.quantity))
+        remaining = source.cost
+        for index, row in enumerate(parts):
+            if index == len(parts) - 1:
+                cost = remaining
+            else:
+                cost = source.cost * row.quantity / quantity if quantity else Decimal(0)
+                remaining -= cost
+            result.append(replace(
+                row, cost=cost,
+                quantity=row.quantity + (source.quantity - quantity if index == len(parts) - 1 else 0),
+                revenue=row.revenue + (source.revenue - revenue if index == len(parts) - 1 else 0)))
+    return result
 
 
 def cash_prepay_from_shifts(day, sales, payments, shifts):
@@ -41,10 +241,14 @@ def cash_prepay_from_shifts(day, sales, payments, shifts):
 
 
 def olap_body(store_id, day, groups, fields, extra_filters=()):
+    return olap_range_body(store_id, day, day, groups, fields, extra_filters)
+
+
+def olap_range_body(store_id, start, end, groups, fields, extra_filters=()):
     return dict(storeIds=[store_id], olapType='SALES', groupFields=groups,
                 dataFields=fields, calculatedFields=[],
-                filters=[dict(filterType='date_range', dateFrom=day.isoformat(),
-                              dateTo=day.isoformat(), includeLeft=True, includeRight=True,
+                filters=[dict(filterType='date_range', dateFrom=start.isoformat(),
+                              dateTo=end.isoformat(), includeLeft=True, includeRight=True,
                               field='OpenDate.Typed')] + [
                     dict(field=field, filterType='value_list', dateFrom=None, dateTo=None,
                          valueMin=None, valueMax=None, valueList=['NOT_DELETED'],
@@ -53,30 +257,293 @@ def olap_body(store_id, day, groups, fields, extra_filters=()):
                 includeVoidTransactions=False, includeNonBusinessPaymentTypes=False)
 
 
+def founder_rows_from_olap(rows, *, payments=False, dish_filter='all', include_cost=False,
+                           include_operation=False):
+    if dish_filter not in {'all', 'exclude_banquet', 'banquet_only'}:
+        raise ValueError('unknown founder dish filter')
+    if include_operation and not payments:
+        raise ValueError("operation requires payment dimensions")
+    group_count = (6 if include_operation else 5) if payments else 4
+    result = []
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку аналитики.')
+        values = list(inherited)
+        while len(values) < group_count:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != group_count:
+            raise DataError('iiko не вернул все измерения аналитики.')
+        try:
+            day = date.fromisoformat(values[0])
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату аналитики.') from None
+        amount = number(cell(row, group_count))
+        banquet_item = is_banquet_item(values[3])
+        if dish_filter == 'exclude_banquet' and banquet_item:
+            return
+        if dish_filter == 'banquet_only' and not banquet_item:
+            return
+        if payments:
+            result.append(PaymentRow(
+                day, values[1], values[2], values[3], values[4], amount,
+                values[5] if include_operation else ""))
+        else:
+            cost = number(cell(row, group_count + 1)) if include_cost else None
+            result.append(RevenueRow(day, values[1], values[2], values[3], amount, cost))
+
+    if not isinstance(rows, list):
+        raise DataError('iiko вернул некорректную структуру аналитики.')
+    for row in rows:
+        visit(row, [])
+    return result
+
+
+def founder_internal_costs_from_olap(rows):
+    """Sum zero-revenue internal operations by iiko non-cash purpose."""
+    totals = {name: Decimal(0) for name in FOUNDER_INTERNAL_COST_TYPES}
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку внутренних расходов.')
+        values = list(inherited)
+        while len(values) < 2:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != 2:
+            raise DataError('iiko не вернул назначение внутреннего расхода.')
+        try:
+            date.fromisoformat(values[0])
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату внутреннего расхода.') from None
+        if values[1] in totals:
+            totals[values[1]] += number(cell(row, 2))
+
+    if not isinstance(rows, list):
+        raise DataError('iiko вернул некорректную структуру внутренних расходов.')
+    for row in rows:
+        visit(row, [])
+    return totals
+
+
+def founder_pnl_from_kpi(data):
+    """Validate and total the exact accounting metrics used by iiko P&L."""
+    if not isinstance(data, dict):
+        raise DataError('iiko вернул некорректный отчёт о прибылях и убытках.')
+    totals = {}
+    for metric in FOUNDER_PNL_METRICS:
+        periods = data.get(metric)
+        if not isinstance(periods, dict) or not periods:
+            raise DataError('iiko не вернул показатель отчёта о прибылях и убытках.')
+        totals[metric] = sum((number(value) for value in periods.values()), Decimal(0))
+    if (abs(totals['PL_SALES_TOTAL'] - totals['PL_COS_TOTAL']
+            - totals['PL_PROFIT_GROSS']) > Decimal('.01')
+            or abs(totals['PL_PROFIT_GROSS'] - totals['PL_EXP_TOTAL']
+                   - totals['PL_PROFIT_MAIN']) > Decimal('.01')
+            or abs(totals['PL_PROFIT_MAIN'] + totals['PL_OTH_INCOME_TOTAL']
+                   - totals['PL_OTH_EXP_TOTAL'] - totals['PL_PROFIT_NET']) > Decimal('.01')):
+        raise DataError('Показатели отчёта iiko о прибылях и убытках не сходятся.')
+    # iiko can expose sub-kopek calculation tails in JSON even though its P&L
+    # report is stated to two decimal places. Keep the raw values for the
+    # reconciliation above, then publish every monetary total at that same
+    # currency precision so long ranges cannot leak binary/calculation dust.
+    totals = {
+        metric: value.quantize(Decimal('.01'), rounding=ROUND_HALF_UP)
+        for metric, value in totals.items()
+    }
+    return {
+        'sales': str(totals['PL_SALES_TOTAL']),
+        'cost': str(totals['PL_COS_TOTAL']),
+        'gross_profit': str(totals['PL_PROFIT_GROSS']),
+        'operating_expenses': str(totals['PL_EXP_TOTAL']),
+        'operating_profit': str(totals['PL_PROFIT_MAIN']),
+        'other_income': str(totals['PL_OTH_INCOME_TOTAL']),
+        'other_expenses': str(totals['PL_OTH_EXP_TOTAL']),
+        'net_profit': str(totals['PL_PROFIT_NET']),
+    }
+
+
+def detail_rows_from_olap(rows, dimensions, *, limit, offset=0):
+    """Flatten a bounded, allowlisted iiko OLAP report for founder questions."""
+    records = []
+    total_rows = 0
+    group_count = len(dimensions)
+
+    def visit(row, inherited):
+        nonlocal total_rows
+        if not isinstance(row, dict):
+            raise DataError('iiko вернул некорректную строку детального отчёта.')
+        values = list(inherited)
+        while len(values) < group_count:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != group_count:
+            raise DataError('iiko не вернул все измерения детального отчёта.')
+        quantity, revenue, total_cost, unit_cost, orders = (
+            number(cell(row, group_count + index)) for index in range(5)
+        )
+        total_rows += 1
+        if total_rows <= offset or len(records) >= limit:
+            return
+        records.append({
+            'dimensions': dict(zip(dimensions, values, strict=True)),
+            'quantity': str(quantity),
+            'revenue': str(revenue),
+            'product_cost_per_unit': str(unit_cost),
+            'product_cost_total': str(total_cost),
+            'orders': str(orders),
+        })
+
+    if not isinstance(rows, list):
+        raise DataError('iiko вернул некорректную структуру детального отчёта.')
+    for row in rows:
+        visit(row, [])
+    return records, total_rows
+
+
+def olap_leaves(rows, group_count, what):
+    """Листья сгруппированного отчёта iiko: (значения измерений, строка метрик)."""
+    leaves = []
+
+    def visit(row, inherited):
+        if not isinstance(row, dict):
+            raise DataError(f'iiko вернул некорректную строку отчёта «{what}».')
+        values = list(inherited)
+        while len(values) < group_count:
+            field = row.get(f'field{len(values)}')
+            if not isinstance(field, dict) or 'value' not in field:
+                break
+            values.append(field['value'])
+        children = row.get('children')
+        if isinstance(children, list) and children:
+            for child in children:
+                visit(child, values)
+            return
+        if len(values) != group_count:
+            raise DataError(f'iiko не вернул все измерения отчёта «{what}».')
+        leaves.append((values, row))
+
+    if not isinstance(rows, list):
+        raise DataError(f'iiko вернул некорректную структуру отчёта «{what}».')
+    for row in rows:
+        visit(row, [])
+    return leaves
+
+
+def daily_orders_from_olap(rows):
+    """Чеки и выручка по дням и кассам. Касса школы — Oxbridge, основная — Retro."""
+    registers = {RETRO_REGISTER: 'retro', SCHOOL_REGISTER: 'school'}
+    result = []
+    for (day, register), row in olap_leaves(rows, 2, 'чеки по дням'):
+        if register not in registers:
+            raise DataError('В iiko появилась неизвестная касса. Разделение выручки требует проверки.')
+        try:
+            date.fromisoformat(day)
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату в отчёте по чекам.') from None
+        result.append(dict(day=day, direction=registers[register],
+                           orders=int(number(cell(row, 2))), revenue=str(number(cell(row, 3)))))
+    return result
+
+
+def chef_bills_from_olap(rows):
+    """Счета «Счёт Шефа» по одному на заказ: сумма по меню и себестоимость.
+
+    Официантов в заказе бывает несколько — перечисляем всех, кто его вёл."""
+    bills = {}
+    for (day, order_id, table, waiter), row in olap_leaves(rows, 4, 'Счёт Шефа'):
+        try:
+            date.fromisoformat(day)
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату Счёта Шефа.') from None
+        bill = bills.setdefault(order_id, dict(day=day, order_id=order_id, table=table,
+                                               waiters=[], amount=Decimal(0), cost=Decimal(0)))
+        if waiter and waiter not in bill['waiters']:
+            bill['waiters'].append(waiter)
+        bill['amount'] += number(cell(row, 4))
+        bill['cost'] += number(cell(row, 5))
+    return [dict(bill, amount=str(bill['amount']), cost=str(bill['cost'].quantize(
+        Decimal('.01'), rounding=ROUND_HALF_UP))) for bill in bills.values()]
+
 class IikoClient:
     def __init__(self, settings, *, transport=None, poll_delay=1):
         self.settings, self.transport, self.poll_delay = settings, transport, poll_delay
+        self._http = None
+        self._auth_lock = asyncio.Lock()
+        self._auth_until = 0
+        # Потолок памяти держит max_weight, а не число записей, поэтому слотов
+        # можно дать больше: при четверти часа TTL шестнадцати не хватало даже
+        # на один девяностодневный период учредителя, и соседние страницы
+        # вытесняли друг друга задолго до истечения срока. Одновременность
+        # остаётся четвёркой: iiko от неё деградирует, а не ускоряется.
+        self._olap_cache = ReportCache(concurrency=4, limit=48, max_weight=12_000_000,
+            weigh=lambda rows: len(json.dumps(rows, ensure_ascii=False).encode()))
+        self._kpi_cache = ReportCache(concurrency=2, limit=16)
+
+    @asynccontextmanager
+    async def _client(self):
+        if self.settings.base_url != IIKO_ORIGIN:
+            raise DataError('Разрешён только сервер Retro Milliy.')
+        if self._http is None:
+            self._http = httpx.AsyncClient(
+                base_url=IIKO_ORIGIN,
+                headers={'Accept': 'application/json', 'Accept-Language': 'ru_RU',
+                         'Content-Type': 'application/json'},
+                timeout=IIKO_TIMEOUT, follow_redirects=False, transport=self.transport,
+                limits=httpx.Limits(max_connections=8, max_keepalive_connections=8))
+        await self._authorize(self._http)
+        yield self._http
+
+    async def _authorize(self, client, rejected_token=None):
+        async with self._auth_lock:
+            current = client.headers.get('Authorization')
+            if current and ((rejected_token is None and monotonic() < self._auth_until)
+                            or (rejected_token is not None and current != rejected_token)):
+                return
+            auth = await self._post(client, '/api/auth/login',
+                dict(login=self.settings.login, password=self.settings.password))
+            if not isinstance(auth.get('token'), str) or not auth['token']:
+                raise DataError('iiko не подтвердил авторизацию.')
+            client.headers['Authorization'] = 'Bearer ' + auth['token']
+            self._auth_until = monotonic() + 15 * 60
+
+    async def close(self):
+        await self._olap_cache.close()
+        await self._kpi_cache.close()
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
 
     async def load(self, day):
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
         if self.settings.base_url != IIKO_ORIGIN:
             raise DataError('Разрешён только сервер Retro Milliy.')
-        headers = {'Accept': 'application/json', 'Accept-Language': 'ru_RU',
-                   'Content-Type': 'application/json'}
+        fresh_token = refresh_source.set(True)
         try:
-            async with httpx.AsyncClient(base_url=IIKO_ORIGIN, headers=headers,
-                                        timeout=25, follow_redirects=False,
-                                        transport=self.transport) as client:
-                auth = await self._post(client, '/api/auth/login',
-                                        dict(login=self.settings.login, password=self.settings.password))
-                if not isinstance(auth.get('token'), str) or not auth['token']:
-                    raise DataError('iiko не подтвердил авторизацию.')
-                client.headers['Authorization'] = 'Bearer ' + auth['token']
-                breakdown_rows = await self._olap(client, day,
-                                                  ['CashRegisterName', 'RestaurantSection'],
-                                                  ['DishDiscountSumInt'])
-                breakdown = build_revenue_breakdown(breakdown_rows)
+            async with self._client() as client:
                 scope = [
                     dict(field='CashRegisterName', filterType='value_list',
                          valueList=[RETRO_REGISTER], inclusiveList=True),
@@ -85,25 +552,332 @@ class IikoClient:
                     dict(field='OperationType', filterType='value_list',
                          valueList=['PAYMENT'], inclusiveList=True),
                 ]
-                total = await self._olap(client, day, ['OpenDate.Typed'],
-                                         ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope)
-                payments = await self._olap(client, day, ['PayTypes'],
-                                            ['DishDiscountSumInt'], scope)
+                breakdown_rows, total, payments, shift_payments, shifts_data = await gather_reads(
+                    self._olap(client, day, ['CashRegisterName', 'RestaurantSection'],
+                               ['DishDiscountSumInt']),
+                    self._olap(client, day, ['OpenDate.Typed'],
+                               ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope),
+                    self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], scope),
+                    # A shift covers the entire register, including the banquet
+                    # section. Subtract an equally scoped PAYMENT report, never
+                    # the narrower cashier sales card.
+                    self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], [scope[0], scope[2]]),
+                    self._post(client, '/api/cash/shift/list_period',
+                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()}),
+                )
+                breakdown = build_revenue_breakdown(breakdown_rows)
                 snapshot = build_snapshot(day, total, payments, revenue_breakdown=breakdown)
-                shifts_data = await self._post(client, '/api/cash/shift/list_period',
-                                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()})
                 shifts = shifts_data.get('shifts')
                 if not isinstance(shifts, list):
                     raise DataError('iiko не вернул список кассовых смен.')
-                amounts = {payment.name: payment.amount for payment in snapshot.payments}
-                total_prepay, cash_prepay = cash_prepay_from_shifts(day, snapshot.revenue, amounts, shifts)
+                amounts = defaultdict(Decimal)
+                for row in shift_payments:
+                    amounts[cell(row, 0)] += number(cell(row, 1))
+                total_prepay, cash_prepay = cash_prepay_from_shifts(
+                    day, sum(amounts.values(), Decimal(0)), amounts, shifts)
                 from dataclasses import replace
-                return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay)
-        except (httpx.HTTPError, TimeoutError):
+                register_sales = sum(amounts.values(), Decimal(0))
+                return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay,
+                               register_payment_sales=register_sales,
+                               register_received_total=register_sales + total_prepay)
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_cashier')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+        finally:
+            refresh_source.reset(fresh_token)
+
+    async def load_director_report(self, today, *, start=None, end=None, days=None):
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        start, end = resolve_period(today, start, end, days)
+        payment_groups = [
+            'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
+            'PayTypes',
+        ]
+        payment_scope = [dict(field='OperationType', filterType='value_list',
+                              valueList=['PAYMENT'], inclusiveList=True)]
+        try:
+            async with self._client() as client:
+                # Период берём окнами. Окна независимы по дням, поэтому идут
+                # разом, но их число ограничено, чтобы не завалить iiko.
+                chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
+
+                # Десятидневное окно нужно только двум тяжёлым отчётам: на их
+                # восьми-девяти измерениях iiko отдаёт 500 уже на трёх неделях.
+                # Выручка по способам оплаты — те же пять измерений, что и у
+                # учредителя, и месяц целиком iiko по ним считает спокойно.
+                # Раньше она резалась теми же десятью днями и на тридцати днях
+                # стоила шести отчётов вместо двух.
+                async def load_costs(chunk_start, chunk_end):
+                    async with chunk_limit:
+                        return await gather_reads(
+                            self._olap_range(client, chunk_start, chunk_end,
+                                             ['OpenDate.Typed', *DIRECTOR_DETAIL_GROUPS], DIRECTOR_FIELDS),
+                            self._olap_range(client, chunk_start, chunk_end,
+                                             ['OpenDate.Typed', *DIRECTOR_COST_GROUPS], DIRECTOR_FIELDS),
+                        )
+
+                async def load_payments(chunk_start, chunk_end):
+                    async with chunk_limit:
+                        return await gather_reads(
+                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                             ['DishDiscountSumInt'], payment_scope),
+                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                             ['DishDiscountSumInt']),
+                        )
+
+                cost_answers, payment_answers = await gather_reads(
+                    gather_reads(*(load_costs(chunk_start, chunk_end)
+                                   for chunk_start, chunk_end in date_chunks(
+                                       start, end, max_days=DIRECTOR_RANGE_MAX_DAYS))),
+                    gather_reads(*(load_payments(chunk_start, chunk_end)
+                                   for chunk_start, chunk_end in date_chunks(
+                                       start, end, max_days=FOUNDER_OLAP_MAX_DAYS))),
+                )
+                payment_rows, cost_rows, regular_rows, banquet_rows = [], [], [], []
+                for chunk_payments, chunk_costs in cost_answers:
+                    payment_rows.extend(chunk_payments)
+                    cost_rows.extend(chunk_costs)
+                for chunk_regular, chunk_banquet in payment_answers:
+                    regular_rows.extend(chunk_regular)
+                    banquet_rows.extend(chunk_banquet)
+                rows = reconcile_director_costs(
+                    director_rows_from_olap(None, payment_rows, payment_details=True),
+                    director_rows_from_olap(None, cost_rows, split_payments=False))
+                payments = founder_rows_from_olap(
+                    regular_rows, payments=True, dish_filter='exclude_banquet')
+                payments.extend(founder_rows_from_olap(
+                    banquet_rows, payments=True, dish_filter='banquet_only'))
+                yandex_revenue = payment_total(payments, 'Яндекс Еда')
+                return build_director_snapshot(rows, self.settings.director_categories, start, end,
+                                               excluded_groups=self.settings.director_excluded_groups,
+                                               yandex_revenue=yandex_revenue)
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_director')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
+    async def load_founder_analytics(self, start, end, granularity, directions):
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        if self.settings.base_url != IIKO_ORIGIN:
+            raise DataError('Разрешён только сервер Retro Milliy.')
+        try:
+            async with self._client() as client:
+                payment_groups = [
+                    'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
+                    'PayTypes',
+                ]
+                revenue_groups = payment_groups[:-1]
+                revenue = []
+                payments = []
+                operations = []
+                internal_costs = {name: Decimal(0) for name in FOUNDER_INTERNAL_COST_TYPES}
+                chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
+
+                async def load_chunk(chunk_start, chunk_end):
+                    async with chunk_limit:
+                        return await gather_reads(
+                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
+                                             ['DishDiscountSumInt']),
+                            self._olap_range(client, chunk_start, chunk_end, revenue_groups,
+                                             ['DishDiscountSumInt', 'ProductCostBase.ProductCost']),
+                            self._olap_range(
+                                client, chunk_start, chunk_end,
+                                ['OpenDate.Typed', 'NonCashPaymentType'],
+                                ['ProductCostBase.ProductCost']),
+                            self._olap_range(client, chunk_start, chunk_end,
+                                             [*payment_groups, 'OperationType'],
+                                             ['DishDiscountSumInt']),
+                        )
+
+                chunks = list(date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS))
+                pnl, chunk_rows = await gather_reads(
+                    self._founder_pnl(client, start, end),
+                    gather_reads(*(load_chunk(chunk_start, chunk_end)
+                                   for chunk_start, chunk_end in chunks)),
+                )
+                for payment_rows, sales_rows, internal_rows, operation_rows in chunk_rows:
+                    payments.extend(founder_rows_from_olap(payment_rows, payments=True))
+                    revenue.extend(founder_rows_from_olap(sales_rows, include_cost=True))
+                    operations.extend(founder_rows_from_olap(
+                        operation_rows, payments=True, include_operation=True))
+                    for name, amount in founder_internal_costs_from_olap(internal_rows).items():
+                        internal_costs[name] += amount
+                result = build_analytics(revenue, payments, start, end, granularity, directions)
+                result['sales_bridge'] = build_sales_bridge(
+                    payments, operations, start, end, granularity, directions)
+                if not result['sales_bridge']['reconciled']:
+                    result['reconciled'] = False
+                    result['warnings'].append('Разбивка оплат и зачтённых авансов не прошла сверку.')
+                if result['sales_bridge']['unknown_operations']:
+                    result['warnings'].append('Другие операции требуют проверки: ' +
+                        ', '.join(result['sales_bridge']['unknown_operations']))
+                result['olap_product_cost_totals'] = result.pop('cost_totals')
+                result['olap_sales_margin_totals'] = result.pop('gross_profit_totals')
+                from retro.modules.founder.models import classify_direction
+                sales = {name: Decimal(0) for name in ('retro', 'school', 'banquet')}
+                excluded = Decimal(0)
+                for row in revenue:
+                    group = classify_direction(row.register, row.section, row.item)
+                    if group is None:
+                        excluded += row.amount
+                    else:
+                        sales[group] += row.amount
+                result['sales_totals'] = {key: str(value) for key, value in sales.items()}
+                result['scope_excluded_revenue'] = str(excluded)
+                result['pnl'] = pnl
+                result['internal_costs'] = {
+                    'tasting': str(internal_costs['Дегустация']),
+                    'chef_account': str(internal_costs['Счет Шефа']),
+                }
+                result['calculation_version'] = '2026-09-24-sales-bridge'
+                result['scope_note'] = (
+                    'Выручка включает продажи, оплаченные авансом; новые авансы за будущие '
+                    'заказы не добавляются. Банкет — только блюда с меткой «БЕХРУЗ». '
+                    'Блок P&L — бухгалтерские показатели всего ресторана из отчёта iiko '
+                    '«Прибыли и убытки»; фильтр направлений на него не влияет. '
+                    'Дегустация и Счёт Шефа показаны отдельно по себестоимости операций '
+                    'без выручки и не прибавляются к продажам. '
+                    'Способы оплаты показывают распределение продаж, а не поступления денег.')
+                return result
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_founder')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def load_daily_orders(self, start, end):
+        """Чеки и выручка по дням для Retro и Oxbridge — без банкетного зала.
+
+        Два измерения iiko отдаёт быстро даже за два месяца, поэтому этим
+        отчётом считается прогноз по дням недели."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        scope = [dict(field='RestaurantSection', filterType='value_list',
+                      valueList=[BANQUET_SECTION], inclusiveList=False)]
+        try:
+            async with self._client() as client:
+                answers = await gather_reads(*(
+                    self._olap_range(client, chunk_start, chunk_end,
+                                     ['OpenDate.Typed', 'CashRegisterName'],
+                                     ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], scope)
+                    for chunk_start, chunk_end in date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS)))
+                return [row for answer in answers for row in daily_orders_from_olap(answer)]
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_daily_orders')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def load_chef_bills(self, start, end):
+        """Счета, закрытые типом оплаты «Счёт Шефа», — по заказам, со столом."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        scope = [dict(field='NonCashPaymentType', filterType='value_list',
+                      valueList=['Счет Шефа'], inclusiveList=True)]
+        try:
+            async with self._client() as client:
+                answers = await gather_reads(*(
+                    self._olap_range(client, chunk_start, chunk_end,
+                                     ['OpenDate.Typed', 'UniqOrderId.Id', 'TableNum', 'WaiterName'],
+                                     ['DishSumInt', 'ProductCostBase.ProductCost'], scope)
+                    for chunk_start, chunk_end in date_chunks(start, end, max_days=FOUNDER_OLAP_MAX_DAYS)))
+                return [row for answer in answers for row in chef_bills_from_olap(answer)]
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_chef_bills')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def _founder_pnl(self, client, start, end):
+        body = {
+            'dateFrom': start.isoformat(),
+            'dateTo': end.isoformat(),
+            'metricCodes': list(FOUNDER_PNL_METRICS),
+            'storeIds': [self.settings.store_id],
+            'dataType': 'DATA_SUMMARY_BY_PERIODS',
+        }
+        key = json.dumps(body, sort_keys=True, ensure_ascii=False)
+
+        async def fetch():
+            response = await self._post(client, '/api/kpi/dashboard/get-data', body)
+            return founder_pnl_from_kpi(response.get('data'))
+
+        return await self._kpi_cache.get(
+            key, fetch, ttl=olap_ttl(end), timeout=90, refresh=refresh_source.get(), label='iiko_kpi')
+
+    async def load_sales_details(self, start, end, dimensions, *, limit, offset=0, revision=None):
+        """Read selected sales dimensions directly from the allowlisted iiko OLAP API."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        if self.settings.base_url != IIKO_ORIGIN:
+            raise DataError('Разрешён только сервер Retro Milliy.')
+        if (not dimensions or len(dimensions) > 4 or len(set(dimensions)) != len(dimensions)
+                or any(value not in IIKO_DETAIL_DIMENSIONS for value in dimensions)):
+            raise DataError('Выберите от одного до четырёх разрешённых измерений iiko.')
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
+            raise DataError('Лимит строк iiko должен быть от 1 до 200.')
+        if not isinstance(offset, int) or isinstance(offset, bool) or not 0 <= offset <= 100000:
+            raise DataError('Некорректное смещение страницы iiko.')
+        if offset and not revision:
+            raise DataError('Для следующей страницы укажите revision первой страницы.')
+        try:
+            async with self._client() as client:
+                raw = await self._olap_range(
+                    client, start, end, list(dimensions), list(IIKO_DETAIL_FIELDS))
+                report_revision = hashlib.sha256(json.dumps(raw, sort_keys=True, default=str).encode()).hexdigest()
+                if revision is not None and revision != report_revision:
+                    raise DataError('Отчёт iiko изменился между страницами. Начните чтение заново.')
+                rows, total_rows = detail_rows_from_olap(raw, dimensions, limit=limit, offset=offset)
+                unsafe_cost = 'PayTypes' in dimensions or 'OperationType' in dimensions
+                if unsafe_cost:
+                    for row in rows:
+                        row['product_cost_total'] = None
+                return {
+                    'source': 'iiko OLAP SALES',
+                    'period': {'start': start.isoformat(), 'end': end.isoformat()},
+                    'dimensions': list(dimensions),
+                    'metrics': list(IIKO_DETAIL_FIELDS),
+                    'rows': rows,
+                    'returned_rows': len(rows),
+                    'total_rows': total_rows,
+                    'truncated': offset > 0 or total_rows > len(rows),
+                    'offset': offset, 'revision': report_revision,
+                    'next_offset': offset + len(rows) if offset + len(rows) < total_rows else None,
+                    'cost_additive': not unsafe_cost,
+                    'warnings': ([
+                        'Себестоимость скрыта: iiko повторяет её при разделении по оплатам/операциям. '
+                        'Запросите себестоимость без этих измерений.'
+                    ] if unsafe_cost else []) + ([
+                        'Выдача усечена; нельзя вычислять итоги и полный рейтинг по этим строкам.'
+                    ] if offset > 0 or total_rows > len(rows) else []),
+                    'scope': 'Все продажи источника; фильтры направлений и исключения меню не применены.',
+                    'non_additive_metrics': ['product_cost_per_unit', 'orders'],
+                }
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_sales_details')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def _send(self, client, path, body):
+        """Один запрос к iiko, переживающий потерю пакетов на маршруте.
+
+        Повтор безопасен по построению: здесь ходят только чтения и задания
+        на отчёт (`auth/login`, `olap/init`, `olap/fetch/*`, `cash/shift/*`,
+        `kpi/dashboard/*`) — ничего, что меняло бы состояние в iiko."""
+        connect_left, read_left = IIKO_CONNECT_ATTEMPTS, IIKO_READ_ATTEMPTS
+        while True:
+            try:
+                return await client.post(path, json=body)
+            except IIKO_CHEAP_RETRY + IIKO_COSTLY_RETRY as error:
+                if isinstance(error, IIKO_COSTLY_RETRY):
+                    read_left -= 1
+                else:
+                    connect_left -= 1
+                if read_left <= 0 or connect_left <= 0:
+                    raise
+                log_upstream_failure('iiko', error, operation='retry')
+                await asyncio.sleep(IIKO_RETRY_PAUSE)
+
     async def _post(self, client, path, body, pending=False):
-        response = await client.post(path, json=body)
+        sent_token = client.headers.get('Authorization')
+        response = await self._send(client, path, body)
+        if response.status_code in (401, 403) and path != '/api/auth/login':
+            await self._authorize(client, rejected_token=sent_token)
+            response = await self._send(client, path, body)
         if pending and response.status_code == 400 and 'data not found' in response.text.lower():
             return None
         if response.status_code in (401, 403):
@@ -119,18 +893,34 @@ class IikoClient:
         return data
 
     async def _olap(self, client, day, groups, fields, extra_filters=()):
-        body = olap_body(self.settings.store_id, day, groups, fields, extra_filters)
+        return await self._olap_range(client, day, day, groups, fields, extra_filters)
+
+    async def _olap_range(self, client, start, end, groups, fields, extra_filters=()):
+        body = olap_range_body(self.settings.store_id, start, end, groups, fields, extra_filters)
+        key = json.dumps(body, sort_keys=True, ensure_ascii=False)
+        return await self._olap_cache.get(
+            key, lambda: self._fetch_olap(client, body), ttl=olap_ttl(end), timeout=90,
+            refresh=refresh_source.get(), label="iiko_olap")
+
+    async def _fetch_olap(self, client, body):
+        started = monotonic()
         init = await self._post(client, '/api/olap/init', body)
         fetch_id = init.get('fetchId') or init.get('data')
         if not isinstance(fetch_id, str) or not fetch_id:
             raise DataError('iiko не вернул идентификатор отчёта.')
-        for attempt in range(15):
-            data = await self._post(client, '/api/olap/fetch/' + quote(fetch_id, safe='') + '/grouped-table', body, True)
+        path = '/api/olap/fetch/' + quote(fetch_id, safe='') + '/grouped-table'
+        attempts = 0
+        while True:
+            attempts += 1
+            data = await self._post(client, path, body, True)
             if data is not None:
                 result = data.get('result')
                 if not isinstance(result, dict) or not isinstance(result.get('rows'), list):
                     raise DataError('iiko вернул некорректную структуру отчёта.')
+                logging.getLogger('retro.performance').info(
+                    'operation=iiko_fetch attempts=%d duration_ms=%d',
+                    attempts, (monotonic() - started) * 1000)
                 return result['rows']
-            if attempt < 14:
-                await asyncio.sleep(self.poll_delay)
-        raise DataError('iiko ещё не подготовил отчёт. Повторите обновление через минуту.')
+            if attempts >= IIKO_POLL_MAX_ATTEMPTS or monotonic() - started >= IIKO_POLL_BUDGET:
+                raise DataError('iiko ещё не подготовил отчёт. Повторите обновление через минуту.')
+            await asyncio.sleep(self.poll_delay)

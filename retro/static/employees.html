@@ -3,35 +3,66 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#143e35">
-  <title>Все сотрудники · Retro Milliy</title>
-  <link rel="stylesheet" href="/static/style.css">
-  <script src="/static/employees.js" defer></script>
+  <title>Сотрудники · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
+  <link rel="stylesheet" href="/static/employees.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/employees.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
-  <a href="/" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <a href="/accountant" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
   <div class="side-rule"></div>
   <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
-  <nav aria-label="Модули"><a href="/" class="nav-link"><span class="nav-icon">▤</span> Кассир</a><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a></nav>
+  <nav aria-label="Модули"><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a></nav>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Все сотрудники</strong></span><span class="top-status">Локальный просмотр</span></header>
-  <div class="workspace accountant-workspace">
-    <div class="page-heading"><div><p class="eyebrow">КОМАНДА · РЕЕСТР</p><h1>Все сотрудники<span>.</span></h1><p class="subtitle">Первый вход, статус и расчёт за выбранный день.</p></div></div>
-    <div class="accountant-demo-banner" role="note"><strong>ДЕМО</strong><span>Время и статусы проходов смоделированы. Реальный Hikvision ресторана пока не подключён.</span></div>
-    <div class="employees-toolbar">
-      <a id="back-accountant" class="button secondary" href="/accountant">← К финансам</a>
-      <label class="date-group" for="employees-date">Дата<input id="employees-date" type="date" required></label>
-      <button id="employees-refresh" class="button secondary" type="button">Обновить</button>
-      <button id="employees-download" class="button primary" type="button">Скачать всех · XLSX</button>
+  <header class="topbar"><span class="breadcrumb"><a href="/accountant">Финансовый отдел</a> <span>/</span> <strong>Сотрудники</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <div class="workspace accountant-workspace employees-workspace">
+    <div class="page-heading">
+      <div><p class="eyebrow">КОМАНДА · РЕЕСТР</p><h1>Сотрудники<span>.</span></h1></div>
+      <div class="emp-head-actions">
+        <div class="date-nav" role="group" aria-label="День реестра">
+          <button id="day-prev" class="date-nav-arrow" type="button" aria-label="Предыдущий день">‹</button>
+          <div class="date-nav-label"><span>Дата</span><strong id="day-label">—</strong></div>
+          <button id="day-next" class="date-nav-arrow" type="button" aria-label="Следующий день">›</button>
+          <span class="date-nav-sep"></span>
+          <button id="day-today" class="date-nav-chip" type="button">Сегодня</button>
+          <button id="day-yesterday" class="date-nav-chip" type="button">Вчера</button>
+        </div>
+        <button id="employees-download" class="button secondary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>Скачать<span class="attendance-file-type">XLSX</span></button>
+        <button id="employees-add" class="button primary" type="button"><span aria-hidden="true">+</span> Сотрудник</button>
+      </div>
     </div>
+    <div class="accountant-demo-banner" role="note"><strong>ДЕМО</strong><span id="employees-attendance-status">Проверяем состояние подключения…</span></div>
     <p id="employees-message" class="notice" role="status" aria-live="polite" hidden></p>
-    <section class="panel accountant-panel" aria-labelledby="employees-title">
-      <div class="accountant-panel-head"><div><p class="eyebrow">ПО ГРУППАМ</p><h2 id="employees-title">Список сотрудников</h2><p id="employees-summary" class="accountant-help">Загружаем реестр…</p></div><button id="employees-add" class="icon-button" type="button" title="Добавить сотрудника" aria-label="Добавить сотрудника">+</button></div>
-      <p class="accountant-help">Сотрудники упорядочены по ролям. Дважды нажмите на имя, роль или зарплату, чтобы изменить ячейку как в Excel.</p>
-      <div id="employees-groups" class="employees-groups" aria-live="polite"></div>
-    </section>
+
+    <section id="employees-stats" class="emp-stats" role="group" aria-label="Сводка дня — карточки фильтруют реестр"></section>
+
+    <div class="emp-layout">
+      <section class="panel accountant-panel emp-registry-panel" aria-labelledby="employees-title">
+        <div class="emp-registry-head">
+          <div class="emp-registry-title"><h2 id="employees-title">Реестр</h2><span id="employees-shown" class="accountant-chip">—</span></div>
+          <div class="emp-registry-tools">
+            <button id="employees-clear-filter" class="emp-filter-tag" type="button" hidden></button>
+            <input id="employees-search" type="search" placeholder="Поиск по имени или должности" aria-label="Поиск по имени или должности" autocomplete="off">
+          </div>
+        </div>
+        <div id="employees-tabs" class="emp-tabs" role="tablist" aria-label="Группы"></div>
+        <div class="emp-registry-columns"><span>Сотрудник</span><span>Первый вход</span><span>Статус</span><span class="num">Ставка за смену</span><span class="num">Начислено</span></div>
+        <div id="employees-groups" class="emp-registry-body" aria-live="polite"></div>
+        <p class="emp-registry-foot">Нажмите на строку, чтобы изменить сотрудника.</p>
+
+        <div class="monthly-roster-head"><div><p class="eyebrow">МЕСЯЧНАЯ ЗАРПЛАТА</p><h3>Административный персонал</h3><p class="accountant-help">Оклады хранятся в локальной базе, а не в исходном коде, и не участвуют в расчёте оплаты за смену.</p></div><button id="monthly-add" class="icon-button" type="button" title="Добавить сотрудника с месячной зарплатой" aria-label="Добавить сотрудника с месячной зарплатой">+</button></div>
+        <div id="monthly-employees" class="monthly-employees" aria-live="polite"></div>
+      </section>
+
+      <aside id="employees-aside" class="emp-aside" aria-label="Панель сотрудника"></aside>
+    </div>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Сотрудники</span><span>Время Ташкента · UZS</span></footer>
   </div>
 </main>

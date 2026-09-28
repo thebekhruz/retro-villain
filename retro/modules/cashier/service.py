@@ -58,6 +58,8 @@ class Snapshot:
     revenue_breakdown: RevenueBreakdown | None = None
     cash_prepayment: Decimal = Decimal(0)
     new_prepayment: Decimal = Decimal(0)
+    register_payment_sales: Decimal | None = None
+    register_received_total: Decimal | None = None
 
     @property
     def average_receipt(self):
@@ -73,7 +75,15 @@ class Snapshot:
                     fetched_at=self.fetched_at.isoformat(), demo=self.demo, currency='UZS',
                     payment_total=str(sum((p.amount for p in self.payments), Decimal(0))),
                     cash_prepayment=str(self.cash_prepayment),
-                    new_prepayment=str(self.new_prepayment))
+                    new_prepayment=str(self.new_prepayment),
+                    prepayment_verified=False,
+                    register_payment_sales=str(self.register_payment_sales) if self.register_payment_sales is not None else None,
+                    register_received_total=str(self.register_received_total) if self.register_received_total is not None else None,
+                    prepayment_scope='Полная смена кассы Retro, включая банкетное отделение; авансы по отделениям не разделены.',
+                    calculation_note='Предоплаты оценены как разница смены и продаж. Это не реестр авансов; '
+                                     'для передачи денег требуется сверка фактической наличности. '
+                                     'Тип «Наличные (Инкасса QR)» передаётся отдельно и не включён в формулу.',
+                    source_cache_max_age_seconds=30)
         if self.revenue_breakdown is not None:
             result['revenue_breakdown'] = self.revenue_breakdown.json()
         return result
