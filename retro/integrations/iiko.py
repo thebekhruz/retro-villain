@@ -501,6 +501,9 @@ class IikoClient:
         self._olap_cache = ReportCache(concurrency=4, limit=48, max_weight=12_000_000,
             weigh=lambda rows: len(json.dumps(rows, ensure_ascii=False).encode()))
         self._kpi_cache = ReportCache(concurrency=2, limit=16)
+        # Свой кэш, а не общий с P&L: смены — один дешёвый POST, и ставить
+        # кассира в очередь за расчётами учредителя незачем.
+        self._shift_cache = ReportCache(concurrency=4, limit=32)
 
     @asynccontextmanager
     async def _client(self):
@@ -532,6 +535,7 @@ class IikoClient:
     async def close(self):
         await self._olap_cache.close()
         await self._kpi_cache.close()
+        await self._shift_cache.close()
         if self._http is not None:
             await self._http.aclose()
             self._http = None
@@ -541,7 +545,13 @@ class IikoClient:
             raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
         if self.settings.base_url != IIKO_ORIGIN:
             raise DataError('Разрешён только сервер Retro Milliy.')
-        fresh_token = refresh_source.set(True)
+        # Кассир смотрит живую смену, поэтому сегодняшний день всегда берётся
+        # заново. Закрытый день в iiko уже не меняется, а безусловный форс
+        # заставлял каждое открытие страницы выкачивать пять отчётов заново —
+        # по дню недельной давности это чистая трата единственного узкого
+        # ресурса. Кнопка обновления по-прежнему обходит кэш: она выставляет
+        # refresh_source сама, и здесь он уважается.
+        fresh_token = refresh_source.set(True if day >= today_tashkent() else refresh_source.get())
         try:
             async with self._client() as client:
                 scope = [
@@ -562,8 +572,7 @@ class IikoClient:
                     # section. Subtract an equally scoped PAYMENT report, never
                     # the narrower cashier sales card.
                     self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], [scope[0], scope[2]]),
-                    self._post(client, '/api/cash/shift/list_period',
-                               {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()}),
+                    self._shifts(client, day),
                 )
                 breakdown = build_revenue_breakdown(breakdown_rows)
                 snapshot = build_snapshot(day, total, payments, revenue_breakdown=breakdown)
@@ -782,6 +791,14 @@ class IikoClient:
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_chef_bills')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def _shifts(self, client, day):
+        """Кассовые смены закрытого дня тоже не меняются — не тянем их заново."""
+        body = {'dateFrom': day.isoformat(), 'dateTo': day.isoformat()}
+        key = 'shifts:' + json.dumps(body, sort_keys=True)
+        return await self._shift_cache.get(
+            key, lambda: self._post(client, '/api/cash/shift/list_period', body),
+            ttl=olap_ttl(day), timeout=90, refresh=refresh_source.get(), label='iiko_shifts')
 
     async def _founder_pnl(self, client, start, end):
         body = {

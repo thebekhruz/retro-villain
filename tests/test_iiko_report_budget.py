@@ -196,3 +196,52 @@ def test_director_report_route_reuses_the_snapshot_and_refuses_an_open_period(tm
     # Пять минут заставляли архив выкачивать тот же месяц заново.
     assert director_routes.CLOSED_PERIOD_TTL > 300
     assert closed.status_code == 503  # loader выше намеренно роняет iiko
+
+
+def test_closed_cashier_day_is_not_refetched_on_every_open():
+    """Кассир форсировал перечитывание даже для дня недельной давности.
+
+    Живую смену по-прежнему берём заново, иначе кассир увидит устаревший
+    приход; закрытый день читается из кэша, а кнопка обновления его обходит."""
+    fetches = Counter()
+
+    async def handler(request):
+        if request.url.path == '/api/auth/login':
+            return httpx.Response(200, json={'token': 'synthetic'})
+        if request.url.path == '/api/olap/init':
+            return httpx.Response(200, json={'fetchId': 'synthetic'})
+        if request.url.path.startswith('/api/cash/shift'):
+            return httpx.Response(200, json={'shifts': []})
+        fetches['olap'] += 1
+        return httpx.Response(200, json={'result': {'rows': []}})
+
+    async def scenario():
+        source = IikoClient(Settings(login='test', password='test', store_id=1),
+                            transport=httpx.MockTransport(handler), poll_delay=0)
+        closed = date.today() - timedelta(days=7)
+        try:
+            await source.load(closed)
+            first = fetches['olap']
+            await source.load(closed)
+            reused = fetches['olap']
+            token = iiko_module.refresh_source.set(True)
+            try:
+                await source.load(closed)
+            finally:
+                iiko_module.refresh_source.reset(token)
+            forced = fetches['olap']
+            await source.load(date.today())
+            today_first = fetches['olap']
+            await source.load(date.today())
+            return first, reused, forced, today_first, fetches['olap']
+        finally:
+            await source.close()
+
+    first, reused, forced, today_first, today_again = asyncio.run(scenario())
+    assert first > 0
+    # Повторное открытие закрытого дня не ходит в iiko вовсе.
+    assert reused == first
+    # Кнопка обновления по-прежнему перечитывает.
+    assert forced == first * 2
+    # Сегодняшний день всегда свежий: оба открытия идут в источник.
+    assert today_again - today_first == today_first - forced > 0

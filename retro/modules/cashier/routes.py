@@ -15,6 +15,10 @@ from .service import DataError, demo_snapshot, today_tashkent
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
 
+# Завершившийся день в iiko сам не меняется; правки вносит человек, и для них
+# есть кнопка обновления.
+CLOSED_DAY_TTL = 15 * 60
+
 
 def entries_revision(items):
     return hashlib.sha256(json.dumps([item.json() for item in items],
@@ -128,7 +132,10 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
         if demo:
             result = demo_snapshot(day)
         else:
-            result = await load_iiko(state, 'load', day, refresh=refresh, request=request)
+            # Закрытый день уже не меняется — держим его снимок дольше
+            # тридцати секунд, иначе каждое открытие страницы идёт в iiko.
+            result = await load_iiko(state, 'load', day, refresh=refresh, request=request,
+                                     ttl=CLOSED_DAY_TTL if day < today_tashkent() else None)
         state.cache.put(result)
         return {**result.json(),
                 'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured)}
