@@ -153,3 +153,46 @@ def test_report_that_never_arrives_still_stops_inside_the_budget():
 
     asyncio.run(run())
     assert clock[0] <= IIKO_POLL_BUDGET
+
+
+def test_director_report_route_reuses_the_snapshot_and_refuses_an_open_period(tmp_path, monkeypatch):
+    """Сырые отчёты за месяц в кэш не влезают, поэтому повтор держит снимок.
+
+    Архивный эндпоинт по построению отдаёт только завершившиеся дни: период с
+    сегодняшним днём он отклоняет до всякого обращения к iiko. Поэтому длинный
+    TTL здесь безусловен, и проверяются обе половины этого утверждения."""
+    from fastapi.testclient import TestClient
+
+    from retro.app import create_app
+    from retro.modules.director import routes as director_routes
+
+    seen = []
+    original = director_routes.load_iiko
+
+    async def spy(state, method, *args, ttl=None, **kwargs):
+        seen.append(ttl)
+        return await original(state, method, *args, ttl=ttl, **kwargs)
+
+    monkeypatch.setattr(director_routes, 'load_iiko', spy)
+    calls = []
+
+    async def loader(today, *, start=None, end=None, days=None):
+        calls.append((start, end))
+        raise DataError('iiko недоступен в тесте')
+
+    app = create_app(Settings(data_dir=tmp_path))
+    monkeypatch.setattr(app.state.iiko, 'load_director_report', loader)
+    today = date.today()
+    closed_end = today - timedelta(days=1)
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        closed = client.get(
+            f'/api/director/report?start={closed_end - timedelta(days=29)}&end={closed_end}')
+        open_period = client.get(
+            f'/api/director/report?start={today - timedelta(days=29)}&end={today}')
+
+    # Незакрытый период не доходит до iiko вовсе — значит, TTL нечему устареть.
+    assert open_period.status_code == 422 and len(calls) == 1
+    assert seen == [director_routes.CLOSED_PERIOD_TTL]
+    # Пять минут заставляли архив выкачивать тот же месяц заново.
+    assert director_routes.CLOSED_PERIOD_TTL > 300
+    assert closed.status_code == 503  # loader выше намеренно роняет iiko

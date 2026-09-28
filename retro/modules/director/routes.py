@@ -87,13 +87,14 @@ async def report_for_period(request: Request, start: date | None = None, end: da
                             days: int | None = None, refresh: bool = False):
     start, end = period_or_422(start, end, days)
     try:
-        # Сырые отчёты директора за месяц весят около 46 MB и в кэш отчётов не
-        # помещаются, поэтому повтор держится на готовом снимке. Для периода,
-        # который уже закончился, пяти минут мало: архив и повторные открытия
+        # period_or_422 пропускает только завершившиеся дни, поэтому период
+        # здесь всегда закрыт и сам по себе в iiko не меняется. Сырые отчёты за
+        # месяц весят около 46 MB и в кэш по весу не помещаются — повтор держится
+        # на готовом снимке, и пяти минут ему мало: архив и повторные открытия
         # заново выкачивали тот же сентябрь. Кнопка обновления обходит кэш.
         snapshot = await load_iiko(request.app.state, 'load_director_report', today_tashkent(),
-                                   start=start, end=end, refresh=refresh, request=request, timeout=150,
-                                   ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None)
+                                   start=start, end=end, refresh=refresh, request=request,
+                                   timeout=150, ttl=CLOSED_PERIOD_TTL)
         return snapshot.json()
     except TimeoutError:
         raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
