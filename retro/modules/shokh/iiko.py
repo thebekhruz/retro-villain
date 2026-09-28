@@ -11,6 +11,9 @@ from urllib.parse import quote
 
 import httpx
 
+from retro.integrations.iiko import (IIKO_CHEAP_RETRY, IIKO_COSTLY_RETRY,
+    IIKO_CONNECT_ATTEMPTS, IIKO_READ_ATTEMPTS, IIKO_RETRY_PAUSE)
+from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import DataError, TZ
 
 TYPE = 'INCOMING_INVOICE'
@@ -45,13 +48,30 @@ class ProcurementIiko:
         self._until = 0
         self._lock = asyncio.Lock()
 
+    async def _read_response(self, http, path, params, body):
+        # The production route to iiko occasionally loses connections. Only
+        # dictionary/document reads use this retry budget; create() never does.
+        connect_left, read_left = IIKO_CONNECT_ATTEMPTS, IIKO_READ_ATTEMPTS
+        while True:
+            try:
+                return (await http.get(path, params=params) if body is None else
+                        await http.post(path, json=body))
+            except IIKO_CHEAP_RETRY + IIKO_COSTLY_RETRY as error:
+                if isinstance(error, IIKO_COSTLY_RETRY):
+                    read_left -= 1
+                else:
+                    connect_left -= 1
+                log_upstream_failure('iiko', error, operation='procurement_read')
+                if read_left <= 0 or connect_left <= 0:
+                    raise
+                await asyncio.sleep(IIKO_RETRY_PAUSE)
+
     async def read(self, path, *, params=None, body=None):
         try:
             async with self.client._client() as http:
                 token = http.headers.get('Authorization')
                 for attempt in range(2):
-                    response = (await http.get(path, params=params) if body is None else
-                                await http.post(path, json=body))
+                    response = await self._read_response(http, path, params, body)
                     if response.status_code not in (401, 403) or attempt:
                         break
                     await self.client._authorize(http, rejected_token=token)

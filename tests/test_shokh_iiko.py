@@ -30,10 +30,14 @@ class Upstream:
         self.documents = {}
         self.mode = 'ok'
         self.catalog_down = False
+        self.read_failures = {}
 
     def __call__(self, request):
         path = request.url.path
         self.calls.append((request.method, path))
+        if self.read_failures.get(path, 0):
+            self.read_failures[path] -= 1
+            raise httpx.ConnectTimeout('Connection interrupted', request=request)
         if path == '/api/auth/login':
             return httpx.Response(200, json={'token': 'test-token'})
         if self.catalog_down and path == '/api/documents/storage/list':
@@ -142,6 +146,26 @@ def test_catalog_maps_iiko_ids_filters_deleted_and_home_is_independent(live):
     assert c.get('/api/shokh/catalog').status_code == 503
     home = c.get('/api/shokh/home')
     assert home.status_code == 200 and home.json()['level']['level'] == 1
+
+
+def test_catalog_retries_interrupted_get_and_read_only_post(live):
+    c, upstream = live
+    upstream.read_failures = {'/api/documents/storage/list': 2, '/api/productV3/list': 1}
+    response = c.get('/api/shokh/catalog')
+    assert response.status_code == 200
+    assert response.json()['source'] == 'iiko'
+    assert upstream.calls.count(('GET', '/api/documents/storage/list')) == 3
+    assert upstream.calls.count(('POST', '/api/productV3/list')) == 2
+    assert upstream.writes == 0
+
+
+def test_catalog_connection_retry_is_bounded_and_home_remains_available(live):
+    c, upstream = live
+    upstream.read_failures = {'/api/documents/storage/list': 10}
+    assert c.get('/api/shokh/catalog').status_code == 503
+    assert upstream.calls.count(('GET', '/api/documents/storage/list')) == 3
+    assert c.get('/api/shokh/home').status_code == 200
+    assert upstream.writes == 0
 
 
 def test_purchase_posts_and_reads_back_exact_invoice_and_replay_does_not_duplicate(live):
