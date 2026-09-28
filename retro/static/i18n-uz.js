@@ -7,6 +7,16 @@
  *  систем и данных (Retro, iiko, Hikvision, «Демо», «БЕХРУЗ», Яндекс, имена
  *  людей) остаются как есть — они приходят из источников, а не из интерфейса. */
 globalThis.RetroDictionaryUz = {
+  'Сохранённый отчёт · iikoWeb': 'Saqlangan hisobot · iikoWeb',
+  'Загружаем отчёт…': 'Hisobot yuklanmoqda…',
+  'Обновляем отчёт. На экране предыдущие данные…': "Hisobot yangilanmoqda. Ekranda oldingi ma'lumotlar…",
+  'Обновляем iiko. На экране последние сохранённые данные…': "iiko yangilanmoqda. Ekranda oxirgi saqlangan ma'lumotlar…",
+  'Обновление продолжается. Повторите проверку позже.': 'Yangilash davom etmoqda. Keyinroq yana tekshiring.',
+  'Показаны последние сохранённые данные. Требуется обновление iiko.': "Oxirgi saqlangan ma'lumotlar ko'rsatilgan. iiko yangilanishi kerak.",
+  'Не удалось обновить iiko. Показаны последние сохранённые данные.': "iiko yangilanmadi. Oxirgi saqlangan ma'lumotlar ko'rsatilgan.",
+  'Не удалось обновить данные iiko. Повторите позже.': "iiko ma'lumotlarini yangilab bo'lmadi. Keyinroq qayta urinib ko'ring.",
+  'iiko временно недоступен. Повторите обновление через минуту.': "iiko vaqtincha ishlamayapti. Bir daqiqadan keyin qayta yangilang.",
+  'Дождитесь обновления iiko перед скачиванием отчёта.': 'Hisobotni yuklab olishdan oldin iiko yangilanishini kuting.',
   '% выборки': "% tanlanmadan",
   ', подробности': ", tafsilotlar",
   '. Возвраты уменьшают продажи и оплаты в своей дате.': ". Qaytarishlar o'z sanasidagi savdo va to'lovlarni kamaytiradi.",

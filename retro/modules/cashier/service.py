@@ -60,6 +60,10 @@ class Snapshot:
     new_prepayment: Decimal = Decimal(0)
     register_payment_sales: Decimal | None = None
     register_received_total: Decimal | None = None
+    source: str = 'iiko'
+    stale: bool = False
+    refreshing: bool = False
+    refresh_error: str | None = None
 
     @property
     def average_receipt(self):
@@ -83,7 +87,9 @@ class Snapshot:
                     calculation_note='Предоплаты оценены как разница смены и продаж. Это не реестр авансов; '
                                      'для передачи денег требуется сверка фактической наличности. '
                                      'Тип «Наличные (Инкасса QR)» передаётся отдельно и не включён в формулу.',
-                    source_cache_max_age_seconds=30)
+                    source_cache_max_age_seconds=30 if self.day >= today_tashkent() else None,
+                    source=self.source,
+                    stale=self.stale, refreshing=self.refreshing, refresh_error=self.refresh_error)
         if self.revenue_breakdown is not None:
             result['revenue_breakdown'] = self.revenue_breakdown.json()
         return result

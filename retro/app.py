@@ -20,6 +20,8 @@ from retro.integrations.bookings import BookingAnalyticsClient
 from retro.integrations.broadcasts import BookingBroadcastClient
 from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
+from retro.modules.cashier.archive import CashierArchive
+from retro.modules.cashier.days import CashierDays
 from retro.modules.cashier.routes import router as cashier_router
 from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.shokh.routes import router as shokh_router
@@ -160,11 +162,15 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         poller = application.state.hikvision_poller
         if poller is not None:
             poller.start()
+        if application.state.cashier_days is not None:
+            application.state.cashier_days.start()
         try:
             yield
         finally:
             if poller is not None:
                 await poller.stop()
+            if application.state.cashier_days is not None:
+                await application.state.cashier_days.close()
             await application.state.reports.close()
             close = getattr(application.state.iiko, 'close', None)
             if close is not None:
@@ -187,6 +193,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     shared = Database(settings.database_url) if settings.database_url else None
     database_path = expense_db_path or shared or settings.data_dir / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
+    app.state.cashier_days = (CashierDays(CashierArchive(database_path, settings),
+        lambda day: app.state.iiko.load(day)) if settings.configured else None)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
     accountant_path = accountant_db_path or shared or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
