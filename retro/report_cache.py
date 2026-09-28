@@ -49,22 +49,24 @@ class ReportCache:
                 started = self.clock()
                 try:
                     async with asyncio.timeout(timeout):
+                        # Слот освобождается сразу после чтения: измерение веса
+                        # сериализует весь отчёт и держало очередь на себе.
                         async with self._slots:
                             acquired = self.clock()
                             value = await operation()
-                            weight = (await asyncio.to_thread(self.weigh, value)
-                                      if self.max_weight is not None else self.weigh(value))
-                            if self.max_weight is None or weight <= self.max_weight:
-                                self.entries[key] = (self.clock() + ttl, value, weight)
-                                self.entries.move_to_end(key)
-                                while len(self.entries) > self.limit or (
-                                        self.max_weight is not None and
-                                        sum(row[2] for row in self.entries.values()) > self.max_weight):
-                                    self.entries.popitem(last=False)
-                            logging.getLogger('retro.performance').info(
-                                'operation=%s cache=miss queue_ms=%d duration_ms=%d',
-                                label, (acquired-started)*1000, (self.clock()-started)*1000)
-                            return value
+                        weight = (await asyncio.to_thread(self.weigh, value)
+                                  if self.max_weight is not None else self.weigh(value))
+                        if self.max_weight is None or weight <= self.max_weight:
+                            self.entries[key] = (self.clock() + ttl, value, weight)
+                            self.entries.move_to_end(key)
+                            while len(self.entries) > self.limit or (
+                                    self.max_weight is not None and
+                                    sum(row[2] for row in self.entries.values()) > self.max_weight):
+                                self.entries.popitem(last=False)
+                        logging.getLogger('retro.performance').info(
+                            'operation=%s cache=miss queue_ms=%d duration_ms=%d',
+                            label, (acquired-started)*1000, (self.clock()-started)*1000)
+                        return value
                 finally:
                     current = self.pending.get(key)
                     if current is not None and current.task is asyncio.current_task():
@@ -94,7 +96,7 @@ class ReportCache:
         self.entries.clear()
 
 
-async def load_iiko(state, method, *args, refresh=False, request=None, timeout=90, **kwargs):
+async def load_iiko(state, method, *args, refresh=False, request=None, timeout=90, ttl=None, **kwargs):
     cache = getattr(state, 'reports', None)
     if cache is None:
         state.reports = cache = ReportCache()
@@ -107,7 +109,8 @@ async def load_iiko(state, method, *args, refresh=False, request=None, timeout=9
         finally:
             refresh_source.reset(token)
 
-    ttl = 300 if method == 'load_director_report' else 30 if method == 'load' else 60
+    if ttl is None:
+        ttl = 300 if method == 'load_director_report' else 30 if method == 'load' else 60
     reader = asyncio.create_task(cache.get(key, operation, ttl=ttl, timeout=timeout, refresh=refresh, label=method))
     try:
         if request is not None and hasattr(request, 'is_disconnected'):

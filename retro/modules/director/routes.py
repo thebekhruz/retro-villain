@@ -16,6 +16,10 @@ from retro.modules.director.tools import DirectorChatTools
 
 router = APIRouter(prefix='/api/director', tags=['director'])
 
+# Завершившийся период в iiko сам не меняется: правки вносит человек, и для них
+# есть кнопка обновления.
+CLOSED_PERIOD_TTL = 15 * 60
+
 
 class ChatInput(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
@@ -83,8 +87,13 @@ async def report_for_period(request: Request, start: date | None = None, end: da
                             days: int | None = None, refresh: bool = False):
     start, end = period_or_422(start, end, days)
     try:
+        # Сырые отчёты директора за месяц весят около 46 MB и в кэш отчётов не
+        # помещаются, поэтому повтор держится на готовом снимке. Для периода,
+        # который уже закончился, пяти минут мало: архив и повторные открытия
+        # заново выкачивали тот же сентябрь. Кнопка обновления обходит кэш.
         snapshot = await load_iiko(request.app.state, 'load_director_report', today_tashkent(),
-                                   start=start, end=end, refresh=refresh, request=request, timeout=150)
+                                   start=start, end=end, refresh=refresh, request=request, timeout=150,
+                                   ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None)
         return snapshot.json()
     except TimeoutError:
         raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
