@@ -22,6 +22,10 @@ from retro.modules.founder.export import month_workbook
 
 router = APIRouter(prefix='/api/founder', tags=['founder'])
 
+# Завершившийся период в iiko сам не меняется: правки вносит человек, и для них
+# есть кнопка обновления.
+CLOSED_PERIOD_TTL = 15 * 60
+
 
 class ChatInput(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
@@ -72,9 +76,12 @@ async def analytics(
     if not selected or len(set(selected)) != len(selected) or any(item not in DIRECTIONS for item in selected):
         raise HTTPException(422, 'Выберите известные направления без повторов.')
     try:
+        # Закрытый период iiko сам не пересчитывает, а сырые отчёты за девяносто
+        # дней не помещаются в кэш по весу — держим готовый разбор дольше.
         data = await load_iiko(request.app.state, 'load_founder_analytics',
                                start, end, granularity, selected, refresh=refresh,
-                               request=request, timeout=180)
+                               request=request, timeout=180,
+                               ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None)
         if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
             return data
         cashier, accountant = await asyncio.gather(

@@ -18,7 +18,8 @@ from retro.report_cache import ReportCache, refresh_source
 from retro.config import IIKO_ORIGIN
 from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
-    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell, number,
+    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell,
+    number, today_tashkent,
 )
 from retro.modules.director.models import (
     SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
@@ -56,6 +57,21 @@ IIKO_TIMEOUT = httpx.Timeout(connect=8, read=30, write=20, pool=8)
 IIKO_CONNECT_ATTEMPTS = 3
 IIKO_READ_ATTEMPTS = 2
 IIKO_RETRY_PAUSE = 0.5
+# Опрос готовности отчёта частым не делаем: замеры 28 сентября показали, что
+# запросы к iiko — дефицитный ресурс. Опрос раз в 0,35 с вместо секунды дал на
+# директорском отчёте вдвое больше запросов (88 против 43) и вдвое худшее время;
+# рост одновременных отчётов до шестнадцати добивал источник совсем (кассовый
+# день 17 с вместо 2,4 с). Поэтому интервал прежний, а меняется только потолок:
+# он считается по часам, а не по числу попыток. Пятнадцать попыток обрывали
+# отчёт на пятнадцатой секунде, хотя в логах прода встречаются честные 23 с —
+# такой отчёт теперь досчитывается, а не падает с ошибкой.
+IIKO_POLL_BUDGET = 30
+IIKO_POLL_MAX_ATTEMPTS = 40
+# Закрытый день в iiko сам по себе не меняется: правки вносит человек, и для них
+# есть кнопка обновления. Минутный TTL заставлял выкачивать один и тот же
+# сентябрь заново на каждом открытии страницы.
+OLAP_TTL_OPEN = 60
+OLAP_TTL_CLOSED = 15 * 60
 # Коннект не состоялся или соединение из пула оказалось мёртвым — повтор дёшев.
 IIKO_CHEAP_RETRY = (httpx.ConnectTimeout, httpx.ConnectError, httpx.PoolTimeout,
                     httpx.CloseError, httpx.RemoteProtocolError)
@@ -66,6 +82,11 @@ FOUNDER_PNL_METRICS = (
     'PL_PROFIT_MAIN', 'PL_OTH_INCOME_TOTAL', 'PL_OTH_EXP_TOTAL', 'PL_PROFIT_NET',
 )
 FOUNDER_INTERNAL_COST_TYPES = ('Дегустация', 'Счет Шефа')
+
+
+def olap_ttl(end, *, today=None):
+    """Отчёт про завершившиеся дни живёт дольше: его данные уже не меняются."""
+    return OLAP_TTL_OPEN if end >= (today or today_tashkent()) else OLAP_TTL_CLOSED
 
 
 def date_chunks(start, end, *, max_days):
@@ -472,7 +493,12 @@ class IikoClient:
         self._http = None
         self._auth_lock = asyncio.Lock()
         self._auth_until = 0
-        self._olap_cache = ReportCache(concurrency=4, limit=16, max_weight=12_000_000,
+        # Потолок памяти держит max_weight, а не число записей, поэтому слотов
+        # можно дать больше: при четверти часа TTL шестнадцати не хватало даже
+        # на один девяностодневный период учредителя, и соседние страницы
+        # вытесняли друг друга задолго до истечения срока. Одновременность
+        # остаётся четвёркой: iiko от неё деградирует, а не ускоряется.
+        self._olap_cache = ReportCache(concurrency=4, limit=48, max_weight=12_000_000,
             weigh=lambda rows: len(json.dumps(rows, ensure_ascii=False).encode()))
         self._kpi_cache = ReportCache(concurrency=2, limit=16)
 
@@ -572,31 +598,47 @@ class IikoClient:
                               valueList=['PAYMENT'], inclusiveList=True)]
         try:
             async with self._client() as client:
-                # Период берём окнами: на восьми измерениях iiko отдаёт 500 уже
-                # на трёх неделях. Окна независимы по дням, поэтому идут разом,
-                # но их число ограничено, чтобы не завалить iiko запросами.
+                # Период берём окнами. Окна независимы по дням, поэтому идут
+                # разом, но их число ограничено, чтобы не завалить iiko.
                 chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
 
-                async def load_chunk(chunk_start, chunk_end):
+                # Десятидневное окно нужно только двум тяжёлым отчётам: на их
+                # восьми-девяти измерениях iiko отдаёт 500 уже на трёх неделях.
+                # Выручка по способам оплаты — те же пять измерений, что и у
+                # учредителя, и месяц целиком iiko по ним считает спокойно.
+                # Раньше она резалась теми же десятью днями и на тридцати днях
+                # стоила шести отчётов вместо двух.
+                async def load_costs(chunk_start, chunk_end):
                     async with chunk_limit:
                         return await gather_reads(
                             self._olap_range(client, chunk_start, chunk_end,
                                              ['OpenDate.Typed', *DIRECTOR_DETAIL_GROUPS], DIRECTOR_FIELDS),
                             self._olap_range(client, chunk_start, chunk_end,
                                              ['OpenDate.Typed', *DIRECTOR_COST_GROUPS], DIRECTOR_FIELDS),
+                        )
+
+                async def load_payments(chunk_start, chunk_end):
+                    async with chunk_limit:
+                        return await gather_reads(
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt'], payment_scope),
                             self._olap_range(client, chunk_start, chunk_end, payment_groups,
                                              ['DishDiscountSumInt']),
                         )
 
-                answers = await asyncio.gather(*(
-                    load_chunk(chunk_start, chunk_end)
-                    for chunk_start, chunk_end in date_chunks(start, end, max_days=DIRECTOR_RANGE_MAX_DAYS)))
+                cost_answers, payment_answers = await gather_reads(
+                    gather_reads(*(load_costs(chunk_start, chunk_end)
+                                   for chunk_start, chunk_end in date_chunks(
+                                       start, end, max_days=DIRECTOR_RANGE_MAX_DAYS))),
+                    gather_reads(*(load_payments(chunk_start, chunk_end)
+                                   for chunk_start, chunk_end in date_chunks(
+                                       start, end, max_days=FOUNDER_OLAP_MAX_DAYS))),
+                )
                 payment_rows, cost_rows, regular_rows, banquet_rows = [], [], [], []
-                for chunk_payments, chunk_costs, chunk_regular, chunk_banquet in answers:
+                for chunk_payments, chunk_costs in cost_answers:
                     payment_rows.extend(chunk_payments)
                     cost_rows.extend(chunk_costs)
+                for chunk_regular, chunk_banquet in payment_answers:
                     regular_rows.extend(chunk_regular)
                     banquet_rows.extend(chunk_banquet)
                 rows = reconcile_director_costs(
@@ -756,7 +798,7 @@ class IikoClient:
             return founder_pnl_from_kpi(response.get('data'))
 
         return await self._kpi_cache.get(
-            key, fetch, ttl=60, timeout=90, refresh=refresh_source.get(), label='iiko_kpi')
+            key, fetch, ttl=olap_ttl(end), timeout=90, refresh=refresh_source.get(), label='iiko_kpi')
 
     async def load_sales_details(self, start, end, dimensions, *, limit, offset=0, revision=None):
         """Read selected sales dimensions directly from the allowlisted iiko OLAP API."""
@@ -857,7 +899,7 @@ class IikoClient:
         body = olap_range_body(self.settings.store_id, start, end, groups, fields, extra_filters)
         key = json.dumps(body, sort_keys=True, ensure_ascii=False)
         return await self._olap_cache.get(
-            key, lambda: self._fetch_olap(client, body), ttl=60, timeout=90,
+            key, lambda: self._fetch_olap(client, body), ttl=olap_ttl(end), timeout=90,
             refresh=refresh_source.get(), label="iiko_olap")
 
     async def _fetch_olap(self, client, body):
@@ -866,16 +908,19 @@ class IikoClient:
         fetch_id = init.get('fetchId') or init.get('data')
         if not isinstance(fetch_id, str) or not fetch_id:
             raise DataError('iiko не вернул идентификатор отчёта.')
-        for attempt in range(15):
-            data = await self._post(client, '/api/olap/fetch/' + quote(fetch_id, safe='') + '/grouped-table', body, True)
+        path = '/api/olap/fetch/' + quote(fetch_id, safe='') + '/grouped-table'
+        attempts = 0
+        while True:
+            attempts += 1
+            data = await self._post(client, path, body, True)
             if data is not None:
                 result = data.get('result')
                 if not isinstance(result, dict) or not isinstance(result.get('rows'), list):
                     raise DataError('iiko вернул некорректную структуру отчёта.')
                 logging.getLogger('retro.performance').info(
                     'operation=iiko_fetch attempts=%d duration_ms=%d',
-                    attempt + 1, (monotonic() - started) * 1000)
+                    attempts, (monotonic() - started) * 1000)
                 return result['rows']
-            if attempt < 14:
-                await asyncio.sleep(self.poll_delay)
-        raise DataError('iiko ещё не подготовил отчёт. Повторите обновление через минуту.')
+            if attempts >= IIKO_POLL_MAX_ATTEMPTS or monotonic() - started >= IIKO_POLL_BUDGET:
+                raise DataError('iiko ещё не подготовил отчёт. Повторите обновление через минуту.')
+            await asyncio.sleep(self.poll_delay)
