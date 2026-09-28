@@ -20,7 +20,10 @@
 
   function total(draft){
     const quantity=number(draft.quantity), price=number(draft.price);
-    return quantity===null||price===null?null:Math.round(quantity*price*100)/100;
+    if(quantity===null||price===null)return null;
+    // Accepted iiko precision: thousandths of a unit and hundredths of a sum.
+    // Multiply integers so 1.005 × 1 rounds to 1.01, as on the server.
+    return Math.round(Math.round(quantity*1000)*Math.round(price*100)/1000)/100;
   }
 
   /* Шаг готов — можно идти дальше. Сумму на последнем шаге не проверяем
