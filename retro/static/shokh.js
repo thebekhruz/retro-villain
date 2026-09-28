@@ -2,13 +2,13 @@ const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 const L = () => globalThis.ShokhLogic;
 
-// Черновик покупки живёт только до отправки: сервер — единственный источник
-// истории, поэтому ничего не кешируем между закупами.
+// Сервер хранит историю. Незавершённая отправка сохраняет ключ и черновик
+// в этой вкладке, чтобы после перезагрузки продолжить ту же покупку.
 let state = {
   screen: 'home', step: 'point', tripId: null, tripStartedAt: null,
   draft: {point: '', item: '', unit: 'кг', quantity: '', price: '', hasPhoto: false},
   photoFile: null, usual: null, catalog: {points: [], units: ['кг'], items: []},
-  home: null, timer: null, lastPocket: null
+  home: null, timer: null, lastPocket: null, catalogReady: false, submitting: false, recovery: null, expectedPhoto: false
 };
 
 function message(text, error = false) {
@@ -33,12 +33,12 @@ function show(screen) {
   window.scrollTo(0, 0);
 }
 async function api(path, options = {}) {
-  const sender = options.method === 'POST' ? RetroFinancialWrite : fetch;
+  const sender = fetch; // Purchase identity is an explicit UUID, independent of multipart boundaries.
   const response = await sender('/api/shokh' + path, {cache: 'no-store', ...options});
   let payload = null;
   try { payload = await response.json(); } catch {}
   if (!response.ok) {
-    throw new Error(typeof payload?.detail === 'string' ? payload.detail : 'Не получилось. Попробуйте ещё раз.');
+    throw new Error(typeof payload?.detail === 'string' ? payload.detail : (response.status === 401 ? 'Войдите в панель заново.' : 'Не удалось загрузить данные. Нажмите «Обновить данные».'));
   }
   return payload;
 }
@@ -133,6 +133,29 @@ function renderPurchases(container, rows) {
     if (row.accepted_at) title.append(node('span', 'shokh-ok', 'принято'));
     body.append(title, node('div', 'shokh-note',
       row.point + ' · ' + row.quantity + ' ' + row.unit + ' × ' + money.format(Number(row.price))));
+    if (row.iiko && row.iiko.status !== 'legacy') {
+      const synced = row.iiko.status === 'synced';
+      body.append(node('small', synced ? 'shokh-ok' : 'shokh-warning', synced
+        ? 'iiko · накладная № ' + (row.iiko.number || '—')
+        : row.iiko.status === 'rejected' ? 'iiko отклонил: ' + row.iiko.error
+        : 'Ожидает подтверждения iiko. Не вводите покупку повторно.'));
+      if (!synced) {
+        const retry = ['rejected', 'pending'].includes(row.iiko.status);
+        const check = node('button', 'shokh-secondary', retry ? 'Повторить отправку' : 'Проверить iiko');
+        check.type = 'button';
+        check.addEventListener('click', async () => {
+          check.disabled = true;
+          try {
+            const result = await api('/purchase/' + row.id + (retry ? '/retry' : '/sync'),
+              retry ? {method: 'POST'} : {});
+            await loadHome();
+            if (result.purchase.iiko.status !== 'synced') message(result.purchase.iiko.error || 'iiko ещё не подтвердил накладную.', true);
+          } catch (error) { message(error.message, true); }
+          finally { check.disabled = false; }
+        });
+        body.append(check);
+      }
+    }
     item.append(body, node('strong', 'rm-num', money.format(Number(row.total))));
     container.append(item);
   });
@@ -142,7 +165,7 @@ async function loadHome() {
   try {
     const data = await api('/home');
     renderHome(data);
-    message('');
+    $('start-purchase').disabled = !state.catalogReady || !!sessionStorage.getItem('shokh-pending-operation');
   } catch (error) { message(error.message, true); }
 }
 
@@ -157,6 +180,12 @@ function renderSegments() {
   });
 }
 
+function ready(step) {
+  if (step === 'point') return !!state.draft.supplierId && !!state.draft.storageId;
+  if (step === 'item') return !!state.draft.productId && (!state.expectedPhoto || !!state.photoFile);
+  return L().stepReady(step, state.draft);
+}
+
 function renderStep() {
   const step = state.step, draft = state.draft;
   for (const name of L().STEPS) $('step-' + name).hidden = name !== step;
@@ -164,8 +193,8 @@ function renderStep() {
   $('flow-step-name').textContent = STEP_NAMES[step];
   renderSegments();
   $('flow-back').disabled = step === 'point';
-  $('flow-next').disabled = !L().stepReady(step, draft);
-  $('flow-next').textContent = step === 'confirm' ? 'Записать покупку' : 'Далее';
+  $('flow-next').disabled = !ready(step);
+  $('flow-next').textContent = step === 'confirm' ? 'Сохранить в iiko' : 'Далее';
 
   if (step === 'item') {
     $('item-point-label').textContent = draft.point || '—';
@@ -191,7 +220,7 @@ function renderPoints() {
       state.draft.point = point;
       $('point-other').value = '';
       // Точку выбрали — сразу к товару, как в макете.
-      state.step = 'item'; renderStep();
+      $('flow-next').disabled = !ready('point');
     });
     box.append(button);
   });
@@ -200,26 +229,28 @@ function renderPoints() {
 function renderItems() {
   const query = $('item-search').value.trim().toLowerCase();
   const box = $('item-list'); box.replaceChildren();
-  const matches = state.catalog.items.filter(row => !query || row.item.toLowerCase().includes(query));
-  $('item-list-title').textContent = query ? 'Найдено' : 'Частые товары';
+  const matches = state.catalog.items.filter(row => !query || row.item.toLowerCase().includes(query) || String(row.code).includes(query));
+  $('item-list-title').textContent = query ? 'Найдено в iiko' : 'Товары iiko';
   matches.slice(0, 10).forEach(row => {
     const button = node('button', 'shokh-item' + (state.draft.item === row.item ? ' is-active' : ''));
     button.type = 'button';
     button.append(node('span', 'shokh-item-name', row.item),
-      node('small', '', 'брали ' + row.times + ' раз · ' + row.unit));
+      node('small', '', 'Арт. ' + row.code + ' · ' + row.unit));
     button.addEventListener('click', () => {
       state.draft.item = row.item;
+      state.draft.productId = row.id;
+      state.draft.unitId = row.unit_id;
       state.draft.unit = state.catalog.units.includes(row.unit) ? row.unit : state.draft.unit;
       $('item-search').value = '';
       chooseItem();
     });
     box.append(button);
   });
-  if (!matches.length && !query) box.append(node('p', 'shokh-note', 'Истории пока нет — впишите товар вручную.'));
+  if (!matches.length) box.append(node('p', 'shokh-note', 'Товар не найден в iiko. Уточните название или добавьте его в справочник iiko.'));
   // Своего товара в списке нет — предлагаем добавить введённое как есть.
   const custom = $('item-search').value.trim();
   const exact = state.catalog.items.some(row => row.item.toLowerCase() === custom.toLowerCase());
-  $('item-add-custom').hidden = !custom || exact;
+  $('item-add-custom').hidden = true;
   $('item-add-custom').textContent = custom ? 'Добавить «' + custom + '»' : '';
   $('item-chosen').hidden = !state.draft.item;
   $('item-chosen').textContent = 'Выбрано: ' + state.draft.item;
@@ -227,18 +258,18 @@ function renderItems() {
 
 async function chooseItem() {
   renderItems();
-  $('flow-next').disabled = !L().stepReady('item', state.draft);
+  $('flow-next').disabled = !ready('item');
   // Обычную цену спрашиваем у сервера: она считается по истории этого товара.
   state.usual = null;
   try {
-    const found = state.catalog.items.find(row => row.item === state.draft.item);
+    const found = state.catalog.items.find(row => row.id === state.draft.productId);
     state.usual = found && found.usual_price !== undefined ? found.usual_price : null;
   } catch { state.usual = null; }
 }
 
 function renderUnits() {
   const box = $('unit-switch'); box.replaceChildren();
-  state.catalog.units.forEach(unit => {
+  [state.draft.unit].forEach(unit => {
     const button = node('button', 'shokh-switch-btn' + (state.draft.unit === unit ? ' is-on' : ''), unit);
     button.type = 'button';
     button.addEventListener('click', () => { state.draft.unit = unit; renderUnits(); renderAmount(); });
@@ -268,7 +299,8 @@ function renderAmount() {
 
 function renderConfirm() {
   const draft = state.draft, total = L().total(draft);
-  $('confirm-point').textContent = draft.point;
+  $('confirm-point').textContent = draft.point || (state.catalog.suppliers.find(s => s.id === draft.supplierId)?.name || '');
+  $('confirm-iiko').textContent = (state.catalog.suppliers.find(s => s.id === draft.supplierId)?.name || '') + ' / ' + (state.catalog.storages.find(s => s.id === draft.storageId)?.name || '');
   $('confirm-item').textContent = draft.item;
   $('confirm-formula').textContent = draft.quantity + ' ' + draft.unit + ' × ' +
     money.format(Number(draft.price)) + ' сум';
@@ -294,7 +326,8 @@ function renderConfirm() {
 
 function resetDraft() {
   state.draft = {point: state.draft.point, item: '', unit: state.draft.unit,
-    quantity: '', price: '', hasPhoto: false};
+    quantity: '', price: '', hasPhoto: false, productId: null, unitId: null,
+    supplierId: state.draft.supplierId, storageId: state.draft.storageId, operationId: crypto.randomUUID()};
   state.photoFile = null; state.usual = null;
   $('qty-input').value = ''; $('price-input').value = '';
   $('item-search').value = '';
@@ -319,20 +352,32 @@ async function beginTrip() {
     // Время начала — с сервера: продолженный закуп не начинает отсчёт с нуля.
     state.tripStartedAt = data.started_at || new Date().toISOString();
     startTimer();
-  } catch (error) { message(error.message, true); }
+    return true;
+  } catch (error) { message(error.message, true); return false; }
 }
 
 async function submitPurchase() {
+  if (state.submitting || !ready('point') || !ready('item') || !ready('amount')) return;
+  state.submitting = true;
   const draft = state.draft;
   const form = new FormData();
   form.append('point', draft.point); form.append('item', draft.item);
   form.append('unit', draft.unit); form.append('quantity', draft.quantity);
   form.append('price', draft.price);
+  form.append('operation_id', draft.operationId);
+  form.append('product_id', draft.productId); form.append('supplier_id', draft.supplierId);
+  form.append('storage_id', draft.storageId); form.append('unit_id', draft.unitId);
+  form.append('date', state.home.date);
   if (state.tripId !== null) form.append('trip_id', String(state.tripId));
   if (state.photoFile) form.append('photo', state.photoFile);
   $('flow-next').disabled = true;
   try {
+    sessionStorage.setItem('shokh-pending-operation', draft.operationId);
+    sessionStorage.setItem('shokh-pending-draft', JSON.stringify({draft, date: state.home.date, tripId: state.tripId, tripStartedAt: state.tripStartedAt}));
     const result = await api('/purchase', {method: 'POST', body: form});
+    sessionStorage.removeItem('shokh-pending-operation');
+    sessionStorage.removeItem('shokh-pending-draft');
+    state.expectedPhoto = false;
     const before = state.lastPocket;
     state.lastPocket = result.pocket;
     $('done-item').textContent = result.purchase.item + ' · ' + money.format(Number(result.purchase.total)) + ' сум';
@@ -346,9 +391,17 @@ async function submitPurchase() {
       : L().tripOnTime(state.tripStartedAt, new Date().toISOString())
         ? 'В закупе ' + L().clock(minutes) + ' — успеваете в ' + L().FAST_TRIP_MINUTES + ' минут'
         : 'В закупе ' + L().clock(minutes) + ' — бонус за скорость уже не начислится';
+    const synced = result.purchase.iiko?.status === 'synced';
+    $('done-title').textContent = synced ? 'Сохранено в iiko' : 'Покупка записана, iiko не подтверждён';
+    $('done-iiko').textContent = synced ? 'Приходная накладная № ' + result.purchase.iiko.number
+      : (result.purchase.iiko?.error || 'Проверьте статус на главной. Не вводите эту покупку повторно.');
     show('done');
     message('');
-  } catch (error) { message(error.message, true); $('flow-next').disabled = false; }
+  } catch (error) {
+    message(error.message + ' Повторите сохранение этой же формы: ключ покупки сохранён.', true);
+    $('flow-next').disabled = false;
+  }
+  finally { state.submitting = false; }
 }
 
 async function finishTrip() {
@@ -381,19 +434,23 @@ $('start-purchase').addEventListener('click', async () => {
   resetDraft();
   state.draft.point = '';
   state.step = 'point';
-  await beginTrip();
-  renderPoints(); renderStep(); show('flow');
+  if (!state.catalogReady || !state.home) return;
+  $('start-purchase').disabled = true;
+  const started = await beginTrip();
+  $('start-purchase').disabled = false;
+  if (!started) return;
+  renderSelectors(); renderPoints(); renderStep(); show('flow');
 });
 $('flow-close').addEventListener('click', async () => { stopTimer(); await loadHome(); show('home'); });
 $('flow-back').addEventListener('click', () => { state.step = L().previousStep(state.step); renderStep(); });
 $('flow-next').addEventListener('click', () => {
   if (state.step === 'confirm') { submitPurchase(); return; }
-  if (!L().stepReady(state.step, state.draft)) return;
+  if (!ready(state.step)) return;
   state.step = L().nextStep(state.step); renderStep();
 });
 $('point-other').addEventListener('input', event => {
   state.draft.point = event.target.value.trim();
-  $('flow-next').disabled = !L().stepReady('point', state.draft);
+  $('flow-next').disabled = !ready('point');
 });
 $('item-back-point').addEventListener('click', () => { state.step = 'point'; renderPoints(); renderStep(); });
 $('item-search').addEventListener('input', renderItems);
@@ -409,18 +466,19 @@ $('photo-input').addEventListener('change', event => {
   $('photo-empty').hidden = !!file;
   $('photo-filled').hidden = !file;
   if (file) $('photo-preview').src = URL.createObjectURL(file);
+  $('flow-next').disabled = !ready(state.step);
 });
 $('qty-input').addEventListener('input', event => { state.draft.quantity = event.target.value; renderAmount(); });
 $('price-input').addEventListener('input', event => { state.draft.price = event.target.value; renderAmount(); });
 $('qty-minus').addEventListener('click', () => {
   const current = L().number(state.draft.quantity) || 0;
-  const next = Math.max(0, Math.round((current - 1) * 100) / 100);
+  const next = Math.max(0, Math.round((current - 1) * 1000) / 1000);
   state.draft.quantity = next ? String(next) : '';
   $('qty-input').value = state.draft.quantity; renderAmount();
 });
 $('qty-plus').addEventListener('click', () => {
   const next = (L().number(state.draft.quantity) || 0) + 1;
-  state.draft.quantity = String(Math.round(next * 100) / 100);
+  state.draft.quantity = String(Math.round(next * 1000) / 1000);
   $('qty-input').value = state.draft.quantity; renderAmount();
 });
 $('done-more').addEventListener('click', () => {
@@ -431,15 +489,74 @@ $('done-more').addEventListener('click', () => {
 $('done-finish').addEventListener('click', finishTrip);
 $('summary-home').addEventListener('click', async () => { await loadHome(); show('home'); });
 
-(async () => {
+function renderSelectors() {
+  for (const [id, rows, key] of [['iiko-supplier', state.catalog.suppliers, 'supplierId'],
+                                ['iiko-storage', state.catalog.storages, 'storageId']]) {
+    const select = $(id); select.replaceChildren();
+    const empty = node('option', '', 'Выберите из iiko'); empty.value = ''; select.append(empty);
+    rows.forEach(row => { const option = node('option', '', row.name); option.value = row.id; select.append(option); });
+    select.value = state.draft[key] || '';
+  }
+}
+$('iiko-supplier').addEventListener('change', event => {
+  state.draft.supplierId = event.target.value;
+  if (!$('point-other').value.trim()) state.draft.point = (state.catalog.suppliers.find(s => s.id === event.target.value)?.name || '').slice(0, 80);
+  $('flow-next').disabled = !ready('point');
+});
+$('iiko-storage').addEventListener('change', event => {
+  state.draft.storageId = event.target.value;
+  $('flow-next').disabled = !ready('point');
+});
+async function loadCatalog() {
+  state.catalogReady = false;
+  $('start-purchase').disabled = true;
+  $('iiko-status').textContent = 'Загружаем справочники iiko…';
   try {
-    state.catalog = await api('/catalog');
-    if (!state.catalog.units.length) state.catalog.units = ['кг'];
-    state.draft.unit = state.catalog.units[0];
-    await loadHome();
-    show('home');
-  } catch (error) { message(error.message, true); }
-})();
+    const catalog = await api('/catalog');
+    state.catalog = catalog;
+    state.catalogReady = catalog.source === 'iiko' && catalog.can_create;
+    $('iiko-status').textContent = state.catalogReady
+      ? 'Подключено · товаров: ' + catalog.items.length + ' · складов: ' + catalog.storages.length
+      : 'Сохранение в iiko недоступно. Проверьте подключение и права на приходные накладные.';
+    $('start-purchase').disabled = !state.catalogReady || !state.home || !!sessionStorage.getItem('shokh-pending-operation');
+  } catch (error) { $('iiko-status').textContent = error.message; }
+}
+async function recoverPending() {
+  const key = sessionStorage.getItem('shokh-pending-operation');
+  if (!key) return;
+  try {
+    const result = await api('/operation/' + encodeURIComponent(key));
+    if (result.purchase) {
+      sessionStorage.removeItem('shokh-pending-operation');
+      sessionStorage.removeItem('shokh-pending-draft');
+      message('Предыдущая покупка найдена в журнале. Проверьте её статус iiko.');
+    } else {
+      state.recovery = JSON.parse(sessionStorage.getItem('shokh-pending-draft') || 'null');
+      message('Ответ предыдущей отправки не получен. Восстановлена та же покупка с защитой от дубля.', true);
+    }
+  } catch (error) { message('Проверяем предыдущую покупку. ' + error.message, true); }
+}
+async function reloadData() {
+  $('reload-data').disabled = true;
+  message('');
+  await recoverPending();
+  await Promise.allSettled([loadHome(), loadCatalog()]);
+  if (state.recovery && state.catalogReady && state.home) {
+    const saved = state.recovery; state.recovery = null;
+    state.draft = saved.draft; state.home.date = saved.date;
+    state.tripId = saved.tripId; state.tripStartedAt = saved.tripStartedAt;
+    state.expectedPhoto = !!saved.draft.hasPhoto;
+    state.draft.hasPhoto = false; state.photoFile = null;
+    state.step = 'item';
+    $('qty-input').value = state.draft.quantity;
+    $('price-input').value = state.draft.price;
+    renderSelectors(); renderPoints(); renderStep(); show('flow'); startTimer();
+    if (state.expectedPhoto) message('Прикрепите прежнее фото и повторите сохранение этой покупки.', true);
+  }
+  $('reload-data').disabled = false;
+}
+$('reload-data').addEventListener('click', reloadData);
+reloadData();
 
 // «‹ Панель» — только тем, кому открыт ещё какой-то модуль. У самого Шоха
 // других модулей нет, и ссылка вела бы его по кругу обратно в закуп.

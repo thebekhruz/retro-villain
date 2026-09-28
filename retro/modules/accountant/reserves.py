@@ -1,5 +1,5 @@
 """Dated subsidiary ledgers. Moving cash to the safe is not an owner payout."""
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import datetime
 from decimal import Decimal
 
@@ -33,15 +33,16 @@ def _balance(rows):
     return sum((Decimal(r['amount']) * (-1 if r['kind'] == 'withdrawal' else 1) for r in rows), Decimal(0))
 
 
-def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount):
+def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *, existing_connection=None):
     allowed = {'dividends': {'opening', 'transfer', 'withdrawal'},
                'usd': {'opening', 'deposit', 'withdrawal'}, 'shoh': {'opening', 'withdrawal'}}
     if account not in allowed or kind not in allowed[account]:
         raise LedgerError('Выберите допустимую операцию и счёт.')
     value = amount_value(amount, allow_zero=kind == 'opening')
     note = required_text(note, 'основание операции')
-    with closing(store._open()) as connection:
-        connection.execute('BEGIN IMMEDIATE')
+    with (nullcontext(existing_connection) if existing_connection else closing(store._open())) as connection:
+        if existing_connection is None:
+            connection.execute('BEGIN IMMEDIATE')
         try:
             rows = _entries(connection, account)
             if kind == 'opening':
@@ -68,7 +69,8 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount):
                     raise LedgerError('Операция превышает остаток на этот или последующий день.')
             if kind == 'transfer' and cashier_amount is not None:
                 store._check_known_future_balances(connection, day)
-            connection.commit()
+            if existing_connection is None:
+                connection.commit()
             return cursor.lastrowid
         except Exception:
             connection.rollback()

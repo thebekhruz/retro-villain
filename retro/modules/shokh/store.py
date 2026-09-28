@@ -7,9 +7,9 @@
 отдельно, когда бухгалтер принимает накладную.
 """
 import sqlite3
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import date, datetime, timedelta
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
 from retro.db import as_database
@@ -55,7 +55,7 @@ def pocket_position(shokh, finance, day: date) -> dict:
                 pending=str(pending))
 
 
-def _money(value, *, name='сумма'):
+def _money(value, *, name='сумма', quantum='0.01'):
     try:
         amount = Decimal(str(value).replace(',', '.').strip())
     except (InvalidOperation, AttributeError):
@@ -64,7 +64,10 @@ def _money(value, *, name='сумма'):
         raise ShokhError(f'Укажите {name} больше нуля.')
     if amount > Decimal('1000000000'):
         raise ShokhError(f'Слишком большая {name}.')
-    return amount.quantize(Decimal('0.01'))
+    rounded = amount.quantize(Decimal(quantum), rounding=ROUND_HALF_UP)
+    if rounded <= 0:
+        raise ShokhError(f'Слишком маленькая {name}.')
+    return rounded
 
 
 def _text(value, *, name, limit=120):
@@ -145,29 +148,36 @@ class ShokhStore:
         return dict(id=row[0], day=row[1], started_at=row[2], finished_at=row[3]) if row else None
 
     def trips(self, day: date) -> list[dict]:
+        return self.trips_between(day, day)
+
+    def trips_between(self, first: date, last: date) -> list[dict]:
         with closing(self._open()) as connection:
             return [dict(id=row[0], day=row[1], started_at=row[2], finished_at=row[3])
                     for row in connection.execute(
                         'SELECT id, day, started_at, finished_at FROM shokh_trips '
-                        'WHERE day = ? ORDER BY id', (day.isoformat(),))]
+                        'WHERE day >= ? AND day <= ? ORDER BY id', (first.isoformat(), last.isoformat()))]
 
     # ── Покупки ────────────────────────────────────────────────────────────
     def add_purchase(self, day: date, at: datetime, *, point, item, unit, quantity, price,
-                     photo=None, photo_type=None, trip_id=None) -> dict:
+                     photo=None, photo_type=None, trip_id=None, _connection=None, iiko_unit=False) -> dict:
         point = _text(point, name='точку закупа', limit=80)
         item = _text(item, name='товар', limit=120)
-        if unit not in UNITS:
+        if not iiko_unit and unit not in UNITS:
             raise ShokhError('Выберите единицу измерения.')
-        count = _money(quantity, name='количество')
+        count = _money(quantity, name='количество', quantum='0.001' if iiko_unit else '0.01')
         unit_price = _money(price, name='цену')
         if photo is not None:
             if len(photo) > MAX_PHOTO_BYTES:
                 raise ShokhError('Фото больше 6 МБ — переснимите поменьше.')
             if photo_type not in ALLOWED_PHOTO_TYPES:
                 raise ShokhError('Фото должно быть картинкой.')
-        total = (count * unit_price).quantize(Decimal('0.01'))
+        total = (count * unit_price).quantize(Decimal('0.01'), rounding=ROUND_HALF_UP)
         usual = self.usual_price(item, before=day)
-        with closing(self._open()) as connection:
+        with (nullcontext(_connection) if _connection else closing(self._open())) as connection:
+            if trip_id is not None:
+                trip = connection.execute('SELECT day, finished_at FROM shokh_trips WHERE id=?', (trip_id,)).fetchone()
+                if not trip or trip[0] != day.isoformat() or trip[1] is not None:
+                    raise ShokhError('Закуп уже закрыт или относится к другому дню. Начните новый.')
             cursor = connection.execute(
                 'INSERT INTO shokh_purchases (trip_id, day, created_at, point, item, unit, '
                 'quantity, price, total, usual_price, photo, photo_type) '
@@ -177,6 +187,8 @@ class ShokhStore:
                  str(usual) if usual is not None else None,
                  sqlite3.Binary(photo) if photo else None,
                  photo_type if photo else None))
+            if _connection is not None:
+                return cursor.lastrowid
             connection.commit()
             return self.purchase(cursor.lastrowid)
 
@@ -227,6 +239,21 @@ class ShokhStore:
             return None
         return bytes(row[0]), row[1] or 'application/octet-stream'
 
+    def accept_with_finance(self, purchase_id, day, at, finance):
+        from retro.modules.accountant.reserves import add_reserve_entry
+        with closing(self._open()) as c, c:
+            c.execute('BEGIN IMMEDIATE')
+            claimed = c.execute('UPDATE shokh_purchases SET accepted_at=? '
+                                'WHERE id=? AND accepted_at IS NULL', (at.isoformat(), purchase_id))
+            if not claimed.rowcount:
+                return False
+            row = c.execute('SELECT day,total,item,point FROM shokh_purchases WHERE id=?', (purchase_id,)).fetchone()
+            if day.isoformat() < row[0]:
+                raise ShokhError('Нельзя принять покупку раньше даты закупа.')
+            add_reserve_entry(finance, day, 'shoh', 'withdrawal', row[1],
+                              f'Закуп: {row[2]} · {row[3]}', None, existing_connection=c)
+        return True
+
     def accept(self, purchase_id: int, at: datetime) -> bool:
         with closing(self._open()) as connection:
             cursor = connection.execute(
@@ -258,7 +285,7 @@ class ShokhStore:
         with closing(self._open()) as connection:
             rows = connection.execute(
                 'SELECT item, unit, COUNT(*) AS times, MAX(day) FROM shokh_purchases '
-                'GROUP BY item ORDER BY times DESC, MAX(day) DESC LIMIT ?', (limit,)).fetchall()
+                'GROUP BY item, unit ORDER BY times DESC, MAX(day) DESC, item, unit LIMIT ?', (limit,)).fetchall()
         result = []
         for item, unit, times, last_day in rows:
             # Обычную цену берём на завтра от последней покупки, иначе сегодняшние

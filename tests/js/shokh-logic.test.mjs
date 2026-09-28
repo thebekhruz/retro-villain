@@ -9,6 +9,9 @@ const draft = (extra = {}) => ({point: 'Базар', item: 'Помидоры', u
 test('итог покупки — количество на цену, с копейками', () => {
   assert.equal(logic.total(draft()), 108000);
   assert.equal(logic.total(draft({quantity: '1,5', price: '3333'})), 4999.5);
+  assert.equal(logic.total(draft({quantity: '1.005', price: '1'})), 1.01);
+  assert.equal(logic.total(draft({quantity: '1.125', price: '1'})), 1.13);
+  assert.equal(logic.total(draft({quantity: '1.125', price: '11200'})), 12600);
   // Пока чего-то не хватает, итога нет — ноль показывать нельзя.
   assert.equal(logic.total(draft({price: ''})), null);
   assert.equal(logic.total(draft({quantity: '0'})), null);
