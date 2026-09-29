@@ -501,6 +501,43 @@ def test_check_mode_records_check_mode_data_and_lets_cash_go_negative(tmp_path):
     assert client.get('/api/config').json()['check_mode'] is True
 
 
+def test_check_mode_carries_cash_over_a_missing_handover_day(tmp_path):
+    """Дыра в цепочке приходов не должна останавливать прогон.
+
+    Обычно пропущенный день — стоп: перенесённый через него остаток был бы
+    выдумкой. В режиме проверки он считается нулевым приходом.
+    """
+    with demo_client(tmp_path, check_mode=True) as client:
+        finance = client.app.state.accountant_finance
+        # Приход есть за позавчера, за вчера — дыра.
+        finance.record_handover(DAY - timedelta(days=2), Decimal('500000'))
+        spend = client.post('/api/accountant/expenses', json={
+            'date': DAY.isoformat(), 'item_code': 'admin_other',
+            'note': 'Через дыру в цепочке', 'amount': '120000'})
+        after = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+
+    assert spend.status_code == 201
+    # 500 000 позавчера + 0 за пропущенный день и за сегодня − 120 000 расхода.
+    assert after['ledger']['cash_balance'] == '380000'
+
+
+def test_missing_handover_day_still_stops_a_normal_run(tmp_path):
+    """Без режима проверки дыра по-прежнему останавливает операцию."""
+    with demo_client(tmp_path) as client:
+        finance = client.app.state.accountant_finance
+        # Приход есть за позавчера и за сегодня, дыра ровно во вчера: так запрос
+        # доходит до переноса остатка, а не отбивается раньше из-за самого дня.
+        finance.record_handover(DAY - timedelta(days=2), Decimal('500000'))
+        finance.record_handover(DAY, Decimal('300000'))
+        spend = client.post('/api/accountant/expenses', json={
+            'date': DAY.isoformat(), 'item_code': 'admin_other',
+            'note': 'Через дыру в цепочке', 'amount': '120000'})
+
+    assert spend.status_code == 422
+    assert 'загрузите данные кассира' in spend.json()['detail']
+    assert (DAY - timedelta(days=1)).isoformat() in spend.json()['detail']
+
+
 def test_check_mode_pays_people_without_a_hikvision_link(tmp_path):
     """В режиме прогона «нет привязки» не держит начисление: ставка идёт как пришедшему."""
     guarded = demo_client(tmp_path / 'off')
