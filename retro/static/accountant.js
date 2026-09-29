@@ -129,11 +129,20 @@ const BLOCK_TEXT = {
   rate: 'Нет ставки — смена не начисляется',
   unlinked: 'Нет привязки к Hikvision — вход не виден',
   hikvision: 'Входы Hikvision за этот день ещё не пришли',
+  hikvision_gap: 'Данных Hikvision за этот день нет — отметьте «был / не был»',
   unknown: 'Начисление не рассчитано',
 };
+/* Выгрузка Hikvision идёт только вперёд и назад не достраивается: за день
+   раньше её начала входов не будет никогда. Ждать нечего — такую смену
+   отмечают руками, и текст блокировки обязан это говорить. */
+function hikvisionGap() {
+  const from = (view.staff?.attendance || view.data.attendance)?.covered_from;
+  return !!from && view.board.S < from.slice(0, 10);
+}
+const blockText = row => BLOCK_TEXT[row.block === 'hikvision' && hikvisionGap() ? 'hikvision_gap' : row.block];
 function rowLock(row) {
   if (view.data.ledger.cash_balance === null) return payDisabledReason();
-  if (row.block) return BLOCK_TEXT[row.block];
+  if (row.block) return blockText(row);
   if (row.own && !row.accrualId && dayBlocks[view.board.S]) return dayBlocks[view.board.S];
   return null;
 }
@@ -195,7 +204,10 @@ function renderShift() {
   $('shift-sum').textContent = 'выдано ' + t.paidCount + ' · ' + money(t.paid) + (errors ? ' · ' + errors + ' ' + L.plural(errors, 'ошибка', 'ошибки', 'ошибок') : '');
 
   const n = payable().length;
-  $('pay-all-label').textContent = n ? 'Выдать пришедшим · ' + n : board.toPay.length ? 'Выдать пришедшим' : 'Все пришедшие получили';
+  // «Все получили» — только когда было что получать: смена без единого
+  // начисления это не «выдали всем», а «выдавать нечего».
+  $('pay-all-label').textContent = n ? 'Выдать пришедшим · ' + n : board.toPay.length ? 'Выдать пришедшим'
+    : t.payableCount ? 'Все пришедшие получили' : 'Выдавать пока некому';
   $('pay-all').disabled = !n || busy;
 }
 
@@ -204,13 +216,19 @@ function shiftRow(row, lock) {
   const line = h('div', {class: 'fd-row fd-shift-cols is-' + row.kind + (flagged ? ' is-focus' : ''), 'data-key': row.key});
 
   const on = row.paid > 0;
-  const check = h('button', {type: 'button', class: 'fd-cb' + (on ? ' is-on' : '') + (row.kind === 'err' ? ' is-err' : ''),
-    title: on ? 'Выдано' : 'Отметить выдачу', 'aria-label': (on ? 'Выдано: ' : 'Отметить выдачу: ') + row.name,
-    'aria-pressed': String(on), text: on ? '✓' : ''});
   const canPay = !lock && row.accrued > 0 && row.debt > 0;
   const canUndo = !lock && row.paidToday > 0;
-  check.disabled = !(canPay || canUndo);
+  const active = canPay || canUndo;
+  // Причина запрета — на самой кнопке. Выключенная кнопка не ловит наведение,
+  // поэтому держим её живой через aria-disabled: подсказка видна, а клик
+  // вместо тишины отвечает, почему выдать нельзя.
+  const why = lock || (row.accrued === 0 ? 'Входа нет — начисление 0 сум' : 'Выдавать по этой строке нечего');
+  const check = h('button', {type: 'button', class: 'fd-cb' + (on ? ' is-on' : '') + (row.kind === 'err' ? ' is-err' : '') + (active ? '' : ' is-locked'),
+    title: active ? (on ? 'Выдано' : 'Отметить выдачу') : why,
+    'aria-label': (on ? 'Выдано: ' : 'Отметить выдачу: ') + row.name,
+    'aria-disabled': String(!active), 'aria-pressed': String(on), text: on ? '✓' : ''});
   check.addEventListener('click', () => {
+    if (!active) { message(why, true); return; }
     if (row.debt > 0 && row.accrued > 0) setPaid(row, row.paidToday + row.debt);
     else if (row.paidToday > 0) setPaid(row, 0);
   });
@@ -228,9 +246,15 @@ function shiftRow(row, lock) {
   } else time.append(h('div', {class: 'fd-time-main is-none', text: '—'}));
 
   const [label, cls] = STATUS[row.status] || ['—', 'unlinked'];
-  const toggleable = row.noHik && row.own && !row.accrualId;
+  // День раньше начала выгрузки отмечают так же, как человека без Hikvision:
+  // входов не будет, и без отметки строка не начислится никогда. Пока выгрузка
+  // просто отстаёт, отметку не предлагаем — данные ещё придут.
+  const markable = row.noHik || (row.status === 'unavailable' && hikvisionGap());
+  const toggleable = markable && row.own && !row.accrualId;
   const pill = h(toggleable ? 'button' : 'span', {class: 'fd-pill ' + cls + (row.noHik ? ' is-manual' : '') + (toggleable ? ' is-toggle' : ''),
-    title: row.noHik ? (toggleable ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был' : 'Отмечено вручную') : 'Данные Hikvision',
+    title: toggleable ? (row.noHik ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был'
+        : 'Данных Hikvision за этот день нет. Нажмите, чтобы отметить: был / не был')
+      : row.noHik ? 'Отмечено вручную' : 'Данные Hikvision',
     type: toggleable ? 'button' : null, text: label});
   if (toggleable) pill.addEventListener('click', () => run(() => write('/api/accountant/manual-attendance',
     {date: view.board.S, employee_id: row.employeeId, present: row.status !== 'manual_present'}),
@@ -266,7 +290,7 @@ function shiftRow(row, lock) {
    исправления перечитываем день — строка становится к выдаче сама. */
 function blockedCell(row) {
   const cell = h('div', {class: 'fd-pay fd-fix'});
-  const note = h('div', {class: 'fd-pay-note is-blocked', text: BLOCK_TEXT[row.block]});
+  const note = h('div', {class: 'fd-pay-note is-blocked', text: blockText(row)});
   if (row.block === 'rate') {
     const open = h('button', {type: 'button', class: 'fd-fix-btn', text: 'Указать ставку'});
     open.addEventListener('click', () => {
