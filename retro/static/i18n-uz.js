@@ -1800,6 +1800,7 @@ globalThis.RetroTemplatesUz.push(
 Object.assign(globalThis.RetroDictionaryUz, {
   '✦ Разобрать с AI →': "✦ AI bilan tahlil qilish →",
   'Все замечания ↓': "Barcha izohlar ↓",
+  'Полный отчёт →': "To'liq hisobot →",
   'Проверка бухгалтера · Счёт Шефа': "Buxgalterni tekshirish · Счёт Шефа",
 });
 Object.assign(globalThis.RetroDictionaryUz, {

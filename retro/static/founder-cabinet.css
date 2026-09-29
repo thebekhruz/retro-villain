@@ -272,7 +272,7 @@
   .fo-kpis{grid-template-columns:1fr 1fr;gap:8px}
   .fo-kpi{padding:12px;border-radius:16px}
   .fo-kpi>strong{font-size:19px;margin-top:6px}
-  .fo-kpi-link{min-height:40px}
+  .fo-kpi-link{min-height:40px;min-width:40px}
   .fo-div-editor.is-desk{display:none}
   .fo-fold{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:52px;padding:0 16px;
     border-radius:18px;background:#fff;border:1px solid var(--border);color:var(--ink);font-size:15px;font-weight:600;text-decoration:none}

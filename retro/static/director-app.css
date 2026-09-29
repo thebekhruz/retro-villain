@@ -262,3 +262,9 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 .dir-close{width:40px;height:40px}
 .dir-pill.manual_present{background:var(--ok-bg);color:var(--ok)}
 .dir-pill.manual_absent{background:#ebeeea;color:#737f74}
+/* Ссылка на полный отчёт в шапке — только там, где меню скрыто или без подписей. */
+.dir-head-actions{flex-wrap:wrap}
+.dir-report-link{display:inline-flex;align-items:center;text-decoration:none}
+.dir-head-actions .dir-back{margin-right:0}
+.dir-head-actions .dir-report-link{margin-right:auto}
+@media(min-width:901px){.dir-report-link{display:none}}
