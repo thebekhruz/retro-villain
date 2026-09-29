@@ -82,3 +82,37 @@ test('пустая смена не ломает состав', () => {
   assert.deepEqual(logic.composition([], PALETTE), []);
   assert.deepEqual(logic.composition(undefined, PALETTE), []);
 });
+
+/* ── 5a: смена, передача, суммы в полях ─────────────────────────────── */
+test('смена: открыта, закрыта со временем, после полуночи — с датой, без данных — ничего', () => {
+  assert.deepEqual(logic.shiftLabel({open: true}, '2026-09-28'), {open: true, text: 'Смена открыта'});
+  assert.deepEqual(logic.shiftLabel({open: false, closed_at: '2026-09-28T22:56:49'}, '2026-09-28'),
+    {open: false, text: 'Смена закрыта 22:56'});
+  assert.equal(logic.shiftLabel({open: false, closed_at: '2026-09-29T00:40:00'}, '2026-09-28').text,
+    'Смена закрыта 29.09 00:40');
+  assert.equal(logic.shiftLabel(null, '2026-09-28'), null);
+  assert.equal(logic.shiftLabel({open: false, closed_at: null}, '2026-09-28'), null);
+});
+
+test('передача: нет, совпала, разошлась, записал бухгалтер', () => {
+  assert.equal(logic.handoverView(null, 850000).state, 'none');
+  assert.equal(logic.handoverView({amount: '850000', source: 'cashier'}, 850000).state, 'done');
+  assert.deepEqual(logic.handoverView({amount: '850000', source: 'cashier'}, 830000),
+    {state: 'diff', difference: -20000});
+  assert.deepEqual(logic.handoverView({amount: '850000', source: 'auto'}, 900000.5),
+    {state: 'diff', difference: 50000.5});
+  // Приход бухгалтера кнопка кассира не трогает, даже если сумма другая.
+  assert.equal(logic.handoverView({amount: '700000', source: 'accountant'}, 850000).state, 'accountant');
+  // Пока расходы не загрузились — отметка есть, разницы нет.
+  assert.deepEqual(logic.handoverView({amount: '850000', source: 'cashier'}, null), {state: 'done', difference: null});
+});
+
+test('сумма из поля: пробелы и запятая допустимы, мусор и ноль — нет', () => {
+  assert.equal(logic.parseAmount('1 500 000'), 1500000);
+  assert.equal(logic.parseAmount('120,5'), 120.5);
+  assert.equal(logic.parseAmount('0'), null);
+  assert.equal(logic.parseAmount('-5'), null);
+  assert.equal(logic.parseAmount('1.234'), null);
+  assert.equal(logic.parseAmount('сто'), null);
+  assert.equal(logic.parseAmount(''), null);
+});
