@@ -9,8 +9,11 @@ const loadCode = source.slice(source.indexOf('async function loadCatalog()'), so
 function harness(saved = {}) {
   const elements = new Map(), pending = [], storage = new Map(Object.entries(saved)), messages = [];
   const state = {catalogReady:false,home:null};
-  const context = vm.createContext({state,
-    $: id=>{if (!elements.has(id)) elements.set(id,{});return elements.get(id);},
+  // Элемент-заглушка: хватает того, что трогают загрузка и отклик (T-393).
+  const fake=()=>({classList:{toggle(){},add(){},remove(){}},setAttribute(){},removeAttribute(){},replaceChildren(){},dataset:{},style:{}});
+  const context = vm.createContext({state,setTimeout,clearTimeout,
+    Busy:{button:(el,work)=>work,section:(el,work)=>work,row:(el,work)=>work},homeFailed(){},
+    $: id=>{if (!elements.has(id)) elements.set(id,fake());return elements.get(id);},
     sessionStorage:{getItem:key=>storage.get(key),removeItem:key=>storage.delete(key)},
     api:path=>new Promise((resolve,reject)=>pending.push({path,resolve,reject})),
     renderHome:data=>{state.home=data;},message:text=>messages.push(text),

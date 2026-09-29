@@ -116,3 +116,18 @@ test('сумма из поля: пробелы и запятая допусти�
   assert.equal(logic.parseAmount('сто'), null);
   assert.equal(logic.parseAmount(''), null);
 });
+
+test('skeletonMap: a figure stays a skeleton until every part it is computed from has arrived', () => {
+  const all = logic.skeletonMap(new Set(logic.PARTS));
+  assert.ok(Object.values(all).every(Boolean));
+  const none = logic.skeletonMap([]);
+  assert.ok(Object.values(none).every(value => value === false));
+  // «К передаче» — из iiko, расходов, поступлений и выдач Шоху.
+  const onlyShokh = logic.skeletonMap(['shokh']);
+  assert.equal(onlyShokh.handover, true);
+  assert.equal(onlyShokh['expense-total'], true);
+  assert.equal(onlyShokh.revenue, false);
+  assert.equal(onlyShokh['receipt-total'], false);
+  const onlyRate = logic.skeletonMap(new Set(['rate']));
+  assert.deepEqual(Object.keys(onlyRate).filter(id => onlyRate[id]).sort(), ['usd-official', 'usd-restaurant']);
+});

@@ -102,6 +102,14 @@ const editable = () => current && current.date === today;
 const needsAttention = p => p.rate == null || NO_SOURCE.has(p.status);
 
 function loadDay() { return fetchDay(); }
+// Отклик (busy.js): при перечитывании реестр и карточки гаснут, а не пропадают.
+const B = globalThis.RetroBusy;
+function reloadDay() {
+  const work = fetchDay();
+  if (!B) return work;
+  B.section($('employees-stats'), work);
+  return B.section(document.querySelector('.emp-layout'), work);
+}
 
 // ── Отрисовка ────────────────────────────────────────────────────────────────
 function render() {
@@ -207,6 +215,7 @@ function whoCell(name, role, warn) {
 }
 function registryRow(row) {
   const line = el('div', 'emp-row' + (ui.sel === row.employee_id ? ' is-selected' : ''), {tabIndex: 0});
+  line.dataset.busyKey = 'emp:' + row.employee_id;
   line.setAttribute('role', 'button');
   line.setAttribute('aria-label', row.name + ' — изменить');
   line.addEventListener('click', () => openDrawer(row.employee_id));
@@ -298,6 +307,7 @@ function renderMonthly() {
   rows.forEach(row => {
     const key = 'm:' + row.id;
     const line = el('div', 'emp-salary-row' + (ui.sel === key ? ' is-selected' : ''), {tabIndex: 0});
+    line.dataset.busyKey = 'emp:' + key;
     line.setAttribute('role', 'button');
     line.setAttribute('aria-label', row.name + ' — изменить');
     line.addEventListener('click', () => openMonthly(row.id));
@@ -418,7 +428,9 @@ function drawerActions(saveLabel, onSave, disabled) {
   const actions = text('div', 'emp-drawer-actions', null);
   const save = el('button', 'emp-btn emp-btn--primary', {type: 'button', textContent: saveLabel});
   save.disabled = !!disabled;
-  save.addEventListener('click', onSave);
+  // Панель перерисовывается целиком: ключ переносит спиннер и ✓ на новую кнопку.
+  save.dataset.busyKey = 'emp-save';
+  save.addEventListener('click', () => { const work = onSave(); if (B) B.button(save, work); });
   const cancel = el('button', 'emp-btn', {type: 'button', textContent: 'Отмена'});
   cancel.addEventListener('click', closeDrawer);
   actions.append(save, cancel);
@@ -557,13 +569,17 @@ function deleteBlock(onDelete) {
   const keep = el('button', 'emp-delete-keep', {type: 'button', textContent: 'Оставить'});
   keep.addEventListener('click', () => { ui.confirm = false; render(); });
   const remove = el('button', 'emp-delete-yes', {type: 'button', textContent: 'Удалить'});
-  remove.addEventListener('click', () => onDelete());
+  remove.dataset.busyKey = 'emp-delete';
+  remove.addEventListener('click', () => { const work = onDelete(); if (B) B.button(remove, work, {done: false}); });
   box.append(keep, remove);
   return box;
 }
 
 // ── Запись ───────────────────────────────────────────────────────────────────
-const fail = value => { ui.feedback = value; ui.fbErr = true; render(); };
+// false — «не удалось»: так кнопка в busy.js не покажет ✓.
+const fail = value => { ui.feedback = value; ui.fbErr = true; render(); return false; };
+// Сохранённую строку реестра подсвечиваем — видно, что именно изменилось.
+const flashRow = key => B?.flash(document.querySelector('[data-busy-key="' + CSS.escape(key) + '"]'));
 async function saveDraft() {
   const d = ui.draft, name = d.name.trim();
   if (!name) return fail('Укажите имя.');
@@ -580,7 +596,9 @@ async function saveDraft() {
         method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить.');
-      await fetchDay(); message('Изменение сохранено с сегодняшнего дня.');
+      const id = ui.sel;
+      await reloadDay(); message('Изменение сохранено с сегодняшнего дня.');
+      flashRow('emp:' + id);
     } else {
       const payload = {name, role: d.role.trim(), rate, group: d.group};
       // Создание — через RetroFinancialWrite: у сотрудника есть ставка, и повтор
@@ -590,17 +608,20 @@ async function saveDraft() {
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить.');
       ui.sel = null; ui.draft = null;
-      await fetchDay(); message('Новый сотрудник добавлен.');
+      await reloadDay(); message('Новый сотрудник добавлен.');
+      if (result && result.id != null) flashRow('emp:' + result.id);
     }
-  } catch (error) { fail(error.message); }
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 async function doDelete() {
   try {
     const response = await fetch('/api/accountant/employees/' + encodeURIComponent(ui.sel), {method: 'DELETE'});
     if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось удалить.'); }
     ui.sel = null; ui.draft = null; ui.confirm = false;
-    await fetchDay(); message('Сотрудник удалён.');
-  } catch (error) { fail(error.message); }
+    await reloadDay(); message('Сотрудник удалён.');
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 async function saveMonthly() {
   const d = ui.draft, name = d.name.trim(), role = d.role.trim();
@@ -622,9 +643,11 @@ async function saveMonthly() {
     const result = await response.json();
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить оклад.');
     if (!isEdit) { ui.sel = null; ui.draft = null; }
-    await fetchDay();
+    await reloadDay();
     message(isEdit ? 'Оклад сохранён.' : 'Сотрудник на окладе добавлен.');
-  } catch (error) { fail(error.message); }
+    flashRow('emp:m:' + (isEdit ? id : result.id));
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 async function doDeleteMonthly() {
   const id = Number(String(ui.sel).slice(2));
@@ -632,14 +655,15 @@ async function doDeleteMonthly() {
     const response = await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(id), {method: 'DELETE'});
     if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.detail || 'Не удалось удалить сотрудника.'); }
     ui.sel = null; ui.draft = null; ui.confirm = false;
-    await fetchDay(); message('Сотрудник удалён.');
-  } catch (error) { fail(error.message); }
+    await reloadDay(); message('Сотрудник удалён.');
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 
 // ── День / загрузка ──────────────────────────────────────────────────────────
 const shift = (day, delta) => { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10); };
 let day;
-function setDay(next) { if (!next || next > today) return; day = next; fetchDay(); }
+function setDay(next) { if (!next || next > today) return; day = next; reloadDay(); }
 function paintDayControls() {
   $('day-label').textContent = day ? formattedDay(day) : '—';
   $('day-next').disabled = !day || day >= today;
@@ -666,7 +690,8 @@ async function fetchDay() {
   if (!day) return;
   const sequence = ++requestNo;
   paintDayControls();
-  status('Загрузка данных за ' + formattedDay(day));
+  // Пока идёт день, в шапке остаётся прежняя подпись, а реестр гаснет
+  // (reloadDay); самая первая загрузка — скелет в разметке.
   try {
     const [response, paid] = await Promise.all([
       fetch('/api/accountant/staff?date=' + encodeURIComponent(day), {cache: 'no-store'}), fetchMonthPaid(day)]);
@@ -693,10 +718,14 @@ $('employees-search').addEventListener('input', event => { ui.q = event.target.v
 $('employees-clear-filter').addEventListener('click', () => { ui.filter = 'all'; render(); });
 $('employees-add').addEventListener('click', () => openNew('shift'));
 $('monthly-add').addEventListener('click', () => openNew('salary'));
-$('employees-download').addEventListener('click', async () => {
+$('employees-download').addEventListener('click', () => {
   if (!day) return;
   const button = $('employees-download');
-  button.disabled = true;
+  // Кнопка в работе, пока файл не начал скачиваться.
+  const work = downloadAll();
+  if (B) B.button(button, work); else { button.disabled = true; work.finally(() => { button.disabled = false; }); }
+});
+async function downloadAll() {
   try {
     const response = await fetch('/api/accountant/employees/export?scope=all&date=' + encodeURIComponent(day), {cache: 'no-store'});
     if (!response.ok) throw new Error('Не удалось скачать файл сотрудников.');
@@ -706,8 +735,9 @@ $('employees-download').addEventListener('click', async () => {
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
     message('Полный список скачан.');
-  } catch (error) { message(error.message, true); } finally { button.disabled = false; }
-});
+    return true;
+  } catch (error) { message(error.message, true); return false; }
+}
 
 (async () => {
   try {

@@ -995,3 +995,12 @@ body.fd-busy .fd :is(.fd-btn-pay,.fd-plus,.fd-btn-give,.fd-accept){cursor:progre
 .fd-pay-note.is-blocked{color:#8a6d3b}
 .fd-row.is-blocked{background:#fffdf7}
 @media (max-width:650px){.fd-fix-btn{min-height:40px;white-space:normal}}
+
+/* ── Первая загрузка дня: скелет в форме секций и правой колонки (T-393) ── */
+.fd-skeleton[hidden]{display:none}
+.fd-skeleton .fd-sec{padding-bottom:8px}
+.fd-skel-head{display:flex;flex-direction:column;gap:10px;padding:20px 20px 16px}
+.fd-skel-cash{display:flex;flex-direction:column;gap:14px;--rm-skel-a:rgba(255,255,255,.09);--rm-skel-b:rgba(255,255,255,.2)}
+.fd-skeleton .fd-card{min-height:96px}
+/* Кнопка в работе остаётся яркой, даже если модуль на это время её отключил. */
+.fd .rm-busy:disabled,.fd .rm-done:disabled{opacity:1}

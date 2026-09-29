@@ -4,10 +4,16 @@ const form = document.getElementById('login-form');
 const submit = document.getElementById('submit');
 const error = document.getElementById('error');
 
-form.addEventListener('submit', async (event) => {
+form.addEventListener('submit', (event) => {
   event.preventDefault();
-  submit.disabled = true;
   error.textContent = '';
+  const attempt = signIn();
+  // Спиннер на самой кнопке; повторное нажатие busy.js не пропустит.
+  if (globalThis.RetroBusy) RetroBusy.button(submit, attempt);
+  else { submit.disabled = true; attempt.finally(() => { submit.disabled = false; }); }
+});
+
+async function signIn() {
   try {
     const response = await fetch('/api/session', {
       method: 'POST',
@@ -20,10 +26,10 @@ form.addEventListener('submit', async (event) => {
     const data = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(data.detail || 'Не удалось войти.');
     window.location.assign(data.path);
+    return true;
   } catch (failure) {
     error.textContent = failure.message;
     form.password.select();
-  } finally {
-    submit.disabled = false;
+    return false;
   }
-});
+}

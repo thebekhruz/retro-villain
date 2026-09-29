@@ -91,5 +91,25 @@
     return value>0?value:null;
   }
 
-  return {CASH_PAYMENT,cashPayment,handover,totalInflow,composition,shiftLabel,handoverView,parseAmount};
+  /* Первая загрузка дня (T-393): экран собирается из шести независимых частей.
+     Цифра — скелетом, пока не пришла хотя бы одна часть, из которых она
+     считается: «К передаче» ждёт и iiko, и расходы, и поступления, и Шоха. */
+  const PARTS=['day','expenses','receipts','shokh','usd','rate'];
+  const SKELETON={
+    'total-inflow':['day','receipts'],composition:['day','receipts'],revenue:['day'],receipts:['day'],average:['day'],
+    'card-prepay':['day'],'payments-sub':['day'],'payment-total':['day'],'payments-inflow':['day','receipts'],
+    handover:['day','expenses','receipts','shokh'],'demo-cash':['day'],'cash-prepay':['day'],
+    'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],'receipt-auto-value':['day'],
+    'expense-total':['expenses','shokh'],'receipt-total':['receipts'],'shokh-pocket':['shokh'],
+    'usd-today':['usd'],'usd-safe':['usd'],'usd-official':['rate'],'usd-restaurant':['rate'],
+  };
+  /* {id: скелет ли} по набору ещё не пришедших частей. */
+  function skeletonMap(waiting){
+    const pending=waiting instanceof Set?waiting:new Set(waiting||[]);
+    const result={};
+    for(const [id,parts] of Object.entries(SKELETON))result[id]=parts.some(part=>pending.has(part));
+    return result;
+  }
+
+  return {CASH_PAYMENT,cashPayment,handover,totalInflow,composition,shiftLabel,handoverView,parseAmount,PARTS,skeletonMap};
 });

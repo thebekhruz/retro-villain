@@ -83,13 +83,40 @@ async function remove(operation, id, day) {
   const response = await fetch('/api/accountant/operations/' + encodeURIComponent(operation) + '/' + id + '?date=' + encodeURIComponent(day), {method: 'DELETE'});
   if (!response.ok) { let detail = 'Не удалось удалить операцию.'; try { detail = (await response.json()).detail || detail; } catch { /* нет тела */ } throw new Error(detail); }
 }
-async function run(action, success) {
+/* Запись и перечитывание дня. fb — кто начал действие и где показать отклик
+   (busy.js): {button} — спиннер и ✓ на кнопке, {field} — «сохраняю…» в поле,
+   {row} — строка в работе, {rows} — несколько строк, {collapse} — удалённая
+   строка сворачивается. Пока идёт перечитывание, день слегка гаснет. */
+const B = globalThis.RetroBusy;
+// Ключ строки смены для busy.js: row.key меняется с «e<сотрудник>» на
+// «a<начисление>», когда смену подтверждают, — берём сотрудника и день.
+const stable = row => (row.employeeId ?? row.key) + '@' + row.day;
+const dayKey = suffix => (view ? view.data.date : selectedDay()) + ':' + suffix;
+async function run(action, success, fb = {}) {
   if (busy) return false;
   busy = true; document.body.classList.add('fd-busy');
-  try { await action(); await loadDay(); if (success) message(success); return true; }
-  catch (error) { await loadDay().catch(() => {}); message(error.message, true); return false; }
-  finally { busy = false; document.body.classList.remove('fd-busy'); renderAll(); }
+  // Новое действие — старые красные поля больше не про текущие данные.
+  B?.clear('', 'error');
+  let work = Promise.resolve().then(action);
+  if (B) {
+    (fb.rows || []).forEach(line => B.row(line, work).catch(() => {}));
+    // Поле само подсвечивает свою строку по итогу; строку «в работе» ставим
+    // только действиям кнопками.
+    if (fb.field) work = B.field(fb.field, work, {row: fb.row});
+    else if (fb.row) work = B.row(fb.row, work, {collapse: fb.collapse});
+    if (fb.button) work = B.button(fb.button, work, {done: !fb.collapse});
+  }
+  let failure = null;
+  try { await work; } catch (error) { failure = error; }
+  // Запись прошла, а перечитать не вышло — это покажет loadDay; форму всё
+  // равно очищаем, иначе повтор записал бы деньги второй раз.
+  try { await reload(); } catch { /* сообщение уже выведено */ }
+  busy = false; document.body.classList.remove('fd-busy'); renderAll();
+  if (failure) { message(failure.message, true); return false; }
+  if (success) message(success);
+  return true;
 }
+const reload = () => (B ? B.section($('finance-layout'), loadDay()) : loadDay());
 
 /* ── секции сворачиваются; состояние помнит браузер ───────────────────── */
 function sectionState(name) { try { return localStorage.getItem('fd-sec:' + name) !== '0'; } catch { return true; } }
@@ -201,18 +228,20 @@ function renderShift() {
 
 function shiftRow(row, lock) {
   const flagged = focusKey === 'row:' + row.key || (focusKey === 'todo' && row.kind === 'todo' && row.own);
-  const line = h('div', {class: 'fd-row fd-shift-cols is-' + row.kind + (flagged ? ' is-focus' : ''), 'data-key': row.key});
+  const line = h('div', {class: 'fd-row fd-shift-cols is-' + row.kind + (flagged ? ' is-focus' : ''), 'data-key': row.key,
+    'data-busy-key': 'shift:' + dayKey(stable(row))});
 
   const on = row.paid > 0;
   const check = h('button', {type: 'button', class: 'fd-cb' + (on ? ' is-on' : '') + (row.kind === 'err' ? ' is-err' : ''),
     title: on ? 'Выдано' : 'Отметить выдачу', 'aria-label': (on ? 'Выдано: ' : 'Отметить выдачу: ') + row.name,
-    'aria-pressed': String(on), text: on ? '✓' : ''});
+    'aria-pressed': String(on), text: on ? '✓' : '', 'data-busy-key': 'cb:' + dayKey(stable(row))});
   const canPay = !lock && row.accrued > 0 && row.debt > 0;
   const canUndo = !lock && row.paidToday > 0;
   check.disabled = !(canPay || canUndo);
   check.addEventListener('click', () => {
-    if (row.debt > 0 && row.accrued > 0) setPaid(row, row.paidToday + row.debt);
-    else if (row.paidToday > 0) setPaid(row, 0);
+    const fb = {button: check, row: line};
+    if (row.debt > 0 && row.accrued > 0) setPaid(row, row.paidToday + row.debt, null, fb);
+    else if (row.paidToday > 0) setPaid(row, 0, null, fb);
   });
 
   const who = h('div', {class: 'fd-who'},
@@ -231,10 +260,10 @@ function shiftRow(row, lock) {
   const toggleable = row.noHik && row.own && !row.accrualId;
   const pill = h(toggleable ? 'button' : 'span', {class: 'fd-pill ' + cls + (row.noHik ? ' is-manual' : '') + (toggleable ? ' is-toggle' : ''),
     title: row.noHik ? (toggleable ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был' : 'Отмечено вручную') : 'Данные Hikvision',
-    type: toggleable ? 'button' : null, text: label});
+    type: toggleable ? 'button' : null, text: label, 'data-busy-key': toggleable ? 'pill:' + dayKey(stable(row)) : null});
   if (toggleable) pill.addEventListener('click', () => run(() => write('/api/accountant/manual-attendance',
     {date: view.board.S, employee_id: row.employeeId, present: row.status !== 'manual_present'}),
-    row.name + ': ' + (row.status === 'manual_present' ? 'не был' : 'был')));
+    row.name + ': ' + (row.status === 'manual_present' ? 'не был' : 'был'), {button: pill, row: line}));
   const statusCell = h('div', {class: 'fd-status'}, pill);
 
   const accrued = h('div', {class: 'fd-acc num' + (row.accrued ? '' : ' is-zero')},
@@ -243,7 +272,7 @@ function shiftRow(row, lock) {
     row.accrued === null ? (row.block === 'rate' ? 'Нет ставки' : '—') : fmt(row.accrued));
 
   const input = h('input', {class: 'fd-pay-input', inputmode: 'numeric', placeholder: '—', autocomplete: 'off',
-    'aria-label': 'Выдано сегодня · ' + row.name});
+    'aria-label': 'Выдано сегодня · ' + row.name, 'data-busy-key': 'pay:' + dayKey(stable(row))});
   input.value = row.paidToday ? fmt(row.paidToday) : '';
   input.disabled = !!lock || !(row.accrued > 0 || row.paidToday > 0);
   if (lock) input.title = lock;
@@ -251,27 +280,28 @@ function shiftRow(row, lock) {
   const commit = () => {
     const value = parse(input.value);
     if (value === row.paidToday) { input.value = row.paidToday ? fmt(row.paidToday) : ''; return; }
-    setPaid(row, value, input);
+    setPaid(row, value, input, {field: input, row: line});
   };
   input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); input.blur(); } });
   input.addEventListener('change', commit);
   let note = row.note;
   if (!note && row.paidBefore > 0) note = 'раньше выдано ' + fmt(row.paidBefore);
-  const pay = row.block ? blockedCell(row) : h('div', {class: 'fd-pay'}, input, h('div', {class: 'fd-pay-note is-' + row.kind, text: note}));
+  const pay = row.block ? blockedCell(row, line) : h('div', {class: 'fd-pay'}, input, h('div', {class: 'fd-pay-note is-' + row.kind, text: note}));
   line.append(check, who, h('div', {class: 'fd-meta'}, time, statusCell), accrued, pay);
   return line;
 }
 
 /* Строка, которую не начислить: своя причина и прямое исправление. После
    исправления перечитываем день — строка становится к выдаче сама. */
-function blockedCell(row) {
+function blockedCell(row, line) {
   const cell = h('div', {class: 'fd-pay fd-fix'});
   const note = h('div', {class: 'fd-pay-note is-blocked', text: BLOCK_TEXT[row.block]});
   if (row.block === 'rate') {
     const open = h('button', {type: 'button', class: 'fd-fix-btn', text: 'Указать ставку'});
     open.addEventListener('click', () => {
       const input = h('input', {class: 'fd-pay-input fd-money', inputmode: 'numeric', placeholder: 'Ставка, сум',
-        'aria-label': 'Ставка за смену · ' + row.name, 'data-money-hint': 'off', autocomplete: 'off'});
+        'aria-label': 'Ставка за смену · ' + row.name, 'data-money-hint': 'off', autocomplete: 'off',
+        'data-busy-key': 'rate:' + dayKey(stable(row))});
       const ok = h('button', {type: 'button', class: 'fd-debt-ok', title: 'Сохранить ставку', 'aria-label': 'Сохранить ставку', text: '✓'});
       const save = () => {
         const rate = parse(input.value);
@@ -279,7 +309,8 @@ function blockedCell(row) {
         run(() => write('/api/accountant/employees/' + row.employeeId,
           // Пустая ставка заполняется сервером и за прошлые дни без ставки —
           // вчерашняя строка после этого начисляется.
-          {rate: String(rate), reason: 'Ставка указана в «Финансах дня»'}, 'PATCH'), 'Ставка сохранена: ' + row.name);
+          {rate: String(rate), reason: 'Ставка указана в «Финансах дня»'}, 'PATCH'), 'Ставка сохранена: ' + row.name,
+          {field: input, row: line});
       };
       ok.addEventListener('click', save);
       input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); save(); } if (event.key === 'Escape') renderShift(); });
@@ -288,10 +319,10 @@ function blockedCell(row) {
     });
     cell.append(open, note);
   } else if (row.block === 'unlinked') {
-    const manual = h('button', {type: 'button', class: 'fd-fix-btn', text: 'Отмечать вручную'});
+    const manual = h('button', {type: 'button', class: 'fd-fix-btn', text: 'Отмечать вручную', 'data-busy-key': 'manual:' + dayKey(stable(row))});
     manual.addEventListener('click', () => run(() => write('/api/accountant/employees/' + row.employeeId,
       {rate: row.rate === null ? null : String(row.rate), reason: 'Нет привязки Hikvision — присутствие отмечается вручную', manual_attendance: true}, 'PATCH'),
-      row.name + ': присутствие отмечается вручную'));
+      row.name + ': присутствие отмечается вручную', {button: manual, row: line}));
     cell.append(manual, note);
   } else cell.append(note);
   return cell;
@@ -323,7 +354,7 @@ async function payAccrual(accrualId, amount) {
 }
 // Поле «Выдано сегодня» — итог за сегодня. Больше прежнего — доплачиваем
 // разницу; меньше — снимаем сегодняшние выплаты и записываем новую сумму.
-function setPaid(row, target, input) {
+function setPaid(row, target, input, fb = {}) {
   if (target < row.paidToday && !ask('Изменить выдачу ' + row.name + ': ' + money(row.paidToday) + ' → ' + money(target) + '?')) {
     if (input) input.value = row.paidToday ? fmt(row.paidToday) : '';
     return;
@@ -339,7 +370,7 @@ function setPaid(row, target, input) {
     } else if (target > fresh.paidToday) {
       await payAccrual(fresh.accrualId, target - fresh.paidToday);
     }
-  }, target ? 'Выдано: ' + row.name + ' · ' + money(target) : 'Выдача снята: ' + row.name);
+  }, target ? 'Выдано: ' + row.name + ' · ' + money(target) : 'Выдача снята: ' + row.name, fb);
 }
 $('pay-all').addEventListener('click', () => {
   if (!view || busy) return;
@@ -348,6 +379,7 @@ $('pay-all').addEventListener('click', () => {
   const total = rows.reduce((s, r) => s + r.debt, 0);
   if (!ask('Выдать ' + rows.length + ' ' + L.plural(rows.length, 'сотруднику', 'сотрудникам', 'сотрудникам') + ' ' + money(total) + '?')) return;
   let done = 0;
+  const lines = rows.map(r => document.querySelector('[data-busy-key="' + CSS.escape('shift:' + dayKey(stable(r))) + '"]')).filter(Boolean);
   run(async () => {
     const keys = rows.map(r => ({employeeId: r.employeeId, day: r.day, accrualId: r.accrualId}));
     if (rows.some(r => !r.accrualId)) await confirmShift();
@@ -355,7 +387,7 @@ $('pay-all').addEventListener('click', () => {
       const fresh = accrualFor(key);
       if (fresh && fresh.debt > 0) { await payAccrual(fresh.accrualId, fresh.debt); done += 1; }
     }
-  }, null).then(ok => { if (ok) message('Выдано ' + done + ' ' + L.plural(done, 'сотруднику', 'сотрудникам', 'сотрудникам') + '.'); });
+  }, null, {button: $('pay-all'), rows: lines}).then(ok => { if (ok) message('Выдано ' + done + ' ' + L.plural(done, 'сотруднику', 'сотрудникам', 'сотрудникам') + '.'); });
 });
 
 /* ── Журнал ─────────────────────────────────────────────────────────── */
@@ -364,7 +396,8 @@ function renderJournal() {
   const box = $('finance-journal'); box.replaceChildren();
   const cash = view.data.ledger.cash_balance !== null;
   journal.rows.forEach(row => {
-    const line = h('div', {class: 'fd-row fd-jr-cols fd-jr-row is-' + row.kind});
+    const rowKey = 'jr:' + dayKey(row.debtId || row.group || (row.ops || []).map(op => op.operation + op.id).join(',') || row.name);
+    const line = h('div', {class: 'fd-row fd-jr-cols fd-jr-row is-' + row.kind, 'data-busy-key': rowKey});
     const cat = h('span', {class: 'fd-jr-cat', text: row.cat});
     const name = h('span', {class: 'fd-jr-name', title: row.title || null}, h('span', {}, h('span', {text: row.name}), row.note ? h('span', {text: ' · ' + row.note}) : null));
     if (row.kind === 'auto') name.append(h('span', {class: 'fd-auto', title: 'Создано автоматически', text: 'Авто'}));
@@ -376,16 +409,17 @@ function renderJournal() {
     if (row.debt > 0 && row.debtId) {
       const button = h('button', {type: 'button', class: 'fd-debt-btn', title: 'Оплатить долг', text: fmt(row.debt)});
       button.disabled = !cash;
-      button.addEventListener('click', () => debtEditor(debt, row));
+      button.addEventListener('click', () => debtEditor(debt, row, line));
       debt.append(button);
       line.classList.add('has-debt');
     } else debt.append(h('span', {class: 'fd-dash', text: '—'}));
     const x = h('span', {class: 'fd-x-cell'});
     if (row.ops && row.ops.length) {
-      x.append(h('button', {type: 'button', class: 'fd-x', 'aria-label': 'Удалить строку', title: 'Удалить', text: '×', onclick: () => {
+      x.append(h('button', {type: 'button', class: 'fd-x', 'aria-label': 'Удалить строку', title: 'Удалить', text: '×', onclick: event => {
         const text = row.kind === 'debt' ? 'Удалить оплату по этой строке? Сам долг останется в «Долгах к оплате».' : 'Удалить эту операцию?';
         if (!ask(text)) return;
-        run(async () => { for (const op of row.ops) await remove(op.operation, op.id, view.data.date); }, 'Операция удалена.');
+        run(async () => { for (const op of row.ops) await remove(op.operation, op.id, view.data.date); }, 'Операция удалена.',
+          {button: event.currentTarget, row: line, collapse: true});
       }}));
     }
     if (row.children) {
@@ -397,12 +431,14 @@ function renderJournal() {
     line.append(cat, name, amount, paid, debt, x);
     box.append(line);
     if (row.children && expanded.has(row.group)) row.children.forEach(child => {
-      box.append(h('div', {class: 'fd-row fd-jr-cols fd-jr-child'}, h('span', {class: 'fd-jr-cat'}), h('span', {class: 'fd-jr-name', text: child.name}),
+      const childLine = h('div', {class: 'fd-row fd-jr-cols fd-jr-child', 'data-busy-key': 'jrc:' + dayKey(child.id)});
+      box.append(childLine);
+      childLine.append(h('span', {class: 'fd-jr-cat'}), h('span', {class: 'fd-jr-name', text: child.name}),
         h('span', {class: 'num fd-jr-amount', text: fmt(child.amount)}), h('span', {class: 'num fd-jr-paid', text: fmt(child.amount)}), h('span', {class: 'num fd-jr-debt fd-dash', text: '—'}),
-        h('span', {class: 'fd-x-cell'}, h('button', {type: 'button', class: 'fd-x', 'aria-label': 'Удалить выплату', title: 'Удалить выплату', text: '×', onclick: () => {
+        h('span', {class: 'fd-x-cell'}, h('button', {type: 'button', class: 'fd-x', 'aria-label': 'Удалить выплату', title: 'Удалить выплату', text: '×', onclick: event => {
           if (!ask('Удалить выплату ' + child.name + ' · ' + money(child.amount) + '?')) return;
-          run(() => remove('salary_payment', child.id, view.data.date), 'Выплата удалена.');
-        }}))));
+          run(() => remove('salary_payment', child.id, view.data.date), 'Выплата удалена.', {button: event.currentTarget, row: childLine, collapse: true});
+        }})));
     });
   });
   if (!journal.rows.length) box.append(h('div', {class: 'fd-empty', text: 'За этот день операций ещё нет.'}));
@@ -411,15 +447,17 @@ function renderJournal() {
   $('journal-sum').textContent = n + ' ' + L.plural(n, 'операция', 'операции', 'операций') + ' · ' + money(journal.total);
   updateNewRow();
 }
-function debtEditor(cell, row) {
-  const input = h('input', {class: 'fd-debt-input', inputmode: 'numeric', 'aria-label': 'Оплатить долг', autocomplete: 'off'});
+function debtEditor(cell, row, line) {
+  const input = h('input', {class: 'fd-debt-input', inputmode: 'numeric', 'aria-label': 'Оплатить долг', autocomplete: 'off',
+    'data-busy-key': 'debt:' + dayKey(row.debtId)});
   input.value = fmt(row.debt);
   const ok = h('button', {type: 'button', class: 'fd-debt-ok', title: 'Записать оплату', 'aria-label': 'Записать оплату', text: '✓'});
   const save = () => {
     const value = parse(input.value);
     if (!value) { renderJournal(); return; }
     if (value > row.debt) { message('Оплата больше долга: осталось ' + money(row.debt) + '.', true); return; }
-    run(() => write('/api/accountant/debts/pay', {date: view.data.date, debt_id: row.debtId, amount: String(value)}), 'Оплата долга записана.');
+    run(() => write('/api/accountant/debts/pay', {date: view.data.date, debt_id: row.debtId, amount: String(value)}), 'Оплата долга записана.',
+      {field: input, row: line});
   };
   ok.addEventListener('click', save);
   input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); save(); } if (event.key === 'Escape') renderJournal(); });
@@ -473,7 +511,8 @@ $('other-expense-form').addEventListener('submit', event => {
   const request = reserve ? ['/api/accountant/reserves', {date: day, amount: String(amount), note, account: reserve.account, kind: reserve.kind}]
     : incomeCodes.includes(code) ? ['/api/accountant/incomes', {date: day, item_code: code, note, amount: String(amount)}]
     : ['/api/accountant/expenses', {date: day, item_code: code, note, amount: String(amount), paid_amount: paid === null ? null : String(paid)}];
-  run(() => write(...request), paid !== null && paid < amount ? 'Записано. Неоплаченная часть ушла в долги.' : 'Записано. Остаток пересчитан.').then(ok => {
+  run(() => write(...request), paid !== null && paid < amount ? 'Записано. Неоплаченная часть ушла в долги.' : 'Записано. Остаток пересчитан.',
+    {button: event.submitter || event.target.querySelector('button[type=submit]')}).then(ok => {
     if (!ok) return;
     ['expense-note', 'expense-amount', 'expense-paid'].forEach(id => { $(id).value = ''; });
     updateNewRow();
@@ -495,13 +534,14 @@ function renderShoh() {
   $('shoh-give-form').querySelector('button[type=submit]').disabled = busy || data.ledger.cash_balance === null;
 
   const gives = $('shoh-gives'); gives.replaceChildren();
-  shoh.gives.forEach(give => gives.append(h('div', {class: 'fd-give'},
+  shoh.gives.forEach(give => gives.append(h('div', {class: 'fd-give', 'data-busy-key': 'give:' + dayKey(give.id || give.time)},
     give.time ? h('span', {class: 'fd-give-time', text: give.time}) : null,
     h('span', {class: 'fd-give-label', text: give.fromKassa ? 'Выдал кассир · уже вычтено из передачи кассы' : 'Выдано бухгалтером · попадает в журнал и остаток'}),
     h('strong', {class: 'num', text: money(give.amount)}),
-    give.fromKassa ? h('span', {class: 'fd-x-gap'}) : h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить выдачу', 'aria-label': 'Удалить выдачу Шоху', onclick: () => {
+    give.fromKassa ? h('span', {class: 'fd-x-gap'}) : h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить выдачу', 'aria-label': 'Удалить выдачу Шоху', onclick: event => {
       if (!ask('Удалить выдачу Шоху ' + money(give.amount) + '?')) return;
-      run(() => remove('movement', give.id, data.date), 'Выдача Шоху удалена.');
+      const button = event.currentTarget;
+      run(() => remove('movement', give.id, data.date), 'Выдача Шоху удалена.', {button, row: button.closest('.fd-give'), collapse: true});
     }}))));
 
   const flagged = shoh.buys.filter(b => b.flags.length).length;
@@ -514,7 +554,8 @@ function renderShoh() {
   const box = $('shoh-buys'); box.replaceChildren();
   shoh.buys.forEach(buy => {
     const focus = focusKey === 'buy:' + buy.id;
-    const line = h('div', {class: 'fd-row fd-buy-cols' + (buy.flags.length ? ' is-flagged' : '') + (focus ? ' is-focus' : ''), 'data-key': 'buy:' + buy.id});
+    const line = h('div', {class: 'fd-row fd-buy-cols' + (buy.flags.length ? ' is-flagged' : '') + (focus ? ' is-focus' : ''), 'data-key': 'buy:' + buy.id,
+      'data-busy-key': 'buy:' + dayKey(buy.id)});
     const item = h('span', {class: 'fd-buy-item'});
     if (buy.has_photo) {
       const photo = h('a', {class: 'fd-thumb', href: '/api/accountant/shokh/photo/' + buy.id, target: '_blank', rel: 'noopener', title: 'Фото приложено'});
@@ -530,9 +571,10 @@ function renderShoh() {
     if (buy.accepted_at !== null) check.append(h('span', {class: 'fd-accepted', text: 'принято бухгалтером'}));
     else if (buy.flags.length) {
       check.append(h('span', {class: 'fd-flag', text: buy.flags.map(f => f.t).join(' · ')}));
-      const accept = h('button', {type: 'button', class: 'fd-accept', title: 'Проверено, принять', text: 'Принять'});
+      const accept = h('button', {type: 'button', class: 'fd-accept', title: 'Проверено, принять', text: 'Принять', 'data-busy-key': 'accept:' + dayKey(buy.id)});
       accept.disabled = busy || (buy.iiko && !['synced', 'legacy'].includes(buy.iiko.status));
-      accept.addEventListener('click', () => run(() => write('/api/accountant/shokh/purchases/' + buy.id + '/accept', {date: data.date}), 'Покупка принята: ' + buy.item));
+      accept.addEventListener('click', () => run(() => write('/api/accountant/shokh/purchases/' + buy.id + '/accept', {date: data.date}), 'Покупка принята: ' + buy.item,
+        {button: accept, row: line}));
       check.append(accept);
     } else check.append(h('span', {class: 'fd-norm', text: '✓ в норме'}));
     line.append(h('span', {class: 'fd-buy-meta'}, h('span', {class: 'fd-muted', text: (buy.created_at || '').slice(11, 16)}),
@@ -551,15 +593,16 @@ function renderShoh() {
 function renderTransfers() {
   const {shoh, data} = view;
   const box = $('shoh-transfers'); box.replaceChildren();
-  shoh.trs.forEach(t => box.append(h('div', {class: 'fd-row fd-tr-cols fd-tr-row'},
+  shoh.trs.forEach(t => box.append(h('div', {class: 'fd-row fd-tr-cols fd-tr-row', 'data-busy-key': 'tr:' + dayKey(t.id)},
     h('span', {class: 'fd-tr-supplier', text: t.supplier}), h('span', {class: 'fd-tr-item', text: t.item}),
     h('span', {class: 'fd-tr-point', text: t.point}), h('strong', {class: 'num fd-tr-amount', text: fmt(t.amount)}),
-    h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить перечисление', 'aria-label': 'Удалить перечисление', onclick: () => {
+    h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить перечисление', 'aria-label': 'Удалить перечисление', onclick: event => {
       if (!ask('Удалить перечисление ' + t.supplier + ' · ' + money(t.amount) + '?')) return;
+      const button = event.currentTarget;
       run(async () => {
         const response = await fetch('/api/accountant/supplier-transfers/' + t.id + '?date=' + encodeURIComponent(data.date), {method: 'DELETE'});
         if (!response.ok) { let detail = 'Не удалось удалить перечисление.'; try { detail = (await response.json()).detail || detail; } catch { /* нет тела */ } throw new Error(detail); }
-      }, 'Перечисление удалено.');
+      }, 'Перечисление удалено.', {button, row: button.closest('.fd-tr-row'), collapse: true});
     }}))));
   // Точки закупа: из справочника сервера, а пока его нет — из покупок дня.
   const select = $('transfer-point'), keep = select.value;
@@ -575,7 +618,7 @@ $('transfer-form').addEventListener('submit', event => {
   const amount = parse($('transfer-amount').value);
   if (!supplier || !amount) { message('Укажите поставщика и сумму.', true); ($('transfer-supplier').value ? $('transfer-amount') : $('transfer-supplier')).focus(); return; }
   run(() => write('/api/accountant/supplier-transfers', {date: view.data.date, supplier, item, point: $('transfer-point').value, amount: String(amount)}),
-    'Перечисление записано.').then(ok => { if (ok) ['transfer-supplier', 'transfer-item', 'transfer-amount'].forEach(id => { $(id).value = ''; }); });
+    'Перечисление записано.', {button: $('transfer-form').querySelector('button[type=submit]')}).then(ok => { if (ok) ['transfer-supplier', 'transfer-item', 'transfer-amount'].forEach(id => { $(id).value = ''; }); });
 });
 $('shoh-quick').addEventListener('click', event => {
   const button = event.target.closest('button[data-amount]');
@@ -588,12 +631,14 @@ $('shoh-give-form').addEventListener('submit', event => {
   const amount = parse($('shoh-give-amount').value);
   if (!amount) { message('Укажите сумму для Шоха.', true); $('shoh-give-amount').focus(); return; }
   run(() => write('/api/accountant/procurement', {date: view.data.date, recipient: 'Шох', purpose: 'закуп за день', amount: String(amount)}),
-    'Выдано Шоху ' + money(amount) + '. Баланс и журнал обновлены.').then(ok => { if (ok) $('shoh-give-amount').value = ''; });
+    'Выдано Шоху ' + money(amount) + '. Баланс и журнал обновлены.', {button: $('shoh-give-form').querySelector('button[type=submit]')}).then(ok => { if (ok) $('shoh-give-amount').value = ''; });
 });
 $('shoh-accept-all').addEventListener('click', () => {
   const list = view.shoh.buys.filter(b => !b.flags.length && b.accepted_at === null);
   if (!list.length || !ask('Принять ' + list.length + ' ' + L.plural(list.length, 'покупку', 'покупки', 'покупок') + ' в норме?')) return;
-  run(async () => { for (const buy of list) await write('/api/accountant/shokh/purchases/' + buy.id + '/accept', {date: view.data.date}); }, 'Покупки приняты.');
+  const lines = list.map(buy => document.querySelector('[data-busy-key="' + CSS.escape('buy:' + dayKey(buy.id)) + '"]')).filter(Boolean);
+  run(async () => { for (const buy of list) await write('/api/accountant/shokh/purchases/' + buy.id + '/accept', {date: view.data.date}); }, 'Покупки приняты.',
+    {button: $('shoh-accept-all'), rows: lines});
 });
 
 /* ── Оклады ─────────────────────────────────────────────────────────── */
@@ -603,14 +648,17 @@ function renderSalary() {
   monthly.today.forEach(pay => {
     const focus = focusKey === 'month:' + pay.employeeId;
     const left = pay.left < 0 ? 'переплата ' + fmt(-pay.left) : pay.left === 0 ? 'оклад закрыт' : 'осталось ' + fmt(pay.left);
-    box.append(h('div', {class: 'fd-mo-row' + (pay.left < 0 ? ' is-over' : '') + (focus ? ' is-focus' : ''), 'data-key': 'month:' + pay.employeeId},
+    const line = h('div', {class: 'fd-mo-row' + (pay.left < 0 ? ' is-over' : '') + (focus ? ' is-focus' : ''), 'data-key': 'month:' + pay.employeeId,
+      'data-busy-key': 'mo:' + dayKey(pay.id)});
+    box.append(line);
+    line.append(
       h('div', {class: 'fd-mo-who'}, h('div', {class: 'fd-who-name', text: pay.name}), h('div', {class: 'fd-who-role', text: pay.role})),
       h('strong', {class: 'num', text: fmt(pay.amount)}),
       h('span', {class: 'num fd-mo-left' + (pay.left < 0 ? ' is-over' : pay.left === 0 ? ' is-closed' : ''), text: left}),
-      h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить выплату', 'aria-label': 'Удалить выплату оклада', onclick: () => {
+      h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить выплату', 'aria-label': 'Удалить выплату оклада', onclick: event => {
         if (!ask('Удалить выплату оклада ' + pay.name + ' · ' + money(pay.amount) + '?')) return;
-        run(() => remove('movement', pay.id, data.date), 'Выплата оклада удалена.');
-      }})));
+        run(() => remove('movement', pay.id, data.date), 'Выплата оклада удалена.', {button: event.currentTarget, row: line, collapse: true});
+      }}));
   });
   if (!monthly.today.length) box.append(h('div', {class: 'fd-mo-empty', text: 'Сегодня оклады не выдавались.'}));
   $('salary-sum').textContent = monthly.today.length ? monthly.today.length + ' ' + L.plural(monthly.today.length, 'выплата', 'выплаты', 'выплат') + ' · ' + money(monthly.todaySum) : 'не выдавались';
@@ -648,7 +696,7 @@ $('salary-payment-form').addEventListener('submit', event => {
   if (amount > Math.max(0, person.left) && !salaryConfirm) { salaryConfirm = true; salaryHint(); return; }
   salaryConfirm = false;
   run(() => write('/api/accountant/monthly-payments', {date: view.data.date, employee_id: person.id, amount: String(amount)}),
-    'Записано: ' + person.name + ', ' + money(amount) + '. Ведомость и остаток обновлены.').then(ok => {
+    'Записано: ' + person.name + ', ' + money(amount) + '. Ведомость и остаток обновлены.', {button: $('salary-submit')}).then(ok => {
     if (ok) { $('salary-employee').value = ''; $('salary-amount').value = ''; salaryHint(); }
   });
 });
@@ -760,6 +808,8 @@ $('dividends-fill-button').addEventListener('click', () => {
   updateNewRow();
   $('other-expense-form').scrollIntoView({block: 'center', behavior: 'smooth'});
   $('expense-amount').focus({preventScroll: true});
+  // Куда ушла сумма — видно по вспышке строки ввода.
+  B?.flash($('other-expense-form'));
 });
 
 /* ── Разовые действия: начальные остатки и ручной приход ───────────── */
@@ -795,7 +845,7 @@ function toolForm(id, url, body, success) {
     const note = $('fd-tools-msg'); note.hidden = true;
     // Окно модальное: сообщение страницы под ним не видно, поэтому ошибку
     // повторяем внутри окна.
-    run(() => write(url, body(new FormData(form))), success).then(ok => {
+    run(() => write(url, body(new FormData(form))), success, {button: form.querySelector('button[type=submit], button:not([type])')}).then(ok => {
       if (ok) { form.reset(); $('fd-tools').close(); return; }
       note.textContent = $('accountant-message').textContent; note.hidden = !note.textContent;
     });
@@ -838,10 +888,15 @@ async function loadDay() {
     view = {data, staff, board, blocker, monthly, shoh, cash, journal, issues};
     renderAll();
     $('finance-layout').hidden = false;
+    $('fd-skeleton').hidden = true;
     if (!$('accountant-message').classList.contains('is-error')) message('');
     status('Данные за ' + longDay(day));
   } catch (error) {
-    if (sequence === requestNo) { message(error.message, true); status('Данные не загрузились'); }
+    if (sequence === requestNo) {
+      message(error.message, true); status('Данные не загрузились');
+      // Скелет обещает, что данные вот-вот будут; при отказе он только путает.
+      if ($('finance-layout').hidden) $('fd-skeleton').hidden = true;
+    }
     throw error;
   } finally {
     if (globalThis.RetroState?.shouldReleaseBusy ? RetroState.shouldReleaseBusy(sequence, requestNo) : true) $('finance-layout').setAttribute('aria-busy', 'false');
@@ -853,7 +908,7 @@ function go(day) {
   focusKey = null; expanded.clear();
   const url = new URL(location.href); url.searchParams.set('date', day); history.replaceState(null, '', url);
   message('');
-  loadDay().catch(() => {});
+  reload().catch(() => {});
 }
 $('accountant-prev').addEventListener('click', () => go(L.shiftIso(selectedDay(), -1)));
 $('accountant-next').addEventListener('click', () => go(L.shiftIso(selectedDay(), 1)));
@@ -866,17 +921,23 @@ $('fd-date-label').addEventListener('click', event => {
   event.preventDefault();
   try { input.showPicker(); } catch { input.focus(); }
 });
-$('fd-export').addEventListener('click', async () => {
-  const day = selectedDay(), button = $('fd-export');
-  button.disabled = true;
+$('fd-export').addEventListener('click', () => {
+  const button = $('fd-export');
+  // Кнопка в работе, пока файл не начал скачиваться.
+  const work = exportDay();
+  if (B) B.button(button, work); else { button.disabled = true; work.finally(() => { button.disabled = false; }); }
+});
+async function exportDay() {
+  const day = selectedDay();
   try {
     const response = await fetch('/api/accountant/day/export?date=' + encodeURIComponent(day), {cache: 'no-store'});
     if (!response.ok) throw new Error('Не удалось сформировать Excel.');
     const url = URL.createObjectURL(await response.blob()), link = h('a', {href: url, download: 'Retro-finance-' + day + '.xlsx'});
     document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
     message('Отчёт за день сохранён в Excel.');
-  } catch (error) { message(error.message, true); } finally { button.disabled = false; }
-});
+    return true;
+  } catch (error) { message(error.message, true); return false; }
+}
 
 (async () => {
   try {

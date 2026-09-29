@@ -9,7 +9,7 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/accountant.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/accountant.js" defer></script>
 </head>
 <body class="fd-page">
 <aside class="sidebar">
@@ -23,7 +23,7 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Финансы дня</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Финансы дня</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace accountant-workspace fd">
     <div class="fd-head">
       <div><p class="fd-kicker">МОДУЛЬ 02 · ФИНАНСОВЫЙ ОТДЕЛ</p><h1 class="fd-h1">Финансы дня<span>.</span></h1></div>
@@ -43,6 +43,26 @@
     </div>
     <p id="accountant-message" class="fd-notice" role="status" aria-live="polite" hidden></p>
 
+    <!-- Первая загрузка: скелет в форме дня вместо пустоты и «Загружаем…». -->
+    <div class="fd-grid fd-skeleton" id="fd-skeleton" aria-hidden="true">
+      <div class="fd-main">
+        <section class="fd-sec"><div class="fd-skel-head"><span class="rm-skel" style="width:120px"></span><span class="rm-skel is-md" style="width:210px"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:34%"></span><span class="rm-skel" style="width:14%"></span><span class="rm-skel" style="width:18%"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:28%"></span><span class="rm-skel" style="width:12%"></span><span class="rm-skel" style="width:18%"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:38%"></span><span class="rm-skel" style="width:15%"></span><span class="rm-skel" style="width:18%"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:13%"></span><span class="rm-skel" style="width:18%"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:31%"></span><span class="rm-skel" style="width:16%"></span><span class="rm-skel" style="width:18%"></span></div></section>
+        <section class="fd-sec"><div class="fd-skel-head"><span class="rm-skel" style="width:150px"></span><span class="rm-skel is-md" style="width:180px"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:40%"></span><span class="rm-skel" style="width:16%"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:33%"></span><span class="rm-skel" style="width:16%"></span></div>
+          <div class="rm-skel-row"><span class="rm-skel" style="width:45%"></span><span class="rm-skel" style="width:16%"></span></div></section>
+      </div>
+      <aside class="fd-rail">
+        <section class="fd-cash fd-skel-cash"><span class="rm-skel" style="width:40%"></span><span class="rm-skel is-lg" style="width:70%"></span><span class="rm-skel" style="width:90%"></span><span class="rm-skel" style="width:85%"></span><span class="rm-skel" style="width:88%"></span></section>
+        <section class="fd-card rm-skel-cell"><span class="rm-skel" style="width:35%"></span><span class="rm-skel" style="width:80%"></span><span class="rm-skel" style="width:70%"></span></section>
+        <section class="fd-card rm-skel-cell"><span class="rm-skel" style="width:45%"></span><span class="rm-skel is-md" style="width:60%"></span></section>
+      </aside>
+    </div>
     <div class="fd-grid" id="finance-layout" hidden>
       <div class="fd-main">
 

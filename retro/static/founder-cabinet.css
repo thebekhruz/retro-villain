@@ -300,3 +300,22 @@
   .fo-panel.fo-week{padding:0}
   .rm-footer{flex-wrap:wrap;gap:6px}
 }
+
+/* ═══ Отклик и ожидание (busy.js, T-393) ═══════════════════════════════════
+   Скелеты первой загрузки и поле суммы дивидендов на тёмной карточке. */
+.fo-skel-row{display:grid;grid-template-columns:1.6fr repeat(8,minmax(0,1fr));gap:14px;padding:0 4px;min-height:40px}
+.fo-skel-row .rm-skel{width:70%!important;max-width:none!important}
+.fo-skel-row .rm-skel:first-child{width:80%!important}
+.fo-skel-col{display:flex;flex-direction:column;justify-content:flex-end;align-items:center;gap:8px;height:150px}
+.fo-skel-col .rm-skel:first-child{width:62%;border-radius:8px 8px 3px 3px}
+.fo-skel-col .rm-skel:last-child{width:70%;height:9px}
+.fo-acc-line .rm-skel.is-val,.fo-panel h2 .rm-skel.is-val{width:9em;height:10px}
+.fo-flag-title .rm-skel.is-val{width:12em;height:9px}
+/* Поле суммы на тёмном: «не отправлено», «сохраняю» и ошибка — без светлой заливки. */
+.fo-stepper input.rm-field-dirty{background-color:#ffffff1f!important;box-shadow:inset 0 -2px 0 var(--gold)!important}
+.fo-stepper input.rm-field-saving{background-color:#ffffff14!important;color:#ffffffb3!important}
+.fo-stepper input.rm-field-error{background-color:#ffffff14!important;box-shadow:0 0 0 3px rgba(244,184,195,.35)!important;border-color:#f4b8c3!important}
+.fo-stepper input.rm-field-ok{border-color:#8fcf9f!important}
+.fo-phone-link.rm-row-pending .fo-phone-link-icon{background:#f6edd6}
+.fo-div-top .rm-skel.is-val,.fo-div-foot .rm-skel.is-val,.fo-label .rm-skel.is-val,.fo-card-head>span .rm-skel.is-val{width:4.5em;height:8px}
+#fo-div-of .rm-skel.is-val{width:5em;height:9px}

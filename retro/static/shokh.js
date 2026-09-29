@@ -12,12 +12,27 @@ let state = {
   home: null, timer: null, lastPocket: null, catalogReady: false, submitting: false, recovery: null, expectedPhoto: false
 };
 
-function message(text, error = false) {
+function message(text, error = false, {toast = true} = {}) {
   const box = $('shokh-message');
   box.textContent = text; box.hidden = !text;
   box.classList.toggle('is-error', error);
   box.setAttribute('role', error ? 'alert' : 'status');
-  globalThis.RetroToast?.show(text, error ? 'error' : 'ok');
+  if (toast) globalThis.RetroToast?.show(text, error ? 'error' : 'ok');
+}
+
+/* Отклик и ожидание (T-393, docs/feedback-principles.md): каждое нажатие
+   отвечает, ожидание видно на том, что его начало. busy.js подключён первым;
+   без него действия просто выполняются. */
+const passthrough = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
+const Busy = globalThis.RetroBusy || {button: passthrough, row: passthrough, section: passthrough,
+  track: passthrough, flash() {}, silent: fn => fn()};
+/** Перезапустить короткую анимацию-отклик (класс снимается сам). */
+function pulse(element, cls) {
+  if (!element || !element.classList) return;
+  element.classList.remove(cls);
+  void element.offsetWidth;
+  element.classList.add(cls);
+  element.addEventListener('animationend', () => element.classList.remove(cls), {once: true});
 }
 function node(tag, cls, text) {
   const element = document.createElement(tag);
@@ -47,6 +62,9 @@ async function api(path, options = {}) {
 /* ── Главная ───────────────────────────────────────────────────────────── */
 function renderHome(data) {
   state.home = data;
+  // Скелеты из разметки заменены данными — раздел больше не «загружается».
+  $('home-balance').removeAttribute('aria-busy');
+  $('home-purchases').removeAttribute('aria-busy');
   state.lastPocket = data.pocket;
   $('home-date').textContent = 'Закуп · ' + new Intl.DateTimeFormat('ru-RU',
     {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'})
@@ -95,6 +113,40 @@ function renderHome(data) {
   renderPurchases($('home-purchases'), data.purchases);
 }
 
+/* Главная не загрузилась с первого раза: скелет не должен крутиться вечно. */
+function homeFailed() {
+  $('home-balance').removeAttribute('aria-busy');
+  $('home-pocket').textContent = '—';
+  $('home-pocket-sub').textContent = '';
+  $('home-reported').textContent = 'Нет данных';
+  $('home-purchases-title').textContent = 'Сегодня';
+  $('home-purchases').removeAttribute('aria-busy');
+  $('home-purchases').replaceChildren(node('p', 'shokh-note', 'Не удалось загрузить покупки. Нажмите «Обновить данные».'));
+}
+
+function letterThumb(row) {
+  return node('span', 'shokh-thumb is-empty', row.item.slice(0, 1).toUpperCase());
+}
+
+/* Проверка / повтор отправки одной покупки в iiko: кнопка крутится, строка
+   «в работе», итог — ✓ и зелёная вспышка или текст ошибки. Ключи
+   data-busy-key переносят состояние на строку после перерисовки списка. */
+function checkIiko(row, button, item) {
+  const retry = ['rejected', 'pending'].includes(row.iiko.status);
+  const work = (async () => {
+    try {
+      const result = await api('/purchase/' + row.id + (retry ? '/retry' : '/sync'),
+        retry ? {method: 'POST'} : {});
+      await loadHome();
+      const synced = result.purchase.iiko.status === 'synced';
+      if (synced) globalThis.RetroToast?.show('iiko подтвердил накладную.', 'ok');
+      else message(result.purchase.iiko.error || 'iiko ещё не подтвердил накладную.', true);
+      return synced;
+    } catch (error) { message(error.message, true); return false; }
+  })();
+  return Busy.button(button, Busy.row(item, work));
+}
+
 function renderPurchases(container, rows) {
   container.replaceChildren();
   if (!rows.length) {
@@ -103,13 +155,19 @@ function renderPurchases(container, rows) {
   }
   [...rows].reverse().forEach(row => {
     const item = node('div', 'shokh-purchase');
+    item.dataset.busyKey = 'shokh:buy:' + row.id;
     if (row.has_photo) {
+      // Пока фото грузится — мерцающая плашка; не открылось — буква, а не
+      // значок битой картинки.
       const image = document.createElement('img');
-      image.className = 'shokh-thumb'; image.alt = '';
+      image.className = 'shokh-thumb is-loading'; image.alt = '';
+      image.loading = 'lazy'; image.decoding = 'async';
+      image.addEventListener('load', () => image.classList.remove('is-loading'), {once: true});
+      image.addEventListener('error', () => image.replaceWith(letterThumb(row)), {once: true});
       image.src = '/api/shokh/photo/' + row.id;
       item.append(image);
     } else {
-      item.append(node('span', 'shokh-thumb is-empty', row.item.slice(0, 1).toUpperCase()));
+      item.append(letterThumb(row));
     }
     const body = node('div', 'shokh-purchase-body');
     const title = node('div', 'shokh-purchase-title');
@@ -135,16 +193,8 @@ function renderPurchases(container, rows) {
         const retry = ['rejected', 'pending'].includes(row.iiko.status);
         const check = node('button', 'shokh-secondary', retry ? 'Повторить отправку' : 'Проверить iiko');
         check.type = 'button';
-        check.addEventListener('click', async () => {
-          check.disabled = true;
-          try {
-            const result = await api('/purchase/' + row.id + (retry ? '/retry' : '/sync'),
-              retry ? {method: 'POST'} : {});
-            await loadHome();
-            if (result.purchase.iiko.status !== 'synced') message(result.purchase.iiko.error || 'iiko ещё не подтвердил накладную.', true);
-          } catch (error) { message(error.message, true); }
-          finally { check.disabled = false; }
-        });
+        check.dataset.busyKey = 'shokh:iiko:' + row.id;
+        check.addEventListener('click', () => checkIiko(row, check, item));
         body.append(check);
       }
     }
@@ -157,8 +207,19 @@ async function loadHome() {
   try {
     const data = await api('/home');
     renderHome(data);
-    $('start-purchase').disabled = !state.catalogReady || !!sessionStorage.getItem('shokh-pending-operation');
-  } catch (error) { message(error.message, true); }
+    updateStart();
+    return true;
+  } catch (error) {
+    if (!state.home) homeFailed();
+    message(error.message, true);
+    return false;
+  }
+}
+/* Первая загрузка — скелет из разметки; повторная — прежние данные на месте,
+   но гаснут, пока идут новые. */
+function refreshHome() {
+  if (!state.home) return loadHome();
+  return Busy.section($('home-balance'), Busy.section($('home-purchases-card'), loadHome()));
 }
 
 /* ── Флоу ──────────────────────────────────────────────────────────────── */
@@ -178,15 +239,83 @@ function ready(step) {
   return L().stepReady(step, state.draft);
 }
 
+/* Чего не хватает, чтобы пройти шаг: текст подсказки и поле, которое
+   подсветить. Неготовое «Далее» не молчит — оно говорит это. */
+function missing(step) {
+  const draft = state.draft;
+  if (step === 'point') {
+    if (!draft.supplierId && !draft.storageId) return ['Выберите поставщика и склад iiko', 'iiko-supplier'];
+    if (!draft.supplierId) return ['Выберите поставщика iiko', 'iiko-supplier'];
+    if (!draft.storageId) return ['Выберите склад поступления', 'iiko-storage'];
+  }
+  if (step === 'item') {
+    if (!draft.productId) return ['Выберите товар из списка iiko', 'item-search'];
+    if (state.expectedPhoto && !state.photoFile) return ['Прикрепите прежнее фото покупки', 'photo-empty'];
+  }
+  if (step === 'amount' || step === 'confirm') {
+    const problem = L().amountProblem(draft);
+    if (problem) return [problem, 'price-input'];
+    if (!L().number(draft.quantity)) return ['Укажите количество.', 'qty-input'];
+    if (!L().number(draft.price)) return ['Укажите цену.', 'price-input'];
+  }
+  return null;
+}
+
+/* «Далее» всегда нажимается: готово — ведёт дальше, нет — объясняет. */
+function setNext(ok) {
+  const next = $('flow-next');
+  next.disabled = false;
+  next.setAttribute('aria-disabled', String(!ok));
+  if (ok) hideHint();
+}
+
+let hintTimer = null;
+function showStatus(kind) {
+  $('flow-status').hidden = !kind;
+  $('flow-hint').hidden = kind !== 'hint';
+  $('save-status').hidden = kind !== 'save';
+}
+function hideHint() {
+  clearTimeout(hintTimer);
+  if (!$('flow-hint').hidden) showStatus(null);
+}
+function explain(step) {
+  const found = missing(step);
+  if (!found) return;
+  const [text, id] = found;
+  $('flow-hint').textContent = text;
+  showStatus('hint');
+  pulse($('flow-hint'), 'is-in');
+  pulse($('flow-next'), 'shokh-nudge');
+  const target = $(id);
+  if (target && !target.closest('[hidden]')) {
+    target.scrollIntoView({block: 'center', behavior: matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'});
+    pulse(target, 'shokh-need');
+    if (target.tagName === 'INPUT') target.focus({preventScroll: true});
+  }
+  clearTimeout(hintTimer);
+  hintTimer = setTimeout(hideHint, 5000);
+}
+
 function renderStep() {
   const step = state.step, draft = state.draft;
   for (const name of L().STEPS) $('step-' + name).hidden = name !== step;
+  // Смена шага видна: новый шаг въезжает с той стороны, куда шли.
+  if (state.shownStep !== step) {
+    const back = state.shownStep && L().STEPS.indexOf(step) < L().STEPS.indexOf(state.shownStep);
+    const panel = $('step-' + step);
+    panel.classList.toggle('is-back', !!back);
+    if (state.shownStep) pulse(panel, 'is-entering');
+    state.shownStep = step;
+    hideHint();
+  }
   $('flow-step-no').textContent = String(L().STEPS.indexOf(step) + 1);
   $('flow-step-name').textContent = STEP_NAMES[step];
   renderSegments();
-  $('flow-back').disabled = step === 'point';
-  $('flow-next').disabled = !ready(step);
-  $('flow-next').textContent = step === 'confirm' ? 'Сохранить в iiko' : 'Далее';
+  setNext(ready(step));
+  $('flow-next').textContent = step !== 'confirm' ? 'Далее'
+    : state.saveFailed ? 'Повторить сохранение' : 'Сохранить в iiko';
+  if (step !== 'confirm' || !state.saveFailed) { if (!$('save-status').hidden) showStatus(null); }
 
   if (step === 'item') {
     $('item-point-label').textContent = draft.point || '—';
@@ -226,10 +355,11 @@ function renderPoints() {
       state.draft.point = point;
       $('point-other').value = '';
       renderPoints();
-      $('flow-next').disabled = !ready('point');
+      setNext(ready('point'));
       // Точку выбрали — сразу к товару, как в макете; но только когда
-      // поставщик и склад iiko уже выбраны, иначе накладную не провести.
-      if (ready('point')) { state.step = L().nextStep('point'); renderStep(); }
+      // поставщик и склад iiko уже выбраны, иначе накладную не провести —
+      // тогда подсказываем, что выбрать.
+      if (ready('point')) { state.step = L().nextStep('point'); renderStep(); } else explain('point');
     });
     box.append(button);
   });
@@ -274,7 +404,8 @@ function renderItems() {
 
 async function chooseItem() {
   renderItems();
-  $('flow-next').disabled = !ready('item');
+  pulse($('item-chosen'), 'is-in');
+  setNext(ready('item'));
   // Обычную цену спрашиваем у сервера: она считается по истории этого товара.
   state.usual = null;
   try {
@@ -354,7 +485,7 @@ function renderAmount() {
     ? 'Обычно ' + money.format(Number(state.usual)) + ' сум за ' + draft.unit : hint.text);
   $('price-hint').textContent = text;
   $('price-hint').className = 'shokh-price-hint is-' + (problem ? 'error' : hint.kind);
-  $('flow-next').disabled = !L().stepReady('amount', draft);
+  setNext(L().stepReady('amount', draft));
 }
 
 function renderConfirm() {
@@ -381,7 +512,7 @@ function renderConfirm() {
   $('confirm-warning').replaceChildren(...warnings.map(text => node('span', '', text)));
 
   const photo = $('confirm-photo');
-  photo.hidden = !state.photoFile;
+  $('confirm-photo-box').hidden = !state.photoFile;
   if (state.photoFile) photo.src = URL.createObjectURL(state.photoFile);
 }
 
@@ -389,11 +520,11 @@ function resetDraft() {
   state.draft = {point: state.draft.point, item: '', unit: state.draft.unit,
     quantity: '', price: '', priceMode: 'unit', priceInput: '', hasPhoto: false, productId: null, unitId: null,
     supplierId: state.draft.supplierId, storageId: state.draft.storageId, operationId: crypto.randomUUID()};
-  state.photoFile = null; state.usual = null; state.priceFit = null;
+  state.photoFile = null; state.usual = null; state.priceFit = null; state.saveFailed = false;
   $('qty-input').value = ''; $('price-input').value = '';
   $('item-search').value = '';
   $('photo-empty').hidden = false; $('photo-filled').hidden = true;
-  $('photo-input').value = '';
+  $('photo-input').value = ''; $('photo-error').hidden = true;
 }
 
 function startTimer() {
@@ -416,31 +547,160 @@ async function beginTrip() {
   } catch (error) { message(error.message, true); return false; }
 }
 
+/* ── Сохранение в iiko ─────────────────────────────────────────────────── */
+/* Покупка уходит одним запросом, но для Шоха это два этапа: фото летит по
+   мобильной сети, потом сервер создаёт приходную накладную в iiko (секунды).
+   Оба этапа видны над кнопками, процент — ещё и на самом фото; кнопка
+   заперта до ответа, повторного сохранения нет. */
+const MAX_PHOTO_BYTES = 6 * 1024 * 1024;  // как store.MAX_PHOTO_BYTES на сервере
+let saveSlowTimer = null;
+
+function saveStep(id, kind) {
+  const step = $(id);
+  step.className = 'shokh-save-step is-' + kind;
+}
+function photoProgress(share) {
+  const percent = Math.round(Math.max(0, Math.min(1, share)) * 100) + '%';
+  $('save-photo-pct').textContent = percent;
+  $('confirm-photo-pct').textContent = percent;
+  $('confirm-photo-bar').style.width = percent;
+  $('save-bar').style.width = percent;
+}
+function startSaving(withPhoto) {
+  const next = $('flow-next');
+  next.classList.add('is-saving', 'rm-lock');
+  next.setAttribute('aria-busy', 'true');
+  next.setAttribute('aria-disabled', 'true');
+  next.replaceChildren(node('span', 'shokh-spin'), node('span', '', withPhoto ? 'Отправляем фото…' : 'Сохраняем в iiko…'));
+  // Уйти с экрана посреди записи нельзя: итог должен прийти сюда.
+  $('flow-back').disabled = true; $('flow-close').disabled = true;
+  const box = $('save-status');
+  box.classList.remove('is-error');
+  box.classList.toggle('is-waiting', !withPhoto);
+  $('save-photo').hidden = !withPhoto;
+  saveStep('save-photo', 'active');
+  saveStep('save-iiko', withPhoto ? 'wait' : 'active');
+  $('save-slow').hidden = true; $('save-error').hidden = true;
+  $('confirm-photo-box').classList.toggle('is-uploading', withPhoto);
+  $('confirm-photo-state').hidden = !withPhoto;
+  $('confirm-photo-text').textContent = 'Отправляем фото…';
+  photoProgress(0);
+  showStatus('save');
+  pulse(box, 'is-in');
+  clearTimeout(saveSlowTimer);
+  saveSlowTimer = setTimeout(() => { $('save-slow').hidden = false; }, 6000);
+}
+function photoSent() {
+  photoProgress(1);
+  saveStep('save-photo', 'ok');
+  saveStep('save-iiko', 'active');
+  $('save-photo-pct').textContent = '';
+  $('save-status').classList.add('is-waiting');
+  $('confirm-photo-box').classList.remove('is-uploading');
+  $('confirm-photo-box').classList.add('is-sent');
+  $('confirm-photo-text').textContent = 'Фото отправлено';
+  $('confirm-photo-pct').textContent = '';
+  const label = $('flow-next').lastElementChild;
+  if (label) label.textContent = 'Сохраняем в iiko…';
+}
+function stopSaving() {
+  clearTimeout(saveSlowTimer);
+  const next = $('flow-next');
+  next.classList.remove('is-saving', 'rm-lock');
+  next.removeAttribute('aria-busy');
+  $('flow-back').disabled = false; $('flow-close').disabled = false;
+  $('confirm-photo-box').classList.remove('is-uploading', 'is-sent');
+  $('confirm-photo-state').hidden = true;
+}
+function saveFailed(text, photoStage) {
+  const box = $('save-status');
+  box.classList.remove('is-waiting');
+  box.classList.add('is-error');
+  saveStep(photoStage ? 'save-photo' : 'save-iiko', 'error');
+  $('save-photo-pct').textContent = '';
+  if (photoStage) saveStep('save-iiko', 'wait');
+  $('save-slow').hidden = true;
+  const reason = node('b', '', text);
+  $('save-error').replaceChildren(reason, node('span', '', 'Повторите сохранение этой же формы: ключ покупки сохранён.'));
+  $('save-error').hidden = false;
+  showStatus('save');
+  pulse(box, 'is-in');
+}
+
+/* XHR, а не fetch: только он сообщает, сколько фото уже ушло. */
+function sendPurchase(form, {onUpload, onSent}) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', '/api/shokh/purchase');
+    xhr.setRequestHeader('Accept', 'application/json');
+    xhr.upload.addEventListener('progress', event => { if (event.lengthComputable) onUpload(event.loaded / event.total); });
+    xhr.upload.addEventListener('load', onSent);
+    xhr.addEventListener('load', () => {
+      let payload = null;
+      try { payload = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300 && payload) { onSent(); resolve(payload); return; }
+      const error = new Error(typeof payload?.detail === 'string' ? payload.detail
+        : xhr.status === 401 ? 'Войдите в панель заново.' : 'Не удалось сохранить покупку.');
+      error.status = xhr.status;
+      reject(error);
+    });
+    xhr.addEventListener('error', () => reject(Object.assign(new Error('Нет связи с сервером. Проверьте интернет.'), {status: 0})));
+    xhr.send(form);
+  });
+}
+
+/* Итог на экране «Записано»: подтверждён iiko — золотая галочка; нет —
+   янтарный «!» и кнопка проверки тут же. */
+function renderDoneIiko(purchase) {
+  const iiko = purchase.iiko || {};
+  const synced = iiko.status === 'synced';
+  state.donePurchase = purchase;
+  $('screen-done').classList.toggle('is-uncertain', !synced);
+  $('done-mark').textContent = synced ? '✓' : '!';
+  pulse($('done-mark'), 'is-in');
+  $('done-title').textContent = synced ? 'Сохранено в iiko' : 'Покупка записана, iiko не подтверждён';
+  $('done-iiko').textContent = synced ? 'Приходная накладная № ' + iiko.number
+    : (iiko.error || 'Проверьте статус на главной. Не вводите эту покупку повторно.');
+  const check = $('done-check');
+  check.hidden = synced;
+  check.textContent = ['rejected', 'pending'].includes(iiko.status) ? 'Повторить отправку' : 'Проверить iiko';
+}
+
 async function submitPurchase() {
   applyPrice();
-  if (state.submitting || !ready('point') || !ready('item') || !ready('amount')) return;
+  if (state.submitting) return;
+  if (!ready('point') || !ready('item') || !ready('amount')) { explain(state.step); return; }
   state.submitting = true;
   const draft = state.draft;
   const form = new FormData();
   form.append('point', draft.point); form.append('item', draft.item);
   // Сервер не понимает пробелов-разделителей в числе — отправляем чистое.
   form.append('unit', draft.unit);
-  form.append('quantity', String(draft.quantity).replace(/[\s\u00a0\u202f]/g, '').replace(',', '.'));
+  form.append('quantity', String(draft.quantity).replace(/[\s  ]/g, '').replace(',', '.'));
   form.append('price', draft.price);
   form.append('operation_id', draft.operationId);
   form.append('product_id', draft.productId); form.append('supplier_id', draft.supplierId);
   form.append('storage_id', draft.storageId); form.append('unit_id', draft.unitId);
   form.append('date', state.home.date);
   if (state.tripId !== null) form.append('trip_id', String(state.tripId));
-  if (state.photoFile) form.append('photo', state.photoFile);
-  $('flow-next').disabled = true;
+  const withPhoto = !!state.photoFile;
+  if (withPhoto) form.append('photo', state.photoFile);
+  startSaving(withPhoto);
+  let sent = !withPhoto;
   try {
     sessionStorage.setItem('shokh-pending-operation', draft.operationId);
     sessionStorage.setItem('shokh-pending-draft', JSON.stringify({draft, date: state.home.date, tripId: state.tripId, tripStartedAt: state.tripStartedAt}));
-    const result = await api('/purchase', {method: 'POST', body: form});
+    const request = sendPurchase(form, {
+      onUpload: share => { if (withPhoto && !sent) photoProgress(share); },
+      onSent: () => { if (!sent) { sent = true; photoSent(); } },
+    });
+    const result = await Busy.track(request);
     sessionStorage.removeItem('shokh-pending-operation');
     sessionStorage.removeItem('shokh-pending-draft');
     state.expectedPhoto = false;
+    state.saveFailed = false;
+    stopSaving();
+    showStatus(null);
     const before = state.lastPocket;
     $('done-more').textContent = '+ Ещё товар' + (draft.point ? ' · ' + draft.point : '');
     state.lastPocket = result.pocket;
@@ -451,22 +711,23 @@ async function submitPurchase() {
     $('done-before').textContent = before === null ? '' : 'было ' + money.format(Number(before));
     const minutes = L().tripElapsedMinutes(state.tripStartedAt, new Date().toISOString());
     $('done-trip').textContent = minutes === null ? '' : 'В закупе ' + L().clock(minutes);
-    const synced = result.purchase.iiko?.status === 'synced';
-    $('done-title').textContent = synced ? 'Сохранено в iiko' : 'Покупка записана, iiko не подтверждён';
-    $('done-iiko').textContent = synced ? 'Приходная накладная № ' + result.purchase.iiko.number
-      : (result.purchase.iiko?.error || 'Проверьте статус на главной. Не вводите эту покупку повторно.');
+    renderDoneIiko(result.purchase);
     show('done');
     message('');
   } catch (error) {
-    message(error.message + ' Повторите сохранение этой же формы: ключ покупки сохранён.', true);
-    $('flow-next').disabled = false;
+    stopSaving();
+    state.saveFailed = true;
+    renderStep();
+    saveFailed(error.message, !sent);
+    // Тост здесь лишний: итог уже над кнопкой; строка сверху — для истории.
+    message(error.message, true, {toast: false});
   }
   finally { state.submitting = false; }
 }
 
 async function finishTrip() {
   stopTimer();
-  if (state.tripId === null) { await loadHome(); show('home'); return; }
+  if (state.tripId === null) { show('home'); refreshHome(); return true; }
   try {
     const data = await api('/trip/' + state.tripId + '/finish', {method: 'POST'});
     const minutes = data.trip.minutes;
@@ -477,31 +738,41 @@ async function finishTrip() {
     renderHome(await api('/home'));
     state.tripId = null; state.tripStartedAt = null;
     show('summary');
-  } catch (error) { message(error.message, true); }
+    return true;
+  } catch (error) { message(error.message, true); return false; }
 }
 
 /* ── События ───────────────────────────────────────────────────────────── */
-$('start-purchase').addEventListener('click', async () => {
-  resetDraft();
-  state.draft.point = '';
-  state.step = 'point';
+$('start-purchase').addEventListener('click', () => {
   if (!state.catalogReady || !state.home) return;
-  $('start-purchase').disabled = true;
-  const started = await beginTrip();
-  $('start-purchase').disabled = false;
-  if (!started) return;
-  renderSelectors(); renderPoints(); renderStep(); show('flow');
+  // Закуп открывается на сервере: кнопка крутится, пока он не ответил.
+  Busy.button($('start-purchase'), (async () => {
+    resetDraft();
+    state.draft.point = '';
+    state.step = 'point'; state.shownStep = null;
+    const started = await beginTrip();
+    if (!started) return false;
+    renderSelectors(); renderPoints(); renderStep(); show('flow');
+    return true;
+  })(), {done: false});
 });
-$('flow-close').addEventListener('click', async () => { stopTimer(); await loadHome(); show('home'); });
-$('flow-back').addEventListener('click', () => { state.step = L().previousStep(state.step); renderStep(); });
+// Домой — сразу, с прежними данными; свежие догружаются поверх.
+function goHome() { stopTimer(); hideHint(); show('home'); refreshHome(); }
+$('flow-close').addEventListener('click', goHome);
+// «Назад» на первом шаге — домой, а не мёртвая кнопка.
+$('flow-back').addEventListener('click', () => {
+  if (state.step === 'point') { goHome(); return; }
+  state.step = L().previousStep(state.step); renderStep();
+});
 $('flow-next').addEventListener('click', () => {
+  if (state.submitting) return;
   if (state.step === 'confirm') { submitPurchase(); return; }
-  if (!ready(state.step)) return;
+  if (!ready(state.step)) { explain(state.step); return; }
   state.step = L().nextStep(state.step); renderStep();
 });
 $('point-other').addEventListener('input', event => {
   state.draft.point = event.target.value.trim();
-  $('flow-next').disabled = !ready('point');
+  setNext(ready('point'));
 });
 $('item-back-point').addEventListener('click', () => { state.step = 'point'; renderPoints(); renderStep(); });
 $('item-search').addEventListener('input', renderItems);
@@ -512,12 +783,34 @@ $('item-add-custom').addEventListener('click', () => {
 });
 $('photo-input').addEventListener('change', event => {
   const file = event.target.files && event.target.files[0];
+  const error = $('photo-error');
+  // Сервер не примет фото больше 6 МБ — говорим сразу, а не после сохранения.
+  if (file && file.size > MAX_PHOTO_BYTES) {
+    error.textContent = 'Фото больше 6 МБ — переснимите поменьше.';
+    error.hidden = false;
+    pulse(error, 'is-in');
+    event.target.value = '';
+    return;
+  }
+  error.hidden = true;
   state.photoFile = file || null;
   state.draft.hasPhoto = !!file;
   $('photo-empty').hidden = !!file;
   $('photo-filled').hidden = !file;
-  if (file) $('photo-preview').src = URL.createObjectURL(file);
-  $('flow-next').disabled = !ready(state.step);
+  if (file) {
+    // Снимок с камеры декодируется заметное время: до этого — мерцание,
+    // потом метка «Фото прикреплено».
+    const filled = $('photo-filled'), preview = $('photo-preview');
+    filled.classList.add('is-loading');
+    filled.classList.remove('is-ready');
+    preview.addEventListener('load', () => {
+      filled.classList.remove('is-loading');
+      filled.classList.add('is-ready');
+      pulse($('photo-ok'), 'is-in');
+    }, {once: true});
+    preview.src = URL.createObjectURL(file);
+  }
+  setNext(ready(state.step));
 });
 $('qty-input').addEventListener('input', event => { state.draft.quantity = event.target.value; renderAmount(); });
 $('price-input').addEventListener('input', event => { state.draft.priceInput = event.target.value; renderAmount(); });
@@ -528,25 +821,49 @@ $('price-mode').addEventListener('click', event => {
   if (!button || button.dataset.mode === state.draft.priceMode) return;
   state.draft.priceMode = button.dataset.mode;
   renderAmount();
+  pulse($('amount-total'), 'shokh-bump');
 });
+/* Кнопки количества: число в поле и итог коротко «подпрыгивают». */
+function setQuantity(next) {
+  state.draft.quantity = next ? String(Math.round(next * 1000) / 1000) : '';
+  $('qty-input').value = state.draft.quantity;
+  renderAmount();
+  pulse($('qty-input'), 'shokh-bump');
+  pulse($('amount-total'), 'shokh-bump');
+}
 $('qty-minus').addEventListener('click', () => {
-  const current = L().number(state.draft.quantity) || 0;
-  const next = Math.max(0, Math.round((current - 1) * 1000) / 1000);
-  state.draft.quantity = next ? String(next) : '';
-  $('qty-input').value = state.draft.quantity; renderAmount();
+  setQuantity(Math.max(0, (L().number(state.draft.quantity) || 0) - 1));
 });
 $('qty-plus').addEventListener('click', () => {
-  const next = (L().number(state.draft.quantity) || 0) + 1;
-  state.draft.quantity = String(Math.round(next * 1000) / 1000);
-  $('qty-input').value = state.draft.quantity; renderAmount();
+  setQuantity((L().number(state.draft.quantity) || 0) + 1);
 });
 $('done-more').addEventListener('click', () => {
   resetDraft();
   state.step = 'item';
   renderStep(); show('flow'); startTimer();
 });
-$('done-finish').addEventListener('click', finishTrip);
-$('summary-home').addEventListener('click', async () => { await loadHome(); show('home'); });
+$('done-check').addEventListener('click', () => {
+  const check = $('done-check'), purchase = state.donePurchase;
+  if (!purchase) return;
+  const retry = ['rejected', 'pending'].includes(purchase.iiko?.status);
+  Busy.button(check, (async () => {
+    try {
+      const result = await api('/purchase/' + purchase.id + (retry ? '/retry' : '/sync'), retry ? {method: 'POST'} : {});
+      const synced = result.purchase.iiko?.status === 'synced';
+      if (synced) {
+        globalThis.RetroToast?.show('iiko подтвердил накладную.', 'ok');
+        // ✓ на кнопке виден, потом экран становится «Сохранено в iiko».
+        setTimeout(() => renderDoneIiko(result.purchase), 900);
+      } else {
+        renderDoneIiko(result.purchase);
+        message(result.purchase.iiko?.error || 'iiko ещё не подтвердил накладную.', true);
+      }
+      return synced;
+    } catch (error) { message(error.message, true); return false; }
+  })());
+});
+$('done-finish').addEventListener('click', () => Busy.button($('done-finish'), finishTrip(), {done: false}));
+$('summary-home').addEventListener('click', () => show('home'));
 
 function renderSelectors() {
   for (const [id, rows, key] of [['iiko-supplier', state.catalog.suppliers, 'supplierId'],
@@ -561,25 +878,62 @@ function renderSelectors() {
 $('iiko-supplier').addEventListener('change', event => {
   state.draft.supplierId = event.target.value;
   if (!$('point-other').value.trim()) state.draft.point = (state.catalog.suppliers.find(s => s.id === event.target.value)?.name || '').slice(0, 80);
-  $('flow-next').disabled = !ready('point');
+  setNext(ready('point'));
 });
 $('iiko-storage').addEventListener('change', event => {
   state.draft.storageId = event.target.value;
-  $('flow-next').disabled = !ready('point');
+  setNext(ready('point'));
 });
+
 async function loadCatalog() {
-  state.catalogReady = false;
-  $('start-purchase').disabled = true;
-  $('iiko-status').textContent = 'Загружаем справочники iiko…';
+  // Уже загруженные справочники остаются в работе, пока идут свежие.
+  const had = state.catalogReady;
+  setIiko('loading', had ? 'Обновляем справочники iiko…' : 'Загружаем справочники iiko…',
+    had ? 'Обновляем справочники iiko — обычно до 10 секунд…' : 'Загружаем справочники iiko — обычно до 10 секунд…');
+  updateStart();
   try {
     const catalog = await api('/catalog');
     state.catalog = catalog;
     state.catalogReady = catalog.source === 'iiko' && catalog.can_create;
-    $('iiko-status').textContent = state.catalogReady
+    setIiko(state.catalogReady ? 'ok' : 'error', state.catalogReady
       ? 'Подключено · товаров: ' + catalog.items.length + ' · складов: ' + catalog.storages.length
-      : 'Сохранение в iiko недоступно. Проверьте подключение и права на приходные накладные.';
-    $('start-purchase').disabled = !state.catalogReady || !state.home || !!sessionStorage.getItem('shokh-pending-operation');
-  } catch (error) { $('iiko-status').textContent = error.message; }
+      : 'Сохранение в iiko недоступно. Проверьте подключение и права на приходные накладные.');
+  } catch (error) {
+    state.catalogReady = false;
+    setIiko('error', error.message);
+  }
+  updateStart();
+  return state.catalogReady;
+}
+/* Кнопка «Новый закуп»: пока её нельзя нажать, подпись говорит почему. */
+function updateStart() {
+  const pending = !!sessionStorage.getItem('shokh-pending-operation');
+  const open = state.catalogReady && !!state.home && !pending;
+  $('start-purchase').disabled = !open;
+  $('start-purchase').classList.toggle('is-waiting', !open && !pending && state.iiko === 'loading');
+  $('start-purchase-sub').textContent = open ? 'Точка, товар, фото и цена'
+    : pending ? 'Сначала проверьте прошлую покупку'
+    : state.iiko === 'error' ? 'Нет связи с iiko — нажмите «Обновить данные»'
+    : 'Ждём справочники iiko…';
+}
+/* Карточка «Связь с iiko»: ждём — золотая точка и бегущая полоса, дольше
+   трёх секунд — объясняем, что так и должно быть; итог — зелёная или
+   красная точка. */
+let iikoSlowTimer = null;
+function setIiko(kind, text, slowText = '') {
+  state.iiko = kind;
+  const card = $('iiko-card');
+  card.classList.toggle('is-loading', kind === 'loading');
+  card.classList.toggle('is-error', kind === 'error');
+  card.classList.toggle('is-ok', kind === 'ok');
+  if (kind === 'loading') card.setAttribute('aria-busy', 'true'); else card.removeAttribute('aria-busy');
+  $('iiko-status').textContent = text;
+  clearTimeout(iikoSlowTimer);
+  if (kind === 'loading') {
+    iikoSlowTimer = setTimeout(() => {
+      if (state.iiko === 'loading' && slowText) $('iiko-status').textContent = slowText;
+    }, 3000);
+  }
 }
 async function recoverPending() {
   const key = sessionStorage.getItem('shokh-pending-operation');
@@ -597,17 +951,16 @@ async function recoverPending() {
   } catch (error) { message('Проверяем предыдущую покупку. ' + error.message, true); }
 }
 async function reloadData() {
-  $('reload-data').disabled = true;
   message('');
   await recoverPending();
-  await Promise.allSettled([loadHome(), loadCatalog()]);
+  const [home, catalog] = await Promise.allSettled([refreshHome(), loadCatalog()]);
   if (state.recovery && state.catalogReady && state.home) {
     const saved = state.recovery; state.recovery = null;
     state.draft = saved.draft; state.home.date = saved.date;
     state.tripId = saved.tripId; state.tripStartedAt = saved.tripStartedAt;
     state.expectedPhoto = !!saved.draft.hasPhoto;
     state.draft.hasPhoto = false; state.photoFile = null;
-    state.step = 'item';
+    state.step = 'item'; state.shownStep = null;
     $('qty-input').value = state.draft.quantity;
     // Черновик до переключателя «за всё» хранил только цену за единицу.
     if (!state.draft.priceMode) state.draft.priceMode = 'unit';
@@ -616,14 +969,19 @@ async function reloadData() {
     renderSelectors(); renderPoints(); renderStep(); show('flow'); startTimer();
     if (state.expectedPhoto) message('Прикрепите прежнее фото и повторите сохранение этой покупки.', true);
   }
-  $('reload-data').disabled = false;
+  // false — кнопка без ✓: что-то не загрузилось, текст ошибки уже на экране.
+  return home.value === true && catalog.value === true;
 }
-$('reload-data').addEventListener('click', reloadData);
-reloadData();
+/* «Обновить данные»: кнопка в работе, пока идут и главная, и справочники
+   iiko; повторное нажатие в это время не проходит. Первая загрузка — так же. */
+function reloadAll() { return Busy.button($('reload-data'), reloadData()); }
+$('reload-data').addEventListener('click', reloadAll);
+reloadAll();
 
 // «‹ Панель» — только тем, кому открыт ещё какой-то модуль. У самого Шоха
 // других модулей нет, и ссылка вела бы его по кругу обратно в закуп.
-fetch('/api/config', {headers: {accept: 'application/json'}})
+// Служебный запрос — без полосы загрузки.
+fetch('/api/config', {headers: {accept: 'application/json'}, retroBusy: false})
   .then(response => (response.ok ? response.json() : null))
   .then(config => {
     // Сервер отдаёт только открытые этой учётной записи модули.

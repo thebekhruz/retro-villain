@@ -2346,3 +2346,61 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "Итог закупа": "Xarid yakuni",
   "Точка, товар, фото и цена": "Do'kon, mahsulot, foto va narx",
 });
+/* T-393 · отклик и ожидание (busy.js). */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Не сохранено. Проверьте и повторите.": "Saqlanmadi. Tekshirib, qayta urinib ko'ring.",
+});
+/* ── T-393 кассир ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "обновляем iiko…": "iiko yangilanmoqda…",
+});
+/* ── /T-393 кассир ── */
+/* ── T-393 Шох ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Ждём справочники iiko…": "iiko ma'lumotnomalari kutilmoqda…",
+  "Сначала проверьте прошлую покупку": "Avval oldingi xaridni tekshiring",
+  "Нет связи с iiko — нажмите «Обновить данные»": "iiko bilan aloqa yo'q — «Ma'lumotlarni yangilash»ni bosing",
+  "Обновляем справочники iiko…": "iiko ma'lumotnomalari yangilanmoqda…",
+  "Загружаем справочники iiko — обычно до 10 секунд…": "iiko ma'lumotnomalari yuklanmoqda — odatda 10 soniyagacha…",
+  "Обновляем справочники iiko — обычно до 10 секунд…": "iiko ma'lumotnomalari yangilanmoqda — odatda 10 soniyagacha…",
+  "Не удалось загрузить покупки. Нажмите «Обновить данные».": "Xaridlarni yuklab bo'lmadi. «Ma'lumotlarni yangilash»ni bosing.",
+  "iiko подтвердил накладную.": "iiko kirim hujjatini tasdiqladi.",
+  "Выберите поставщика и склад iiko": "iiko yetkazib beruvchisi va omborini tanlang",
+  "Выберите поставщика iiko": "iiko yetkazib beruvchisini tanlang",
+  "Выберите склад поступления": "Kirim omborini tanlang",
+  "Выберите товар из списка iiko": "iiko ro'yxatidan mahsulotni tanlang",
+  "Прикрепите прежнее фото покупки": "Xaridning oldingi fotosini biriktiring",
+  "Повторить сохранение": "Qayta saqlash",
+  "Отправляем фото…": "Foto yuborilmoqda…",
+  "Сохраняем в iiko…": "iiko da saqlanmoqda…",
+  "Фото отправлено": "Foto yuborildi",
+  "Приходная накладная iiko": "iiko kirim hujjati",
+  "Фото прикреплено": "Foto biriktirildi",
+  "iiko отвечает дольше обычного. Не закрывайте экран — покупка не задвоится.": "iiko odatdagidan uzoqroq javob bermoqda. Ekranni yopmang — xarid ikki marta yozilmaydi.",
+  "Повторите сохранение этой же формы: ключ покупки сохранён.": "Shu shaklni qayta saqlang: xarid kaliti saqlangan.",
+  "Не удалось сохранить покупку.": "Xaridni saqlab bo'lmadi.",
+  "Нет связи с сервером. Проверьте интернет.": "Server bilan aloqa yo'q. Internetni tekshiring.",
+});
+/* ── /T-393 Шох ── */
+/* ── T-393 директор/учредитель ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "AI смотрит данные…": "AI ma'lumotlarni ko'rmoqda…",
+  "Помощник смотрит данные…": "Yordamchi ma'lumotlarni ko'rmoqda…",
+  "Повторить": "Qayta urinish",
+  "Помощник ещё не настроен на сервере: ответ не придёт, пока не заданы ключи AI.": "Yordamchi serverda hali sozlanmagan: AI kalitlari berilmaguncha javob kelmaydi.",
+  "Считаем период в iiko…": "iiko'da davr hisoblanmoqda…",
+  "Пересчитываем период в iiko — на экране прежние цифры…": "iiko'da davr qayta hisoblanmoqda — ekranda oldingi raqamlar…",
+  "Собираем данные iiko и пишем разбор…": "iiko ma'lumotlari yig'ilmoqda, tahlil yozilmoqda…",
+  "AI пишет разбор — обычно до двух минут, страницу можно не трогать.": "AI tahlil yozmoqda — odatda ikki daqiqagacha, sahifaga tegmasangiz ham bo'ladi.",
+  "Отчёт готов · PDF в архиве": "Hisobot tayyor · PDF arxivda",
+  "Не удалось скачать PDF.": "PDF ni yuklab bo'lmadi.",
+  "Excel с отчётом бухгалтера скачан.": "Buxgalter hisoboti Excel fayli yuklab olindi.",
+  "Не удалось выгрузить Excel.": "Excel ni yuklab bo'lmadi.",
+  "Брони недоступны": "Bronlar mavjud emas",
+  "История чата уже пуста.": "Chat tarixi allaqachon bo'sh.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Формируем отчёт · (\d+:\d\d)$/, "Hisobot tayyorlanmoqda · $1"],
+  [/^Отчёт сохранён в архиве · (\d+:\d\d)$/, "Hisobot arxivga saqlandi · $1"],
+);
+/* ── /T-393 директор/учредитель ── */

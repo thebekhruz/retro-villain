@@ -282,3 +282,54 @@
   body:has(.cashier-workspace) .sidebar .nav-link .nav-icon,body:has(.cashier-workspace) .sidebar .nav-active .nav-icon{font-size:24px}
   body:has(.cashier-workspace) .sidebar .nav-active .nav-dot,body:has(.cashier-workspace) .sidebar .rm-subnav{display:none}
 }
+
+/* ── Отклик и ожидание (busy.js, T-393) ──────────────────────────────────
+   Общий язык — в style.css («ОТКЛИК И ОЖИДАНИЕ»); здесь только форма
+   скелета кассира и тёмные панели. */
+/* Цифра ещё не пришла: на её месте мерцающая полоса. Подпись «—» остаётся
+   прозрачной внутри, поэтому высота строки та же, что у числа, — раскладка
+   не прыгает, когда число приходит. */
+.cashier-workspace .is-skel,.cashier-workspace.is-booting .rm-num{display:inline-block;min-width:4.6em;
+  color:transparent!important;border-radius:6px;
+  background:linear-gradient(90deg,var(--rm-skel-a) 25%,var(--rm-skel-b) 40%,var(--rm-skel-a) 60%) 0 50%/300% 62% no-repeat;
+  animation:cashier-shimmer 1.3s ease-in-out infinite}
+@keyframes cashier-shimmer{from{background-position:100% 50%}to{background-position:0 50%}}
+@media(prefers-reduced-motion:reduce){.cashier-workspace .is-skel,.cashier-workspace.is-booting .rm-num{animation:none}}
+/* На тёмно-зелёных панелях полоса светлая, иначе она читается как дыра. */
+.cashier-cards .rm-card--hero,.cashier-rail .handover-panel{--rm-skel-a:rgba(255,255,255,.08);--rm-skel-b:rgba(255,255,255,.2)}
+#report-date-text.is-skel{min-width:112px}
+#payments-sub.is-skel{min-width:150px}
+.cashier-split-bar.is-skel{display:flex;min-width:0;background-size:300% 100%}
+.cashier-split-bar.is-skel>span{visibility:hidden}
+/* Строки-заглушки — той же высоты, что настоящие. */
+.cashier-skel-row{pointer-events:none}
+.cashier-skel-row .payment-dot{background:var(--rm-skel-a)}
+.cashier-revenue .payment-row.cashier-skel-row{min-height:39px}
+.cashier-revenue .cashier-skel-row .rm-skel:nth-child(n+3){justify-self:end}
+.cashier-ops .expense-item.cashier-skel-row{min-height:47px;justify-content:space-between}
+/* До первого кадра скрипта пустых состояний не показываем — только скелет. */
+.cashier-workspace.is-booting :is(.empty-state,.expense-empty){visibility:hidden}
+
+/* Кнопка «в работе» бывает и выключенной (пока идёт передача, модуль гасит
+   соседние). Сама она не бледнеет — спиннер должен читаться. */
+.cashier-workspace button.rm-lock:disabled{opacity:1;cursor:progress}
+
+/* «Записано» на тёмной панели передачи: золотой отсвет вместо светло-зелёного
+   фона, на котором белый текст пропал бы. */
+.cashier-rail .handover-panel .rm-flash-ok{animation:cashier-flash-dark 1.6s ease-out;border-radius:11px}
+@keyframes cashier-flash-dark{0%,25%{background-color:rgba(216,185,119,.24);box-shadow:0 0 0 2px rgba(216,185,119,.6)}}
+@media(prefers-reduced-motion:reduce){.cashier-rail .handover-panel .rm-flash-ok{animation:none}}
+
+/* Подсказка «= 15 000 сум» (feedback.js) встаёт после поля суммы. В сетке
+   формы она занимала ячейку и выталкивала «+» на новую строку прямо во время
+   набора; теперь у неё своя строка под полем суммы, а пустая не занимает места. */
+.cashier-form .rm-money-hint,.cashier-shokh .rm-money-hint{grid-column:2;grid-row:2;margin:-2px 0 0;text-align:right}
+:is(.cashier-form,.cashier-shokh) .rm-money-hint:empty{display:none}
+@media(max-width:650px){.cashier-shokh .rm-money-hint{grid-column:1;grid-row:3}}
+@media(max-width:380px){.cashier-form .rm-money-hint{grid-column:1;grid-row:3}}
+/* Взнос в сейф: кромке «в работе» и вспышке нужен отступ слева, текст остаётся на месте. */
+.usd-deposit{margin-left:-6px;padding-left:6px;border-radius:0 6px 6px 0}
+.cashier-shift.is-skel{display:flex;min-width:0;border-color:transparent;background-size:300% 100%}
+.cashier-shift.is-skel>*{visibility:hidden}
+/* Маленькие × и «Отменить» — спиннер помельче, как у ячеек бухгалтера. */
+:is(.expense-remove,.usd-remove,.handover-undo){--rm-spin:13px}

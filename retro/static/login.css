@@ -47,3 +47,19 @@ button:disabled { cursor: wait; opacity: .65; }
   .login-card { padding: 30px 24px; }
   .lang-switch { top: 16px; right: 16px; }
 }
+
+/* Отклик кнопки входа (busy.js). Экран входа не грузит style.css, поэтому
+   здесь — короткая копия общих правил: спиннер цветом подписи, ширина та же. */
+button:not(:disabled):active { transform: scale(.97); }
+.rm-lock { cursor: progress; }
+.rm-rel { position: relative; }
+.rm-busy, .rm-done { -webkit-text-fill-color: transparent !important; }
+.rm-busy > *, .rm-done > * { visibility: hidden; }
+.rm-busy::after, .rm-done::after { content: ""; position: absolute; inset: 0; margin: auto; box-sizing: border-box;
+  width: var(--rm-spin, 16px); height: var(--rm-spin, 16px); pointer-events: none; }
+.rm-busy::after { border-radius: 50%; border: 2px solid color-mix(in srgb, currentColor 26%, transparent);
+  border-top-color: currentColor; animation: rm-spin .7s linear infinite; }
+.rm-done::after { width: calc(var(--rm-spin, 16px) * .42); height: calc(var(--rm-spin, 16px) * .78);
+  border: solid currentColor; border-width: 0 2.5px 2.5px 0; transform: translateY(-12%) rotate(45deg); }
+@keyframes rm-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { button:active { transform: none; } }

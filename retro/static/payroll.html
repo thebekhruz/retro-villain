@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/payroll.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/payroll-logic.js" defer></script><script src="/static/payroll.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/payroll-logic.js" defer></script><script src="/static/payroll.js" defer></script>
 </head>
 <body class="pr-page">
 <aside class="sidebar">
@@ -22,7 +22,7 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong id="crumb-month">Зарплаты</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong id="crumb-month">Зарплаты</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace pr-workspace payroll-workspace">
     <div class="pr-heading">
       <div><p class="pr-kicker">ВЕДОМОСТЬ МЕСЯЦА</p><h1 id="month-title" class="pr-title">Зарплаты<span>.</span></h1></div>
@@ -37,6 +37,11 @@
     </div>
     <p id="payroll-message" class="notice" role="status" aria-live="polite" hidden></p>
 
+    <!-- Первая загрузка: скелет итогов и сетки вместо пустоты и «Загружаем…». -->
+    <div id="payroll-skeleton" class="pr-skeleton" aria-hidden="true">
+      <div class="pr-cards"><div class="rm-skel-card"><span class="rm-skel" style="width:60%"></span><span class="rm-skel is-lg" style="width:70%"></span></div><div class="rm-skel-card"><span class="rm-skel" style="width:70%"></span><span class="rm-skel is-lg" style="width:62%"></span></div><div class="rm-skel-card"><span class="rm-skel" style="width:64%"></span><span class="rm-skel is-lg" style="width:74%"></span></div><div class="rm-skel-card"><span class="rm-skel" style="width:58%"></span><span class="rm-skel is-lg" style="width:66%"></span></div><div class="rm-skel-card"><span class="rm-skel" style="width:72%"></span><span class="rm-skel is-lg" style="width:40%"></span></div></div>
+      <div class="pr-sheet"><div class="rm-skel-row"><span class="rm-skel" style="width:22%"></span><span class="rm-skel" style="width:48%"></span><span class="rm-skel" style="width:12%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:18%"></span><span class="rm-skel" style="width:52%"></span><span class="rm-skel" style="width:12%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:25%"></span><span class="rm-skel" style="width:44%"></span><span class="rm-skel" style="width:12%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:20%"></span><span class="rm-skel" style="width:56%"></span><span class="rm-skel" style="width:12%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:23%"></span><span class="rm-skel" style="width:50%"></span><span class="rm-skel" style="width:12%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:19%"></span><span class="rm-skel" style="width:46%"></span><span class="rm-skel" style="width:12%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:54%"></span><span class="rm-skel" style="width:12%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:21%"></span><span class="rm-skel" style="width:49%"></span><span class="rm-skel" style="width:12%"></span></div></div>
+    </div>
     <div id="payroll-body" hidden>
       <section class="pr-cards" aria-label="Итоги месяца">
         <article class="pr-card"><div class="pr-card-label">Фонд окладов</div><div class="pr-card-value rm-num" id="kpi-fund">—</div></article>

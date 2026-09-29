@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/director-app.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/period.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/director-app.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/period.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/director-app.js" defer></script>
 </head>
 <body class="director-app">
 <aside class="sidebar">
@@ -43,24 +43,24 @@
     <section id="tab-home" class="dir-screen" aria-label="Сегодня">
       <article class="rm-phone-hero dir-tips">
         <div class="dir-tips-head"><span class="dir-spark" aria-hidden="true">✦</span><span>AI · ЧТО СДЕЛАТЬ СЕГОДНЯ</span></div>
-        <ol id="tips" class="dir-tips-list"><li class="is-muted">Смотрим меню за неделю…</li></ol>
+        <ol id="tips" class="dir-tips-list" aria-busy="true"><li class="is-skel" aria-hidden="true"><span class="rm-skel"></span><span class="rm-skel"></span></li><li class="is-skel" aria-hidden="true"><span class="rm-skel"></span><span class="rm-skel"></span></li><li class="is-skel" aria-hidden="true"><span class="rm-skel"></span><span class="rm-skel"></span></li></ol>
         <button id="ask-tip" class="dir-tips-ask" type="button">Спросить AI подробнее →</button>
       </article>
       <div class="dir-pair">
-        <article class="rm-phone-card dir-kpi"><span>Касса Retro сегодня</span><strong id="kassa" class="rm-num">—</strong><small id="kassa-sub">iiko</small></article>
-        <article class="rm-phone-card dir-kpi"><span>Остаток у бухгалтера</span><strong id="cash" class="rm-num">—</strong><small id="cash-sub">на конец дня</small></article>
+        <article class="rm-phone-card dir-kpi"><span>Касса Retro сегодня</span><strong id="kassa" class="rm-num"><span class="rm-skel is-val"></span></strong><small id="kassa-sub">iiko</small></article>
+        <article class="rm-phone-card dir-kpi"><span>Остаток у бухгалтера</span><strong id="cash" class="rm-num"><span class="rm-skel is-val"></span></strong><small id="cash-sub">на конец дня</small></article>
       </div>
       <article class="rm-phone-card">
-        <div class="dir-card-head"><strong>Отчёт бухгалтера</strong><span id="err-badge" class="dir-badge">—</span></div>
-        <div id="err-list" class="dir-issues"></div>
+        <div class="dir-card-head"><strong>Отчёт бухгалтера</strong><span id="err-badge" class="dir-badge"><span class="rm-skel is-val"></span></span></div>
+        <div id="err-list" class="dir-issues" aria-busy="true"><div class="dir-skel-list" aria-hidden="true"><div class="dir-skel-line"><span class="rm-skel is-dot"></span><span><span class="rm-skel"></span><span class="rm-skel"></span></span></div><div class="dir-skel-line"><span class="rm-skel is-dot"></span><span><span class="rm-skel"></span><span class="rm-skel"></span></span></div></div></div>
         <button id="ask-err" class="dir-link" type="button" hidden>Что важнее всего? · AI →</button>
       </article>
       <article class="rm-phone-card">
         <strong class="dir-card-title">Команда сегодня</strong>
         <div class="dir-team-counts">
-          <button type="button" class="dir-count is-late" data-team-filter="late"><strong id="late-n">—</strong><span>опоздали</span></button>
-          <button type="button" class="dir-count" data-team-filter="missing"><strong id="miss-n">—</strong><span>не пришли</span></button>
-          <button type="button" class="dir-count is-nohik" data-team-filter="nohik"><strong id="nohik-n">—</strong><span>без Hikvision</span></button>
+          <button type="button" class="dir-count is-late" data-team-filter="late"><strong id="late-n"><span class="rm-skel is-val is-num"></span></strong><span>опоздали</span></button>
+          <button type="button" class="dir-count" data-team-filter="missing"><strong id="miss-n"><span class="rm-skel is-val is-num"></span></strong><span>не пришли</span></button>
+          <button type="button" class="dir-count is-nohik" data-team-filter="nohik"><strong id="nohik-n"><span class="rm-skel is-val is-num"></span></strong><span>без Hikvision</span></button>
         </div>
         <p id="attendance-note" class="dir-note"></p>
       </article>

@@ -91,7 +91,7 @@ def test_path_tricks_do_not_open_a_foreign_panel(client, path):
 @pytest.mark.parametrize('role', ROLES + ('boss',))
 def test_shared_static_is_open_to_every_signed_in_role(client, role):
     for name in ('style.css', 'mobile.css', 'nav.js', 'i18n.js', 'i18n-uz.js', 'logout.js',
-                 'frontend-state.js', 'financial-write.js', 'favicon.svg'):
+                 'frontend-state.js', 'financial-write.js', 'busy.js', 'favicon.svg'):
         assert client.get('/static/' + name, auth=(role, 'secret')).status_code == 200, (role, name)
 
 

@@ -222,3 +222,10 @@ button.pr-s:hover{box-shadow:inset 0 0 0 2px #d2af59;filter:none}
   /* Служебный капс на телефоне — как у всей панели (mobile.css): 10 px на солнце не читается. */
   .pr-kicker{font-size:11.5px;letter-spacing:1.1px}
 }
+
+/* ── Первая загрузка: скелет итогов и сетки (T-393) ─────────────────────── */
+.pr-skeleton[hidden]{display:none}
+.pr-skeleton .pr-sheet{padding:8px 0}
+.pr-skeleton .rm-skel-card{min-height:92px}
+/* Ячейка в работе: подпись спрятана, спиннер по центру, размер тот же. */
+.pr-grid .rm-busy,.pr-grid .rm-done{opacity:1}

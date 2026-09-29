@@ -49,7 +49,7 @@ from retro.sessions import SessionIdentity, SessionStore
 STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js',
-                '/static/i18n.js', '/static/i18n-uz.js', '/static/favicon.svg',
+                '/static/i18n.js', '/static/i18n-uz.js', '/static/busy.js', '/static/favicon.svg',
                 '/static/favicon-32.png', '/static/apple-touch-icon.png'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
@@ -233,7 +233,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
         app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention,
-        loader=lambda today: load_iiko(app.state, 'load_director_report', today, timeout=150))
+        # Сервис передаёт период (start/end): без **kw «Сформировать отчёт» падал с 500.
+        loader=lambda today, **kw: load_iiko(app.state, 'load_director_report', today, timeout=150, **kw))
 
     app.state.financial_requests = FinancialRequests(
         shared or Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3')

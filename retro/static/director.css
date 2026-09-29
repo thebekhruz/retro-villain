@@ -305,14 +305,56 @@
   .menu-table td.metric-cell[data-label="Выручка"]{order:3}
   .menu-table td.metric-cell[data-label="Прибыль итоговая"]{border-top:1px solid var(--border);margin-top:4px;padding-top:8px}
 }
-/* Пока грузится новый период, прежние цифры гаснут: иначе человек читает
-   чужой диапазон как готовый ответ, а через секунды числа меняются сами.
+/* Пока грузится новый период, прежние цифры гаснут (RetroBusy.section →
+   .rm-reloading): иначе человек читает чужой диапазон как готовый ответ.
    Управление остаётся живым — период можно переключить снова. */
-.workspace[aria-busy=true] > section:not(.controls):not(.setup),
-.workspace[aria-busy=true] > details{opacity:.45;pointer-events:none}
 .workspace > section,.workspace > details{transition:opacity .15s ease}
 
 /* Подменю директора в полосе меню на телефоне — под палец, не ниже 40 точек. */
 @media(max-width:650px){
   .sidebar .rm-subnav a{min-height:40px;display:flex;align-items:center}
 }
+
+/* ═══ Отклик и ожидание (busy.js, T-393) ═══════════════════════════════════
+   Первая загрузка — скелеты в форме цифр, строк и карточек архива; отчёт с
+   разбором AI — карточка «формируется» с часами и полосой. */
+.rm-skel.is-val{display:inline-block;vertical-align:middle;width:5.2em;max-width:100%;height:.62em;border-radius:6px}
+.hero-value .rm-skel.is-val{width:6em;height:.5em}
+#margin-percent .rm-skel.is-val{width:2.6em}
+.rail-line b .rm-skel.is-val,.mini-value .rm-skel.is-val{width:4.6em;height:9px}
+#report-period .rm-skel.is-val{width:9em;height:8px}
+.dr-skel-line{display:flex;align-items:center;gap:12px;min-height:48px;padding:0 4px}
+.dr-skel-line+.dr-skel-line{border-top:1px solid #f0f3ec}
+.dr-skel-line>.rm-skel.is-dot{width:20px;height:20px;border-radius:50%}
+.dr-skel-line>span:not(.rm-skel){display:flex;flex-direction:column;gap:7px;flex:1;min-width:0}
+.dr-skel-line>span:not(.rm-skel)>.rm-skel:first-child{width:58%;height:11px}
+.dr-skel-line>span:not(.rm-skel)>.rm-skel:last-child{width:34%;height:8px}
+.dr-skel-line>.rm-skel.is-end{width:64px;height:11px}
+.menu-table tr.dr-skel-tr td{padding:0;text-align:left}
+.dr-skel-row{display:grid;grid-template-columns:minmax(0,2.4fr) repeat(3,minmax(0,1fr));gap:22px;align-items:center;min-height:50px;padding:0 10px;border-bottom:1px solid #f0f3ec}
+.dr-skel-row .rm-skel:first-child{width:70%}
+.dr-skel-row .rm-skel:not(:first-child){width:62%;justify-self:end}
+@media(max-width:700px){
+  .menu-table tr.dr-skel-tr,.menu-table tr.dr-skel-tr td{display:block;padding:0;border:0}
+  .dr-skel-row{grid-template-columns:minmax(0,1fr) auto;gap:10px 16px;min-height:0;padding:14px 2px}
+  .dr-skel-row .rm-skel:nth-child(3){grid-column:1/-1;width:40%;justify-self:start;height:14px}
+  .dr-skel-row .rm-skel:nth-child(4){display:none}
+}
+/* Строка состояния: пока идёт работа — золотая точка пульсирует. */
+#state.is-working{display:inline-flex;align-items:center;gap:7px;color:var(--ink)}
+#state.is-working::before{content:"";width:7px;height:7px;border-radius:50%;background:var(--gold);flex:none;animation:dr-pulse 1.1s ease-in-out infinite}
+#state.is-error{color:#a33f2b}
+@keyframes dr-pulse{50%{opacity:.3;transform:scale(.7)}}
+@media(prefers-reduced-motion:reduce){#state.is-working::before{animation:none}}
+/* Архив: отчёт, который сейчас формируется, и отчёт, который не получился. */
+.report-link.is-pending{border-color:#e6d7b2;background:#fffcf4}
+.report-spin{width:18px;height:18px;border-radius:50%;border:2px solid #eadcb8;border-top-color:#b8954c;animation:rm-spin .8s linear infinite}
+.report-progress{position:relative;display:block!important;height:3px;margin-top:6px;border-radius:3px;background:#f1ead8;overflow:hidden}
+.report-progress i{position:absolute;inset:0 auto 0 0;width:38%;border-radius:3px;background:linear-gradient(90deg,rgba(216,185,119,0),#d8b977 40%,#c5a359);animation:rm-topbar 1.4s cubic-bezier(.45,.05,.55,.95) infinite}
+@media(prefers-reduced-motion:reduce){.report-spin,.report-progress i{animation:none}.report-progress i{width:100%;opacity:.6}}
+.report-clock{font-variant-numeric:tabular-nums;min-width:44px;text-align:center}
+.report-link.is-failed{border-color:#efcfc6;background:#fff6f3}
+.report-link.is-failed .report-note{color:#a33f2b;-webkit-line-clamp:4}
+.report-fail{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;background:#a33f2b;color:#fff;font-size:12px;font-weight:700}
+.report-retry{min-height:36px;padding:0 14px;border:1px solid #e3b9ad;border-radius:9px;background:#fff;color:#a33f2b;font-size:12px;font-weight:650}
+@media(max-width:700px){.report-link.is-pending,.report-link.is-failed{grid-template-columns:20px minmax(0,1fr) auto}}

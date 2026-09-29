@@ -50,6 +50,45 @@
     return response.status === 204 ? null : response.json();
   }
 
+  // ── Отклик и ожидание (busy.js, T-393) ───────────────────────────────
+  const Busy = globalThis.RetroBusy;
+  const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+  /** Кнопка / раздел «в работе» — если busy.js на странице; иначе просто ждём. */
+  const busyButton = (button, work, opts) => (Busy ? Busy.button(button, work, opts) : Promise.resolve(work));
+  const busySection = (element, work) => (Busy ? Busy.section(element, work) : Promise.resolve(work));
+
+  /** Скелет списка: строки в форме будущих (точка/номер, две строки текста, число справа). */
+  function skeletonList(target, rows, end) {
+    const list = node('div', 'dir-skel-list');
+    list.setAttribute('aria-hidden', 'true');
+    for (let index = 0; index < rows; index += 1) {
+      const line = node('div', 'dir-skel-line');
+      const text = node('span');
+      text.append(node('span', 'rm-skel'), node('span', 'rm-skel'));
+      line.append(node('span', 'rm-skel is-dot'), text);
+      if (end) line.append(node('span', 'rm-skel is-end'));
+      list.append(line);
+    }
+    target.replaceChildren(list);
+    target.setAttribute('aria-busy', 'true');
+  }
+  const settled = target => target.setAttribute('aria-busy', 'false');
+  /** Число так и не пришло — прочерк вместо вечного скелета. */
+  function dashIfSkeleton(...ids) {
+    ids.forEach(id => { const target = $(id); if (target && target.querySelector('.rm-skel')) target.textContent = '—'; });
+  }
+
+  /** Ссылка на другую страницу: крутится, пока та открывается. Возврат
+   *  «назад» из кеша браузера снимает спиннер. */
+  function busyLink(link) {
+    link.addEventListener('click', event => {
+      if (!Busy || event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      busyButton(link, new Promise(resolve => {
+        addEventListener('pageshow', function back(page) { if (page.persisted) { removeEventListener('pageshow', back); resolve(false); } });
+      }), {done: false});
+    });
+  }
+
   function say(text, error) {
     const state = $('state');
     state.hidden = !text;
@@ -106,6 +145,7 @@
   function renderTips(snapshot) {
     const list = $('tips');
     list.replaceChildren();
+    settled(list);
     const tips = logic.dayTips(snapshot);
     const weekday = WEEKDAYS[new Date(view.today + 'T12:00:00Z').getUTCDay()];
     const texts = tips.map(tip => {
@@ -120,6 +160,7 @@
   async function loadHome() {
     loadReport(7).then(renderTips).catch(error => {
       $('tips').replaceChildren(node('li', 'is-muted', 'Меню за неделю недоступно: ' + error.message));
+      settled($('tips'));
     });
     request('/api/director/cash-today').then(data => {
       $('kassa').textContent = short(data.retro);
@@ -168,6 +209,7 @@
       badge.className = 'dir-badge ' + (bad ? 'is-bad' : items.length ? '' : 'is-ok');
       const list = $('err-list');
       list.replaceChildren();
+      settled(list);
       items.sort((a, b) => (a.level === 'bad' ? 0 : 1) - (b.level === 'bad' ? 0 : 1)).slice(0, 3).forEach(item => {
         const row = node('div');
         const text = node('div');
@@ -182,6 +224,7 @@
       $('cash').textContent = '—';
       $('err-badge').textContent = 'Нет данных';
       $('err-list').replaceChildren(node('p', 'dir-note', error.message));
+      settled($('err-list'));
     }
   }
 
@@ -270,19 +313,32 @@
     });
   }
 
-  async function loadMenu() {
+  /** trigger — чип периода, который начал загрузку: крутится он. Прежний
+   *  список на месте и гаснет; первый раз — скелет в форме строк блюд. */
+  async function loadMenu(trigger) {
     const days = view.menuDays;
+    const list = $('menu-list');
+    const work = loadReport(days);
     if (!view.reports[days]) {
-      $('menu-list').replaceChildren(node('p', 'dir-empty', 'Собираем продажи из iiko…'));
-      $('menu-period').textContent = '';
+      const shown = list.querySelector('.dir-dish');
+      if (shown) busySection($('tab-menu').querySelector('.dir-menu-card'), work.catch(() => {}));
+      else { skeletonList(list, 5, true); $('menu-period').textContent = ''; }
+      if (trigger) busyButton(trigger, work, {done: false});
     }
     try {
-      await loadReport(days);
+      await work;
+      settled(list);
       if (days === view.menuDays) renderMenu();
       // Тренд — это ещё два отчёта. Грузим их вслед, чтобы список не ждал.
-      Promise.all([loadReport(3), loadReport(30)]).then(renderMenu).catch(() => {});
+      // Это подгрузка в фоне: верхнюю полосу не зажигаем.
+      // silent() получает синхронную функцию: запросы уходят внутри неё, а
+      // ожидание — снаружи, чтобы не заглушить чужие запросы на это время.
+      let trends;
+      const start = () => { trends = Promise.all([loadReport(3), loadReport(30)]); };
+      if (Busy) Busy.silent(start); else start();
+      trends.then(renderMenu).catch(() => {});
     } catch (error) {
-      if (days === view.menuDays) $('menu-list').replaceChildren(node('p', 'dir-empty', error.message));
+      if (days === view.menuDays) { list.replaceChildren(node('p', 'dir-empty', error.message)); settled(list); }
     }
   }
 
@@ -295,10 +351,21 @@
     return new Date(iso).toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'});
   }
 
-  async function loadTeam() {
+  /** Первый раз — скелет списка; дальше прежний список на месте и гаснет. */
+  function loadTeam() {
+    const list = $('team-list');
+    const work = fetchTeam();
+    if (!view.team) skeletonList(list, 4, true);
+    else busySection(list, work);
+    return work;
+  }
+
+  async function fetchTeam() {
     const day = view.teamDay === 'today' ? view.today : shiftDay(view.today, -1);
+    const asked = view.teamDay;
     try {
       const team = await request('/api/director/team?date=' + day);
+      if (asked !== view.teamDay) return;
       if (view.teamDay === 'today') {
         $('late-n').textContent = team.counts.late;
         $('miss-n').textContent = team.counts.missing;
@@ -313,7 +380,12 @@
       roles.replaceChildren(...(team.roles || []).map(role => { const option = node('option'); option.value = role; return option; }));
       renderTeam();
     } catch (error) {
-      $('team-list').replaceChildren(node('p', 'dir-empty', error.message));
+      dashIfSkeleton('late-n', 'miss-n', 'nohik-n');
+      // Прежний список не стираем: ошибку — над ним.
+      if (view.team) toast(error.message, true);
+      else $('team-list').replaceChildren(node('p', 'dir-empty', error.message));
+    } finally {
+      settled($('team-list'));
     }
   }
 
@@ -336,6 +408,8 @@
     shown.forEach(row => {
       const button = node('button', 'dir-person');
       button.type = 'button';
+      // Ключ переживает перерисовку: «сохранено» подсвечивает ту же строку.
+      button.dataset.busyKey = 'dir-team:' + row.type + ':' + row.id;
       const main = node('span', 'dir-person-main');
       const name = node('span', 'dir-person-name');
       name.append(node('strong', '', row.name));
@@ -371,6 +445,7 @@
     const rows = logic.waiters(snapshot.waiter_metrics || {}).filter(row => row.revenue > 0).slice(0, 6);
     const target = $('waiters');
     target.replaceChildren();
+    settled(target);
     if (!rows.length) { target.append(node('p', 'dir-empty', 'iiko не вернул продажи официантов за неделю.')); return; }
     const max = Math.max(1, ...rows.map(row => row.revenue));
     rows.forEach((row, index) => {
@@ -442,39 +517,58 @@
     event.preventDefault();
     const name = $('editor-name').value.trim(), role = $('editor-role').value.trim();
     const amount = $('editor-amount').value.replace(/\D/g, '');
-    if (!name || !role || !Number(amount)) { $('editor-error').textContent = 'Укажите имя, должность и сумму.'; return; }
+    if (!name || !role || !Number(amount)) {
+      $('editor-error').textContent = 'Укажите имя, должность и сумму.';
+      const empty = !name ? $('editor-name') : !role ? $('editor-role') : $('editor-amount');
+      empty.focus();
+      return;
+    }
     const row = view.editing;
     const body = {name, role, amount};
     if (view.editorType === 'shift') body.manual_attendance = view.manual;
     const url = row ? '/api/director/team/' + row.type + '/' + row.id : '/api/director/team';
     if (!row) body.type = view.editorType;
-    $('editor-save').disabled = true;
+    $('editor-error').textContent = '';
+    const editor = $('team-editor');
+    // Кнопка крутится, пока запись не легла и список не перечитан; потом ✓,
+    // редактор закрывается, а строка человека в списке вспыхивает зелёным.
+    const work = request(url, {method: row ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
+      .then(() => loadTeam());
+    editor.setAttribute('aria-busy', 'true');
+    editor.classList.add('is-saving');
+    busyButton($('editor-save'), work);
     try {
-      await request(url, {method: row ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+      await work;
+      await wait(650);
       closeEditor();
       toast(row ? 'Сохранено: ' + name + ' · ' + sum(amount) + ' сум. Бухгалтер видит новую ставку.'
         : name + ' в реестре. Видно у бухгалтера в «Сотрудниках» и «Финансах дня».');
-      await loadTeam();
+      const line = row ? document.querySelector('[data-busy-key="dir-team:' + row.type + ':' + row.id + '"]') : null;
+      if (line && Busy) { Busy.flash(line); line.scrollIntoView({block: 'nearest', behavior: 'smooth'}); }
     } catch (error) {
       $('editor-error').textContent = error.message;
     } finally {
-      $('editor-save').disabled = false;
+      editor.setAttribute('aria-busy', 'false');
+      editor.classList.remove('is-saving');
     }
   }
 
   async function deleteEditor() {
     const row = view.editing;
     if (!row) return;
-    $('editor-delete-yes').disabled = true;
+    $('editor-error').textContent = '';
+    const line = document.querySelector('[data-busy-key="dir-team:' + row.type + ':' + row.id + '"]');
+    const removal = request('/api/director/team/' + row.type + '/' + row.id, {method: 'DELETE'});
+    // Строка в списке «в работе» и после удаления плавно сворачивается.
+    const work = line && Busy ? Busy.row(line, removal, {collapse: true}) : removal;
+    busyButton($('editor-delete-yes'), work, {done: false});
     try {
-      await request('/api/director/team/' + row.type + '/' + row.id, {method: 'DELETE'});
+      await work;
       closeEditor();
       toast(row.name + ' удалён(а) из реестра.');
       await loadTeam();
     } catch (error) {
       $('editor-error').textContent = error.message;
-    } finally {
-      $('editor-delete-yes').disabled = false;
     }
   }
 
@@ -492,9 +586,10 @@
     }));
     $('menu-query').addEventListener('input', event => { view.query = event.target.value; renderMenu(); });
     document.querySelectorAll('#tab-menu [data-days]').forEach(button => button.addEventListener('click', () => {
+      if (view.menuDays === Number(button.dataset.days)) return;
       view.menuDays = Number(button.dataset.days);
       document.querySelectorAll('#tab-menu [data-days]').forEach(other => other.classList.toggle('is-active', other === button));
-      loadMenu();
+      loadMenu(button);
     }));
     document.querySelectorAll('[data-venue]').forEach(button => button.addEventListener('click', () => {
       view.venue = button.dataset.venue;
@@ -507,9 +602,10 @@
       renderMenu();
     }));
     $('team-days').querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+      if (view.teamDay === button.dataset.day) return;
       view.teamDay = button.dataset.day;
       $('team-days').querySelectorAll('button').forEach(other => other.classList.toggle('is-active', other === button));
-      loadTeam();
+      busyButton(button, loadTeam(), {done: false});
     }));
     $('team-add').addEventListener('click', () => openEditor(null));
     $('editor-close').addEventListener('click', closeEditor);
@@ -523,6 +619,7 @@
     $('editor-delete').addEventListener('click', () => { $('editor-delete').hidden = true; $('editor-confirm').hidden = false; });
     $('editor-keep').addEventListener('click', () => { $('editor-delete').hidden = false; $('editor-confirm').hidden = true; });
     $('editor-delete-yes').addEventListener('click', deleteEditor);
+    document.querySelectorAll('a[href="/director/report"]').forEach(busyLink);
   }
 
   (async function start() {
@@ -544,9 +641,11 @@
       status: $('chat-status'), prompts: $('chat-prompts'), endpoint: '/api/director/chat',
     });
     bind();
+    skeletonList($('waiters'), 4, true);
     loadHome();
     loadReport(7).then(renderWaiters).catch(error => {
       $('waiters').replaceChildren(node('p', 'dir-empty', error.message));
+      settled($('waiters'));
     });
   })();
 })();

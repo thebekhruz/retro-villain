@@ -8,6 +8,11 @@ const money = value => fmt(value) + ' сум';
 const L = globalThis.PayrollLogic;
 let today, current, pending = null, requestNo = 0, saving = false;
 let shownMonth = null, focus = null, checksOpen = false;
+// Отклик (busy.js): ячейка, которую нажали, крутится сама; ведомость при
+// перечитывании гаснет, а не пропадает. Ключи — с месяцем: в другом месяце
+// те же id означают другие ячейки.
+const B = globalThis.RetroBusy;
+const cellKey = (kind, personId, day) => kind + ':' + ($('month-input').value || '') + ':' + personId + ':' + day;
 
 function message(value, error = false) {
   const box = $('payroll-message');
@@ -44,14 +49,17 @@ async function postJson(url, body, idempotent) {
 }
 
 /* ── Выплаты прямо из ячеек ─────────────────────────────────────────── */
-async function payShift(person, cell) {
+async function payShift(person, cell, box) {
   if (saving) return;
   saving = true;
+  B?.clear('', 'error');
   // Колонка — день смены; выдают на следующий день (или сегодня, если смена вчерашняя).
   const date = L.payday(cell.day, today);
   try {
-    await postJson('/api/accountant/salary-payments',
+    const write = postJson('/api/accountant/salary-payments',
       {date, accrual_id: Number(cell.accrualId), amount: String(cell.debt)}, true);
+    B?.button(box, write);
+    await write;
     await load();
     message('Выдано: ' + person.name + ' · ' + money(cell.debt) + ' · смена ' + dm(cell.day));
   } catch (error) { message(error.message, true); }
@@ -62,10 +70,15 @@ async function payShift(person, cell) {
    подтверждает смену целиком (от имени вошедшего), потом выдаёт начисление.
    Сервер отказал (нет ставки, неполный Hikvision) — показываем его причину,
    ячейка остаётся «к выдаче». */
-async function payPending(person, cell) {
+async function payPending(person, cell, box) {
   if (saving) return;
   saving = true;
+  B?.clear('', 'error');
   const date = L.payday(cell.day, today);
+  // Подтверждение, перечитывание и выдача — одно действие для человека:
+  // ячейка крутится, пока не закончится всё.
+  let release = null;
+  if (B) B.button(box, new Promise((resolve, reject) => { release = {resolve, reject}; })).catch(() => {});
   try {
     let approver = 'бухгалтер';
     try { const config = await globalThis.RetroConfig; if (config?.user) approver = config.user; } catch { /* по умолчанию */ }
@@ -79,8 +92,10 @@ async function payPending(person, cell) {
     const debt = Number(fresh.debt || 0);
     if (debt > 0) await postJson('/api/accountant/salary-payments', {date, accrual_id: Number(fresh.accrual_id), amount: String(debt)}, true);
     await load();
+    release?.resolve(true);
     message('Начислено и выдано: ' + person.name + ' · ' + money(debt) + ' · смена ' + dm(cell.day));
   } catch (error) {
+    release?.reject(error);
     // Сначала перерисовка (она гасит старые сообщения), потом причина отказа.
     await load().catch(() => {});
     message(error.message, true);
@@ -164,7 +179,9 @@ async function editMonthly(person, cell, input) {
   }
   if (saving) { reset(); return; }
   saving = true;
-  try {
+  B?.clear('', 'error');
+  const line = input.closest('.pr-row');
+  const work = (async () => {
     for (const step of plan) {
       if (step.action === 'add') {
         await postJson('/api/accountant/monthly-payments', {date: cell.day, employee_id: Number(person.id), amount: String(step.amount)}, true);
@@ -175,13 +192,20 @@ async function editMonthly(person, cell, input) {
         await send('/api/accountant/operations/movement/' + encodeURIComponent(step.id) + '?date=' + encodeURIComponent(cell.day), 'DELETE');
       }
     }
+  })();
+  // «Сохраняю…» в самой ячейке, затем галочка и вспышка строки; при отказе
+  // ячейка красная, а набранное число остаётся — можно поправить и повторить.
+  if (B) B.field(input, work, {row: line}).catch(() => {});
+  try {
+    await work;
     await load();
     if (next > cell.amount) message('Оклад: ' + person.name + ' · ' + money(next - cell.amount) + ' · ' + dm(cell.day));
     else if (next === 0) message('Выплата оклада за ' + dm(cell.day) + ' удалена: ' + person.name);
     else message('Оклад за ' + dm(cell.day) + ' изменён: ' + person.name + ' · ' + fmt(cell.amount) + ' → ' + money(next));
   } catch (error) {
     await load().catch(() => {});
-    reset(); message(error.message, true);
+    if (!B) reset();
+    message(error.message, true);
   } finally { saving = false; }
 }
 
@@ -230,6 +254,7 @@ function monthlyRow(person) {
   const key = 'm' + person.id;
   const line = node('div', 'pr-row is-monthly' + (isFocused(key) ? ' is-focus' : ''));
   line.dataset.row = key;
+  line.dataset.busyKey = cellKey('row', key, '');
   const sum = node('div', 'pr-c pr-c-sum rm-num', fmt(person.salary));
   line.append(whoCell(person.name, person.role, false), sum);
   person.cells.forEach(cell => {
@@ -237,12 +262,14 @@ function monthlyRow(person) {
       (cell.future ? ' is-future' : '') + (cell.today ? ' is-today' : '');
     if (cell.future) { line.append(node('div', cls, cell.amount ? fmt(cell.amount) : '')); return; }
     const input = node('input', cls);
+    input.dataset.busyKey = cellKey('pm', person.id, cell.day);
     input.value = cell.amount ? fmt(cell.amount) : '';
     input.inputMode = 'numeric';
     input.autocomplete = 'off';
     input.setAttribute('aria-label', person.name + ' · оклад за ' + dm(cell.day));
     input.title = person.name + ' · ' + dm(cell.day) + (cell.amount ? ' · выдано ' + money(cell.amount) + ' · изменить или очистить' : ' · выдать часть оклада');
-    input.addEventListener('focus', () => { input.value = cell.amount ? String(cell.amount) : ''; input.select(); });
+    // Показанное (сохранённое или набранное, но не записанное) — цифрами без пробелов.
+    input.addEventListener('focus', () => { const shown = parse(input.value); input.value = shown ? String(shown) : ''; input.select(); });
     input.addEventListener('blur', () => { if (parse(input.value) === cell.amount) input.value = cell.amount ? fmt(cell.amount) : ''; });
     input.addEventListener('keydown', event => { if (event.key === 'Enter') input.blur(); if (event.key === 'Escape') { input.value = String(cell.amount || ''); input.blur(); } });
     input.addEventListener('change', () => editMonthly(person, cell, input));
@@ -270,6 +297,7 @@ function shiftRow(person) {
   const key = 's' + person.id;
   const line = node('div', 'pr-row is-shift' + (isFocused(key) ? ' is-focus' : ''));
   line.dataset.row = key;
+  line.dataset.busyKey = cellKey('row', key, '');
   line.append(whoCell(person.name, personRole(person), person.noHik),
     person.rate == null ? node('div', 'pr-c pr-c-sum is-norate', 'нет ставки') : node('div', 'pr-c pr-c-sum rm-num', fmt(person.rate)));
   person.cells.forEach(cell => {
@@ -277,10 +305,11 @@ function shiftRow(person) {
     const box = node(interactive ? 'button' : 'div', 'pr-s is-' + cell.kind + (cell.late ? ' is-late' : '') +
       (cell.day === today ? ' is-today' : '') + (isFocused(key, cell.day) ? ' is-focus' : ''), cell.text);
     if (cell.kind !== 'future' && cell.kind !== 'empty') box.title = shiftCellTitle(person, cell);
+    box.dataset.busyKey = cellKey('ps', person.id, cell.day);
     if (interactive) {
       box.type = 'button';
-      box.addEventListener('click', () => (cell.kind === 'pending' ? payPending(person, cell)
-        : cell.kind === 'blocked' ? message(blockerMessage(person.name, cell.day, cell.blocker), true) : payShift(person, cell)));
+      box.addEventListener('click', () => (cell.kind === 'pending' ? payPending(person, cell, box)
+        : cell.kind === 'blocked' ? message(blockerMessage(person.name, cell.day, cell.blocker), true) : payShift(person, cell, box)));
     }
     line.append(box);
   });
@@ -429,12 +458,18 @@ async function loadPending(data) {
   pending = next;
 }
 
-async function load() {
+/* Перечитывание: ведомость на экране гаснет, пока идут новые данные;
+   в самый первый раз вместо неё стоит скелет. */
+function load() {
+  const body = $('payroll-body');
+  return B && !body.hidden ? B.section(body, loadMonth()) : loadMonth();
+}
+async function loadMonth() {
   const month = $('month-input').value;
   const sequence = ++requestNo;
   if (!month) { message('Выберите месяц.', true); return; }
   const fresh = month !== shownMonth;
-  if (fresh) { $('payroll-body').hidden = true; focus = null; checksOpen = false; }
+  if (fresh) { focus = null; checksOpen = false; }
   const name = monthName(month);
   $('month-title').replaceChildren('Зарплаты · ' + name, node('span', '', '.'));
   $('crumb-month').textContent = 'Зарплаты · ' + name;
@@ -453,6 +488,7 @@ async function load() {
     renderSheet(data);
     renderChecks(checks);
     $('payroll-body').hidden = false;
+    $('payroll-skeleton').hidden = true;
     if (fresh) {
       const days = data.days || [];
       scrollToDay(days.includes(today) ? today : days[days.length - 1], false);
@@ -461,7 +497,10 @@ async function load() {
     $('payroll-message').hidden = true;
     $('connection').textContent = 'Ведомость за ' + monthYear(month).toLowerCase();
   } catch (error) {
-    if (sequence === requestNo) { message(error.message, true); $('connection').textContent = 'Данные не загрузились'; }
+    if (sequence === requestNo) {
+      message(error.message, true); $('connection').textContent = 'Данные не загрузились';
+      if ($('payroll-body').hidden) $('payroll-skeleton').hidden = true;
+    }
   }
 }
 
@@ -478,10 +517,15 @@ $('checks-more').addEventListener('click', () => {
   renderChecks(L.checks(current, {today, pending}));
 });
 $('kpi-issues-card').addEventListener('click', () => $('checks-title').scrollIntoView({block: 'start', behavior: 'smooth'}));
-$('payroll-download').addEventListener('click', async () => {
-  const month = $('month-input').value, button = $('payroll-download');
-  if (!month) return;
-  button.disabled = true;
+$('payroll-download').addEventListener('click', () => {
+  const button = $('payroll-download');
+  if (!$('month-input').value) return;
+  // Кнопка в работе, пока файл не начал скачиваться.
+  const work = download();
+  if (B) B.button(button, work); else { button.disabled = true; work.finally(() => { button.disabled = false; }); }
+});
+async function download() {
+  const month = $('month-input').value;
   try {
     const response = await fetch('/api/accountant/payroll/month/export?month=' + encodeURIComponent(month), {cache: 'no-store'});
     if (!response.ok) throw new Error('Не удалось скачать ведомость.');
@@ -491,8 +535,9 @@ $('payroll-download').addEventListener('click', async () => {
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
     message('Ведомость скачана.');
-  } catch (error) { message(error.message, true); } finally { button.disabled = false; }
-});
+    return true;
+  } catch (error) { message(error.message, true); return false; }
+}
 (async () => {
   try {
     today = (await globalThis.RetroConfig).today;

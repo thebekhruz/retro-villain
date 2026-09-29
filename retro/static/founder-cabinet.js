@@ -49,6 +49,88 @@
 
   function setText(id, value) { $(id).textContent = value; }
 
+  // ── Отклик и ожидание (busy.js, T-393) ───────────────────────────────
+  const Busy = globalThis.RetroBusy;
+  /** Цифры, которые на первой загрузке стоят скелетом, а не «—». */
+  const VALUE_IDS = ['fo-div-collected', 'fo-div-target', 'fo-y-demo', 'fo-y-recv', 'fo-morning', 'fo-t-retro', 'fo-t-ox',
+    'fo-out-sal', 'fo-out-zak', 'fo-out-oth', 'fo-evening', 'fo-acc-line', 'k-retro', 'k-ox', 'k-demo', 'k-div', 'k-month',
+    'fo-checks-title', 'fo-chef-title', 'fo-exp-total', 'z-given', 'z-spent', 'z-direct', 'z-pocket', 'z-flag-title', 'fo-week-label',
+    'fo-div-range', 'fo-div-of', 'fo-div-status', 'fo-y-date', 'fo-t-checks'];
+
+  function skeletonLines(target, rows) {
+    const list = node('div', 'dir-skel-list');
+    list.setAttribute('aria-hidden', 'true');
+    for (let index = 0; index < rows; index += 1) {
+      const line = node('div', 'dir-skel-line');
+      const text = node('span');
+      text.append(node('span', 'rm-skel'), node('span', 'rm-skel'));
+      line.append(node('span', 'rm-skel is-dot'), text, node('span', 'rm-skel is-end'));
+      list.append(line);
+    }
+    target.replaceChildren(list);
+  }
+
+  /** Первая загрузка: полосы в строке каждой цифры, строки-скелеты в списках
+   *  и таблице недели — вместо «—» и «Собираем…». */
+  function paintSkeleton() {
+    VALUE_IDS.forEach(id => $(id).replaceChildren(node('span', 'rm-skel is-val')));
+    ['fo-t-retro-fc', 'fo-t-ox-fc'].forEach(id => setText(id, ''));
+    ['fo-checks', 'fo-chef', 'fo-exp-list', 'fo-dishes'].forEach(id => skeletonLines($(id), 3));
+    const week = $('fo-week-table');
+    week.replaceChildren(...Array.from({length: 6}, (_, index) => {
+      const row = node('div', 'rm-skel-row fo-skel-row');
+      row.setAttribute('aria-hidden', 'true');
+      for (let cell = 0; cell < 9; cell += 1) row.append(node('span', 'rm-skel' + (index === 0 ? ' is-md' : '')));
+      return row;
+    }));
+    const forecast = $('fo-forecast');
+    forecast.replaceChildren(...Array.from({length: 7}, (_, index) => {
+      const column = node('div', 'fo-skel-col');
+      const bar = node('span', 'rm-skel');
+      bar.style.height = (38 + (index * 23) % 50) + '%';
+      column.append(bar, node('span', 'rm-skel'));
+      return column;
+    }));
+  }
+
+  /** Блок так и не получил данных — прочерк вместо вечной полосы. */
+  function dashSkeletons() {
+    VALUE_IDS.forEach(id => { const target = $(id); if (target.querySelector('.rm-skel')) target.textContent = '—'; });
+    ['fo-checks', 'fo-chef', 'fo-exp-list', 'fo-dishes', 'fo-forecast', 'fo-week-table'].forEach(id => {
+      if ($(id).querySelector(':scope > .dir-skel-list, :scope > .rm-skel-row, :scope > .fo-skel-col')) $(id).replaceChildren();
+    });
+  }
+
+  /** Скачать файл по ссылке: кнопка крутится, пока файл не пришёл. */
+  function download(link, fallback) {
+    link.addEventListener('click', event => {
+      if (!Busy || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (link.getAttribute('aria-busy') === 'true') return;
+      const work = (async () => {
+        const response = await fetch(link.href);
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail || 'Не удалось выгрузить Excel.');
+        }
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const name = (disposition.match(/filename="?([^";]+)"?/) || [])[1] || fallback;
+        const url = URL.createObjectURL(await response.blob());
+        const file = document.createElement('a');
+        file.href = url;
+        file.download = name;
+        document.body.append(file);
+        file.click();
+        file.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      })();
+      // Кнопка компьютера крутится сама; строка телефона — золотой кромкой.
+      const shown = link.classList.contains('fo-phone-link') ? Busy.row(link, work) : Busy.button(link, work);
+      shown.then(() => globalThis.RetroToast?.show('Excel с отчётом бухгалтера скачан.'),
+        error => globalThis.RetroToast?.show(error.message, 'error'));
+    });
+  }
+
   function dismissed() {
     try { return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]'); } catch (error) { return []; }
   }
@@ -102,6 +184,7 @@
     plus.setAttribute('aria-label', 'Больше на 500 000');
     const input = node('input', 'rm-num');
     input.inputMode = 'numeric';
+    input.dataset.busyKey = 'fo-div-amount';
     input.setAttribute('aria-label', 'Сумма дивидендов в неделю, сум');
     input.value = editor.draft ? sum(editor.draft) : '';
     minus.addEventListener('click', () => { editor.draft = logic.stepTarget(editor.draft, -1); editor.message = ''; renderEditor(); });
@@ -122,9 +205,9 @@
           : 'Касса в среднем свободно даёт ≈ ' + short(free) + ' в неделю: после закупа, зарплат и расходов за 7 дней.');
     host.append(stepper, presets, feasible);
     if (editor.draft > 0 && editor.draft !== view.target) {
-      const save = node('button', 'fo-save', editor.saving ? 'Сохраняем…' : 'Сохранить ' + sum(editor.draft) + ' сум');
+      const save = node('button', 'fo-save', 'Сохранить ' + sum(editor.draft) + ' сум');
       save.type = 'button';
-      save.disabled = editor.saving;
+      save.dataset.busyKey = 'fo-div-save';
       save.addEventListener('click', saveTarget);
       host.append(save);
     }
@@ -134,17 +217,30 @@
     host.append(node('p', 'fo-msg' + (editor.error ? ' is-error' : ''), note));
   }
 
-  async function saveTarget() {
+  async function saveTarget(event) {
     const editor = state.editor, data = state.data.dividends;
+    if (editor.saving) return;
     editor.saving = true;
-    renderEditor();
-    try {
+    editor.message = '';
+    editor.error = false;
+    const work = (async () => {
       const response = await globalThis.RetroFinancialWrite('/api/founder/dividends/weekly', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({week: data.week, amount: String(editor.draft)}),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || 'Не удалось сохранить сумму.');
+      return body;
+    })();
+    // Кнопка крутится; поле суммы — «сохраняю», потом зелёная галочка
+    // (кнопка после записи исчезает: сумма уже сохранена).
+    if (Busy) {
+      Busy.clear('fo-div-', 'error');
+      Busy.button(event && event.currentTarget, work, {done: false});
+      Busy.field(editorHost().querySelector('input'), work, {row: false, message: false});
+    }
+    try {
+      const body = await work;
       state.data.dividends = body;
       editor.message = 'Сохранено. Бухгалтер видит новую сумму в «Финансах дня».';
       globalThis.RetroToast?.show(editor.message);
@@ -435,6 +531,9 @@
 
   function failBlock(id, error) {
     $(id).replaceChildren(node('p', 'fo-empty', error.message));
+    if (id === 'fo-week-table') ['k-retro', 'k-ox', 'k-demo', 'fo-week-label', 'fo-checks-title'].forEach(key => {
+      if ($(key).querySelector('.rm-skel')) setText(key, '—');
+    });
   }
 
   function mountChat() {
@@ -522,6 +621,7 @@
   }
 
   (async function start() {
+    paintSkeleton();
     state.today = new Date().toISOString().slice(0, 10);
     try {
       const config = await globalThis.RetroConfig;
@@ -541,9 +641,13 @@
     $('fo-phone-excel').href = $('fo-excel').href;
     setText('fo-phone-excel-label', 'Отчёт бухгалтера · ' + MONTHS[Number(month.slice(5, 7)) - 1] + ' · Excel');
     bind();
+    download($('fo-excel'), 'Retro-accountant-' + month + '.xlsx');
+    download($('fo-phone-excel'), 'Retro-accountant-' + month + '.xlsx');
     load('dividends', '/api/founder/dividends/weekly').then(renderDividends).catch(error => setText('fo-div-status', error.message));
     load('chef', '/api/founder/chef-account?date=' + state.today).then(renderChef).catch(error => renderChef({error: error.message}));
     load('forecast', '/api/founder/forecast?date=' + state.today).then(renderForecast).catch(error => renderForecast({error: error.message}));
     loadForLayout();
+    // Когда все блоки ответили (или упали) — ни одной вечной полосы.
+    setTimeout(() => Promise.allSettled(Object.values(state.pending)).then(dashSkeletons), 0);
   })();
 })();

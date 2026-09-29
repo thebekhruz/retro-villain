@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/shokh.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/shokh-logic.js" defer></script><script src="/static/shokh.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/shokh-logic.js" defer></script><script src="/static/shokh.js" defer></script>
 </head>
 <body class="shokh-body">
 <div class="rm-phone">
@@ -35,14 +35,16 @@
         <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
         <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
       </div>
-      <div class="shokh-balance">
+      <div class="shokh-balance" id="home-balance" aria-busy="true">
         <span>На руках</span>
-        <strong id="home-pocket" class="rm-num">—</strong>
-        <small id="home-pocket-note">сум</small>
-        <p id="home-pocket-sub" class="shokh-balance-sub"></p>
+        <!-- До ответа сервера — скелет в форме суммы (T-393): «—» читалось как
+             «денег нет». Разметку заменяет renderHome. -->
+        <strong id="home-pocket" class="rm-num"><span class="rm-skel shokh-skel-pocket"></span></strong>
+        <small id="home-pocket-note"></small>
+        <p id="home-pocket-sub" class="shokh-balance-sub"><span class="rm-skel shokh-skel-line" style="width:72%"></span></p>
       </div>
       <div class="shokh-progress">
-        <span id="home-reported">Отчитались за — денег на руках</span>
+        <span id="home-reported"><span class="rm-skel shokh-skel-line" style="width:52%"></span></span>
         <div class="rm-bar"><span id="home-reported-bar" style="width:0%"></span></div>
       </div>
     </header>
@@ -50,10 +52,14 @@
     <div class="shokh-body-scroll">
       <!-- В макете этой карточки нет: без справочников iiko закуп не начать,
            поэтому связь с iiko — одной строкой, а не отдельным блоком. -->
-      <article class="rm-phone-card shokh-iiko">
-        <div><strong class="shokh-card-title">Связь с iiko</strong>
-        <p id="iiko-status" class="shokh-note" role="status">Загружаем справочники…</p></div>
+      <!-- Справочники iiko идут по 5–10 секунд: пока ждём — золотая точка,
+           бегущая полоса по низу карточки и «в работе» на кнопке (T-393). -->
+      <article id="iiko-card" class="rm-phone-card shokh-iiko is-loading" aria-busy="true">
+        <div><strong class="shokh-card-title"><i class="shokh-dot" aria-hidden="true"></i>Связь с iiko</strong>
+        <p id="iiko-status" class="shokh-note" role="status">Загружаем справочники iiko…</p>
+</div>
         <button id="reload-data" class="shokh-secondary shokh-iiko-reload" type="button">Обновить данные</button>
+        <span class="shokh-iiko-bar" aria-hidden="true"></span>
       </article>
       <!-- Макет 3a: что бухгалтер сегодня оплатил поставщикам переводом —
            Шох не должен платить за это наличными. Показываем только когда есть. -->
@@ -67,16 +73,21 @@
         <p class="shokh-note" id="home-pending-note"></p>
       </article>
 
-      <article class="rm-phone-card">
-        <strong id="home-purchases-title" class="shokh-card-title">Сегодня покупок нет</strong>
-        <div id="home-purchases" class="shokh-purchases"></div>
+      <!-- Пока ответа нет — скелет в форме покупок, а не «Сегодня покупок нет». -->
+      <article class="rm-phone-card" id="home-purchases-card">
+        <strong id="home-purchases-title" class="shokh-card-title"><span class="rm-skel is-md" style="width:46%"></span></strong>
+        <div id="home-purchases" class="shokh-purchases" aria-busy="true">
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:58%"></span><span class="rm-skel" style="width:36%"></span></span><span class="rm-skel is-md" style="width:74px"></span></div>
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:44%"></span><span class="rm-skel" style="width:30%"></span></span><span class="rm-skel is-md" style="width:64px"></span></div>
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:52%"></span><span class="rm-skel" style="width:40%"></span></span><span class="rm-skel is-md" style="width:80px"></span></div>
+        </div>
       </article>
     </div>
 
     <div class="shokh-cta">
-      <button id="start-purchase" disabled class="shokh-primary" type="button">
+      <button id="start-purchase" disabled class="shokh-primary is-waiting" type="button">
         <span class="shokh-plus" aria-hidden="true">+</span>
-        <span><b>Новый закуп</b><small>Точка, товар, фото и цена</small></span>
+        <span><b>Новый закуп</b><small id="start-purchase-sub">Ждём справочники iiko…</small></span>
       </button>
     </div>
   </section>
@@ -126,8 +137,10 @@
           </div>
           <div id="photo-filled" class="shokh-photo-filled" hidden>
             <img id="photo-preview" alt="Фото покупки">
+            <span id="photo-ok" class="shokh-photo-ok">Фото прикреплено</span>
             <span class="shokh-retake">Переснять</span>
           </div>
+          <p id="photo-error" class="shokh-photo-error" role="alert" hidden></p>
         </label>
       </div>
 
@@ -164,7 +177,12 @@
       <div id="step-confirm" class="shokh-step" hidden>
         <h1>Всё верно?</h1>
         <article class="rm-phone-card shokh-summary">
-          <img id="confirm-photo" alt="Фото покупки" hidden>
+          <!-- Фото уходит вместе с покупкой: пока грузится — полоса и проценты
+               прямо на снимке (T-393). -->
+          <div id="confirm-photo-box" class="shokh-summary-photo" hidden>
+            <img id="confirm-photo" alt="">
+            <span id="confirm-photo-state" class="shokh-upload" hidden><span id="confirm-photo-text">Отправляем фото…</span><b id="confirm-photo-pct" data-i18n="off"></b><i><span id="confirm-photo-bar"></span></i></span>
+          </div>
           <div class="shokh-summary-row"><span>Точка</span><strong id="confirm-point" data-i18n="off">—</strong></div>
           <div class="shokh-summary-row"><span>Поставщик / склад</span><strong id="confirm-iiko" data-i18n="off">—</strong></div>
           <div class="shokh-summary-row"><span>Товар</span><strong id="confirm-item" data-i18n="off">—</strong></div>
@@ -179,6 +197,18 @@
     </div>
 
     <div class="shokh-flow-nav">
+      <!-- Над кнопками: подсказка «чего не хватает» при нажатии неготового
+           «Далее» и ход сохранения в iiko. Поверх контента — раскладка не прыгает. -->
+      <div id="flow-status" class="shokh-flow-status" role="status" aria-live="polite" hidden>
+        <p id="flow-hint" class="shokh-flow-hint" hidden></p>
+        <div id="save-status" class="shokh-save" hidden>
+          <div id="save-photo" class="shokh-save-step" hidden><i aria-hidden="true"></i><span>Фото покупки</span><b id="save-photo-pct" data-i18n="off"></b></div>
+          <div id="save-iiko" class="shokh-save-step"><i aria-hidden="true"></i><span>Приходная накладная iiko</span></div>
+          <p id="save-error" class="shokh-save-error" role="alert" hidden></p>
+          <p id="save-slow" class="shokh-save-slow" hidden>iiko отвечает дольше обычного. Не закрывайте экран — покупка не задвоится.</p>
+          <span class="shokh-save-bar" aria-hidden="true"><span id="save-bar"></span></span>
+        </div>
+      </div>
       <button id="flow-back" class="shokh-secondary" type="button">Назад</button>
       <button id="flow-next" class="shokh-primary is-flat" type="button">Далее</button>
     </div>
@@ -187,13 +217,15 @@
   <!-- ── Записано ────────────────────────────────────────────────────── -->
   <section id="screen-done" class="shokh-screen is-dark" hidden>
     <div class="shokh-done">
-      <span class="shokh-done-mark" aria-hidden="true">✓</span>
+      <span id="done-mark" class="shokh-done-mark" aria-hidden="true">✓</span>
       <strong id="done-title" class="shokh-done-title">Записано!</strong>
       <p id="done-iiko" role="status"></p>
       <span id="done-item" class="shokh-done-item">—</span>
       <div class="shokh-done-pocket"><span>На руках<small id="done-before"></small></span><strong id="done-pocket" class="rm-num">—</strong></div>
       <p id="done-trip" class="shokh-note"></p>
       <div class="shokh-done-actions">
+        <!-- iiko не подтвердил сразу — проверка тут же, без похода на главную. -->
+        <button id="done-check" class="shokh-ghost is-gold-line" type="button" hidden>Проверить iiko</button>
         <button id="done-more" class="shokh-primary is-gold" type="button">Ещё покупка</button>
         <button id="done-finish" class="shokh-ghost" type="button">Завершить закуп</button>
       </div>
