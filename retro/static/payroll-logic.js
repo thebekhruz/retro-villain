@@ -17,7 +17,6 @@
   }
   const ABSENT=new Set(['missing','manual_absent']);
   const byId=(list,key)=>list.slice().sort((a,b)=>n(a[key])-n(b[key]));
-  const PRESENT=new Set(['on_time','late','manual_present']);
 
   /* Состояние ячейки дня (старая классификация, на ней держится подвал).
      Пустая ячейка — смены не было: начисления за этот день у человека нет.
@@ -49,7 +48,9 @@
       if(pending&&!pending.accrued){
         if(ABSENT.has(pending.status))return {...base,kind:'missing',text:'н/я'};
         if(pending.blocker)return {...base,kind:'blocked',text:BLOCKER[pending.blocker]||BLOCKER.unknown,blocker:pending.blocker};
-        if(PRESENT.has(pending.status)&&n(pending.payable)>0)
+        // Право на начисление определяет сервер. «Нет привязки» — метка,
+        // положительная сумма без blocker доступна к выдаче и в месяце.
+        if(n(pending.payable)>0)
           return {...base,kind:'pending',text:'к выдаче',debt:n(pending.payable)};
       }
       // День начислен частично, а данных по человеку нет — он ждёт начисления.
@@ -96,12 +97,13 @@
     }));
     return byId(people,'employee_id').map(person=>{
       const id=person.employee_id, cells=person.cells||{};
-      let extra=0, manual=Object.values(cells).some(c=>String(c.status).startsWith('manual_'));
+      let extra=0, noHik=person.hikvision_registered===false||Object.values(cells)
+        .some(c=>c.status==='unlinked'||String(c.status).startsWith('manual_'));
       const row=days.map(day=>{
         const cell=cells[day]||null;
         const open=!cell&&!closed.has(day);
         const wait=open&&pending&&pending[day]?pending[day][id]||null:null;
-        if(wait&&String(wait.status).startsWith('manual_'))manual=true;
+        if(wait&&(wait.hikvision_registered===false||wait.status==='unlinked'||String(wait.status).startsWith('manual_')))noHik=true;
         const item=gridCell(cell,{rate:person.rate,day,today,pending:wait,waiting:open&&!wait&&partial.has(day)});
         if(item.kind==='pending')extra+=item.debt;
         return item;
@@ -109,7 +111,7 @@
       const rest=n(person.debt)+extra;
       const noRate=person.rate==null||person.rate==='';
       return {id,name:person.name,group:person.group||'',rate:noRate?null:n(person.rate),
-        paid:n(person.paid),accrued:n(person.accrued),rest,noHik:!!manual,cells:row};
+        paid:n(person.paid),accrued:n(person.accrued),rest,noHik,cells:row};
     });
   }
 

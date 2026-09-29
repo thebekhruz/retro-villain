@@ -249,6 +249,31 @@ test('частично начисленный день: у кого препят
   assert.ok(checks.some(c => c.text === 'Не начислено 27.09: Отабек Эргашев' && /вручную/.test(c.sub)));
 });
 
+test('без Hikvision в месяце: к выдаче и долг до выплаты, метка остаётся после выплаты', () => {
+  const day = '2026-09-28';
+  const person = {employee_id: 40, name: 'Без устройства', group: 'Зал', rate: '170000',
+    status: 'unlinked', first_entry: null, payable: '170000', accrued: false,
+    blocker: null, hikvision_registered: false};
+  const data = {days: [day], shift: [], confirmed_days: [], partial_days: []};
+  const pending = {[day]: {40: person}};
+  const [before] = logic.shiftRows(data, {today: TODAY, pending});
+  assert.equal(before.cells[0].kind, 'pending');
+  assert.equal(before.cells[0].text, 'к выдаче');
+  assert.equal(before.rest, 170000);
+  assert.equal(before.noHik, true);
+  data.shift = [{...person, accrued: '170000', paid: '170000', debt: '0', cells: {
+    [day]: {accrual_id: 3, status: 'unlinked', amount: '170000', rate: '170000',
+      paid: '170000', debt: '0', payments: [{id: 4, day: TODAY, amount: '170000'}]},
+  }}];
+  const [after] = logic.shiftRows(data, {today: TODAY});
+  assert.equal(after.cells[0].kind, 'paid');
+  assert.equal(after.rest, 0);
+  assert.equal(after.noHik, true);
+  assert.equal(logic.gridCell(null, {day, today: TODAY, pending: {
+    ...person, rate: null, payable: null, blocker: 'missing_rate',
+  }}).kind, 'blocked');
+});
+
 test('новый в реестре без начислений за месяц всё равно виден в открытом дне', () => {
   const rows = logic.shiftRows(month2b(), {today: TODAY, pending: {'2026-09-28': {
     40: {employee_id: 40, name: 'Новый Официант', group: 'Обслуживание зала', rate: '170000', status: 'on_time', payable: '170000', accrued: false, blocker: null}}}});

@@ -69,7 +69,7 @@ async function payShift(person, cell, box) {
 }
 
 /* Неподтверждённая вчерашняя смена: как в «Финансах дня», первая выдача
-   подтверждает смену целиком (от имени вошедшего), потом выдаёт начисление.
+   подтверждает смену выбранного сотрудника, потом выдаёт начисление.
    Сервер отказал (нет ставки, неполный Hikvision) — показываем его причину,
    ячейка остаётся «к выдаче». */
 async function payPending(person, cell, box) {
@@ -260,7 +260,7 @@ async function editMonthly(person, cell, input) {
 /* ── Сетка ──────────────────────────────────────────────────────────── */
 function hikChip() {
   const chip = node('span', 'pr-hik', '⊘ Hik');
-  chip.title = 'Нет в Hikvision — присутствие отмечается вручную';
+  chip.title = 'Не зарегистрирован в Hikvision';
   return chip;
 }
 function whoCell(name, role, noHik) {
@@ -529,8 +529,8 @@ async function loadPending(data) {
       const day = wanted[index];
       (answer.employees || []).forEach(row => {
         if (!roles[row.employee_id]) roles[row.employee_id] = row.role;
-        // «⊘ Hik» — по флагу реестра «отмечать вручную», а не только по отметкам месяца.
-        if (row.manual_attendance) noHik[row.employee_id] = true;
+        // «⊘ Hik» — отсутствие регистрации, включая ещё не начисленные строки.
+        if (row.hikvision_registered === false || row.status === 'unlinked' || row.manual_attendance) noHik[row.employee_id] = true;
       });
       if (days.has(day)) next[day] = Object.fromEntries((answer.employees || []).map(row => [row.employee_id, row]));
     });
