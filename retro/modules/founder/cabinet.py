@@ -14,6 +14,7 @@ from fastapi import HTTPException
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.expenses import cash_to_finance
 from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.till import shokh_gives, shokh_total, till_totals
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
@@ -61,10 +62,9 @@ async def cashier_day(request, day: date):
     if snapshot is None:
         return None, error
     state = request.app.state
-    expenses, receipts = await asyncio.gather(
-        asyncio.to_thread(state.expenses.list, day), asyncio.to_thread(state.expenses.list_receipts, day))
-    expense_total = sum((item.amount for item in expenses), Decimal(0))
-    receipt_total = sum((item.amount for item in receipts), Decimal(0))
+    # Выдачи Шоху из кассы вычитаются вместе с расходами кассира: без них
+    # «Проверка передачи» показывала бы недостачу там, где её нет.
+    totals = await asyncio.to_thread(till_totals, state, day)
     demo = next((payment.amount for payment in snapshot.payments if payment.name == 'Демо'), Decimal(0))
     breakdown = snapshot.revenue_breakdown
     return dict(
@@ -72,7 +72,7 @@ async def cashier_day(request, day: date):
         school=money(breakdown.school) if breakdown else None,
         banquet=money(breakdown.bekhruz_banquet) if breakdown else None,
         register_revenue=money(snapshot.revenue), retro_checks=snapshot.receipt_count, demo=money(demo),
-        expected_handover=money(cash_to_finance(snapshot, expense_total, receipt_total)),
+        expected_handover=money(cash_to_finance(snapshot, totals.cash_out, totals.receipts)),
         fetched_at=snapshot.fetched_at.isoformat()), None
 
 
@@ -171,14 +171,18 @@ async def founder_chef(request, day: date):
 def founder_spending(state, day: date):
     first, _ = month_bounds(day)
     flows = state.accountant_finance.cash_flows_between(first, day)
+    transfers = state.accountant_finance.supplier_transfers(first, day)
     purchases = state.shokh.purchases_between(first, day)
     # «На руках у Шоха» считает store.pocket_position — та же формула, что на
     # экране закупа; своей копии здесь быть не должно.
     position = pocket_position(state.shokh, state.accountant_finance, day)
     pocket = None if position['pocket'] is None else money(position['pocket'])
+    # Выдачи Шоху из кассы: в движениях бухгалтера их нет (передача уже меньше
+    # на эту сумму), поэтому в «Закуп · наличные Шоху» они идут отдельно — один раз.
+    from_till = shokh_total(shokh_gives(state.accountant_finance, first, day))
     return dict(month=first.isoformat()[:7], through=day.isoformat(),
-                expenses=overview.expense_categories(flows),
-                shokh=overview.shokh_month(purchases, flows, pocket=pocket))
+                expenses=overview.expense_categories(flows, transfers, shokh_from_till=from_till),
+                shokh=overview.shokh_month(purchases, flows, pocket=pocket, from_till=from_till))
 
 
 def selected_day(value: date | None) -> date:

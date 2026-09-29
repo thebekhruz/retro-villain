@@ -141,7 +141,7 @@ def test_catalog_maps_iiko_ids_filters_deleted_and_home_is_independent(live):
     upstream.catalog_down = True
     assert c.get('/api/shokh/catalog').status_code == 503
     home = c.get('/api/shokh/home')
-    assert home.status_code == 200 and home.json()['level']['level'] == 1
+    assert home.status_code == 200 and 'level' not in home.json()
 
 
 def test_purchase_posts_and_reads_back_exact_invoice_and_replay_does_not_duplicate(live):

@@ -1,121 +1,284 @@
 /* Экран кассира (5a). Общий слой (.rm-*) лежит в style.css; здесь только то,
-   что специфично для смены: приход, состав оплат, ручной учёт и передача. */
+   что специфично для смены: приход, выручка по типам оплаты, ручной учёт и
+   передача. Размеры и цвета — из макета «Финансы дня» 5a. */
 
-.cashier-workspace{padding-bottom:38px}
+.cashier-workspace{padding:30px 36px 28px;max-width:none}
+/* Шапка экрана кассира ниже общей, как в макете (64 px). */
+@media(min-width:901px){.topbar{height:64px;padding:0 36px}}
+
+/* ── Шапка: заголовок слева, дата и выгрузка справа ───────────────────── */
+.cashier-heading{align-items:flex-end;gap:20px;margin-bottom:24px}
+.cashier-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.cashier-source{font-size:11px;color:var(--muted-2)}
+.cashier-date{position:relative;min-width:136px}
+/* Подпись не ловит нажатие: под ней на всю плашку лежит поле даты. */
+.cashier-date label{font-size:10px;color:var(--muted-2);pointer-events:none}
+.cashier-date strong{font-size:14px;font-weight:600;text-transform:none;white-space:nowrap}
+/* Системное поле даты лежит поверх подписи: нажатие открывает календарь,
+   а на экране остаётся «чт, 24 сентября». */
+.cashier-date input#report-date[type=date]{position:absolute;inset:0;width:100%;max-width:none;height:100%;min-height:0;
+  opacity:0;border:0;padding:0;cursor:pointer}
+.cashier-date input#report-date::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;cursor:pointer}
+.cashier-date:focus-within{outline:3px solid #c5a359;outline-offset:2px;border-radius:8px}
+.cashier-actions .button{min-height:48px;border-radius:10px;margin:0}
+.cashier-icon-button{width:48px;padding:0}
+.cashier-icon-button>span{font-size:20px}
+.cashier-download{color:#53675c}
+.cashier-download .file-type{color:#9aab9d}
 
 /* ── Карточки прихода ─────────────────────────────────────────────────── */
-.cashier-cards{--cards:minmax(0,1.5fr) minmax(0,1fr) minmax(0,1fr);margin:0 0 20px}
-.cashier-cards .rm-card-value strong{font-size:clamp(24px,2.2vw,34px);overflow-wrap:anywhere}
-/* Полоса состава внутри зелёной карточки: белая подложка на прозрачном фоне. */
-.cashier-cards .composition{margin:14px 0 10px;background:#ffffff1f;height:10px}
-.cashier-card-split{display:flex;justify-content:space-between;gap:12px;
-  font-size:11px;color:#748376;border-top:1px solid var(--line-soft);padding-top:10px}
-.cashier-card-split b{font-weight:600;color:var(--ink)}
+/* Карточек три: у общего слоя на ≤1180 своя сетка auto-fit, и под широкой
+   главной карточкой оставалась пустая колонка. Сетку задаём сами на всех ширинах. */
+.cashier-cards{--cards:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr);--cards-md:var(--cards);margin:0 0 20px}
+.cashier-cards .rm-card{border-radius:18px;padding:22px}
+.cashier-cards .rm-card-value{margin:16px 0 12px}
+.cashier-cards .rm-card-value strong{font-size:28px;letter-spacing:-.8px}
+.cashier-cards .rm-card--hero .rm-card-value{margin:14px 0 16px}
+.cashier-cards .rm-card--hero .rm-card-value strong{font-size:36px;letter-spacing:-1.2px}
+.cashier-cards .rm-card-value small{font-size:11px}
+.cashier-square{width:8px;height:8px;border-radius:2px;background:#d8b977;margin-top:4px;flex:none}
+.cashier-square.is-soft{background:#d8b97777}
+.cashier-card-sub{font-size:11px;color:var(--muted-2)}
+.rm-card--warn .cashier-card-sub{color:#7a6a45}
+.rm-card--warn .rm-card-value strong{color:#7a5a22}
+.rm-card--warn .rm-card-value small{color:#a8946a}
+/* Полоса главной карточки: продажи (золото) и остальной приход (штриховка). */
+.cashier-split-bar{position:relative;display:flex;gap:3px;height:10px;border-radius:5px;overflow:hidden;background:#ffffff14}
+.cashier-split-bar>span{height:100%;width:0;transition:width .3s}
+.cashier-split-bar .is-sales{background:#d8b977}
+.cashier-split-bar .is-other{background:repeating-linear-gradient(-45deg,#d8b97755 0 4px,#d8b97722 4px 8px)}
+.cashier-legend{position:relative;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;margin-top:10px;font-size:11px;color:#c5d3c9}
+.cashier-legend>span{display:flex;align-items:center;gap:6px}
+.cashier-legend i{width:8px;height:8px;border-radius:2px;background:#d8b977}
+.cashier-legend i.is-other{background:#d8b97766}
 
 /* ── Раскладка: работа слева, итог справа ─────────────────────────────── */
-.cashier-layout{display:grid;grid-template-columns:minmax(0,1fr) 330px;gap:20px;align-items:start}
+.cashier-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
 .cashier-main{display:grid;gap:20px;min-width:0}
-.cashier-rail{gap:14px}
-/* Секции кассира не сворачиваются: на экране их всего три, и прятать нечего. */
-.rm-section-head.as-static{cursor:default;padding-bottom:10px}
+.cashier-rail{gap:14px;grid-template-columns:minmax(0,1fr)}
+.cashier-rail>.panel{min-width:0}
 
-/* ── Состав оплат ─────────────────────────────────────────────────────── */
-.payments{padding:0 18px}
-.payment-row{display:grid;grid-template-columns:12px minmax(0,1.1fr) minmax(60px,.9fr) auto;
-  column-gap:12px;align-items:center;padding:11px 0;border-bottom:1px solid var(--line-soft);font-size:13px}
-.payment-row:last-child{border-bottom:0}
-.payment-dot{width:8px;height:8px;border-radius:50%;background:var(--color)}
-.payment-name{line-height:1.45;overflow-wrap:anywhere}
-.payment-bar{display:block;height:6px;border-radius:3px;background:#f1f3ee;overflow:hidden}
-.payment-bar i{display:block;height:100%;border-radius:3px;background:var(--color)}
-.payment-value{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
-.payment-value small{display:block;font-weight:400;font-size:11px;color:var(--muted-2);margin-top:4px}
+/* ── Выручка по типам оплаты ──────────────────────────────────────────── */
+.cashier-section-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:20px 18px 14px}
+.cashier-section-head .eyebrow,.cashier-ops-head .eyebrow{margin:0 0 9px}
+.cashier-section-head h2{font-size:20px}
+.cashier-section-sub{font-size:12px;color:var(--muted-2);text-align:right}
+.cashier-pay-bar{height:10px;margin:0 18px 10px;gap:3px}
+.cashier-pay-bar:empty{display:none}
+.payments{padding:0}
+.cashier-revenue .payment-row{grid-template-columns:12px minmax(0,1fr) 70px 130px;column-gap:10px;
+  padding:10px 18px;border-bottom:0;border-top:1px solid #f0f3ec;font-size:13px}
+.payment-dot{width:8px;height:8px;border-radius:50%;background:var(--color);margin:0}
+.cashier-revenue .payment-name{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;line-height:1.35}
+.payment-source{font-size:10px;color:#9aa69b}
+.cashier-revenue .payment-row .payment-share{grid-column:3;grid-row:1}
+.cashier-revenue .payment-row .payment-value{grid-column:4;grid-row:1;justify-self:end}
+.payment-share{text-align:right;font-size:11px;color:var(--muted-3);font-variant-numeric:tabular-nums}
+.cashier-revenue .payment-value{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .payment-row.is-zero{color:#a4afa3}
-.payment-row.is-zero .payment-bar{background:#f6f7f2}
 /* Наличные — единственная строка, которая физически уезжает бухгалтеру. */
-.payment-row.is-cash{background:#fbfcf9}
+.payment-row.is-cash{background:var(--accent-soft)}
+.payment-row.is-cash .payment-label{font-weight:650}
 .payment-tag{display:inline-block;padding:3px 7px;border-radius:6px;background:var(--green);
-  color:#e8cf95;font-size:10px;font-weight:650;white-space:nowrap;vertical-align:middle}
-#payments:empty+.rm-section-note{border-top:1px solid var(--line-mid);padding-top:14px}
-#payment-empty{border-top:1px solid var(--line-mid)}
+  color:#e8cf95;font-size:10px;font-weight:650;white-space:nowrap}
+.cashier-revenue #payment-empty{border-top:1px solid #f0f3ec}
+.cashier-pay-total{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:13px 18px;
+  border-top:1px solid #dfe6db;background:#fbfcf9;font-size:12px;color:var(--ink-2)}
+.cashier-pay-total b{font-weight:500;font-variant-numeric:tabular-nums}
+.cashier-pay-total strong{font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 
 /* ── Ручной учёт: расходы и поступления рядом ─────────────────────────── */
 .cashier-ops{display:grid;grid-template-columns:1fr 1fr;gap:20px;min-width:0}
 .cashier-ops .rm-section{display:flex;flex-direction:column}
-.cashier-ops .expense-list{padding:0 18px}
-.cashier-ops .expense-empty{padding:14px 18px;margin:0;border-top:1px solid var(--line-mid);
-  color:var(--muted-2);font-size:12px}
-.expense-item{display:grid;grid-template-columns:minmax(0,1fr) auto auto;gap:10px;align-items:center;
-  padding:10px 0;border-bottom:1px solid var(--line-soft);font-size:12px}
-.expense-item:last-child{border-bottom:0}
-.expense-item-name{min-width:0;overflow-wrap:anywhere}
-.expense-item-value{font-weight:600;font-variant-numeric:tabular-nums}
-.expense-remove{width:30px;height:30px;border:0;border-radius:8px;background:#f7f1ee;
-  color:#a46a65;font-size:17px;line-height:1}
+.cashier-ops-head{padding:18px 18px 10px}
+.cashier-ops-head h2{font-size:18px;letter-spacing:-.3px}
+.cashier-ops .expense-list{padding:0}
+.cashier-ops .expense-empty{padding:10px 18px;margin:0;border-top:1px solid #f0f3ec;color:var(--muted-2);font-size:12px}
+.cashier-ops .expense-item{display:flex;align-items:center;gap:10px;padding:9px 18px;border-top:1px solid #f0f3ec;
+  border-bottom:0;font-size:12px}
+.cashier-ops .expense-item-name{flex:1;min-width:0;overflow-wrap:anywhere}
+.cashier-ops .expense-item-value{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+.expense-remove{width:44px;height:28px;border:0;border-radius:6px;background:#f7f1ee;
+  color:#a46a65;font-size:14px;line-height:1;flex:none}
 .expense-remove:hover{background:#f8e8e4}
-.expense-automatic{border-radius:6px;background:#eef3e9;color:#4d7959;padding:4px 7px;font-size:10px}
-.cashier-form{display:grid;grid-template-columns:minmax(0,1fr) 116px auto;gap:10px;align-items:end;
-  padding:12px 18px;border-top:1px solid var(--line-mid);background:#f9fbf7;margin:auto 0 0}
-.cashier-form .expense-field{display:grid;gap:5px;min-width:0}
-.cashier-form label{font-size:10px;color:#78897b}
-.cashier-form input{width:100%;min-width:0;height:40px;border:1px solid #dfe6dc;border-radius:8px;
-  padding:0 10px;background:#fff;color:var(--ink);font-size:12px}
+.expense-automatic{width:44px;text-align:center;border-radius:6px;background:#eef3e9;color:#4d7959;padding:3px 0;font-size:10px;flex:none}
+.cashier-form{display:grid;grid-template-columns:minmax(0,1fr) 110px 40px;gap:8px;align-items:center;
+  padding:10px 18px;border-top:1px solid #e7ece3;background:#f9fbf7;margin:auto 0 0}
+.cashier-form input{width:100%;min-width:0;height:40px;border:1px solid #dbe3d8;border-radius:7px;
+  padding:0 10px;background:#fff;color:#203d33;font-size:12px}
 .cashier-form input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
-.cashier-form .button{width:auto;min-height:40px}
-.expense-feedback{min-height:16px;margin:0;padding:0 18px;color:#4f795c;font-size:11px}
+.cashier-add{width:40px;height:40px;border:0;border-radius:8px;background:var(--green);color:#d8b977;
+  font-size:20px;line-height:1;padding:0}
+.expense-feedback{margin:0;padding:0 18px;color:#4f795c;font-size:11px}
+.expense-feedback:empty{display:none}
+.expense-feedback:not(:empty){padding:6px 18px}
 .expense-feedback.is-error{color:#aa4656}
 .cashier-total{display:flex;align-items:baseline;justify-content:space-between;gap:12px;
-  padding:12px 18px 14px;font-size:12px;color:var(--ink-2)}
-.cashier-total strong{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums}
-.cashier-total small{font-size:10px;font-weight:400}
+  padding:12px 18px;border-top:1px solid #e7ece3;font-size:12px;color:var(--ink-2)}
+.cashier-total strong{color:var(--ink);font-variant-numeric:tabular-nums}
 
 /* ── Передача и доллары ───────────────────────────────────────────────── */
-.cashier-rail .handover-panel{padding:22px}
-.cashier-rail .handover-number{margin:14px 0 18px}
-.cashier-rail .usd-card{padding:20px}
+.cashier-rail .handover-panel{padding:20px;border-radius:18px;order:0}
+.cashier-rail .handover-number{margin:10px 0 14px;gap:8px}
+.cashier-rail .handover-number span{font-size:32px;letter-spacing:-.8px}
+.cashier-rail .handover-rule{padding:9px 0;font-size:12px}
+.cashier-rail .handover-rule strong{font-size:12px}
+.cashier-rail .handover-note{margin-top:10px;padding-top:10px;border-top:1px solid #ffffff20;font-size:11px;color:#a9bfb1}
+.cashier-rail .usd-card{padding:20px;border-radius:18px}
 .usd-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .usd-head .eyebrow{margin:0}
-.usd-aside-note{font-size:10px;color:var(--muted-2)}
-.cashier-rail .usd-balance-entry{display:grid;grid-template-columns:1fr auto;gap:8px;
-  align-items:end;padding:14px 0 0}
-.cashier-rail .usd-balance-entry label{grid-column:1/-1;font-size:11px;color:#687c6e}
-.cashier-rail .usd-balance-entry input{width:100%;height:42px;border:1px solid #dbe3d8;
-  border-radius:8px;padding:0 10px;background:#fff;color:#203d33;font:inherit;font-size:16px;
-  font-weight:600;text-align:right;font-variant-numeric:tabular-nums}
-.cashier-rail .usd-balance-entry .button{width:auto;min-height:42px}
-.cashier-rail #usd-balance-status{grid-column:1/-1;font-size:11px;color:#557463;min-height:14px;padding:0}
+.usd-aside-note{font-size:10px;color:#9aa69b;white-space:nowrap}
+.cashier-rail .usd-balance-entry{display:flex;align-items:center;gap:8px;margin-top:12px}
+.usd-input{flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;border-bottom:2px solid #dbe3d8;padding-bottom:4px}
+.usd-input:focus-within{border-color:var(--green2)}
+.usd-input input{flex:1;min-width:0;height:38px;border:0;background:none;padding:0;font:inherit;font-size:26px;font-weight:600;
+  color:var(--ink);font-variant-numeric:tabular-nums;outline:none}
+.usd-input span{font-size:13px;color:var(--muted-2)}
+.usd-save{height:42px;border:0;border-radius:10px;background:var(--green);color:#fff;font-size:12px;font-weight:600;
+  padding:0 14px;white-space:nowrap}
+.usd-hint{margin:8px 0 0;font-size:11px;color:var(--ink-2)}
+.usd-hint.is-error{color:#aa4656}
 .usd-rates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
-.usd-rate{display:grid;gap:4px;padding:11px 12px;border:1px solid #e4e9e0;border-radius:11px;
-  background:#f8faf6;min-width:0}
-.usd-rate.restaurant{background:#eaf1e7;border-color:#dbe6d6}
-.usd-rate>span{font-size:10px;color:#687c6e}
-.usd-rate>strong{font-size:17px;line-height:1.2;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.usd-rate>small{font-size:9px;line-height:1.3;color:#748778}
-.usd-foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;
-  font-size:10px;color:#7a8b7d}
-.usd-foot a{color:#315e4c;text-decoration:underline;text-underline-offset:2px}
+.usd-rate{display:grid;gap:4px;padding:10px 12px;border-radius:10px;background:#f5f7f1;min-width:0}
+.usd-rate.restaurant{background:var(--accent-soft)}
+.usd-rate>span{font-size:10px;color:var(--muted-2)}
+.usd-rate.restaurant>span{color:#7a6a45}
+.usd-rate>strong{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.usd-foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid #edf1e9;
+  font-size:11px;color:var(--ink-2)}
+.usd-foot a{color:#315e4c;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
 .usd-status{margin:10px 0 0;color:#728674;font-size:11px}
 .usd-status:empty{display:none}
 .usd-status.is-error{color:#aa4656}
 
+/* ── Смена в шапке (5a) ───────────────────────────────────────────────── */
+.cashier-shift{display:flex;align-items:center;gap:8px;height:48px;padding:0 14px;border-radius:11px;
+  background:#fbf7ed;border:1px solid #eddfbe;font-size:12px;color:#7a6a45;white-space:nowrap}
+.cashier-shift[hidden]{display:none}
+.cashier-shift-dot{width:7px;height:7px;border-radius:50%;background:#d8b977;flex:none}
+.cashier-shift.is-closed{background:#f5f7f1;border-color:#e3e7df;color:#607368}
+.cashier-shift.is-closed .cashier-shift-dot{background:#a9b9a5}
+
+/* ── Выдать Шоху из кассы ─────────────────────────────────────────────── */
+.cashier-ops .expense-item.is-shokh{background:#fbf7ed}
+.cashier-shokh{display:grid;grid-template-columns:minmax(0,1fr) 110px auto;gap:8px;align-items:center;
+  padding:10px 18px;border-top:1px solid #eddfbe;background:#fbf7ed;margin:auto 0 0}
+.cashier-shokh+.cashier-form{margin-top:0}
+.cashier-shokh-label{font-size:12px;color:#7a6a45;line-height:1.4;min-width:0}
+.cashier-shokh-label strong{font-weight:650;color:#1c302b}
+.cashier-shokh-label .rm-num{white-space:nowrap}
+.cashier-shokh input{width:100%;min-width:0;height:36px;border:1px solid #e2d3ae;border-radius:7px;padding:0 10px;
+  background:#fff;color:#203d33;font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
+.cashier-shokh button{height:34px;border:0;border-radius:8px;background:var(--green);color:#fff;font-size:12px;
+  font-weight:600;padding:0 10px;cursor:pointer}
+.cashier-shokh button:disabled{opacity:.5;cursor:default}
+
+/* ── Передать бухгалтеру ──────────────────────────────────────────────── */
+.handover-action[hidden],.handover-done[hidden],.handover-diff[hidden]{display:none}
+.handover-button{width:100%;height:46px;margin-top:12px;border:0;border-radius:11px;background:#d8b977;
+  color:#143e35;font-size:14px;font-weight:700;cursor:pointer}
+.handover-button:disabled{opacity:.45;cursor:default}
+.handover-caption{font-size:11px;color:#a9bfb1;margin:8px 0 0}
+.handover-done{display:flex;align-items:center;gap:10px;margin-top:12px;padding:10px 12px;border-radius:11px;
+  background:#ffffff12;border:1px solid #ffffff22;min-width:0}
+.handover-check{display:grid;place-items:center;width:24px;height:24px;flex:none;border-radius:50%;
+  background:#d8b977;color:#143e35;font-size:12px;font-weight:700}
+.handover-done-text{flex:1;min-width:0;font-size:12px;color:#fff;overflow-wrap:anywhere}
+.handover-where{display:block;font-size:10px;color:#e8cf95;margin-top:2px}
+.handover-undo{flex:none;border:0;background:none;color:#a9bfb1;font-size:11px;cursor:pointer;padding:0 2px;min-height:32px}
+.handover-undo[hidden]{display:none}
+.handover-diff .handover-caption{color:#e8cf95}
+.handover-feedback{margin:8px 0 0;font-size:11px;color:#c5d3c9}
+.handover-feedback:empty{display:none}
+.handover-feedback.is-error{color:#f2b1b4}
+
+/* ── Доллары: взносы в сейф ───────────────────────────────────────────── */
+.usd-plus{color:#d8b977}
+.usd-deposit{display:flex;align-items:center;gap:8px;padding:8px 0;margin-top:6px;border-top:1px solid #edf1e9;font-size:12px}
+.usd-deposit-time{color:#7d8881;flex:none}
+.usd-deposit-note{flex:1;min-width:0;color:#607368}
+.usd-deposit strong{font-weight:600;white-space:nowrap}
+.usd-remove{width:24px;height:24px;flex:none;border:0;border-radius:6px;background:#f7f1ee;color:#a46a65;font-size:14px;line-height:1;padding:0}
+.usd-remove:hover{background:#f8e8e4}
+.cashier-rail .usd-foot{font-size:11px;color:#607368;align-items:baseline}
+.cashier-rail .usd-foot strong{color:#1c302b;font-weight:600;white-space:nowrap}
+
+/* Рядом два блока учёта помещаются только когда у поля «На что» остаётся
+   хотя бы полторы сотни точек; уже — ставим их друг под другом. */
+@media(max-width:1380px){
+  .cashier-ops{grid-template-columns:1fr}
+}
 @media(max-width:1180px){
-  .cashier-cards{--cards-md:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr)}
-  .cashier-layout{grid-template-columns:minmax(0,1fr) 290px;gap:16px}
+  .cashier-workspace{padding:26px 25px}
+  .cashier-layout{grid-template-columns:minmax(0,1fr) 300px;gap:16px}
   .cashier-ops{gap:16px}
+}
+@media(max-width:1024px){
+  .cashier-heading{flex-wrap:wrap;align-items:flex-start}
+  .cashier-actions{justify-content:flex-start}
 }
 @media(max-width:900px){
   .cashier-layout{grid-template-columns:1fr}
   /* Итог смены поднимаем над ручным учётом: с телефона открывают ради него. */
-  .cashier-rail{order:-1;grid-template-columns:1fr 1fr}
+  .cashier-rail{order:-1;grid-template-columns:1fr 1fr;position:static}
   .cashier-ops{grid-template-columns:1fr}
+  .cashier-cards{--cards:1fr 1fr;--cards-md:1fr 1fr}
+  .cashier-cards .rm-card--hero{grid-column:1/-1}
+  /* Планшет и телефон — это палец: удаление строки и ссылка на источник
+     курса не ниже 40 точек. */
+  .expense-remove{height:40px}
+  .usd-foot a{display:inline-flex;align-items:center;min-height:40px}
+  .usd-remove{width:40px;height:40px}
+  .usd-input input{height:40px}
+  .cashier-actions .date-nav-arrow{min-width:40px;min-height:40px}
+  .cashier-actions .date-nav-chip{min-height:40px}
+  .cashier-shokh input{height:40px}
+  .cashier-shokh button{height:40px;padding:0 14px}
+  .handover-undo{min-height:40px;padding:0 6px}
 }
 @media(max-width:650px){
-  .cashier-cards{--cards-sm:1fr}
+  .cashier-workspace{padding:22px 16px 25px}
+  .cashier-cards{--cards:1fr;--cards-md:1fr;--cards-sm:1fr}
   .cashier-rail{grid-template-columns:1fr}
-  .cashier-form{grid-template-columns:minmax(0,1fr) 104px;padding:12px 16px}
-  .cashier-form .button{grid-column:1/-1;width:100%}
-  .payments{padding:0 16px}
-  .payment-row{grid-template-columns:12px minmax(0,1fr) auto;row-gap:6px}
-  .payment-bar{grid-column:2/-1;order:3}
+  .cashier-actions{width:100%;display:grid;grid-template-columns:1fr 48px;gap:8px}
+  .cashier-actions .date-nav{grid-column:1/-1;width:100%;flex-wrap:wrap;height:auto;min-height:48px}
+  .cashier-actions .cashier-date{flex:1}
+  .cashier-actions .cashier-download{width:100%}
+  .cashier-section-head{flex-direction:column;gap:6px;padding:18px 16px 12px}
+  .cashier-section-sub{text-align:left}
+  .cashier-pay-bar{margin:0 16px 10px}
+  .cashier-revenue .payment-row{grid-template-columns:12px minmax(0,1fr) auto;padding:10px 16px;row-gap:2px}
+  .cashier-revenue .payment-row .payment-share{grid-column:2;grid-row:2;text-align:left}
+  .cashier-revenue .payment-row .payment-value{grid-column:3;grid-row:1/span 2}
+  .cashier-pay-total{flex-direction:column;gap:6px;padding:13px 16px}
+  .cashier-form{grid-template-columns:minmax(0,1fr) 96px 40px;padding:10px 16px}
+  /* Под палец: быстрые дни — не ниже 40 точек. */
+  .cashier-actions .date-nav-chip{min-height:40px}
+  .cashier-ops .expense-item,.cashier-ops-head,.cashier-total{padding-left:16px;padding-right:16px}
+  .cashier-actions .cashier-shift{grid-column:1/-1;flex:1 1 100%;width:100%;justify-content:center;height:44px}
+  /* «Выдать Шоху · на руках у него …» — подпись над полем, иначе поле в 110 точек
+     и кнопка съедали строку и подпись рвалась по слову. */
+  .cashier-shokh{grid-template-columns:minmax(0,1fr) auto;padding:10px 16px}
+  .cashier-shokh-label{grid-column:1/-1}
+}
+@media(max-width:380px){
+  /* «вт, 29 сентября» целиком: на 360 точках плашка даты делит строку с «Сегодня/Вчера». */
+  .cashier-actions .date-nav .date-nav-chip{padding:8px 6px}
+  .cashier-date strong{font-size:13px}
+  .cashier-form{grid-template-columns:minmax(0,1fr) 40px}
+  .cashier-form input[type=number]{grid-column:1;grid-row:2}
+  .cashier-form .cashier-add{grid-column:2;grid-row:1/span 2;height:88px}
   .usd-rates{grid-template-columns:1fr}
+}
+
+/* Планшет (651–900 px): меню модулей — полоса 80 px со значками. Подписи
+   соседних модулей и подменю в неё не помещались и обрезались на краю;
+   теперь, как у активного пункта, остаётся значок, а название читает
+   экранный диктор. Подменю дублирует ссылки на самом экране. */
+@media(min-width:651px) and (max-width:900px){
+  body:has(.cashier-workspace) .sidebar nav{width:100%}
+  body:has(.cashier-workspace) .sidebar nav>a{width:100%;min-width:0}
+  body:has(.cashier-workspace) .sidebar .nav-link,body:has(.cashier-workspace) .sidebar .nav-active{font-size:0;justify-content:center;padding:15px 13px;gap:0}
+  body:has(.cashier-workspace) .sidebar .nav-link .nav-icon,body:has(.cashier-workspace) .sidebar .nav-active .nav-icon{font-size:24px}
+  body:has(.cashier-workspace) .sidebar .nav-active .nav-dot,body:has(.cashier-workspace) .sidebar .rm-subnav{display:none}
 }

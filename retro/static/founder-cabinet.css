@@ -29,7 +29,7 @@
 .fo-kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:12px}
 .fo-kpi{position:relative;background:#fff;border:1px solid var(--border);border-radius:16px;padding:16px;min-width:0}
 .fo-kpi>span{display:block;font-size:11px;color:#748376}
-.fo-kpi>strong{display:block;font-size:22px;font-weight:600;letter-spacing:-.5px;margin-top:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fo-kpi>strong{display:block;font-size:22px;font-weight:600;letter-spacing:-.5px;margin-top:10px;overflow-wrap:anywhere}
 .fo-kpi>small{display:block;font-size:10px;color:#9aa69b;margin-top:3px}
 .fo-kpi.is-gold{background:var(--accent-soft);border-color:var(--accent-line)}
 .fo-kpi.is-gold>span{color:#7a6a45}.fo-kpi.is-gold>strong{color:#7a5a22}.fo-kpi.is-gold>small{color:#9a8b66}
@@ -84,7 +84,7 @@
 /* ── Счёт Шефа, расходы, закуп ────────────────────────────────────────── */
 .fo-chef-row{display:grid;grid-template-columns:86px minmax(0,1fr) 90px;gap:8px;align-items:baseline;padding:9px 6px;border-top:1px solid #edf1e9;margin-top:4px;font-size:12px}
 .fo-chef-row>span:first-child{color:var(--muted-2);font-variant-numeric:tabular-nums}
-.fo-chef-row>span:nth-child(2){overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fo-chef-row>span:nth-child(2){min-width:0;overflow-wrap:anywhere}
 .fo-chef-row small{color:var(--muted-3);font-size:12px}
 .fo-chef-row>b{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .fo-chef-row.is-over{background:#fff7f8}
@@ -100,7 +100,7 @@
 .fo-tiles>div.is-dark{background:var(--green);color:#fff}
 .fo-tiles span{display:block;font-size:10px;color:var(--muted-2)}
 .fo-tiles .is-dark span{color:#c5d3c9}
-.fo-tiles b{display:block;font-size:15px;font-weight:650;margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fo-tiles b{display:block;font-size:15px;font-weight:650;margin-top:3px;overflow-wrap:anywhere}
 .fo-flag-title{margin:12px 0 0;font-size:12px;font-weight:600;color:var(--warn)}
 .fo-flags>div{display:flex;justify-content:space-between;gap:8px;padding:7px 0;border-top:1px solid #edf1e9;margin-top:6px;font-size:12px}
 .fo-flags small{color:#b0663a;font-size:11px;white-space:nowrap}
@@ -120,7 +120,7 @@
 .fo-forecast small{font-size:9px;color:#9aa69b;white-space:nowrap}
 .fo-dish{display:grid;grid-template-columns:18px minmax(0,1fr) 60px 70px 40px;gap:8px;align-items:baseline;padding:8px 0;border-top:1px solid #edf1e9;margin-top:4px;font-size:12px}
 .fo-dish>span:first-child{color:#b6a37a;font-weight:700}
-.fo-dish>strong{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.fo-dish>strong{font-weight:600;min-width:0;overflow-wrap:anywhere}
 .fo-dish>span:nth-child(3),.fo-dish>b,.fo-dish>small{text-align:right;font-variant-numeric:tabular-nums}
 .fo-dish>span:nth-child(3){color:var(--muted-2)}
 .fo-dish>b{font-weight:600}
@@ -133,7 +133,10 @@
 .fo-chat-head{display:flex;align-items:center;gap:10px;padding:22px 18px 14px;border-bottom:1px solid var(--border)}
 .fo-chat-head strong{display:block;font-size:15px;font-weight:650}
 .fo-chat-head span:not(.dir-spark){display:block;font-size:11px;color:var(--muted-2)}
-.fo-chat-messages{flex:1;min-height:0}
+/* Как в макете: подсказки сразу под приветствием, поле ввода — внизу. */
+.fo-chat-messages{flex:0 1 auto;min-height:0}
+.fo-chat-inner>.rm-chat-form{margin-top:auto}
+.fo-chat .rm-chat-form input{font-size:12.5px}
 .fo-prompts{display:flex;flex-direction:column;gap:6px;padding:0 16px 8px}
 .fo-chat-status{padding:0 16px}
 #fo-chat-status.is-error{color:var(--late)}
@@ -225,4 +228,75 @@
   .founder-cabinet .breadcrumb{display:none}
   .founder-cabinet .topbar-actions{width:100%;justify-content:space-between}
   .founder-cabinet{background:var(--phone-bg)}
+}
+
+/* ── Телефон 7a: дорога к тому, что живёт на компьютере ──────────────── */
+.fo-phone-ask{margin-top:8px}
+.fo-phone-links{display:grid;gap:0;padding:6px 16px}
+.fo-phone-link{display:flex;align-items:center;gap:10px;min-height:48px;padding:6px 0;border:0;border-top:1px solid #eef1ea;
+  background:none;color:#285140;font:inherit;font-size:13px;font-weight:600;text-align:left;text-decoration:none}
+.fo-phone-link:first-child{border-top:0}
+.fo-phone-link .dir-spark{width:26px;height:26px;font-size:13px}
+.fo-phone-link-icon{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:50%;background:#edf2e9;color:#35624e;font-size:13px}
+.fo-back{display:none;text-decoration:none}
+.fo-chat-close{display:none}
+@media(max-width:900px){
+  .fo-back:not([hidden]){display:inline-flex;align-items:center}
+  /* Чат поверх экрана: берём колонку чата из раскладки компьютера. */
+  body.fo-chat-open{overflow:hidden}
+  body.fo-chat-open .fo-chat{position:fixed;inset:0;z-index:60;border:0;background:var(--phone-bg)}
+  body.fo-chat-open .fo-chat-inner{position:static;height:100%;height:100dvh}
+  .fo-chat-close{display:grid;place-items:center;width:40px;height:40px;margin-left:auto;flex:none;border:0;border-radius:50%;
+    background:#fff;color:#53675c;font-size:20px}
+  body.fo-chat-open .rm-chat-form{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  body.fo-chat-open .fo-prompts .rm-prompt{min-height:40px}
+}
+/* Под палец: пресеты суммы дивидендов на телефоне. */
+.fo-presets button{min-height:40px}
+
+/* ── Телефон и планшет: под 7a — вся картина компьютера ─────────────────
+   Требование: на телефоне не должно быть недоступной информации. Разделы
+   7b идут одной колонкой под экраном 7a и раскрываются по заголовку. На
+   компьютере (≥ 901) ничего из этого не действует: .fo-fold скрыты. */
+.fo-fold{display:none}
+.fo-acc-open{flex:none;min-height:40px;border:0;background:none;padding:0 2px;color:#315e4c;font-size:12px;font-weight:600;white-space:nowrap}
+@media(max-width:900px){
+  .fo-desk{display:block;max-width:480px;margin:0 auto;min-height:0}
+  .fo-chat{display:none}
+  body.fo-chat-open .fo-chat{display:block}
+  .fo-content{padding:4px 14px 34px;gap:10px}
+  .fo-heading{flex-direction:column;align-items:stretch;gap:12px;margin-top:6px}
+  .fo-heading h1{font-size:26px;letter-spacing:-.8px}
+  .fo-excel{align-items:stretch}
+  .fo-excel .button{justify-content:center}
+  .fo-kpis{grid-template-columns:1fr 1fr;gap:8px}
+  .fo-kpi{padding:12px;border-radius:16px}
+  .fo-kpi>strong{font-size:19px;margin-top:6px}
+  .fo-kpi-link{min-height:40px;min-width:40px}
+  .fo-div-editor.is-desk{display:none}
+  .fo-fold{display:flex;align-items:center;justify-content:space-between;gap:10px;min-height:52px;padding:0 16px;
+    border-radius:18px;background:#fff;border:1px solid var(--border);color:var(--ink);font-size:15px;font-weight:600;text-decoration:none}
+  .fo-fold i{font-style:normal;font-size:20px;color:#9aa69b;transition:transform .2s}
+  .fo-fold[aria-expanded=true]{border-color:var(--green)}
+  .fo-fold[aria-expanded=true] i{transform:rotate(90deg)}
+  #fo-week:not(.fo-open),#fo-acc:not(.fo-open),#fo-exp:not(.fo-open),#fo-menu:not(.fo-open){display:none}
+  .fo-grid,.fo-grid.is-even{grid-template-columns:minmax(0,1fr);gap:10px}
+  .fo-panel{padding:16px;border-radius:18px}
+  .fo-panel-head{flex-wrap:wrap}
+  .fo-ai-button{min-height:40px}
+  /* Неделя по дням: таблица прокручивается внутри карточки, первая колонка стоит. */
+  .fo-week .fo-panel-head{padding:16px 16px 10px}
+  .fo-week-scroll{overflow-x:auto;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+  .fo-week-table{min-width:720px}
+  .fo-row{grid-template-columns:132px repeat(7,minmax(64px,1fr)) 84px}
+  .fo-row>:first-child{position:sticky;left:0;z-index:1;background:#fff;white-space:normal;box-shadow:1px 0 0 var(--line-soft)}
+  .fo-row.is-head>:first-child,.fo-row.is-balance>:first-child{background:var(--head-bg)}
+  .fo-row.is-check>:first-child{background:var(--panel-2)}
+  .fo-chef-row{grid-template-columns:52px minmax(0,1fr) auto}
+  .fo-dish{grid-template-columns:16px minmax(0,1fr) auto auto 34px;gap:6px}
+  .fo-forecast{gap:4px}
+  .fo-forecast span{font-size:9px}
+  .fo-forecast small{white-space:normal;text-align:center;line-height:1.2}
+  .fo-panel.fo-week{padding:0}
+  .rm-footer{flex-wrap:wrap;gap:6px}
 }

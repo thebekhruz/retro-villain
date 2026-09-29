@@ -23,6 +23,7 @@ from retro.modules.cashier.expenses import ExpenseStore
 from retro.modules.cashier.archive import CashierArchive
 from retro.modules.cashier.days import CashierDays
 from retro.modules.cashier.routes import router as cashier_router
+from retro.modules.cashier.till import migrate_legacy_usd_safely
 from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.shokh.routes import router as shokh_router
 from retro.modules.shokh.store import ShokhStore
@@ -201,6 +202,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     accountant_path = accountant_db_path or shared or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(accountant_path)
+    # Старое поле «Доллары в кассе» (одна сумма на день) → по взносу на день.
+    migrate_legacy_usd_safely(app.state.usd_rates, app.state.accountant_finance)
     app.state.attendance_store = AttendanceStore(accountant_path)
     # Закуп живёт в той же базе, что подотчёт бухгалтера: они про одни деньги.
     app.state.shokh = ShokhStore(accountant_path)
@@ -380,9 +383,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         modules = [dict(id=panel, name=name, path=path, available=True)
                    for panel, name, path in MODULE_NAMES
                    if role in FULL_ACCESS_ROLES or role == panel]
+        # Имя вошедшего нужно бухгалтеру: первая выдача за смену подтверждает её
+        # от его имени, отдельной формы «Кто подтвердил» в макете нет.
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
-                    role=role, modules=modules, planned_modules=0)
+                    role=role, user=getattr(request.state, 'dashboard_user', None),
+                    modules=modules, planned_modules=0)
 
     app.include_router(cashier_router)
     app.include_router(accountant_router)

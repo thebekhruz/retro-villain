@@ -27,7 +27,8 @@ def test_usd_rate_is_for_selected_day_and_rounded_down_to_one_decimal(tmp_path):
         page = client.get('/').text
         # Кассир должен видеть оба курса и понимать, чем они отличаются.
         # Скидка теперь подписана в самой метке курса, а не отдельной строкой.
-        assert 'Официальный курс ЦБ' in page
+        # Подпись официального курса — «Курс ЦБ», как в макете 5a.
+        assert '<span>Курс ЦБ</span>' in page
         assert 'Курс Retro' in page
         assert '1,5%' in page
 
@@ -62,13 +63,20 @@ def test_historical_rate_stays_unchanged_after_restart_and_source_change(tmp_pat
         assert calls == ['/ru/arkhiv-kursov-valyut/json/USD/2026-09-17/']
 
 
-def test_usd_balance_can_be_saved_for_selected_day(tmp_path):
-    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3')
+def test_usd_for_the_day_is_the_sum_of_deposits_to_the_safe(tmp_path):
+    # Одной суммы на день больше нет: доллары кладут в сейф взносами (5a).
+    app = create_app(Settings(data_dir=tmp_path), expense_db_path=tmp_path / 'cashier.sqlite3',
+                     accountant_db_path=tmp_path / 'accountant.sqlite3')
     with TestClient(app, client=('127.0.0.1', 50000)) as client:
-        response = client.post('/api/cashier/usd-balance', json={
-            'date': '2026-09-17', 'amount': '1250.50'})
-        assert response.status_code == 201
-        assert client.get('/api/cashier/usd-balance', params={'date': '2026-09-17'}).json()['amount'] == '1250.50'
+        assert client.post('/api/cashier/usd-balance', json={
+            'date': '2026-09-17', 'amount': '1250.50'}).status_code == 410
+        for amount in ('1250.50', '120'):
+            response = client.post('/api/cashier/usd-deposits', json={
+                'date': '2026-09-17', 'amount': amount})
+            assert response.status_code == 201
+        assert client.get('/api/cashier/usd-balance', params={'date': '2026-09-17'}).json() == {
+            'date': '2026-09-17', 'amount': '1370.50'}
+        assert client.get('/api/cashier/usd-balance', params={'date': '2026-09-18'}).json()['amount'] is None
 
 
 def test_rate_source_failure_and_invalid_value_do_not_create_rate(tmp_path):

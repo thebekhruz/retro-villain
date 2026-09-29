@@ -160,8 +160,11 @@
      работает в пределах родителя, поэтому шапка раздела растворяется
      (display:contents) и полоса становится ребёнком всей панели. */
   .menu-head{display:contents}
+  /* Белая «подложка» полосы при прилипании — только на 6 точек вокруг:
+     прежняя тень уходила на 28 точек вверх и закрашивала заголовок
+     «Блюда за период» над вкладками. Отступ сверху больше подложки. */
   .menu-head .ops-tabs{position:sticky;top:0;z-index:3;overscroll-behavior-x:contain;
-    margin-bottom:14px;box-shadow:0 -18px 0 10px #fff,0 14px 0 2px #fff,0 0 0 10px #fff}
+    margin:12px 0 14px;box-shadow:0 0 0 6px #fff}
   /* В колонке flex-basis задаёт высоту, и поле поиска раздувалось
      на все 220 пикселей, оставляя под собой пустую полосу. */
   .menu-search{flex:0 0 auto}
@@ -308,3 +311,8 @@
 .workspace[aria-busy=true] > section:not(.controls):not(.setup),
 .workspace[aria-busy=true] > details{opacity:.45;pointer-events:none}
 .workspace > section,.workspace > details{transition:opacity .15s ease}
+
+/* Подменю директора в полосе меню на телефоне — под палец, не ниже 40 точек. */
+@media(max-width:650px){
+  .sidebar .rm-subnav a{min-height:40px;display:flex;align-items:center}
+}

@@ -20,11 +20,13 @@ from retro.runtime import secure_directory, secure_file
 # появившийся из повтора после потерянного ответа, начислится на следующей
 # смене как отдельный человек. Правок ставки (PATCH) и удаления (DELETE) это
 # не касается — они идемпотентны по смыслу, а сторож смотрит только POST.
-PATHS = {'/api/cashier/expenses', '/api/cashier/receipts', '/api/cashier/usd-balance'} | {
+PATHS = {'/api/cashier/expenses', '/api/cashier/receipts', '/api/cashier/usd-balance',
+         # 5a: передача бухгалтеру, выдача Шоху из кассы, доллары в сейф.
+         '/api/cashier/handover', '/api/cashier/shokh', '/api/cashier/usd-deposits'} | {
     '/api/accountant/' + suffix for suffix in (
         'handover', 'incomes', 'expenses', 'reserves', 'cash-opening', 'monthly-plan',
         'salary-payments', 'debts/pay', 'procurement', 'payroll/confirm',
-        'employees', 'monthly-employees')} | {
+        'employees', 'monthly-employees', 'monthly-payments', 'supplier-transfers')} | {
     '/api/founder/dividends/weekly', '/api/director/team'}
 
 

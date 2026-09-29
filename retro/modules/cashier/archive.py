@@ -6,7 +6,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from retro.db import as_database
-from .service import Snapshot, Payment, RevenueBreakdown, DataError, TZ, RETRO_REGISTER
+from .service import Snapshot, Payment, RevenueBreakdown, ShiftStatus, DataError, TZ, RETRO_REGISTER
 
 CALCULATION_VERSION = 'cashier-2026-09-28-v1'
 
@@ -22,6 +22,8 @@ def decode_snapshot(payload):
     def amount(key):
         return Decimal(value[key]) if value.get(key) is not None else None
     breakdown = value.get('revenue_breakdown')
+    # Смену в снимок стали класть позже: у старых записей её нет — это «неизвестно».
+    shift = value.get('shift')
     return Snapshot(
         id=value['snapshot_id'], day=date.fromisoformat(value['date']),
         revenue=amount('revenue'), receipt_count=value['receipt_count'],
@@ -31,7 +33,9 @@ def decode_snapshot(payload):
             ('retro', 'school', 'bekhruz_banquet'))) if breakdown else None,
         cash_prepayment=amount('cash_prepayment'), new_prepayment=amount('new_prepayment'),
         register_payment_sales=amount('register_payment_sales'),
-        register_received_total=amount('register_received_total'), source='database')
+        register_received_total=amount('register_received_total'), source='database',
+        shift=ShiftStatus(bool(shift['open']), shift.get('opened_at'), shift.get('closed_at'))
+        if isinstance(shift, dict) else None)
 
 
 class CashierArchive:

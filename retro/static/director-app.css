@@ -13,7 +13,7 @@
 .dir-head{display:flex;flex-wrap:wrap;align-items:center;gap:10px 12px}
 .dir-hello{flex:1;min-width:0}
 .dir-hello span{display:block;font-size:12px;color:var(--muted-2)}
-.dir-hello strong{display:block;font-size:19px;font-weight:650;margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-hello strong{display:block;font-size:19px;font-weight:650;margin-top:1px;overflow-wrap:anywhere}
 .dir-head-actions{display:flex;align-items:center;gap:6px}
 .dir-head-actions .lang-switch{margin:0}
 .dir-logout{min-height:36px;padding:6px 10px}
@@ -38,7 +38,7 @@
 .dir-pair{display:grid;grid-template-columns:1fr 1fr;gap:10px}
 .dir-kpi{border-radius:18px;padding:14px;min-width:0}
 .dir-kpi span{display:block;font-size:11px;color:var(--muted-2)}
-.dir-kpi strong{display:block;font-size:22px;font-weight:650;letter-spacing:-.5px;margin-top:6px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-kpi strong{display:block;font-size:22px;font-weight:650;letter-spacing:-.5px;margin-top:6px;overflow-wrap:anywhere}
 .dir-kpi strong.is-negative{color:var(--late)}
 .dir-kpi small{display:block;font-size:10px;color:#9aa69b;margin-top:3px}
 .dir-card-head{display:flex;justify-content:space-between;align-items:center;gap:10px}
@@ -118,7 +118,7 @@
 .dir-chat-screen{min-height:calc(100vh - 170px)}
 .dir-chat-head{display:flex;align-items:center;gap:10px}
 .dir-chat-head strong{display:block;font-size:18px;font-weight:650}
-.dir-chat-head span{display:block;font-size:11px;color:var(--muted-2)}
+.dir-chat-head div>span{display:block;font-size:11px;color:var(--muted-2)}
 .dir-chat{padding:0;overflow:visible;flex:1}
 .dir-chat .rm-msg{font-size:14px;border-radius:18px 18px 18px 6px}
 .dir-chat .rm-msg.is-user{border-radius:18px 18px 6px 18px}
@@ -130,7 +130,7 @@
 .rm-msg.has-table{max-width:100%;overflow-x:auto}
 .dir-prompts{display:flex;flex-direction:column;gap:6px}
 .dir-chat-form{position:sticky;bottom:84px;margin:0 -16px;padding:8px 16px;border-top:0;background:var(--phone-bg)}
-.dir-chat-form input{height:48px;border-radius:24px;font-size:14px}
+.dir-chat-form input{height:48px;border-radius:24px;font-size:13px;padding:0 14px}
 .dir-chat-form .rm-chat-send{width:48px;height:48px}
 #chat-status.is-error{color:var(--late)}
 
@@ -159,7 +159,11 @@
 .dir-waiters>div{padding:10px 0;border-top:1px solid #eef1ea;margin-top:8px}
 .dir-waiter-line{display:flex;align-items:baseline;gap:8px}
 .dir-waiter-line>span:first-child{width:14px;font-size:12px;font-weight:700;color:#b6a37a}
-.dir-waiter-line>strong:nth-child(2){flex:1;min-width:0;font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-waiter-name{flex:1;min-width:0;display:flex;align-items:center;flex-wrap:wrap;gap:3px 6px}
+.dir-waiter-name strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.dir-waiter-tag{flex:none;padding:2px 6px;border-radius:6px;font-size:9px;font-weight:700}
+.dir-waiter-tag.is-top{background:#fbf0d7;color:#906c2b}
+.dir-waiter-tag.is-low{background:#fde9ed;color:var(--late)}
 .dir-waiter-line>b{font-size:14px;font-weight:650;white-space:nowrap}
 .dir-waiters .rm-bar{margin:7px 0 0 22px}
 .dir-waiters small{display:block;font-size:10px;color:var(--muted-3);margin:4px 0 0 22px}
@@ -168,7 +172,8 @@
 .dir-person:first-child{border-top:0}
 .dir-person-main{flex:1;min-width:0}
 .dir-person-name{display:flex;align-items:center;gap:6px}
-.dir-person-name strong{font-size:14px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.dir-person-name{flex-wrap:wrap}
+.dir-person-name strong{font-size:14px;font-weight:600;overflow-wrap:anywhere}
 .dir-person-main>small{display:block;font-size:11px;color:var(--muted-3);margin-top:2px}
 .dir-person .rm-bar{margin-top:7px}
 .dir-paid{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin-top:4px;color:var(--ink-2)}
@@ -198,7 +203,6 @@
 @media(max-width:400px){
   /* Язык и выход уходят на свою строку, но не прячутся: узбекский нужен
      и на самом узком телефоне. */
-  .dir-head-actions{width:100%;justify-content:space-between}
   .dir-kpi strong{font-size:19px}
 }
 
@@ -209,3 +213,58 @@
 .director-app,
 .director-app input,
 .director-app button{font-variant-numeric:tabular-nums}
+
+/* ── Сверка с макетом 6a ──────────────────────────────────────────────── */
+/* Шапка одной строкой: приветствие слева, язык и выход справа. Если места
+   не хватает, кнопки переходят на свою строку, а не обрезают приветствие. */
+/* Язык и выход — тонкой строкой над приветствием, справа: так строка
+   приветствия остаётся как в макете и ничего не обрезается даже на 360 px. */
+.dir-head-actions{order:-1;width:100%;justify-content:flex-end;margin-left:0}
+.dir-head-actions .lang-button{min-width:40px;min-height:40px}
+.dir-logout{min-height:40px}
+/* Приветствие — только на «Сегодня»: у остальных вкладок свой заголовок. */
+body[data-dir-tab]:not([data-dir-tab=home]) .dir-head>.rm-phone-mark,
+body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
+/* AI: подсказки сразу под приветствием, поле ввода прижато к вкладкам. */
+.dir-chat{flex:0 0 auto}
+.dir-prompts{margin-top:4px}
+.dir-prompts .rm-prompt{border-radius:16px;padding:8px 12px}
+.dir-chat-form{margin-top:auto}
+.dir-chat .rm-msg.is-ai{border:0;max-width:88%}
+/* Нижние вкладки: подсветка — плашка под значком, а не вся кнопка. */
+.dir-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:0;align-items:center;
+  padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:#ffffffee}
+.dir-tabs .rm-tab,.dir-tabs .rm-tab.is-active,.dir-tabs .rm-tab--ai,.dir-tabs .rm-tab--ai:not(.is-active){
+  min-height:54px;border-radius:0;background:none;color:#8a978b;gap:4px;font-weight:500}
+.dir-tabs .rm-tab-icon{display:grid;place-items:center;width:52px;height:30px;border-radius:15px}
+.dir-tabs .rm-tab.is-active{color:var(--green);font-weight:650}
+.dir-tabs .rm-tab.is-active .rm-tab-icon{background:#edf2e9}
+.dir-tabs .rm-tab--ai .rm-tab-icon{background:#1f4f43;color:var(--gold)}
+.dir-tabs .rm-tab--ai.is-active .rm-tab-icon{background:var(--green)}
+
+/* Планшет (651–900 px): меню модулей — полоса 80 px со значками. Подписи
+   соседних модулей и подменю в неё не помещались и обрезались на краю;
+   теперь, как у активного пункта, остаётся значок, а название читает
+   экранный диктор. Подменю дублирует ссылки на самом экране. */
+@media(min-width:651px) and (max-width:900px){
+  .director-app .sidebar nav{width:100%}
+  .director-app .sidebar nav>a{width:100%;min-width:0}
+  .director-app .sidebar .nav-link,.director-app .sidebar .nav-active{font-size:0;justify-content:center;padding:15px 13px;gap:0}
+  .director-app .sidebar .nav-link .nav-icon,.director-app .sidebar .nav-active .nav-icon{font-size:24px}
+  .director-app .sidebar .nav-active .nav-dot,.director-app .sidebar .rm-subnav{display:none}
+}
+
+/* «‹ Панель» нужна только там, где скрыто меню модулей (телефон). */
+.dir-back{display:inline-flex;align-items:center;margin-right:auto;text-decoration:none}
+@media(min-width:651px){.dir-back{display:none!important}}
+/* Под палец (≥ 40 точек): подсказки AI, фильтры, закрытие редактора. */
+.dir-prompts .rm-prompt,.dir-chips button{min-height:40px}
+.dir-close{width:40px;height:40px}
+.dir-pill.manual_present{background:var(--ok-bg);color:var(--ok)}
+.dir-pill.manual_absent{background:#ebeeea;color:#737f74}
+/* Ссылка на полный отчёт в шапке — только там, где меню скрыто или без подписей. */
+.dir-head-actions{flex-wrap:wrap}
+.dir-report-link{display:inline-flex;align-items:center;text-decoration:none}
+.dir-head-actions .dir-back{margin-right:0}
+.dir-head-actions .dir-report-link{margin-right:auto}
+@media(min-width:901px){.dir-report-link{display:none}}

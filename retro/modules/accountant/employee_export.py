@@ -16,7 +16,8 @@ PINK = 'FCE6E9'
 PALE = 'EAF0E9'
 STATUS = {'on_time': 'Вовремя', 'late': 'Опоздал',
           'missing': 'Не пришёл', 'unlinked': 'Нет привязки',
-          'unavailable': 'Данных нет'}
+          'unavailable': 'Данных нет', 'manual_present': 'Был · вручную',
+          'manual_absent': 'Не был · вручную'}
 
 
 def export_employees(day: date, rows: list[PayrollRow], scope: str,

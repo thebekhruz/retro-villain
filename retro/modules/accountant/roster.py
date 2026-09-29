@@ -9,7 +9,7 @@ from __future__ import annotations
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -89,12 +89,18 @@ class Employee:
     # (охрана, уборка). Привязку к устройству такой сотрудник не получает, и
     # его день отмечает бухгалтер, как у любого непривязанного.
     manual_attendance: bool = False
+    # С какого дня действует ручная отметка (день включения флага). До него
+    # «был» по умолчанию не ставится: новый человек не получает оплату за дни,
+    # когда его ещё не было. None — флаг стоял раньше, чем появилась дата:
+    # такие сотрудники «был» по умолчанию во все дни, как и прежде.
+    manual_since: date | None = None
 
     def json(self):
         return dict(id=self.id, name=self.name, role=self.role, group=self.group_name,
                     rate=str(self.rate) if self.rate is not None else None,
                     hikvision_registered=self.hikvision_id is not None,
-                    manual_attendance=self.manual_attendance)
+                    manual_attendance=self.manual_attendance,
+                    manual_since=self.manual_since.isoformat() if self.manual_since else None)
 
 
 @dataclass(frozen=True)
@@ -166,6 +172,10 @@ class RosterStore:
             if 'manual_attendance' not in employee_columns:
                 connection.execute('ALTER TABLE accountant_employees '
                                    'ADD COLUMN manual_attendance INTEGER NOT NULL DEFAULT 0')
+            if 'manual_since' not in employee_columns:
+                # У уже отмеченных вручную дата остаётся пустой — «всегда»:
+                # вчерашняя смена у них по-прежнему выдаётся как «был».
+                connection.execute('ALTER TABLE accountant_employees ADD COLUMN manual_since TEXT')
             columns = table_columns(connection, 'accountant_monthly_employees')
             if 'external_key' not in columns:
                 connection.execute('ALTER TABLE accountant_monthly_employees ADD COLUMN external_key TEXT')
@@ -285,7 +295,7 @@ class RosterStore:
         with closing(self._open()) as connection:
             if day is None:
                 rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id, '
-                                          'manual_attendance '
+                                          'manual_attendance, manual_since '
                                           'FROM accountant_employees ORDER BY source_row').fetchall()
             else:
                 rows = connection.execute('''
@@ -296,7 +306,8 @@ class RosterStore:
                              WHERE h.employee_id=v.employee_id AND h.hikvision_id IS NOT NULL
                              ORDER BY h.effective_day DESC LIMIT 1)),
                         COALESCE((SELECT e.manual_attendance FROM accountant_employees e
-                                  WHERE e.id=v.employee_id), 0)
+                                  WHERE e.id=v.employee_id), 0),
+                        (SELECT e.manual_since FROM accountant_employees e WHERE e.id=v.employee_id)
                     FROM accountant_employee_versions v WHERE deleted=0 AND effective_day=(
                         SELECT MAX(effective_day) FROM accountant_employee_versions h
                         WHERE h.employee_id=v.employee_id AND h.effective_day<=?)
@@ -305,13 +316,24 @@ class RosterStore:
         # Ручная отметка сильнее привязки: турникет такого человека не видит,
         # и его вход не должен ни засчитываться, ни считаться прогулом.
         return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None,
-                         None if row[7] else row[6], bool(row[7])) for row in rows]
+                         None if row[7] else row[6], bool(row[7]),
+                         date.fromisoformat(row[8]) if row[7] and row[8] else None) for row in rows]
 
     def set_manual_attendance(self, employee_id: int, manual: bool) -> Employee:
+        """Включить или снять ручную отметку.
+
+        Включение запоминает день (по Ташкенту): «был» по умолчанию ставится
+        только с него. Повторное включение дату не сдвигает, снятие — стирает.
+        """
+        since = today_tashkent().isoformat()
         with closing(self._open()) as connection, connection:
+            # В SET справа — значения до правки: дата ставится только при
+            # переходе «выкл → вкл».
             changed = connection.execute(
-                'UPDATE accountant_employees SET manual_attendance = ? WHERE id = ?',
-                (1 if manual else 0, employee_id)).rowcount
+                'UPDATE accountant_employees SET manual_attendance = ?, manual_since = CASE '
+                'WHEN ? = 0 THEN NULL WHEN manual_attendance = 1 THEN manual_since ELSE ? END '
+                'WHERE id = ?',
+                (1 if manual else 0, 1 if manual else 0, since, employee_id)).rowcount
             if changed:
                 self._stamp_version(connection, employee_id)
         if not changed:

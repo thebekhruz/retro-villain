@@ -13,6 +13,7 @@ from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
+from retro.modules.cashier.till import expected_from_saved, shokh_gives, shokh_total, till_totals
 from retro.modules.founder.cabinet import dividend_summary
 
 from .attendance import Entrance, export_entrances
@@ -76,18 +77,19 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
             raise HTTPException(503, str(error)) from None
     if snapshot is None:
         return None
-    expenses = await asyncio.to_thread(state.expenses.list, day)
-    receipts = await asyncio.to_thread(state.expenses.list_receipts, day)
-    expense_total = sum((item.amount for item in expenses), Decimal(0))
-    receipt_total = sum((item.amount for item in receipts), Decimal(0))
-    return cash_to_finance(snapshot, expense_total, receipt_total)
+    # Расходы кассы вместе с выдачами Шоху из кассы: одна формула для всех экранов.
+    totals = await asyncio.to_thread(till_totals, state, day)
+    return cash_to_finance(snapshot, totals.cash_out, totals.receipts)
 
 
 async def required_handover(request: Request, day: date) -> Decimal:
     amount = await cashier_handover(request, day)
     if amount is None:
         raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
-    await asyncio.to_thread(request.app.state.accountant_finance.record_handover, day, amount)
+    # Уже записанный приход той же суммой не перезаписывается (время «получено»
+    # остаётся); новый — расчёт iiko, его кассир может заменить своей передачей.
+    await asyncio.to_thread(request.app.state.accountant_finance.record_handover, day, amount,
+                            source='auto')
     return amount
 
 
@@ -121,7 +123,8 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                     monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
                     groups=[dict(name=name) for name in dict.fromkeys(e.group_name for e in roster)],
                     payroll={f'{status}_count': sum(row.status == status for row in rows)
-                             for status in ('late', 'missing', 'unlinked', 'unavailable')})
+                             for status in ('late', 'missing', 'unlinked', 'unavailable',
+                                            'manual_present', 'manual_absent')})
     anchor = finance.cash_opening()
     carry_start = date.fromisoformat(anchor['day']) if anchor and request.app.state.settings.manual_handover_only else None
     summary = finance.daily_summary(
@@ -149,6 +152,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                  for item in group_items]
     reserves = finance.reserves(day)
     reserves['monthly']['total'] = str(request.app.state.accountant_roster.monthly_total())
+    transfers = finance.supplier_transfers(day)
     return dict(demo=False, date=day.isoformat(), source='Hikvision ISAPI',
                 attendance=attendance.health,
                 employees=[row.json() for row in rows], roster_count=len(roster), manual_handover=request.app.state.settings.manual_handover_only,
@@ -160,15 +164,56 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                              late_count=sum(row.status == 'late' for row in rows),
                              missing_count=sum(row.status == 'missing' for row in rows),
                              unlinked_count=sum(row.status == 'unlinked' for row in rows),
-                             unavailable_count=sum(row.status == 'unavailable' for row in rows)),
+                             unavailable_count=sum(row.status == 'unavailable' for row in rows),
+                             manual_present_count=sum(row.status == 'manual_present' for row in rows),
+                             manual_absent_count=sum(row.status == 'manual_absent' for row in rows)),
+                monthly_payments=monthly_payments_json(finance, request.app.state.accountant_roster, day),
+                # Перечисления поставщикам — безнал: в ledger (наличные) их нет.
+                supplier_transfers=transfers,
+                supplier_transfers_total=str(sum((Decimal(row['amount']) for row in transfers), Decimal(0))),
+                procurement_points=request.app.state.shokh.points(),
                 ledger=money_json(summary),
                 reserves=reserves,
                 expected_cashier=str(cashier_amount) if cashier_amount is not None else None,
                 cashier_error=cashier_error,
+                # «От кассира · ожидается / получено HH:MM»: запись передачи и расчёт
+                # по последнему снимку iiko на сервере (подсказка, в остаток не входит).
+                cashier_handover=cashier_handover_json(request, day),
+                # Выдачи Шоху из кассы: уже вычтены из передачи кассира. Подотчёт Шоха
+                # их считает (reserves.shoh), а деньги бухгалтера — нет.
+                cashier_shokh_gives=cashier_gives_json(finance, day),
                 # Цель учредителя на неделю и сколько уже отложено в сейф.
                 dividends_week=dividend_summary(request.app.state, day),
                 scenarios=dict(shortfall=str(shortfall) if shortfall is not None else None, groups=scenarios,
                                note='Только оценка будущей смены; уже начисленный долг не уменьшается.'))
+
+
+def cashier_handover_json(request, day: date) -> dict:
+    state = request.app.state
+    recorded = state.accountant_finance.handover_state(day) or {}
+    expected, fetched_at = expected_from_saved(state, day)
+    return dict(amount=recorded.get('amount'), handed_at=recorded.get('handed_at'),
+                source=recorded.get('source'),
+                expected=str(expected) if expected is not None else None,
+                expected_at=fetched_at.isoformat() if fetched_at is not None else None)
+
+
+def cashier_gives_json(finance, day: date) -> dict:
+    gives = shokh_gives(finance, day)
+    return dict(gives=gives, total=str(shokh_total(gives)))
+
+
+def monthly_payments_json(finance, roster, day: date) -> dict:
+    """Выплаты окладов: сколько каждому выдано с начала месяца и что — сегодня."""
+    names = {person.id: person.name for person in roster.list_monthly()}
+    rows = finance.monthly_payments(day.replace(day=1), day)
+    paid = {}
+    for row in rows:
+        paid[row['employee_id']] = paid.get(row['employee_id'], Decimal(0)) + Decimal(row['amount'])
+    return dict(month=day.strftime('%Y-%m'),
+                paid_by_employee={str(key): str(value) for key, value in paid.items()},
+                today=[dict(row, name=names.get(row['employee_id'], 'Сотрудник удалён'))
+                       for row in rows if row['day'] == day.isoformat()])
 
 
 class ExceptionInput(BaseModel):
@@ -217,9 +262,19 @@ def payroll_month(request: Request, month: str):
     last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     data = request.app.state.accountant_finance.payroll_month(first, last)
     roster = request.app.state.accountant_roster
-    # Оклады остаются ручным реестром: разбивки выплат по дням в данных нет,
-    # поэтому отдаём их как есть, вместе с собственным предупреждением модели.
+    # Выплаты окладов раскладываются по людям и дням из журнала расходов:
+    # monthly_cells — сумма за день, monthly_cell_ops — сами записи, чтобы
+    # ячейку можно было исправить (PUT) или очистить (DELETE) по id движения.
+    # monthly_paid из payroll_month — весь оклад месяца, включая записи без
+    # сотрудника.
+    monthly_cells, monthly_cell_ops = {}, {}
+    for row in request.app.state.accountant_finance.monthly_payments(first, last):
+        cells = monthly_cells.setdefault(str(row['employee_id']), {})
+        cells[row['day']] = str(Decimal(cells.get(row['day'], '0')) + Decimal(row['amount']))
+        monthly_cell_ops.setdefault(str(row['employee_id']), {}).setdefault(row['day'], []).append(
+            dict(id=row['id'], amount=row['amount']))
     return dict(demo=False, month=month, first=first.isoformat(), last=last.isoformat(),
+                monthly_cells=monthly_cells, monthly_cell_ops=monthly_cell_ops,
                 days=[(first + timedelta(days=offset)).isoformat()
                       for offset in range((last - first).days + 1)],
                 monthly=[row.json() for row in roster.list_monthly()],
@@ -339,11 +394,12 @@ def confirm_payroll(request: Request, body: ConfirmInput):
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
     roster = request.app.state.accountant_roster.list(day)
-    _, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
+    snapshot, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
     if any(row.status == 'unavailable' for row in rows):
         raise HTTPException(409, 'Данные Hikvision за этот день неполные. Начисление не подтверждено.')
     try:
-        confirmed = finance.confirm_payroll(day, rows, body.approver)
+        # Отметки, по которым посчитаны строки, сверяются внутри транзакции.
+        confirmed = finance.confirm_payroll(day, rows, body.approver, marks=snapshot.marks)
     except LedgerError as error:
         finance_error(error)
     return dict(demo=True, date=day.isoformat(), already_confirmed=not confirmed,
@@ -454,6 +510,115 @@ class SalaryPaymentInput(BaseModel):
     accrual_id: int
     date: date
     amount: str
+
+
+class ManualAttendanceInput(BaseModel):
+    date: date
+    employee_id: int
+    present: bool
+
+
+@router.post('/manual-attendance')
+def mark_manual_attendance(request: Request, body: ManualAttendanceInput):
+    """«Был / не был» для сотрудника без Hikvision — по одному дню."""
+    day = selected_day(body.date)
+    employee = next((item for item in request.app.state.accountant_roster.list(day)
+                     if item.id == body.employee_id), None)
+    if employee is None:
+        raise HTTPException(404, 'Сотрудник не найден.')
+    if not employee.manual_attendance:
+        raise HTTPException(422, 'Сотрудник отмечается через Hikvision.')
+    approver = getattr(request.state, 'dashboard_user', None) or 'бухгалтер'
+    try:
+        # Проверка «смена не подтверждена», запись и аудит — одна транзакция.
+        request.app.state.accountant_finance.mark_manual_attendance(
+            body.employee_id, day, body.present, approver)
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=False, employee_id=body.employee_id, day=day.isoformat(), present=body.present)
+
+
+class MonthlyPaymentInput(BaseModel):
+    date: date
+    employee_id: int
+    amount: str
+
+
+@router.post('/monthly-payments', status_code=201)
+async def add_monthly_payment(request: Request, body: MonthlyPaymentInput):
+    day = selected_day(body.date)
+    employee = next((item for item in request.app.state.accountant_roster.list_monthly()
+                     if item.id == body.employee_id), None)
+    if employee is None:
+        raise HTTPException(404, 'Сотрудник на окладе не найден.')
+    cashier_amount = await required_handover(request, day)
+    try:
+        entry_id = await asyncio.to_thread(request.app.state.accountant_finance.pay_monthly,
+            employee.id, employee.name, day, body.amount, cashier_amount=cashier_amount)
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=False, id=entry_id)
+
+
+class SupplierTransferInput(BaseModel):
+    date: date
+    supplier: str
+    item: str = ''
+    point: str
+    amount: str
+
+
+@router.post('/supplier-transfers', status_code=201)
+def add_supplier_transfer(request: Request, body: SupplierTransferInput):
+    """Перечисление поставщику со счёта: касса и подотчёт Шоха не меняются."""
+    day = selected_day(body.date)
+    point = body.point.strip() if isinstance(body.point, str) else ''
+    if point not in request.app.state.shokh.points():
+        raise HTTPException(422, 'Выберите точку закупа из списка.')
+    finance = request.app.state.accountant_finance
+    try:
+        transfer_id = finance.add_supplier_transfer(day, body.supplier, body.item, point, body.amount)
+    except LedgerError as error:
+        finance_error(error)
+    transfer = next(row for row in finance.supplier_transfers(day) if row['id'] == transfer_id)
+    return dict(demo=False, id=transfer_id, transfer=transfer)
+
+
+@router.delete('/supplier-transfers/{transfer_id}', status_code=204)
+def delete_supplier_transfer(request: Request, transfer_id: int, date: date):
+    day = selected_day(date)
+    try:
+        request.app.state.accountant_finance.delete_supplier_transfer(transfer_id, day)
+    except LedgerError as error:
+        if 'не найдено' in str(error):
+            raise HTTPException(404, str(error)) from None
+        finance_error(error)
+
+
+@router.get('/day/export')
+async def download_day(request: Request, date: date | None = None):
+    """«Финансы дня» в Excel так, как их видит экран.
+
+    Выбранная дата — день выплат P: лист «Смена» — вчерашняя смена S = P − 1,
+    которую выдают сегодня, «Операции» и «Итог» — деньги самого дня P.
+    """
+    from .sheets_export import day_workbook
+    day = selected_day(date)
+    data = await day_view(request, day)
+    staff = await asyncio.to_thread(_day_data, request, day - timedelta(days=1), None, None,
+                                    staff_only=True)
+    body = await asyncio.to_thread(day_workbook, data, staff)
+    return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename="Retro-finance-{day.isoformat()}.xlsx"'})
+
+
+@router.get('/payroll/month/export')
+def download_payroll_month(request: Request, month: str):
+    from .sheets_export import payroll_workbook
+    data = payroll_month(request, month)
+    body = payroll_workbook(data)
+    return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename="Retro-payroll-{month}.xlsx"'})
 
 
 @router.post('/salary-payments', status_code=201)

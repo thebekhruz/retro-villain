@@ -285,14 +285,15 @@ def test_founder_tools_expose_iiko_and_local_cashier_data(tmp_path):
                 'date': day.isoformat(), 'official_rate': '12500',
                 'restaurant_rate': '12300'})
 
-        def balance(self, day):
-            return {'date': day.isoformat(), 'amount': '100'}
-
     app = create_app(Settings(data_dir=tmp_path))
     app.state.iiko = IikoStub()
     app.state.usd_rates = RateStub()
     app.state.expenses.add(date(2026, 9, 16), 'Такси', '20000')
     app.state.expenses.add_receipt(date(2026, 9, 16), 'Возврат', '50000')
+    # Доллары кассира и выдача Шоху из кассы живут в базе бухгалтера (cashier/till.py).
+    from retro.modules.cashier.till import add_usd_deposit, give_shokh
+    add_usd_deposit(app.state.accountant_finance, date(2026, 9, 16), '100')
+    give_shokh(app.state.accountant_finance, date(2026, 9, 16), '300000')
 
     result = asyncio.run(FounderChatTools(app).execute(
         'get_cashier_day', {'date': '2026-09-16'}))
@@ -300,6 +301,7 @@ def test_founder_tools_expose_iiko_and_local_cashier_data(tmp_path):
     assert result['revenue'] == '18450000'
     assert result['expenses'][0]['description'] == 'Такси'
     assert result['expense_total'] == '20000'
+    assert result['shokh_from_till_total'] == '300000'
     assert result['receipt_total'] == '50000'
     assert result['usd_rate']['restaurant_rate'] == '12300'
     assert result['usd_balance']['amount'] == '100'

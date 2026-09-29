@@ -5,9 +5,9 @@ from retro.report_cache import load_iiko
 import asyncio
 from datetime import date
 
-from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
-from retro.modules.founder.tools import FounderChatTools
+from retro.modules.founder.tools import ATTENDANCE_STATUSES, FounderChatTools
 
 
 DELEGATED_NAMES = {'get_iiko_sales_details', 'get_saved_director_reports'}
@@ -70,19 +70,19 @@ class DirectorChatTools:
         if day > today or (today - day).days > 366:
             raise DataError('Посещаемость доступна за сегодняшний и последние 366 дней.')
         status = arguments['status']
-        allowed = {'all', 'arrived', 'on_time', 'late', 'missing', 'unlinked', 'unavailable'}
-        if status not in allowed:
+        if not isinstance(status, str) or status not in ATTENDANCE_STATUSES:
             raise DataError('Неизвестный статус посещаемости.')
         roster = self.app.state.accountant_roster.list()
         snapshot = self.app.state.attendance.snapshot(day, roster)
         rows = draft_payroll(day, roster, set(), snapshot.rows)
+        groups = {'arrived': PRESENT_STATUSES, 'absent': ABSENT_STATUSES}
         selected = rows if status == 'all' else [
-            row for row in rows
-            if row.status == status or (status == 'arrived' and row.status in {'on_time', 'late'})
-        ]
+            row for row in rows if row.status in groups.get(status, {status})]
         counts = {value: sum(row.status == value for row in rows)
-                  for value in ('on_time', 'late', 'missing', 'unlinked', 'unavailable')}
-        counts['arrived'] = counts['on_time'] + counts['late']
+                  for value in ('on_time', 'late', 'missing', 'unlinked', 'unavailable',
+                                'manual_present', 'manual_absent')}
+        counts['arrived'] = sum(row.status in PRESENT_STATUSES for row in rows)
+        counts['absent'] = sum(row.status in ABSENT_STATUSES for row in rows)
         counts['roster'] = len(rows)
         return {
             'date': day.isoformat(), 'timezone': str(TZ), 'source': 'Hikvision ISAPI',

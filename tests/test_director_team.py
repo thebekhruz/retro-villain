@@ -103,11 +103,18 @@ def test_director_marks_without_hikvision_and_accountant_sees_manual_status(tmp_
             'type': 'shift', 'name': 'Гульшан', 'role': 'техперсонал', 'amount': '130000',
             'manual_attendance': True}).json()['employee']
         assert employee['manual_attendance'] is True
-        team = c.get('/api/director/team', params={'date': DAY.isoformat()}).json()
+        # «Был» по умолчанию — с того дня, как директор отметил «без Hikvision».
+        today = today_tashkent().isoformat()
+        assert employee['manual_since'] == today
+        team = c.get('/api/director/team', params={'date': today}).json()
         assert team['counts']['no_hikvision'] == 1
-        assert team['shift'][0]['status'] == 'unlinked'
-        staff = c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
-        assert staff['employees'][0]['status'] == 'unlinked'
+        assert team['shift'][0]['status'] == 'manual_present'
+        staff = c.get('/api/accountant/staff', params={'date': today}).json()
+        assert staff['employees'][0]['status'] == 'manual_present'
+        # Раньше этого дня «был» не подразумевается: оплата за прошлое сама не начисляется.
+        before = c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+        assert (before['employees'][0]['status'], before['employees'][0]['payable']) == (
+            'manual_absent', '0')
         c.patch(f"/api/director/team/shift/{employee['id']}", json={
             'name': 'Гульшан', 'role': 'техперсонал', 'amount': '130000', 'manual_attendance': False})
         assert c.get('/api/director/team').json()['shift'][0]['manual_attendance'] is False

@@ -74,3 +74,13 @@ test('команда: смены с посещаемостью и оклады �
   assert.deepEqual(rows.filter(row => logic.teamMatches(row, 'nohik')).map(row => row.name), ['Гульшан']);
   assert.deepEqual(rows.filter(row => logic.teamMatches(row, 'monthly')).map(row => row.id), [7]);
 });
+
+/* «Не пришли» у директора считается как на сервере (counts.missing):
+   и по турникету, и отмеченные бухгалтером вручную «не был». */
+test('фильтр «Не пришли» включает отметку «не был · вручную»', () => {
+  const absent = {type: 'shift', status: 'manual_absent', noHik: true};
+  assert.equal(logic.teamMatches(absent, 'missing'), true);
+  assert.equal(logic.teamMatches(absent, 'late'), false);
+  assert.equal(logic.teamMatches({type: 'shift', status: 'missing'}, 'missing'), true);
+  assert.equal(logic.teamMatches({type: 'shift', status: 'manual_present'}, 'missing'), false);
+});

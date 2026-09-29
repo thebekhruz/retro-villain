@@ -28,6 +28,11 @@ NUMERIC_COLUMNS = {
         'accountant_cash_opening': ('amount',),
         'accountant_debts': ('total_amount',),
         'accountant_debt_payments': ('amount',),
+        'accountant_supplier_transfers': ('amount',),
+        # Касса кассира в базе бухгалтера (modules/cashier/till.py).
+        'cashier_shokh_gives': ('amount',),
+        'cashier_usd_deposits': ('amount',),
+        'cashier_usd_legacy': ('amount',),
         'accountant_employees': ('rate',),
         'accountant_monthly_employees': ('salary', 'card', 'cash', 'advances', 'remaining'),
     },

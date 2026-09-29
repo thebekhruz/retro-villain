@@ -87,7 +87,13 @@ def month_workbook(state, first: date, last: date, orders, orders_error):
     categories = workbook.create_sheet('Расходы')
     text(categories['A1'], f'Куда ушли деньги · {first.strftime("%m.%Y")}')
     categories['A1'].font = Font(bold=True, size=13)
-    spending = overview.expense_categories(flows_rows)
+    # Как в кабинете: перечисления — своей категорией, выдачи Шоху из кассы —
+    # один раз в «Закуп · наличные Шоху». В «По дням» их нет: это не деньги
+    # бухгалтера (передача кассира уже меньше на эту сумму).
+    from retro.modules.cashier.till import shokh_gives, shokh_total
+    spending = overview.expense_categories(
+        flows_rows, state.accountant_finance.supplier_transfers(first, last),
+        shokh_from_till=shokh_total(shokh_gives(state.accountant_finance, first, last)))
     for column, head in enumerate(('Категория', 'Сумма', 'Доля, %'), start=1):
         cell = categories.cell(row=3, column=column)
         text(cell, head)

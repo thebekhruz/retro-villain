@@ -1,94 +1,220 @@
-/* Ведомость месяца (2b). Сетка «сотрудник × день»: тридцать с лишним колонок,
-   поэтому имя и итоги закреплены по краям, а прокручивается только середина. */
+/* Ведомость месяца (2b) — размеры, цвета и отступы взяты из макета
+   «Финансы дня.dc.html#2b» один в один. Классы с префиксом pr-, чтобы общие
+   правила (.sheet-*, .accountant-*) их не задевали. */
 
-.month-cards{--cards:repeat(4,minmax(0,1fr));margin-bottom:20px}
+/* Оболочка экрана (шапка 64, поля 30/36, меню, планшетный сайдбар) — общая для
+   трёх экранов бухгалтера, живёт в mobile.css (блок «2b Ведомость (parity)»). */
 
-.sheet-panel{padding:0;overflow:hidden}
-.sheet-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;
-  flex-wrap:wrap;padding:18px}
-.sheet-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:var(--ink-2);align-items:center}
-.sheet-legend span{display:flex;align-items:center;gap:6px}
-.cell-key{display:grid;place-items:center;width:22px;height:18px;border-radius:4px;
-  font-size:10px;font-style:normal;background:#f1f3ee;color:var(--muted-2)}
-.cell-key.is-paid{background:#fff;border:1px solid var(--border);color:var(--ok)}
-.cell-key.is-partial{background:#eef5ec;color:var(--ok)}
-.cell-key.is-owed{background:#fff5ee;border:1px solid #efdccc}
-.cell-key.is-late{background:#fff0f2}
-.cell-key.is-missing{background:#f1f3ee;color:#9da79d;font-size:9px}
-.cell-key.is-empty{background:repeating-linear-gradient(-45deg,#f6f7f2 0 3px,#eef1ea 3px 6px)}
-.sheet-hint{font-size:11px;color:var(--muted-2);margin:0}
+.pr-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:20px;margin-bottom:24px}
+.pr-kicker{font-size:10px;font-weight:650;letter-spacing:1.8px;color:#818c80;margin:0 0 11px}
+.pr-title{font-size:37px;letter-spacing:-1.5px;font-weight:550;margin:0;line-height:1.15}
+.pr-title span{color:#bba26d}
+.pr-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+.pr-month{display:flex;align-items:center;height:48px;border:1px solid #e3e7df;background:#fff;border-radius:11px;padding:0 4px}
+.pr-month-arrow{width:36px;height:38px;border:0;background:transparent;border-radius:8px;color:#53675c;font-size:18px}
+.pr-month-arrow:hover:not(:disabled){background:#f3f5f0}
+.pr-month-arrow:disabled{opacity:.3}
+.pr-month-label{position:relative;display:flex;align-items:center;align-self:stretch;padding:0 10px;cursor:pointer}
+.pr-month-label strong{font-size:14px;font-weight:600;color:#1c302b;white-space:nowrap}
+/* Родной выбор месяца лежит поверх подписи прозрачным: клик по «Сентябрь 2026»
+   открывает календарь браузера, а вид остаётся как в макете. */
+.pr-month .pr-month-label input#month-input{position:absolute;inset:0;width:100%;height:100%;min-height:0;max-width:none;opacity:0;
+  cursor:pointer;border:0;padding:0;margin:0}
+.pr-btn{min-height:48px;border-radius:10px;display:flex;align-items:center;gap:9px;padding:11px 16px;font-size:12px;
+  font-weight:550;border:1px solid #e3e7df;background:#fff;color:#53675c;white-space:nowrap}
+.pr-btn:hover:not(:disabled){background:#f5f7f1}
+.pr-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6}
+.pr-btn-type{color:#9aab9d;font-size:9px}
 
-.sheet-scroll{overflow-x:auto;border-top:1px solid var(--line-mid);
-  -webkit-overflow-scrolling:touch}
-/* Первые две и последние две колонки закреплены, между ними — дни месяца.
-   Раскладку держит переменная, а не subgrid: без него строки схлопнулись бы
-   в одну колонку, а так сетка одинаково работает во всех браузерах. */
-.sheet-grid{--day-w:44px;
-  --sheet-cols:190px 84px repeat(var(--days),var(--day-w)) 104px 104px;
-  display:block;min-width:max-content}
-.sheet-row{display:grid;grid-template-columns:var(--sheet-cols);min-width:max-content;
-  border-top:1px solid var(--line-soft)}
-.sheet-row:first-child{border-top:0}
-.sheet-row.is-head{background:var(--head-bg);border-top:0;
-  position:sticky;top:0;z-index:3;font-size:10px;color:#71827d}
-.sheet-row.is-foot{border-top:1px solid #b5cbb8;background:var(--head-bg);font-size:11px}
+/* Пять карточек */
+.pr-cards{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:14px;margin-bottom:20px}
+.pr-card{display:block;width:100%;min-width:0;text-align:left;background:#fff;border:1px solid #e3e7df;border-radius:16px;
+  padding:18px 18px 16px;color:#1c302b;font:inherit}
+.pr-card-label{font-size:11px;color:#748376}
+.pr-card-value{margin-top:14px;font-size:24px;font-weight:600;letter-spacing:-.6px;font-variant-numeric:tabular-nums;
+  line-height:1.2;white-space:nowrap}
+.pr-card--issues{background:#fff8f7;border-color:#f0dddd;cursor:pointer}
+.pr-card--issues:hover{background:#fdf1f0}
+.pr-card--issues .pr-card-label{color:#9b4b5a}
+.pr-card--issues .pr-card-value{color:#ab445e}
 
-.sheet-name,.sheet-rate,.sheet-total,.sheet-day,.sheet-cell,.sheet-day-total{
-  min-width:0;display:flex;align-items:center;padding:0 8px;height:40px}
-.sheet-name{position:sticky;left:0;z-index:2;background:#fff;flex-direction:column;
-  align-items:flex-start;justify-content:center;gap:2px;padding:0 14px}
-.sheet-rate{position:sticky;left:190px;z-index:2;background:#fff;justify-content:flex-end;
-  border-right:1px solid var(--border);font-size:12px}
-.sheet-total{position:sticky;z-index:2;background:#fff;justify-content:flex-end;
-  font-size:12px;font-weight:600}
-.sheet-total:nth-last-child(2){right:104px;border-left:1px solid var(--border)}
-.sheet-total:last-child{right:0;padding-right:14px}
-.sheet-total.is-owed{color:#a96039}
-.is-head .sheet-name,.is-head .sheet-rate,.is-head .sheet-total,
-.is-foot .sheet-name,.is-foot .sheet-rate,.is-foot .sheet-total{background:var(--head-bg)}
-.is-head .sheet-name,.is-head .sheet-rate,.is-head .sheet-total{
-  font-weight:600;letter-spacing:.05em;text-transform:uppercase}
-.is-head .sheet-name{flex-direction:row;align-items:center}
-.is-foot .sheet-name{flex-direction:row;font-weight:650;color:#234a3a}
-.sheet-person{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:100%}
-.sheet-group{font-size:10px;color:var(--muted-3);white-space:nowrap;overflow:hidden;
-  text-overflow:ellipsis;max-width:100%}
+/* Карточка сетки */
+.pr-sheet{background:#fff;border:1px solid #e3e7df;border-radius:18px;overflow:hidden}
+.pr-sheet-head{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:16px 18px;flex-wrap:wrap}
+.pr-legend{display:flex;flex-wrap:wrap;gap:14px;font-size:11px;color:#607368;align-items:center}
+.pr-legend>span{display:flex;align-items:center;gap:6px}
+.pr-key{display:grid;place-items:center;min-width:22px;height:18px;padding:0 3px;border-radius:4px;font-style:normal;font-size:9px;flex:none;white-space:nowrap}
+.pr-key.is-paid{background:#fff;border:1px solid #e3e7df;color:#4a8056;font-size:11px}
+.pr-key.is-late{background:#fff0f2}
+.pr-key.is-missing{background:#f1f3ee;color:#9da79d}
+.pr-key.is-odd{background:#fbf0d7}
+.pr-key.is-unpaid{background:#fff5ee;color:#a96039}
+.pr-key.is-nopass{background:#fde9ed;color:#ab445e;font-size:11px;font-weight:700}
+.pr-hik{display:inline-block;padding:0 4px;border-radius:4px;border:1px dashed #c9b27a;background:#f7f3e8;color:#7a6a45;
+  font-size:9px;font-weight:650;font-style:normal;line-height:1.5;white-space:nowrap}
+.pr-hint{font-size:11px;color:#7d8881}
 
-/* Шапка дня — кнопка перехода в день. */
-.sheet-day{flex-direction:column;justify-content:center;gap:0;border:0;border-right:1px solid #eef1ea;
-  background:var(--head-bg);color:#71827d;cursor:pointer;padding:0}
-.sheet-day:hover{background:#eaeee4;color:var(--green)}
-.sheet-day strong{font-size:12px;font-weight:600}
-.sheet-day span{font-size:9px}
-.sheet-day.is-weekend{color:#a98b8b}
+.pr-scroll{position:relative;overflow-x:auto;border-top:1px solid #e7ece3;-webkit-overflow-scrolling:touch;overscroll-behavior-x:contain}
+.pr-grid{--name-w:190px;--sum-w:110px;--day-w:86px;--tot-w:120px;
+  --cols:var(--name-w) var(--sum-w) repeat(var(--days),var(--day-w)) var(--tot-w) var(--tot-w);
+  width:max-content;min-width:100%}
+.pr-row{display:grid;grid-template-columns:var(--cols);font-variant-numeric:tabular-nums}
+.pr-c{display:flex;align-items:center;min-width:0;background:#fff}
+.pr-c-name{position:sticky;left:0;z-index:2;flex-direction:column;align-items:flex-start;justify-content:center;
+  padding:3px 14px;min-height:40px}
+.pr-c-sum{position:sticky;left:var(--name-w);z-index:2;justify-content:flex-end;padding:0 10px;font-size:12px;
+  border-right:1px solid #e3e7df}
+.pr-c-paid{position:sticky;right:var(--tot-w);z-index:2;justify-content:flex-end;padding:0 10px;font-size:12px;
+  font-weight:600;border-left:1px solid #e3e7df}
+.pr-c-rest{position:sticky;right:0;z-index:2;flex-direction:column;align-items:flex-end;justify-content:center;
+  padding:0 14px 0 10px;font-size:12px;font-weight:600}
+.pr-c-rest small{font-size:9px;font-weight:500}
+.pr-name{font-size:12px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
+.pr-role{display:flex;align-items:center;flex-wrap:wrap;gap:0 5px;font-size:10px;color:#88978a;line-height:1.35}
 
-/* Ячейка смены. Цвет говорит о состоянии, клик выдаёт долг. */
-.sheet-cell{justify-content:center;border:0;border-right:1px solid #eef1ea;
-  font-size:11px;font-weight:600;background:#fff;color:var(--ink);padding:0}
-.sheet-cell:disabled{cursor:default}
-.sheet-cell.is-empty{background:repeating-linear-gradient(-45deg,#fbfcf9 0 3px,#f4f6f0 3px 6px)}
-.sheet-cell.is-missing{background:#f1f3ee;color:#9da79d;font-size:9px}
-.sheet-cell.is-paid{color:var(--ok)}
-.sheet-cell.is-partial{background:#eef5ec;color:var(--ok)}
-.sheet-cell.is-owed{background:#fff5ee;color:#a96039}
-.sheet-cell.is-late{background:#fff0f2;color:var(--late)}
-.sheet-cell.is-owed:hover,.sheet-cell.is-late:hover,.sheet-cell.is-partial:hover{
-  box-shadow:inset 0 0 0 2px var(--gold)}
-.sheet-day-total{justify-content:flex-end;border-right:1px solid #eef1ea;font-size:10px;
-  font-weight:600;padding:0 5px}
-.sheet-day-total.is-zero{color:#b7c0b9}
+/* Шапка */
+.pr-row.is-head{background:#f5f7f1;border-bottom:1px solid #e7ece3;font-size:10px;color:#71827d}
+.pr-row.is-head .pr-c{background:#f5f7f1;font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;min-height:0}
+.pr-row.is-head .pr-c-name{padding:10px 14px}
+.pr-row.is-head .pr-c-rest{padding:10px 14px 10px 10px}
+.pr-day{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:1px;border:0;
+  border-right:1px solid #eef1ea;padding:6px 0;background:#f5f7f1;color:#607368;font:inherit;cursor:pointer;min-width:0}
+.pr-day strong{font-size:12px;font-weight:600;line-height:1.2}
+.pr-day span{font-size:9px;font-weight:400;line-height:1.2}
+button.pr-day:hover{background:#eaeee4;color:#143e35}
+.pr-day.is-shift{background:#e8efe4}
+.pr-day.is-today{background:#143e35;color:#fff}
+button.pr-day.is-today:hover{background:#1b4a3f;color:#fff}
+.pr-day.is-future{background:#f9faf6;color:#b3bdb1;cursor:default}
 
-.monthly-table-scroll{overflow-x:auto;margin-top:14px}
-#monthly-table{min-width:760px}
+/* Разделы */
+.pr-section{padding:12px 14px 8px;background:#fff}
+.pr-section+.pr-row{border-top:0}
+.pr-row+.pr-section{padding-top:16px;border-top:1px solid #e7ece3}
+.pr-section strong{position:sticky;left:14px;font-size:12px;font-weight:650;color:#285140}
 
-@media(max-width:1180px){.month-cards{--cards-md:repeat(2,minmax(0,1fr))}}
+/* Строки */
+.pr-row.is-monthly,.pr-row.is-shift{border-top:1px solid #eef1ea}
+.pr-row.is-shift .pr-c-name{min-height:36px}
+.pr-row.is-focus .pr-c{background:#fff6d8}
+
+/* Ячейки окладов — поле ввода прямо в сетке */
+.pr-m{width:100%;min-width:0;height:auto;min-height:40px;border:0;border-right:1px solid #eef1ea;border-radius:0;
+  padding:0 7px;text-align:right;font-family:inherit;font-size:11px;font-weight:600;line-height:1;font-variant-numeric:tabular-nums;background:#fff;color:#1c4c3e;
+  display:flex;align-items:center;justify-content:flex-end}
+input.pr-m{outline:0}
+input.pr-m:focus{box-shadow:inset 0 0 0 2px #d2af59;background:#fff}
+input.pr-m:hover{background:#fbfcf9}
+.pr-m.is-today{background:#fbf7ed}
+.pr-m.is-filled{background:#f3f8f0}
+.pr-m.is-over{background:#fde9ed;color:#ab445e}
+.pr-m.is-future{background:#f9faf6}
+.pr-c-paid.is-over,.pr-c-rest.is-over{color:#ab445e}
+.pr-c-rest.is-closed{color:#4a8056}
+
+/* Ячейки сменных */
+.pr-s{min-width:0;min-height:36px;border:0;border-right:1px solid #eef1ea;padding:0 2px;display:flex;align-items:center;
+  justify-content:center;font-family:inherit;font-size:12px;font-weight:600;line-height:1.1;background:#fff;color:#4a8056;text-align:center}
+.pr-s.is-late{background:#fff0f2}
+.pr-s.is-future,.pr-s.is-today{background:#f9faf6}
+.pr-s.is-missing{background:#f1f3ee;color:#9da79d;font-size:10px}
+.pr-s.is-nopass{background:#fde9ed;color:#ab445e}
+.pr-s.is-odd{background:#fbf0d7;color:#906c2b;font-size:10px}
+.pr-s.is-topay,.pr-s.is-pending{color:#7d8881;font-size:10px}
+.pr-s.is-unpaid{background:#fff5ee;color:#a96039}
+button.pr-s{cursor:pointer}
+button.pr-s:hover{box-shadow:inset 0 0 0 2px #d2af59;filter:none}
+.pr-s.is-focus{box-shadow:inset 0 0 0 2px #d2af59}
+.pr-c-rest.is-owed{color:#a96039}
+
+/* Подтверждение удаления выплаты — строкой у ячейки, в стиле «Удалить сотрудника?» */
+.pr-confirm{position:fixed;z-index:80;width:max-content;max-width:min(320px,calc(100vw - 16px));display:grid;gap:10px;
+  padding:12px 14px;border:1px solid #e3e7df;border-radius:12px;background:#fff;box-shadow:0 10px 30px #143e3526}
+.pr-confirm-q{font-size:12px;line-height:1.45;color:#7b6257}
+.pr-confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+.pr-confirm-keep,.pr-confirm-yes{min-height:36px;border-radius:7px;padding:7px 12px;font-size:11px;font-weight:600}
+.pr-confirm-keep{border:1px solid #dbe3d8;background:#fff;color:#35624e}
+.pr-confirm-yes{border:1px solid #e4cfc2;background:#fff0eb;color:#a33f2b}
+
+/* Подвал: выдано из кассы по дням */
+.pr-row.is-foot{border-top:1px solid #b5cbb8;background:#f5f7f1}
+.pr-row.is-foot .pr-c{background:#f5f7f1}
+.pr-c-label{position:sticky;left:0;z-index:2;padding:10px 14px;font-size:11px;font-weight:650;line-height:1.3;
+  color:#234a3a}
+.pr-row.is-foot .pr-c-sumfoot{padding:0}
+.pr-t{padding:10px 7px;text-align:right;font-size:10px;font-weight:600;color:#234a3a;border-right:1px solid #eef1ea;
+  white-space:nowrap}
+.pr-t.is-today{background:#e8efe4}
+.pr-c-grand{position:sticky;right:0;z-index:2;grid-column:span 2;justify-content:flex-end;padding:10px 14px;
+  font-size:12px;font-weight:650;border-left:1px solid #e3e7df;white-space:nowrap}
+
+/* Проверки за месяц */
+.pr-checks{background:#fff;border:1px solid #e3e7df;border-radius:18px;padding:20px 22px;margin-top:20px}
+.pr-checks-title{font-size:10px;font-weight:650;letter-spacing:1.8px;color:#ab445e;margin:0 0 6px}
+.pr-checks-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));column-gap:24px}
+.pr-check{display:flex;gap:10px;align-items:flex-start;padding:10px 0;border:0;border-top:1px solid #edf1e9;
+  background:none;text-align:left;color:#1c302b;font:inherit;min-width:0}
+.pr-check:hover{background:#fbfcf9}
+.pr-dot{flex:none;width:8px;height:8px;border-radius:50%;margin-top:4px}
+.pr-dot.is-err{background:#ab445e}.pr-dot.is-warn{background:#d2a54a}.pr-dot.is-todo{background:#a9b9a5}
+.pr-check-text{min-width:0}
+.pr-check-text strong{display:block;font-size:12px;font-weight:600;line-height:1.35}
+.pr-check-text small{display:block;font-size:11px;color:#7d8881;margin-top:2px}
+.pr-checks-empty{grid-column:1/-1;font-size:12px;color:#4a8056;margin:8px 0 0}
+.pr-checks-more{margin-top:10px;border:1px solid #e3e7df;border-radius:9px;background:#fff;color:#35624e;
+  padding:9px 14px;font-size:12px;min-height:40px}
+
+.pr-footer{display:flex;justify-content:space-between;gap:10px;font-size:9px;letter-spacing:.5px;color:#9ba392;padding-top:30px}
+.pr-footer .footer-divider{padding:0 8px;color:#c2c9bb}
+
+/* Ноутбук поуже: колонки сужаются, закреплёнными остаются все четыре. */
+@media(max-width:1180px){
+  .pr-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .pr-grid{--name-w:160px;--sum-w:96px;--tot-w:108px}
+  .pr-checks-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+/* Планшет: закреплено только имя, остальное прокручивается внутри карточки. */
+@media(max-width:900px){
+  .pr-c-sum,.pr-c-paid,.pr-c-rest,.pr-c-grand{position:static}
+  .pr-heading{flex-wrap:wrap;align-items:flex-start}
+  .pr-actions{justify-content:flex-start}
+  .pr-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .pr-card--issues{grid-column:span 2}
+  /* Сенсорные ширины: стрелки месяца, номера дней и ячейки — под палец. */
+  .pr-month-arrow{width:44px;height:44px}
+  .pr-day{min-height:44px}
+  .pr-s,.pr-m{min-height:40px}
+  .pr-row.is-shift .pr-c-name{min-height:40px}
+  .pr-confirm-keep,.pr-confirm-yes{min-height:40px}
+}
 @media(max-width:650px){
-  .month-cards{--cards-sm:1fr 1fr}
-  /* На телефоне закреплять четыре колонки некуда — оставляем только имя. */
-  .sheet-grid{--day-w:38px;--sheet-cols:132px 0 repeat(var(--days),var(--day-w)) 88px 88px}
-  .sheet-rate{display:none}
-  .sheet-total:nth-last-child(2){right:88px}
-  .sheet-name{padding:0 10px}
-  .sheet-head{padding:16px}
+  .pr-title{font-size:30px;letter-spacing:-1px}
+  .pr-heading{gap:14px;margin-bottom:18px}
+  .pr-actions{width:100%}
+  .pr-month{flex:1 1 100%;justify-content:space-between}
+  .pr-month-arrow{width:44px;height:44px}
+  .pr-btn{flex:1 1 100%;justify-content:center;min-height:44px}
+  .pr-cards{grid-template-columns:1fr 1fr;gap:10px}
+  .pr-card{padding:14px}
+  .pr-card-value{font-size:20px;margin-top:10px}
+  .pr-card--issues{grid-column:span 2}
+  .pr-sheet-head{padding:14px 16px}
+  .pr-legend{gap:8px 12px}
+  .pr-grid{--name-w:132px;--sum-w:84px;--day-w:76px;--tot-w:100px}
+  /* Прокрутка пальцем останавливается на границе дня, а не посреди суммы. */
+  .pr-scroll{scroll-snap-type:x proximity;scroll-padding-left:var(--name-w-snap,132px)}
+  .pr-day{scroll-snap-align:start}
+  .pr-m{padding:0 5px}
+  /* Заголовок раздела длиннее экрана — переносим внутри видимой части. */
+  .pr-section strong{display:inline-block;max-width:calc(100vw - 58px);line-height:1.35}
+  .pr-c-label{padding:8px 10px}
+  .pr-c-name{padding:4px 10px}
+  .pr-row.is-head .pr-c-name{padding:10px}
+  .pr-section strong{left:10px}
+  .pr-checks{padding:18px 16px}
+  .pr-checks-grid{grid-template-columns:1fr}
+  .pr-check{min-height:40px}
+  .pr-footer{flex-wrap:wrap;font-size:11.5px;line-height:1.7}
+  /* Служебный капс на телефоне — как у всей панели (mobile.css): 10 px на солнце не читается. */
+  .pr-kicker{font-size:11.5px;letter-spacing:1.1px}
 }

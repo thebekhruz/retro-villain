@@ -1,11 +1,10 @@
 """Manual payable expenses and their dated cash payments."""
 
 from contextlib import closing
-from datetime import datetime
 from decimal import Decimal
 
 from .expense_catalog import ITEMS
-from .ledger import LedgerError, amount_value, required_text
+from .ledger import LedgerError, amount_value, now_stamp, required_text
 from .audit import record_audit
 
 
@@ -51,7 +50,7 @@ def record_debt(store, day, item_code, note, total, paid, cashier_amount):
             store._validate_salary_expense(connection, day, item_code)
             if paid_value and store.available_cash(connection, day, cashier_amount) < paid_value:
                 raise LedgerError('На выбранный день недостаточно денег от кассира.')
-            now = datetime.now().isoformat()
+            now = now_stamp()
             debt_id = connection.execute(
                 'INSERT INTO accountant_debts (day,item_code,description,total_amount,created_at) '
                 'VALUES (?,?,?,?,?)',
@@ -99,7 +98,7 @@ def pay_debt(store, debt_id, day, amount, cashier_amount):
                 raise LedgerError('Оплата превышает оставшийся долг.')
             if store.available_cash(connection, day, cashier_amount) < value:
                 raise LedgerError('На выбранный день недостаточно денег от кассира.')
-            now = datetime.now().isoformat()
+            now = now_stamp()
             movement_id = connection.execute(
                 'INSERT INTO accountant_movements '
                 '(day,kind,description,amount,item_code,created_at) VALUES (?,?,?,?,?,?)',
