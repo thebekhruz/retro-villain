@@ -29,6 +29,9 @@ from retro.modules.shokh.routes import router as shokh_router
 from retro.modules.shokh.store import ShokhStore
 from retro.modules.shokh.iiko import ProcurementIiko
 from retro.modules.shokh.sync import ProcurementSync
+from retro.modules.menu.store import MenuStore
+from retro.modules.menu.iiko import MenuIiko
+from retro.modules.menu.sync import MenuSync
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
@@ -167,6 +170,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             poller.start()
         if application.state.cashier_days is not None:
             application.state.cashier_days.start()
+        if application.state.menu_sync is not None:
+            application.state.menu_sync.start()
         try:
             yield
         finally:
@@ -174,6 +179,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await poller.stop()
             if application.state.cashier_days is not None:
                 await application.state.cashier_days.close()
+            if application.state.menu_sync is not None:
+                await application.state.menu_sync.close()
             await application.state.reports.close()
             close = getattr(application.state.iiko, 'close', None)
             if close is not None:
@@ -229,6 +236,13 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         app.state.hikvision_poller = None
     director_path = director_db_path or shared or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
+    # Меню — справочник, а не отчёт: лежит у нас и обновляется раз в неделю.
+    # Без настроенного iiko брать его неоткуда, поэтому планировщик не заводим,
+    # а сохранённое меню (если оно есть) всё равно читается.
+    app.state.menu_store = MenuStore(director_path)
+    app.state.menu_iiko = MenuIiko(app.state.iiko)
+    app.state.menu_sync = (MenuSync(app.state.menu_store, app.state.menu_iiko)
+                           if settings.configured else None)
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
