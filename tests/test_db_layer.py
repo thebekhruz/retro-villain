@@ -174,6 +174,30 @@ def test_rollback_undoes_the_whole_operation_on_both_dialects(tmp_path, label):
         assert connection.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 0
 
 
+@pytest.mark.parametrize('label', ['sqlite', 'postgres'])
+def test_transaction_block_commits_and_keeps_the_connection_open(tmp_path, label):
+    """`with closing(conn) as c, c:` — как в sqlite3: блок фиксирует или
+    откатывает, но соединение остаётся открытым до внешнего closing. На
+    Postgres оно закрывалось, и чтение после блока падало «connection is closed»."""
+    from contextlib import closing
+    found = dict(databases(tmp_path))
+    if label not in found:
+        pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
+    database = found[label]
+    prepare(database)
+    with closing(database.connect()) as connection:
+        with connection:
+            connection.execute('INSERT INTO probe_money (day, amount) VALUES (?, ?)', ('2026-09-16', '1'))
+        assert connection.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 1
+        with pytest.raises(RuntimeError):
+            with connection:
+                connection.execute('INSERT INTO probe_money (day, amount) VALUES (?, ?)', ('2026-09-17', '2'))
+                raise RuntimeError('откат')
+        assert connection.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 1
+    with closing(database.connect()) as other:
+        assert other.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 1
+
+
 # ── История ставок без триггеров ────────────────────────────────────────────
 
 def roster_for(tmp_path, label):
