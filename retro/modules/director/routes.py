@@ -2,7 +2,7 @@ import asyncio
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -109,6 +109,38 @@ async def report_for_period(request: Request, start: date | None = None, end: da
 @router.get('/reports')
 def reports(request: Request):
     return {'reports': request.app.state.director_store.list_metadata()}
+
+
+# ── Меню (справочник, не продажи) ───────────────────────────────────────────
+# Отчёт продаж показывает только то, что купили; справочник — всё меню целиком,
+# включая позиции, которых за период никто не заказал. Он лежит в нашей базе и
+# обновляется раз в неделю, поэтому здесь нет ни одного запроса в iiko.
+
+@router.get('/menu')
+def menu(request: Request, scope: Literal['menu', 'all'] = 'menu',
+         query: str = Query('', max_length=80), group: str = Query('', max_length=120),
+         missing: bool = False, limit: int = Query(2000, ge=1, le=10000)):
+    store = request.app.state.menu_store
+    items = store.items(scope=scope, include_missing=missing, query=query.strip(),
+                        group=group.strip(), limit=limit)
+    return dict(source='iiko · номенклатура', scope=scope, items=items,
+                shown=len(items), **store.status())
+
+
+@router.post('/menu/refresh')
+async def refresh_menu(request: Request):
+    """Внеочередная загрузка меню. Недельный срок при этом отсчитывается заново."""
+    sync = request.app.state.menu_sync
+    if sync is None:
+        raise HTTPException(503, 'Подключение iiko не настроено. Меню обновить неоткуда.')
+    if sync.lock.locked():
+        raise HTTPException(429, 'Меню уже обновляется. Подождите.')
+    try:
+        return await sync.run_once(force=True)
+    except DataError as error:
+        log_safe_failure('director-route', error, operation='refresh_menu',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
 
 
 @router.get('/chat')
