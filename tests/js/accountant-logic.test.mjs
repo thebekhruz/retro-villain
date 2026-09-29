@@ -184,12 +184,24 @@ test('после подтверждения видна выдача за сег�
   assert.deepEqual(logic.boardTabs(board.rows).map(([k, , n]) => k + n), ['all3', 'late1', 'todo1', 'err1', 'nohik0']);
 });
 
-test('смену нельзя подтвердить без Hikvision или ставок — причина видна заранее', () => {
-  const board = {confirmed: false};
-  assert.equal(logic.shiftBlocker({employees: [staffRow(1, 'А')], payroll: {unavailable_count: 1}, missing_rates: 0}, board), 'hikvision');
-  assert.equal(logic.shiftBlocker({employees: [staffRow(1, 'А', {payable: null, rate: null})], payroll: {}, missing_rates: 1}, board), 'rates');
-  assert.equal(logic.shiftBlocker({employees: [staffRow(1, 'А')], payroll: {}, missing_rates: 0}, board), null);
-  assert.equal(logic.shiftBlocker({employees: [staffRow(1, 'А')], payroll: {unavailable_count: 1}}, {confirmed: true}), null);
+test('подтверждение частичное: заблокированы только строки без расчёта', () => {
+  const staff = {employees: [staffRow(1, 'Жасур'), staffRow(2, 'Без ставки', {rate: null, payable: null}),
+    staffRow(3, 'Без привязки', {status: 'unlinked', first_entry: null, payable: null}),
+    staffRow(4, 'Нет входов', {status: 'unavailable', first_entry: null, payable: null})]};
+  const board = logic.shiftBoard({payday: '2026-09-29', staff, accruals: [], movements: []});
+  assert.deepEqual(board.own.map(r => r.block), [null, 'rate', 'unlinked', 'hikvision']);
+  assert.deepEqual(board.own.map(r => r.kind), ['todo', 'blocked', 'blocked', 'blocked']);
+  assert.equal(board.toPay.length, 1);
+  assert.deepEqual(logic.shiftBlocker(staff, board), {total: 3, rate: 1, unlinked: 1, hikvision: 1, unknown: 0});
+  assert.equal(logic.boardTabs(board.rows).find(([k]) => k === 'err')[2], 3);
+  // Сервер начислил Жасура — остальные всё ещё ждут, смена подтверждена частично.
+  const partial = logic.shiftBoard({payday: '2026-09-29', staff, movements: [],
+    accruals: [accrualRow(10, 1, 'Жасур', '2026-09-28')]});
+  assert.equal(partial.confirmed, false);
+  assert.equal(partial.partial, true);
+  assert.equal(partial.own[0].accrualId, 10);
+  assert.equal(partial.own[1].accrualId, null);
+  assert.equal(logic.shiftBlocker(null, logic.shiftBoard({payday: '2026-09-29', staff: {employees: [staffRow(1, 'А')]}, accruals: [], movements: []})), null);
 });
 
 test('журнал: долг дня одной строкой, зарплата и выдачи Шоху — «Авто»', () => {

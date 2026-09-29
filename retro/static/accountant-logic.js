@@ -163,7 +163,6 @@
     const byId=new Map(staffRows.map(r=>[r.employee_id,r]));
     const all=accruals||[];
     const own=all.filter(a=>a.work_day===S);
-    const confirmed=own.length>0;
     const pays=todaySalaryPayments(movements);
     const build=(src)=>{
       const today=pays.get(src.name+'|'+src.day)||[];
@@ -174,9 +173,14 @@
         todayPayments:today,noHik:MANUAL.has(src.status),
         time:src.own?entryClock(src.entry):null,late:src.status==='late'?lateMinutes(src.entry):0};
       let kind='ok', note='';
-      // Без ставки — ошибка реестра; «нет данных» Hikvision объясняет полоса
-      // над таблицей, строку ошибкой не считаем.
-      if(accrued===null){kind=src.rate===null?'warn':'none';}
+      // Начисление не посчитать — строка заблокирована своей причиной, а
+      // остальным выдавать можно: подтверждение смены частичное.
+      // Причину отдаёт сервер (`blocker`); без неё выводим по ставке и статусу.
+      const BLOCK={missing_rate:'rate',unlinked:'unlinked',unavailable:'hikvision',unknown:'unknown'};
+      row.block=src.blocker?(BLOCK[src.blocker]||'unknown')
+        :accrued===null?(src.rate===null?'rate':src.status==='unlinked'?'unlinked'
+        :src.status==='unavailable'?'hikvision':'unknown'):null;
+      if(row.block)kind='blocked';
       else if(paid>0&&accrued===0){kind='err'; note='Входа нет — выдавать не нужно';}
       else if(paid>0&&paid!==accrued){kind='warn';
         note=(paid>accrued?'+':'−')+Math.abs(paid-accrued).toLocaleString('ru-RU')+' к ставке';}
@@ -184,14 +188,20 @@
       else if(accrued===0)kind='none';
       row.kind=kind; row.note=note; return row;
     };
-    const ownRows=confirmed
-      ?own.map(a=>{const e=byId.get(a.employee_id)||{};
-        return build({key:'a'+a.id,accrualId:a.id,employeeId:a.employee_id,name:a.name,
-          role:e.role||a.group||'',status:a.status,entry:e.first_entry||null,rate:a.rate,
-          accrued:a.amount,paid:a.paid,debt:a.debt,day:S,own:true});})
-      :staffRows.map(e=>build({key:'e'+e.employee_id,accrualId:null,employeeId:e.employee_id,
-          name:e.name,role:e.role,status:e.status,entry:e.first_entry,rate:e.rate,
-          accrued:e.payable,paid:0,debt:e.payable===null?0:e.payable,day:S,own:true}));
+    // Смена может быть подтверждена частично: у кого начисление уже есть —
+    // строка из начисления, у остальных — из реестра дня.
+    const ownAcc=new Map(own.map(a=>[a.employee_id,a]));
+    const fromAcc=a=>{const e=byId.get(a.employee_id)||{};
+      return build({key:'a'+a.id,accrualId:a.id,employeeId:a.employee_id,name:a.name,
+        role:e.role||a.group||'',status:a.status,entry:e.first_entry||null,rate:a.rate,
+        accrued:a.amount,paid:a.paid,debt:a.debt,day:S,own:true});};
+    const ownRows=staffRows.map(e=>ownAcc.has(e.employee_id)?fromAcc(ownAcc.get(e.employee_id))
+      :build({key:'e'+e.employee_id,accrualId:null,employeeId:e.employee_id,
+        name:e.name,role:e.role,status:e.status,entry:e.first_entry,rate:e.rate,blocker:e.blocker||null,
+        accrued:e.payable,paid:0,debt:e.payable===null?0:e.payable,day:S,own:true}))
+      .concat(own.filter(a=>!byId.has(a.employee_id)).map(fromAcc));
+    const confirmed=ownRows.length>0&&ownRows.every(r=>r.accrualId);
+    const partial=!confirmed&&ownRows.some(r=>r.accrualId);
     const other=all.filter(a=>a.work_day!==S&&(num(a.debt)>0||pays.has(a.name+'|'+a.work_day)))
       .sort((a,b)=>a.work_day.localeCompare(b.work_day)||a.name.localeCompare(b.name,'ru'))
       .map(a=>{const e=byId.get(a.employee_id)||{};
@@ -201,30 +211,31 @@
     const rows=other.concat(ownRows);
     const toPay=rows.filter(r=>r.debt>0&&r.accrued>0);
     const payable=ownRows.filter(r=>r.accrued>0);
-    return {S,confirmed,rows,own:ownRows,other,toPay,
+    const blocked=ownRows.filter(r=>r.block);
+    return {S,confirmed,partial,rows,own:ownRows,other,toPay,blocked,
       totals:{accrued:ownRows.reduce((s,r)=>s+(r.accrued||0),0),
         paid:ownRows.reduce((s,r)=>s+r.paid,0),
         paidCount:ownRows.filter(r=>r.paid>0).length,payableCount:payable.length,
         toPaySum:toPay.reduce((s,r)=>s+r.debt,0),
-        unconfirmedDebt:confirmed?0:ownRows.reduce((s,r)=>s+(r.accrued||0),0)}};
+        unconfirmedDebt:ownRows.filter(r=>!r.accrualId).reduce((s,r)=>s+(r.accrued||0),0)}};
   }
 
   const BOARD_TABS=[['all','Все'],['late','Опоздали'],['todo','Не выдано'],['err','Ошибки'],['nohik','Без Hikvision']];
   function boardMatch(row,tab){
     return tab==='all'||(tab==='late'&&row.status==='late')||(tab==='todo'&&row.kind==='todo')
-      ||(tab==='err'&&(row.kind==='err'||row.kind==='warn'))||(tab==='nohik'&&row.noHik);
+      ||(tab==='err'&&(row.kind==='err'||row.kind==='warn'||row.kind==='blocked'))||(tab==='nohik'&&row.noHik);
   }
   function boardTabs(rows){ return BOARD_TABS.map(([k,l])=>[k,l,rows.filter(r=>boardMatch(r,k)).length]); }
 
   /* Почему смену нельзя подтвердить. Сервер откажет и сам, но причину
      показываем заранее — вместо полей, которые молча не работают. */
+  /* Кого из смены нельзя начислить и почему — по строкам, а не на всю
+     смену: подтверждение частичное, остальным выдают сразу. */
   function shiftBlocker(staff,board){
-    if(board.confirmed||!staff)return null;
-    const p=staff.payroll||{};
-    if(!(staff.employees||[]).length)return 'empty';
-    if(p.unavailable_count>0)return 'hikvision';
-    if(staff.missing_rates>0||(staff.employees||[]).some(e=>e.payable===null))return 'rates';
-    return null;
+    const list=(board&&board.blocked)||[];
+    if(!list.length)return null;
+    const count=kind=>list.filter(r=>r.block===kind).length;
+    return {total:list.length,rate:count('rate'),unlinked:count('unlinked'),hikvision:count('hikvision'),unknown:count('unknown')};
   }
 
   /* Журнал: каждое списание строкой. Зарплата и выдачи Шоху собираются в
@@ -385,7 +396,7 @@
       if(r.kind==='err')add('err','Выдано без входа: '+r.name,'Смена '+dm(r.day)+' · '+fmt(r.paid)+' сум','row:'+r.key);
       else if(r.kind==='warn'&&r.accrued!==null)add('warn',(r.paid>r.accrued?'Больше ставки: ':'Меньше ставки: ')+r.name,
         'Выдано '+fmt(r.paid)+' при ставке '+fmt(r.accrued),'row:'+r.key);
-      else if(r.kind==='warn'&&r.rate===null)add('warn','Нет ставки: '+r.name,'Смена '+dm(r.day)+' не начисляется','row:'+r.key);
+
     });
     board.other.forEach(r=>{
       if(r.debt>0)add('warn','Смена '+dm(r.day)+' не выдана: '+r.name,'Долг '+fmt(r.debt)+' сум','row:'+r.key);
@@ -397,8 +408,12 @@
     const dv=data.dividends_week;
     if(dv&&dv.behind)add('warn','Отстаём от недельных дивидендов',
       'Отложено '+fmt(num(dv.collected))+' из '+fmt(num(dv.target))+' · по плану к этому дню '+fmt(Math.round(num(dv.pace))),'dividends');
-    if(blocker==='hikvision')add('warn','Смену '+dm(board.S)+' нельзя подтвердить','Данные Hikvision за этот день неполные','shift');
-    if(blocker==='rates')add('warn','Смену '+dm(board.S)+' нельзя подтвердить','Не у всех сотрудников указана ставка','shift');
+    if(blocker&&blocker.rate)add('warn',blocker.rate+' '+plural(blocker.rate,'сотрудник','сотрудника','сотрудников')+' без ставки',
+      'Смена '+dm(board.S)+' им не начисляется — укажите ставку','blocked');
+    if(blocker&&blocker.unlinked)add('warn',blocker.unlinked+' '+plural(blocker.unlinked,'сотрудник','сотрудника','сотрудников')+' без привязки Hikvision',
+      'Отметьте их вручную — тогда смену можно начислить','blocked');
+    if(blocker&&blocker.hikvision)add('warn',blocker.hikvision+' '+plural(blocker.hikvision,'сотрудник','сотрудника','сотрудников')+' без данных Hikvision',
+      'Входы за '+dm(board.S)+' ещё не пришли','blocked');
     const todo=board.own.filter(r=>r.kind==='todo');
     if(todo.length)add('todo',todo.length+' '+plural(todo.length,'сменный ждёт','сменных ждут','сменных ждут')+' выплату за '+dm(board.S),
       fmt(todo.reduce((s,r)=>s+r.debt,0))+' сум','todo');

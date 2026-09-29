@@ -600,6 +600,16 @@ class RosterStore:
                                    str(parsed_rate) if parsed_rate is not None else None,
                                    derived_group, employee_id))
                 self._stamp_version(connection, employee_id)
+                if old[2] is None and parsed_rate is not None:
+                    # Ставки не было — её впервые задали. Дни без ставки ждали её,
+                    # поэтому она действует и на них: пустая ставка в истории
+                    # заменяется новой. Начисленные дни не меняются — их суммы
+                    # заморожены в начислениях. Смена уже заданной ставки
+                    # по-прежнему действует только с сегодняшнего дня.
+                    connection.execute(
+                        'UPDATE accountant_employee_versions SET rate = ? '
+                        'WHERE employee_id = ? AND rate IS NULL',
+                        (str(parsed_rate), employee_id))
                 connection.execute('INSERT INTO accountant_roster_audit '
                                    '(employee_id, changed_at, reason, old_rate, new_rate, old_group, new_group) '
                                    'VALUES (?, ?, ?, ?, ?, ?, ?)',

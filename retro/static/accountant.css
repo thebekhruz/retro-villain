@@ -986,3 +986,12 @@ body.fd-busy .fd :is(.fd-btn-pay,.fd-plus,.fd-btn-give,.fd-accept){cursor:progre
 
 .fd-x-gap{width:26px;flex:none}
 .fd-cash-line.is-expected b{color:#c5d3c9}
+
+/* Строка, которую нельзя начислить: причина и кнопка исправления вместо поля */
+.fd-fix{display:flex;flex-direction:column;align-items:flex-end;gap:2px}
+.fd-fix-btn{min-height:34px;border:1px dashed #c9b27a;border-radius:7px;background:#f7f3e8;color:#6d5c38;font-size:11px;font-weight:600;padding:0 10px;white-space:nowrap}
+.fd-fix-btn:hover:not(:disabled){filter:none;background:#f1ead6}
+.fd-fix .fd-debt-edit{width:100%}
+.fd-pay-note.is-blocked{color:#8a6d3b}
+.fd-row.is-blocked{background:#fffdf7}
+@media (max-width:650px){.fd-fix-btn{min-height:40px;white-space:normal}}
