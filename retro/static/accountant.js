@@ -106,10 +106,6 @@ document.querySelectorAll('.fd-sec-toggle').forEach(button => {
 });
 
 /* ── Смена ──────────────────────────────────────────────────────────── */
-function strip(parts, action) {
-  return h('div', {class: 'fd-strip'}, h('span', {class: 'fd-strip-tag', text: '⊘ Без Hikvision'}),
-    h('span', {class: 'fd-strip-text'}, ...parts.filter(Boolean).flatMap((part, i) => i ? [' ', h('span', {text: part})] : [h('span', {text: part})])), action || null);
-}
 function noteStrip(text, tag, action) {
   return h('div', {class: 'fd-strip is-block'}, h('span', {class: 'fd-strip-tag', text: tag}),
     h('span', {class: 'fd-strip-text', text}), action || null);
@@ -158,44 +154,17 @@ function renderShift() {
   $('shift-title').textContent = 'Смена ' + longDay(board.S);
   const lock = payDisabledReason();
 
-  // Полосы: сотрудники без Hikvision, состояние Hikvision и причина запрета.
+  /* Полосы-сводки сняты по решению PM (T-397): три баннера над таблицей
+     отодвигали саму смену вниз. Счётчики «без ставки» и «без привязки
+     Hikvision» никуда не делись — они в правой карточке «Проверки», а причина
+     по каждому человеку написана в его же строке. Остаются только полосы,
+     которые объясняют неработающие кнопки: состояние Hikvision и запрет
+     выдачи. Их молчание и было багом T-393. */
   const strips = $('shift-strips'); strips.replaceChildren();
-  const noHik = board.own.filter(r => r.noHik);
-  if (noHik.length) {
-    const roles = [...new Set(noHik.map(r => r.role).filter(Boolean))].join(', ');
-    const absent = noHik.filter(r => r.status === 'manual_absent').length;
-    const n = noHik.length;
-    const parts = [n + ' ' + L.plural(n, 'сотрудник не зарегистрирован', 'сотрудника не зарегистрированы', 'сотрудников не зарегистрированы') + ' в Hikvision'
-        + (roles ? '' : '.'), roles ? '(' + roles + ').' : null,
-      board.confirmed ? 'Смена подтверждена — отметки закрыты.' : 'Время входа неизвестно — нажмите на статус, чтобы отметить «был / не был».',
-      absent ? 'Отмечено отсутствие: ' + absent + '.' : null];
-    strips.append(strip(parts, h('button', {type: 'button', class: 'fd-strip-btn', text: 'Показать', onclick: () => { shiftTab = 'nohik'; renderShift(); }})));
-  }
-  const blocker = view.blocker;
-  if (blocker) {
-    const parts = [];
-    if (blocker.rate) parts.push(blocker.rate + ' без ставки');
-    if (blocker.unlinked) parts.push(blocker.unlinked + ' без привязки Hikvision');
-    if (blocker.hikvision) parts.push(blocker.hikvision + ' без данных Hikvision');
-    if (blocker.unknown) parts.push(blocker.unknown + ' не рассчитано');
-    const payableLeft = board.own.some(r => !r.block);
-    // Каждая часть — отдельный узел: так её переводит словарь, а не склейка.
-    const text = h('span', {class: 'fd-strip-text'}, ...parts.flatMap((part, i) => i ? [' · ', h('span', {text: part})] : [h('span', {text: part})]),
-      ' ', h('span', {text: payableLeft ? '— остальным можно выдавать.' : '— выдавать пока некому.'}));
-    strips.append(h('div', {class: 'fd-strip is-block'}, h('span', {class: 'fd-strip-tag', text: 'Не начислено'}), text,
-      h('button', {type: 'button', class: 'fd-strip-btn', text: 'Показать', onclick: () => { shiftTab = 'err'; renderShift(); }})));
-  }
   const health = attendanceHealth(staff?.attendance || data.attendance);
   if (!health.ok) strips.append(noteStrip(health.text, 'Hikvision'));
   if (lock) strips.append(noteStrip(lock, 'Выдача закрыта',
     data.ledger.cash_balance === null ? h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools}) : null));
-  // Снятые гейты обязаны быть видны. Молчаливый режим проверки на боевом
-  // контуре означал бы выдачу против кассы, которой нет, и начисление людям,
-  // чей день никто не подтверждал, — и никто бы этого не заметил.
-  if (checkMode)
-    strips.append(noteStrip('Временный режим проверки: выдача идёт без данных кассира, «нет привязки Hikvision» не держит начисление, остаток может уйти в минус.',
-      'Проверка', data.ledger.cash_balance === null
-        ? h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools}) : null));
 
   const tabs = $('shift-tabs'); tabs.replaceChildren();
   L.boardTabs(board.rows).forEach(([key, label, count]) => {
