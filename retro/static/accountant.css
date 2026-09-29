@@ -685,6 +685,8 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-cash-confirm button{height:36px;border:0;border-radius:9px;background:#d8b977;color:#143e35;font-weight:650;font-size:12px;padding:0 12px;cursor:pointer}
 .fd-cash-confirm button:disabled{opacity:.5;cursor:default}
 .fd-cash-confirm-note{margin:6px 0 0;font-size:10.5px;color:#b9cbbd}
+/* T-399: кассир изменил день после подтверждения — пояснение заметнее. */
+.fd-cash-confirm.is-changed .fd-cash-confirm-note{color:#f0cf8a;font-weight:600}
 .fd-cash-confirmed{position:relative;margin:10px 0 0;font-size:11px;color:#b9e0c6;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
 .fd-cash-confirmed.is-short{color:#f2b1b4}
 .fd-cash-confirmed .fd-link-btn{color:#d8b977;background:none;border:0;padding:0;font-size:11px;text-decoration:underline;cursor:pointer}
@@ -694,6 +696,7 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-checks-head .fd-kicker{margin:0}
 .fd-badge{font-size:10px;font-weight:650;padding:4px 8px;border-radius:20px;background:#fde9ed;color:#ab445e;white-space:nowrap}
 .fd-badge.is-clean{background:#edf5eb;color:#4a8056}
+.fd-badge.is-warn{background:#fbf0d7;color:#906c2b}
 .fd-checks-ok{font-size:12px;color:#4a8056;margin:10px 0 0}
 .fd-check{width:100%;display:flex;gap:10px;align-items:flex-start;padding:10px 0;border:0;border-top:1px solid #edf1e9;background:none;text-align:left;color:#1c302b}
 .fd-check:hover:not(:disabled){background:#fbfcf9;filter:none}

@@ -87,6 +87,11 @@ def lock_day(connection, day: date) -> None:
                            (DAY_LOCK_BASE + day.toordinal(),))
 
 
+def plain(value: Decimal) -> str:
+    """Сумма строкой без хвостовых нулей: 300000.00 → «300000», 0.50 → «0.5»."""
+    return format(value.normalize(), 'f') if value else '0'
+
+
 def amount_value(value, *, allow_zero=False) -> Decimal:
     try:
         amount = Decimal(str(value))
@@ -362,8 +367,23 @@ class FinanceStore:
                 record_audit(connection, 'handover', day.isoformat(),
                              'create' if before is None else 'update', before, after)
 
-    def handover_state(self, day: date) -> dict | None:
-        """Приход кассира за день для экранов: сумма, когда записан и кем."""
+    def handover_state(self, day: date, current_expected=None, *, cashier_active=None) -> dict | None:
+        """Приход кассира за день для экранов: сумма, когда записан и кем.
+
+        Недостача считается здесь и только здесь — одно число для тоста 2a,
+        карточки «Деньги на расходы», «Проверок», учредителя и Excel:
+        shortfall = текущий расчёт кассира − полученное (не меньше 0).
+        `current_expected` — текущий расчёт (iiko + расходы кассы и выдачи Шоху,
+        cashier.till.expected_from_saved); без него — расчёт на момент
+        подтверждения. Сверяется полученное бухгалтером (`checked`):
+        подтверждённая передача — всегда, его собственная ручная запись
+        прихода — только если кассир в этот день работал в панели
+        (`cashier_active`, cashier.till.cashier_active). Без этого расчёт iiko
+        не знает реальных расходов кассы, и «недостача» была бы ложной (прод
+        ведёт приход вручную, модуль кассира только внедряется). Передача
+        кассира до подтверждения и авто-расчёт iiko — сами расчёт, их не сверяем.
+        Касса изменилась после подтверждения (`expected_changed`) — расчёт
+        сейчас не тот, что был при подтверждении: бухгалтер подтверждает снова."""
         with closing(self._open()) as connection:
             row = connection.execute(
                 'SELECT amount, checked_at, source, expected_amount, confirmed_at, confirmed_by '
@@ -371,17 +391,28 @@ class FinanceStore:
                 (day.isoformat(),)).fetchone()
         if row is None:
             return None
-        # confirmed_at — бухгалтер подтвердил получение: amount — сколько реально
-        # получено, expected_amount — расчёт на момент подтверждения, shortfall —
-        # недостача (расчёт − получено, не меньше 0). До подтверждения всё None.
         confirmed = row[4] is not None
-        shortfall = (max(Decimal(0), Decimal(row[3]) - Decimal(row[0]))
-                     if confirmed and row[3] is not None else None)
-        return dict(amount=row[0], handed_at=local_timestamp(row[1]), source=row[2] or 'accountant',
+        source = row[2] or 'accountant'
+        stored = Decimal(row[3]) if confirmed and row[3] is not None else None
+        current = Decimal(str(current_expected)) if current_expected is not None else None
+        checked = confirmed or (source == 'accountant' and bool(cashier_active))
+        calculation = (current if current is not None else stored) if checked else None
+        shortfall = max(Decimal(0), calculation - Decimal(row[0])) if calculation is not None else None
+        changed = (confirmed and stored is not None and current is not None
+                   and abs(current - stored) >= Decimal('0.01'))
+        return dict(amount=row[0], handed_at=local_timestamp(row[1]), source=source,
                     confirmed_at=local_timestamp(row[4]) if confirmed else None,
                     confirmed_by=row[5] if confirmed else None,
+                    # Расчёт, записанный при подтверждении (у кассира — «после
+                    # подтверждения сумма изменилась на …»).
                     expected_amount=row[3] if confirmed else None,
-                    shortfall=str(shortfall) if shortfall is not None else None)
+                    checked=checked,
+                    # Работал ли кассир в панели в этот день (None — не проверяли).
+                    cashier_active=cashier_active,
+                    # Расчёт, с которым сверено полученное, и недостача к нему.
+                    calculation=plain(calculation) if calculation is not None else None,
+                    shortfall=plain(shortfall) if shortfall is not None else None,
+                    expected_changed=bool(changed))
 
     def confirm_handover(self, day: date, received, expected, approver: str) -> dict:
         """Бухгалтер подтверждает, сколько наличных от кассира реально получил.
@@ -400,13 +431,17 @@ class FinanceStore:
                 f'SELECT {", ".join(columns)} FROM accountant_handover_days WHERE day = ?',
                 (day.isoformat(),)).fetchone()
             before = dict(zip(columns, row)) if row else None
-            if before and before['confirmed_at'] is not None:
+            if expected is not None:
+                # Текущий расчёт кассы — тот, что в «Проверках» и у учредителя.
+                # Повторное подтверждение после правок кассира берёт уже новый.
+                calculation = str(Decimal(str(expected)))
+            elif before and before['confirmed_at'] is not None:
                 calculation = before['expected_amount']
             elif before and before['source'] in ('cashier', 'auto'):
                 calculation = before['amount']
             else:
-                # Своя ручная запись бухгалтера — не расчёт: сверяем с iiko, если он есть.
-                calculation = str(amount_value(expected, allow_zero=True)) if expected is not None else None
+                # Своя ручная запись бухгалтера без расчёта iiko — сверять не с чем.
+                calculation = None
             if calculation is None:
                 calculation = str(received)
             now = datetime.now().isoformat()
@@ -422,7 +457,7 @@ class FinanceStore:
                 f'SELECT {", ".join(columns)} FROM accountant_handover_days WHERE day = ?',
                 (day.isoformat(),)).fetchone()
             record_audit(connection, 'handover', day.isoformat(), 'confirm', before, dict(zip(columns, row)))
-        return self.handover_state(day)
+        return self.handover_state(day, current_expected=expected)
 
     def handover_for_day(self, day: date) -> Decimal | None:
         with closing(self._open()) as connection:

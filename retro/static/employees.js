@@ -171,7 +171,10 @@ function renderStats(s) {
   const pct = Math.round(s.present.length / (s.total || 1) * 100);
   box.replaceChildren(
     statCard({label: 'К начислению за день', accent: 'accrued', value: money(s.accrued), unit: 'сум',
-      footer: s.total + ' в реестре · ' + s.noRate.length + ' без ставки'}),
+      // Реестр ниже считает и окладников («Реестр 77 сотрудников»): здесь
+      // подписываем, кто есть кто, чтобы 60 и 77 не спорили.
+      footer: s.total + ' ' + plural(s.total, ['сменный', 'сменных', 'сменных'])
+        + ((current?.monthly_employees || []).length ? ' · ' + current.monthly_employees.length + ' на окладе' : '')}),
     statCard({key: 'present', filterable: true, label: 'На месте', value: s.present.length, total: s.total,
       progress: pct}),
     statCard({key: 'late', filterable: true, accent: 'late', label: 'Опоздали', value: s.late.length, dot: 'late',
@@ -351,7 +354,7 @@ function openDrawer(id) {
   render(); revealDrawer();
 }
 const shiftDraft = row => ({name: row.name, role: row.role, rate: L.formatAmount(row.rate), group: row.group, reason: '',
-  manual: !!row.manual_attendance, groupTouched: false});
+  manual: !!row.manual_attendance, hikId: row.hikvision_id || '', groupTouched: false});
 const monthlyDraft = row => ({name: row.name, role: row.role, salary: L.formatAmount(row.salary), schedule: row.schedule || '',
   noHik: !!row.no_hikvision, reason: ''});
 function openMonthly(id) {
@@ -535,7 +538,17 @@ function drawerCard() {
   form.append(manualToggle('Нет в Hikvision · отмечать вручную', d.manual, value => setDraft('manual', value),
     d.manual ? 'Турникет не нужен: по умолчанию «был», в «Финансах дня» можно отметить «не был».'
       : selP?.hikvision_registered ? 'Выключено: день берётся из Hikvision.'
-        : 'Выключено: должен проходить турникет, а ID Hikvision не привязан — начисление заблокировано.', !editable()));
+        : isEdit ? 'Выключено: должен проходить турникет, а ID Hikvision не привязан — укажите его ниже.'
+          : 'Выключено: должен проходить турникет, а ID Hikvision не привязан — начисление заблокировано.', !editable()));
+  // Сняли «Нет в Hikvision» — привязать человека к устройству можно прямо
+  // здесь: номер сотрудника на устройстве (employeeNo), без синхронизации.
+  if (isEdit && !d.manual) {
+    const hikInput = el('input', null, {name: 'hikvision_id', value: d.hikId, placeholder: 'Номер на устройстве, например 1024',
+      maxLength: 32, autocomplete: 'off', inputMode: 'text', spellcheck: false});
+    hikInput.disabled = !editable();
+    hikInput.addEventListener('input', event => setDraft('hikId', event.target.value));
+    form.append(fieldLabel('ID в Hikvision', hikInput));
+  }
 
   if (isEdit) {
     const reasonInput = el('input', null, {name: 'reason', value: d.reason,
@@ -664,7 +677,7 @@ async function loadHistory(kind, id) {
   } catch { if (ui.history?.key === key) ui.history.error = true; }
   if (ui.history?.key === key) renderAside(people(), {attention: people().filter(needsAttention)});
 }
-const historyActions = {create: 'Добавлен', update: 'Изменение', manual: 'Hikvision', delete: 'Удалён'};
+const historyActions = {create: 'Добавлен', update: 'Изменение', manual: 'Hikvision', hikvision: 'Hikvision', delete: 'Удалён'};
 function historyWhen(value) {
   const at = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(value) ? value : value + '+05:00');
   return Number.isNaN(at.getTime()) ? value : new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'short',
@@ -688,7 +701,7 @@ function historyBlock() {
       text('span', null, historyWhen(row.changed_at) + (row.changed_by ? ' · ' + row.changed_by : '')));
     item.append(head, text('div', 'emp-history-reason', row.reason));
     const changes = [];
-    if ((row.old_rate || '') !== (row.new_rate || '') && row.action !== 'manual') {
+    if ((row.old_rate || '') !== (row.new_rate || '') && row.action !== 'manual' && row.action !== 'hikvision') {
       const fmt = value => value == null ? 'нет' : money(value);
       changes.push(row.action === 'create' ? unit + ' ' + fmt(row.new_rate)
         : row.action === 'delete' ? unit + ' был' + (unit === 'Ставка' ? 'а ' : ' ') + fmt(row.old_rate)
@@ -731,6 +744,12 @@ async function saveDraft() {
       const before = people().find(p => p.employee_id === id);
       const payload = {name, role: d.role.trim(), rate, group: d.group, reason: d.reason.trim()};
       if (!before || !!before.manual_attendance !== d.manual) payload.manual_attendance = d.manual;
+      // Номер Hikvision отправляем, только если его поменяли: пусто — снять привязку.
+      const hikId = (d.hikId || '').trim();
+      if (!d.manual && hikId !== (before?.hikvision_id || '')) {
+        if (hikId && !/^[0-9A-Za-z_-]{1,32}$/.test(hikId)) return fail('ID в Hikvision — номер сотрудника на устройстве: цифры и латиница, до 32 знаков.');
+        payload.hikvision_id = hikId || null;
+      }
       const response = await fetch('/api/accountant/employees/' + encodeURIComponent(id), {
         method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();

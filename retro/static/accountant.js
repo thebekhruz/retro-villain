@@ -102,7 +102,7 @@ async function run(action, success, fb = {}) {
     (fb.rows || []).forEach(line => B.row(line, work).catch(() => {}));
     // Поле само подсвечивает свою строку по итогу; строку «в работе» ставим
     // только действиям кнопками.
-    if (fb.field) work = B.field(fb.field, work, {row: fb.row});
+    if (fb.field) work = B.field(fb.field, work, {row: fb.row, restore: fb.restore});
     else if (fb.row) work = B.row(fb.row, work, {collapse: fb.collapse});
     if (fb.button) work = B.button(fb.button, work, {done: !fb.collapse});
   }
@@ -289,18 +289,26 @@ function shiftRow(row, lock) {
   input.disabled = !!lock || !(row.accrued > 0 || row.paidToday > 0);
   if (lock) input.title = lock;
   else if (row.accrued === 0 && !row.paidToday) input.title = 'Входа нет — начисление 0 сум';
+  // Отклонённое значение в поле не остаётся: ошибка — в сообщении, а поле
+  // возвращается к сохранённой выдаче (и «несохранённый» набор busy.js тоже
+  // снимаем, иначе перерисовка вернула бы 999 999 рядом с ✓).
+  const restore = () => {
+    B?.clear(input.dataset.busyKey);
+    input.classList.remove('is-bad');
+    input.value = row.paidToday ? fmt(row.paidToday) : '';
+  };
   const commit = () => {
     const raw = input.value.trim();
     // «abc» — не ноль: без проверки такая опечатка снимала бы выдачу.
     if (raw && !/^[\d\s\u00a0\u202f.,]+$/.test(raw)) {
-      message('Сумма — только цифрами: ' + raw, true); input.classList.add('is-bad'); input.focus(); return;
+      message('Сумма — только цифрами: ' + raw, true); restore(); return;
     }
     const value = parse(raw);
     // Больше долга сервер не примет — говорим сразу и сколько можно.
     const most = row.paidToday + Math.max(0, row.debt);
     if (value > most) {
       message('Больше долга: ' + row.name + ' можно выдать ещё ' + money(Math.max(0, row.debt)) + ' (итого за сегодня до ' + money(most) + ').', true);
-      input.focus(); return;
+      restore(); return;
     }
     if (value === row.paidToday) { input.value = row.paidToday ? fmt(row.paidToday) : ''; return; }
     setPaid(row, value, input, {field: input, row: line});
@@ -393,7 +401,9 @@ function setPaid(row, target, input, fb = {}) {
     } else if (target > fresh.paidToday) {
       await payAccrual(fresh.accrualId, target - fresh.paidToday);
     }
-  }, target ? 'Выдано: ' + row.name + ' · ' + money(target) : 'Выдача снята: ' + row.name, fb);
+  // restore: сервер отказал — ошибка остаётся (сообщение и рамка поля), а в поле
+  // после перерисовки то, что реально сохранено, а не отклонённая сумма.
+  }, target ? 'Выдано: ' + row.name + ' · ' + money(target) : 'Выдача снята: ' + row.name, {...fb, restore: true});
 }
 $('pay-all').addEventListener('click', () => {
   if (!view || busy) return;
@@ -601,7 +611,7 @@ function renderShoh() {
     else if (buy.flags.length) {
       check.append(h('span', {class: 'fd-flag', text: buy.flags.map(f => f.t).join(' · ')}));
       const accept = h('button', {type: 'button', class: 'fd-accept', title: 'Проверено, принять', text: 'Принять', 'data-busy-key': 'accept:' + dayKey(buy.id)});
-      accept.disabled = busy || (buy.iiko && !['synced', 'legacy'].includes(buy.iiko.status));
+      accept.disabled = busy || (buy.iiko && !['synced', 'legacy', 'manual'].includes(buy.iiko.status));
       accept.addEventListener('click', () => run(() => write('/api/accountant/shokh/purchases/' + buy.id + '/accept', {date: data.date}), 'Покупка принята: ' + buy.item,
         {button: accept, row: line}));
       check.append(accept);
@@ -738,14 +748,21 @@ function railLine(label, value, cls) {
    «Получено» по умолчанию = переданное кассиром (или расчёт iiko). После
    подтверждения остаток считается от полученного, а недостача — ошибка. */
 let confirmEditing = false, confirmDirty = false;
+// Последнее верное значение поля «Получено»: неверный ввод («abc») сюда не
+// попадает — поле возвращается к нему, когда из него уходят.
+const confirmDefault = () => { const {cash} = view; return cash.confirmedAt || cash.changed ? cash.cashier : cash.cashier !== null ? cash.cashier : cash.expected; };
 function renderCashConfirm(handover) {
   const {cash} = view, form = $('cash-confirm'), done = $('cash-confirmed');
   const handed = cash.cashier !== null ? cash.cashier : cash.expected;
-  // Подтверждать нужно передачу кассира; свою ручную запись бухгалтер уже ввёл сам.
-  const needs = !cash.confirmedAt && (handover.source === 'cashier' || (cash.cashier === null && cash.expected !== null));
+  // Подтверждать нужно передачу кассира; свою ручную запись бухгалтер уже ввёл
+  // сам. Касса изменилась после подтверждения — подтверждают снова.
+  const needs = cash.changed || (!cash.confirmedAt && (handover.source === 'cashier' || (cash.cashier === null && cash.expected !== null)));
   form.hidden = !(needs || confirmEditing) || handed === null;
-  if (!form.hidden && !confirmDirty) $('cash-confirm-amount').value = fmt(cash.confirmedAt ? cash.cashier : handed);
-  $('cash-confirm-note').textContent = cash.confirmedAt ? 'Исправление: расчёт ' + money(cash.calculation) + '.'
+  form.classList.toggle('is-changed', cash.changed);
+  if (!form.hidden && !confirmDirty) $('cash-confirm-amount').value = fmt(confirmDefault());
+  $('cash-confirm-note').textContent = cash.changed
+    ? 'Касса изменилась после подтверждения: было ' + money(cash.confirmedCalc) + ', сейчас ' + money(cash.calculation) + ' — подтвердите снова.'
+    : cash.confirmedAt ? 'Исправление: расчёт ' + money(cash.calculation) + '.'
     : handover.source !== 'cashier' && cash.cashier !== null ? 'Исправление записанного прихода ' + money(cash.cashier) + '.'
     : handover.source === 'cashier' ? 'Кассир передал ' + money(cash.cashier) + '. Пересчитайте и подтвердите.'
     : 'Кассир ещё не нажал «Передать» — по расчёту ' + money(cash.expected) + '.';
@@ -754,22 +771,48 @@ function renderCashConfirm(handover) {
   const manual = !cash.confirmedAt && cash.cashier !== null && handover.source !== 'cashier';
   done.hidden = !(cash.confirmedAt || manual) || !form.hidden;
   done.classList.toggle('is-short', cash.shortfall > 0);
+  // Недостачу считает сервер от текущего расчёта кассы; ручная запись прихода
+  // сверяется сразу, без «Изменить → Подтвердить».
   done.replaceChildren(h('span', {text: cash.shortfall > 0
       ? '⚠ Получено на ' + money(cash.shortfall) + ' меньше расчёта (' + money(cash.calculation) + ')'
-      : manual ? 'Приход записан бухгалтером' : '✓ Сумма от кассира подтверждена'}), ' ',
+      : manual ? (cash.unchecked ? 'Приход записан бухгалтером · кассир в панели не работал — сверки нет' : 'Приход записан бухгалтером')
+      : '✓ Сумма от кассира подтверждена'}), ' ',
     h('button', {type: 'button', class: 'fd-link-btn', text: 'Изменить', onclick: () => { confirmEditing = true; confirmDirty = false; renderCashConfirm(handover); $('cash-confirm-amount').focus(); }}));
 }
+const confirmValid = raw => !!raw && /^[\d\s\u00a0\u202f.,]+$/.test(raw);
 $('cash-confirm-amount').addEventListener('input', () => { confirmDirty = true; $('cash-confirm-amount').classList.remove('is-bad'); });
+// Ушли из поля с неверной суммой — ошибка остаётся в сообщении, а в поле
+// возвращается последнее верное значение: «abc» рядом с «Подтвердить» не висит.
+// Уход из поля нажатием «Подтвердить» — не уход: отказ покажет сама отправка
+// (иначе подтвердилась бы подставленная сумма, которую не вводили).
+let confirmPressing = false;
+$('cash-confirm-submit').addEventListener('pointerdown', () => { confirmPressing = true; setTimeout(() => { confirmPressing = false; }, 800); });
+$('cash-confirm-amount').addEventListener('blur', () => {
+  const input = $('cash-confirm-amount');
+  if (!view || confirmPressing || confirmValid(input.value.trim())) return;
+  message('Укажите полученную сумму цифрами.', true);
+  confirmDirty = false; input.classList.remove('is-bad');
+  const value = confirmDefault();
+  input.value = value === null ? '' : fmt(value);
+});
 $('cash-confirm').addEventListener('submit', event => {
   event.preventDefault();
+  confirmPressing = false;
   if (!view) return;
   const input = $('cash-confirm-amount'), raw = input.value.trim();
-  if (!raw || !/^[\d\s\u00a0\u202f.,]+$/.test(raw)) { message('Укажите полученную сумму цифрами.', true); input.classList.add('is-bad'); input.focus(); return; }
+  if (!confirmValid(raw)) { message('Укажите полученную сумму цифрами.', true); input.classList.add('is-bad'); input.focus(); return; }
   const amount = parse(raw), day = view.data.date;
-  const calc = view.cash.confirmedAt ? view.cash.calculation : (view.cash.cashier !== null ? view.cash.cashier : view.cash.expected);
-  const note = calc !== null && amount < calc ? ' Не хватает ' + money(calc - amount) + ' — это видно в проверках.' : '';
-  run(() => write('/api/accountant/handover/confirm', {date: day, amount: String(amount)}), 'Получено от кассира: ' + money(amount) + '.' + note,
-    {button: $('cash-confirm-submit')}).then(ok => { if (ok) { confirmEditing = false; confirmDirty = false; renderAll(); } });
+  // Недостачу в сообщении берём из ответа сервера — то же число, что в
+  // карточке, «Проверках», у учредителя и в Excel.
+  let saved = null;
+  run(async () => { saved = await write('/api/accountant/handover/confirm', {date: day, amount: String(amount)}); }, null,
+    {button: $('cash-confirm-submit')}).then(ok => {
+    confirmDirty = false;
+    if (!ok) { renderAll(); return; }
+    confirmEditing = false; renderAll();
+    const short = Number(saved?.handover?.shortfall || 0);
+    message('Получено от кассира: ' + money(amount) + '.' + (short > 0 ? ' Не хватает ' + money(short) + ' — это видно в проверках.' : ''));
+  });
 });
 
 function renderRail() {
@@ -810,10 +853,10 @@ function renderRail() {
 
 function renderChecks() {
   const issues = view.issues, box = $('finance-checks'); box.replaceChildren();
-  const errors = issues.filter(i => i.lvl !== 'todo').length;
-  const badge = $('checks-badge');
-  badge.textContent = errors ? errors + ' ' + L.plural(errors, 'ошибка', 'ошибки', 'ошибок') : 'чисто';
-  badge.classList.toggle('is-clean', !errors);
+  const state = L.checksBadge(issues), badge = $('checks-badge');
+  badge.textContent = state.text;
+  badge.classList.toggle('is-clean', state.tone === 'clean');
+  badge.classList.toggle('is-warn', state.tone === 'warn');
   if (!issues.length) { box.append(h('p', {class: 'fd-checks-ok', text: 'Ошибок не найдено.'})); return; }
   (allIssues ? issues : issues.slice(0, 5)).forEach(issue => box.append(h('button', {type: 'button', class: 'fd-check', onclick: () => focusOn(issue.target)},
     h('span', {class: 'fd-dot is-' + issue.lvl}),
@@ -829,7 +872,7 @@ function focusOn(target) {
     : target.startsWith('buy:') || target === 'shoh' ? 'shoh' : target.startsWith('month:') ? 'salary' : null;
   if (section) setSection(section, true);
   if (target.startsWith('row:') || target === 'todo') shiftTab = 'all';
-  if (target === 'blocked') shiftTab = 'err';
+  if (target === 'blocked') shiftTab = 'blocked';
   renderAll();
   const el = target.startsWith('row:') ? document.querySelector('[data-key="' + target.slice(4) + '"]')
     : target === 'todo' ? document.querySelector('.fd-row.is-focus')

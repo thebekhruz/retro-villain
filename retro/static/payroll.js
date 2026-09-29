@@ -14,7 +14,12 @@ let shownMonth = null, focus = null, checksOpen = false;
 const B = globalThis.RetroBusy;
 const cellKey = (kind, personId, day) => kind + ':' + ($('month-input').value || '') + ':' + personId + ':' + day;
 
+// Последнее сообщение: «Ведомость скачана.» — про показанный месяц, при
+// переходе на другой месяц его убираем (иначе висит над чужой ведомостью).
+let lastNote = '';
+const DOWNLOADED = 'Ведомость скачана.';
 function message(value, error = false) {
+  lastNote = value;
   const box = $('payroll-message');
   box.textContent = value; box.hidden = !value || !error;
   box.setAttribute('role', error ? 'alert' : 'status');
@@ -558,7 +563,10 @@ async function loadMonth() {
     month = back;
   }
   const fresh = month !== shownMonth;
-  if (fresh) { focus = null; checksOpen = false; }
+  if (fresh) {
+    focus = null; checksOpen = false;
+    if (lastNote === DOWNLOADED) { globalThis.RetroToast?.hide(); lastNote = ''; }
+  }
   const name = monthName(month);
   $('month-title').replaceChildren('Зарплаты · ' + name, node('span', '', '.'));
   $('crumb-month').textContent = 'Зарплаты · ' + name;
@@ -629,7 +637,7 @@ async function download() {
     link.href = url; link.download = 'Retro-payroll-' + month + '.xlsx';
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
-    message('Ведомость скачана.');
+    message(DOWNLOADED);
     return true;
   } catch (error) { message(error.message, true); return false; }
 }

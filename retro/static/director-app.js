@@ -389,6 +389,11 @@
         $('late-n').textContent = team.counts.late;
         $('miss-n').textContent = team.counts.missing;
         $('nohik-n').textContent = team.counts.no_hikvision;
+        // «Без Hikvision» — все, кого нет на устройстве; у бухгалтера в проверках
+        // видны только непривязанные. Подписываем, сколько их, чтобы числа не спорили.
+        const unlinked = team.counts.unlinked_hikvision || 0;
+        $('nohik-sub').hidden = !unlinked;
+        $('nohik-sub').textContent = unlinked ? 'из них ' + unlinked + ' без привязки' : '';
         const health = team.attendance && team.attendance.status;
         $('attendance-note').textContent = health === 'ok' ? '' :
           health === 'not_configured' ? 'Hikvision ресторана не подключён: входы не видны, опоздания не считаются.' :

@@ -314,10 +314,13 @@ def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0), transfers=())
     by_item = defaultdict(Decimal)
     for row in purchases:
         by_item[row['item']] += Decimal(row['total'])
+    # `total` покупки — наличные в целых сумах (shokh.store.cash_amount).
     flagged = [dict(id=row['id'], day=row['day'], item=row['item'], total=row['total'],
-                    reason='нет фото' if not row['has_photo'] else 'цена выше обычной')
+                    reason=('нет в iiko' if row.get('off_catalog') else
+                            'нет фото' if not row['has_photo'] else 'цена выше обычной'))
                for row in purchases
-               if row['accepted_at'] is None and (not row['has_photo'] or row['price_above_usual'])]
+               if row['accepted_at'] is None and (row.get('off_catalog') or not row['has_photo']
+                                                  or row['price_above_usual'])]
     top = sorted(by_item.items(), key=lambda item: (-item[1], item[0]))[:5]
     transferred = sum((Decimal(row['amount']) for row in transfers), Decimal(0))
     return dict(given=money(given), given_from_till=money(from_till), spent=money(spent),

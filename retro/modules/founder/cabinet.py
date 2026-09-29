@@ -14,7 +14,7 @@ from fastapi import HTTPException
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.expenses import cash_to_finance
 from retro.modules.cashier.service import DataError, today_tashkent
-from retro.modules.cashier.till import shokh_gives, shokh_total, till_totals
+from retro.modules.cashier.till import handover_check, shokh_gives, shokh_total, till_totals
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
@@ -152,12 +152,14 @@ async def day_outlook(request, day: date, accounting: dict, expected):
 
 
 def handover_expected(cashier, handover_state):
-    """Расчёт кассира для сверки и отчёта: после подтверждения бухгалтером —
-    расчёт на момент подтверждения, иначе — текущий расчёт по iiko.
+    """Расчёт кассира для сверки и отчёта. Полученное бухгалтером (подтверждённая
+    передача или его ручная запись) сверено сервером с текущим расчётом кассы
+    (ledger.handover_state) — берём ровно тот расчёт, иначе — расчёт по iiko.
     Возвращает (сумма или None, подтверждено ли)."""
-    if handover_state and handover_state.get('confirmed_at') and handover_state.get('expected_amount') is not None:
-        return money(handover_state['expected_amount']), True
-    return (cashier['expected_handover'] if cashier else None), False
+    confirmed = bool(handover_state and handover_state.get('confirmed_at'))
+    if handover_state and handover_state.get('checked') and handover_state.get('calculation') is not None:
+        return money(handover_state['calculation']), confirmed
+    return (cashier['expected_handover'] if cashier else None), confirmed
 
 
 async def month_cashier(request, first: date, last: date):
@@ -169,7 +171,8 @@ async def month_cashier(request, first: date, last: date):
     async def one(day):
         async with gate:
             cashier, error = await cashier_day(request, day)
-        handover_state = await asyncio.to_thread(state.accountant_finance.handover_state, day)
+        handover_state = await asyncio.to_thread(
+            handover_check, state, day, Decimal(cashier['expected_handover']) if cashier else None)
         expected, _ = handover_expected(cashier, handover_state)
         if cashier is None:
             return day, None, error
@@ -193,15 +196,22 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
             await asyncio.to_thread(state.accountant_finance.cash_flows_between, day, day))
     values = flows.get(day.isoformat(), {})
     recorded = await asyncio.to_thread(state.accountant_finance.handover_for_day, day)
-    handover_state = await asyncio.to_thread(state.accountant_finance.handover_state, day)
+    handover_state = await asyncio.to_thread(
+        handover_check, state, day, Decimal(cashier['expected_handover']) if cashier else None) or {}
     expected, confirmed = handover_expected(cashier, handover_state)
-    if confirmed:
-        # Бухгалтер подтвердил, сколько реально получил (2a): сверяем с расчётом
-        # на момент подтверждения — это та же недостача, что ошибка
-        # «От кассира получено меньше расчёта» в 2a.
+    checked = bool(handover_state.get('checked')) and handover_state.get('shortfall') is not None
+    if checked:
+        # Полученное бухгалтером (подтверждение или ручная запись, 2a) сверено
+        # сервером с текущим расчётом кассы — та же недостача, что ошибка
+        # «От кассира получено меньше расчёта» в 2a и в Excel дня.
         shortfall = Decimal(handover_state['shortfall'] or 0)
         check = dict(status='mismatch' if shortfall > 1 else 'ok',
                      difference=money(Decimal(recorded) - Decimal(expected)))
+    elif (recorded is not None and handover_state.get('source') == 'accountant'
+          and not handover_state.get('cashier_active')):
+        # Приход записал бухгалтер, а кассир в панели в этот день не работал:
+        # расчёт iiko не знает реальных расходов кассы — сверки нет, как в 2a.
+        check = dict(status='unchecked', difference=None)
     else:
         check = overview.handover_check(recorded, expected)
     if day == today_tashkent() and check['status'] == 'missing':
@@ -217,9 +227,10 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
         cashier=cashier, cashier_error=cashier_error,
         orders={key: value['orders'] for key, value in day_orders.items()} if orders is not None else None,
         handover=dict(recorded=money(recorded) if recorded is not None else None,
-                      expected=expected, confirmed=confirmed,
+                      expected=expected, confirmed=confirmed, checked=checked,
                       confirmed_at=handover_state.get('confirmed_at') if confirmed else None,
-                      shortfall=handover_state.get('shortfall') if confirmed else None, **check),
+                      shortfall=handover_state.get('shortfall') if checked else None,
+                      expected_changed=bool(handover_state.get('expected_changed')), **check),
         flows={key: money(values.get(key, Decimal(0)))
                for key in ('salary', 'procurement', 'other', 'dividends', 'receipt')},
         opening_balance=ledger['cash_flow'].get('opening_balance'),

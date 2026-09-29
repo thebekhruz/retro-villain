@@ -8,8 +8,6 @@
 .fo-main{min-height:100vh}
 .fo-phone{display:none}
 .fo-desk{display:grid;grid-template-columns:minmax(0,1fr) 340px;min-height:calc(100vh - 80px)}
-.fo-nav-label{margin:26px 0 10px}
-.fo-subnav{margin-left:0}
 .fo-content{min-width:0;padding:28px 28px 22px 32px;display:grid;gap:18px;align-content:start}
 .fo-hint{margin:0;font-size:11px;color:#9aa69b;line-height:1.45}
 .fo-empty{margin:0;padding:22px 18px;font-size:12px;color:var(--muted-3)}

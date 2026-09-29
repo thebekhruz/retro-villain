@@ -59,7 +59,9 @@
         ' — совпало с расчётом' : 'Передача совпала с расчётом'};
     }
     if (handover.status === 'mismatch') {
-      if (handover.confirmed) {
+      // Полученное бухгалтером (подтверждение или ручная запись) сверено сервером
+      // с текущим расчётом кассы: та же недостача, что в «Проверках» 2a.
+      if (handover.confirmed || handover.checked) {
         return {mark: '⚠', tone: 'bad', tip: 'Получено ' + sum(num(handover.recorded)) + ' при расчёте ' +
           sum(num(handover.expected)) + ' · недостача ' + sum(num(handover.shortfall))};
       }
@@ -67,6 +69,8 @@
         sum(num(handover.expected)) + ' · разница ' + sum(num(handover.difference))};
     }
     if (handover.status === 'pending') return {mark: '…', tone: 'wait', tip: 'День ещё идёт'};
+    // Приход записан бухгалтером вручную, кассир в панели не работал — сверять не с чем.
+    if (handover.status === 'unchecked') return {mark: '–', tone: 'wait', tip: 'Кассир в панели не работал — сверки нет'};
     if (handover.status === 'missing') return {mark: '⚠', tone: 'bad', tip: 'Бухгалтер не записал передачу кассы'};
     return {mark: '?', tone: 'wait', tip: day.cashier_error || 'Нет данных iiko для сверки'};
   }
@@ -179,10 +183,12 @@
       const handover = day.handover;
       if (handover.status === 'mismatch') {
         const diff = num(handover.difference);
-        const text = handover.confirmed ? (diff < 0 ? 'От кассира получено меньше расчёта' : 'От кассира получено больше расчёта')
+        const received = handover.confirmed || handover.checked;
+        const text = received ? (diff < 0 ? 'От кассира получено меньше расчёта' : 'От кассира получено больше расчёта')
           : diff < 0 ? 'Кассир передал меньше расчёта' : 'Кассир передал больше расчёта';
         items.push({level: 'bad', rank: diff < 0 ? 0 : 1, text: text + ' · ' + dm(day.date),
-          sub: (handover.confirmed ? 'Получено ' : 'Передано ') + sum(num(handover.recorded)) + ' при расчёте ' + sum(num(handover.expected))});
+          sub: (received ? 'Получено ' : 'Передано ') + sum(num(handover.recorded)) + ' при расчёте ' + sum(num(handover.expected))
+            + (received && num(handover.shortfall) > 0 ? ' · недостача ' + sum(num(handover.shortfall)) : '')});
       } else if (handover.status === 'missing') {
         items.push({level: 'bad', rank: 1, text: 'Передача кассы не записана · ' + dm(day.date),
           sub: 'Расчёт кассира ' + sum(num(handover.expected))});

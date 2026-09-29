@@ -129,7 +129,20 @@
         <p id="item-chosen" class="shokh-chosen" hidden></p>
         <div id="item-list-title" class="shokh-list-title">Частые товары</div>
         <div id="item-list" class="shokh-items"></div>
-        <button id="item-add-custom" class="shokh-dashed" type="button" hidden></button>
+        <!-- §3a: товара нет среди номенклатуры iiko — «+ Новый товар». Такая
+             покупка сохраняется без накладной; бухгалтер заводит товар в iiko
+             и проводит накладную руками. -->
+        <button id="item-add-custom" class="shokh-dashed" type="button">+ Новый товар</button>
+        <div id="item-custom" class="rm-phone-card shokh-custom" hidden>
+          <div class="shokh-custom-head"><strong>Новый товар</strong><span class="shokh-custom-tag">не из справочника iiko</span></div>
+          <label class="shokh-field"><span>Название</span>
+            <input id="custom-name" type="text" maxlength="120" autocomplete="off" placeholder="Например: лепёшка тандырная">
+          </label>
+          <div class="shokh-row-head"><span>Единица</span><div id="custom-units" class="shokh-switch" role="group" aria-label="Единица"></div></div>
+          <p id="custom-known" class="shokh-note" hidden></p>
+          <p class="shokh-note">Накладной iiko не будет: бухгалтер заведёт товар и проведёт накладную вручную.</p>
+          <button id="custom-cancel" class="shokh-chip" type="button">← Выбрать из списка iiko</button>
+        </div>
         <label class="shokh-photo">
           <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
           <div id="photo-empty" class="shokh-photo-empty">
@@ -206,7 +219,7 @@
         <p id="flow-hint" class="shokh-flow-hint" hidden></p>
         <div id="save-status" class="shokh-save" hidden>
           <div id="save-photo" class="shokh-save-step" hidden><i aria-hidden="true"></i><span>Фото покупки</span><b id="save-photo-pct" data-i18n="off"></b></div>
-          <div id="save-iiko" class="shokh-save-step"><i aria-hidden="true"></i><span>Приходная накладная iiko</span></div>
+          <div id="save-iiko" class="shokh-save-step"><i aria-hidden="true"></i><span id="save-iiko-label">Приходная накладная iiko</span></div>
           <p id="save-error" class="shokh-save-error" role="alert" hidden></p>
           <p id="save-slow" class="shokh-save-slow" hidden>iiko отвечает дольше обычного. Не закрывайте экран — покупка не задвоится.</p>
           <span class="shokh-save-bar" aria-hidden="true"><span id="save-bar"></span></span>

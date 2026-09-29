@@ -1114,3 +1114,59 @@ def test_founder_month_excel_counts_till_gives_to_shokh_once(tmp_path):
         heads = [cell.value for cell in by_day[4]]
         day_row = next(row for row in by_day.iter_rows(min_row=5) if row[0].value.date() == DAY)
         assert day_row[heads.index('Закуп · Шох и напрямую')].value == 700000
+
+
+# ── T-399: привязка к Hikvision вручную из «Сотрудников» ─────────────────
+
+def test_accountant_links_a_person_to_hikvision_by_hand(any_db):
+    """Сняли «Нет в Hikvision» — номер на устройстве вводят в карточке: он
+    уникален (занятый — 409 с именем), пишется в историю, и входы, пришедшие
+    до привязки, сразу становятся первыми входами человека."""
+    c, today = any_db, today_tashkent()
+    roster = c.app.state.accountant_roster
+    jasur = roster.add(name='Жасур Алиев', role='официант', rate='180000', group_name='Обслуживание зала')
+    shahzod = roster.add(name='Шахзод Мирзаев', role='официант', rate='180000', group_name='Обслуживание зала')
+    # Событие турникета пришло, пока номер ни к кому не привязан.
+    entered = datetime.combine(today, datetime.min.time(), TZ) + timedelta(hours=9, minutes=5)
+    c.app.state.attendance_store.ingest(HikvisionEvent('retro-main-entry', 'e-1024', '1024', entered), None)
+
+    def staff(person):
+        rows = c.get('/api/accountant/staff', params={'date': today.isoformat()}).json()['employees']
+        return next(row for row in rows if row['employee_id'] == person.id)
+
+    def patch(person, **body):
+        return c.patch(f'/api/accountant/employees/{person.id}',
+                       json={'rate': '180000', 'reason': 'Привязка к турникету', **body})
+
+    assert staff(jasur)['status'] == 'unlinked'
+    linked = patch(jasur, hikvision_id=' 1024 ')
+    assert linked.status_code == 200, linked.text
+    assert linked.json()['employee']['hikvision_id'] == '1024'
+    row = staff(jasur)
+    assert (row['hikvision_registered'], row['hikvision_id'], row['status']) == (True, '1024', 'on_time')
+    assert row['first_entry'].startswith(today.isoformat() + 'T09:05')
+    def hikvision_history(person):
+        rows = c.get(f'/api/accountant/employees/{person.id}/history').json()['history']
+        return [row['details'] for row in rows if row['action'] == 'hikvision']
+
+    assert hikvision_history(jasur) == ['ID в Hikvision: — → 1024']
+
+    # Номер уже занят — 409 с именем владельца, карточка второго не меняется.
+    taken = patch(shahzod, hikvision_id='1024', name='Шахзод М.')
+    assert taken.status_code == 409
+    assert 'Жасур Алиев' in taken.json()['detail']
+    assert staff(shahzod)['name'] == 'Шахзод Мирзаев' and staff(shahzod)['hikvision_id'] is None
+    assert patch(shahzod, hikvision_id='12 34').status_code == 422
+    # Правка без поля привязку не трогает.
+    assert patch(jasur, name='Жасур Алиев').status_code == 200
+    assert staff(jasur)['hikvision_id'] == '1024'
+
+    # Сняли номер — входы по нему больше не его, человек снова «Нет привязки».
+    cleared = patch(jasur, hikvision_id='')
+    assert cleared.status_code == 200, cleared.text
+    row = staff(jasur)
+    assert (row['hikvision_id'], row['status'], row['first_entry']) == (None, 'unlinked', None)
+    assert hikvision_history(jasur) == ['ID в Hikvision: 1024 → —', 'ID в Hikvision: — → 1024']
+    # Освободившийся номер можно отдать другому — его входы переходят к нему.
+    assert patch(shahzod, hikvision_id='1024').status_code == 200
+    assert staff(shahzod)['status'] == 'on_time'

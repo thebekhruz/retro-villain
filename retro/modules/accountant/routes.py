@@ -13,7 +13,8 @@ from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
-from retro.modules.cashier.till import expected_from_saved, shokh_gives, shokh_total, till_totals
+from retro.modules.cashier.till import (expected_from_saved, expected_handover, handover_check, shokh_gives,
+                                        shokh_total, till_totals)
 from retro.modules.founder.cabinet import dividend_summary
 from retro.modules.shokh.store import pocket_position
 
@@ -22,6 +23,7 @@ from .employee_export import export_employees
 from .expense_catalog import catalog_json
 from .ledger import LedgerError, amount_value, required_text
 from .payroll import blocker_reason, draft_payroll
+from .roster import HikvisionIdTaken
 
 router = APIRouter(prefix='/api/accountant', tags=['accountant'])
 
@@ -103,6 +105,34 @@ async def required_handover(request: Request, day: date) -> Decimal:
     return amount
 
 
+async def current_cashier_expected(request: Request, day: date, *, force: bool = False):
+    """Текущий расчёт кассы дня (iiko + расходы кассира и выдачи Шоху) — то,
+    с чем сверяется полученное бухгалтером. Сначала снимок, который уже есть
+    на сервере; если его нет, а сверять есть что (приход записан бухгалтером
+    или подтверждён; `force` — само подтверждение), — спрашиваем iiko. iiko
+    не ответил — сверки нет, как и без расчёта вообще.
+    Возвращает (сумма или None, время снимка или None)."""
+    state = request.app.state
+    expected, fetched_at = await asyncio.to_thread(expected_from_saved, state, day)
+    if expected is not None or not state.settings.configured:
+        return expected, fetched_at
+    if not force:
+        recorded = await asyncio.to_thread(handover_check, state, day)
+        if not recorded or not recorded.get('checked'):
+            return None, None
+    try:
+        snapshot = await load_iiko(state, 'load', day, request=request)
+    except (TimeoutError, DataError) as error:
+        log_safe_failure('accountant-route', error, operation='current_cashier_expected',
+                         request_id=request.state.request_id)
+        return None, None
+    if snapshot is None or snapshot.demo:
+        return None, None
+    state.cache.put(snapshot)
+    totals = await asyncio.to_thread(till_totals, state, day)
+    return expected_handover(snapshot, totals), snapshot.fetched_at
+
+
 @router.get('/day')
 async def day_view(request: Request, date: date | None = None):
     day = selected_day(date)
@@ -114,7 +144,8 @@ async def day_view(request: Request, date: date | None = None):
             raise
         cashier_amount = None
         cashier_error = error.detail
-    return await asyncio.to_thread(_day_data, request, day, cashier_amount, cashier_error)
+    current = await current_cashier_expected(request, day)
+    return await asyncio.to_thread(_day_data, request, day, cashier_amount, cashier_error, current=current)
 
 
 @router.get('/staff')
@@ -140,7 +171,8 @@ def shift_rows_json(rows, accrued: dict[int, int], closed: bool, roster=()) -> l
         employee = people.get(row.employee_id)
         if employee is not None:
             item.update(manual_attendance=employee.manual_attendance,
-                        hikvision_registered=employee.hikvision_id is not None)
+                        hikvision_registered=employee.hikvision_id is not None,
+                        hikvision_id=employee.hikvision_id)
         result.append(item)
     return result
 
@@ -155,7 +187,7 @@ def payroll_state(rows, accrued: dict[int, int], confirmed: bool) -> dict:
                     (row.payable for row in waiting if row.payable is not None), Decimal(0))))
 
 
-def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
+def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, current=None):
     roster = request.app.state.accountant_roster.list(day)
     finance = request.app.state.accountant_finance
     # Начисленным сотрудникам сумма всегда из начисления: смену подтверждают
@@ -229,7 +261,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                 cashier_error=cashier_error,
                 # «От кассира · ожидается / получено HH:MM»: запись передачи и расчёт
                 # по последнему снимку iiko на сервере (подсказка, в остаток не входит).
-                cashier_handover=cashier_handover_json(request, day),
+                cashier_handover=cashier_handover_json(request, day, current),
                 # Выдачи Шоху из кассы: уже вычтены из передачи кассира. Подотчёт Шоха
                 # их считает (reserves.shoh), а деньги бухгалтера — нет.
                 cashier_shokh_gives=cashier_gives_json(finance, day),
@@ -241,16 +273,21 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                                note='Только оценка будущей смены; уже начисленный долг не уменьшается.'))
 
 
-def cashier_handover_json(request, day: date) -> dict:
+def cashier_handover_json(request, day: date, current=None) -> dict:
     state = request.app.state
-    recorded = state.accountant_finance.handover_state(day) or {}
-    expected, fetched_at = expected_from_saved(state, day)
+    expected, fetched_at = current if current is not None else expected_from_saved(state, day)
+    recorded = handover_check(state, day, expected) or {}
     return dict(amount=recorded.get('amount'), handed_at=recorded.get('handed_at'),
                 source=recorded.get('source'),
                 # Подтверждение бухгалтера: получено (amount), расчёт на момент
-                # подтверждения и недостача — ошибка «получено меньше расчёта».
+                # подтверждения (expected_amount), текущий расчёт, с которым
+                # сверено полученное (calculation), и недостача к нему — ошибка
+                # «получено меньше расчёта». Ручная запись прихода сверяется так же.
                 confirmed_at=recorded.get('confirmed_at'), confirmed_by=recorded.get('confirmed_by'),
                 expected_amount=recorded.get('expected_amount'), shortfall=recorded.get('shortfall'),
+                checked=recorded.get('checked', False), calculation=recorded.get('calculation'),
+                cashier_active=recorded.get('cashier_active'),
+                expected_changed=recorded.get('expected_changed', False),
                 expected=str(expected) if expected is not None else None,
                 expected_at=fetched_at.isoformat() if fetched_at is not None else None)
 
@@ -288,6 +325,9 @@ class EmployeeUpdateInput(BaseModel):
     group: str | None = None
     reason: str
     manual_attendance: bool | None = None
+    # Номер сотрудника на устройстве Hikvision; пусто/null — снять привязку.
+    # Поле не прислали — привязку не трогаем.
+    hikvision_id: str | None = None
 
 
 class EmployeeCreateInput(BaseModel):
@@ -356,13 +396,27 @@ def payroll_month(request: Request, month: str):
 
 @router.patch('/employees/{employee_id}')
 def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInput):
+    roster = request.app.state.accountant_roster
     try:
+        if 'hikvision_id' in body.model_fields_set:
+            # Сначала привязка: занятый номер (409) не должен оставить
+            # наполовину сохранённую карточку.
+            old, new = roster.set_hikvision_id(employee_id, body.hikvision_id, by=changed_by(request))
+            if old != new:
+                store = request.app.state.attendance_store
+                if old:
+                    store.forget_link(employee_id, old)
+                if new:
+                    # Входы, пришедшие до привязки, сразу становятся его первыми входами.
+                    store.reconcile_links({new: employee_id})
         employee = request.app.state.accountant_roster.update(
             employee_id, name=body.name, role=body.role, rate=body.rate,
             group_name=body.group, reason=body.reason, by=changed_by(request))
         if body.manual_attendance is not None and body.manual_attendance != employee.manual_attendance:
             employee = request.app.state.accountant_roster.set_manual_attendance(
                 employee_id, body.manual_attendance, by=changed_by(request))
+    except HikvisionIdTaken as error:
+        raise HTTPException(409, str(error)) from None
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(demo=True, employee=employee.json())
@@ -526,14 +580,18 @@ class HandoverConfirmInput(BaseModel):
 
 
 @router.post('/handover/confirm')
-def confirm_handover(request: Request, body: HandoverConfirmInput):
-    """«Получено» от кассира: бухгалтер подтверждает, сколько наличных пришло."""
+async def confirm_handover(request: Request, body: HandoverConfirmInput):
+    """«Получено» от кассира: бухгалтер подтверждает, сколько наличных пришло.
+
+    Сверяется с ТЕКУЩИМ расчётом кассы; он же запоминается как расчёт на
+    момент подтверждения. Ответ несёт недостачу — её и показывает сообщение."""
     day = selected_day(body.date)
     state = request.app.state
-    expected, _ = expected_from_saved(state, day)
+    expected, _ = await current_cashier_expected(request, day, force=True)
     approver = getattr(request.state, 'dashboard_user', None) or 'бухгалтер'
     try:
-        result = state.accountant_finance.confirm_handover(day, body.amount, expected, approver)
+        result = await asyncio.to_thread(state.accountant_finance.confirm_handover, day, body.amount,
+                                         expected, approver)
     except LedgerError as error:
         finance_error(error)
     return dict(demo=False, date=day.isoformat(), handover=result)

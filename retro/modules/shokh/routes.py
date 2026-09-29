@@ -58,6 +58,21 @@ def home(request: Request, date_: date | None = Query(None, alias='date')):
         trips=[dict(trip, minutes=trip_minutes(trip)) for trip in trips])
 
 
+def _history(request: Request) -> dict:
+    """История покупок для «Часто покупаете», обычной цены и подстановки
+    поставщика и склада по точке. Сливает её с товарами iiko экран
+    (ShokhLogic.withHistory) — одно правило и после загрузки справочников, и
+    после каждой покупки, когда экран берёт свежую историю через /history."""
+    store = request.app.state.shokh
+    defaults = store.point_defaults()
+    return dict(history=store.item_history(today=today_tashkent()), point_defaults=defaults)
+
+
+@router.get('/history')
+def history(request: Request):
+    return _history(request)
+
+
 @router.get('/catalog')
 async def catalog(request: Request):
     store = request.app.state.shokh
@@ -71,12 +86,11 @@ async def catalog(request: Request):
     except DataError as error:
         raise HTTPException(503, str(error)) from None
     result.pop('settings', None)
-    history = {(r['item'], r['unit']): r for r in frequent}
-    result['items'] = [dict(r, times=history.get((r['item'], r['unit']), {}).get('times', 0),
-        usual_price=history.get((r['item'], r['unit']), {}).get('usual_price')) for r in result['items']]
-    defaults = await asyncio.to_thread(request.app.state.shokh_sync.point_defaults)
-    return dict(result, points=points, point_defaults=defaults,
-                units=sorted({r['unit'] for r in result['items']}))
+    known = await asyncio.to_thread(_history, request)
+    return dict(result, points=points, **known,
+                units=sorted({r['unit'] for r in result['items']}),
+                # Для товара не из справочника iiko единицу выбирают сами.
+                custom_units=list(UNITS))
 
 
 @router.post('/trip', status_code=201)
@@ -127,6 +141,7 @@ async def add_purchase(request: Request,
                        operation_id: str | None = Form(None),
                        product_id: str | None = Form(None), supplier_id: str | None = Form(None),
                        storage_id: str | None = Form(None), unit_id: str | None = Form(None),
+                       off_catalog: bool = Form(False),
                        date_: date | None = Form(None, alias='date'),
                        photo: UploadFile | None = File(None)):
     day = _day(date_)
@@ -138,6 +153,14 @@ async def add_purchase(request: Request,
             raise HTTPException(413, 'Фото больше 6 МБ — переснимите поменьше.')
         content_type = photo.content_type
     try:
+        if off_catalog:
+            # Товара нет в справочнике iiko: покупку записываем у себя без
+            # накладной. Бухгалтер видит её с пометкой «Нет в iiko», заводит
+            # товар и проводит накладную руками, потом принимает покупку.
+            row = await asyncio.to_thread(_off_catalog_purchase, request, day, point=point, item=item,
+                unit=unit, quantity=quantity, price=price, trip_id=trip_id, key=operation_id,
+                supplier_id=supplier_id, storage_id=storage_id, photo=content, photo_type=content_type)
+            return dict(purchase=row, **await asyncio.to_thread(_pocket, request, day))
         if request.app.state.settings.configured:
             row = await request.app.state.shokh_sync.purchase(
                 key=operation_id, day=day, at=_now(), product_id=product_id,
@@ -155,6 +178,30 @@ async def add_purchase(request: Request,
     except DataError as error:
         raise HTTPException(503, str(error)) from None
     return dict(purchase=row, **_pocket(request, day))
+
+
+def _off_catalog_purchase(request: Request, day: date, *, point, item, unit, quantity, price,
+                          trip_id, key, supplier_id, storage_id, photo, photo_type):
+    from uuid import UUID
+    try:
+        key = str(UUID(key))
+    except (ValueError, TypeError, AttributeError):
+        raise ShokhError('Не указан корректный ключ покупки. Обновите страницу.') from None
+    # Поставщик и склад, выбранные на шаге точки: бухгалтеру для накладной и
+    # подстановке по точке в следующий раз. Названия — из справочника в памяти,
+    # за ними в iiko не ходим.
+    cached = getattr(request.app.state.shokh_iiko, '_catalog', None) or {}
+    def name(rows, id_):
+        return next((row['name'] for row in rows or () if row['id'] == id_), None)
+    refs = {key_: value for key_, value in dict(
+        supplier_id=supplier_id or None, storage_id=storage_id or None,
+        supplier=name(cached.get('suppliers'), supplier_id),
+        storage=name(cached.get('storages'), storage_id)).items() if value}
+    row = request.app.state.shokh.add_purchase(
+        day, _now(), point=point, item=item, unit=unit, quantity=quantity, price=price,
+        photo=photo, photo_type=photo_type, trip_id=trip_id, off_catalog=True,
+        client_key=key, refs=refs or None)
+    return request.app.state.shokh_sync.decorate([row])[0]
 
 
 @router.get('/photo/{purchase_id}')
@@ -194,4 +241,8 @@ def operation_status(request: Request, operation_id: str):
     except ValueError:
         raise HTTPException(422, 'Некорректный ключ покупки.') from None
     operation = request.app.state.shokh_sync.operation(key=key)
-    return dict(purchase=request.app.state.shokh_sync.result(operation['purchase_id']) if operation else None)
+    if operation:
+        return dict(purchase=request.app.state.shokh_sync.result(operation['purchase_id']))
+    # Покупка не из справочника iiko хранит ключ у себя, без операции iiko.
+    found = request.app.state.shokh.purchase_by_key(key)
+    return dict(purchase=request.app.state.shokh_sync.decorate([found])[0] if found else None)

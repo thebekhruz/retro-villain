@@ -319,13 +319,21 @@ def test_week_marks_a_short_handover_and_keeps_iiko_gaps_empty(tmp_path, today):
         # Расчёт кассира по фейку: «Демо» 9 млн, расходов нет — ровно 9 млн.
         finance.record_handover(MONDAY, Decimal('9000000'))
         finance.record_handover(date(2026, 9, 23), Decimal('8700000'))
+        # 23.09 кассир работал в панели (поступление 100 000 → расчёт 9,1 млн);
+        # 21.09 — нет: ручной приход без его данных не сверяется.
+        c.app.state.expenses.add_receipt(date(2026, 9, 23), 'Возврат долга', Decimal('100000'))
         week = c.get('/api/founder/week').json()
     days = {day['date']: day for day in week['days']}
     assert week['week'] == '2026-W39'
-    assert days['2026-09-21']['handover']['status'] == 'ok'
-    assert days['2026-09-23']['handover'] == {'recorded': '8700000.00', 'expected': '9000000.00',
-                                              'confirmed': False, 'confirmed_at': None, 'shortfall': None,
-                                              'status': 'mismatch', 'difference': '-300000.00'}
+    # Кассир в панели не работал — сверки нет (T-399), даже при совпадении.
+    assert days['2026-09-21']['handover']['status'] == 'unchecked'
+    # Ручная запись бухгалтера при работавшем кассире сверяется с расчётом кассы
+    # сразу — та же недостача, что в «Проверках» 2a (T-399).
+    assert days['2026-09-23']['handover'] == {'recorded': '8700000.00', 'expected': '9100000.00',
+                                              'confirmed': False, 'checked': True, 'confirmed_at': None,
+                                              'shortfall': '400000', 'expected_changed': False,
+                                              'status': 'mismatch', 'difference': '-400000.00'}
+    assert days['2026-09-21']['handover']['shortfall'] is None
     # iiko не ответил — день не превращается в нули.
     assert days['2026-09-22']['cashier'] is None
     assert days['2026-09-22']['cashier_error'] == 'iiko временно недоступен'
@@ -526,6 +534,7 @@ def test_founder_ai_sees_the_cabinet_numbers(tmp_path, today):
     chef = [dict(day='2026-09-23', order_id='x', table=2, waiters=['Алина'], amount='520000', cost='1')]
     with client(tmp_path, FakeIiko(chef=chef)) as c:
         c.app.state.accountant_finance.record_handover(date(2026, 9, 23), Decimal('8700000'))
+        c.app.state.expenses.add(date(2026, 9, 23), 'Такси', Decimal('100000'))  # кассир работал в панели
         tools = FounderChatTools(c.app)
         assert 'get_founder_cabinet' in {tool['name'] for tool in tools.definitions}
         data = asyncio.run(tools.execute('get_founder_cabinet', {'date': TODAY.isoformat()}))

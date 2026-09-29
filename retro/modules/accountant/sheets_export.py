@@ -308,12 +308,26 @@ def _total_sheet(sheet, payday: date, data: dict):
     if handover.get('amount') is not None:
         who = HANDOVER_SOURCE.get(handover.get('source'), handover.get('source') or '—')
         received = _time(handover.get('handed_at'))
-        if handover.get('confirmed_at'):
-            _row(sheet, row, [f'Передача кассира · расчёт · {who} {received}', _money(handover.get('expected_amount'))])
-            row += 1
-            _row(sheet, row, [f'Получено бухгалтером · подтверждено {_time(handover["confirmed_at"])}',
-                              _money(handover['amount'])])
-            row += 1
+        if handover.get('confirmed_at') or handover.get('checked'):
+            # Недостача и расчёт — те же, что в 2a: сервер сверяет полученное с
+            # ТЕКУЩИМ расчётом кассы (ledger.handover_state).
+            calculation = handover.get('calculation') or handover.get('expected_amount')
+            if handover.get('confirmed_at'):
+                _row(sheet, row, [f'Передача кассира · расчёт · {who} {received}', _money(calculation)])
+                row += 1
+                _row(sheet, row, [f'Получено бухгалтером · подтверждено {_time(handover["confirmed_at"])}',
+                                  _money(handover['amount'])])
+                row += 1
+                if handover.get('expected_changed'):
+                    _row(sheet, row, ['⚠ Касса изменилась после подтверждения · было',
+                                      _money(handover.get('expected_amount'))], bold=True)
+                    row += 1
+            else:
+                if calculation is not None:
+                    _row(sheet, row, ['Передача кассира · расчёт', _money(calculation)])
+                    row += 1
+                _row(sheet, row, [f'Получено бухгалтером · записано вручную {received}', _money(handover['amount'])])
+                row += 1
             if (_money(handover.get('shortfall')) or 0) > 0:
                 _row(sheet, row, ['⚠ Получено меньше расчёта на', _money(handover['shortfall'])], bold=True)
                 row += 1
@@ -321,6 +335,9 @@ def _total_sheet(sheet, payday: date, data: dict):
             _row(sheet, row, [f'Передача кассира · получено {received} · {who} · не подтверждено',
                               _money(handover['amount'])])
             row += 1
+            if handover.get('source') == 'accountant' and handover.get('cashier_active') is False:
+                _note(sheet, row, 'Кассир в панели не работал — сверки с расчётом нет.', 2)
+                row += 1
     elif handover:
         _row(sheet, row, ['Передача кассира · ещё не записана', None])
         row += 1

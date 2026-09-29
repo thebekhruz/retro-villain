@@ -122,3 +122,20 @@ def test_handover_formula_lives_only_on_the_server():
               "console.log(typeof logic.handover, typeof logic.totalInflow);")
     result = subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
     assert result.stdout.split() == ['undefined', 'undefined']
+
+
+def test_export_with_many_expenses_does_not_hit_template_leftovers():
+    """Строки 20–21 шаблона были объединённым баннером старой формы: при семи и
+    более расходах выгрузка падала с 500 (MergedCell read-only)."""
+    from datetime import date
+    from decimal import Decimal
+    from retro.modules.cashier.expenses import Expense
+    day = date(2026, 9, 29)
+    expenses = [Expense(i, day, f'Расход {i}', Decimal('10000')) for i in range(1, 26)]
+    book = openpyxl.load_workbook(BytesIO(export_report(snapshot(), expenses)))
+    sheet = book['отчет']
+    names = [sheet.cell(row, 3).value for row in range(15, 37)]
+    assert names == [f'Расход {i}' for i in range(1, 23)]
+    assert 'ИТОГО:' not in names and 'Прочие расходы' not in names
+    assert sheet['C37'].value == 'Ещё 3 — на листе «Расходы»'
+    assert sheet['D38'].value == Decimal('250000')

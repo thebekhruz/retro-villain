@@ -130,3 +130,61 @@ test('в расчётах закупа нет опыта и бонуса за с
   assert.equal(logic.xpPreview, undefined);
   assert.equal(logic.tripOnTime, undefined);
 });
+
+test('T-399: наличные — целые сумы, накладная — до тийина', () => {
+  // 3 × 33 333,33: в накладную 99 999,99, из кармана — 100 000.
+  assert.equal(logic.total(draft({quantity: '3', price: '33333.33'})), 99999.99);
+  assert.equal(logic.cashTotal(draft({quantity: '3', price: '33333.33'})), 100000);
+  // Половина сума — вверх, как ROUND_HALF_UP на сервере.
+  assert.equal(logic.cashTotal(draft({quantity: '1', price: '10.50'})), 11);
+  assert.equal(logic.cashTotal(draft({quantity: '1', price: '10.49'})), 10);
+  assert.equal(logic.cashTotal(draft({price: ''})), null);
+  // «На руках после» считается по наличным: целое число.
+  assert.equal(logic.pocketAfter('1000000', draft({quantity: '3', price: '33333.33'})), 900000);
+});
+
+test('T-399: история покупок цепляется к товарам iiko по id, старые записи — по названию', () => {
+  const items = [{id: 'p1', item: 'Овощ Помидор', unit: 'кг', code: '1'},
+    {id: 'p2', item: 'Лук', unit: 'кг', code: '2'}, {id: 'p3', item: 'Агар', unit: 'кг', code: '3'}];
+  const history = [
+    // Название в iiko поправили — id тот же, история не теряется.
+    {product_id: 'p1', item: 'Помидор', unit: 'кг', times: 2, points: {RETRO: 2}, usual_price: '9000.00'},
+    // Запись до связи с iiko: без id, по названию («ё» = «е», регистр не важен).
+    {product_id: null, item: 'лук', unit: 'кг', times: 5, points: {'Школа MU': 5}, usual_price: '4000.00'},
+    // Товар не из справочника iiko — отдельной строкой «новый товар».
+    {product_id: null, item: 'Лепёшка тандырная', unit: 'шт', times: 4, points: {RETRO: 4},
+     usual_price: '5000.00', off_catalog: true},
+  ];
+  const rows = logic.withHistory(items, history);
+  const by = name => rows.find(r => r.item === name);
+  assert.deepEqual([by('Овощ Помидор').times, by('Овощ Помидор').usual_price], [2, '9000.00']);
+  assert.deepEqual([by('Лук').times, by('Лук').points], [5, {'Школа MU': 5}]);
+  assert.equal(by('Агар').times, 0);
+  assert.equal(by('Агар').usual_price, null);
+  assert.equal(by('Лепёшка тандырная').custom, true);
+  // Повторное слияние (после каждой покупки) не дублирует строки.
+  assert.equal(logic.withHistory(rows, history).length, rows.length);
+  // На точке первыми — её товары, потом частые вообще, потом по алфавиту.
+  assert.deepEqual(logic.searchItems(rows, '', 10, 'RETRO').map(r => r.item),
+    ['Лепёшка тандырная', 'Овощ Помидор', 'Лук', 'Агар']);
+  assert.deepEqual(logic.searchItems(rows, '', 10, 'Школа MU').map(r => r.item),
+    ['Лук', 'Лепёшка тандырная', 'Овощ Помидор', 'Агар']);
+});
+
+test('T-399: черновик закупа переживает F5 только для открытого закупа того же дня', () => {
+  const now = Date.parse('2026-09-29T10:00:00Z');
+  const snap = logic.draftSnapshot({tripId: 7, tripStartedAt: 'x', date: '2026-09-29', step: 'amount',
+    draft: {point: 'RETRO', item: 'Лук', quantity: '3', priceInput: '1000', supplierId: 's', storageId: 't',
+            productId: 'p', hasPhoto: true, junk: 'не сохраняем'}}, now);
+  assert.equal(snap.draft.junk, undefined);
+  assert.equal(snap.draft.hasPhoto, true);
+  const saved = JSON.parse(JSON.stringify(snap));
+  const home = {date: '2026-09-29', trips: [{id: 7, finished_at: null}]};
+  assert.equal(logic.restorableDraft(saved, home, now + 60000).step, 'amount');
+  assert.equal(logic.restorableDraft(saved, {...home, date: '2026-09-30'}, now), null);
+  assert.equal(logic.restorableDraft(saved, {...home, trips: [{id: 7, finished_at: 'y'}]}, now), null);
+  assert.equal(logic.restorableDraft(saved, home, now + 13 * 3600 * 1000), null);
+  assert.equal(logic.restorableDraft({...saved, draft: {}}, home, now), null);
+  assert.equal(logic.restorableDraft(null, home, now), null);
+  assert.equal(logic.draftKey(7), 'shokh-draft:7');
+});

@@ -31,6 +31,15 @@ def export_report(snapshot, expenses=(), receipts=()):
     # Row 12 is an obsolete merged salary banner in the source template.
     # Reuse it for the ninth payment and move the payment total below all sources.
     sheet.unmerge_cells('C12:D12')
+    # Строки 20–21 шаблона — остатки старой формы («ИТОГО:» и жёлтый объединённый
+    # баннер «Прочие расходы») посреди списка расходов (строки 15–36). При семи и
+    # более расходах запись упиралась в объединённую C21 и выгрузка падала с 500.
+    # Делаем их обычными строками списка.
+    sheet.unmerge_cells('C21:D21')
+    for row in (20, 21):
+        for column in ('C', 'D'):
+            sheet[f'{column}{row}'].value = None
+            sheet[f'{column}{row}']._style = copy(sheet[f'{column}15']._style)
     sheet['C11']._style = copy(sheet['C10']._style)
     sheet['D11']._style = copy(sheet['D10']._style)
     # Preserve layout/style; erase the example's transactions and out-of-scope formulas.

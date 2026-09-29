@@ -425,3 +425,18 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .shokh-quick-btn{height:44px}
 .shokh-mode .shokh-switch-btn{min-height:44px;min-width:64px}
 .shokh-iiko-note{margin-top:6px}
+
+/* T-399: «+ Новый товар» — товар не из справочника iiko. Карточка ввода
+   названия и единицы вместо списка iiko; метка на строке покупки. */
+.shokh-custom{display:grid;gap:12px}
+.shokh-custom-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.shokh-custom-head strong{font-size:16px;color:var(--ink)}
+.shokh-custom-tag{padding:4px 9px;border-radius:20px;background:var(--accent-soft);color:#7a5a1e;
+  font-size:11px;font-weight:650}
+.shokh-custom .shokh-note{margin:0}
+.shokh-custom .shokh-switch{flex-wrap:wrap;justify-content:flex-end}
+#custom-units .shokh-switch-btn{min-height:36px;min-width:44px}
+#custom-units .shokh-switch-btn.is-on{background:var(--green);color:#fff;box-shadow:none}
+.shokh-item.is-custom{border-style:dashed}
+.shokh-restored{margin:0 0 4px;padding:9px 12px;border-radius:12px;background:#eaf1e6;color:#285140;
+  font-size:12px;font-weight:600}
