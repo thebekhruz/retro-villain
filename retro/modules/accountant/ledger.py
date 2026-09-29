@@ -8,7 +8,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from uuid import uuid4
 
-from .payroll import PayrollRow
+from .payroll import PayrollRow, attendance_after_payment
 from .expense_catalog import ITEMS
 from .audit import audit_entries as read_audit_entries, record_audit
 from retro.db import PostgresConnection, as_database, table_columns
@@ -713,6 +713,18 @@ class FinanceStore:
             return connection.execute('SELECT 1 FROM accountant_payroll_days WHERE day = ?',
                                       (day.isoformat(),)).fetchone() is not None
 
+    def paid_employees(self, day: date) -> set[int]:
+        """Кому выдали деньги за эту смену (дата выдачи может быть другой).
+
+        Читаем сохранённые выплаты, поэтому отмена ошибочной выдачи убирает
+        и подтверждение присутствия; старые выплаты работают без миграции.
+        """
+        with closing(self._open()) as connection:
+            return {row[0] for row in connection.execute(
+                'SELECT a.employee_id, p.amount FROM accountant_accruals a '
+                'JOIN accountant_salary_payments p ON p.accrual_id = a.id '
+                'WHERE a.work_day = ?', (day.isoformat(),)) if Decimal(row[1]) > 0}
+
     def day_accruals(self, day: date) -> dict[int, dict]:
         """Начисления смены дня одним запросом: {сотрудник: {id, rate, amount}}."""
         with closing(self._open()) as connection:
@@ -922,7 +934,7 @@ class FinanceStore:
             person.update(name=row[3], group=row[4], rate=str(row[6]))
             paid = payments[row[0]]
             person['cells'][row[1]] = dict(
-                accrual_id=row[0], status=row[5], rate=str(row[6]), amount=str(row[7]),
+                accrual_id=row[0], status=attendance_after_payment(row[5], paid), rate=str(row[6]), amount=str(row[7]),
                 paid=str(paid), debt=str(Decimal(row[7]) - paid), payments=payment_rows[row[0]])
         for person in people.values():
             cells = person['cells'].values()
@@ -969,7 +981,7 @@ class FinanceStore:
             for row in rows:
                 paid = payments[row[0]]
                 result.append(dict(id=row[0], work_day=row[1], employee_id=row[2],
-                                   name=row[3], group=row[4], status=row[5], rate=str(row[6]),
+                                   name=row[3], group=row[4], status=attendance_after_payment(row[5], paid), rate=str(row[6]),
                                    amount=str(row[7]), paid=str(paid),
                                    debt=str(Decimal(row[7]) - paid)))
         return result

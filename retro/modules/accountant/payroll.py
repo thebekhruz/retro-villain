@@ -60,6 +60,11 @@ def blocker_reason(row: 'PayrollRow') -> str | None:
     return 'unknown'
 
 
+def attendance_after_payment(status: str, paid: Decimal) -> str:
+    """Выдача за смену подтверждает присутствие, но не меняет проход Hikvision."""
+    return 'manual_present' if paid > 0 and status not in PRESENT_STATUSES else status
+
+
 def compute_pay(rate: Decimal | None, status: str, *, exception: bool) -> Decimal | None:
     """Сколько начислить за день. None — начислить нельзя, данных о дне нет.
 

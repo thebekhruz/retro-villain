@@ -4,16 +4,18 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
+from collections.abc import Callable
+from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from retro.integrations.hikvision import HikvisionEvent
 from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 
-from .payroll import AttendanceRow
+from .payroll import AttendanceRow, attendance_after_payment
 from .roster import Employee
 
 
@@ -291,11 +293,13 @@ class AttendanceStore:
 
 class AttendanceService:
     def __init__(self, store: AttendanceStore, *, source: str,
-                 enabled: bool, poll_seconds: int):
+                 enabled: bool, poll_seconds: int,
+                 paid_employees: Callable[[date], set[int]] | None = None):
         self.store = store
         self.source = source
         self.enabled = enabled
         self.poll_seconds = poll_seconds
+        self.paid_employees = paid_employees
 
     def _day_complete(self, day: date, now: datetime, state: SyncState | None = None) -> bool:
         """Накрыта ли выгрузка весь день целиком — только тогда «нет прохода» = «не пришёл»."""
@@ -350,6 +354,9 @@ class AttendanceService:
                 rows.append(AttendanceRow(employee.id, 'manual_present' if mark else 'manual_absent', None))
             else:
                 rows.append(AttendanceRow(employee.id, 'missing' if complete else 'unavailable', None))
+        paid = self.paid_employees(day) if self.paid_employees else set()
+        rows = [replace(row, status=attendance_after_payment(row.status, Decimal(1)))
+                if row.employee_id in paid else row for row in rows]
         return AttendanceSnapshot(tuple(rows), complete, self._health(state, now, complete), marks)
 
     @staticmethod

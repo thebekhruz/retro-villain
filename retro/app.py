@@ -224,7 +224,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         app.state.attendance_store,
         source=settings.hikvision.source if settings.hikvision else 'retro-main-entry',
         enabled=settings.hikvision_configured,
-        poll_seconds=settings.hikvision.poll_seconds if settings.hikvision else 30)
+        poll_seconds=settings.hikvision.poll_seconds if settings.hikvision else 30,
+        paid_employees=app.state.accountant_finance.paid_employees)
     if hikvision_poller is not None:
         app.state.hikvision_poller = hikvision_poller
     elif settings.hikvision is not None:

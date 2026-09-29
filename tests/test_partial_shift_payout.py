@@ -238,3 +238,40 @@ def test_accountant_role_can_switch_an_unlinked_person_to_manual(tmp_path):
         assert switched.status_code == 200
         assert switched.json()['employee']['manual_since'] == today_tashkent().isoformat()
         assert mark(c, person.id, DAY, True).status_code == 200
+
+
+def test_paid_shift_confirms_presence_everywhere_and_undo_restores_source(any_db):
+    c = any_db
+    _, _, person = shift(c)
+    confirm(c, employee_ids=[person.id])
+    accrual_id = rows(c)[person.id]['accrual_id']
+    cash(c, NEXT, handover='1000000', opening='0')
+    payload = {'accrual_id': accrual_id, 'date': NEXT.isoformat(), 'amount': '180001'}
+    # An unsuccessful payment must not mark attendance.
+    assert c.post('/api/accountant/salary-payments', json=payload).status_code == 422
+    assert rows(c)[person.id]['status'] == 'unlinked'
+    payload['amount'] = '50000'
+    result = c.post('/api/accountant/salary-payments', json=payload)
+    assert result.status_code == 201, result.text
+    payment_id = result.json()['id']
+    shown = rows(c)[person.id]
+    assert shown['status'] == 'manual_present'
+    assert shown['first_entry'] is None
+    assert shown['hikvision_registered'] is False
+    staff = c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+    assert next(r for r in staff['employees'] if r['employee_id'] == person.id)['status'] == 'manual_present'
+    finance = c.app.state.accountant_finance
+    assert finance.paid_employees(DAY) == {person.id}
+    assert finance.paid_employees(NEXT) == set()
+    assert rows(c, NEXT)[person.id]['status'] == 'unlinked'
+    # The historical ledger as of the shift date does not see tomorrow's payment.
+    assert next(r for r in finance.accruals(DAY) if r['employee_id'] == person.id)['status'] == 'unlinked'
+    assert next(r for r in finance.accruals(NEXT) if r['employee_id'] == person.id)['status'] == 'manual_present'
+    monthly = next(r for r in month_json(c)['shift'] if r['employee_id'] == person.id)
+    assert monthly['cells'][DAY.isoformat()]['status'] == 'manual_present'
+    assert monthly['cells'][DAY.isoformat()]['debt'] == '130000'
+    finance.delete_operation('salary_payment', payment_id, NEXT)
+    assert rows(c)[person.id]['status'] == 'unlinked'
+    monthly = next(r for r in month_json(c)['shift'] if r['employee_id'] == person.id)
+    assert monthly['cells'][DAY.isoformat()]['status'] == 'unlinked'
+    assert monthly['cells'][DAY.isoformat()]['debt'] == '180000'
