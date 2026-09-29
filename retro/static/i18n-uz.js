@@ -2296,3 +2296,8 @@ globalThis.RetroTemplatesUz.push(
   [/^Удалить взнос (.+) USD$/, "$1 USD ni o'chirish"],
 );
 /* ── /5a кассир: передача, Шох, доллары ── */
+/* T-385 · закуп Шоха без опыта. */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Итог закупа": "Xarid yakuni",
+  "Точка, товар, фото и цена": "Do'kon, mahsulot, foto va narx",
+});

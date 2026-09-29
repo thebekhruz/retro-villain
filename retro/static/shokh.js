@@ -45,8 +45,6 @@ async function api(path, options = {}) {
 }
 
 /* ── Главная ───────────────────────────────────────────────────────────── */
-const WEEKDAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
-
 function renderHome(data) {
   state.home = data;
   state.lastPocket = data.pocket;
@@ -69,45 +67,6 @@ function renderHome(data) {
     ? 'Подотчёт не заведён'
     : 'Отчитались за ' + share + '% выданных денег';
   $('home-reported-bar').style.width = (share || 0) + '%';
-
-  const level = data.level;
-  $('home-level').textContent = level.level;
-  $('home-level-title').textContent = level.title;
-  $('home-xp').textContent = level.xp + ' XP';
-  $('home-xp-bar').style.width = Math.round(level.progress * 100) + '%';
-  $('home-xp-next').textContent = level.next_at === null
-    ? 'Максимальный уровень'
-    : 'ещё ' + level.to_next + ' XP до уровня ' + (level.level + 1);
-
-  const week = $('home-week'); week.replaceChildren();
-  data.week.forEach(day => {
-    const box = node('div', 'shokh-day' + (day.active ? ' is-active' : '') + (day.today ? ' is-today' : ''));
-    // Как в макете: отмеченный день — галочка, остальные — число месяца.
-    const number = day.day ? String(Number(day.day.slice(8, 10))) : '·';
-    box.append(node('span', 'shokh-day-mark', day.active ? '✓' : number),
-      node('small', '', WEEKDAYS[day.weekday]));
-    week.append(box);
-  });
-  $('home-streak').textContent = data.streak + ' ' +
-    (data.streak % 10 === 1 && data.streak % 100 !== 11 ? 'день'
-      : [2, 3, 4].includes(data.streak % 10) && ![12, 13, 14].includes(data.streak % 100) ? 'дня' : 'дней') + ' подряд';
-
-  const quests = $('home-quests'); quests.replaceChildren();
-  data.quests.forEach(quest => {
-    const row = node('div', 'shokh-quest' + (quest.complete ? ' is-done' : ''));
-    row.append(node('span', 'shokh-quest-mark', quest.complete ? '✓' : ''));
-    const body = node('div', 'shokh-quest-body');
-    body.append(node('div', 'shokh-quest-title', quest.title));
-    const bar = node('div', 'rm-bar');
-    const fill = node('span');
-    fill.style.width = Math.min(100, Math.round(quest.done / Math.max(quest.target, 1) * 100)) + '%';
-    bar.append(fill);
-    const meter = node('div', 'shokh-quest-meter');
-    meter.append(bar, node('small', '', quest.done + ' / ' + quest.target));
-    body.append(meter);
-    row.append(body, node('span', 'shokh-xp-tag', '+' + quest.xp + ' XP'));
-    quests.append(row);
-  });
 
   // Перечисления поставщикам за сегодня (поле transfers в ответе /home).
   const transfers = Array.isArray(data.transfers) ? data.transfers : [];
@@ -134,8 +93,6 @@ function renderHome(data) {
   $('home-purchases-title').textContent = count
     ? 'Сегодня · ' + count + ' ' + purchasesWord(count) : 'Сегодня покупок нет';
   renderPurchases($('home-purchases'), data.purchases);
-  $('cta-note').textContent = 'Уложитесь в ' + data.fast_trip_minutes + ' минут — +' +
-    L().XP_FAST_TRIP + ' XP';
 }
 
 function renderPurchases(container, rows) {
@@ -412,10 +369,6 @@ function renderConfirm() {
   $('confirm-after').textContent = after === null ? 'Подотчёт не задан' : money.format(after) + ' сум';
   $('confirm-after').classList.toggle('is-negative', after !== null && after < 0);
 
-  const preview = L().xpPreview(draft, state.usual);
-  const row = $('confirm-xp'); row.replaceChildren();
-  preview.parts.forEach(part => row.append(node('span', 'shokh-xp-tag', part.label + ' +' + part.xp)));
-
   const warnings = [];
   if (state.priceFit && !state.priceFit.exact) warnings.push('Введено ' + money.format(state.priceFit.entered) +
     ' сум, но ровно на ' + draft.quantity + ' ' + draft.unit + ' не делится: в накладную уйдёт ' +
@@ -448,7 +401,6 @@ function startTimer() {
   state.timer = setInterval(() => {
     const minutes = L().tripElapsedMinutes(state.tripStartedAt, new Date().toISOString());
     $('flow-timer').textContent = '⏱ ' + L().clock(minutes);
-    $('flow-timer').classList.toggle('is-late', minutes !== null && minutes > L().FAST_TRIP_MINUTES);
   }, 1000);
 }
 function stopTimer() { if (state.timer) { clearInterval(state.timer); state.timer = null; } }
@@ -495,16 +447,10 @@ async function submitPurchase() {
     const doneName = node('span', '', result.purchase.item);
     doneName.dataset.i18n = 'off';
     $('done-item').replaceChildren(doneName, ' · ' + money.format(Number(result.purchase.total)) + ' сум');
-    $('done-xp').textContent = '+' + result.xp.total + ' XP';
-    const parts = $('done-parts'); parts.replaceChildren();
-    result.xp.parts.forEach(part => parts.append(node('span', 'shokh-xp-tag', part.label + ' +' + part.xp)));
     $('done-pocket').textContent = result.pocket === null ? '—' : money.format(Number(result.pocket)) + ' сум';
     $('done-before').textContent = before === null ? '' : 'было ' + money.format(Number(before));
     const minutes = L().tripElapsedMinutes(state.tripStartedAt, new Date().toISOString());
-    $('done-trip').textContent = minutes === null ? ''
-      : L().tripOnTime(state.tripStartedAt, new Date().toISOString())
-        ? 'В закупе ' + L().clock(minutes) + ' — успеваете в ' + L().FAST_TRIP_MINUTES + ' минут'
-        : 'В закупе ' + L().clock(minutes) + ' — бонус за скорость уже не начислится';
+    $('done-trip').textContent = minutes === null ? '' : 'В закупе ' + L().clock(minutes);
     const synced = result.purchase.iiko?.status === 'synced';
     $('done-title').textContent = synced ? 'Сохранено в iiko' : 'Покупка записана, iiko не подтверждён';
     $('done-iiko').textContent = synced ? 'Приходная накладная № ' + result.purchase.iiko.number
@@ -525,19 +471,10 @@ async function finishTrip() {
     const data = await api('/trip/' + state.tripId + '/finish', {method: 'POST'});
     const minutes = data.trip.minutes;
     $('sum-time').textContent = L().clock(minutes);
-    $('sum-target').textContent = 'из ' + L().FAST_TRIP_MINUTES + ':00';
-    const onTime = data.trip.bonus > 0;
-    $('sum-badge').textContent = onTime ? 'Успели · +' + data.trip.bonus + ' XP' : 'Дольше плана';
-    $('sum-badge').classList.toggle('is-good', onTime);
     $('sum-count').textContent = String(data.purchases.length);
     $('sum-total').textContent = money.format(Number(data.spent));
-    $('sum-xp').textContent = '+' + data.xp;
     renderPurchases($('sum-list'), data.purchases);
-    const home = await api('/home');
-    renderHome(home);
-    $('sum-level').textContent = 'Ур. ' + home.level.level + ' · ' + home.level.title;
-    $('sum-xp-text').textContent = home.level.xp + ' XP';
-    $('sum-xp-bar').style.width = Math.round(home.level.progress * 100) + '%';
+    renderHome(await api('/home'));
     state.tripId = null; state.tripStartedAt = null;
     show('summary');
   } catch (error) { message(error.message, true); }

@@ -13,9 +13,8 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, Request, Upload
 from fastapi.responses import Response, JSONResponse
 
 from retro.modules.cashier.service import TZ, today_tashkent, DataError
-from .gamification import (level_for, purchase_xp, quests, spent, streak, total_xp,
-                           trip_bonus, trip_minutes, week_marks, FAST_TRIP_MINUTES)
-from .store import MAX_PHOTO_BYTES, ShokhError, UNITS, pocket_position, FIRST_DAY
+from .trips import spent, trip_minutes
+from .store import MAX_PHOTO_BYTES, ShokhError, UNITS, pocket_position
 
 router = APIRouter(prefix='/api/shokh')
 
@@ -46,9 +45,6 @@ def home(request: Request, date_: date | None = Query(None, alias='date')):
     store = request.app.state.shokh
     today_rows = store.purchases(day)
     trips = store.trips(day)
-    history = store.purchases_between(FIRST_DAY, day)
-    days = {row['day'] for row in history}
-    xp = total_xp(history, store.trips_between(FIRST_DAY, day))
     # Бухгалтер уже оплатил этим поставщикам переводом: наличными им не платить.
     # На деньги у Шоха на руках перечисления не влияют.
     transfers = request.app.state.accountant_finance.supplier_transfers(day)
@@ -59,12 +55,7 @@ def home(request: Request, date_: date | None = Query(None, alias='date')):
         spent_today=str(spent(today_rows)),
         transfers=transfers,
         transfers_total=str(sum((Decimal(row['amount']) for row in transfers), Decimal(0))),
-        level=level_for(xp),
-        streak=streak({date.fromisoformat(value) for value in days}, day),
-        week=week_marks({date.fromisoformat(value) for value in days}, day),
-        quests=quests(today_rows, trips),
-        trips=[dict(trip, minutes=trip_minutes(trip), bonus=trip_bonus(trip)) for trip in trips],
-        fast_trip_minutes=FAST_TRIP_MINUTES)
+        trips=[dict(trip, minutes=trip_minutes(trip)) for trip in trips])
 
 
 @router.get('/catalog')
@@ -107,9 +98,8 @@ def finish_trip(request: Request, trip_id: int):
     trip = store.trip(trip_id)
     rows = [row for row in store.purchases(date.fromisoformat(trip['day']))
             if row['trip_id'] == trip_id]
-    return dict(trip=dict(trip, minutes=trip_minutes(trip), bonus=trip_bonus(trip)),
-                purchases=request.app.state.shokh_sync.decorate(rows), spent=str(spent(rows)),
-                xp=sum(purchase_xp(row)['total'] for row in rows) + trip_bonus(trip))
+    return dict(trip=dict(trip, minutes=trip_minutes(trip)),
+                purchases=request.app.state.shokh_sync.decorate(rows), spent=str(spent(rows)))
 
 
 @router.post('/purchase', status_code=201)
@@ -137,7 +127,7 @@ async def add_purchase(request: Request,
                 supplier_id=supplier_id, storage_id=storage_id, unit_id=unit_id,
                 point=point, quantity=quantity, price=price, trip_id=trip_id,
                 photo=content, photo_type=content_type)
-            result = dict(purchase=row, xp=purchase_xp(row),
+            result = dict(purchase=row,
                           **await asyncio.to_thread(_pocket, request, day))
             return JSONResponse(result, status_code=201 if row['iiko']['status'] == 'synced' else 202)
         row = request.app.state.shokh.add_purchase(
@@ -147,7 +137,7 @@ async def add_purchase(request: Request,
         _fail(error)
     except DataError as error:
         raise HTTPException(503, str(error)) from None
-    return dict(purchase=row, xp=purchase_xp(row), **_pocket(request, day))
+    return dict(purchase=row, **_pocket(request, day))
 
 
 @router.get('/photo/{purchase_id}')

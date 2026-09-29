@@ -44,18 +44,6 @@ test('подсказка по цене сравнивает с обычной, �
   assert.equal(logic.priceHint(draft({price: ''}), '8000').kind, 'empty');
 });
 
-/* Награды обещаются до отправки, поэтому должны совпадать с серверными:
-   30 за покупку, 10 за фото, 10 за цену не выше обычной. */
-test('предпросмотр опыта повторяет серверные награды', () => {
-  assert.equal(logic.xpPreview(draft(), null).total, 30);
-  assert.equal(logic.xpPreview(draft({hasPhoto: true}), null).total, 40);
-  assert.equal(logic.xpPreview(draft({price: '7000'}), '8000').total, 40);
-  assert.equal(logic.xpPreview(draft({price: '9000'}), '8000').total, 30);
-  assert.equal(logic.xpPreview(draft({hasPhoto: true, price: '7000'}), '8000').total, 50);
-  assert.deepEqual(logic.xpPreview(draft({hasPhoto: true}), null).parts.map(p => p.label),
-    ['Покупка', 'Фото']);
-});
-
 test('остаток после покупки может уйти в минус и это видно', () => {
   assert.equal(logic.pocketAfter('900000', draft()), 792000);
   // Записали больше, чем выдали — прятать нельзя.
@@ -64,11 +52,9 @@ test('остаток после покупки может уйти в минус
   assert.equal(logic.pocketAfter(null, draft()), null);
 });
 
-test('таймер закупа считает минуты и держит цель в пятнадцать минут', () => {
+test('таймер закупа считает минуты', () => {
   const started = '2026-09-16T09:00:00+05:00';
   assert.equal(logic.tripElapsedMinutes(started, '2026-09-16T09:12:00+05:00'), 12);
-  assert.equal(logic.tripOnTime(started, '2026-09-16T09:12:00+05:00'), true);
-  assert.equal(logic.tripOnTime(started, '2026-09-16T09:40:00+05:00'), false);
   assert.equal(logic.tripElapsedMinutes(null, '2026-09-16T09:12:00+05:00'), null);
   assert.equal(logic.clock(12.5), '12:30');
   assert.equal(logic.clock(null), '—');
@@ -117,4 +103,9 @@ test('больше знаков, чем примет сервер, — не сч
   assert.equal(logic.stepReady('amount', draft({quantity: '1.2345'})), false);
   // Пробелы-разделители в цене не мешают: «12 000» — это 12000.
   assert.equal(logic.total(draft({price: '12 000'})), 144000);
+});
+
+test('в расчётах закупа нет опыта и бонуса за скорость', () => {
+  assert.equal(logic.xpPreview, undefined);
+  assert.equal(logic.tripOnTime, undefined);
 });
