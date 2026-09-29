@@ -49,11 +49,16 @@ def home(request: Request, date_: date | None = Query(None, alias='date')):
     history = store.purchases_between(FIRST_DAY, day)
     days = {row['day'] for row in history}
     xp = total_xp(history, store.trips_between(FIRST_DAY, day))
+    # Бухгалтер уже оплатил этим поставщикам переводом: наличными им не платить.
+    # На деньги у Шоха на руках перечисления не влияют.
+    transfers = request.app.state.accountant_finance.supplier_transfers(day)
     return dict(
         demo=False, date=day.isoformat(),
         **_pocket(request, day),
         purchases=request.app.state.shokh_sync.decorate(today_rows),
         spent_today=str(spent(today_rows)),
+        transfers=transfers,
+        transfers_total=str(sum((Decimal(row['amount']) for row in transfers), Decimal(0))),
         level=level_for(xp),
         streak=streak({date.fromisoformat(value) for value in days}, day),
         week=week_marks({date.fromisoformat(value) for value in days}, day),

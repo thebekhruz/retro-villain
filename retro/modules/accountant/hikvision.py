@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import sqlite3
 from contextlib import closing
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, time, timedelta
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from retro.integrations.hikvision import HikvisionEvent
-from retro.db import as_database
+from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 
 from .payroll import AttendanceRow
@@ -44,6 +44,10 @@ class AttendanceSnapshot:
     rows: tuple[AttendanceRow, ...]
     complete: bool
     health: dict
+    # Явные отметки «был / не был» за день, по которым посчитаны строки.
+    # Подтверждение смены сверяет их со свежими внутри своей транзакции:
+    # отметка, поставленная после расчёта, не должна потеряться в начислении.
+    marks: dict = field(default_factory=dict)
 
 
 def _iso(value: datetime | None) -> str | None:
@@ -56,6 +60,40 @@ def _iso(value: datetime | None) -> str | None:
 
 def _datetime(value: str | None) -> datetime | None:
     return datetime.fromisoformat(value) if value else None
+
+
+def _entry_status(entry: 'FirstEntry') -> str:
+    local_time = entry.occurred_at.astimezone(TZ).time().replace(tzinfo=None)
+    return 'late' if local_time > LATE_AFTER else 'on_time'
+
+
+# ── Ручные отметки «был / не был» ───────────────────────────────────────────
+# Таблица называется по-старому: сначала в ней хранились только отсутствия.
+# Теперь это явная отметка за день с флагом present; она всегда сильнее
+# умолчания. Запись с проверкой смены и аудитом — FinanceStore.mark_manual_attendance,
+# на одном соединении с подтверждением смены.
+
+def read_manual_marks(connection, day: date) -> dict[int, bool]:
+    return {row[0]: bool(row[1]) for row in connection.execute(
+        'SELECT employee_id, present FROM hikvision_manual_absences WHERE work_day = ?',
+        (day.isoformat(),))}
+
+
+def read_manual_mark(connection, employee_id: int, day: date) -> dict | None:
+    row = connection.execute(
+        'SELECT work_day, employee_id, present, approver, created_at FROM hikvision_manual_absences '
+        'WHERE work_day = ? AND employee_id = ?', (day.isoformat(), employee_id)).fetchone()
+    return dict(work_day=row[0], employee_id=row[1], present=bool(row[2]),
+                approver=row[3], created_at=row[4]) if row else None
+
+
+def write_manual_mark(connection, employee_id: int, day: date, present: bool, approver: str) -> None:
+    connection.execute(
+        'INSERT INTO hikvision_manual_absences (work_day, employee_id, present, approver, created_at) '
+        'VALUES (?, ?, ?, ?, ?) ON CONFLICT(work_day, employee_id) DO UPDATE SET '
+        'present = excluded.present, approver = excluded.approver, created_at = excluded.created_at',
+        (day.isoformat(), employee_id, 1 if present else 0, approver,
+         datetime.now(TZ).isoformat(timespec='seconds')))
 
 
 class AttendanceStore:
@@ -88,6 +126,20 @@ class AttendanceStore:
                 serial_no TEXT NOT NULL,
                 PRIMARY KEY (work_day, employee_id)
             )''')
+            # Сотрудник без Hikvision: «был» по умолчанию с дня включения ручной
+            # отметки; здесь — явные отметки «был / не был» по дням.
+            connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_manual_absences (
+                work_day TEXT NOT NULL,
+                employee_id INTEGER NOT NULL,
+                approver TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                present INTEGER NOT NULL DEFAULT 0,
+                PRIMARY KEY (work_day, employee_id)
+            )''')
+            if 'present' not in table_columns(connection, 'hikvision_manual_absences'):
+                # Прежние строки — отсутствия: present = 0.
+                connection.execute('ALTER TABLE hikvision_manual_absences '
+                                   'ADD COLUMN present INTEGER NOT NULL DEFAULT 0')
             connection.execute('''CREATE TABLE IF NOT EXISTS hikvision_sync_state (
                 source TEXT PRIMARY KEY,
                 cursor_at TEXT,
@@ -164,6 +216,26 @@ class AttendanceStore:
                 'WHERE work_day = ?', (day.isoformat(),)).fetchall()
         return {row[0]: FirstEntry(row[0], row[1], datetime.fromisoformat(row[2])) for row in rows}
 
+    def manual_marks(self, day: date) -> dict[int, bool]:
+        """Явные отметки за день: {сотрудник: был ли}."""
+        with closing(self._open()) as connection:
+            return read_manual_marks(connection, day)
+
+    def manual_absences(self, day: date) -> set[int]:
+        return {employee_id for employee_id, present in self.manual_marks(day).items() if not present}
+
+    def set_manual_mark(self, employee_id: int, day: date, present: bool, approver: str):
+        """Отметка без проверки смены и без аудита — для засева и обслуживания.
+
+        Экран пишет через FinanceStore.mark_manual_attendance: там отметка,
+        проверка «смена не подтверждена» и аудит идут одной транзакцией.
+        """
+        with closing(self._open()) as connection, connection:
+            write_manual_mark(connection, employee_id, day, present, approver)
+
+    def set_manual_absence(self, employee_id: int, day: date, absent: bool, approver: str):
+        self.set_manual_mark(employee_id, day, not absent, approver)
+
     def event_count(self) -> int:
         with closing(self._open()) as connection:
             return connection.execute('SELECT COUNT(*) FROM hikvision_events').fetchone()[0]
@@ -232,6 +304,7 @@ class AttendanceService:
             raise ValueError('Current time must include a timezone.')
         now = now.astimezone(TZ)
         entries = self.store.first_entries(day)
+        marks = self.store.manual_marks(day)
         state = self.store.sync_state(self.source)
         start = datetime.combine(day, time.min, TZ)
         end = start + timedelta(days=1)
@@ -241,15 +314,35 @@ class AttendanceService:
         rows = []
         for employee in employees:
             entry = entries.get(employee.id)
-            if entry is not None:
-                local_time = entry.occurred_at.astimezone(TZ).time().replace(tzinfo=None)
-                status = 'late' if local_time > LATE_AFTER else 'on_time'
-                rows.append(AttendanceRow(employee.id, status, entry.occurred_at))
+            if employee.manual_attendance:
+                rows.append(self._manual_row(employee, day, marks.get(employee.id), entry))
+            elif entry is not None:
+                rows.append(AttendanceRow(employee.id, _entry_status(entry), entry.occurred_at))
             elif employee.hikvision_id is None:
                 rows.append(AttendanceRow(employee.id, 'unlinked', None))
             else:
                 rows.append(AttendanceRow(employee.id, 'missing' if complete else 'unavailable', None))
-        return AttendanceSnapshot(tuple(rows), complete, self._health(state, now, complete))
+        return AttendanceSnapshot(tuple(rows), complete, self._health(state, now, complete), marks)
+
+    @staticmethod
+    def _manual_row(employee: Employee, day: date, mark: bool | None, entry) -> AttendanceRow:
+        """День сотрудника с ручной отметкой.
+
+        Явная отметка бухгалтера сильнее всего. Без неё — «был» с дня, когда
+        включили ручную отметку (или всегда, если дата не записана). Раньше
+        этого дня «был» не подразумевается: новый человек не получает оплату
+        за дни до появления. Если он тогда проходил турникет — берём проход,
+        иначе «не был» (0 сум), и бухгалтер может поставить «был» явно.
+        «Нет привязки» ручным не ставим: такая строка заперла бы подтверждение.
+        """
+        if mark is not None:
+            return AttendanceRow(employee.id, 'manual_present' if mark else 'manual_absent', None)
+        since = getattr(employee, 'manual_since', None)
+        if since is None or day >= since:
+            return AttendanceRow(employee.id, 'manual_present', None)
+        if entry is not None:
+            return AttendanceRow(employee.id, _entry_status(entry), entry.occurred_at)
+        return AttendanceRow(employee.id, 'manual_absent', None)
 
     def _health(self, state: SyncState, now: datetime, complete: bool) -> dict:
         if not self.enabled:

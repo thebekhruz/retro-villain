@@ -41,16 +41,17 @@ def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
         modules = client.get('/api/config').json()['modules']
     assert accountant.status_code == 200
     assert 'ДЕМО' not in accountant.text
-    assert 'id="attendance-banner"' in accountant.text
-    assert 'id="attendance-chip"' in accountant.text
-    assert 'Опоздавшие сотрудники' in accountant.text
-    assert 'id="late-details"' in accountant.text
+    # Макет 2a: состояние Hikvision и сотрудники без него — полосой в секции
+    # смены, опоздавшие — вкладкой «Опоздали» в той же таблице, а выгрузка
+    # входов живёт у «Сотрудников». Отдельного блока опоздавших больше нет.
+    assert 'id="shift-strips"' in accountant.text
+    assert 'id="shift-tabs"' in accountant.text
+    assert 'Опоздавшие сотрудники' not in accountant.text
     assert 'href="/accountant/employees"' in accountant.text
-    assert 'Скачать опоздавших' in accountant.text
     assert 'name="item_code"' in accountant.text
     assert 'Подтвердить получение' not in accountant.text
     assert 'id="accountant-date"' in accountant.text
-    assert 'id="entrances-download"' in accountant.text
+    assert 'Сохранить в Excel' in accountant.text
     assert 'Зарплата к выплате' not in cashier.text
     # T-383: в разметке кассы чужих модулей нет — пункт «Бухгалтер» дорисует
     # меню, только если он открыт этой учётной записи (здесь — полный доступ).

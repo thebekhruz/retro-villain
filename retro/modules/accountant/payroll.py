@@ -37,12 +37,19 @@ class PayrollRow:
                     exception=self.exception, demo=False)
 
 
+# «Пришли» и «не пришли» везде считаются одинаково — как на странице
+# сотрудников: ручная отметка бухгалтера наравне с проходом Hikvision.
+# unlinked и unavailable — ни то ни другое: данных о дне нет.
+PRESENT_STATUSES = frozenset({'on_time', 'late', 'manual_present'})
+ABSENT_STATUSES = frozenset({'missing', 'manual_absent'})
+
+
 def compute_pay(rate: Decimal | None, status: str, *, exception: bool) -> Decimal | None:
     if rate is None:
         return None
-    if status == 'missing':
+    if status in ('missing', 'manual_absent'):
         return Decimal(0)
-    if status in ('on_time', 'late'):
+    if status in ('on_time', 'late', 'manual_present'):
         return rate
     if status == 'unlinked' and exception:
         return rate

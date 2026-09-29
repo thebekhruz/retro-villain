@@ -3,7 +3,7 @@ from contextlib import closing, nullcontext
 from datetime import datetime
 from decimal import Decimal
 
-from .ledger import LedgerError, amount_value, required_text
+from .ledger import LedgerError, amount_value, now_stamp, required_text
 from .audit import record_audit
 
 SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}
@@ -24,6 +24,10 @@ def _entries(connection, account, through=None):
             "SELECT day, amount, description FROM accountant_movements WHERE "
             "(kind='other_expense' AND item_code='proc_shoh') OR "
             "(kind='procurement_advance' AND description LIKE 'Шох:%')")]
+    # Приход из кассы кассира: выдачи Шоху (`shoh`) и доллары в сейф (`usd`).
+    # Деньги бухгалтера они не трогают — см. modules/cashier/till.py.
+    from retro.modules.cashier.till import reserve_rows
+    rows += reserve_rows(connection, account)
     return sorted((r for r in rows if through is None or r['day'] <= through), key=lambda r: r['day'])
 
 
@@ -59,7 +63,7 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *
                     raise LedgerError('Недостаточно денег от кассира для перевода в сейф.')
             cursor = connection.execute(
                 'INSERT INTO accountant_reserves (day, account, kind, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                (day.isoformat(), account, kind, str(value), note, datetime.now().isoformat()))
+                (day.isoformat(), account, kind, str(value), note, now_stamp()))
             after = store._row_dict(connection, 'accountant_reserves', cursor.lastrowid)
             record_audit(connection, 'reserve', cursor.lastrowid, 'create', None, after)
             rows = _entries(connection, account)

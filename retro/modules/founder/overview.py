@@ -83,11 +83,23 @@ def daily_flows(rows):
     return result
 
 
-def expense_categories(rows):
+SUPPLIER_TRANSFERS_LABEL = 'Закуп · перечисления'
+
+
+def expense_categories(rows, transfers=(), *, shokh_from_till=Decimal(0)):
     """Куда ушли деньги за период: группы справочника, зарплаты раздельно.
 
-    Приход (передача кассира, прочие поступления) сюда не входит."""
+    Приход (передача кассира, прочие поступления) сюда не входит.
+    `transfers` — перечисления поставщикам со счёта: это расход на закуп, но не
+    наличные, поэтому в движения кассы (`rows`) они не попадают и приходят
+    отдельно — своей категорией. `shokh_from_till` — наличные Шоху прямо из
+    кассы кассира: среди движений бухгалтера их тоже нет, а закуп это тот же."""
     totals = defaultdict(Decimal)
+    transferred = sum((Decimal(row['amount']) for row in transfers), Decimal(0))
+    if transferred:
+        totals[SUPPLIER_TRANSFERS_LABEL] += transferred
+    if shokh_from_till:
+        totals['Закуп · наличные Шоху'] += Decimal(shokh_from_till)
     for row in rows:
         kind = flow_kind(row)
         if kind in ('handover', 'receipt'):
@@ -266,12 +278,14 @@ def is_shokh_advance(row):
              and str(row.get('description') or '').startswith('Шох:')))
 
 
-def shokh_month(purchases, flows, *, pocket):
+def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0)):
     """Закуп за месяц: сколько выдали Шоху, сколько он записал, что проверить.
 
     «Напрямую» — закуп, который бухгалтер оплатил сам, мимо подотчёта Шоха
-    (мясо, уголь, хлеб и прочие статьи группы «Закуп»)."""
-    given = sum((Decimal(row['amount']) for row in flows if is_shokh_advance(row)), Decimal(0))
+    (мясо, уголь, хлеб и прочие статьи группы «Закуп»). `from_till` — выдачи
+    Шоху прямо из кассы кассира: в выдано они входят, в движениях бухгалтера их нет."""
+    given = sum((Decimal(row['amount']) for row in flows if is_shokh_advance(row)),
+                Decimal(from_till))
     direct = sum((Decimal(row['amount']) for row in flows
                   if flow_kind(row) == 'procurement' and not is_shokh_advance(row)), Decimal(0))
     spent = sum((Decimal(row['total']) for row in purchases), Decimal(0))
@@ -283,6 +297,6 @@ def shokh_month(purchases, flows, *, pocket):
                for row in purchases
                if row['accepted_at'] is None and (not row['has_photo'] or row['price_above_usual'])]
     top = sorted(by_item.items(), key=lambda item: (-item[1], item[0]))[:5]
-    return dict(given=money(given), spent=money(spent), direct=money(direct),
-                pocket=pocket, purchases=len(purchases), flagged=flagged,
+    return dict(given=money(given), given_from_till=money(from_till), spent=money(spent),
+                direct=money(direct), pocket=pocket, purchases=len(purchases), flagged=flagged,
                 top_items=[dict(item=name, amount=money(amount)) for name, amount in top])

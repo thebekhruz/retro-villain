@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
-from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.accountant.roster import GROUPS, UNASSIGNED_GROUP, group_for
 from retro.modules.director.models import resolve_period
 from retro.modules.director.tools import DirectorChatTools
@@ -41,7 +41,8 @@ def attendance(request: Request, date: date | None = None):
     roster = request.app.state.accountant_roster.list(day)
     snapshot = request.app.state.attendance.snapshot(day, roster)
     rows = draft_payroll(day, roster, set(), snapshot.rows)
-    arrived = [row for row in rows if row.status in ('on_time', 'late')]
+    # Ручная отметка «был / не был» считается наравне с проходом Hikvision.
+    arrived = [row for row in rows if row.status in PRESENT_STATUSES]
     late = [row for row in rows if row.status == 'late']
     return {
         'demo': False,
@@ -51,7 +52,7 @@ def attendance(request: Request, date: date | None = None):
         'roster_count': len(rows),
         'arrived_count': len(arrived),
         'late_count': len(late),
-        'missing_count': sum(row.status == 'missing' for row in rows),
+        'missing_count': sum(row.status in ABSENT_STATUSES for row in rows),
         'unavailable_count': sum(row.status == 'unavailable' for row in rows),
         'employees': [dict(employee_id=row.employee_id, name=row.name, role=row.role,
                            group=row.group_name, status=row.status,
@@ -230,13 +231,15 @@ def team(request: Request, date: date | None = None):
     rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows)
     by_id = {employee.id: employee for employee in roster}
     shift = [dict(row.json(), manual_attendance=by_id[row.employee_id].manual_attendance,
+                  manual_since=(by_id[row.employee_id].manual_since.isoformat()
+                                if by_id[row.employee_id].manual_since else None),
                   hikvision_registered=by_id[row.employee_id].hikvision_id is not None)
              for row in rows]
     return dict(demo=False, date=day.isoformat(), attendance=snapshot.health,
                 shift=shift, monthly=[row.json() for row in state.accountant_roster.list_monthly()],
                 roles=sorted(set(GROUPS) | {'повар', 'кондитер'}),
                 counts=dict(late=sum(row['status'] == 'late' for row in shift),
-                            missing=sum(row['status'] == 'missing' for row in shift),
+                            missing=sum(row['status'] in ABSENT_STATUSES for row in shift),
                             no_hikvision=sum(not row['hikvision_registered'] for row in shift)))
 
 

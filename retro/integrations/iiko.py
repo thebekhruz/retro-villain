@@ -20,7 +20,7 @@ from retro.config import IIKO_ORIGIN
 from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell,
-    number, today_tashkent,
+    number, shift_status, today_tashkent,
 )
 from retro.modules.director.models import (
     SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
@@ -598,7 +598,9 @@ class IikoClient:
                 register_sales = sum(amounts.values(), Decimal(0))
                 return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay,
                                register_payment_sales=register_sales,
-                               register_received_total=register_sales + total_prepay)
+                               register_received_total=register_sales + total_prepay,
+                               # «Смена открыта / закрыта в 22:56» в шапке кассира.
+                               shift=shift_status(day, shifts))
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_cashier')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
