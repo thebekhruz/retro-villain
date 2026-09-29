@@ -145,7 +145,7 @@ const month2b = () => ({
 });
 
 test('строка сменного: остаток включает вчерашнюю смену к выдаче, ручная отметка даёт «⊘ Hik»', () => {
-  const [row] = logic.shiftRows(month2b(), {today: TODAY, pending: {5: {status: 'on_time', payable: '150000'}}});
+  const [row] = logic.shiftRows(month2b(), {today: TODAY, pending: {'2026-09-28': {5: {status: 'on_time', payable: '150000', accrued: false, blocker: null}}}});
   // 27-е старше вчерашнего дня — это уже «✕ не выдана», вчерашнее 28-е ждёт подтверждения.
   assert.deepEqual(row.cells.map(c => c.kind), ['unpaid', 'pending', 'future']);
   assert.equal(row.rest, 300000);
@@ -211,4 +211,39 @@ test('строка помесячного несёт выплаты дня, ес
   const [chef, lola] = logic.monthlyRows(data, {today: TODAY});
   assert.deepEqual(chef.cells[0].ops, [{id: 5, amount: 6000000}, {id: 9, amount: 3500000}]);
   assert.deepEqual(lola.cells[0].ops, []);
+});
+
+test('частично начисленный день: у кого препятствие — ждёт, остальные не заблокированы', () => {
+  const data = month2b();
+  data.days = ['2026-09-26', '2026-09-27', '2026-09-28', '2026-09-29'];
+  data.confirmed_days = ['2026-09-26'];
+  data.partial_days = ['2026-09-27'];
+  data.shift.push({employee_id: 7, name: 'Отабек Эргашев', group: 'Обслуживание зала', rate: '150000',
+    accrued: '0', paid: '0', debt: '0', cells: {}});
+  const pending = {
+    '2026-09-27': {7: {status: 'unlinked', payable: null, accrued: false, blocker: 'unlinked'}},
+    '2026-09-28': {5: {status: 'late', payable: '150000', accrued: false, blocker: null},
+      7: {status: 'on_time', payable: null, accrued: false, blocker: 'missing_rate'}},
+  };
+  const [sanjar, otabek] = logic.shiftRows(data, {today: TODAY, pending});
+  // Закрытый день без начисления — просто не работал.
+  assert.equal(otabek.cells[0].kind, 'empty');
+  assert.deepEqual(otabek.cells.slice(1, 3).map(c => [c.kind, c.text]), [['blocked', 'нет привязки'], ['blocked', 'нет ставки']]);
+  // Соседа по тому же дню препятствие не держит: он «к выдаче».
+  assert.equal(sanjar.cells[2].kind, 'pending');
+  assert.equal(otabek.rest, 0);
+  // Частичный день без строки /staff — всё равно «ждёт», а не пусто.
+  assert.equal(logic.shiftRows(data, {today: TODAY, pending: {}})[1].cells[1].kind, 'blocked');
+  const checks = logic.checks(data, {today: TODAY, pending});
+  assert.ok(checks.some(c => c.text === 'Не начислено 28.09: Отабек Эргашев' && /Сотрудниках/.test(c.sub)));
+  assert.ok(checks.some(c => c.text === 'Не начислено 27.09: Отабек Эргашев' && /вручную/.test(c.sub)));
+});
+
+test('новый в реестре без начислений за месяц всё равно виден в открытом дне', () => {
+  const rows = logic.shiftRows(month2b(), {today: TODAY, pending: {'2026-09-28': {
+    40: {employee_id: 40, name: 'Новый Официант', group: 'Обслуживание зала', rate: '170000', status: 'on_time', payable: '170000', accrued: false, blocker: null}}}});
+  const added = rows.find(row => row.id === 40);
+  assert.equal(added.name, 'Новый Официант');
+  assert.equal(added.cells[1].kind, 'pending');
+  assert.equal(added.rest, 170000);
 });

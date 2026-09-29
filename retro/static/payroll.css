@@ -49,6 +49,7 @@
 .pr-key.is-missing{background:#f1f3ee;color:#9da79d}
 .pr-key.is-odd{background:#fbf0d7}
 .pr-key.is-unpaid{background:#fff5ee;color:#a96039}
+.pr-key.is-blocked{background:#fbf7ed;color:#906c2b}
 .pr-key.is-nopass{background:#fde9ed;color:#ab445e;font-size:11px;font-weight:700}
 .pr-hik{display:inline-block;padding:0 4px;border-radius:4px;border:1px dashed #c9b27a;background:#f7f3e8;color:#7a6a45;
   font-size:9px;font-weight:650;font-style:normal;line-height:1.5;white-space:nowrap}
@@ -122,10 +123,13 @@ input.pr-m:hover{background:#fbfcf9}
 .pr-s.is-odd{background:#fbf0d7;color:#906c2b;font-size:10px}
 .pr-s.is-topay,.pr-s.is-pending{color:#7d8881;font-size:10px}
 .pr-s.is-unpaid{background:#fff5ee;color:#a96039}
+/* Ждёт начисления: смена начислена не всем, у человека препятствие (нет ставки…) */
+.pr-s.is-blocked{background:#fbf7ed;color:#906c2b;font-size:10px;line-height:1.15}
 button.pr-s{cursor:pointer}
 button.pr-s:hover{box-shadow:inset 0 0 0 2px #d2af59;filter:none}
 .pr-s.is-focus{box-shadow:inset 0 0 0 2px #d2af59}
 .pr-c-rest.is-owed{color:#a96039}
+.pr-c-sum.is-norate{color:#a96039;font-size:11px}
 
 /* Подтверждение удаления выплаты — строкой у ячейки, в стиле «Удалить сотрудника?» */
 .pr-confirm{position:fixed;z-index:80;width:max-content;max-width:min(320px,calc(100vw - 16px));display:grid;gap:10px;
