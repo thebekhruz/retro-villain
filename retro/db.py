@@ -172,11 +172,22 @@ class PostgresConnection:
         self._raw.close()
 
     # `with closing(conn) as c, c:` — второй `with` открывает транзакцию.
+    # Как в sqlite3: на выходе фиксируем или откатываем, но НЕ закрываем.
+    # psycopg на выходе из `with` закрывает соединение, и код, который после
+    # блока транзакции ещё читал тем же соединением (касса: авто-строки
+    # политики, затем выборка), на Postgres падал «the connection is closed».
+    # Закрывает соединение внешний `closing(...)`.
     def __enter__(self):
-        return self._raw.__enter__() and self
+        return self
 
-    def __exit__(self, *error):
-        return self._raw.__exit__(*error)
+    def __exit__(self, error_type, error, traceback):
+        if self._raw.closed:
+            return False
+        if error_type is None:
+            self._raw.commit()
+        else:
+            self._raw.rollback()
+        return False
 
 
 class _WithId:

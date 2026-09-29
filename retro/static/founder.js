@@ -11,8 +11,35 @@ function svg(name,attrs={}){const node=document.createElementNS('http://www.w3.o
 function selectedDirections(){return [...document.querySelectorAll('input[name=direction]:checked')].map(input=>input.value)}
 // Пояснения — по одному предложению в своём узле: переводчик сопоставляет строку целиком,
 // и склеенный абзац из нескольких пояснений на узбекском оставался русским.
-function setMessage(text,error=false){const node=$('message'),parts=(Array.isArray(text)?text:[text]).filter(Boolean);node.hidden=!parts.length;node.replaceChildren(...parts.flatMap((part,index)=>{const span=document.createElement('span');span.textContent=part;return index?[' ',span]:[span]}));node.classList.toggle('is-error',error)}
-function setLoading(value){document.querySelectorAll('.founder-metrics').forEach(node=>node.setAttribute('aria-busy',String(value)));$('refresh').disabled=value}
+function setMessage(text,error=false){$('message').classList.remove('is-skel');const node=$('message'),parts=(Array.isArray(text)?text:[text]).filter(Boolean);node.hidden=!parts.length;node.replaceChildren(...parts.flatMap((part,index)=>{const span=document.createElement('span');span.textContent=part;return index?[' ',span]:[span]}));node.classList.toggle('is-error',error)}
+function setLoading(value){document.querySelectorAll('.founder-metrics').forEach(node=>node.setAttribute('aria-busy',String(value)))}
+
+/* ── Отклик и ожидание (busy.js, T-393) ──────────────────────────────────
+   Первая загрузка — скелеты в форме цифр, графиков и таблиц. Повторная
+   (другой период, «Показать») — прежние данные на месте и гаснут, пока не
+   придут новые: пустой экран на время iiko читался как поломка. */
+const Busy=globalThis.RetroBusy;
+const ANALYTICS_PANELS='.founder-workspace>.founder-metrics,.founder-workspace>.founder-panel:not(.booking-panel):not(.broadcast-panel)';
+const skel=(className='rm-skel is-val')=>{const node=document.createElement('span');node.className=className;return node};
+function chartSkeleton(target,height){const block=document.createElement('div');block.className='fa-skel-chart';block.style.height=height+'px';block.setAttribute('aria-hidden','true');for(let index=0;index<4;index+=1)block.append(skel('rm-skel'));target.replaceChildren(block)}
+function cardsSkeleton(target,count){target.replaceChildren(...Array.from({length:count},()=>{const card=document.createElement('article');card.className='fa-skel-card';card.setAttribute('aria-hidden','true');card.append(skel('rm-skel'),skel('rm-skel is-md'),skel('rm-skel'));return card}))}
+function tableSkeleton(target,rows){target.replaceChildren(...Array.from({length:rows},()=>{const row=document.createElement('div');row.className='rm-skel-row fa-skel-row';row.setAttribute('aria-hidden','true');for(let index=0;index<6;index+=1)row.append(skel('rm-skel'));return row}))}
+function paintSkeleton(){
+  document.querySelectorAll('.founder-metrics:not(.booking-metrics) article strong').forEach(node=>node.replaceChildren(skel()));
+  // Пояснения к выборке приходят почти всегда — место под них держим сразу, иначе вся страница съезжает вниз.
+  const message=$('message');message.hidden=false;message.classList.remove('is-error');message.classList.add('is-skel');message.replaceChildren(skel('rm-skel'),skel('rm-skel'),skel('rm-skel'));
+  chartSkeleton($('revenue-chart'),230);chartSkeleton($('payment-chart'),255);cardsSkeleton($('payment-summary'),4);tableSkeleton($('series-table'),5);
+  bookingSkeleton();
+}
+function bookingSkeleton(){['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).replaceChildren(skel()));chartSkeleton($('booking-chart'),255);cardsSkeleton($('booking-sources'),3);const status=$('booking-status');status.replaceChildren(skel('rm-skel is-val'));status.classList.remove('is-error')}
+/** Аналитика не пришла на первой загрузке — прочерки вместо вечных полос. */
+function settleSkeletons(){document.querySelectorAll('.founder-metrics:not(.booking-metrics) article strong').forEach(node=>{if(node.querySelector('.rm-skel'))node.textContent='—'});['revenue-chart','payment-chart','payment-summary'].forEach(id=>{if($(id).querySelector('.rm-skel'))$(id).replaceChildren()});if($('series-table').querySelector('.rm-skel'))renderSeriesTable()}
+function beginLoading(reload,analytics,bookings){
+  if(!reload){paintSkeleton();return}
+  if(!Busy)return;
+  document.querySelectorAll(ANALYTICS_PANELS).forEach(node=>Busy.section(node,analytics));
+  Busy.section(document.querySelector('.booking-panel'),bookings);
+}
 
 function revenuePeriod(group){
   const dated=value=>`${shortDate(value)}, ${FounderLogic.weekday(value)}`;
@@ -85,11 +112,12 @@ function renderBookingChart(data){
 }
 
 function renderBookings(data){
-  lastBookings=data;$('booking-total').textContent=money.format(Number(data.totals.bookings));$('booking-guests').textContent=money.format(Number(data.totals.guests));$('booking-unknown').textContent=money.format(Number(data.totals.unknown_guest_bookings));$('booking-cancelled').textContent=money.format(Number(data.totals.cancelled));renderBookingChart(data);const sources=$('booking-sources');sources.replaceChildren();data.sources.forEach(source=>{const card=document.createElement('article'),label=document.createElement('span'),total=document.createElement('strong'),detail=document.createElement('small');label.textContent=source.name;total.textContent=`${money.format(Number(source.bookings))} броней`;detail.textContent=`${money.format(Number(source.guests))} гостей · ${source.share_percent===null?'доля не вычисляется':source.share_percent+'%'}`;card.append(label,total,detail);sources.append(card)});if(!data.sources.length){const empty=document.createElement('article');empty.textContent='Источников за период нет.';sources.append(empty)}const coverage=data.coverage,started=new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Tashkent'}).format(new Date(coverage.history_started_at)),parts=[`Журнал ведётся с ${started}.`];if(!coverage.historical_data_complete)parts.push('История до запуска журнала неполная.');if(coverage.excluded_missing_date)parts.push(`Без даты визита исключено: ${money.format(Number(coverage.excluded_missing_date))}.`);const note=$('booking-coverage');note.textContent=parts.join(' ');note.classList.toggle('is-warning',!coverage.historical_data_complete||Boolean(coverage.excluded_missing_date));const status=$('booking-status');status.textContent='Telegram API подключён';status.classList.remove('is-error');renderSeriesTable()
+  lastBookings=data;document.querySelector('.booking-panel').classList.remove('is-unavailable');$('booking-total').textContent=money.format(Number(data.totals.bookings));$('booking-guests').textContent=money.format(Number(data.totals.guests));$('booking-unknown').textContent=money.format(Number(data.totals.unknown_guest_bookings));$('booking-cancelled').textContent=money.format(Number(data.totals.cancelled));renderBookingChart(data);const sources=$('booking-sources');sources.replaceChildren();data.sources.forEach(source=>{const card=document.createElement('article'),label=document.createElement('span'),total=document.createElement('strong'),detail=document.createElement('small');label.textContent=source.name;total.textContent=`${money.format(Number(source.bookings))} броней`;detail.textContent=`${money.format(Number(source.guests))} гостей · ${source.share_percent===null?'доля не вычисляется':source.share_percent+'%'}`;card.append(label,total,detail);sources.append(card)});if(!data.sources.length){const empty=document.createElement('article');empty.textContent='Источников за период нет.';sources.append(empty)}const coverage=data.coverage,started=new Intl.DateTimeFormat('ru-RU',{dateStyle:'medium',timeStyle:'short',timeZone:'Asia/Tashkent'}).format(new Date(coverage.history_started_at)),parts=[`Журнал ведётся с ${started}.`];if(!coverage.historical_data_complete)parts.push('История до запуска журнала неполная.');if(coverage.excluded_missing_date)parts.push(`Без даты визита исключено: ${money.format(Number(coverage.excluded_missing_date))}.`);const note=$('booking-coverage');note.textContent=parts.join(' ');note.classList.toggle('is-warning',!coverage.historical_data_complete||Boolean(coverage.excluded_missing_date));const status=$('booking-status');status.textContent='Telegram API подключён';status.classList.remove('is-error');renderSeriesTable()
 }
 
 function renderBookingError(message){
-  ['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-chart').replaceChildren();$('booking-legend').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='Основная аналитика iiko продолжает работать независимо.';const status=$('booking-status');status.textContent=message;status.classList.add('is-error')
+  ['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='Основная аналитика iiko продолжает работать независимо.';const status=$('booking-status');status.textContent='Брони недоступны';status.classList.add('is-error');document.querySelector('.booking-panel').classList.add('is-unavailable');
+  const notice=document.createElement('div');notice.className='fa-unavailable';notice.setAttribute('role','status');const icon=document.createElement('span');icon.textContent='!';icon.setAttribute('aria-hidden','true');const text=document.createElement('p');text.textContent=message;notice.append(icon,text);$('booking-chart').replaceChildren(notice)
 }
 
 function renderSeriesTable(){
@@ -154,6 +182,10 @@ function render(data){
 async function load(options = {}) {
   const directions = selectedDirections();
   if (!directions.length) { setMessage('Выберите хотя бы одно направление.', true); return; }
+  // Неверный период ловим до запроса: ответ 422 иначе выглядел бы как
+  // «Источник iiko недоступен» в строке статуса.
+  const periodError = globalThis.FounderLogic?.periodError ? globalThis.FounderLogic.periodError($('start').value, $('end').value) : null;
+  if (periodError) { setMessage(periodError, true); $('updated').textContent = 'Проверьте даты'; return false; }
   controller?.abort();
   controller = new AbortController();
   const signal = controller.signal, requestId = gate.next();
@@ -161,16 +193,18 @@ async function load(options = {}) {
     granularity:$('granularity').value, directions:directions.join(',')});
   const query = params.toString();
   if (options.refresh === true && lastQuery === query) params.set('refresh', 'true');
-  setLoading(true); clearResults(); setMessage('');
+  const reload = Boolean(lastAnalytics || lastBookings);
+  setLoading(true); setMessage('');
   const bookingParams = new URLSearchParams({start:$('start').value, end:$('end').value,
     granularity:$('granularity').value});
   const fetchJson = async (url, fallback) => RetroState.responseJson(await fetch(url, {signal}), fallback);
   const analytics = fetchJson('/api/founder/analytics?' + params, 'Не удалось получить аналитику.')
-    .then(data => { if (gate.isCurrent(requestId)) { lastQuery=query; render(data); } })
+    .then(data => { if (!gate.isCurrent(requestId)) return false; lastQuery=query; render(data); return true; })
     .catch(error => {
-      if (!gate.isCurrent(requestId) || error.name === 'AbortError') return;
-      lastAnalytics=RetroState.analyticsAfterFailure(lastAnalytics); renderSeriesTable();
+      if (!gate.isCurrent(requestId) || error.name === 'AbortError') return false;
+      lastAnalytics=RetroState.analyticsAfterFailure(lastAnalytics); settleSkeletons(); renderSeriesTable();
       setMessage(error.message,true); $('updated').textContent='Источник iiko недоступен';
+      return false;
     })
     .finally(() => { if (gate.isCurrent(requestId)) setLoading(false); });
   const bookings = fetchJson('/api/founder/bookings?' + bookingParams, 'Не удалось получить бронирования.')
@@ -178,11 +212,16 @@ async function load(options = {}) {
     .catch(error => {
       if (gate.isCurrent(requestId) && error.name !== 'AbortError') renderBookingError(error.message);
     });
-  await Promise.allSettled([analytics, bookings]);
+  beginLoading(reload, analytics, bookings);
+  const [result] = await Promise.allSettled([analytics, bookings]);
+  // Для кнопки: ✓ — только если аналитика действительно на экране.
+  return result.status === 'fulfilled' && result.value === true;
 }
 
-async function start(){try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
+async function start(){paintSkeleton();try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
 function clearResults(){['sales-paid','sales-prepaid','sales-other','sales-full'].forEach(id=>$(id).textContent='—');$('sales-other-card').hidden=true;$('sales-bridge-table').replaceChildren();$('sales-bridge-equation').textContent='';$('sales-bridge-scope').textContent='Выбранные направления · даты заказа';lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`article[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';['pnl-sales','pnl-cost','pnl-profit','pnl-net-profit','net-profit-final','pnl-operating-expenses','pnl-other-expenses','pnl-other-income','expense-cashier','expense-accountant','expense-dashboard-total','internal-tasting','internal-chef'].forEach(id=>$(id).textContent='—');$('expense-accountant-detail').textContent='зарплата: — · прочие: —';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
 function invalidatePending(){controller?.abort();controller=null;gate.invalidate();setLoading(false);clearResults();$('updated').textContent='Фильтры изменены · нажмите «Показать»';setMessage('Фильтры изменены. Нажмите «Показать», чтобы загрузить новую выборку.')}
 ['start','end','granularity'].forEach(id=>$(id).addEventListener('change',invalidatePending));document.querySelectorAll('input[name=direction]').forEach(input=>input.addEventListener('change',invalidatePending));
-$('filters').addEventListener('submit',event=>{event.preventDefault();document.querySelectorAll('[data-period]').forEach(button=>button.classList.remove('is-active'));load({refresh:true})});document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.toggle('is-active',item===button));const period=FounderLogic.quickPeriod(button.dataset.period,$('end').max);$('start').value=period.start;$('end').value=period.end;load()}));start();
+// «Показать» крутится, пока iiko считает, и ставит ✓, когда цифры на экране;
+// быстрый период — крутится сам чип.
+$('filters').addEventListener('submit',event=>{event.preventDefault();document.querySelectorAll('[data-period]').forEach(button=>button.classList.remove('is-active'));const work=load({refresh:true});if(Busy)Busy.button($('refresh'),work)});document.querySelectorAll('[data-period]').forEach(button=>button.addEventListener('click',()=>{document.querySelectorAll('[data-period]').forEach(item=>item.classList.toggle('is-active',item===button));const period=FounderLogic.quickPeriod(button.dataset.period,$('end').max);$('start').value=period.start;$('end').value=period.end;const work=load();if(Busy)Busy.button(button,work,{done:false})}));start();

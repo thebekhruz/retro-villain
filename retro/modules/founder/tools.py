@@ -153,6 +153,25 @@ TOOL_DEFINITIONS = (
         },
     },
     {
+        'name': 'get_founder_cabinet',
+        'description': (
+            'Кабинет учредителя (экраны 7a/7b) за неделю с датой: деньги по дням — выручка '
+            'Retro и Oxbridge, Демо, чеки, передача кассира и её сверка с расчётом (недостача), '
+            'зарплаты, закуп, прочие расходы, дивиденды, остаток у бухгалтера; дивиденды недели '
+            '(цель, отложено, план, «касса свободно даёт», прошлые недели); куда ушли деньги '
+            'за месяц по категориям; закуп Шоха за месяц (выдано, потрачено, перечисления, '
+            'на руках, покупки на проверку, топ товаров); Счёт Шефа за неделю и месяц.'
+        ),
+        'input_schema': {
+            'type': 'object',
+            'properties': {
+                'date': {'type': 'string', 'format': 'date', 'description': 'Дата YYYY-MM-DD.'},
+            },
+            'required': ['date'],
+            'additionalProperties': False,
+        },
+    },
+    {
         'name': 'get_saved_director_reports',
         'description': (
             'Получить список сохранённых отчётов директора либо полный отчёт по его id, '
@@ -270,7 +289,26 @@ class FounderChatTools:
             return await self._accounting_day(arguments)
         if name == 'get_saved_director_reports':
             return await asyncio.to_thread(self._director_reports, arguments)
+        if name == 'get_founder_cabinet':
+            return await self._founder_cabinet(arguments)
         raise DataError('Чат запросил неизвестный инструмент.')
+
+    async def _founder_cabinet(self, arguments):
+        """Те же числа, что на экранах 7a/7b, без полного дня бухгалтерии в каждой
+        строке недели (для него есть get_accounting_day)."""
+        from retro.modules.founder import cabinet
+        day = _single_day(arguments)
+        request = _tool_request(self.app)
+        state = self.app.state
+        week, chef, spending, dividends = await asyncio.gather(
+            cabinet.founder_week(request, day), cabinet.founder_chef(request, day),
+            asyncio.to_thread(cabinet.founder_spending, state, day),
+            asyncio.to_thread(cabinet.dividend_summary, state, day))
+        week = dict(week, days=[{key: value for key, value in item.items() if key != 'accounting'}
+                                for item in week['days']])
+        if not chef.get('error'):
+            chef = {key: value for key, value in chef.items() if key != 'bills'}
+        return dict(week=week, dividends=dividends, spending=spending, chef_account=chef)
 
     async def _cashier_day(self, arguments):
         day = _single_day(arguments)

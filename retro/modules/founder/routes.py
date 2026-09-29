@@ -89,17 +89,23 @@ async def analytics(
         # iiko) не вычитается, а закуп, оплаченный поставщику напрямую, — статьи
         # «Закуп» наличными и перечисления со счёта — вычитается: накладной по
         # нему система не создаёт. Правило целиком — в expense_totals_between.
-        cashier, accountant = await asyncio.gather(
+        cashier, accountant, flows = await asyncio.gather(
             asyncio.to_thread(request.app.state.expenses.total_between, start, end),
             asyncio.to_thread(
                 request.app.state.accountant_finance.expense_totals_between, start, end),
+            asyncio.to_thread(request.app.state.accountant_finance.cash_flows_between, start, end),
         )
         manual_total = cashier + accountant['total']
+        # В «зарплата» — и выплаты сменным, и строки «Зарплаты» журнала (оклады
+        # частями): иначе оклады попадали в «прочие». Итог не меняется.
+        salary_items = sum((Decimal(row['amount']) for row in flows
+                            if row['type'] == 'other_expense' and overview.flow_kind(row) == 'salary'),
+                           Decimal(0))
         result = dict(data)
         result['dashboard_expenses'] = {
             'cashier': str(cashier),
-            'accountant_other': str(accountant['other']),
-            'accountant_salary': str(accountant['salary']),
+            'accountant_other': str(accountant['other'] - salary_items),
+            'accountant_salary': str(accountant['salary'] + salary_items),
             'accountant': str(accountant['total']),
             'total': str(manual_total),
         }
@@ -329,7 +335,9 @@ async def export_month(request: Request, month: str | None = None):
     rows, error = await cabinet.iiko_or_error(request, 'load_daily_orders', first, last,
                                               operation='export_month', timeout=120)
     orders = overview.register_days(rows) if rows is not None else None
-    data = await asyncio.to_thread(month_workbook, request.app.state, first, last, orders, error)
+    till, till_error = await cabinet.month_cashier(request, first, last)
+    data = await asyncio.to_thread(month_workbook, request.app.state, first, last, orders, error,
+                                   till, till_error)
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition':
                              f'attachment; filename="Retro-accountant-{first.isoformat()[:7]}.xlsx"'})

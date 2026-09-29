@@ -18,7 +18,7 @@ from openpyxl import load_workbook
 from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 from retro.integrations.hikvision import HikvisionPerson
-from retro.modules.cashier.service import today_tashkent
+from retro.modules.cashier.service import TZ, today_tashkent
 
 
 GROUPS = {
@@ -115,11 +115,15 @@ class MonthlyEmployee:
     cash: Decimal
     advances: Decimal
     remaining: Decimal
+    # «⊘ Hik»: окладник не проходит турникет. На выплаты не влияет — это
+    # пометка для экранов (1a, 2b, 6a), как у сменных «отмечать вручную».
+    no_hikvision: bool = False
 
     def json(self):
         return dict(id=self.id, external_key=self.external_key, name=self.name, role=self.role,
                     salary=str(self.salary), schedule=self.schedule, card=str(self.card),
                     cash=str(self.cash), advances=str(self.advances), remaining=str(self.remaining),
+                    no_hikvision=self.no_hikvision,
                     accounting_basis='manual_current_register',
                     warning='Ручной текущий реестр: поля выплат и остатка не сверены с движениями; месяц не задан.')
 
@@ -182,6 +186,21 @@ class RosterStore:
                 connection.execute(
                     'CREATE UNIQUE INDEX IF NOT EXISTS accountant_monthly_external_key '
                     'ON accountant_monthly_employees(external_key) WHERE external_key IS NOT NULL')
+            if 'no_hikvision' not in columns:
+                connection.execute('ALTER TABLE accountant_monthly_employees '
+                                   'ADD COLUMN no_hikvision INTEGER NOT NULL DEFAULT 0')
+            # Удаление окладника = архив: строка остаётся, чтобы выплаты
+            # прошлых дней и ведомость показывали имя, а не «удалён · №».
+            if 'archived' not in columns:
+                connection.execute('ALTER TABLE accountant_monthly_employees '
+                                   'ADD COLUMN archived INTEGER NOT NULL DEFAULT 0')
+            # История реестра (1a): кроме ставки и группы — что сделали, кто и
+            # с чем (добавил, удалил в архив, «без Hikvision», имя/должность),
+            # и чей это сотрудник: сменный (shift) или на окладе (monthly).
+            audit_columns = table_columns(connection, 'accountant_roster_audit')
+            for column in ('action', 'changed_by', 'kind', 'details'):
+                if column not in audit_columns:
+                    connection.execute(f'ALTER TABLE accountant_roster_audit ADD COLUMN {column} TEXT')
             # Preserve values used for previous calendar days. The initial version
             # is a baseline, not a reconstruction of changes before this migration.
             connection.executescript('''
@@ -228,6 +247,31 @@ class RosterStore:
             'group_name=excluded.group_name, rate=excluded.rate, '
             'hikvision_id=excluded.hikvision_id, deleted=excluded.deleted',
             (effective, 1 if deleted else 0, employee_id))
+
+    @staticmethod
+    def _audit(connection, employee_id: int, *, action: str, reason: str, old_rate=None, new_rate=None,
+               old_group: str = '', new_group: str = '', by: str | None = None, kind: str = 'shift',
+               details: str = '') -> None:
+        """Строка истории реестра: кто, когда, что сделал, было → стало."""
+        connection.execute(
+            'INSERT INTO accountant_roster_audit (employee_id, changed_at, reason, old_rate, new_rate, '
+            'old_group, new_group, action, changed_by, kind, details) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+            (employee_id, datetime.now(TZ).isoformat(timespec='seconds'), reason,
+             str(old_rate) if old_rate is not None else None,
+             str(new_rate) if new_rate is not None else None,
+             old_group or '', new_group or '', action, by, kind, details))
+
+    def history(self, employee_id: int, *, kind: str = 'shift') -> list[dict]:
+        """История сотрудника, новые записи сверху. Старые строки (до
+        колонки kind) — правки ставки сменных."""
+        with closing(self._open()) as connection:
+            rows = connection.execute(
+                'SELECT changed_at, reason, old_rate, new_rate, old_group, new_group, action, changed_by, details '
+                'FROM accountant_roster_audit WHERE employee_id = ? AND COALESCE(kind, ?) = ? '
+                'ORDER BY id DESC', (employee_id, 'shift', kind)).fetchall()
+        return [dict(changed_at=row[0], reason=row[1], old_rate=row[2], new_rate=row[3],
+                     old_group=row[4] or None, new_group=row[5] or None, action=row[6] or 'update',
+                     changed_by=row[7], details=row[8] or '') for row in rows]
 
     def import_xlsx(self, source: Path, *, replace: bool = False) -> dict[str, int]:
         workbook = load_workbook(source, read_only=True, data_only=True)
@@ -319,7 +363,7 @@ class RosterStore:
                          None if row[7] else row[6], bool(row[7]),
                          date.fromisoformat(row[8]) if row[7] and row[8] else None) for row in rows]
 
-    def set_manual_attendance(self, employee_id: int, manual: bool) -> Employee:
+    def set_manual_attendance(self, employee_id: int, manual: bool, *, by: str | None = None) -> Employee:
         """Включить или снять ручную отметку.
 
         Включение запоминает день (по Ташкенту): «был» по умолчанию ставится
@@ -327,6 +371,8 @@ class RosterStore:
         """
         since = today_tashkent().isoformat()
         with closing(self._open()) as connection, connection:
+            before = connection.execute('SELECT manual_attendance, rate, group_name FROM accountant_employees '
+                                        'WHERE id = ?', (employee_id,)).fetchone()
             # В SET справа — значения до правки: дата ставится только при
             # переходе «выкл → вкл».
             changed = connection.execute(
@@ -336,6 +382,12 @@ class RosterStore:
                 (1 if manual else 0, 1 if manual else 0, since, employee_id)).rowcount
             if changed:
                 self._stamp_version(connection, employee_id)
+                if bool(before[0]) != manual:
+                    self._audit(connection, employee_id, action='manual', by=by,
+                                reason=('Нет в Hikvision · отмечать вручную' if manual
+                                        else 'Снова по Hikvision'),
+                                old_rate=before[1], new_rate=before[1],
+                                old_group=before[2], new_group=before[2])
         if not changed:
             raise ValueError('Сотрудник не найден.')
         return next(person for person in self.list() if person.id == employee_id)
@@ -458,13 +510,16 @@ class RosterStore:
     def monthly_total(self) -> Decimal:
         """Return only salaries explicitly stored in the monthly payroll register."""
         return sum((person.salary for person in self.list_monthly()), Decimal(0))
-    def list_monthly(self) -> list[MonthlyEmployee]:
+    def list_monthly(self, *, archived: bool = False) -> list[MonthlyEmployee]:
+        """Окладники в реестре; archived=True — удалённые (в архиве)."""
         with closing(self._open()) as connection:
             rows = connection.execute(
-                'SELECT id, external_key, name, role, salary, schedule, card, cash, advances, remaining '
-                'FROM accountant_monthly_employees ORDER BY role, name, id').fetchall()
+                'SELECT id, external_key, name, role, salary, schedule, card, cash, advances, remaining, '
+                'no_hikvision FROM accountant_monthly_employees WHERE archived = ? ORDER BY role, name, id',
+                (1 if archived else 0,)).fetchall()
         return [MonthlyEmployee(row[0], row[1], row[2], row[3], Decimal(row[4]), row[5],
-                                Decimal(row[6]), Decimal(row[7]), Decimal(row[8]), Decimal(row[9]))
+                                Decimal(row[6]), Decimal(row[7]), Decimal(row[8]), Decimal(row[9]),
+                                bool(row[10]))
                 for row in rows]
 
     @staticmethod
@@ -485,7 +540,8 @@ class RosterStore:
 
     def add_monthly(self, *, name: str, role: str, salary: str, schedule: str = '',
                     card: str = '0', cash: str = '0', advances: str = '0',
-                    remaining: str = '0', external_key: str | None = None) -> MonthlyEmployee:
+                    remaining: str = '0', external_key: str | None = None,
+                    no_hikvision: bool | None = None, by: str | None = None) -> MonthlyEmployee:
         name, role, schedule, money = self._monthly_values(
             name=name, role=role, salary=salary, schedule=schedule, card=card, cash=cash,
             advances=advances, remaining=remaining)
@@ -494,50 +550,86 @@ class RosterStore:
             try:
                 employee_id = connection.execute(
                     'INSERT INTO accountant_monthly_employees '
-                    '(external_key,name,role,salary,schedule,card,cash,advances,remaining) '
-                    'VALUES (?,?,?,?,?,?,?,?,?)',
+                    '(external_key,name,role,salary,schedule,card,cash,advances,remaining,no_hikvision) '
+                    'VALUES (?,?,?,?,?,?,?,?,?,?)',
                     (key, name, role, str(money['salary']), schedule, str(money['card']),
-                     str(money['cash']), str(money['advances']), str(money['remaining']))).lastrowid
+                     str(money['cash']), str(money['advances']), str(money['remaining']),
+                     1 if no_hikvision else 0)).lastrowid
             except sqlite3.IntegrityError:
                 raise ValueError('Сотрудник с таким внешним ключом уже существует.') from None
+            self._audit(connection, employee_id, action='create', kind='monthly', by=by,
+                        reason='Добавлен на оклад', new_rate=money['salary'],
+                        details='Без Hikvision' if no_hikvision else '')
         return next(item for item in self.list_monthly() if item.id == employee_id)
 
     def update_monthly(self, employee_id: int, *, name: str, role: str, salary: str,
                        schedule: str = '', card: str = '0', cash: str = '0',
-                       advances: str = '0', remaining: str = '0') -> MonthlyEmployee:
+                       advances: str = '0', remaining: str = '0', no_hikvision: bool | None = None,
+                       by: str | None = None, reason: str = '') -> MonthlyEmployee:
         name, role, schedule, money = self._monthly_values(
             name=name, role=role, salary=salary, schedule=schedule, card=card, cash=cash,
             advances=advances, remaining=remaining)
         with closing(self._open()) as connection, connection:
+            before = connection.execute(
+                'SELECT name, role, salary, no_hikvision FROM accountant_monthly_employees WHERE id=? AND archived=0',
+                (employee_id,)).fetchone()
+            flag = bool(before[3]) if before and no_hikvision is None else bool(no_hikvision)
             changed = connection.execute(
                 'UPDATE accountant_monthly_employees SET name=?,role=?,salary=?,schedule=?,card=?,cash=?, '
-                'advances=?,remaining=? WHERE id=?',
+                'advances=?,remaining=?,no_hikvision=? WHERE id=? AND archived=0',
                 (name, role, str(money['salary']), schedule, str(money['card']), str(money['cash']),
-                 str(money['advances']), str(money['remaining']), employee_id)).rowcount
+                 str(money['advances']), str(money['remaining']), 1 if flag else 0, employee_id)).rowcount
+            if changed:
+                notes = [f'{label}: {old} → {new}' for label, old, new in
+                         (('Имя', before[0], name), ('Должность', before[1], role)) if old != new]
+                if bool(before[3]) != flag:
+                    notes.append('Без Hikvision' if flag else 'По Hikvision')
+                if notes or Decimal(before[2]) != money['salary']:
+                    self._audit(connection, employee_id, action='update', kind='monthly', by=by,
+                                reason=reason.strip() or 'Изменение оклада', old_rate=before[2],
+                                new_rate=money['salary'], details='; '.join(notes))
         if not changed:
             raise ValueError('Сотрудник не найден.')
         return next(item for item in self.list_monthly() if item.id == employee_id)
 
     def update_monthly_basics(self, employee_id: int, *, name: str, role: str,
-                              salary: str) -> MonthlyEmployee:
+                              salary: str, by: str | None = None,
+                              reason: str = 'Изменено директором') -> MonthlyEmployee:
         """Имя, должность и оклад без касания выплат, которые ведёт бухгалтер."""
         name, role, _, money = self._monthly_values(name=name, role=role, salary=salary)
         with closing(self._open()) as connection, connection:
+            before = connection.execute(
+                'SELECT name, role, salary FROM accountant_monthly_employees WHERE id=? AND archived=0',
+                (employee_id,)).fetchone()
             changed = connection.execute(
-                'UPDATE accountant_monthly_employees SET name=?,role=?,salary=? WHERE id=?',
+                'UPDATE accountant_monthly_employees SET name=?,role=?,salary=? WHERE id=? AND archived=0',
                 (name, role, str(money['salary']), employee_id)).rowcount
+            if changed:
+                notes = [f'{label}: {old} → {new}' for label, old, new in
+                         (('Имя', before[0], name), ('Должность', before[1], role)) if old != new]
+                if notes or Decimal(before[2]) != money['salary']:
+                    self._audit(connection, employee_id, action='update', kind='monthly', by=by,
+                                reason=reason, old_rate=before[2], new_rate=money['salary'],
+                                details='; '.join(notes))
         if not changed:
             raise ValueError('Сотрудник не найден.')
         return next(item for item in self.list_monthly() if item.id == employee_id)
 
-    def delete_monthly(self, employee_id: int):
+    def delete_monthly(self, employee_id: int, *, by: str | None = None):
         with closing(self._open()) as connection, connection:
+            before = connection.execute('SELECT salary FROM accountant_monthly_employees '
+                                        'WHERE id = ? AND archived = 0', (employee_id,)).fetchone()
+            if before is not None:
+                self._audit(connection, employee_id, action='delete', kind='monthly', by=by,
+                            reason='Удалён из реестра', old_rate=before[0])
             deleted = connection.execute(
-                'DELETE FROM accountant_monthly_employees WHERE id = ?', (employee_id,)).rowcount
+                'UPDATE accountant_monthly_employees SET archived = 1 WHERE id = ? AND archived = 0',
+                (employee_id,)).rowcount
         if not deleted:
             raise ValueError('Сотрудник не найден.')
 
-    def add(self, *, name: str, role: str, rate: str | None, group_name: str) -> Employee:
+    def add(self, *, name: str, role: str, rate: str | None, group_name: str,
+            by: str | None = None) -> Employee:
         name = name.strip()
         role = role.strip()
         if not name or len(name) > 160:
@@ -558,10 +650,20 @@ class RosterStore:
             # Новый сотрудник действует с начала времён: иначе прошлые дни его
             # не увидят, а начисления за них уже закрыты.
             self._stamp_version(connection, employee_id, day='0001-01-01')
+            self._audit(connection, employee_id, action='create', by=by, reason='Добавлен в реестр',
+                        new_rate=parsed_rate, new_group=group_name)
         return next(person for person in self.list() if person.id == employee_id)
 
-    def delete(self, employee_id: int):
+    def delete(self, employee_id: int, *, by: str | None = None):
+        """Удаление = архив: в сегодняшних и будущих списках сотрудника нет,
+        прошлые дни (версии реестра) и начисления остаются как были."""
         with closing(self._open()) as connection, connection:
+            before = connection.execute('SELECT rate, group_name FROM accountant_employees WHERE id = ?',
+                                        (employee_id,)).fetchone()
+            if before is not None:
+                self._audit(connection, employee_id, action='delete', by=by,
+                            reason='Удалён из реестра: прошлые дни сохранены',
+                            old_rate=before[0], old_group=before[1])
             # Снимок снимаем до удаления: после него строки уже нет.
             self._stamp_version(connection, employee_id, deleted=True)
             deleted = connection.execute('DELETE FROM accountant_employees WHERE id = ?',
@@ -571,7 +673,7 @@ class RosterStore:
 
     def update(self, employee_id: int, *, name: str | None = None, role: str | None = None,
                rate: str | None,
-               group_name: str | None = None, reason: str) -> Employee:
+               group_name: str | None = None, reason: str, by: str | None = None) -> Employee:
         if not reason.strip():
             raise ValueError('Укажите причину изменения.')
         with closing(self._open()) as connection:
@@ -610,9 +712,9 @@ class RosterStore:
                         'UPDATE accountant_employee_versions SET rate = ? '
                         'WHERE employee_id = ? AND rate IS NULL',
                         (str(parsed_rate), employee_id))
-                connection.execute('INSERT INTO accountant_roster_audit '
-                                   '(employee_id, changed_at, reason, old_rate, new_rate, old_group, new_group) '
-                                   'VALUES (?, ?, ?, ?, ?, ?, ?)',
-                                   (employee_id, datetime.now().isoformat(), reason.strip(), old[2],
-                                    str(parsed_rate) if parsed_rate is not None else None, old[3], derived_group))
+                notes = [f'{label}: {before} → {after}' for label, before, after in
+                         (('Имя', old[0], name), ('Должность', old[1], role)) if before != after]
+                self._audit(connection, employee_id, action='update', by=by, reason=reason.strip(),
+                            old_rate=old[2], new_rate=parsed_rate, old_group=old[3],
+                            new_group=derived_group, details='; '.join(notes))
         return next(person for person in self.list() if person.id == employee_id)

@@ -103,18 +103,21 @@
     return index<=0?step:STEPS[index-1];
   }
 
-  /* Сравнение с обычной ценой. Дороже — не запрет, а повод бухгалтеру
-     проверить; дешевле и «как обычно» одинаково хороши. */
+  /* Сравнение с обычной ценой («Функционал» §3.12, §4): дешевле — «дешевле на
+     N%», до +10% — «в норме», выше — «дороже на N% — бухгалтер увидит».
+     Порог тот же, что у сервера (store.ABOVE_USUAL): сравниваем в тийинах,
+     чтобы округление процента не спорило с флагом «дороже обычного». */
   function priceHint(draft,usual){
     const price=number(String(draft.price==null?'':draft.price).replace(/[\s\u00a0\u202f]/g,''));
     if(price===null)return {kind:'empty',text:''};
     if(usual==null)return {kind:'unknown',text:'Раньше не покупали — цену не с чем сравнить'};
     const reference=Number(usual);
     if(!Number.isFinite(reference)||reference<=0)return {kind:'unknown',text:''};
-    const delta=Math.round((price/reference-1)*1000)/10;
-    if(delta>0)return {kind:'above',delta,text:'Дороже обычного на '+delta+'% — бухгалтер проверит'};
-    if(delta<0)return {kind:'below',delta,text:'Дешевле обычного на '+Math.abs(delta)+'%'};
-    return {kind:'same',delta:0,text:'Как обычно'};
+    const paid=Math.round(price*100), normal=Math.round(reference*100);
+    const delta=Math.round((price/reference-1)*100);
+    if(paid*10>normal*11)return {kind:'above',delta,text:'Дороже обычного на '+delta+'% — бухгалтер увидит'};
+    if(paid<normal)return {kind:'below',delta,text:'Дешевле обычного на '+Math.max(1,Math.abs(delta))+'%'};
+    return {kind:'same',delta:Math.max(0,delta),text:'В норме'};
   }
 
   /* Сколько осталось на руках после покупки. Может уйти в минус — значит,
@@ -137,17 +140,20 @@
     return String(whole).padStart(2,'0')+':'+String(Math.floor((minutes-whole)*60)).padStart(2,'0');
   }
 
-  /* Доля отчитанных денег: сколько из выданного уже объяснено покупками.
-     Без подотчёта доли нет — Number(null) даёт ноль, и «отчитались за 0%»
-     выглядело бы как факт вместо «подотчёт не заведён». */
-  function reportedShare(pocket,pending){
-    if(pocket==null||pending==null)return null;
-    const left=Number(pocket), waiting=Number(pending);
-    if(!Number.isFinite(left)||!Number.isFinite(waiting))return null;
-    const advanced=left+waiting;
-    return advanced>0?Math.round(waiting/advanced*100):0;
+  /* Поиск и «Часто покупаете»: без запроса — сначала то, что Шох уже брал
+     (чаще — выше), потом остальное по алфавиту; с запросом — каждое слово
+     должно встретиться в названии или артикуле, в любом порядке. «ё» = «е». */
+  function searchItems(items,query,limit){
+    const fold=value=>String(value==null?'':value).toLowerCase().replace(/ё/g,'е');
+    const words=fold(query).split(/\s+/).filter(Boolean);
+    const rows=(items||[]).filter(row=>{
+      const haystack=fold(row.item)+' '+fold(row.code);
+      return words.every(word=>haystack.includes(word));
+    });
+    rows.sort((a,b)=>(Number(b.times)||0)-(Number(a.times)||0)||String(a.item).localeCompare(String(b.item),'ru'));
+    return rows.slice(0,limit||10);
   }
 
   return {STEPS,number,total,priceFromTotal,amountProblem,stepReady,
-          nextStep,previousStep,priceHint,pocketAfter,tripElapsedMinutes,clock,reportedShare};
+          nextStep,previousStep,priceHint,pocketAfter,tripElapsedMinutes,clock,searchItems};
 });

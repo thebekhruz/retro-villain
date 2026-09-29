@@ -20,3 +20,18 @@
 .ai-chat-form-foot{display:flex;justify-content:space-between;gap:12px;margin-top:7px;color:#98a39b;font-size:8px}.ai-chat-form-foot button{border:0;padding:0;background:transparent;color:#7a8c82;font:600 9px/1 inherit;cursor:pointer}.ai-chat-form-foot button:hover{color:#9b433d}
 @media(max-width:650px){.ai-chat-toggle{right:14px;bottom:14px;padding:12px}.ai-chat-toggle span{display:none}.ai-chat-drawer{width:100vw;border-left:0}.ai-chat-head{padding-top:max(16px,env(safe-area-inset-top))}.ai-chat-form{padding-bottom:max(14px,env(safe-area-inset-bottom))}.ai-chat-form-foot>span{display:none}.ai-chat-message.has-table .ai-chat-content{padding:10px}.ai-chat-table-wrap{margin-inline:0}.ai-chat-table-wrap table.is-compact th:first-child,.ai-chat-table-wrap table.is-compact td:first-child{min-width:0}.ai-chat-table-wrap table.is-compact th:not(:first-child),.ai-chat-table-wrap table.is-compact td:not(:first-child){width:22%}}
 @media(prefers-reduced-motion:reduce){.ai-chat-drawer,.ai-chat-toggle{transition:none}.ai-chat-messages{scroll-behavior:auto}}
+
+/* Отклик (busy.js, T-393): «печатает», ошибка с повтором, скелет истории, поле занято. */
+.rm-typing{display:inline-flex;align-items:center;gap:4px;height:12px;margin-right:9px;vertical-align:-1px}
+.rm-typing i{width:6px;height:6px;border-radius:50%;background:#9fb0a2;animation:rm-typing 1.1s ease-in-out infinite}
+.rm-typing i:nth-child(2){animation-delay:.16s}.rm-typing i:nth-child(3){animation-delay:.32s}
+@keyframes rm-typing{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-3px);opacity:1}}
+.ai-chat-message.is-pending .ai-chat-content,.ai-chat-message.is-pending>p{animation:none;font-style:normal}
+.ai-chat-message.is-error>p{display:flex;flex-direction:column;align-items:flex-start;gap:9px;background:#fff6f3;border-color:#efcfc6;color:#a33f2b}
+.ai-chat-error-text::before{content:"!";display:inline-grid;place-items:center;width:16px;height:16px;margin-right:7px;border-radius:50%;background:#a33f2b;color:#fff;font-size:10px;font-weight:700;vertical-align:1px}
+.ai-chat-retry{min-height:32px;padding:0 13px;border:1px solid #e3b9ad;border-radius:16px;background:#fff;color:#a33f2b;font:650 11px/1 inherit;cursor:pointer}
+.ai-chat-skel{display:flex;flex-direction:column;gap:9px;width:78%;padding:13px;border:1px solid #e2e9e1;border-radius:4px 14px 14px 14px;background:#fff}
+.ai-chat-skel .rm-skel:nth-child(1){width:92%}.ai-chat-skel .rm-skel:nth-child(2){width:74%}.ai-chat-skel .rm-skel:nth-child(3){width:48%}
+.ai-chat-form.is-busy .ai-chat-compose{background:#f3f5ef}
+.ai-chat-form.is-busy textarea{color:#76847c}
+@media(prefers-reduced-motion:reduce){.rm-typing i{animation:none;opacity:.7}}

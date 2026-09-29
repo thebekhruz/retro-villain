@@ -11,7 +11,7 @@
   <link rel="stylesheet" href="/static/director-app.css">
   <link rel="stylesheet" href="/static/founder-cabinet.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
 </head>
 <body class="founder-cabinet">
 <aside class="sidebar">
@@ -24,7 +24,7 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro · Retro Oxbridge · Бехруз<small>Ташкент · UZS</small></div></div>
 </aside>
 <main class="fo-main">
-  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Учредитель</strong></span><div class="topbar-actions"><a id="fo-back" class="logout-button fo-back" href="/login" hidden>‹ Панель</a><span class="top-status" id="updated">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Учредитель</strong></span><div class="topbar-actions"><a id="fo-back" class="logout-button fo-back" href="/login" hidden>‹ Панель</a><span class="top-status rm-status-skel" id="updated"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
 
   <!-- ══ 7a · Телефон: сколько денег и сколько моих ══════════════════════ -->
   <div class="fo-phone rm-phone">
@@ -39,6 +39,7 @@
         <div class="fo-div-foot"><span id="fo-div-status">—</span><span id="fo-div-payout"></span></div>
         <button id="fo-div-toggle" class="fo-div-target" type="button" aria-expanded="false"><span><small>Моя сумма в неделю</small><b id="fo-div-target" class="rm-num">—</b></span><em id="fo-div-toggle-label">Изменить</em></button>
         <div id="fo-div-editor-phone" class="fo-div-editor" hidden></div>
+        <details id="fo-div-history" class="fo-div-history" hidden><summary>Прошлые недели</summary><div id="fo-div-history-list"></div></details>
       </article>
 
       <article class="rm-phone-card">
@@ -98,7 +99,7 @@
       <a class="fo-fold" href="#fo-week" data-fold="fo-week" role="button" aria-expanded="false" aria-controls="fo-week"><span>Деньги недели</span><i aria-hidden="true">›</i></a>
       <section id="fo-week" class="fo-panel fo-week">
         <div class="fo-panel-head"><div><p class="eyebrow">КАК РАЗОШЛИСЬ ДЕНЬГИ</p><h2>Неделя по дням</h2></div><span class="fo-hint">≈ — прогноз по среднему для этого дня недели</span></div>
-        <div class="fo-week-scroll"><div id="fo-week-table" class="fo-week-table" role="table" aria-label="Неделя по дням"><p class="fo-empty">Собираем неделю из iiko и журнала бухгалтера…</p></div></div>
+        <div class="fo-week-scroll"><div id="fo-week-table" class="fo-week-table" role="table" aria-label="Неделя по дням"></div></div>
       </section>
 
       <a class="fo-fold" href="#fo-acc" data-fold="fo-acc" role="button" aria-expanded="false" aria-controls="fo-acc"><span>Проверка бухгалтера · Счёт Шефа</span><i aria-hidden="true">›</i></a>
@@ -123,7 +124,7 @@
         </section>
         <section class="fo-panel">
           <p class="eyebrow">ЗАКУП · ШОХ · <span id="fo-shokh-month">МЕСЯЦ</span></p>
-          <div class="fo-tiles is-two"><div><span>Выдано наличными</span><b id="z-given" class="rm-num">—</b></div><div><span>Потрачено · записал Шох</span><b id="z-spent" class="rm-num">—</b></div><div><span>Напрямую поставщикам</span><b id="z-direct" class="rm-num">—</b></div><div class="is-dark"><span>На руках у Шоха</span><b id="z-pocket" class="rm-num">—</b></div></div>
+          <div class="fo-tiles is-two"><div><span>Выдано наличными</span><b id="z-given" class="rm-num">—</b></div><div><span>Потрачено · записал Шох</span><b id="z-spent" class="rm-num">—</b></div><div><span>Перечислениями</span><b id="z-direct" class="rm-num">—</b><small id="z-direct-cash" class="fo-tile-note" hidden></small></div><div class="is-dark"><span>На руках у Шоха</span><b id="z-pocket" class="rm-num">—</b></div></div>
           <p id="z-flag-title" class="fo-flag-title">—</p>
           <div id="z-flags" class="fo-flags"></div>
           <p id="z-top-title" class="fo-hint">Больше всего потрачено на</p>

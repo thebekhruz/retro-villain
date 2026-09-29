@@ -55,5 +55,14 @@
     }));
   }
 
-  return {nearestRevenueIndex,paymentLineSeries,quickPeriod,revenuePaths,requestGate,weekday};
+  /** Ошибка периода до запроса — те же правила, что у сервера (422). */
+  function periodError(start,end){
+    if(!start||!end)return 'Укажите обе даты периода.';
+    if(start>end)return 'Дата начала должна быть не позже даты конца.';
+    const days=(Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/864e5;
+    if(days>=366)return 'Период не может быть длиннее 366 дней.';
+    return null;
+  }
+
+  return {nearestRevenueIndex,paymentLineSeries,periodError,quickPeriod,revenuePaths,requestGate,weekday};
 });

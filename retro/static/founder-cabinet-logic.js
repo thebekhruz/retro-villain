@@ -54,8 +54,15 @@
   function handoverMark(day) {
     if (!day || day.future) return {mark: '', tone: 'future', tip: ''};
     const handover = day.handover || {};
-    if (handover.status === 'ok') return {mark: '✓', tone: 'ok', tip: 'Передача совпала с расчётом'};
+    if (handover.status === 'ok') {
+      return {mark: '✓', tone: 'ok', tip: handover.confirmed ? 'Бухгалтер подтвердил: получено ' + sum(num(handover.recorded)) +
+        ' — совпало с расчётом' : 'Передача совпала с расчётом'};
+    }
     if (handover.status === 'mismatch') {
+      if (handover.confirmed) {
+        return {mark: '⚠', tone: 'bad', tip: 'Получено ' + sum(num(handover.recorded)) + ' при расчёте ' +
+          sum(num(handover.expected)) + ' · недостача ' + sum(num(handover.shortfall))};
+      }
       return {mark: '⚠', tone: 'bad', tip: 'Передано ' + sum(num(handover.recorded)) + ' при расчёте ' +
         sum(num(handover.expected)) + ' · разница ' + sum(num(handover.difference))};
     }
@@ -119,9 +126,11 @@
     if (!data) return null;
     const target = num(data.target), collected = num(data.collected) || 0;
     const pace = num(data.pace), due = num(data.due);
+    // «Отстаём» решает сервер (§3.7: меньше 85 % плана к сегодня, включая
+    // сегодня); подпись — насколько отложенное меньше этого плана.
     const status = target === null ? 'Цель на неделю не задана'
       : data.done ? 'Недельная сумма собрана'
-      : data.behind ? 'Отстаём от плана на ' + sum(Math.round(due - collected))
+      : data.behind ? 'Отстаём от плана на ' + sum(Math.round(Math.max(0, pace - collected)))
       : 'Идём по плану';
     return {
       target, collected, status,
@@ -132,6 +141,13 @@
       payout: 'Выдача в понедельник, ' + dayWords(data.payout_day),
       free: num(data.free_cash_week),
       source: data.target_source,
+      history: (data.history || []).map(week => ({
+        range: dm(week.start) + '–' + dm(week.end),
+        text: week.target === null ? 'собрано ' + short(num(week.collected)) + ' · цели не было'
+          : 'собрано ' + short(num(week.collected)) + ' из ' + short(num(week.target)),
+        paid: num(week.paid_out) ? 'выдано ' + dm(week.payout_day) + ' · ' + short(num(week.paid_out)) : '',
+        tone: week.target === null ? 'none' : week.done ? 'ok' : 'warn',
+      })),
     };
   }
 
@@ -145,20 +161,30 @@
     return digits ? Number(digits) : 0;
   }
 
-  /** Замечания к бухгалтеру за неделю: недостачи от кассира, проверки дня из
-   *  «Финансов дня» и покупки Шоха, которые надо проверить. Одинаковые
-   *  проверки разных дней не склеиваем — у каждой свой день. */
+  // Проверки, которые описывают состояние на сегодня, а не событие дня:
+  // «Без ставки» или долг по старым сменам в каждом дне недели повторялись бы
+  // одним и тем же пунктом. Такие берём по последнему дню, где они есть.
+  const STANDING_CHECKS = new Set(['Невыданные смены', 'Без ставки', 'Неоплаченные расходы']);
+
+  /** Замечания к бухгалтеру за неделю (7b, Функционал §4): недостача от кассира —
+   *  первой, затем остальные ошибки, затем предупреждения. Источники: сверка
+   *  передачи, проверки дня из «Финансов дня», смены, выданные без входа, и
+   *  покупки Шоха на проверку. */
   function accountantIssues(week, spending, dayChecks) {
     const items = [];
-    ((week && week.days) || []).forEach(day => {
-      if (day.future || !day.handover) return;
+    const standing = new Map();
+    const days = ((week && week.days) || []).filter(day => !day.future);
+    days.forEach(day => {
+      if (!day.handover) return;
       const handover = day.handover;
       if (handover.status === 'mismatch') {
         const diff = num(handover.difference);
-        items.push({level: 'bad', text: (diff < 0 ? 'Кассир передал меньше расчёта' : 'Кассир передал больше расчёта') + ' · ' + dm(day.date),
-          sub: 'Передано ' + sum(num(handover.recorded)) + ' при расчёте ' + sum(num(handover.expected))});
+        const text = handover.confirmed ? (diff < 0 ? 'От кассира получено меньше расчёта' : 'От кассира получено больше расчёта')
+          : diff < 0 ? 'Кассир передал меньше расчёта' : 'Кассир передал больше расчёта';
+        items.push({level: 'bad', rank: diff < 0 ? 0 : 1, text: text + ' · ' + dm(day.date),
+          sub: (handover.confirmed ? 'Получено ' : 'Передано ') + sum(num(handover.recorded)) + ' при расчёте ' + sum(num(handover.expected))});
       } else if (handover.status === 'missing') {
-        items.push({level: 'bad', text: 'Передача кассы не записана · ' + dm(day.date),
+        items.push({level: 'bad', rank: 1, text: 'Передача кассы не записана · ' + dm(day.date),
           sub: 'Расчёт кассира ' + sum(num(handover.expected))});
       }
       if (day.accounting && dayChecks) {
@@ -169,15 +195,37 @@
           const parts = [];
           if (check.sub && check.sub.count) parts.push(check.sub.count + ' шт');
           if (check.sub && check.sub.amount !== undefined) parts.push(sum(num(check.sub.amount)) + ' сум');
-          items.push({level: check.level, text: check.text + ' · ' + dm(day.date), sub: parts.join(' · ') || 'Финансы дня'});
+          const item = {level: check.level, rank: check.level === 'bad' ? 1 : 2, text: check.text + ' · ' + dm(day.date),
+            sub: parts.join(' · ') || 'Финансы дня'};
+          if (STANDING_CHECKS.has(check.text)) standing.set(check.text, item); else items.push(item);
         });
       }
     });
+    items.push(...standing.values());
+    // «Сменному выдано без входа» (ошибка): начисление 0 — входа не было, а
+    // деньги выданы. Начисления за неделю берём из журнала последнего дня.
+    const last = days.filter(day => day.accounting && day.accounting.ledger).at(-1);
+    if (last && week.start) {
+      const from = dayBefore(week.start);
+      (last.accounting.ledger.accruals || []).forEach(row => {
+        if (row.work_day < from || row.work_day > last.date) return;
+        if (num(row.amount) === 0 && num(row.paid) > 0) {
+          items.push({level: 'bad', rank: 1, text: 'Выдано без входа: ' + row.name + ' · ' + dm(row.work_day),
+            sub: 'Смена ' + dm(row.work_day) + ' · ' + sum(num(row.paid)) + ' сум'});
+        }
+      });
+    }
     ((spending && spending.shokh && spending.shokh.flagged) || []).forEach(row => {
-      items.push({level: 'warn', text: 'Покупка Шоха: ' + row.item + ' · ' + dm(row.day),
+      items.push({level: 'warn', rank: 2, text: 'Покупка Шоха: ' + row.item + ' · ' + dm(row.day),
         sub: sum(num(row.total)) + ' сум · ' + row.reason});
     });
-    return items.sort((a, b) => (a.level === 'bad' ? 0 : 1) - (b.level === 'bad' ? 0 : 1));
+    return items.sort((a, b) => a.rank - b.rank).map(({rank, ...item}) => item);
+  }
+
+  function dayBefore(iso) {
+    const value = new Date(iso + 'T12:00:00Z');
+    value.setUTCDate(value.getUTCDate() - 1);
+    return value.toISOString().slice(0, 10);
   }
 
   /** Счета Шефа выше порога за сегодня и вчера — «уведомления» на телефоне.
@@ -189,18 +237,8 @@
     return chef.bills.filter(bill => bill.over && (bill.day === today || bill.day === yesterday) && !hidden.has(bill.order_id));
   }
 
-  /** «У бухгалтера к вечеру ≈»: утренний остаток плюс касса минус то, что уйдёт. */
-  function eveningCash(today) {
-    if (!today || !today.outlook) return null;
-    const opening = num(today.opening_balance);
-    if (opening === null) return null;
-    const handover = today.cashier ? num(today.cashier.expected_handover) || 0 : 0;
-    const out = (num(today.outlook.salary_due) || 0) + (num(today.outlook.procurement) || 0) + (num(today.outlook.other) || 0);
-    return opening + handover - out;
-  }
-
   // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
   return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
-    accountantIssues, chefAlerts, eveningCash};
+    accountantIssues, chefAlerts};
 });

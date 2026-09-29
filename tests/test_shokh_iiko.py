@@ -306,3 +306,13 @@ def test_half_kopeck_rounding_matches_ui_local_ledger_and_iiko(live):
     assert response.status_code == 201
     assert response.json()['purchase']['total'] == '1.13'
     assert next(iter(upstream.documents.values()))['sum'] == 1.13
+
+
+def test_catalog_remembers_supplier_and_storage_of_the_last_invoice_per_point(live):
+    """Нажатие на точку ведёт сразу к товару: поставщик и склад — с прошлой
+    накладной этой точки."""
+    c, _ = live
+    assert c.get('/api/shokh/catalog').json()['point_defaults'] == {}
+    assert c.post('/api/shokh/purchase', data=fields(point='RETRO')).status_code == 201
+    defaults = c.get('/api/shokh/catalog').json()['point_defaults']
+    assert defaults == {'RETRO': {'supplier_id': 'supplier', 'storage_id': 'storage'}}

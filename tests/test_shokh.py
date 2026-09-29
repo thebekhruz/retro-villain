@@ -336,3 +336,68 @@ def test_reopened_trip_keeps_its_real_start_for_the_timer(tmp_path):
     assert again['trip_id'] == first['trip_id']
     assert again['started_at'] == first['started_at']
     assert first['started_at'].endswith('+05:00')
+
+
+# ── «Функционал» §3.6 и §3a ───────────────────────────────────────────────
+
+def test_day_position_follows_the_spec_formula_and_survives_acceptance(tmp_path):
+    """На руках = на начало + выдано сегодня − покупки за день; «Отчитались за
+    X%» = потрачено / (на начало + выдано). Вчерашняя непринятая покупка уже
+    не на руках с утра, а приёмка бухгалтера долю не уменьшает."""
+    yesterday = DAY - timedelta(days=1)
+    with client(tmp_path) as c:
+        advance(c, yesterday, '900000')
+        purchase(c, date=yesterday.isoformat(), quantity='10', price='10000')  # 100 000 вчера
+        assert c.post('/api/cashier/shokh', json={'date': DAY.isoformat(), 'amount': '500000'}).status_code == 201
+        purchase(c, quantity='5', price='60000')  # 300 000 сегодня
+        home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
+        assert Decimal(home['day_start']) == Decimal('800000')
+        assert Decimal(home['given_today']) == Decimal('500000')
+        assert Decimal(home['spent_day']) == Decimal('300000')
+        assert Decimal(home['pocket']) == Decimal('1000000')
+        assert home['reported_percent'] == 23  # 300 000 / 1 300 000
+
+        for row in home['purchases']:
+            assert c.post(f"/api/accountant/shokh/purchases/{row['id']}/accept",
+                          json={'date': DAY.isoformat()}).status_code == 200
+        after = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
+        assert Decimal(after['pocket']) == Decimal('1000000')
+        assert after['reported_percent'] == 23
+
+
+def test_without_an_advance_the_share_is_unknown(tmp_path):
+    with client(tmp_path) as c:
+        purchase(c)
+        home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
+    assert home['reported_percent'] is None and home['day_start'] is None
+
+
+def test_up_to_ten_percent_above_the_usual_price_is_normal(tmp_path):
+    shokh = store(tmp_path)
+    for offset in (3, 2):
+        shokh.add_purchase(DAY - timedelta(days=offset), AT, point='RETRO', item='Лук',
+                           unit='кг', quantity='1', price='5000')
+    normal = shokh.add_purchase(DAY, AT, point='RETRO', item='Лук', unit='кг', quantity='1', price='5500')
+    above = shokh.add_purchase(DAY, AT, point='RETRO', item='Лук', unit='кг', quantity='1', price='5501')
+    assert normal['price_above_usual'] is False
+    assert above['price_above_usual'] is True
+
+
+def test_the_four_venues_come_first_in_a_fixed_order(tmp_path):
+    shokh = store(tmp_path)
+    shokh.add_purchase(DAY, AT, point='Оптовый склад', item='Лук', unit='кг', quantity='1', price='1')
+    assert shokh.points()[:5] == ['Школа MU', 'Школа YA', 'RETRO', 'ШЕФ Базаар', 'Оптовый склад']
+
+
+def test_closing_an_empty_trip_cancels_it_and_a_trip_with_purchases_finishes(tmp_path):
+    with client(tmp_path) as c:
+        empty = c.post('/api/shokh/trip', params={'date': DAY.isoformat()}).json()
+        assert c.post(f"/api/shokh/trip/{empty['trip_id']}/close").json() == {'cancelled': True}
+        # Отменённый закуп не продолжается: следующий начинается заново.
+        fresh = c.post('/api/shokh/trip', params={'date': DAY.isoformat()}).json()
+        assert fresh['trip_id'] != empty['trip_id']
+        purchase(c, trip_id=str(fresh['trip_id']))
+        closed = c.post(f"/api/shokh/trip/{fresh['trip_id']}/close").json()
+        assert closed['cancelled'] is False
+        assert closed['trip']['finished_at'] is not None and len(closed['purchases']) == 1
+        assert c.post('/api/shokh/trip/4242/close').status_code == 404

@@ -37,8 +37,9 @@ def test_director_edits_reach_the_accountant_registry_immediately(tmp_path):
         assert [row['rate'] for row in staff['employees']] == ['195000']
         # Правка ставки оставляет след с причиной, как правка бухгалтера.
         audit = c.app.state.accountant_roster._open().execute(
-            'SELECT reason, old_rate, new_rate FROM accountant_roster_audit').fetchall()
-        assert audit == [('Изменено директором', '180000', '195000')]
+            'SELECT reason, old_rate, new_rate FROM accountant_roster_audit ORDER BY id').fetchall()
+        # История 1a: добавление директором и правка ставки — обе записи.
+        assert audit == [('Добавлен в реестр', None, '180000'), ('Изменено директором', '180000', '195000')]
 
         assert c.delete(f"/api/director/team/shift/{employee['id']}").status_code == 204
         assert c.get('/api/accountant/staff', params={'date': today}).json()['employees'] == []
@@ -171,3 +172,25 @@ def test_monthly_edit_does_not_overwrite_a_payment_recorded_meanwhile(tmp_path):
             'name': 'Азиз', 'role': 'менеджер', 'amount': '9000000'})
         saved = roster.list_monthly()[0]
         assert saved.salary == 9000000 and saved.cash == 2000000
+
+
+def test_director_changes_land_in_the_1a_history_and_monthly_without_hikvision(tmp_path):
+    """§6: директор добавил окладника «без Hikvision», изменил ставку и удалил
+    сменного — 1a видит флаг «⊘ Hik» и запись в истории, удалённый в архиве."""
+    with client(tmp_path) as c:
+        monthly = c.post('/api/director/team', json={
+            'type': 'monthly', 'name': 'Охранник Окладник', 'role': 'охрана', 'amount': '4 000 000',
+            'manual_attendance': True}).json()['employee']
+        assert monthly['no_hikvision'] is True
+        listed = c.get('/api/accountant/staff').json()['monthly_employees']
+        assert next(row for row in listed if row['id'] == monthly['id'])['no_hikvision'] is True
+        shift = c.post('/api/director/team', json={
+            'type': 'shift', 'name': 'Ставка Директора', 'role': 'официант', 'amount': '180 000'}).json()['employee']
+        assert c.patch(f"/api/director/team/shift/{shift['id']}", json={
+            'name': 'Ставка Директора', 'role': 'официант', 'amount': '200 000'}).status_code == 200
+        assert c.delete(f"/api/director/team/shift/{shift['id']}").status_code == 204
+        history = c.get(f"/api/accountant/employees/{shift['id']}/history").json()['history']
+        assert [row['action'] for row in history] == ['delete', 'update', 'create']
+        assert (history[1]['reason'], history[1]['old_rate'], history[1]['new_rate']) == (
+            'Изменено директором', '180000', '200000')
+        assert all(row['changed_by'] for row in history)

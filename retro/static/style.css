@@ -784,8 +784,13 @@ button.rm-card:hover{background:var(--panel-2)}
 .rm-toast-close{flex:none;width:36px;height:36px;border:0;border-radius:10px;background:transparent;
   color:#ffffffcc;font-size:22px;line-height:1}
 .rm-toast-close:hover{background:#ffffff1a}
-body:has(.rm-tabs) .rm-toast,body:has(.dir-tabs) .rm-toast{bottom:calc(env(safe-area-inset-bottom) + 92px)}
-body:has(#screen-flow:not([hidden])) .rm-toast,body:has(#screen-home:not([hidden])) .rm-toast{bottom:calc(env(safe-area-inset-bottom) + 104px)}
+/* Подъём над нижними вкладками — только на широком экране: до 900px тост
+   сверху (mobile.css), и id в :has() перебивал там bottom:auto — тост
+   растягивался на весь экран Шоха. */
+@media(min-width:901px){
+  body:has(.rm-tabs) .rm-toast,body:has(.dir-tabs) .rm-toast{bottom:calc(env(safe-area-inset-bottom) + 92px)}
+  body:has(#screen-flow:not([hidden])) .rm-toast,body:has(#screen-home:not([hidden])) .rm-toast{bottom:calc(env(safe-area-inset-bottom) + 104px)}
+}
 @keyframes rm-toast-in{from{opacity:0;transform:translate(-50%,12px)}to{opacity:1;transform:translate(-50%,0)}}
 @media(prefers-reduced-motion:reduce){.rm-toast.is-in{animation:none}}
 
@@ -793,3 +798,116 @@ body:has(#screen-flow:not([hidden])) .rm-toast,body:has(#screen-home:not([hidden
 .rm-money-hint{display:block;min-height:16px;margin-top:4px;font-size:12px;font-weight:600;
   color:var(--green,#143e35);font-variant-numeric:tabular-nums}
 .rm-money-hint:empty{min-height:0;margin:0}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   ОТКЛИК И ОЖИДАНИЕ (busy.js, T-393) — один язык для всей панели.
+   Принципы и примеры: docs/feedback-principles.md. Коротко: нажатие видно
+   сразу; ожидание — на том элементе, что его начал; быстрое не мигает;
+   итог (✓ / ошибка) — на месте; размеры не прыгают.
+   ═══════════════════════════════════════════════════════════════════════ */
+:root{--rm-gold-2:#c5a359;--rm-ok-line:#4a8056;--rm-ok-tint:#e6f2e3;--rm-err:#a33f2b;--rm-err-tint:#fff6f3;
+  --rm-skel-a:#eceee7;--rm-skel-b:#f7f8f4}
+
+/* 1. Нажатие: всё, что нажимается, «проседает» сразу. Большие строки и
+      заголовки секций не сжимаются (выглядит как дрожь), а темнеют. */
+@media(prefers-reduced-motion:no-preference){
+  :where(button,[role=button],[role=tab],summary,a.fd-btn,a.fd-sec-link,.rm-chip,label.chip){
+    transition:transform .08s ease-out,filter .12s,background-color .15s,box-shadow .15s,opacity .15s}
+}
+:where(button,[role=tab],summary,a.fd-btn,a.fd-sec-link,.rm-chip,label.chip):not(:disabled):not(.rm-lock):active{transform:scale(.97)}
+:where(.fd-sec-toggle,.fd-check,.pr-check,.emp-stat,.pr-card,.fd-cash-set,.fd-res-tools,[role=button]:not(button),.emp-row,.emp-salary-row):not(:disabled):active{
+  transform:none;filter:brightness(.95)}
+:where(input[type=checkbox],input[type=radio]):active{filter:brightness(.9)}
+@media(prefers-reduced-motion:reduce){
+  :where(button,[role=tab],summary,a.fd-btn,.rm-chip,label.chip):active{transform:none;filter:brightness(.93)}
+}
+/* Фокус с клавиатуры — на всём, что можно нажать (style.css выше покрывает
+   только button/a/input). */
+:where(select,textarea,summary,[role=button],[role=tab],[tabindex]:not([tabindex="-1"])):focus-visible{
+  outline:3px solid var(--rm-gold-2);outline-offset:2px}
+
+/* 2. Кнопка «в работе»: подпись прячется, но место держит — ширина та же;
+      спиннер цветом подписи, поэтому одинаково читается на тёмной и светлой. */
+.rm-lock{cursor:progress}
+.rm-rel{position:relative}
+.rm-busy,.rm-done{-webkit-text-fill-color:transparent!important}
+.rm-busy>*,.rm-done>*,.rm-busy::before,.rm-done::before{visibility:hidden}
+.rm-busy::after,.rm-done::after{content:"";position:absolute;inset:0;margin:auto;box-sizing:border-box;
+  width:var(--rm-spin,16px);height:var(--rm-spin,16px);background:none;pointer-events:none;visibility:visible}
+.rm-busy::after{border-radius:50%;border:2px solid color-mix(in srgb,currentColor 26%,transparent);
+  border-top-color:currentColor;animation:rm-spin .7s linear infinite}
+.rm-done::after{width:calc(var(--rm-spin,16px)*.42);height:calc(var(--rm-spin,16px)*.78);border:solid currentColor;
+  border-width:0 2.5px 2.5px 0;border-radius:1px;transform:translateY(-12%) rotate(45deg);animation:rm-tick .22s ease-out}
+/* Маленькие кнопки и ячейки — спиннер мельче. */
+:is(.fd-x,.fd-cb,.fd-debt-ok,.fd-accept,.fd-pill,.pr-s,.emp-delete-yes){--rm-spin:13px}
+@keyframes rm-spin{to{transform:rotate(360deg)}}
+@keyframes rm-tick{from{opacity:0;transform:translateY(-12%) rotate(45deg) scale(.4)}}
+@media(prefers-reduced-motion:reduce){
+  .rm-busy::after{animation:rm-spin 1.6s linear infinite}
+  .rm-done::after{animation:none}
+}
+
+/* 3. Поле, которое сохраняется само. Значки рисуются фоном у свободного края
+      (у чисел справа — слева), поэтому текст и размер поля не сдвигаются. */
+input.rm-field-dirty{background-color:#fffaf0!important;box-shadow:inset 0 -2px 0 var(--gold,#d8b977)!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M12.5 3.5v4.5a1.5 1.5 0 0 1-1.5 1.5H4.5m2.5-3-3 3 3 3' fill='none' stroke='%23b08a3e' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-size:13px 13px!important;background-position:right 7px center!important}
+input.rm-field-saving{background-color:#f7f3e6!important;border-color:var(--gold,#d8b977)!important;color:var(--muted,#5b675f)!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='6' fill='none' stroke='%23143e35' stroke-opacity='.18' stroke-width='2'/%3E%3Cpath d='M8 2a6 6 0 0 1 6 6' fill='none' stroke='%23143e35' stroke-width='2' stroke-linecap='round'%3E%3CanimateTransform attributeName='transform' type='rotate' from='0 8 8' to='360 8 8' dur='.7s' repeatCount='indefinite'/%3E%3C/path%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-size:16px 16px!important;background-position:right 7px center!important;cursor:progress}
+input.rm-field-ok{border-color:var(--rm-ok-line)!important;animation:rm-field-ok 1.6s ease-out;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%234a8056'/%3E%3Cpath d='m4.8 8.2 2.1 2.1 4.3-4.6' fill='none' stroke='%23fff' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-size:14px 14px!important;background-position:right 7px center!important}
+input.rm-field-error{border-color:var(--rm-err)!important;background-color:var(--rm-err-tint)!important;
+  box-shadow:0 0 0 3px rgba(163,63,43,.14)!important;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Ccircle cx='8' cy='8' r='7' fill='%23a33f2b'/%3E%3Cpath d='M8 4.5v4.2' stroke='%23fff' stroke-width='1.8' stroke-linecap='round'/%3E%3Ccircle cx='8' cy='11.3' r='1' fill='%23fff'/%3E%3C/svg%3E")!important;
+  background-repeat:no-repeat!important;background-size:14px 14px!important;background-position:right 7px center!important}
+input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-error){background-position:left 7px center!important}
+@keyframes rm-field-ok{from{box-shadow:0 0 0 3px rgba(74,128,86,.28)}to{box-shadow:0 0 0 3px rgba(74,128,86,0)}}
+.rm-field-msg{display:block;margin-top:4px;color:var(--rm-err);font-size:12px;font-weight:600;line-height:1.3;
+  text-align:left;white-space:normal;overflow-wrap:anywhere}
+
+/* 4. Строка: «в работе» — золотая кромка и приглушение; итог — зелёная
+      вспышка; удалённая — плавно сворачивается. */
+.rm-row-pending{box-shadow:inset 3px 0 0 var(--gold,#d8b977)!important;cursor:progress}
+/* Гаснет содержимое строки, но не та кнопка/поле, где крутится спиннер. */
+.rm-row-pending>:not(:has(.rm-busy,.rm-done,.rm-field-saving)):not(.rm-busy,.rm-done){opacity:.5;transition:opacity .15s}
+.rm-flash-ok{animation:rm-flash 1.6s ease-out}
+@keyframes rm-flash{0%,25%{background-color:var(--rm-ok-tint);box-shadow:inset 3px 0 0 var(--rm-ok-line)}}
+.rm-collapsing{transition:height .22s ease,opacity .16s ease,padding .22s ease,margin .22s ease;
+  opacity:0!important;padding-top:0!important;padding-bottom:0!important;margin-top:0!important;margin-bottom:0!important;
+  border-width:0!important;min-height:0!important}
+
+/* 5. Перезагрузка раздела: данные на месте, но гаснут и не нажимаются. */
+.rm-reloading{opacity:.58;pointer-events:none;transition:opacity .2s ease}
+
+/* 6. Верхняя полоса — любой запрос к /api/ дольше 250 мс. */
+.rm-topbar{position:fixed;top:0;left:0;right:0;z-index:1000;height:3px;overflow:hidden;pointer-events:none;opacity:0;
+  transition:opacity .25s ease}
+.rm-topbar.is-on{opacity:1;background:rgba(216,185,119,.22)}
+.rm-topbar i{position:absolute;top:0;bottom:0;left:0;width:42%;border-radius:0 3px 3px 0;
+  background:linear-gradient(90deg,rgba(216,185,119,0),#d8b977 35%,#c5a359);box-shadow:0 0 10px rgba(216,185,119,.8);
+  animation:rm-topbar 1.15s cubic-bezier(.45,.05,.55,.95) infinite}
+.rm-topbar.is-done{opacity:0;transition:opacity .3s ease .12s}
+.rm-topbar.is-done i{animation:none;width:100%;background:#d8b977;transition:width .2s ease-out}
+@keyframes rm-topbar{from{transform:translateX(-100%)}to{transform:translateX(240%)}}
+@media(prefers-reduced-motion:reduce){.rm-topbar i{animation:none;width:100%;opacity:.8}}
+
+/* 7. Скелет первой загрузки: полосы в форме будущих строк. */
+.rm-skel{display:block;flex:none;height:10px;border-radius:6px;
+  background:linear-gradient(90deg,var(--rm-skel-a) 25%,var(--rm-skel-b) 40%,var(--rm-skel-a) 60%);background-size:300% 100%;
+  animation:rm-shimmer 1.3s ease-in-out infinite}
+.rm-skel.is-lg{height:22px;border-radius:8px}
+.rm-skel.is-md{height:14px}
+.rm-skel-row{display:flex;align-items:center;justify-content:space-between;gap:18px;min-height:52px;padding:0 20px;
+  border-top:1px solid var(--line-soft,#f0f3ec)}
+.rm-skel-row .rm-skel:first-child{max-width:40%}
+.rm-skel-cell{display:flex;flex-direction:column;gap:10px;padding:16px 18px}
+.rm-skel-card{display:flex;flex-direction:column;gap:12px;padding:18px 20px;border:1px solid var(--border,#e3e7df);
+  border-radius:14px;background:#fff}
+@keyframes rm-shimmer{from{background-position:100% 0}to{background-position:0 0}}
+@media(prefers-reduced-motion:reduce){.rm-skel{animation:none}}
+/* Статус в шапке, пока данных ещё нет: полоса вместо «Загружаем…». */
+.top-status.rm-status-skel:empty{display:inline-block;width:132px;height:10px!important;min-height:0!important;padding:0!important;border:0!important;border-radius:6px;vertical-align:middle;align-self:center;
+  background:linear-gradient(90deg,var(--rm-skel-a) 25%,var(--rm-skel-b) 40%,var(--rm-skel-a) 60%);background-size:300% 100%;
+  animation:rm-shimmer 1.3s ease-in-out infinite}

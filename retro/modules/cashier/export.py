@@ -60,7 +60,7 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['A30'], sheet['B30'] = 'Прочие поступления наличными', receipt_total
     for position in ('B27', 'B28', 'B29', 'B30'):
         sheet[position].number_format = MONEY
-    sheet['A31'] = 'Расчёт: Демо + предоплаты наличными + прочие поступления − расходы.'
+    sheet['A31'] = 'Расчёт: Демо + предоплаты наличными + прочие поступления − расходы − выдано Шоху.'
     sheet['A39'] = ('ДЕМОНСТРАЦИЯ — НЕ ОТЧЁТ iiko' if snapshot.demo else
                     'Сформировано из iiko • только Retro, без школы и зала Бехруз')
     amounts = {p.name: p.amount for p in snapshot.payments}

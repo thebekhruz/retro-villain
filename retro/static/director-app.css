@@ -50,6 +50,7 @@
 .dir-issues>div{display:flex;gap:10px;padding:10px 0 0;margin-top:10px;border-top:1px solid #eef1ea}
 .dir-issues i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px;background:#d2a54a}
 .dir-issues i.is-bad{background:var(--late)}
+.dir-issues i.is-todo{background:#b9c2b5}
 .dir-issues strong{display:block;font-size:13px;font-weight:600;line-height:1.35}
 .dir-issues small{display:block;font-size:11px;color:var(--muted-3);margin-top:2px}
 .dir-link{display:inline-flex;align-items:center;min-height:40px;margin-top:4px;border:0;background:none;padding:0;
@@ -119,6 +120,10 @@
 .dir-chat-head{display:flex;align-items:center;gap:10px}
 .dir-chat-head strong{display:block;font-size:18px;font-weight:650}
 .dir-chat-head div>span{display:block;font-size:11px;color:var(--muted-2)}
+.dir-chat-head>div{flex:1;min-width:0}
+/* «Очистить» — переписка хранится на сервере, кнопка стирает её там. */
+.dir-chat-clear{flex:none;min-height:36px;padding:0 12px;border:1px solid #dfe5dc;border-radius:10px;background:#fff;color:var(--ink-2);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.dir-chat-clear[data-confirm]{border-color:var(--late);color:var(--late)}
 .dir-chat{padding:0;overflow:visible;flex:1}
 .dir-chat .rm-msg{font-size:14px;border-radius:18px 18px 18px 6px}
 .dir-chat .rm-msg.is-user{border-radius:18px 18px 6px 18px}
@@ -167,6 +172,10 @@
 .dir-waiter-line>b{font-size:14px;font-weight:650;white-space:nowrap}
 .dir-waiters .rm-bar{margin:7px 0 0 22px}
 .dir-waiters small{display:block;font-size:10px;color:var(--muted-3);margin:4px 0 0 22px}
+/* Официанты сверх первых шести — по кнопке «Все официанты». */
+.dir-waiters>div.is-folded{display:none}
+.dir-waiters.is-unfolded>div.is-folded{display:block}
+.dir-waiters .dir-more{margin-top:8px}
 .dir-team-list{padding:4px 14px}
 .dir-person{width:100%;display:flex;align-items:center;gap:10px;border:0;border-top:1px solid #eef1ea;background:none;padding:11px 0;text-align:left;color:var(--ink);min-height:56px}
 .dir-person:first-child{border-top:0}
@@ -178,6 +187,10 @@
 .dir-person .rm-bar{margin-top:7px}
 .dir-paid{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin-top:4px;color:var(--ink-2)}
 .dir-paid .is-rest{color:var(--warn)}
+.dir-paid .is-over{color:var(--late);font-weight:650}
+.dir-paid .is-closed{color:#24594b}
+.dir-person .rm-bar.is-over>span{background:var(--late)}
+.dir-month{display:block;font-size:10px;color:var(--muted-3);margin-top:3px}
 .dir-pill{flex:none;padding:4px 8px;border-radius:20px;font-size:10px;font-weight:650;background:#ebeeea;color:#737f74;white-space:nowrap}
 .dir-pill.on_time{background:var(--ok-bg);color:var(--ok)}
 .dir-pill.late{background:#fde9ed;color:var(--late)}
@@ -259,7 +272,7 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 @media(min-width:651px){.dir-back{display:none!important}}
 /* Под палец (≥ 40 точек): подсказки AI, фильтры, закрытие редактора. */
 .dir-prompts .rm-prompt,.dir-chips button{min-height:40px}
-.dir-close{width:40px;height:40px}
+.dir-close{flex:none;width:44px;height:44px}
 .dir-pill.manual_present{background:var(--ok-bg);color:var(--ok)}
 .dir-pill.manual_absent{background:#ebeeea;color:#737f74}
 /* Ссылка на полный отчёт в шапке — только там, где меню скрыто или без подписей. */
@@ -268,3 +281,49 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 .dir-head-actions .dir-back{margin-right:0}
 .dir-head-actions .dir-report-link{margin-right:auto}
 @media(min-width:901px){.dir-report-link{display:none}}
+
+/* ═══ Отклик и ожидание · директор и учредитель (T-393) ═══════════════════
+   Общий язык — busy.js и блок «ОТКЛИК И ОЖИДАНИЕ» в style.css. Здесь только
+   то, что у экранов 6a / 7a / 7b своё: чат, скелеты цифр и списков. */
+/* Чат: ответ ждём «печатающим» пузырём; ошибка — пузырём с «Повторить». */
+.rm-msg.is-pending{display:flex;align-items:center;gap:10px;color:var(--muted-3);white-space:normal}
+.rm-typing{display:inline-flex;align-items:center;gap:4px;flex:none;height:14px}
+.rm-typing i{width:6px;height:6px;border-radius:50%;background:#9fb0a2;animation:rm-typing 1.1s ease-in-out infinite}
+.rm-typing i:nth-child(2){animation-delay:.16s}.rm-typing i:nth-child(3){animation-delay:.32s}
+@keyframes rm-typing{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-3px);opacity:1}}
+@media(prefers-reduced-motion:reduce){.rm-typing i{animation:none;opacity:.7}}
+.rm-typing-label{font-size:12.5px}
+.rm-msg.is-error,.dir-chat .rm-msg.is-error{display:flex;flex-direction:column;align-items:flex-start;gap:8px;white-space:normal;
+  background:var(--rm-err-tint,#fff6f3);border:1px solid #efcfc6!important;color:var(--rm-err,#a33f2b)}
+.rm-msg-error-text{font-size:13px;line-height:1.45}
+.rm-msg-error-text::before{content:"!";display:inline-grid;place-items:center;width:17px;height:17px;margin-right:7px;border-radius:50%;
+  background:var(--rm-err,#a33f2b);color:#fff;font-size:11px;font-weight:700;vertical-align:1px}
+.rm-msg-error-detail{display:block;margin:-4px 0 0 24px;font-size:11px;line-height:1.4;opacity:.8}
+.rm-msg-retry{min-height:34px;padding:0 14px;border:1px solid #e3b9ad;border-radius:17px;background:#fff;color:var(--rm-err,#a33f2b);font-size:12px;font-weight:650}
+.rm-msg-skel{display:flex;flex-direction:column;gap:8px;width:70%;background:#fff}
+.rm-msg-skel .rm-skel:first-child{width:92%}.rm-msg-skel .rm-skel:last-child{width:58%}
+.rm-chat-form.is-busy input{background:#f6f7f1;color:var(--muted)}
+.rm-chat-form.is-busy input::placeholder{color:var(--muted-3)}
+/* Скелет цифры: полоса в строке самого числа — высота строки та же. */
+.rm-skel.is-val{display:inline-block;vertical-align:middle;width:5.2em;max-width:100%;height:.62em;border-radius:6px}
+.rm-phone-hero .rm-skel{--rm-skel-a:rgba(255,255,255,.1);--rm-skel-b:rgba(255,255,255,.22)}
+.fo-kpi.is-green .rm-skel,.fo-tiles .is-dark .rm-skel{--rm-skel-a:rgba(255,255,255,.12);--rm-skel-b:rgba(255,255,255,.24)}
+/* Советы AI: три пункта-скелета в форме будущих советов. */
+.dir-tips-list li.is-skel{display:grid;grid-template-columns:auto minmax(0,1fr);column-gap:10px;row-gap:9px;align-items:center}
+.dir-tips-list li.is-skel:before{grid-row:span 2;align-self:start}
+.dir-tips-list li.is-skel .rm-skel{grid-column:2;height:10px;margin:0}
+.dir-tips-list li.is-skel .rm-skel:first-child{width:94%}.dir-tips-list li.is-skel .rm-skel:last-child{width:62%}
+/* Списки (замечания, меню, официанты, команда): строки-скелеты. */
+.dir-skel-list{display:flex;flex-direction:column}
+.dir-skel-line{display:flex;align-items:center;gap:12px;min-height:56px;border-top:1px solid var(--line-soft,#f0f3ec)}
+.dir-skel-line:first-child{border-top:0}
+.dir-skel-line>.rm-skel.is-dot{width:22px;height:22px;border-radius:50%;flex:none}
+.dir-skel-line>span:not(.rm-skel){display:flex;flex-direction:column;gap:7px;flex:1;min-width:0}
+.dir-skel-line>span:not(.rm-skel)>.rm-skel:first-child{width:62%;height:12px}
+.dir-skel-line>span:not(.rm-skel)>.rm-skel:last-child{width:38%;height:9px}
+.dir-skel-line>.rm-skel.is-end{width:52px;height:12px;flex:none}
+.rm-skel.is-val.is-num{width:1.3em}
+.dir-badge .rm-skel.is-val{width:6.5em;height:8px}
+/* Редактор сотрудника, пока идёт запись: поля не меняются, кнопка крутится. */
+.dir-editor.is-saving .dir-field,.dir-editor.is-saving .dir-check,.dir-editor.is-saving .dir-segment{opacity:.6;pointer-events:none;transition:opacity .2s}
+.dir-kpi strong .rm-skel.is-val{width:72%;height:14px}

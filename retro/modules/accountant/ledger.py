@@ -229,6 +229,13 @@ class FinanceStore:
             # запись бухгалтера, 'auto' — расчёт iiko. Старые строки — ручные.
             if 'source' not in table_columns(connection, 'accountant_handover_days'):
                 connection.execute('ALTER TABLE accountant_handover_days ADD COLUMN source TEXT')
+            # Подтверждение бухгалтера: сколько реально получено (amount), каким
+            # был расчёт в момент подтверждения (expected_amount), кто и когда.
+            # После подтверждения кассир передачу не отменит и не перепишет.
+            handover_columns = table_columns(connection, 'accountant_handover_days')
+            for column in ('expected_amount', 'confirmed_at', 'confirmed_by'):
+                if column not in handover_columns:
+                    connection.execute(f'ALTER TABLE accountant_handover_days ADD COLUMN {column} TEXT')
 
     def reserves(self, day: date):
         from .reserves import reserve_summary
@@ -330,6 +337,13 @@ class FinanceStore:
                 raise LedgerError('Приход за этот день уже записан. Используйте исправление дневного итога.')
             if row and not add and Decimal(row[1]) == amount:
                 return
+            confirmed = row is not None and connection.execute(
+                'SELECT confirmed_at FROM accountant_handover_days WHERE day = ?',
+                (day.isoformat(),)).fetchone()[0] is not None
+            if confirmed and source == 'auto':
+                return
+            if confirmed and replace_sources is not None:
+                raise LedgerError('Бухгалтер уже подтвердил получение кассы — передачу не изменить.')
             if row and replace_sources is not None and row[3] not in replace_sources:
                 raise LedgerError('Приход за этот день уже записал бухгалтер. Исправить его может только он.')
             if row and add:
@@ -352,11 +366,63 @@ class FinanceStore:
         """Приход кассира за день для экранов: сумма, когда записан и кем."""
         with closing(self._open()) as connection:
             row = connection.execute(
-                'SELECT amount, checked_at, source FROM accountant_handover_days WHERE day = ?',
+                'SELECT amount, checked_at, source, expected_amount, confirmed_at, confirmed_by '
+                'FROM accountant_handover_days WHERE day = ?',
                 (day.isoformat(),)).fetchone()
         if row is None:
             return None
-        return dict(amount=row[0], handed_at=local_timestamp(row[1]), source=row[2] or 'accountant')
+        # confirmed_at — бухгалтер подтвердил получение: amount — сколько реально
+        # получено, expected_amount — расчёт на момент подтверждения, shortfall —
+        # недостача (расчёт − получено, не меньше 0). До подтверждения всё None.
+        confirmed = row[4] is not None
+        shortfall = (max(Decimal(0), Decimal(row[3]) - Decimal(row[0]))
+                     if confirmed and row[3] is not None else None)
+        return dict(amount=row[0], handed_at=local_timestamp(row[1]), source=row[2] or 'accountant',
+                    confirmed_at=local_timestamp(row[4]) if confirmed else None,
+                    confirmed_by=row[5] if confirmed else None,
+                    expected_amount=row[3] if confirmed else None,
+                    shortfall=str(shortfall) if shortfall is not None else None)
+
+    def confirm_handover(self, day: date, received, expected, approver: str) -> dict:
+        """Бухгалтер подтверждает, сколько наличных от кассира реально получил.
+
+        Расчёт — то, что кассир передал кнопкой (или расчёт iiko, если кнопки
+        ещё не было); при повторном подтверждении он не меняется. Полученная
+        сумма становится приходом дня: остаток считается от неё. Разницу видно
+        как недостачу («От кассира получено меньше расчёта»), а не обнуляют.
+        После подтверждения кассир передачу не отменит и не перепишет."""
+        received = amount_value(received, allow_zero=True)
+        approver = required_text(approver, 'кто подтвердил')
+        with closing(self._open()) as connection, connection:
+            connection.execute('BEGIN IMMEDIATE')
+            columns = ('day', 'amount', 'checked_at', 'source', 'expected_amount', 'confirmed_at', 'confirmed_by')
+            row = connection.execute(
+                f'SELECT {", ".join(columns)} FROM accountant_handover_days WHERE day = ?',
+                (day.isoformat(),)).fetchone()
+            before = dict(zip(columns, row)) if row else None
+            if before and before['confirmed_at'] is not None:
+                calculation = before['expected_amount']
+            elif before and before['source'] in ('cashier', 'auto'):
+                calculation = before['amount']
+            else:
+                # Своя ручная запись бухгалтера — не расчёт: сверяем с iiko, если он есть.
+                calculation = str(amount_value(expected, allow_zero=True)) if expected is not None else None
+            if calculation is None:
+                calculation = str(received)
+            now = datetime.now().isoformat()
+            connection.execute(
+                'INSERT INTO accountant_handover_days '
+                '(day, amount, checked_at, source, expected_amount, confirmed_at, confirmed_by) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?) '
+                'ON CONFLICT(day) DO UPDATE SET amount=excluded.amount, '
+                'expected_amount=excluded.expected_amount, confirmed_at=excluded.confirmed_at, '
+                'confirmed_by=excluded.confirmed_by',
+                (day.isoformat(), str(received), now, 'accountant', str(calculation), now, approver))
+            row = connection.execute(
+                f'SELECT {", ".join(columns)} FROM accountant_handover_days WHERE day = ?',
+                (day.isoformat(),)).fetchone()
+            record_audit(connection, 'handover', day.isoformat(), 'confirm', before, dict(zip(columns, row)))
+        return self.handover_state(day)
 
     def handover_for_day(self, day: date) -> Decimal | None:
         with closing(self._open()) as connection:
@@ -375,8 +441,24 @@ class FinanceStore:
                     return
                 if owner[0] != only_source:
                     raise LedgerError('Приход за этот день записал бухгалтер. Отменить его может только он.')
+                confirmed = connection.execute(
+                    'SELECT confirmed_at FROM accountant_handover_days WHERE day = ?',
+                    (day.isoformat(),)).fetchone()[0]
+                if confirmed is not None:
+                    raise LedgerError('Бухгалтер уже подтвердил получение кассы — отменить передачу нельзя.')
             anchor = connection.execute('SELECT day FROM accountant_cash_opening WHERE id=1').fetchone()
-            dependent = connection.execute(
+            # Неподтверждённую передачу кассир отменяет, пока бухгалтер не потратил
+            # эти деньги: операции дня сами по себе не мешают (зарплату выдают
+            # утром, а кассу передают вечером). Проверка — остаток без этой
+            # передачи не уходит в минус ни в этот, ни в следующие дни.
+            if only_source is not None:
+                connection.execute("UPDATE accountant_handover_days SET amount = '0' WHERE day = ?",
+                                   (day.isoformat(),))
+                try:
+                    self._check_known_future_balances(connection, day)
+                except LedgerError:
+                    raise LedgerError('Приход используется в остатках. Исправьте сумму вместо удаления.') from None
+            dependent = None if only_source is not None else connection.execute(
                 'SELECT day FROM accountant_handover_days WHERE day > ? '
                 'UNION SELECT day FROM accountant_movements WHERE day >= ? '
                 'UNION SELECT paid_day FROM accountant_salary_payments WHERE paid_day >= ? '
@@ -409,6 +491,7 @@ class FinanceStore:
             'salary_payment': 'accountant_salary_payments',
             'debt_payment': 'accountant_debt_payments',
             'reserve_transfer': 'accountant_reserves',
+            'debt': 'accountant_debts',
         }
         table = tables.get(operation_type)
         if table is None:
@@ -432,6 +515,23 @@ class FinanceStore:
                         balance = _balance([row for row in rows if row['day'] <= cutoff])
                         if balance is not None and balance < 0:
                             raise LedgerError('Удаление делает остаток отрицательным в последующие дни.')
+                elif operation_type == 'debt':
+                    # Ошибочно записанный долг удаляется целиком — вместе с оплатами
+                    # того же дня. Оплату в другой день сначала удаляют в том дне:
+                    # иначе молча поменялся бы остаток чужого дня.
+                    payments = connection.execute(
+                        'SELECT id, day, movement_id FROM accountant_debt_payments WHERE debt_id = ?',
+                        (operation_id,)).fetchall()
+                    if any(payment[1] != before['day'] for payment in payments):
+                        raise LedgerError('По долгу есть оплаты в другие дни — сначала удалите их там.')
+                    for payment_id, _, movement_id in payments:
+                        for table_name, row_id in (('accountant_debt_payments', payment_id),
+                                                   ('accountant_movements', movement_id)):
+                            removed = self._row_dict(connection, table_name, row_id)
+                            connection.execute(f'DELETE FROM {table_name} WHERE id = ?', (row_id,))
+                            record_audit(connection, 'debt_payment' if table_name.endswith('payments')
+                                         else 'movement', row_id, 'delete', removed, None)
+                    connection.execute('DELETE FROM accountant_debts WHERE id = ?', (operation_id,))
                 elif operation_type == 'debt_payment':
                     connection.execute('DELETE FROM accountant_debt_payments WHERE id = ?', (operation_id,))
                     connection.execute('DELETE FROM accountant_movements WHERE id = ?',
@@ -783,16 +883,25 @@ class FinanceStore:
             accruals = connection.execute(
                 'SELECT id, work_day, employee_id, employee_name, group_name, '
                 'attendance_status, rate, amount FROM accountant_accruals '
-                'WHERE work_day >= ? AND work_day <= ? ORDER BY employee_name, work_day',
+                'WHERE work_day >= ? AND work_day <= ? ORDER BY employee_id, work_day',
                 (first.isoformat(), last.isoformat())).fetchall()
             payments = defaultdict(Decimal)
-            paid_per_day = defaultdict(Decimal)
-            for accrual_id, paid_day, amount in connection.execute(
-                    'SELECT p.accrual_id, p.paid_day, p.amount FROM accountant_salary_payments p '
+            # Сами выплаты по начислению: по ним ячейку «✓» можно отменить.
+            payment_rows = defaultdict(list)
+            for payment_id, accrual_id, paid_day, amount in connection.execute(
+                    'SELECT p.id, p.accrual_id, p.paid_day, p.amount FROM accountant_salary_payments p '
                     'JOIN accountant_accruals a ON a.id = p.accrual_id '
-                    'WHERE a.work_day >= ? AND a.work_day <= ?',
+                    'WHERE a.work_day >= ? AND a.work_day <= ? ORDER BY p.id',
                     (first.isoformat(), last.isoformat())):
                 payments[accrual_id] += Decimal(amount)
+                payment_rows[accrual_id].append(dict(id=payment_id, day=paid_day, amount=str(amount)))
+            # «Выдано из кассы за день» — по дню выдачи, какая бы смена ни была:
+            # 1-го числа выдают смену последнего дня прошлого месяца, и эти
+            # деньги ушли из кассы этого месяца.
+            paid_per_day = defaultdict(Decimal)
+            for paid_day, amount in connection.execute(
+                    'SELECT paid_day, amount FROM accountant_salary_payments '
+                    'WHERE paid_day >= ? AND paid_day <= ?', (first.isoformat(), last.isoformat())):
                 paid_per_day[paid_day] += Decimal(amount)
             # Оклады за месяц: расход по зарплате, не привязанный к начислению.
             # Здесь общая сумма — вместе с записями без сотрудника; разбивку по
@@ -804,14 +913,17 @@ class FinanceStore:
             closed = {row[0] for row in connection.execute(
                 'SELECT day FROM accountant_payroll_days WHERE day >= ? AND day <= ?',
                 (first.isoformat(), last.isoformat()))}
+        # Строка — сотрудник (по id: у однофамильцев разные строки). Ставка в
+        # ячейке — та, что действовала в день смены: «сумма ≠ ставке» сверяют
+        # с ней; у строки — ставка последней смены месяца.
         people = {}
         for row in accruals:
-            person = people.setdefault(row[3], dict(
-                employee_id=row[2], name=row[3], group=row[4], rate=str(row[6]), cells={}))
+            person = people.setdefault(row[2], dict(employee_id=row[2], cells={}))
+            person.update(name=row[3], group=row[4], rate=str(row[6]))
             paid = payments[row[0]]
             person['cells'][row[1]] = dict(
-                accrual_id=row[0], status=row[5], amount=str(row[7]),
-                paid=str(paid), debt=str(Decimal(row[7]) - paid))
+                accrual_id=row[0], status=row[5], rate=str(row[6]), amount=str(row[7]),
+                paid=str(paid), debt=str(Decimal(row[7]) - paid), payments=payment_rows[row[0]])
         for person in people.values():
             cells = person['cells'].values()
             person['accrued'] = str(sum((Decimal(c['amount']) for c in cells), Decimal(0)))
@@ -825,6 +937,22 @@ class FinanceStore:
                     monthly_paid=str(monthly_paid),
                     confirmed_days=sorted(closed),
                     partial_days=sorted(accrued_days - closed))
+
+    def negative_cash_days(self, first: date, last: date, start_day: date | None = None) -> list[dict]:
+        """Дни периода, когда остаток бухгалтера на конец дня ушёл в минус.
+
+        Тот же расчёт, что и «Остаток» в «Финансах дня» (cash_position); день
+        без данных кассира пропускается — «нет данных» не значит «минус».
+        """
+        result = []
+        with closing(self._open()) as connection:
+            day = first
+            while day <= last:
+                _, remaining, _, _ = self.cash_position(connection, day, start_day)
+                if remaining is not None and remaining < 0:
+                    result.append(dict(day=day.isoformat(), balance=str(remaining)))
+                day += timedelta(days=1)
+        return result
 
     def accruals(self, day: date) -> list[dict]:
         with closing(self._open()) as connection:

@@ -225,7 +225,8 @@ test('журнал: долг дня одной строкой, зарплата 
   assert.equal(byName['Выдано Шоху на закуп · подотчёт'].kind, 'auto');
   assert.deepEqual([byName['Электроэнергия'].amount, byName['Электроэнергия'].paid, byName['Электроэнергия'].debt], [1850000, 1000000, 850000]);
   assert.equal(byName['Электроэнергия'].cat, 'Коммунальные / охрана');
-  assert.deepEqual(byName['Электроэнергия'].ops, [{operation: 'movement', id: 58}]);
+  // × удаляет ошибочный долг целиком — вместе с оплатой этого дня.
+  assert.deepEqual(byName['Электроэнергия'].ops, [{operation: 'debt', id: 1}]);
   assert.equal(byName['Канцтовары'].cat, 'Административные');
   assert.equal(byName['Ремонт'].kind, 'carried');
   assert.equal(rows.filter(r => r.name === 'Электроэнергия').length, 1);
@@ -278,4 +279,48 @@ test('перечисления поставщику и время выдачи �
   assert.equal(shoh.gives[0].time, '08:40');
   assert.equal(shoh.trSum, 1850000);
   assert.deepEqual(shoh.trs[0], {id: 1, supplier: 'Milk Pro', item: 'Молочная продукция', point: 'RETRO', amount: 1850000});
+});
+
+test('«Выдать пришедшим» — только своя смена и только тем, кому ещё ничего не выдано', () => {
+  const board = logic.shiftBoard({payday: '2026-09-29',
+    staff: {employees: [staffRow(1, 'Жасур'), staffRow(2, 'Шахзод'), staffRow(3, 'Нодира')]},
+    accruals: [{id: 10, employee_id: 2, name: 'Шахзод', work_day: '2026-09-28', status: 'on_time', rate: '180000', amount: '180000', paid: '100000', debt: '80000'},
+      {id: 11, employee_id: 9, name: 'Севара', work_day: '2026-09-09', status: 'on_time', rate: '200000', amount: '200000', paid: '0', debt: '200000'}],
+    movements: []});
+  assert.deepEqual(board.handOut.map(r => r.name), ['Жасур', 'Нодира']);
+  assert.equal(board.toPay.length, 4);  // долги видны, но кнопка их не трогает
+});
+
+test('Шох: «на руках» и числа дня берутся с сервера, «Закуп · Шох» — среди выдач', () => {
+  const shoh = logic.shohBoard({balance: '3640000', entries: [{kind: 'deposit', amount: '3000000'}, {kind: 'deposit', amount: '24000'}]},
+    [{id: 1, item: 'Лук', unit: 'кг', price: '5000', total: '100000', has_photo: true, accepted_at: null, usual_price: null}],
+    [{id: 57, type: 'procurement_advance', amount: '3000000'}, {id: 60, type: 'other_expense', item_code: 'proc_shoh', amount: '24000', description: 'Шох · мелочь'}],
+    [], null, {pocket: '1860000.00', day_start: '640000.00', given_today: '3024000', spent_day: '1804000', reported_percent: 49});
+  assert.deepEqual([shoh.start, shoh.given, shoh.spent, shoh.hand, shoh.reported], [640000, 3024000, 1804000, 1860000, 49]);
+  assert.equal(shoh.start + shoh.given - shoh.spent, shoh.hand);
+  assert.equal(shoh.gives.reduce((s, g) => s + g.amount, 0), 3024000);
+  const card = logic.cashCard({expected_cashier: '1000', ledger: {cash_balance: '0', cash_flow: {other_outflows: '3024000'},
+    movements: [{type: 'procurement_advance', amount: '3000000'}, {type: 'other_expense', item_code: 'proc_shoh', amount: '24000'}]}});
+  assert.deepEqual([card.shoh, card.other], [3024000, 0]);
+});
+
+test('проверки: получено от кассира меньше расчёта — ошибка', () => {
+  const board = logic.shiftBoard({payday: '2026-09-29', staff: {employees: []}, accruals: [], movements: []});
+  const data = {date: '2026-09-29', expected_cashier: '550000', dividends_week: null,
+    cashier_handover: {amount: '550000', confirmed_at: '2026-09-29T21:10:00+05:00', expected_amount: '850000', shortfall: '300000'},
+    ledger: {cash_balance: '550000', cash_flow: {opening_balance: '0', other_outflows: '0', salary_paid: '0'}, movements: []}};
+  const cash = logic.cashCard(data);
+  assert.deepEqual([cash.confirmedAt, cash.calculation, cash.shortfall], ['21:10', 850000, 300000]);
+  const issues = logic.financeIssues({data, board, blocker: null, monthly: {overpaid: []}, shoh: {buys: [], hand: 0}, cash});
+  assert.equal(issues[0].lvl, 'err');
+  assert.equal(issues[0].text, 'От кассира получено меньше расчёта');
+  assert.equal(issues[0].target, 'cash');
+});
+
+test('проверки дня: отставание по дивидендам меряется от плана к сегодняшнему дню', () => {
+  const items = logic.dayChecks({date: '2026-09-29', expected_cashier: '1', missing_rates: 0, employees: [], payroll: {unknown_count: 0},
+    ledger: {cash_balance: '0', accruals: [], payroll_confirmed: true, manual_debt_total: '0'},
+    dividends_week: {behind: true, pace: '2857142.86', due: '1428571.43', collected: '1500000'}});
+  const behind = items.find(item => item.text === 'Отстаём от недельных дивидендов');
+  assert.equal(behind.sub.amount, 1357143);
 });

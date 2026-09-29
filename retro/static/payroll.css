@@ -33,6 +33,10 @@
 .pr-card-label{font-size:11px;color:#748376}
 .pr-card-value{margin-top:14px;font-size:24px;font-weight:600;letter-spacing:-.6px;font-variant-numeric:tabular-nums;
   line-height:1.2;white-space:nowrap}
+.pr-card-sub{margin-top:4px;font-size:11px;font-weight:600;color:#ab445e}
+.pr-card-sub[hidden]{display:none}
+.pr-day.is-focus{box-shadow:inset 0 0 0 2px #d2af59}
+.pr-m.is-gone{color:#9da79d}
 .pr-card--issues{background:#fff8f7;border-color:#f0dddd;cursor:pointer}
 .pr-card--issues:hover{background:#fdf1f0}
 .pr-card--issues .pr-card-label{color:#9b4b5a}
@@ -222,3 +226,10 @@ button.pr-s:hover{box-shadow:inset 0 0 0 2px #d2af59;filter:none}
   /* Служебный капс на телефоне — как у всей панели (mobile.css): 10 px на солнце не читается. */
   .pr-kicker{font-size:11.5px;letter-spacing:1.1px}
 }
+
+/* ── Первая загрузка: скелет итогов и сетки (T-393) ─────────────────────── */
+.pr-skeleton[hidden]{display:none}
+.pr-skeleton .pr-sheet{padding:8px 0}
+.pr-skeleton .rm-skel-card{min-height:92px}
+/* Ячейка в работе: подпись спрятана, спиннер по центру, размер тот же. */
+.pr-grid .rm-busy,.pr-grid .rm-done{opacity:1}

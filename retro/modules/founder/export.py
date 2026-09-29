@@ -12,6 +12,8 @@ from io import BytesIO
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from retro.modules.accountant.reserves import is_monthly_salary
+
 from . import overview
 
 MONEY = '#,##0'
@@ -34,9 +36,31 @@ def closing_balance(state, day: date, handover):
     return summary['cash_balance']
 
 
-def month_workbook(state, first: date, last: date, orders, orders_error):
+def salary_split(rows):
+    """{день: (сменные, оклады)} — выплаты сменным по начислениям и строки
+    «Зарплаты» журнала: оклады отдельно, остальное — сменные."""
+    result = {}
+    for row in rows:
+        if overview.flow_kind(row) != 'salary':
+            continue
+        shift, monthly = result.get(row['day'], (Decimal(0), Decimal(0)))
+        if row['type'] != 'salary_payment' and is_monthly_salary(row.get('item_code')):
+            monthly += Decimal(row['amount'])
+        else:
+            shift += Decimal(row['amount'])
+        result[row['day']] = (shift, monthly)
+    return result
+
+
+def month_workbook(state, first: date, last: date, orders, orders_error, cashier=None, cashier_error=None):
+    """Лист «По дням» — колонки Функционала (7b): Retro, Oxbridge, Демо, передал
+    кассир, расчёт кассира, сменные, оклады, закуп, прочие, дивиденды, остаток;
+    за ними чеки и прочие поступления. `cashier` — {день: касса кассира} из
+    iiko (Демо и расчёт передачи), None — iiko не ответил."""
     flows_rows = state.accountant_finance.cash_flows_between(first, last)
     flows = overview.daily_flows(flows_rows)
+    salaries = salary_split(flows_rows)
+    cashier = cashier or {}
     workbook = openpyxl.Workbook()
     sheet = workbook.active
     sheet.title = 'По дням'
@@ -45,10 +69,13 @@ def month_workbook(state, first: date, last: date, orders, orders_error):
     sheet['A1'].font = Font(bold=True, size=13)
     note = ('Выручка и чеки — iiko по кассам, без банкетного зала. Деньги — журнал бухгалтера.'
             if orders is not None else f'Колонки iiko пустые: {orders_error}')
+    if cashier_error:
+        note += f' Демо и расчёт кассира пустые за дни без ответа iiko: {cashier_error}'
     text(sheet['A2'], note)
-    heads = ['Дата', 'Retro · выручка', 'Oxbridge · выручка', 'Чеки Retro', 'Чеки Oxbridge',
-             'Получено от кассира', 'Прочие поступления', 'Зарплаты', 'Закуп', 'Прочие расходы',
-             'Дивиденды', 'Остаток на конец дня']
+    heads = ['Дата', 'Retro · выручка', 'Oxbridge · выручка', 'Демо · Retro', 'Передал кассир',
+             'Расчёт кассира', 'Сменные', 'Оклады', 'Закуп · Шох и напрямую', 'Прочие расходы',
+             'Дивиденды', 'Остаток на конец дня', 'Чеки Retro', 'Чеки Oxbridge', 'Прочие поступления']
+    counts = (13, 14)
     for column, head in enumerate(heads, start=1):
         cell = sheet.cell(row=4, column=column)
         text(cell, head)
@@ -62,25 +89,31 @@ def month_workbook(state, first: date, last: date, orders, orders_error):
         registers = (orders or {}).get(day.isoformat(), {})
         handover = values.get('handover')
         balance = closing_balance(state, day, handover)
+        till = cashier.get(day.isoformat())
+        shift, monthly = salaries.get(day.isoformat(), (Decimal(0), Decimal(0)))
         cells = [
             datetime.combine(day, datetime.min.time()),
             registers.get('retro', {}).get('revenue') if orders is not None else None,
             registers.get('school', {}).get('revenue') if orders is not None else None,
-            registers.get('retro', {}).get('orders') if orders is not None else None,
-            registers.get('school', {}).get('orders') if orders is not None else None,
-            handover, values.get('receipt', Decimal(0)), values.get('salary', Decimal(0)),
+            Decimal(till['demo']) if till else None,
+            handover,
+            Decimal(till['expected']) if till and till.get('expected') is not None else None,
+            shift, monthly,
             values.get('procurement', Decimal(0)), values.get('other', Decimal(0)),
             values.get('dividends', Decimal(0)), balance,
+            registers.get('retro', {}).get('orders') if orders is not None else None,
+            registers.get('school', {}).get('orders') if orders is not None else None,
+            values.get('receipt', Decimal(0)),
         ]
         for column, value in enumerate(cells, start=1):
             cell = sheet.cell(row=row_index, column=column, value=value)
             if column == 1:
                 cell.number_format = 'dd.mm.yyyy'
-            elif column not in (4, 5):
+            elif column not in counts:
                 cell.number_format = MONEY
         row_index += 1
         day += timedelta(days=1)
-    for column, width in zip('ABCDEFGHIJKL', (12, 16, 16, 11, 11, 16, 14, 14, 14, 14, 14, 16)):
+    for column, width in zip('ABCDEFGHIJKLMNO', (12, 16, 16, 14, 16, 16, 14, 14, 16, 14, 14, 16, 11, 11, 14)):
         sheet.column_dimensions[column].width = width
     sheet.freeze_panes = 'B5'
 

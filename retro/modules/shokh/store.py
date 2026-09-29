@@ -18,11 +18,15 @@ from retro.runtime import secure_directory, secure_file
 # Телефонное фото редко больше пяти мегабайт; ограничение защищает базу от
 # случайной загрузки видео или архива.
 MAX_PHOTO_BYTES = 6 * 1024 * 1024
-ALLOWED_PHOTO_TYPES = ('image/jpeg', 'image/png', 'image/webp', 'image/heic')
+ALLOWED_PHOTO_TYPES = ('image/jpeg', 'image/png', 'image/webp', 'image/heic', 'image/heif')
 UNITS = ('кг', 'шт', 'л', 'уп')
-# Точки закупа: список пополняется сам из истории, но начинать с пустого экрана
-# неудобно, поэтому базовые заведены сразу.
-DEFAULT_POINTS = ('Базар', 'Оптовый склад', 'Магазин', 'Поставщик')
+# Точки закупа — заведения, для которых Шох закупает (макет 3a, «Функционал»
+# §3a): всегда эти четыре и в этом порядке, чтобы рука находила их на том же
+# месте. Точки из прошлых покупок добавляются после них.
+DEFAULT_POINTS = ('Школа MU', 'Школа YA', 'RETRO', 'ШЕФ Базаар')
+# «Цена выше обычной больше чем на 10%» — внимание бухгалтеру (§4). До +10% —
+# «в норме»: рыночная цена гуляет, и каждую копейку сверху проверять незачем.
+ABOVE_USUAL = Decimal('1.10')
 
 
 # Раньше этой даты закупа в системе не было; нижняя граница выборок «за всё время».
@@ -45,14 +49,30 @@ def pocket_position(shokh, finance, day: date) -> dict:
     Считают по этой формуле и экран закупа, и кабинет учредителя. Правило про
     деньги должно жить в одном файле, иначе копии со временем разойдутся.
     """
-    accounting = finance.reserves(day)['shoh']['balance']
+    reserve = finance.reserves(day)['shoh']
+    accounting = reserve['balance']
     # Непринятым может быть и вчерашнее, поэтому смотрим всю историю до дня.
     history = shokh.purchases_between(FIRST_DAY, day)
     pending = sum((Decimal(row['total']) for row in history if row['accepted_at'] is None),
                   Decimal(0))
+    pocket = None if accounting is None else Decimal(accounting) - pending
+    # День по §3.6 «Функционала»: на руках = на начало + выдано сегодня (кассиром
+    # и бухгалтером) − покупки за день. Начало выводим из той же суммы на руках,
+    # поэтому оно само равно вчерашнему «на руках», включая непринятое.
+    given = sum((Decimal(row['amount']) for row in reserve['entries'] if row['kind'] == 'deposit'),
+                Decimal(0))
+    spent = sum((Decimal(row['total']) for row in history if row['day'] == day.isoformat()),
+                Decimal(0))
+    start = None if pocket is None else pocket - given + spent
+    # «Отчитались за X%» = потрачено / (на начало + выдано). Приёмка бухгалтера
+    # долю не уменьшает: принятая покупка остаётся потраченной.
+    base = None if pocket is None else start + given
+    reported = (None if base is None else 0 if base <= 0 else
+                int((spent * 100 / base).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
     return dict(accounting_balance=accounting,
-                pocket=None if accounting is None else str(Decimal(accounting) - pending),
-                pending=str(pending))
+                pocket=None if pocket is None else str(pocket),
+                pending=str(pending), day_start=None if start is None else str(start),
+                given_today=str(given), spent_day=str(spent), reported_percent=reported)
 
 
 def _money(value, *, name='сумма', quantum='0.01'):
@@ -118,7 +138,7 @@ class ShokhStore:
 
     # ── Поездки ────────────────────────────────────────────────────────────
     def open_trip(self, day: date, at: datetime) -> int:
-        """Незакрытая поездка дня или новая. Бонус за скорость считается по ней."""
+        """Незакрытая поездка дня или новая: время закупа считается по ней."""
         with closing(self._open()) as connection:
             connection.execute('BEGIN IMMEDIATE')
             row = connection.execute(
@@ -139,6 +159,17 @@ class ShokhStore:
                                'WHERE id = ? AND finished_at IS NULL',
                                (at.isoformat(), trip_id))
             connection.commit()
+
+    def cancel_trip(self, trip_id: int) -> bool:
+        """Закрыли закуп, ничего не купив: поездки не было. Покупки удалить так
+        нельзя — поездку с ними только завершают."""
+        with closing(self._open()) as connection:
+            connection.execute('BEGIN IMMEDIATE')
+            cursor = connection.execute(
+                'DELETE FROM shokh_trips WHERE id = ? AND finished_at IS NULL AND NOT EXISTS '
+                '(SELECT 1 FROM shokh_purchases WHERE trip_id = ?)', (trip_id, trip_id))
+            connection.commit()
+            return cursor.rowcount > 0
 
     def trip(self, trip_id: int) -> dict | None:
         with closing(self._open()) as connection:
@@ -222,8 +253,8 @@ class ShokhStore:
     def _json(row) -> dict:
         usual = Decimal(row[10]) if row[10] is not None else None
         price = Decimal(row[8])
-        # Дороже обычного — повод бухгалтеру проверить, а не запрет.
-        above = usual is not None and price > usual
+        # Дороже обычного больше чем на 10% — повод бухгалтеру проверить, а не запрет.
+        above = usual is not None and price > usual * ABOVE_USUAL
         return dict(id=row[0], trip_id=row[1], day=row[2], created_at=row[3], point=row[4],
                     item=row[5], unit=row[6], quantity=row[7], price=row[8], total=row[9],
                     usual_price=row[10], has_photo=bool(row[11]), photo_type=row[12],
@@ -300,4 +331,4 @@ class ShokhStore:
             seen = [row[0] for row in connection.execute(
                 'SELECT point, COUNT(*) AS times FROM shokh_purchases '
                 'GROUP BY point ORDER BY times DESC, MAX(day) DESC')]
-        return list(dict.fromkeys([*seen, *DEFAULT_POINTS]))
+        return list(dict.fromkeys([*DEFAULT_POINTS, *seen]))

@@ -68,7 +68,8 @@ test('замечания к бухгалтеру: недостача касси�
 test('дивиденды: статус, доли и подпись выдачи', () => {
   const view = logic.dividendView({week: '2026-W39', start: '2026-09-21', end: '2026-09-27', payout_day: '2026-09-28',
     target: '10000000.00', collected: '2000000.00', pace: '5714285.71', due: '4285714.29', behind: true, done: false, free_cash_week: null});
-  assert.equal(plain(view.status), 'Отстаём от плана на 2 285 714');
+  // Отставание — от плана к сегодня, включая сегодня (Функционал §3.7).
+  assert.equal(plain(view.status), 'Отстаём от плана на 3 714 286');
   assert.equal(view.pct, 20);
   assert.equal(view.range, '21.09–27.09');
   assert.equal(view.payout, 'Выдача в понедельник, 28 сентября');
@@ -85,15 +86,36 @@ test('уведомления о Счёте Шефа: только выше по�
   assert.deepEqual(logic.chefAlerts(chef, '2026-09-24', '2026-09-23', ['b']).map(bill => bill.order_id), ['a']);
 });
 
-test('к вечеру: утро плюс касса минус то, что уйдёт', () => {
-  const evening = logic.eveningCash({opening_balance: '10000000', cashier: {expected_handover: '5000000'},
-    outlook: {salary_due: '2000000', procurement: '3000000', other: '500000'}});
-  assert.equal(evening, 9500000);
-  assert.equal(logic.eveningCash({opening_balance: null, outlook: {}}), null);
-});
-
 test('короткие суммы: миллионы и миллиарды', () => {
   assert.equal(logic.short(1438528898), '1,44 млрд');
   assert.equal(logic.short(42500000), '42,5 млн');
   assert.equal(logic.short(null), '—');
+});
+
+test('история дивидендов: собрано из цели и выдача в понедельник', () => {
+  const view = logic.dividendView({start: '2026-09-28', end: '2026-10-04', payout_day: '2026-10-05', target: '10000000', collected: '0',
+    history: [{start: '2026-09-21', end: '2026-09-27', payout_day: '2026-09-28', target: '10000000.00', collected: '10500000.00', paid_out: '10000000.00', done: true},
+      {start: '2026-09-14', end: '2026-09-20', payout_day: '2026-09-21', target: null, collected: '3500000.00', paid_out: '0.00', done: false}]});
+  assert.deepEqual(view.history.map(week => [week.range, week.text, week.paid, week.tone]), [
+    ['21.09–27.09', 'собрано 10,5 млн из 10 млн', 'выдано 28.09 · 10 млн', 'ok'],
+    ['14.09–20.09', 'собрано 3,5 млн · цели не было', '', 'none']]);
+});
+
+test('замечания 7b: недостача от кассира первой, выдано без входа, постоянные — один раз', () => {
+  const accounting = date => ({date, expected_cashier: '1', missing_rates: 5, payroll: {unknown_count: 1}, employees: [],
+    ledger: {cash_balance: '100', payroll_confirmed: true, manual_debt_total: '0', accruals: [
+      {work_day: '2026-09-19', name: 'Старый', amount: '0', paid: '150000'},  // выдана до недели — не берём
+      {work_day: '2026-09-22', name: 'Алина', amount: '0', paid: '180000'},
+      {work_day: '2026-09-22', name: 'Жасур', amount: '180000', paid: '180000'}]}});
+  const days = {start: '2026-09-21', days: [
+    {...week.days[0], accounting: accounting('2026-09-21')},
+    {...week.days[1], accounting: accounting('2026-09-22')},
+    {...week.days[2], date: '2026-09-23', handover: {recorded: '8700000.00', expected: '9000000.00', status: 'mismatch',
+      difference: '-300000.00', confirmed: true, shortfall: '300000'}, accounting: accounting('2026-09-23')}]};
+  const spending = {shokh: {flagged: [{day: '2026-09-23', item: 'Лук', total: '100000', reason: 'нет фото'}]}};
+  const issues = logic.accountantIssues(days, spending, accountant.dayChecks);
+  assert.deepEqual(issues.map(item => item.text), [
+    'От кассира получено меньше расчёта · 23.09', 'Выдано без входа: Алина · 22.09',
+    'Без ставки · 23.09', 'Покупка Шоха: Лук · 23.09']);
+  assert.match(plain(logic.handoverMark(days.days[2]).tip), /Получено 8 700 000 при расчёте 9 000 000 · недостача 300 000/);
 });

@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/employees.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/employees.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/employees-logic.js" defer></script><script src="/static/employees.js" defer></script>
 </head>
 <body class="emp-page">
 <aside class="sidebar">
@@ -22,7 +22,7 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Сотрудники</strong></span><div class="topbar-actions"><span id="employees-demo" class="rm-demo" hidden><strong>ДЕМО</strong><span>Проходы Hikvision смоделированы</span></span><span class="top-status" id="connection">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Сотрудники</strong></span><div class="topbar-actions"><span id="employees-demo" class="rm-demo" hidden><strong>ДЕМО</strong><span>Проходы Hikvision смоделированы</span></span><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace employees-workspace">
     <div class="emp-heading">
       <div><p class="emp-kicker">КОМАНДА · РЕЕСТР</p><h1 class="emp-title">Сотрудники<span>.</span></h1></div>
@@ -41,7 +41,7 @@
     </div>
     <p id="employees-message" class="notice" role="status" aria-live="polite" hidden></p>
 
-    <section id="employees-stats" class="emp-stats" role="group" aria-label="Сводка дня — карточки фильтруют реестр"></section>
+    <section id="employees-stats" class="emp-stats" role="group" aria-label="Сводка дня — карточки фильтруют реестр"><div class="rm-skel-card" aria-hidden="true"><span class="rm-skel" style="width:55%"></span><span class="rm-skel is-lg" style="width:40%"></span><span class="rm-skel" style="width:70%"></span></div><div class="rm-skel-card" aria-hidden="true"><span class="rm-skel" style="width:62%"></span><span class="rm-skel is-lg" style="width:30%"></span><span class="rm-skel" style="width:64%"></span></div><div class="rm-skel-card" aria-hidden="true"><span class="rm-skel" style="width:50%"></span><span class="rm-skel is-lg" style="width:28%"></span><span class="rm-skel" style="width:72%"></span></div><div class="rm-skel-card" aria-hidden="true"><span class="rm-skel" style="width:58%"></span><span class="rm-skel is-lg" style="width:30%"></span><span class="rm-skel" style="width:60%"></span></div></section>
 
     <div class="emp-layout">
       <section class="emp-registry-panel" aria-labelledby="employees-title">
@@ -54,7 +54,7 @@
         </div>
         <div id="employees-tabs" class="emp-tabs" role="tablist" aria-label="Группы"></div>
         <div class="emp-registry-columns"><span>Сотрудник</span><span>Первый вход</span><span>Статус</span><span class="num">Ставка за смену</span><span class="num">Начислено</span></div>
-        <div id="employees-groups" class="emp-registry-body" aria-live="polite"></div>
+        <div id="employees-groups" class="emp-registry-body" aria-live="polite"><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:10%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:31%"></span><span class="rm-skel" style="width:15%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:12%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:31%"></span><span class="rm-skel" style="width:17%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:14%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:31%"></span><span class="rm-skel" style="width:11%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:16%"></span><span class="rm-skel" style="width:14%"></span></div></div>
 
         <div class="emp-salary" id="monthly-section">
           <div class="emp-group-head emp-salary-head">
@@ -62,7 +62,7 @@
             <div class="emp-salary-tools"><span class="emp-group-total" id="monthly-total"></span><button id="monthly-add" class="emp-salary-add" type="button" title="Добавить сотрудника на окладе" aria-label="Добавить сотрудника на окладе"><span aria-hidden="true">+</span>На оклад</button></div>
           </div>
           <div class="emp-salary-columns"><span>Сотрудник</span><span>Должность</span><span class="num">Оклад</span><span class="num" id="monthly-paid-head">Выдано в месяце</span><span class="num">Осталось</span></div>
-          <div id="monthly-employees" class="monthly-employees" aria-live="polite"></div>
+          <div id="monthly-employees" class="monthly-employees" aria-live="polite"><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:10%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:31%"></span><span class="rm-skel" style="width:15%"></span><span class="rm-skel" style="width:14%"></span></div><div class="rm-skel-row" aria-hidden="true"><span class="rm-skel" style="width:24%"></span><span class="rm-skel" style="width:12%"></span><span class="rm-skel" style="width:14%"></span></div></div>
         </div>
         <p class="emp-registry-foot">Нажмите на строку, чтобы изменить сотрудника.</p>
       </section>

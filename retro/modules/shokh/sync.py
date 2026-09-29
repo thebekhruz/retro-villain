@@ -39,6 +39,24 @@ class ProcurementSync:
         return dict(zip(('key','fingerprint','purchase_id','payload','status','document_id',
                          'document_number','error','updated_at'), row)) if row else None
 
+    def point_defaults(self, limit=300):
+        """Поставщик и склад последней накладной по каждой точке: нажал точку —
+        и сразу к товару (§3a), без повторного выбора из справочников iiko."""
+        with closing(self.store._open()) as c:
+            rows = c.execute('SELECT p.point, o.payload FROM shokh_iiko_operations o '
+                             'JOIN shokh_purchases p ON p.id = o.purchase_id '
+                             'ORDER BY p.id DESC LIMIT ?', (limit,)).fetchall()
+        result = {}
+        for point, payload in rows:
+            if point in result:
+                continue
+            try:
+                data = json.loads(payload)
+                result[point] = dict(supplier_id=data['supplier'], storage_id=data['storage'])
+            except (ValueError, TypeError, KeyError):
+                continue
+        return result
+
     def decorate(self, rows):
         if not rows:
             return rows

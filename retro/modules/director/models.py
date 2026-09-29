@@ -96,6 +96,10 @@ class DirectorSnapshot:
     payment_totals: dict[str, Decimal] = field(default_factory=dict)
     daily_totals: tuple = ()
     missing_days: tuple = ()
+    # Группа iiko (DishGroup) каждой позиции: по ней срез «Слабые» отбрасывает
+    # напитки и выпечку. Официанты Retro — отдельно, с чеками и сменами (3.11).
+    item_groups: tuple = ()
+    waiter_retro: tuple = ()
 
     def json(self):
         def money(value):
@@ -124,7 +128,14 @@ class DirectorSnapshot:
                     missing_days=[value.isoformat() for value in self.missing_days],
                     item_metrics={group: {name: metric(value) for name, value in values.items()}
                                   for group, values in self.item_metrics.items()},
-                    waiter_metrics={name: metric(value) for name, value in self.waiter_metrics.items()})
+                    waiter_metrics={name: metric(value) for name, value in self.waiter_metrics.items()},
+                    item_groups=dict(self.item_groups),
+                    waiter_retro={name: dict(revenue=money(stats['revenue']), cost=money(stats['cost']),
+                                             quantity=str(stats['quantity']), checks=stats['checks'],
+                                             shifts=stats['shifts'],
+                                             average_check=money(stats['revenue'] / stats['checks'])
+                                             if stats['checks'] else None)
+                                  for name, stats in self.waiter_retro})
 
 
 # Период берём только из закрытых дней: сегодняшняя смена ещё идёт, и её
@@ -213,6 +224,9 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
     # читается только в календарном порядке. Копим по тем же строкам, что и
     # разбивка по блюдам, поэтому итог по дням сходится с item_metrics.
     daily = {}
+    item_groups = {}
+    retro_waiters = defaultdict(lambda: dict(revenue=Decimal(0), cost=Decimal(0), quantity=Decimal(0),
+                                             orders=set(), days=set()))
     for row in values:
         group = direction(row)
         if group is None:
@@ -243,6 +257,18 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
         day_row['directions'][group] += row.revenue
         kind = sale_kind(row)
         add(waiters[row.waiter], kind, row)
+        item_groups.setdefault(row.item, row.category)
+        if group == 'retro':
+            # Чек — заказ iiko с выручкой; смена — день, в который официант
+            # продавал в зале Retro. Позиции без выручки (Счёт Шефа,
+            # дегустация) чеком не считаются.
+            stats = retro_waiters[row.waiter]
+            stats['revenue'] += row.revenue
+            stats['cost'] += row.cost
+            stats['quantity'] += row.quantity
+            if row.revenue != 0 and row.order_id:
+                stats['orders'].add(row.order_id)
+                stats['days'].add(row.day)
         for name in names:
             add(metrics[name][row.item], kind, row)
     daily_totals = tuple(DayTotal(day, daily[day]['revenue'], daily[day]['cost'],
@@ -256,4 +282,9 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
                             {name: finish(amounts) for name, amounts in waiters.items()},
                             dict(excluded_revenue), scope_excluded, yandex_total,
                             tuple(sorted(excluded_groups)),
-                            dict(payment_totals), daily_totals, missing_days)
+                            dict(payment_totals), daily_totals, missing_days,
+                            tuple(sorted(item_groups.items())),
+                            tuple((name, dict(revenue=stats['revenue'], cost=stats['cost'],
+                                              quantity=stats['quantity'], checks=len(stats['orders']),
+                                              shifts=len(stats['days'])))
+                                  for name, stats in sorted(retro_waiters.items())))

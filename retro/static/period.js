@@ -166,8 +166,19 @@
     const presetChips = node('div', 'quick-days');
     rangePane.append(startGroup, endGroup, presetChips);
 
+    // Что начало смену периода: чип или кнопка режима. С options.busy и
+    // обещанием от onChange эта кнопка крутится, пока грузится новый период
+    // (busy.js, T-393). Без options.busy поведение прежнее.
+    let trigger = null;
     function emit() {
-      if (typeof options.onChange === 'function') options.onChange(current());
+      const from = trigger;
+      trigger = null;
+      if (typeof options.onChange !== 'function') return;
+      const result = options.onChange(current());
+      const busy = typeof globalThis !== 'undefined' ? globalThis.RetroBusy : null;
+      if (options.busy && busy && from && from.tagName === 'BUTTON' && result && typeof result.then === 'function') {
+        busy.button(from, result, { done: false });
+      }
     }
 
     function current() {
@@ -212,6 +223,7 @@
         button.addEventListener('click', () => {
           if (state.mode === mode) return;
           state.mode = mode;
+          trigger = button;
           if (paint()) emit();
         });
         switcher.append(button);
@@ -226,7 +238,10 @@
           : shortDay(day));
         chip.type = 'button';
         chip.dataset.date = day;
-        chip.addEventListener('click', () => { state.day = day; if (paint()) emit(); });
+        chip.addEventListener('click', () => {
+          if (options.busy && state.mode === 'day' && state.day === day) return;
+          state.day = day; trigger = chip; if (paint()) emit();
+        });
         dayChips.append(chip);
       }
       root.append(dayPane);
@@ -237,7 +252,9 @@
         chip.type = 'button';
         chip.dataset.preset = preset.code;
         chip.addEventListener('click', () => {
+          if (options.busy && state.mode === 'range' && state.preset === preset.code) return;
           state.preset = preset.code;
+          trigger = chip;
           Object.assign(state, presetRange(today, preset.code));
           if (paint()) emit();
         });

@@ -231,7 +231,7 @@
 .shokh-field select { width: 100%; padding: 14px; border: 1px solid #cbd5ce; border-radius: 12px; background: white; color: #163e34; font: inherit; }
 .shokh-purchase-body small { display: block; margin-top: 6px; }
 .shokh-purchase-body .shokh-secondary { margin-top: 8px; }
-button:disabled { opacity: .55; cursor: wait; }
+button:disabled { opacity: .55; cursor: not-allowed; }
 
 /* ── Сверка с макетом 3a ──────────────────────────────────────────────── */
 /* Язык, выход и «‹ Панель» в макете не нарисованы; они нужны, но не должны
@@ -271,3 +271,157 @@ button:disabled { opacity: .55; cursor: wait; }
 .shokh-purchase-body small.shokh-ok,.shokh-purchase-body small.shokh-warning{font-size:11px}
 /* Числа дней без закупа — темнее, чтобы читались на светлом круге. */
 .shokh-day-mark{color:#6d7a70}
+
+/* ═══ Отклик и ожидание (T-393, busy.js) ═════════════════════════════════
+   Общий язык — в style.css; здесь — только то, что свойственно закупу:
+   скелеты на тёмном герое, связь с iiko, ход сохранения накладной, фото. */
+
+/* Первая загрузка: скелеты в форме суммы и покупок. На зелёном — светлые. */
+.shokh-hero .rm-skel{--rm-skel-a:#ffffff1c;--rm-skel-b:#ffffff36}
+.rm-skel.shokh-skel-pocket{width:4.4em;height:.8em;margin:.15em 0;border-radius:10px}
+.shokh-balance-sub .shokh-skel-line{height:10px;margin:3.5px 0}
+#home-reported{display:flex;align-items:center;min-height:13px}
+.shokh-progress>span .shokh-skel-line{height:9px;margin:2px 0}
+.shokh-card-title .rm-skel{margin:2px 0}
+.shokh-skel-purchase .shokh-thumb{border-radius:12px}
+.shokh-skel-purchase .shokh-purchase-body{display:grid;gap:9px}
+.shokh-thumb.is-loading{background:linear-gradient(90deg,var(--rm-skel-a) 25%,var(--rm-skel-b) 40%,var(--rm-skel-a) 60%);
+  background-size:300% 100%;animation:rm-shimmer 1.3s ease-in-out infinite}
+
+/* Связь с iiko: точка-состояние, бегущая полоса по низу, пока ждём. */
+.shokh-iiko{position:relative;overflow:hidden}
+.shokh-dot{display:inline-block;width:8px;height:8px;border-radius:50%;margin-right:7px;flex:none;
+  background:#b6c4ba;align-self:center}
+.shokh-iiko .shokh-card-title{justify-content:flex-start;gap:0}
+.shokh-iiko.is-ok .shokh-dot{background:#3f8a55}
+.shokh-iiko.is-error .shokh-dot{background:var(--late)}
+.shokh-iiko.is-error #iiko-status{color:#8d3548}
+.shokh-iiko.is-loading .shokh-dot{background:var(--gold);animation:shokh-breathe 1.2s ease-in-out infinite}
+.shokh-iiko-bar{position:absolute;left:0;right:0;bottom:0;height:3px;overflow:hidden;opacity:0;transition:opacity .25s}
+.shokh-iiko.is-loading .shokh-iiko-bar{opacity:1}
+.shokh-iiko-bar::after{content:"";position:absolute;top:0;bottom:0;left:0;width:38%;border-radius:2px;
+  background:linear-gradient(90deg,#d8b97700,var(--gold) 40%,#c5a359);animation:shokh-slide 1.2s cubic-bezier(.45,.05,.55,.95) infinite}
+/* Статус в две строки и до ответа — карточка не прыгает, когда он пришёл. */
+@media(max-width:559px){#iiko-status{min-height:3em}}
+/* В узбекском кнопка шире, статус на узком телефоне — в три строки. */
+@media(max-width:379px){html[lang=uz] #iiko-status{min-height:4.5em}}
+@keyframes shokh-breathe{50%{opacity:.35;transform:scale(.8)}}
+@keyframes shokh-slide{from{transform:translateX(-100%)}to{transform:translateX(270%)}}
+
+/* «Новый закуп», пока нельзя: светлая и читаемая, подпись объясняет почему;
+   пока ждём iiko — в плюсе крутится колечко. */
+.shokh-primary:disabled{opacity:1;background:#dfe6de;color:#46564d;box-shadow:none}
+.shokh-primary:disabled small{color:#56645b}
+.shokh-primary:disabled .shokh-plus{background:#c9d3c8;color:#fff}
+.shokh-primary.is-waiting .shokh-plus{font-size:0;position:relative}
+.shokh-primary.is-waiting .shokh-plus::after{content:"";width:14px;height:14px;border-radius:50%;box-sizing:border-box;
+  border:2px solid #ffffff66;border-top-color:#fff;animation:rm-spin .8s linear infinite}
+
+/* «Далее», когда шаг не готов: нажимается и объясняет, но выглядит
+   неготовым. Сохранение — зелёная кнопка со спиннером и словами. */
+.shokh-primary[aria-disabled=true]:not(.is-saving){background:#dfe6de;color:#46564d;box-shadow:none}
+.shokh-primary.is-saving{cursor:progress;gap:10px}
+.shokh-spin{width:18px;height:18px;flex:none;border-radius:50%;box-sizing:border-box;
+  border:2px solid #ffffff4d;border-top-color:#fff;animation:rm-spin .7s linear infinite}
+.shokh-nudge{animation:shokh-nudge .34s ease-in-out}
+@keyframes shokh-nudge{20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+/* Поле, которого не хватает, коротко подсвечивается золотом. */
+.shokh-need{animation:shokh-need 1.6s ease-out}
+@keyframes shokh-need{0%,35%{box-shadow:0 0 0 4px #d8b97799;border-color:var(--gold)}}
+
+/* Над кнопками флоу: подсказка и ход сохранения — поверх контента. */
+.shokh-flow-status{position:absolute;left:12px;right:12px;bottom:calc(100% + 8px);z-index:6}
+.shokh-flow-hint{display:flex;align-items:center;gap:10px;margin:0;padding:11px 14px;border-radius:14px;
+  background:#fff8e8;border:1px solid #ead7a6;color:#5e4715;font-size:13px;font-weight:600;line-height:1.35;
+  box-shadow:0 8px 24px #143e351f}
+.shokh-flow-hint::before{content:"!";display:grid;place-items:center;width:20px;height:20px;flex:none;border-radius:50%;
+  background:var(--gold);color:var(--green);font-size:12px;font-weight:800}
+.shokh-flow-hint.is-in,.shokh-save.is-in{animation:shokh-rise .2s ease-out}
+@keyframes shokh-rise{from{opacity:0;transform:translateY(8px)}}
+.shokh-save{position:relative;overflow:hidden;display:grid;gap:9px;padding:13px 14px 15px;border-radius:16px;
+  background:#fff;border:1px solid var(--border);box-shadow:0 10px 30px #143e3529}
+.shokh-save-step{display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--ink)}
+.shokh-save-step b{margin-left:auto;font-variant-numeric:tabular-nums;color:#35624e}
+.shokh-save-step i{position:relative;width:18px;height:18px;flex:none;border-radius:50%;box-sizing:border-box}
+.shokh-save-step.is-wait{color:var(--muted-2)}
+.shokh-save-step.is-wait i{border:2px solid #dfe5da}
+.shokh-save-step.is-active i{border:2px solid #143e3524;border-top-color:var(--green);animation:rm-spin .7s linear infinite}
+.shokh-save-step.is-ok i{background:#3f8a55;animation:shokh-pop .25s ease-out}
+.shokh-save-step.is-ok i::after{content:"";position:absolute;left:6px;top:3px;width:4px;height:8px;border:solid #fff;
+  border-width:0 2px 2px 0;transform:rotate(45deg)}
+.shokh-save-step.is-error{color:#8d3548}
+.shokh-save-step.is-error i{background:var(--rm-err,#a33f2b)}
+.shokh-save-step.is-error i::after{content:"!";position:absolute;inset:0;display:grid;place-items:center;color:#fff;
+  font-size:12px;font-weight:800;font-style:normal}
+.shokh-save-slow{margin:0;font-size:12px;line-height:1.4;color:#7a6a45}
+.shokh-save-error{margin:0;font-size:12px;line-height:1.45;color:#8d3548}
+.shokh-save-error b{display:block;font-size:13px;margin-bottom:2px}
+.shokh-save-bar{position:absolute;left:0;right:0;bottom:0;height:3px;background:#eef1ea;overflow:hidden}
+.shokh-save-bar>span{display:block;height:100%;width:0;background:var(--gold);transition:width .2s ease-out}
+.shokh-save.is-waiting .shokh-save-bar>span{width:38%!important;border-radius:2px;
+  animation:shokh-slide 1.2s cubic-bezier(.45,.05,.55,.95) infinite}
+.shokh-save.is-error .shokh-save-bar{display:none}
+.shokh-save.is-error{border-color:#f0c9d2;background:#fff9fa}
+
+/* Фото покупки. На шаге товара — мерцание, пока снимок декодируется, и
+   метка «прикреплено»; на проверке — ход отправки прямо на снимке. */
+.shokh-photo-filled.is-loading{min-height:180px;border-radius:18px;
+  background:linear-gradient(90deg,var(--rm-skel-a) 25%,var(--rm-skel-b) 40%,var(--rm-skel-a) 60%);
+  background-size:300% 100%;animation:rm-shimmer 1.3s ease-in-out infinite}
+.shokh-photo-filled.is-loading img{opacity:0}
+.shokh-photo-filled img{transition:opacity .2s}
+.shokh-photo-ok{position:absolute;left:10px;top:10px;padding:6px 11px;border-radius:20px;background:#fff;
+  color:#2f6b41;font-size:12px;font-weight:650;box-shadow:0 2px 8px #0000001f}
+.shokh-photo-ok::before{content:"✓ "}
+.shokh-photo-filled:not(.is-ready) .shokh-photo-ok{display:none}
+.shokh-photo-ok.is-in{animation:shokh-pop .3s ease-out}
+.shokh-photo-error{margin:8px 0 0;font-size:12px;font-weight:600;color:var(--late);line-height:1.4}
+.shokh-photo-error.is-in{animation:shokh-nudge .34s ease-in-out}
+.shokh-summary-photo{position:relative}
+.shokh-summary-photo img{transition:filter .2s}
+.shokh-summary-photo.is-uploading img{filter:brightness(.8)}
+.shokh-upload{position:absolute;left:10px;right:10px;bottom:10px;display:flex;flex-wrap:wrap;justify-content:space-between;
+  gap:4px 10px;padding:8px 12px 10px;border-radius:12px;background:#143e35e0;color:#fff;font-size:12px;font-weight:600}
+.shokh-upload b{font-variant-numeric:tabular-nums}
+.shokh-upload i{flex-basis:100%;height:4px;border-radius:2px;background:#ffffff33;overflow:hidden}
+.shokh-upload i>span{display:block;height:100%;width:0;background:var(--gold);transition:width .2s ease-out}
+.shokh-summary-photo.is-sent .shokh-upload{padding-bottom:8px}
+.shokh-summary-photo.is-sent .shokh-upload i{display:none}
+.shokh-summary-photo.is-sent #confirm-photo-text::before{content:"✓ ";color:var(--gold)}
+
+/* Шаги флоу: новый въезжает с той стороны, куда идём. */
+.shokh-flow-body{overflow-x:clip}
+.shokh-step.is-entering{animation:shokh-step-in .22s ease-out}
+.shokh-step.is-entering.is-back{animation-name:shokh-step-back}
+@keyframes shokh-step-in{from{opacity:0;transform:translateX(18px)}}
+@keyframes shokh-step-back{from{opacity:0;transform:translateX(-18px)}}
+.shokh-chosen.is-in{animation:shokh-pop .25s ease-out}
+.shokh-bump{animation:shokh-bump .22s ease-out}
+@keyframes shokh-bump{40%{transform:scale(1.06)}}
+@keyframes shokh-pop{from{opacity:.4;transform:scale(.85)}}
+
+/* «Записано»: галочка появляется с отскоком; iiko не подтвердил —
+   янтарный «!» и кнопка проверки с золотой рамкой. */
+.shokh-done-mark.is-in{animation:shokh-done-in .5s cubic-bezier(.2,.9,.3,1.25)}
+@keyframes shokh-done-in{from{opacity:0;transform:scale(.6);box-shadow:0 0 0 0 #d8b97700,0 0 0 0 #d8b97700}}
+.is-uncertain .shokh-done-mark{border-color:#e7ab5c;color:#e7ab5c;box-shadow:0 0 0 16px #e7ab5c14,0 0 0 34px #e7ab5c09}
+.shokh-ghost.is-gold-line{border-color:var(--gold);color:var(--gold)}
+
+@media(prefers-reduced-motion:reduce){
+  .shokh-step.is-entering,.shokh-step.is-entering.is-back{animation:shokh-fade .15s ease-out}
+  .shokh-nudge,.shokh-photo-error.is-in,.shokh-bump,.shokh-done-mark.is-in,.shokh-chosen.is-in,.shokh-photo-ok.is-in{animation:none}
+  .shokh-iiko-bar::after,.shokh-save.is-waiting .shokh-save-bar>span{animation:none;width:100%!important;opacity:.7}
+  .shokh-iiko.is-loading .shokh-dot{animation:none}
+}
+@keyframes shokh-fade{from{opacity:0}}
+
+/* «Функционал» §3a: закуп — на ходу и одной рукой, поэтому каждая кнопка
+   не меньше 44 px по обеим сторонам. */
+.shokh-body .shokh-hero .lang-button{min-width:44px;min-height:44px}
+.shokh-body .shokh-logout{min-height:44px}
+.shokh-iiko-reload{min-height:44px}
+.shokh-round{width:44px;height:44px}
+.shokh-chip{min-height:44px}
+.shokh-quick-btn{height:44px}
+.shokh-mode .shokh-switch-btn{min-height:44px;min-width:64px}
+.shokh-iiko-note{margin-top:6px}

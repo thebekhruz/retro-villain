@@ -14,40 +14,12 @@ const snapshot = (extra = {}) => ({
   ...extra,
 });
 
-/* Формула повторяет серверную (cash_to_finance): наличные из iiko плюс
-   предоплаты наличными плюс прочие поступления минус расходы. */
-test('к передаче: наличные + предоплаты + поступления − расходы', () => {
-  assert.equal(logic.handover(snapshot(), '300000', '100000'),
-    4000000 + 500000 + 100000 - 300000);
-});
-
-test('передача уходит в минус, когда расходов больше наличных', () => {
-  assert.equal(logic.handover(snapshot(), '9000000', '0'), 4000000 + 500000 - 9000000);
-});
-
-/* Неполная сумма на экране хуже прочерка: пока расходы или поступления не
-   загрузились, считать нечего. */
-test('без расходов, поступлений или смены сумма не выдумывается', () => {
-  assert.equal(logic.handover(snapshot(), null, '0'), null);
-  assert.equal(logic.handover(snapshot(), '0', null), null);
-  assert.equal(logic.handover(null, '0', '0'), null);
-});
-
-test('смена без наличной оплаты считается нулём, а не пропуском', () => {
-  const noCash = snapshot({payments: [{name: 'Карта', amount: '12000000'}]});
-  assert.equal(logic.cashPayment(noCash), 0);
-  assert.equal(logic.handover(noCash, '0', '0'), 500000);
-});
-
-test('весь приход берётся из регистра, если он пришёл', () => {
-  // Регистр знает полную кассу смены, включая погашенные авансы.
-  assert.equal(logic.totalInflow(snapshot({register_received_total: '19000000'}), '250000'),
-    19000000 + 250000);
-  // Без регистра — продажи плюс новые предоплаты.
-  assert.equal(logic.totalInflow(snapshot({new_prepayment: '700000'}), '250000'),
-    18000000 + 700000 + 250000);
-  assert.equal(logic.totalInflow(null, '0'), null);
-  assert.equal(logic.totalInflow(snapshot(), null), null);
+/* «К передаче» и «Касса за день» экран не считает (Функционал §1): формула
+   одна, на сервере (till_summary). Во фронтенде её копии быть не должно. */
+test('формулы передачи во фронтенде нет — числа приходят с сервера', () => {
+  assert.equal(logic.handover, undefined);
+  assert.equal(logic.totalInflow, undefined);
+  assert.equal(logic.cashPayment, undefined);
 });
 
 const PALETTE = ['#a', '#b', '#c'];
@@ -74,8 +46,6 @@ test('инкассовый QR отличается от наличных к пе
   assert.equal(cash.name, 'Демо');
   assert.equal(collection.name, 'Наличные (Инкасса QR)');
   assert.equal(collection.isCash, false);
-  // В сумму передачи инкасса не входит: там только «Демо».
-  assert.equal(logic.handover(snapshot(), '0', '0'), 4000000 + 500000);
 });
 
 test('пустая смена не ломает состав', () => {
@@ -107,6 +77,18 @@ test('передача: нет, совпала, разошлась, записа
   assert.deepEqual(logic.handoverView({amount: '850000', source: 'cashier'}, null), {state: 'done', difference: null});
 });
 
+/* «Отменить» доступна, пока бухгалтер не подтвердил сумму (Функционал 5a). */
+test('передача подтверждена бухгалтером: отменить и переписать нельзя, недостача видна', () => {
+  const confirmed = {amount: '800000', source: 'cashier', confirmed_at: '2026-09-29T21:40:00+05:00',
+    expected_amount: '850000', shortfall: '50000'};
+  assert.deepEqual(logic.handoverView(confirmed, 850000), {state: 'confirmed', difference: null, shortfall: 50000});
+  // Кассир добавил расход после подтверждения — разница от расчёта, а не от полученного.
+  assert.deepEqual(logic.handoverView(confirmed, 840000), {state: 'confirmed', difference: -10000, shortfall: 50000});
+  // Подтверждение сильнее источника записи.
+  assert.equal(logic.handoverView({...confirmed, source: 'accountant'}, 850000).state, 'confirmed');
+  assert.equal(logic.handoverView({amount: null, source: null}, 850000).state, 'none');
+});
+
 test('сумма из поля: пробелы и запятая допустимы, мусор и ноль — нет', () => {
   assert.equal(logic.parseAmount('1 500 000'), 1500000);
   assert.equal(logic.parseAmount('120,5'), 120.5);
@@ -115,4 +97,19 @@ test('сумма из поля: пробелы и запятая допусти�
   assert.equal(logic.parseAmount('1.234'), null);
   assert.equal(logic.parseAmount('сто'), null);
   assert.equal(logic.parseAmount(''), null);
+});
+
+test('skeletonMap: a figure stays a skeleton until every part it is computed from has arrived', () => {
+  const all = logic.skeletonMap(new Set(logic.PARTS));
+  assert.ok(Object.values(all).every(Boolean));
+  const none = logic.skeletonMap([]);
+  assert.ok(Object.values(none).every(value => value === false));
+  // «К передаче» — из iiko, расходов, поступлений и выдач Шоху.
+  const onlyShokh = logic.skeletonMap(['shokh']);
+  assert.equal(onlyShokh.handover, true);
+  assert.equal(onlyShokh['expense-total'], true);
+  assert.equal(onlyShokh.revenue, false);
+  assert.equal(onlyShokh['receipt-total'], false);
+  const onlyRate = logic.skeletonMap(new Set(['rate']));
+  assert.deepEqual(Object.keys(onlyRate).filter(id => onlyRate[id]).sort(), ['usd-official', 'usd-restaurant']);
 });
