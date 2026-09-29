@@ -50,8 +50,7 @@ def money_json(summary: dict) -> dict:
 
 def attendance_payroll(request: Request, day: date, roster, exceptions, *, frozen_pay=False):
     snapshot = request.app.state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, exceptions, snapshot.rows,
-                         pay_unlinked=request.app.state.settings.check_mode)
+    rows = draft_payroll(day, roster, exceptions, snapshot.rows)
     if not frozen_pay:
         return snapshot, rows
     saved = request.app.state.accountant_finance.day_accruals(day)
@@ -128,7 +127,7 @@ def shift_rows_json(rows, accrued: dict[int, int], closed: bool, roster=()) -> l
 
     accrued — начислено ли уже (тогда сумма в строке — начисленная),
     accrual_id — по нему выдают деньги, blocker — почему начислить пока
-    нельзя: missing_rate / unlinked / unavailable (None — можно или уже начислено).
+    нельзя: missing_rate / unavailable (None — можно или уже начислено).
     manual_attendance / hikvision_registered — из реестра: по ним «Сотрудники»
     показывают переключатель «Нет в Hikvision · отмечать вручную».
     """

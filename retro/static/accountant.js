@@ -251,7 +251,7 @@ function shiftRow(row, lock) {
 
   const who = h('div', {class: 'fd-who'},
     h('div', {class: 'fd-who-line'}, h('span', {class: 'fd-who-name', text: row.name}),
-      row.noHik ? h('span', {class: 'fd-nohik', title: 'Не зарегистрирован в Hikvision — присутствие отмечается вручную', text: '⊘ без Hikvision'}) : null),
+      row.noHik ? h('span', {class: 'fd-nohik', title: 'Не зарегистрирован в Hikvision', text: '⊘ без Hikvision'}) : null),
     h('div', {class: 'fd-who-role'}, h('span', {text: row.role}), row.own ? null : h('span', {text: ' · смена ' + dm(row.day)})));
 
   const time = h('div', {class: 'fd-time'});
@@ -265,12 +265,13 @@ function shiftRow(row, lock) {
   // День раньше начала выгрузки отмечают так же, как человека без Hikvision:
   // входов не будет, и без отметки строка не начислится никогда. Пока выгрузка
   // просто отстаёт, отметку не предлагаем — данные ещё придут.
-  const markable = row.noHik || (row.status === 'unavailable' && hikvisionGap());
+  const markable = row.manualAttendance || (row.status === 'unavailable' && hikvisionGap());
   const toggleable = markable && row.own && !row.accrualId;
-  const pill = h(toggleable ? 'button' : 'span', {class: 'fd-pill ' + cls + (row.noHik ? ' is-manual' : '') + (toggleable ? ' is-toggle' : ''),
-    title: toggleable ? (row.noHik ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был'
+  const pill = h(toggleable ? 'button' : 'span', {class: 'fd-pill ' + cls + (row.manualAttendance ? ' is-manual' : '') + (toggleable ? ' is-toggle' : ''),
+    title: toggleable ? (row.manualAttendance ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был'
         : 'Данных Hikvision за этот день нет. Нажмите, чтобы отметить: был / не был')
-      : row.noHik ? 'Отмечено вручную · смена уже начислена, отметку не изменить' : 'Данные Hikvision',
+      : row.manualAttendance ? 'Отмечено вручную · смена уже начислена, отметку не изменить'
+      : row.noHik ? 'Не зарегистрирован в Hikvision' : 'Данные Hikvision',
     type: toggleable ? 'button' : null, text: label, 'data-busy-key': toggleable ? 'pill:' + dayKey(stable(row)) : null});
   if (toggleable) pill.addEventListener('click', () => run(() => write('/api/accountant/manual-attendance',
     {date: view.board.S, employee_id: row.employeeId, present: row.status !== 'manual_present'}),

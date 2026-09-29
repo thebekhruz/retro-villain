@@ -31,6 +31,30 @@ const employee = (name, extra = {}) => ({
   name, role: 'официант', status: 'on_time', first_entry: '2026-09-17T09:10:00+05:00',
   rate: '200000', payable: '200000', hikvision_registered: true, ...extra,
 });
+
+test('без Hikvision: метка и фильтр остаются, начисление и выдача доступны', () => {
+  const staff = {employees: [employee('Без устройства', {
+    employee_id: 101, status: 'unlinked', first_entry: null, hikvision_registered: false, blocker: null,
+  })]};
+  const board = logic.shiftBoard({payday: '2026-09-29', staff, accruals: [], movements: []});
+  const row = board.own[0];
+  assert.equal(row.block, null);
+  assert.equal(row.accrued, 200000);
+  assert.equal(row.status, 'unlinked');
+  assert.equal(row.time, null);
+  assert.equal(row.noHik, true);
+  assert.equal(row.manualAttendance, false);
+  assert.equal(board.handOut.length, 1);
+  assert.equal(logic.boardTabs(board.rows).find(([k]) => k === 'nohik')[2], 1);
+  assert.equal(logic.boardTabs(board.rows).find(([k]) => k === 'err')[2], 0);
+  const confirmed = logic.shiftBoard({payday: '2026-09-29', staff, movements: [], accruals: [{
+    id: 1, employee_id: 101, name: 'Без устройства', work_day: '2026-09-28',
+    status: 'unlinked', rate: '200000', amount: '200000', paid: '0', debt: '200000',
+  }]});
+  assert.equal(confirmed.own[0].noHik, true);
+  assert.equal(confirmed.own[0].block, null);
+  assert.equal(confirmed.handOut.length, 1);
+});
 const accrual = (name, day, extra = {}) => ({
   id: name.length + day.length, name, work_day: day, group: 'Обслуживание зала',
   status: 'on_time', rate: '200000', amount: '200000', paid: '0', debt: '200000', ...extra,

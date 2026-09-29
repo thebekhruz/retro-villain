@@ -664,24 +664,16 @@ def test_missing_handover_day_still_stops_a_normal_run(tmp_path):
     assert (DAY - timedelta(days=1)).isoformat() in spend.json()['detail']
 
 
-def test_check_mode_pays_people_without_a_hikvision_link(tmp_path):
-    """В режиме прогона «нет привязки» не держит начисление: ставка идёт как пришедшему."""
-    guarded = demo_client(tmp_path / 'off')
-    with guarded as client:
-        blocked = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
-    unguarded = demo_client(tmp_path / 'on', check_mode=True)
-    with unguarded as client:
-        opened = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+def test_people_without_hikvision_can_be_paid_in_both_modes(tmp_path):
+    """Нет привязки — метка, а не запрет на начисление по ставке."""
+    for mode in (False, True):
+        with demo_client(tmp_path / str(mode), check_mode=mode) as client:
+            data = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+            unlinked = [row for row in data['employees'] if row['status'] == 'unlinked']
+            assert unlinked
+            assert all(row['blocker'] is None and row['payable'] == row['rate'] for row in unlinked)
+            assert all(row['first_entry'] is None and not row['hikvision_registered'] for row in unlinked)
 
-    unlinked = [row for row in blocked['employees'] if row['status'] == 'unlinked']
-    assert unlinked, 'демо-реестр обязан содержать людей без привязки'
-    assert all(row['blocker'] == 'unlinked' and row['payable'] is None for row in unlinked)
-
-    same = {row['employee_id'] for row in unlinked}
-    after = [row for row in opened['employees'] if row['employee_id'] in same]
-    assert all(row['blocker'] is None and row['payable'] == row['rate'] for row in after)
-    # Статус не подменяем: человек по-прежнему без привязки, просто оплачен.
-    assert all(row['status'] == 'unlinked' for row in after)
 
 
 def test_check_mode_is_off_unless_asked(tmp_path, monkeypatch):

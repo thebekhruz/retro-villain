@@ -171,7 +171,8 @@
       const accrued=src.accrued===null||src.accrued===undefined?null:num(src.accrued);
       const paid=num(src.paid), debt=src.debt===null?(accrued||0):num(src.debt);
       const row={...src,accrued,paid,paidToday,paidBefore:Math.max(0,paid-paidToday),debt,
-        todayPayments:today,noHik:MANUAL.has(src.status),
+        todayPayments:today,noHik:src.noHik||src.status==='unlinked'||MANUAL.has(src.status),
+        manualAttendance:MANUAL.has(src.status),
         time:src.own?entryClock(src.entry):null,late:src.status==='late'?lateMinutes(src.entry):0};
       let kind='ok', note='';
       // Начисление не посчитать — строка заблокирована своей причиной, а
@@ -194,11 +195,11 @@
     const ownAcc=new Map(own.map(a=>[a.employee_id,a]));
     const fromAcc=a=>{const e=byId.get(a.employee_id)||{};
       return build({key:'a'+a.id,accrualId:a.id,employeeId:a.employee_id,name:a.name,
-        role:e.role||a.group||'',status:a.status,entry:e.first_entry||null,rate:a.rate,
+        role:e.role||a.group||'',status:a.status,entry:e.first_entry||null,rate:a.rate,noHik:e.hikvision_registered===false,
         accrued:a.amount,paid:a.paid,debt:a.debt,day:S,own:true});};
     const ownRows=staffRows.map(e=>ownAcc.has(e.employee_id)?fromAcc(ownAcc.get(e.employee_id))
       :build({key:'e'+e.employee_id,accrualId:null,employeeId:e.employee_id,
-        name:e.name,role:e.role,status:e.status,entry:e.first_entry,rate:e.rate,blocker:e.blocker||null,
+        name:e.name,role:e.role,status:e.status,entry:e.first_entry,rate:e.rate,blocker:e.blocker||null,noHik:e.hikvision_registered===false,
         accrued:e.payable,paid:0,debt:e.payable===null?0:e.payable,day:S,own:true}))
       .concat(own.filter(a=>!byId.has(a.employee_id)).map(fromAcc));
     const confirmed=ownRows.length>0&&ownRows.every(r=>r.accrualId);
@@ -207,7 +208,7 @@
       .sort((a,b)=>a.work_day.localeCompare(b.work_day)||a.name.localeCompare(b.name,'ru'))
       .map(a=>{const e=byId.get(a.employee_id)||{};
         return build({key:'a'+a.id,accrualId:a.id,employeeId:a.employee_id,name:a.name,
-          role:e.role||a.group||'',status:a.status,entry:null,rate:a.rate,
+          role:e.role||a.group||'',status:a.status,entry:null,rate:a.rate,noHik:e.hikvision_registered===false,
           accrued:a.amount,paid:a.paid,debt:a.debt,day:a.work_day,own:false});});
     const rows=other.concat(ownRows);
     const toPay=rows.filter(r=>r.debt>0&&r.accrued>0);

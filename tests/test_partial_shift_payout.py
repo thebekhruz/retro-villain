@@ -1,6 +1,6 @@
 """T-391: смену начисляют по людям.
 
-Сотрудник без ставки или без привязки Hikvision не запирает всю смену: кому
+Сотрудник без ставки не запирает всю смену. Без привязки Hikvision можно платить: кому
 сумму можно посчитать, тому начисляется и выдаётся сразу; остальные ждут с
 причиной и начисляются, как только их разблокировали. День закрыт целиком,
 когда начислено всем. На SQLite и на Postgres (RETRO_TEST_POSTGRES_URL).
@@ -50,10 +50,9 @@ def test_partial_confirm_pays_the_ready_ones_and_names_the_blockers(any_db):
     c = any_db
     ready, no_rate, unlinked = shift(c)
     result = confirm(c)
-    assert result['accrued'] == [ready.id]
+    assert result['accrued'] == [ready.id, unlinked.id]
     assert result['blockers'] == [
-        {'employee_id': no_rate.id, 'name': 'Лола', 'reason': 'missing_rate'},
-        {'employee_id': unlinked.id, 'name': 'Жасур', 'reason': 'unlinked'}]
+        {'employee_id': no_rate.id, 'name': 'Лола', 'reason': 'missing_rate'}]
     assert (result['confirmed'], result['partial']) == (False, True)
 
     day = day_json(c)
@@ -61,17 +60,25 @@ def test_partial_confirm_pays_the_ready_ones_and_names_the_blockers(any_db):
     assert (shown[ready.id]['accrued'], shown[ready.id]['blocker']) == (True, None)
     assert shown[ready.id]['accrual_id'] is not None
     assert (shown[no_rate.id]['accrued'], shown[no_rate.id]['blocker']) == (False, 'missing_rate')
-    assert (shown[unlinked.id]['accrued'], shown[unlinked.id]['blocker']) == (False, 'unlinked')
+    assert (shown[unlinked.id]['accrued'], shown[unlinked.id]['blocker']) == (True, None)
+    assert shown[unlinked.id]['status'] == 'unlinked'
+    assert shown[unlinked.id]['hikvision_registered'] is False
     assert (day['ledger']['payroll_confirmed'], day['ledger']['payroll_partial']) == (False, True)
-    assert (day['payroll']['accrued_count'], day['payroll']['blocked_count']) == (1, 2)
+    assert (day['payroll']['accrued_count'], day['payroll']['blocked_count']) == (2, 1)
     staff = c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
-    assert (staff['payroll_partial'], staff['accrued_count'], staff['blocked_count']) == (True, 1, 2)
+    assert (staff['payroll_partial'], staff['accrued_count'], staff['blocked_count']) == (True, 2, 1)
 
     # Начисленному выдают сразу, не дожидаясь остальных.
     cash(c, NEXT, handover='1000000', opening='0')
     paid = c.post('/api/accountant/salary-payments', json={
         'accrual_id': shown[ready.id]['accrual_id'], 'date': NEXT.isoformat(), 'amount': '150000'})
     assert paid.status_code == 201, paid.text
+    # Человеку без Hikvision тоже выдаётся зарплата при выключенном check_mode.
+    assert c.app.state.settings.check_mode is False
+    paid_unlinked = c.post('/api/accountant/salary-payments', json={
+        'accrual_id': shown[unlinked.id]['accrual_id'], 'date': NEXT.isoformat(), 'amount': '180000'})
+    assert paid_unlinked.status_code == 201, paid_unlinked.text
+    assert day_json(c, NEXT)['ledger']['cash_balance'] == '670000'
 
 
 def test_unblocked_people_are_accrued_by_the_next_confirm_until_the_day_closes(any_db):
@@ -81,17 +88,10 @@ def test_unblocked_people_are_accrued_by_the_next_confirm_until_the_day_closes(a
     # Ставку задали впервые — она действует и на ждущий день.
     assert patch_employee(c, no_rate, rate='130000').status_code == 200
     second = confirm(c)
-    assert second['accrued'] == [no_rate.id] and second['confirmed'] is False
+    assert second['accrued'] == [no_rate.id] and second['confirmed'] is True
+    assert second['blockers'] == []
     assert rows(c)[no_rate.id]['payable'] == '130000'
-
-    # Непривязанного переводят в ручную отметку прямо со смены (роль бухгалтера).
-    switched = patch_employee(c, unlinked, manual_attendance=True)
-    assert switched.status_code == 200 and switched.json()['employee']['manual_attendance'] is True
-    # До дня включения «был» не подразумевается: 0 — пока бухгалтер не отметит.
-    assert rows(c)[unlinked.id]['status'] == 'manual_absent'
-    assert mark(c, unlinked.id, DAY, True).status_code == 200
-    last = confirm(c)
-    assert last['accrued'] == [unlinked.id] and last['confirmed'] is True and last['blockers'] == []
+    assert rows(c)[unlinked.id]['status'] == 'unlinked'
     day = day_json(c)
     assert day['ledger']['payroll_confirmed'] is True and day['ledger']['payroll_partial'] is False
     assert sorted(item['amount'] for item in c.app.state.accountant_finance.accruals(DAY)
@@ -99,15 +99,12 @@ def test_unblocked_people_are_accrued_by_the_next_confirm_until_the_day_closes(a
     assert confirm(c)['already_confirmed'] is True
 
 
-def test_an_exception_unblocks_one_unlinked_person(any_db):
+def test_unlinked_person_needs_no_exception_and_closed_day_stays_closed(any_db):
     c = any_db
     ready, no_rate, unlinked = shift(c)
     confirm(c)
-    granted = c.post('/api/accountant/exceptions', json={
-        'date': DAY.isoformat(), 'employee_id': unlinked.id, 'reason': 'Работал без турникета',
-        'approver': 'Любовь'})
-    assert granted.status_code == 201, granted.text
-    assert confirm(c)['accrued'] == [unlinked.id]
+    assert rows(c)[unlinked.id]['accrued'] is True
+    assert confirm(c)['accrued'] == []
     # Закрыли день целиком — новый человек, заведённый позже, в него уже не попадёт:
     # ни исключением, ни отметкой, ни повторным подтверждением.
     patch_employee(c, no_rate, rate='130000')
@@ -152,7 +149,7 @@ def test_employee_ids_limit_who_is_accrued_now(any_db):
     result = confirm(c, employee_ids=[other.id])
     assert result['accrued'] == [other.id] and result['blockers'] == []
     assert rows(c)[ready.id]['accrued'] is False
-    assert confirm(c)['accrued'] == [ready.id]
+    assert confirm(c)['accrued'] == [ready.id, unlinked.id]
 
 
 def test_concurrent_confirms_never_accrue_twice(any_db):
@@ -222,8 +219,6 @@ def test_month_sheet_marks_partial_and_closed_days(any_db):
     people = {person['employee_id']: person for person in month['shift']}
     assert DAY.isoformat() in people[ready.id]['cells'] and no_rate.id not in people
     patch_employee(c, no_rate, rate='130000')
-    patch_employee(c, unlinked, manual_attendance=True)
-    mark(c, unlinked.id, DAY, True)
     confirm(c)
     month = month_json(c)
     assert DAY.isoformat() in month['confirmed_days'] and DAY.isoformat() not in month['partial_days']

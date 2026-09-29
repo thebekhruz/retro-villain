@@ -805,6 +805,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Команда сегодня': "Bugungi jamoa",
   'опоздали': "kechikdi",
   'не пришли': "kelmadi",
+  'Не зарегистрирован в Hikvision': "Hikvision'da ro'yxatdan o'tmagan",
   'без Hikvision': "Hikvision'siz",
   'Меню': "Menyu",
   'Найти блюдо: плов, манты…': "Taomni topish: palov, manti…",
