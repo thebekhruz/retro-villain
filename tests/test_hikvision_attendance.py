@@ -1,4 +1,4 @@
-from datetime import date, datetime
+from datetime import date, datetime, time
 from decimal import Decimal
 from zoneinfo import ZoneInfo
 
@@ -219,3 +219,16 @@ def test_sync_failure_preserves_cursor_and_reports_safe_code(tmp_path):
     assert state.cursor_at == first
     assert state.last_success_at == first
     assert state.last_error_code == 'timeout'
+
+
+def test_paid_attendance_keeps_real_entry_and_lateness(tmp_path):
+    store = AttendanceStore(tmp_path / 'attendance.sqlite3')
+    person = linked_employee(1, 'Сотрудник', '10')
+    at = datetime.combine(DAY, time(10, 35), TZ)
+    from retro.modules.accountant.hikvision import FirstEntry
+    store.first_entries = lambda day: {person.id: FirstEntry(person.id, '10', at)}
+    service = AttendanceService(store, source='entry', enabled=True, poll_seconds=30,
+                                paid_employees=lambda day: {person.id})
+    row = service.snapshot(DAY, [person], now=at).rows[0]
+    assert row.status == 'late'
+    assert row.occurred_at == at
