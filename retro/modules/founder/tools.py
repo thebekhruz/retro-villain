@@ -11,14 +11,18 @@ from types import SimpleNamespace
 from fastapi import HTTPException
 
 from retro.integrations.iiko import IIKO_DETAIL_DIMENSIONS
-from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
+from retro.modules.cashier.till import shokh_gives, shokh_total, usd_balance
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
 
 
+# manual_present / manual_absent — отметка бухгалтера у сотрудников без
+# Hikvision (охрана, уборка): «был» по умолчанию, «не был» — вручную за день.
 ATTENDANCE_STATUSES = {
-    'all', 'arrived', 'on_time', 'late', 'missing', 'unlinked', 'unavailable',
+    'all', 'arrived', 'absent', 'on_time', 'late', 'missing', 'unlinked', 'unavailable',
+    'manual_present', 'manual_absent',
 }
 
 TOOL_DEFINITIONS = (
@@ -71,7 +75,10 @@ TOOL_DEFINITIONS = (
             'Получить фактический первый вход сотрудников из Hikvision за конкретный день. '
             'Поддерживает опоздавших, пришедших вовремя, всех пришедших, отсутствующих, '
             'непривязанных и сотрудников с недоступным статусом. Никогда не считай '
-            'unavailable или unlinked отсутствием.'
+            'unavailable или unlinked отсутствием. manual_present и manual_absent — '
+            'ручная отметка бухгалтера для сотрудников без Hikvision, а не проход через '
+            'турникет. arrived — все пришедшие (on_time, late, manual_present), absent — '
+            'все не пришедшие (missing, manual_absent).'
         ),
         'input_schema': {
             'type': 'object',
@@ -278,14 +285,20 @@ class FounderChatTools:
             usd_rate = {'error': str(error)}
         expenses = await asyncio.to_thread(self.app.state.expenses.list, day)
         receipts = await asyncio.to_thread(self.app.state.expenses.list_receipts, day)
+        finance = self.app.state.accountant_finance
+        gives = await asyncio.to_thread(shokh_gives, finance, day)
         return {
             **result,
             'expenses': [item.json() for item in expenses],
             'expense_total': str(sum((item.amount for item in expenses), 0)),
+            # Наличные Шоху прямо из кассы: к передаче их уже нет, как и расходов.
+            'shokh_gives_from_till': gives,
+            'shokh_from_till_total': str(shokh_total(gives)),
             'receipts': [item.json() for item in receipts],
             'receipt_total': str(sum((item.amount for item in receipts), 0)),
             'usd_rate': usd_rate,
-            'usd_balance': await asyncio.to_thread(self.app.state.usd_rates.balance, day),
+            # Доллары кассира «в сейф» за день и сколько всего в сейфе.
+            'usd_balance': await asyncio.to_thread(usd_balance, finance, day),
         }
 
     async def _accounting_day(self, arguments):
@@ -324,17 +337,22 @@ class FounderChatTools:
 
         roster = self.app.state.accountant_roster.list()
         snapshot = self.app.state.attendance.snapshot(day, roster)
-        rows = draft_payroll(day, roster, set(), snapshot.rows)
+        rows = draft_payroll(day, roster, set(), snapshot.rows,
+                             pay_unlinked=self.app.state.settings.check_mode)
         counts = {
             status: sum(row.status == status for row in rows)
-            for status in ('on_time', 'late', 'missing', 'unlinked', 'unavailable')
+            for status in ('on_time', 'late', 'missing', 'unlinked', 'unavailable',
+                           'manual_present', 'manual_absent')
         }
-        counts['arrived'] = counts['on_time'] + counts['late']
+        counts['arrived'] = sum(row.status in PRESENT_STATUSES for row in rows)
+        counts['absent'] = sum(row.status in ABSENT_STATUSES for row in rows)
         counts['roster'] = len(rows)
         if selected_status == 'all':
             selected = rows
         elif selected_status == 'arrived':
-            selected = [row for row in rows if row.status in ('on_time', 'late')]
+            selected = [row for row in rows if row.status in PRESENT_STATUSES]
+        elif selected_status == 'absent':
+            selected = [row for row in rows if row.status in ABSENT_STATUSES]
         else:
             selected = [row for row in rows if row.status == selected_status]
         by_id = {employee.id: employee for employee in roster}

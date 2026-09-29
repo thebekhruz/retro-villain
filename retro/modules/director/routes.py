@@ -2,14 +2,14 @@ import asyncio
 from datetime import date, datetime, timezone
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
-from retro.modules.accountant.payroll import draft_payroll
+from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.accountant.roster import GROUPS, UNASSIGNED_GROUP, group_for
 from retro.modules.director.models import resolve_period
 from retro.modules.director.tools import DirectorChatTools
@@ -40,8 +40,10 @@ def attendance(request: Request, date: date | None = None):
         raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
     roster = request.app.state.accountant_roster.list(day)
     snapshot = request.app.state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, set(), snapshot.rows)
-    arrived = [row for row in rows if row.status in ('on_time', 'late')]
+    rows = draft_payroll(day, roster, set(), snapshot.rows,
+                         pay_unlinked=request.app.state.settings.check_mode)
+    # Ручная отметка «был / не был» считается наравне с проходом Hikvision.
+    arrived = [row for row in rows if row.status in PRESENT_STATUSES]
     late = [row for row in rows if row.status == 'late']
     return {
         'demo': False,
@@ -51,7 +53,7 @@ def attendance(request: Request, date: date | None = None):
         'roster_count': len(rows),
         'arrived_count': len(arrived),
         'late_count': len(late),
-        'missing_count': sum(row.status == 'missing' for row in rows),
+        'missing_count': sum(row.status in ABSENT_STATUSES for row in rows),
         'unavailable_count': sum(row.status == 'unavailable' for row in rows),
         'employees': [dict(employee_id=row.employee_id, name=row.name, role=row.role,
                            group=row.group_name, status=row.status,
@@ -107,6 +109,38 @@ async def report_for_period(request: Request, start: date | None = None, end: da
 @router.get('/reports')
 def reports(request: Request):
     return {'reports': request.app.state.director_store.list_metadata()}
+
+
+# ── Меню (справочник, не продажи) ───────────────────────────────────────────
+# Отчёт продаж показывает только то, что купили; справочник — всё меню целиком,
+# включая позиции, которых за период никто не заказал. Он лежит в нашей базе и
+# обновляется раз в неделю, поэтому здесь нет ни одного запроса в iiko.
+
+@router.get('/menu')
+def menu(request: Request, scope: Literal['menu', 'all'] = 'menu',
+         query: str = Query('', max_length=80), group: str = Query('', max_length=120),
+         missing: bool = False, limit: int = Query(2000, ge=1, le=10000)):
+    store = request.app.state.menu_store
+    items = store.items(scope=scope, include_missing=missing, query=query.strip(),
+                        group=group.strip(), limit=limit)
+    return dict(source='iiko · номенклатура', scope=scope, items=items,
+                shown=len(items), **store.status())
+
+
+@router.post('/menu/refresh')
+async def refresh_menu(request: Request):
+    """Внеочередная загрузка меню. Недельный срок при этом отсчитывается заново."""
+    sync = request.app.state.menu_sync
+    if sync is None:
+        raise HTTPException(503, 'Подключение iiko не настроено. Меню обновить неоткуда.')
+    if sync.lock.locked():
+        raise HTTPException(429, 'Меню уже обновляется. Подождите.')
+    try:
+        return await sync.run_once(force=True)
+    except DataError as error:
+        log_safe_failure('director-route', error, operation='refresh_menu',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
 
 
 @router.get('/chat')
@@ -227,16 +261,19 @@ def team(request: Request, date: date | None = None):
     state = request.app.state
     roster = state.accountant_roster.list(day)
     snapshot = state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows)
+    rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows,
+                         pay_unlinked=state.settings.check_mode)
     by_id = {employee.id: employee for employee in roster}
     shift = [dict(row.json(), manual_attendance=by_id[row.employee_id].manual_attendance,
+                  manual_since=(by_id[row.employee_id].manual_since.isoformat()
+                                if by_id[row.employee_id].manual_since else None),
                   hikvision_registered=by_id[row.employee_id].hikvision_id is not None)
              for row in rows]
     return dict(demo=False, date=day.isoformat(), attendance=snapshot.health,
                 shift=shift, monthly=[row.json() for row in state.accountant_roster.list_monthly()],
                 roles=sorted(set(GROUPS) | {'повар', 'кондитер'}),
                 counts=dict(late=sum(row['status'] == 'late' for row in shift),
-                            missing=sum(row['status'] == 'missing' for row in shift),
+                            missing=sum(row['status'] in ABSENT_STATUSES for row in shift),
                             no_hikvision=sum(not row['hikvision_registered'] for row in shift)))
 
 

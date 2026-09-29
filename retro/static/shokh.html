@@ -25,7 +25,6 @@
           <strong>Салом, Шох</strong>
           <span id="home-date">Закуп</span>
         </div>
-        <span class="shokh-level-chip">Ур. <b id="home-level">—</b></span>
       </div>
       <!-- Закуп ведёт местный сотрудник, поэтому язык и выход — на своей строке,
            а не втиснуты в приветствие. -->
@@ -40,6 +39,7 @@
         <span>На руках</span>
         <strong id="home-pocket" class="rm-num">—</strong>
         <small id="home-pocket-note">сум</small>
+        <p id="home-pocket-sub" class="shokh-balance-sub"></p>
       </div>
       <div class="shokh-progress">
         <span id="home-reported">Отчитались за — денег на руках</span>
@@ -48,19 +48,18 @@
     </header>
 
     <div class="shokh-body-scroll">
-      <article class="rm-phone-card shokh-level">
-        <div class="shokh-level-head"><strong id="home-level-title">—</strong><span id="home-xp">—</span></div>
-        <div class="rm-bar is-gold"><span id="home-xp-bar" style="width:0%"></span></div>
-        <p id="home-xp-next" class="shokh-note"></p>
-        <div class="shokh-week-row">
-          <div id="home-week" class="shokh-week"></div>
-          <div class="shokh-streak"><strong id="home-streak">—</strong><span>без пропусков</span></div>
-        </div>
+      <!-- В макете этой карточки нет: без справочников iiko закуп не начать,
+           поэтому связь с iiko — одной строкой, а не отдельным блоком. -->
+      <article class="rm-phone-card shokh-iiko">
+        <div><strong class="shokh-card-title">Связь с iiko</strong>
+        <p id="iiko-status" class="shokh-note" role="status">Загружаем справочники…</p></div>
+        <button id="reload-data" class="shokh-secondary shokh-iiko-reload" type="button">Обновить данные</button>
       </article>
-
-      <article class="rm-phone-card">
-        <strong class="shokh-card-title">Задания на сегодня</strong>
-        <div id="home-quests" class="shokh-quests"></div>
+      <!-- Макет 3a: что бухгалтер сегодня оплатил поставщикам переводом —
+           Шох не должен платить за это наличными. Показываем только когда есть. -->
+      <article class="rm-phone-card shokh-transfers" id="home-transfers-card" hidden>
+        <strong class="shokh-transfers-title">Оплачено переводом — наличными не платить</strong>
+        <div id="home-transfers"></div>
       </article>
 
       <article class="rm-phone-card" id="home-pending-card" hidden>
@@ -69,15 +68,15 @@
       </article>
 
       <article class="rm-phone-card">
-        <strong class="shokh-card-title">Покупки за день <span id="home-spent" class="shokh-spent"></span></strong>
+        <strong id="home-purchases-title" class="shokh-card-title">Сегодня покупок нет</strong>
         <div id="home-purchases" class="shokh-purchases"></div>
       </article>
     </div>
 
     <div class="shokh-cta">
-      <button id="start-purchase" class="shokh-primary" type="button">
+      <button id="start-purchase" disabled class="shokh-primary" type="button">
         <span class="shokh-plus" aria-hidden="true">+</span>
-        <span><b>Новый закуп</b><small id="cta-note">Уложитесь в 15 минут — +50 XP</small></span>
+        <span><b>Новый закуп</b><small>Точка, товар, фото и цена</small></span>
       </button>
     </div>
   </section>
@@ -95,16 +94,22 @@
       <!-- Шаг 1: точка -->
       <div id="step-point" class="shokh-step">
         <h1>Где закупаете?</h1>
-        <p class="shokh-note">Нажмите на точку — сразу перейдём к товару</p>
+        <p class="shokh-note">Выберите поставщика и склад для приходной накладной iiko.</p>
+        <label class="shokh-field"><span>Поставщик iiko</span>
+          <select id="iiko-supplier" required></select>
+        </label>
+        <label class="shokh-field"><span>Склад поступления</span>
+          <select id="iiko-storage" required></select>
+        </label>
         <div id="point-list" class="shokh-points"></div>
-        <label class="shokh-field"><span>Другая точка</span>
+        <label class="shokh-field"><span>Место закупа (необязательно)</span>
           <input id="point-other" type="text" maxlength="80" placeholder="Название точки">
         </label>
       </div>
 
       <!-- Шаг 2: товар и фото -->
       <div id="step-item" class="shokh-step" hidden>
-        <button id="item-back-point" class="shokh-chip" type="button"><span id="item-point-label">—</span> · сменить</button>
+        <button id="item-back-point" class="shokh-chip" type="button"><span id="item-point-label" data-i18n="off">—</span> · сменить</button>
         <h1>Что купили?</h1>
         <input id="item-search" type="search" maxlength="120" placeholder="Поиск: помидоры, лук, мясо…" class="shokh-search">
         <p id="item-chosen" class="shokh-chosen" hidden></p>
@@ -118,7 +123,6 @@
               <svg viewBox="0 0 24 24"><path d="M4 8h3l2-3h6l2 3h3v11H4z"></path><circle cx="12" cy="13" r="3.5"></circle></svg>
             </span>
             <span><b>Сфотографируйте товар или чек</b><small>Бухгалтер увидит фото рядом с покупкой</small></span>
-            <span class="shokh-xp-tag">+10 XP</span>
           </div>
           <div id="photo-filled" class="shokh-photo-filled" hidden>
             <img id="photo-preview" alt="Фото покупки">
@@ -129,7 +133,7 @@
 
       <!-- Шаг 3: количество и цена -->
       <div id="step-amount" class="shokh-step" hidden>
-        <div class="shokh-step-top"><span id="amount-point">—</span><h1 id="amount-item">—</h1></div>
+        <div class="shokh-step-top"><span id="amount-point" data-i18n="off">—</span><h1 id="amount-item" data-i18n="off">—</h1></div>
         <article class="rm-phone-card">
           <div class="shokh-row-head"><span>Сколько</span><div id="unit-switch" class="shokh-switch"></div></div>
           <div class="shokh-stepper">
@@ -140,8 +144,14 @@
           <div id="qty-quick" class="shokh-quick"></div>
         </article>
         <article class="rm-phone-card">
-          <div class="shokh-row-head"><span>Цена за единицу</span><span id="usual-price" class="shokh-note"></span></div>
-          <div class="shokh-price"><input id="price-input" type="text" inputmode="numeric" placeholder="0" aria-label="Цена"><span>сум</span></div>
+          <!-- Как в макете: «Цена [за 1 кг | за всё]». «За всё» — вводят сумму
+               покупки, цену за единицу считает экран так, как её примет сервер. -->
+          <div class="shokh-row-head"><span>Цена <small class="shokh-vat">с НДС</small></span>
+            <div id="price-mode" class="shokh-switch shokh-mode" role="group" aria-label="Как ввести цену">
+              <button id="price-mode-unit" type="button" class="shokh-switch-btn is-on" data-mode="unit" aria-pressed="true">за 1 кг</button><button type="button" class="shokh-switch-btn" data-mode="total" aria-pressed="false">за всё</button>
+            </div></div>
+          <div class="shokh-price"><input id="price-input" type="text" inputmode="decimal" placeholder="0" aria-label="Цена" data-money-hint="off"><span>сум</span></div>
+          <p id="price-derived" class="shokh-price-derived" hidden></p>
           <p id="price-hint" class="shokh-price-hint"></p>
         </article>
         <article class="rm-phone-card is-dark">
@@ -155,15 +165,15 @@
         <h1>Всё верно?</h1>
         <article class="rm-phone-card shokh-summary">
           <img id="confirm-photo" alt="Фото покупки" hidden>
-          <div class="shokh-summary-row"><span>Точка</span><strong id="confirm-point">—</strong></div>
-          <div class="shokh-summary-row"><span>Товар</span><strong id="confirm-item">—</strong></div>
+          <div class="shokh-summary-row"><span>Точка</span><strong id="confirm-point" data-i18n="off">—</strong></div>
+          <div class="shokh-summary-row"><span>Поставщик / склад</span><strong id="confirm-iiko" data-i18n="off">—</strong></div>
+          <div class="shokh-summary-row"><span>Товар</span><strong id="confirm-item" data-i18n="off">—</strong></div>
           <div class="shokh-summary-row"><span>Расчёт</span><strong id="confirm-formula">—</strong></div>
           <div class="shokh-summary-row is-total"><span>Итого</span><strong id="confirm-total" class="rm-num">—</strong></div>
         </article>
         <article class="rm-phone-card shokh-after">
           <span>На руках после</span><strong id="confirm-after" class="rm-num">—</strong>
         </article>
-        <div id="confirm-xp" class="shokh-xp-row"></div>
         <p id="confirm-warning" class="shokh-warning"></p>
       </div>
     </div>
@@ -178,10 +188,9 @@
   <section id="screen-done" class="shokh-screen is-dark" hidden>
     <div class="shokh-done">
       <span class="shokh-done-mark" aria-hidden="true">✓</span>
-      <strong class="shokh-done-title">Записано!</strong>
+      <strong id="done-title" class="shokh-done-title">Записано!</strong>
+      <p id="done-iiko" role="status"></p>
       <span id="done-item" class="shokh-done-item">—</span>
-      <span id="done-xp" class="shokh-done-xp">—</span>
-      <div id="done-parts" class="shokh-done-parts"></div>
       <div class="shokh-done-pocket"><span>На руках<small id="done-before"></small></span><strong id="done-pocket" class="rm-num">—</strong></div>
       <p id="done-trip" class="shokh-note"></p>
       <div class="shokh-done-actions">
@@ -194,20 +203,14 @@
   <!-- ── Итог закупа ─────────────────────────────────────────────────── -->
   <section id="screen-summary" class="shokh-screen" hidden>
     <div class="shokh-body-scroll shokh-summary-screen">
-      <div><p class="eyebrow">ЗАКУП ЗАВЕРШЁН</p><h1 class="shokh-h1">Отличная работа</h1></div>
+      <div><p class="eyebrow">ЗАКУП ЗАВЕРШЁН</p><h1 class="shokh-h1">Итог закупа</h1></div>
       <article class="rm-phone-card shokh-time">
-        <div><span>Время закупа</span><div class="shokh-time-value"><strong id="sum-time" class="rm-num">—</strong><small id="sum-target">из 15:00</small></div></div>
-        <span id="sum-badge" class="shokh-badge">—</span>
+        <div><span>Время закупа</span><div class="shokh-time-value"><strong id="sum-time" class="rm-num">—</strong></div></div>
       </article>
       <div class="shokh-sum-grid">
         <div class="rm-phone-card"><span>Товаров</span><strong id="sum-count">—</strong></div>
         <div class="rm-phone-card"><span>Потрачено</span><strong id="sum-total" class="rm-num">—</strong></div>
-        <div class="rm-phone-card is-gold"><span>Опыт</span><strong id="sum-xp">—</strong></div>
       </div>
-      <article class="rm-phone-card">
-        <div class="shokh-level-head"><strong id="sum-level">—</strong><span id="sum-xp-text">—</span></div>
-        <div class="rm-bar is-gold"><span id="sum-xp-bar" style="width:0%"></span></div>
-      </article>
       <article class="rm-phone-card"><div id="sum-list" class="shokh-purchases"></div></article>
       <button id="summary-home" class="shokh-primary is-flat" type="button">На главную</button>
     </div>

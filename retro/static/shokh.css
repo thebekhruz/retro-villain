@@ -20,17 +20,16 @@
   background:var(--gold);color:var(--green);font-weight:700;font-size:18px}
 .shokh-hello{flex:1;min-width:0}
 .shokh-hello strong{display:block;font-size:17px;font-weight:600}
-.shokh-hello span{display:block;font-size:12px;color:#a9bfb1;margin-top:2px;
-  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.shokh-level-chip{padding:6px 11px;border-radius:20px;background:#ffffff14;
-  border:1px solid #d8b97766;color:#e8cf95;font-size:12px;font-weight:650;white-space:nowrap}
+.shokh-hello span{display:block;font-size:12px;color:#a9bfb1;margin-top:2px;overflow-wrap:anywhere}
 .shokh-logout{border-color:#ffffff33;background:#ffffff14;color:#e9f0e8;min-height:32px;padding:6px 10px}
 .shokh-logout:hover:not(:disabled){background:#ffffff22}
 .shokh-back{display:inline-flex;align-items:center;margin-right:auto;text-decoration:none}
-.shokh-balance{margin-top:22px}
-.shokh-balance>span{font-size:12px;color:#a9bfb1}
-.shokh-balance>strong{display:block;font-size:40px;font-weight:650;letter-spacing:-1.5px;margin-top:4px}
-.shokh-balance>small{font-size:12px;color:#c5d3c9}
+.shokh-balance{margin-top:22px;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px}
+.shokh-balance>span{flex-basis:100%;font-size:12px;color:#a9bfb1}
+.shokh-balance>strong{font-size:clamp(34px,11vw,44px);font-weight:650;letter-spacing:-1.5px;margin-top:4px;line-height:1.1}
+.shokh-balance>small{font-size:14px;color:#c5d3c9}
+.shokh-balance-sub{flex-basis:100%;margin:6px 0 0;font-size:12px;color:#c5d3c9;line-height:1.45}
+.shokh-balance-sub:empty{display:none}
 .shokh-progress{margin-top:16px}
 .shokh-progress>span{display:block;font-size:11px;color:#c5d3c9;margin-bottom:6px}
 .shokh-progress .rm-bar{height:8px;border-radius:4px;background:#ffffff1a}
@@ -41,41 +40,6 @@
 .shokh-card-title{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
   font-size:15px;font-weight:600;margin-bottom:4px}
 .shokh-spent{font-size:12px;font-weight:500;color:var(--muted-2)}
-.rm-bar.is-gold{background:#f1ecdc;height:8px;border-radius:4px}
-.rm-bar.is-gold>span{background:var(--gold);transition:width .6s}
-.shokh-level-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
-  margin-bottom:10px}
-.shokh-level-head strong{font-size:15px;font-weight:600}
-.shokh-level-head span{font-size:11px;color:var(--warn);font-weight:650}
-.shokh-level .shokh-note{margin-top:6px}
-.shokh-week-row{display:flex;justify-content:space-between;align-items:center;gap:10px;
-  margin-top:14px;padding-top:12px;border-top:1px solid #eef1ea}
-.shokh-week{display:flex;gap:5px}
-.shokh-day{display:flex;flex-direction:column;align-items:center;gap:3px}
-.shokh-day-mark{display:grid;place-items:center;width:28px;height:28px;border-radius:50%;
-  font-size:11px;font-weight:650;background:#f1f3ee;color:#9da79d;border:1.5px solid transparent}
-.shokh-day.is-active .shokh-day-mark{background:#eaf1e6;color:var(--ok);border-color:#c7ddc9}
-.shokh-day.is-today .shokh-day-mark{border-color:var(--gold)}
-.shokh-day small{font-size:9px;color:var(--muted-3)}
-.shokh-streak{text-align:right}
-.shokh-streak strong{display:block;font-size:15px;font-weight:650;color:var(--warn);white-space:nowrap}
-.shokh-streak span{font-size:10px;color:var(--muted-3)}
-
-.shokh-quests{display:grid}
-.shokh-quest{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #eef1ea}
-.shokh-quest:first-child{border-top:0}
-.shokh-quest-mark{display:grid;place-items:center;width:26px;height:26px;flex:none;border-radius:50%;
-  border:1.5px solid #dbe3d8;color:#fff;font-size:12px}
-.shokh-quest.is-done .shokh-quest-mark{background:var(--ok);border-color:var(--ok)}
-.shokh-quest-body{flex:1;min-width:0}
-.shokh-quest-title{font-size:13px;font-weight:600}
-.shokh-quest-meter{display:flex;align-items:center;gap:8px;margin-top:5px}
-.shokh-quest-meter .rm-bar{flex:1;height:4px;background:#eef1ea}
-.shokh-quest-meter .rm-bar>span{background:var(--gold)}
-.shokh-quest.is-done .rm-bar>span{background:var(--ok)}
-.shokh-quest-meter small{font-size:10px;color:var(--muted-3);white-space:nowrap}
-.shokh-xp-tag{padding:4px 8px;border-radius:8px;background:var(--warn-bg);color:var(--warn);
-  font-size:10px;font-weight:700;white-space:nowrap}
 
 .shokh-purchases{display:grid}
 .shokh-purchase{display:flex;align-items:center;gap:12px;padding:10px 0;border-top:1px solid #eef1ea}
@@ -117,7 +81,6 @@
 .shokh-step-label b{color:var(--ink);font-weight:600}
 .shokh-timer{padding:8px 11px;border-radius:20px;background:#eaf1e6;color:#35624e;
   font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
-.shokh-timer.is-late{background:var(--late-bg);color:var(--late)}
 .shokh-segments{display:flex;gap:5px;padding:0 16px 12px;background:var(--phone-bg);
   position:sticky;top:64px;z-index:4}
 .shokh-segment{flex:1;height:5px;border-radius:3px;background:#dfe5da;transition:background .3s}
@@ -150,6 +113,7 @@
 .shokh-point-mark{display:grid;place-items:center;width:54px;height:54px;border-radius:18px;
   background:#edf2e9;color:var(--green);font-size:18px;font-weight:750}
 .shokh-point-name{font-size:17px;font-weight:650;overflow-wrap:anywhere}
+.shokh-point-name small{display:block;margin-top:4px;font-size:11px;font-weight:400;color:var(--muted-2)}
 .shokh-items{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 /* Пустая история — подпись на всю строку, а не в одну колонку из двух. */
 .shokh-items>.shokh-note{grid-column:1/-1;margin:0}
@@ -219,7 +183,6 @@
 .shokh-after span{color:var(--muted-2)}
 .shokh-after strong{font-size:18px;font-weight:650}
 .shokh-after strong.is-negative{color:var(--late)}
-.shokh-xp-row{display:flex;flex-wrap:wrap;gap:6px}
 .shokh-warning{margin:0;font-size:12px;color:#b0663a;line-height:1.5;min-height:16px}
 .shokh-flow-nav{position:sticky;bottom:0;display:flex;gap:10px;
   padding:12px 16px calc(16px + env(safe-area-inset-bottom));
@@ -234,9 +197,6 @@
   color:var(--gold);font-size:54px}
 .shokh-done-title{font-size:30px;font-weight:650;letter-spacing:-.8px;margin-top:38px}
 .shokh-done-item{font-size:14px;color:#c5d3c9;margin-top:6px}
-.shokh-done-xp{font-size:42px;font-weight:700;color:#e8cf95;margin-top:20px;letter-spacing:-1px}
-.shokh-done-parts{display:flex;flex-wrap:wrap;justify-content:center;gap:6px;margin-top:10px}
-.shokh-done-parts .shokh-xp-tag{background:#ffffff14;color:#e8cf95}
 .shokh-done-pocket{width:100%;margin-top:24px;padding:16px;border-radius:18px;background:#ffffff0f;
   border:1px solid #ffffff1a;display:flex;justify-content:space-between;align-items:center;gap:12px}
 .shokh-done-pocket span{font-size:12px;color:#c5d3c9;text-align:left}
@@ -251,16 +211,10 @@
 .shokh-time span{font-size:12px;color:var(--muted-2)}
 .shokh-time-value{display:flex;align-items:baseline;gap:6px;margin-top:4px}
 .shokh-time-value strong{font-size:34px;font-weight:650;letter-spacing:-1px}
-.shokh-time-value small{font-size:13px;color:var(--muted-3)}
-.shokh-badge{padding:7px 10px;border-radius:12px;font-size:11px;font-weight:700;text-align:center;
-  max-width:130px;background:var(--late-bg);color:var(--late)}
-.shokh-badge.is-good{background:var(--ok-bg);color:var(--ok)}
-.shokh-sum-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}
+.shokh-sum-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
 .shokh-sum-grid .rm-phone-card{padding:12px}
 .shokh-sum-grid span{font-size:11px;color:var(--muted-2)}
 .shokh-sum-grid strong{display:block;font-size:20px;font-weight:650;margin-top:4px;overflow-wrap:anywhere}
-.shokh-sum-grid .is-gold{background:var(--warn-bg)}
-.shokh-sum-grid .is-gold span,.shokh-sum-grid .is-gold strong{color:var(--warn)}
 
 @media(min-width:560px){
   .shokh-points{grid-template-columns:repeat(3,1fr)}
@@ -271,5 +225,49 @@
 .shokh-hero-actions{display:flex;align-items:center;justify-content:flex-end;gap:10px;margin-top:12px}
 .shokh-hero-actions .lang-switch{display:flex;gap:2px;padding:3px;border-radius:9px;background:#ffffff14}
 .shokh-hero-actions .lang-button{border:0;border-radius:7px;background:transparent;color:#a9bfb1;
-  min-height:32px;padding:6px 10px;font-size:11px;font-weight:600}
+  min-height:36px;min-width:40px;padding:6px 10px;font-size:11px;font-weight:600}
 .shokh-hero-actions .lang-button[aria-pressed=true]{background:#ffffff1f;color:#fff}
+
+.shokh-field select { width: 100%; padding: 14px; border: 1px solid #cbd5ce; border-radius: 12px; background: white; color: #163e34; font: inherit; }
+.shokh-purchase-body small { display: block; margin-top: 6px; }
+.shokh-purchase-body .shokh-secondary { margin-top: 8px; }
+button:disabled { opacity: .55; cursor: wait; }
+
+/* ── Сверка с макетом 3a ──────────────────────────────────────────────── */
+/* Язык, выход и «‹ Панель» в макете не нарисованы; они нужны, но не должны
+   спорить с суммой: тонкие кнопки 40 px под палец, без плашек. */
+.shokh-hero-actions{margin-top:14px;gap:8px}
+.shokh-hero-actions .shokh-logout{min-height:40px;padding:6px 12px;background:transparent;font-size:12px}
+.shokh-hero-actions .lang-switch{padding:2px}
+/* Связь с iiko — строкой: статус слева, обновление справа. */
+.shokh-iiko{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;padding-bottom:12px}
+.shokh-iiko>div{min-width:0}
+.shokh-iiko .shokh-card-title{font-size:13px;margin-bottom:2px}
+.shokh-iiko .shokh-note{font-size:11px}
+.shokh-iiko-reload{min-width:0;min-height:40px;border-radius:12px;padding:0 12px;font-size:12px;flex:none}
+/* Кнопка «Новый закуп»: плюс и подписи слева, как в макете. */
+.shokh-cta .shokh-primary{justify-content:flex-start;padding:0 20px;text-align:left}
+/* Единица — тёмная плашка, режим цены — белая с тенью, как в макете 3a. */
+#unit-switch .shokh-switch-btn.is-on{background:var(--green);color:#fff;box-shadow:none}
+.shokh-mode .shokh-switch-btn{min-height:32px}
+.shokh-vat{font-size:11px;font-weight:500;color:var(--muted-3)}
+.shokh-price-derived{margin:8px 0 0;font-size:12px;font-weight:550;color:var(--ink-2);line-height:1.45}
+.shokh-price-derived.is-adjusted{color:#b0663a}
+.shokh-price-hint.is-error{color:var(--late)}
+/* Перечисления поставщикам за сегодня — зелёная плашка из макета 3a. */
+.shokh-transfers{background:#eaf1e6;border-radius:20px;padding:14px 16px}
+.shokh-transfers-title{display:block;font-size:12px;font-weight:650;color:#285140}
+.shokh-transfer{margin-top:8px;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.shokh-transfer small{display:block;margin-top:2px;font-size:11px;font-weight:400;color:#607368}
+.shokh-warning>span{display:block}
+.shokh-warning>span+span{margin-top:6px}
+/* Под палец (≥ 40 точек): смена точки, режим цены, язык; поле цены выше. */
+.shokh-chip{min-height:40px}
+.shokh-mode .shokh-switch-btn{min-height:40px}
+.shokh-hero-actions .lang-button{min-height:40px}
+.shokh-price input{min-height:44px}
+#unit-switch .shokh-switch-btn{display:inline-grid;place-items:center;cursor:default}
+/* Номер накладной iiko — наша подпись, не из макета: читаемый размер. */
+.shokh-purchase-body small.shokh-ok,.shokh-purchase-body small.shokh-warning{font-size:11px}
+/* Числа дней без закупа — темнее, чтобы читались на светлом круге. */
+.shokh-day-mark{color:#6d7a70}

@@ -109,14 +109,59 @@ def test_incomplete_source_is_unavailable_and_payroll_confirmation_is_blocked(tm
         day = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         confirmation = client.post('/api/accountant/payroll/confirm', json={
             'date': DAY.isoformat(), 'approver': 'Бухгалтер'})
+        after = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
 
     statuses = {row['employee_id']: row['status'] for row in day['employees']}
     assert statuses[arrived.id] == 'on_time'
     assert statuses[missing.id] == 'unavailable'
     assert day['payroll']['missing_count'] == 0
     assert day['payroll']['unavailable_count'] == 1
-    assert confirmation.status_code == 409
-    assert 'Hikvision' in confirmation.json()['detail']
+    # Смену начисляют по людям: пришедший начислен, «данных нет» ждёт — ему
+    # ни ставку, ни ноль не начисляют, и день целиком не закрыт.
+    assert confirmation.status_code == 200
+    result = confirmation.json()
+    assert result['accrued'] == [arrived.id] and result['confirmed'] is False and result['partial'] is True
+    assert result['blockers'] == [{'employee_id': missing.id, 'name': 'Бахром Алиев', 'reason': 'unavailable'}]
+    rows = {row['employee_id']: row for row in after['employees']}
+    assert (rows[arrived.id]['accrued'], rows[missing.id]['accrued']) == (True, False)
+    assert rows[missing.id]['blocker'] == 'unavailable'
+    assert after['ledger']['payroll_confirmed'] is False and after['ledger']['payroll_partial'] is True
+
+
+def test_day_outside_the_sync_window_unblocks_after_a_hand_mark(tmp_path):
+    """Смена вне выгрузки: отметка «был» возвращает строку к начислению и выдаче."""
+    client, arrived, missing = live_client(tmp_path, complete=False)
+    with client:
+        marked = client.post('/api/accountant/manual-attendance', json={
+            'date': DAY.isoformat(), 'employee_id': missing.id, 'present': True})
+        day = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        confirmation = client.post('/api/accountant/payroll/confirm', json={
+            'date': DAY.isoformat(), 'approver': 'Бухгалтер'})
+
+    assert marked.status_code == 200
+    rows = {row['employee_id']: row for row in day['employees']}
+    assert rows[missing.id]['status'] == 'manual_present'
+    assert rows[missing.id]['blocker'] is None
+    assert rows[missing.id]['payable'] == '260000'
+    assert day['payroll']['unavailable_count'] == 0
+    result = confirmation.json()
+    assert result['blockers'] == [] and result['confirmed'] is True
+    assert sorted(result['accrued']) == sorted([arrived.id, missing.id])
+
+
+def test_hand_mark_is_refused_while_hikvision_still_answers_for_the_day(tmp_path):
+    """Отметка — замена молчащему устройству, а не способ переписать его ответ."""
+    client, arrived, missing = live_client(tmp_path)
+    with client:
+        over_absence = client.post('/api/accountant/manual-attendance', json={
+            'date': DAY.isoformat(), 'employee_id': missing.id, 'present': True})
+        over_entry = client.post('/api/accountant/manual-attendance', json={
+            'date': DAY.isoformat(), 'employee_id': arrived.id, 'present': False})
+        day = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+
+    assert (over_absence.status_code, over_entry.status_code) == (422, 422)
+    assert {row['employee_id']: row['status'] for row in day['employees']} == {
+        arrived.id: 'on_time', missing.id: 'missing'}
 
 
 def test_real_employee_and_entrance_exports_use_same_rows_without_demo_claim(tmp_path):

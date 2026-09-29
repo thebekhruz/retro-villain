@@ -32,10 +32,11 @@ def store(tmp_path):
 
 
 def test_unknown_payroll_cannot_close_day_and_can_be_fixed(store):
-    with pytest.raises(LedgerError, match='неполное'):
-        store.confirm_payroll(DAY, [salary(None)], 'Тест')
-    assert not store.summary(DAY)['payroll_confirmed']
+    blocked = store.confirm_payroll(DAY, [salary(None)], 'Тест')
+    assert not blocked and blocked.blockers[0]['reason'] == 'missing_rate'
+    assert not store.summary(DAY)['payroll_confirmed'] and store.accruals(DAY) == []
     assert store.confirm_payroll(DAY, [salary()], 'Тест')
+    assert store.summary(DAY)['payroll_confirmed']
     assert store.summary(DAY)['salary_debt'] == 100
 
 

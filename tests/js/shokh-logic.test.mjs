@@ -9,6 +9,9 @@ const draft = (extra = {}) => ({point: 'Базар', item: 'Помидоры', u
 test('итог покупки — количество на цену, с копейками', () => {
   assert.equal(logic.total(draft()), 108000);
   assert.equal(logic.total(draft({quantity: '1,5', price: '3333'})), 4999.5);
+  assert.equal(logic.total(draft({quantity: '1.005', price: '1'})), 1.01);
+  assert.equal(logic.total(draft({quantity: '1.125', price: '1'})), 1.13);
+  assert.equal(logic.total(draft({quantity: '1.125', price: '11200'})), 12600);
   // Пока чего-то не хватает, итога нет — ноль показывать нельзя.
   assert.equal(logic.total(draft({price: ''})), null);
   assert.equal(logic.total(draft({quantity: '0'})), null);
@@ -41,18 +44,6 @@ test('подсказка по цене сравнивает с обычной, �
   assert.equal(logic.priceHint(draft({price: ''}), '8000').kind, 'empty');
 });
 
-/* Награды обещаются до отправки, поэтому должны совпадать с серверными:
-   30 за покупку, 10 за фото, 10 за цену не выше обычной. */
-test('предпросмотр опыта повторяет серверные награды', () => {
-  assert.equal(logic.xpPreview(draft(), null).total, 30);
-  assert.equal(logic.xpPreview(draft({hasPhoto: true}), null).total, 40);
-  assert.equal(logic.xpPreview(draft({price: '7000'}), '8000').total, 40);
-  assert.equal(logic.xpPreview(draft({price: '9000'}), '8000').total, 30);
-  assert.equal(logic.xpPreview(draft({hasPhoto: true, price: '7000'}), '8000').total, 50);
-  assert.deepEqual(logic.xpPreview(draft({hasPhoto: true}), null).parts.map(p => p.label),
-    ['Покупка', 'Фото']);
-});
-
 test('остаток после покупки может уйти в минус и это видно', () => {
   assert.equal(logic.pocketAfter('900000', draft()), 792000);
   // Записали больше, чем выдали — прятать нельзя.
@@ -61,11 +52,9 @@ test('остаток после покупки может уйти в минус
   assert.equal(logic.pocketAfter(null, draft()), null);
 });
 
-test('таймер закупа считает минуты и держит цель в пятнадцать минут', () => {
+test('таймер закупа считает минуты', () => {
   const started = '2026-09-16T09:00:00+05:00';
   assert.equal(logic.tripElapsedMinutes(started, '2026-09-16T09:12:00+05:00'), 12);
-  assert.equal(logic.tripOnTime(started, '2026-09-16T09:12:00+05:00'), true);
-  assert.equal(logic.tripOnTime(started, '2026-09-16T09:40:00+05:00'), false);
   assert.equal(logic.tripElapsedMinutes(null, '2026-09-16T09:12:00+05:00'), null);
   assert.equal(logic.clock(12.5), '12:30');
   assert.equal(logic.clock(null), '—');
@@ -76,4 +65,47 @@ test('доля отчитанных денег считается от всег�
   assert.equal(logic.reportedShare('792000', '108000'), 12);
   assert.equal(logic.reportedShare('900000', '0'), 0);
   assert.equal(logic.reportedShare(null, '0'), null);
+});
+
+/* «За всё»: сумму покупки переводим в цену за единицу так, как её примет
+   сервер (цена до тийина, итог = количество × цена с округлением половиной
+   вверх), чтобы экран и накладная iiko не расходились. */
+test('цена «за всё» даёт ровно введённую сумму, когда это возможно', () => {
+  assert.deepEqual(logic.priceFromTotal('10', '120000'),
+    {price: '12000', total: 120000, entered: 120000, exact: true});
+  // Из всех цен с тем же итогом берём честное частное, а не «3 999,98».
+  assert.equal(logic.priceFromTotal('0,25', '1000').price, '4000');
+  assert.equal(logic.priceFromTotal('2.5', '12 500').price, '5000');
+  assert.equal(logic.priceFromTotal('1,5', '4999,5').price, '3333');
+  // Меньше единицы: 0,007 кг за 1 сум — цена с тийинами, итог тот же.
+  const tiny = logic.priceFromTotal('0.007', '1');
+  assert.equal(tiny.exact, true);
+  assert.equal(logic.total({quantity: '0.007', price: tiny.price}), 1);
+});
+
+test('если ровно не делится — показываем итог, который уйдёт в накладную', () => {
+  const fit = logic.priceFromTotal('3', '100000');
+  assert.deepEqual(fit, {price: '33333.33', total: 99999.99, entered: 100000, exact: false});
+  // Итог совпадает с тем, что посчитает сервер по отправленной цене.
+  assert.equal(logic.total({quantity: '3', price: fit.price}), fit.total);
+  assert.equal(logic.priceFromTotal('7.5', '100000').total, 99999.98);
+  // Ближайший итог, даже если он больше введённого.
+  assert.equal(logic.priceFromTotal('1000', '999999999').total, 1000000000);
+});
+
+test('больше знаков, чем примет сервер, — не считаем и объясняем', () => {
+  assert.equal(logic.priceFromTotal('1.2345', '100'), null);
+  assert.equal(logic.priceFromTotal('3', '100.001'), null);
+  assert.equal(logic.amountProblem(draft({quantity: '1.2345'})), 'Количество — не больше трёх знаков после запятой');
+  assert.equal(logic.amountProblem(draft({price: '10.555'})), 'Цена — не больше двух знаков после запятой');
+  assert.equal(logic.amountProblem(draft({quantity: '1000', price: '2000000'})), 'Слишком большая сумма покупки');
+  assert.equal(logic.amountProblem(draft({price: '12 000'})), '');
+  assert.equal(logic.stepReady('amount', draft({quantity: '1.2345'})), false);
+  // Пробелы-разделители в цене не мешают: «12 000» — это 12000.
+  assert.equal(logic.total(draft({price: '12 000'})), 144000);
+});
+
+test('в расчётах закупа нет опыта и бонуса за скорость', () => {
+  assert.equal(logic.xpPreview, undefined);
+  assert.equal(logic.tripOnTime, undefined);
 });

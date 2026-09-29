@@ -325,3 +325,98 @@ details[open]>summary::before{transform:rotate(90deg)}
    меню…», потом три совета — всё ниже уезжало на 175 точек. Место под
    советы занято заранее. */
 .dir-tips-list:has(> li.is-muted:only-child){min-height:196px}
+
+
+/* ── T-390 · меню на телефоне не прячет пункты ─────────────────────────────
+   Полоса меню прокручивалась вбок и таяла у края: «Сотрудники» у бухгалтера
+   оказывались за правым краем и находились только свайпом. Пунктов у роли
+   немного, поэтому они переносятся на вторую строку и видны все сразу. */
+@media(max-width:650px){
+  .sidebar nav{flex-wrap:wrap;overflow:visible;row-gap:6px;
+    mask-image:none;-webkit-mask-image:none;scroll-snap-type:none}
+  /* Подпункты встают в ту же строку сразу за разделом и переносятся вместе
+     с ней: у бухгалтера раздел и три экрана занимают две строки, а не четыре. */
+  .sidebar nav .rm-subnav{display:contents}
+  .sidebar nav .rm-subnav a{order:-1;padding:9px 10px}
+  /* Как на компьютере по макету: плашкой выделен только открытый экран,
+     раздел с подменю — просто подпись, иначе непонятно, где ты. */
+  .sidebar nav .nav-active:has(+ .rm-subnav){background:transparent;border-color:transparent;padding-left:4px}
+}
+/* На телефоне и планшете тост внизу закрывал нижние кнопки: «Сохранить» и
+   «Удалить» в боковой панели, нижние вкладки, последнюю строку формы, а
+   ошибка держится, пока её не закроют. Наверху экрана он так же всегда на
+   виду при любой прокрутке, но ничего не перекрывает под пальцем.
+   Класс повторён, чтобы перебить правила с :has() для экранов с вкладками. */
+@media(max-width:900px){
+  .rm-toast.rm-toast.rm-toast{top:calc(env(safe-area-inset-top) + 10px);bottom:auto}
+  .rm-toast.rm-toast.rm-toast.is-in{animation-name:rm-toast-in-top}
+  .lang-button{min-height:40px}
+}
+@keyframes rm-toast-in-top{from{opacity:0;transform:translate(-50%,-12px)}to{opacity:1;transform:translate(-50%,0)}}
+/* Подписи, которые рисует CSS (content:), словарь i18n не видит: в UZ
+   «Развернуть / Свернуть» и заглушки графиков оставались русскими. */
+html[lang=uz] .fold>summary::after{content:"Yoyish"}
+html[lang=uz] .fold[open]>summary::after{content:"Yig'ish"}
+html[lang=uz] .chart-shell:empty::after,html[lang=uz] .payment-chart:empty::after{content:"Ma'lumotlar iiko'dan birinchi yuklashdan keyin paydo bo'ladi"}
+html[lang=uz] .booking-chart:empty::after{content:"Dinamika bron boti javob berganda paydo bo'ladi"}
+html[lang=uz] .booking-sources:empty::after{content:"Manbalar birinchi bronlar bilan paydo bo'ladi"}
+
+/* Мелкие цели под палец на телефоне: поле и кнопка чата, переключатель
+   «За смену / Оклад», фото покупки, раскрывашка способов оплаты. */
+@media(max-width:650px){
+  .ai-chat-compose textarea{min-height:40px}
+  .ai-chat-compose button{flex-basis:40px;width:40px;height:40px}
+  .emp-kind-btn{min-height:40px}
+  .fd-buy-item a.fd-thumb{width:40px;height:40px}
+  .founder-panel>details>summary{min-height:40px;display:flex;align-items:center}
+}
+/* ── /T-390 ── */
+
+/* ── 2b Ведомость (parity) ── */
+/* Оболочка трёх экранов бухгалтера — «Финансы дня» (2a, body.fd-page),
+   «Зарплаты · месяц» (2b, .pr-page) и «Сотрудники» (1a, .emp-page). Одна копия
+   вместо трёх, чтобы при переходе между ними ничего не прыгало. Значения макета:
+   шапка 64, поля 30/36, меню 14/13 px, «Бухгалтер» — заголовок подменю без плашки. */
+:is(.fd-page,.pr-page,.emp-page) .topbar{height:64px;padding:0 36px;border-bottom-color:#e3e7df}
+:is(.fd-page,.pr-page,.emp-page) main>.workspace{max-width:none;margin:0;padding:30px 36px 28px}
+@media(min-width:901px){
+  :is(.fd-page,.pr-page,.emp-page) .sidebar nav{gap:4px}
+  :is(.fd-page,.pr-page,.emp-page) .nav-label{font-size:9px;letter-spacing:1.5px;margin:0 0 18px}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .nav-link{font-size:14px;padding:15px;border:0}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .nav-active{font-size:14px;padding:15px 15px 8px;gap:13px;background:none;border:0;color:#e9f0e8}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .nav-active>.nav-dot{display:none}
+  :is(.fd-page,.pr-page,.emp-page) .rm-subnav a{font-size:13px}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar-bottom{font-size:13px}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar-bottom small{font-size:10px}
+  :is(.fd-page,.pr-page,.emp-page) .brand small{font-size:10px;letter-spacing:6px}
+}
+@media(min-width:651px){
+  :is(.fd-page,.pr-page,.emp-page) .breadcrumb{font-size:12px;color:#7d8881}
+  :is(.fd-page,.pr-page,.emp-page) .breadcrumb strong{color:#1c302b}
+  :is(.fd-page,.pr-page,.emp-page) .top-status{font-size:11px;color:#66776a}
+}
+@media(max-width:1180px){
+  :is(.fd-page,.pr-page,.emp-page) .topbar{padding:0 25px}
+  :is(.fd-page,.pr-page,.emp-page) main>.workspace{padding:26px 22px 28px}
+}
+/* Планшет (651–900): style.css сворачивает меню в полоску 80 px с одними
+   иконками, а подменю бухгалтера и пункты других модулей в неё не влезали —
+   подписи обрезались, «Сотрудники» уезжали за край. Меню остаётся подписанным. */
+@media(min-width:651px) and (max-width:900px){
+  :is(.fd-page,.pr-page,.emp-page) .sidebar{width:195px;align-items:stretch;padding:30px 18px}
+  :is(.fd-page,.pr-page,.emp-page) .brand>span:last-child{display:block}
+  :is(.fd-page,.pr-page,.emp-page) .brand-mark{font-size:44px}
+  :is(.fd-page,.pr-page,.emp-page) .nav-label,:is(.fd-page,.pr-page,.emp-page) .side-rule{display:block}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar-bottom{display:flex}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar nav{margin-top:0;gap:4px}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .nav-link{font-size:14px;padding:13px}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .nav-active{font-size:14px;padding:13px 13px 8px;gap:13px;background:none;border:0;color:#e9f0e8}
+  :is(.fd-page,.pr-page,.emp-page) .nav-icon{font-size:22px}
+  :is(.fd-page,.pr-page,.emp-page) main{margin-left:195px;width:calc(100% - 195px)}
+  :is(.fd-page,.pr-page,.emp-page) .breadcrumb{display:none}
+}
+@media(max-width:650px){
+  :is(.fd-page,.pr-page,.emp-page) .topbar{height:auto;min-height:52px;padding:10px 16px}
+  :is(.fd-page,.pr-page,.emp-page) main>.workspace{padding:22px 14px 26px}
+}
+/* ── /2b Ведомость (parity) ── */

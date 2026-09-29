@@ -47,6 +47,52 @@ class RevenueBreakdown:
 
 
 @dataclass(frozen=True)
+class ShiftStatus:
+    """Кассовая смена Retro за день — как её отдаёт iiko (`cash/shift/list_period`).
+
+    Время — как в iiko, по Ташкенту, без пояса: «2026-09-28T22:56:49»."""
+    open: bool
+    opened_at: str | None
+    closed_at: str | None
+
+    def json(self):
+        return dict(open=self.open, opened_at=self.opened_at, closed_at=self.closed_at)
+
+
+def shift_status(day, shifts):
+    """Смена кассы Retro (регистр № 1), открытая в этот день, или None.
+
+    Ту же выборку делает расчёт предоплат (cash_prepay_from_shifts). Если смену
+    за день переоткрывали, она «открыта», пока открыта хоть одна; иначе закрыта
+    в момент последнего закрытия. Без данных iiko статус не придумываем."""
+    if not isinstance(shifts, list):
+        return None
+    selected = [shift for shift in shifts if isinstance(shift, dict)
+                and shift.get('cashRegNumber') == 1
+                and str(shift.get('openDate', ''))[:10] == day.isoformat()]
+    if not selected:
+        return None
+
+    def text(value):
+        return value if isinstance(value, str) and value else None
+
+    def is_open(shift):
+        if isinstance(shift.get('isOpen'), bool):
+            return shift['isOpen']
+        return shift.get('sessionStatus') == 'OPEN' and not text(shift.get('closeDate'))
+
+    opened = min((text(shift.get('openDate')) for shift in selected if text(shift.get('openDate'))),
+                 default=None)
+    if any(is_open(shift) for shift in selected):
+        return ShiftStatus(True, opened, None)
+    closed = max((text(shift.get('closeDate')) for shift in selected if text(shift.get('closeDate'))),
+                 default=None)
+    if closed is None:
+        return None
+    return ShiftStatus(False, opened, closed)
+
+
+@dataclass(frozen=True)
 class Snapshot:
     id: str
     day: date
@@ -60,6 +106,12 @@ class Snapshot:
     new_prepayment: Decimal = Decimal(0)
     register_payment_sales: Decimal | None = None
     register_received_total: Decimal | None = None
+    source: str = 'iiko'
+    stale: bool = False
+    refreshing: bool = False
+    refresh_error: str | None = None
+    # Смена кассы на момент снимка; None — iiko её не отдал (или старый архив).
+    shift: ShiftStatus | None = None
 
     @property
     def average_receipt(self):
@@ -83,7 +135,10 @@ class Snapshot:
                     calculation_note='Предоплаты оценены как разница смены и продаж. Это не реестр авансов; '
                                      'для передачи денег требуется сверка фактической наличности. '
                                      'Тип «Наличные (Инкасса QR)» передаётся отдельно и не включён в формулу.',
-                    source_cache_max_age_seconds=30)
+                    source_cache_max_age_seconds=30 if self.day >= today_tashkent() else None,
+                    source=self.source,
+                    stale=self.stale, refreshing=self.refreshing, refresh_error=self.refresh_error,
+                    shift=self.shift.json() if self.shift is not None else None)
         if self.revenue_breakdown is not None:
             result['revenue_breakdown'] = self.revenue_breakdown.json()
         return result

@@ -1,9 +1,9 @@
 """Dated subsidiary ledgers. Moving cash to the safe is not an owner payout."""
-from contextlib import closing
+from contextlib import closing, nullcontext
 from datetime import datetime
 from decimal import Decimal
 
-from .ledger import LedgerError, amount_value, required_text
+from .ledger import LedgerError, amount_value, now_stamp, required_text
 from .audit import record_audit
 
 SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}
@@ -24,6 +24,10 @@ def _entries(connection, account, through=None):
             "SELECT day, amount, description FROM accountant_movements WHERE "
             "(kind='other_expense' AND item_code='proc_shoh') OR "
             "(kind='procurement_advance' AND description LIKE 'Шох:%')")]
+    # Приход из кассы кассира: выдачи Шоху (`shoh`) и доллары в сейф (`usd`).
+    # Деньги бухгалтера они не трогают — см. modules/cashier/till.py.
+    from retro.modules.cashier.till import reserve_rows
+    rows += reserve_rows(connection, account)
     return sorted((r for r in rows if through is None or r['day'] <= through), key=lambda r: r['day'])
 
 
@@ -33,15 +37,16 @@ def _balance(rows):
     return sum((Decimal(r['amount']) * (-1 if r['kind'] == 'withdrawal' else 1) for r in rows), Decimal(0))
 
 
-def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount):
+def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *, existing_connection=None):
     allowed = {'dividends': {'opening', 'transfer', 'withdrawal'},
                'usd': {'opening', 'deposit', 'withdrawal'}, 'shoh': {'opening', 'withdrawal'}}
     if account not in allowed or kind not in allowed[account]:
         raise LedgerError('Выберите допустимую операцию и счёт.')
     value = amount_value(amount, allow_zero=kind == 'opening')
     note = required_text(note, 'основание операции')
-    with closing(store._open()) as connection:
-        connection.execute('BEGIN IMMEDIATE')
+    with (nullcontext(existing_connection) if existing_connection else closing(store._open())) as connection:
+        if existing_connection is None:
+            connection.execute('BEGIN IMMEDIATE')
         try:
             rows = _entries(connection, account)
             if kind == 'opening':
@@ -58,7 +63,7 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount):
                     raise LedgerError('Недостаточно денег от кассира для перевода в сейф.')
             cursor = connection.execute(
                 'INSERT INTO accountant_reserves (day, account, kind, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                (day.isoformat(), account, kind, str(value), note, datetime.now().isoformat()))
+                (day.isoformat(), account, kind, str(value), note, now_stamp()))
             after = store._row_dict(connection, 'accountant_reserves', cursor.lastrowid)
             record_audit(connection, 'reserve', cursor.lastrowid, 'create', None, after)
             rows = _entries(connection, account)
@@ -68,7 +73,8 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount):
                     raise LedgerError('Операция превышает остаток на этот или последующий день.')
             if kind == 'transfer' and cashier_amount is not None:
                 store._check_known_future_balances(connection, day)
-            connection.commit()
+            if existing_connection is None:
+                connection.commit()
             return cursor.lastrowid
         except Exception:
             connection.rollback()

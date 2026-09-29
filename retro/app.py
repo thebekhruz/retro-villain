@@ -20,10 +20,18 @@ from retro.integrations.bookings import BookingAnalyticsClient
 from retro.integrations.broadcasts import BookingBroadcastClient
 from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
+from retro.modules.cashier.archive import CashierArchive
+from retro.modules.cashier.days import CashierDays
 from retro.modules.cashier.routes import router as cashier_router
+from retro.modules.cashier.till import migrate_legacy_usd_safely
 from retro.modules.accountant.routes import router as accountant_router
 from retro.modules.shokh.routes import router as shokh_router
 from retro.modules.shokh.store import ShokhStore
+from retro.modules.shokh.iiko import ProcurementIiko
+from retro.modules.shokh.sync import ProcurementSync
+from retro.modules.menu.store import MenuStore
+from retro.modules.menu.iiko import MenuIiko
+from retro.modules.menu.sync import MenuSync
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
@@ -160,11 +168,19 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         poller = application.state.hikvision_poller
         if poller is not None:
             poller.start()
+        if application.state.cashier_days is not None:
+            application.state.cashier_days.start()
+        if application.state.menu_sync is not None:
+            application.state.menu_sync.start()
         try:
             yield
         finally:
             if poller is not None:
                 await poller.stop()
+            if application.state.cashier_days is not None:
+                await application.state.cashier_days.close()
+            if application.state.menu_sync is not None:
+                await application.state.menu_sync.close()
             await application.state.reports.close()
             close = getattr(application.state.iiko, 'close', None)
             if close is not None:
@@ -187,13 +203,20 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     shared = Database(settings.database_url) if settings.database_url else None
     database_path = expense_db_path or shared or settings.data_dir / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
+    app.state.cashier_days = (CashierDays(CashierArchive(database_path, settings),
+        lambda day: app.state.iiko.load(day)) if settings.configured else None)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
     accountant_path = accountant_db_path or shared or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
-    app.state.accountant_finance = FinanceStore(accountant_path)
+    app.state.accountant_finance = FinanceStore(
+        accountant_path, allow_negative_cash=settings.check_mode)
+    # Старое поле «Доллары в кассе» (одна сумма на день) → по взносу на день.
+    migrate_legacy_usd_safely(app.state.usd_rates, app.state.accountant_finance)
     app.state.attendance_store = AttendanceStore(accountant_path)
     # Закуп живёт в той же базе, что подотчёт бухгалтера: они про одни деньги.
     app.state.shokh = ShokhStore(accountant_path)
+    app.state.shokh_iiko = ProcurementIiko(app.state.iiko)
+    app.state.shokh_sync = ProcurementSync(app.state.shokh, app.state.shokh_iiko)
     # Недельную цель дивидендов ставит учредитель, а видит бухгалтер: храним
     # рядом с резервом `dividends`, в который эти деньги и откладываются.
     app.state.dividend_targets = DividendTargetStore(accountant_path)
@@ -213,6 +236,13 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         app.state.hikvision_poller = None
     director_path = director_db_path or shared or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
+    # Меню — справочник, а не отчёт: лежит у нас и обновляется раз в неделю.
+    # Без настроенного iiko брать его неоткуда, поэтому планировщик не заводим,
+    # а сохранённое меню (если оно есть) всё равно читается.
+    app.state.menu_store = MenuStore(director_path)
+    app.state.menu_iiko = MenuIiko(app.state.iiko)
+    app.state.menu_sync = (MenuSync(app.state.menu_store, app.state.menu_iiko)
+                           if settings.configured else None)
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
@@ -368,9 +398,15 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         modules = [dict(id=panel, name=name, path=path, available=True)
                    for panel, name, path in MODULE_NAMES
                    if role in FULL_ACCESS_ROLES or role == panel]
+        # Имя вошедшего нужно бухгалтеру: первая выдача за смену подтверждает её
+        # от его имени, отдельной формы «Кто подтвердил» в макете нет.
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
-                    role=role, modules=modules, planned_modules=0)
+                    role=role, user=getattr(request.state, 'dashboard_user', None),
+                    # Экран запирает выдачу сам, до похода на сервер: без этого
+                    # флага кнопки остались бы мёртвыми даже при снятом гейте.
+                    check_mode=settings.check_mode,
+                    modules=modules, planned_modules=0)
 
     app.include_router(cashier_router)
     app.include_router(accountant_router)

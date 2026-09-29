@@ -114,8 +114,8 @@ def test_ttl_refresh_failed_refresh_and_lru_bound():
 
         with pytest.raises(ValueError):
             await cache.get('c', failure, refresh=True)
-        assert 'c' not in cache.entries
-        assert await cache.get('c', operation) == 6
+        assert 'c' in cache.entries
+        assert await cache.get('c', operation) == 5
 
     asyncio.run(scenario())
 

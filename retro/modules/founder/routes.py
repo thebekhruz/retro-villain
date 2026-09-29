@@ -84,6 +84,11 @@ async def analytics(
                                ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None)
         if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
             return data
+        # Чистая прибыль iiko уже содержит себестоимость товаров, прошедших через
+        # склад iiko. Поэтому закуп через Шоха (его покупки — приходные накладные
+        # iiko) не вычитается, а закуп, оплаченный поставщику напрямую, — статьи
+        # «Закуп» наличными и перечисления со счёта — вычитается: накладной по
+        # нему система не создаёт. Правило целиком — в expense_totals_between.
         cashier, accountant = await asyncio.gather(
             asyncio.to_thread(request.app.state.expenses.total_between, start, end),
             asyncio.to_thread(

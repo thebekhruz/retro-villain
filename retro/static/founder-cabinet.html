@@ -24,7 +24,7 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro · Retro Oxbridge · Бехруз<small>Ташкент · UZS</small></div></div>
 </aside>
 <main class="fo-main">
-  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Учредитель</strong></span><div class="topbar-actions"><span class="top-status" id="updated">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Учредитель</strong></span><div class="topbar-actions"><a id="fo-back" class="logout-button fo-back" href="/login" hidden>‹ Панель</a><span class="top-status" id="updated">Загружаем данные…</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
 
   <!-- ══ 7a · Телефон: сколько денег и сколько моих ══════════════════════ -->
   <div class="fo-phone rm-phone">
@@ -62,9 +62,18 @@
       </article>
 
       <article class="rm-phone-card">
-        <div class="fo-card-head"><strong id="fo-acc-line" class="fo-acc-line">—</strong><span class="fo-hint">подробно — на компьютере</span></div>
+        <div class="fo-card-head"><strong id="fo-acc-line" class="fo-acc-line">—</strong><button id="fo-acc-open" class="fo-acc-open" type="button">Все замечания ↓</button></div>
         <div id="fo-chef-week"></div>
+        <button id="fo-phone-ask-checks" class="dir-link fo-phone-ask" type="button" hidden>✦ Разобрать с AI →</button>
       </article>
+
+      <!-- Макет 7a — «только важное». Остальное (AI, выгрузка, аналитика)
+           живёт на компьютере, но с телефона до него тоже можно дойти. -->
+      <nav class="rm-phone-card fo-phone-links" aria-label="Ещё">
+        <button id="fo-phone-ai" class="fo-phone-link" type="button"><span class="dir-spark" aria-hidden="true">✦</span><span>AI-помощник</span></button>
+        <a id="fo-phone-excel" class="fo-phone-link" href="/api/founder/export/month" download><span class="fo-phone-link-icon" aria-hidden="true">↓</span><span id="fo-phone-excel-label">Отчёт бухгалтера · месяц · Excel</span></a>
+        <a class="fo-phone-link" href="/founder/analytics"><span class="fo-phone-link-icon" aria-hidden="true">→</span><span>Аналитика iiko · брони · рассылки</span></a>
+      </nav>
     </div>
   </div>
 
@@ -85,11 +94,14 @@
       </section>
       <div id="fo-div-editor-desk" class="fo-div-editor is-desk" hidden></div>
 
+      <!-- Телефон: разделы компьютера сворачиваются под заголовки (на компьютере скрыто). -->
+      <a class="fo-fold" href="#fo-week" data-fold="fo-week" role="button" aria-expanded="false" aria-controls="fo-week"><span>Деньги недели</span><i aria-hidden="true">›</i></a>
       <section id="fo-week" class="fo-panel fo-week">
         <div class="fo-panel-head"><div><p class="eyebrow">КАК РАЗОШЛИСЬ ДЕНЬГИ</p><h2>Неделя по дням</h2></div><span class="fo-hint">≈ — прогноз по среднему для этого дня недели</span></div>
         <div class="fo-week-scroll"><div id="fo-week-table" class="fo-week-table" role="table" aria-label="Неделя по дням"><p class="fo-empty">Собираем неделю из iiko и журнала бухгалтера…</p></div></div>
       </section>
 
+      <a class="fo-fold" href="#fo-acc" data-fold="fo-acc" role="button" aria-expanded="false" aria-controls="fo-acc"><span>Проверка бухгалтера · Счёт Шефа</span><i aria-hidden="true">›</i></a>
       <div id="fo-acc" class="fo-grid">
         <section class="fo-panel">
           <div class="fo-panel-head"><div><p class="eyebrow is-red">ПРОВЕРКА БУХГАЛТЕРА</p><h2 id="fo-checks-title">—</h2></div><button id="fo-ask-checks" class="fo-ai-button" type="button">✦ Разобрать с AI</button></div>
@@ -103,6 +115,7 @@
         </section>
       </div>
 
+      <a class="fo-fold" href="#fo-exp" data-fold="fo-exp" role="button" aria-expanded="false" aria-controls="fo-exp"><span>Расходы и закуп</span><i aria-hidden="true">›</i></a>
       <div id="fo-exp" class="fo-grid">
         <section class="fo-panel">
           <div class="fo-panel-head"><div><p class="eyebrow">КУДА УШЛИ ДЕНЬГИ · <span id="fo-exp-month">МЕСЯЦ</span></p><h2 id="fo-exp-total">—</h2></div></div>
@@ -118,6 +131,7 @@
         </section>
       </div>
 
+      <a class="fo-fold" href="#fo-menu" data-fold="fo-menu" role="button" aria-expanded="false" aria-controls="fo-menu"><span>Прогноз и блюда</span><i aria-hidden="true">›</i></a>
       <div id="fo-menu" class="fo-grid is-even">
         <section class="fo-panel">
           <p class="eyebrow">ПРОГНОЗ · ДЕНЬ НЕДЕЛИ <em class="fo-estimate">оценка</em></p><h2>Средняя выручка и чеки</h2>
@@ -136,7 +150,7 @@
 
     <aside class="fo-chat" aria-label="AI-помощник">
       <div class="fo-chat-inner">
-        <div class="fo-chat-head"><span class="dir-spark is-lg" aria-hidden="true">✦</span><div><strong>AI-помощник</strong><span>Видит все данные системы</span></div></div>
+        <div class="fo-chat-head"><span class="dir-spark is-lg" aria-hidden="true">✦</span><div><strong>AI-помощник</strong><span>Видит все данные системы</span></div><button id="fo-chat-close" class="fo-chat-close" type="button" aria-label="Закрыть">×</button></div>
         <div id="fo-chat-messages" class="rm-chat fo-chat-messages" aria-live="polite">
           <div class="rm-msg is-ai">Я вижу кассу, Демо, передачи кассира, расходы, закуп, дивиденды, Счёт Шефа и продажи блюд. Спросите, всё ли правильно у бухгалтера, или куда ушли деньги.</div>
         </div>
