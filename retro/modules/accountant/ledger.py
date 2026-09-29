@@ -25,6 +25,23 @@ class LedgerError(ValueError):
     pass
 
 
+class PayrollConfirmation:
+    """Итог подтверждения смены: кому начислено сейчас и кто ещё ждёт.
+
+    Истинно, если что-то изменилось (кому-то начислено или день закрыт)."""
+
+    def __init__(self, *, accrued=(), blockers=(), confirmed=False, already_confirmed=False,
+                 accrued_before=()):
+        self.accrued = list(accrued)
+        self.blockers = list(blockers)
+        self.confirmed = confirmed
+        self.already_confirmed = already_confirmed
+        self.accrued_before = list(accrued_before)
+
+    def __bool__(self):
+        return bool(self.accrued) or (self.confirmed and not self.already_confirmed)
+
+
 def now_stamp() -> str:
     """Момент записи с поясом Ташкента: не зависит от пояса сервера."""
     return datetime.now(TZ).isoformat()
@@ -565,28 +582,83 @@ class FinanceStore:
                                       (day.isoformat(),)).fetchall()
         return {row[0] for row in rows}
 
+    def is_payroll_confirmed(self, day: date) -> bool:
+        """Смена дня закрыта: начислено всем сотрудникам."""
+        with closing(self._open()) as connection:
+            return connection.execute('SELECT 1 FROM accountant_payroll_days WHERE day = ?',
+                                      (day.isoformat(),)).fetchone() is not None
+
+    def day_accruals(self, day: date) -> dict[int, dict]:
+        """Начисления смены дня одним запросом: {сотрудник: {id, rate, amount}}."""
+        with closing(self._open()) as connection:
+            return {row[0]: dict(id=row[1], rate=row[2], amount=row[3]) for row in connection.execute(
+                'SELECT employee_id, id, rate, amount FROM accountant_accruals WHERE work_day = ?',
+                (day.isoformat(),))}
+
+    def accrued_employees(self, day: date) -> dict[int, int]:
+        """Кому смена дня уже начислена: {сотрудник: id начисления}."""
+        return {employee_id: item['id'] for employee_id, item in self.day_accruals(day).items()}
+
+    @staticmethod
+    def _employee_closed(connection, employee_id: int, day: date) -> bool:
+        """День сотрудника закрыт: ему уже начислено или вся смена подтверждена.
+
+        Подтверждённая целиком смена закрыта и для людей, добавленных в реестр
+        позже: новый сотрудник действует «с начала времён» и иначе попал бы в
+        прошлую закрытую смену."""
+        return bool(connection.execute(
+            'SELECT 1 FROM accountant_accruals WHERE work_day = ? AND employee_id = ? '
+            'UNION SELECT 1 FROM accountant_payroll_days WHERE day = ?',
+            (day.isoformat(), employee_id, day.isoformat())).fetchone())
+
     def grant_exception(self, employee_id: int, day: date, reason: str, approver: str):
         reason = required_text(reason, 'причину исключения')
         approver = required_text(approver, 'имя подтвердившего')
         with closing(self._open()) as connection:
-            with connection:
-                try:
-                    connection.execute('INSERT INTO accountant_exceptions '
-                                       '(employee_id, day, reason, approver, created_at) VALUES (?, ?, ?, ?, ?)',
-                                       (employee_id, day.isoformat(), reason, approver, datetime.now().isoformat()))
-                except sqlite3.IntegrityError:
-                    raise LedgerError('Однодневное исключение уже использовано для этого сотрудника.') from None
+            connection.execute('BEGIN IMMEDIATE')
+            try:
+                lock_day(connection, day)
+                if self._employee_closed(connection, employee_id, day):
+                    raise LedgerError('Начисление этому сотруднику за день уже подтверждено.')
+                if connection.execute('SELECT 1 FROM accountant_exceptions WHERE employee_id = ?',
+                                      (employee_id,)).fetchone():
+                    raise LedgerError('Однодневное исключение уже использовано для этого сотрудника.')
+                connection.execute('INSERT INTO accountant_exceptions '
+                                   '(employee_id, day, reason, approver, created_at) VALUES (?, ?, ?, ?, ?)',
+                                   (employee_id, day.isoformat(), reason, approver, datetime.now().isoformat()))
+                record_audit(connection, 'exception', employee_id, 'create', None,
+                             dict(employee_id=employee_id, day=day.isoformat(), reason=reason,
+                                  approver=approver))
+                connection.commit()
+            except Exception:
+                connection.rollback()
+                raise
 
     def confirm_payroll(self, day: date, rows: list[PayrollRow], approver: str, *,
-                        marks: dict[int, bool] | None = None) -> bool:
-        """Зафиксировать начисления дня.
+                        marks: dict[int, bool] | None = None,
+                        employee_ids=None) -> 'PayrollConfirmation':
+        """Начислить смену дня — по людям.
+
+        `rows` — вся смена дня (весь реестр на этот день). Начисляется каждый,
+        чью сумму можно посчитать и кому ещё не начислено; остальные ждут и
+        возвращаются в `blockers` с причиной (нет ставки, нет привязки
+        Hikvision, данные неполные). Повторный вызов начисляет тех, кого с тех
+        пор разблокировали. `employee_ids` ограничивает, кого начислять сейчас.
+        День считается подтверждённым целиком (строка в accountant_payroll_days)
+        только когда начислено всем сотрудникам смены; после этого смена
+        закрыта.
 
         `marks` — явные отметки «был / не был», по которым посчитаны `rows`.
-        Внутри транзакции они сверяются со свежими: отметка, поставленная между
-        расчётом строк и подтверждением, иначе молча потерялась бы — человеку
-        с «не был» начислили бы ставку.
+        Для начисляемых строк они сверяются со свежими внутри транзакции:
+        отметка, поставленная после расчёта, не должна потеряться.
         """
+        from .payroll import blocker_reason
         approver = required_text(approver, 'имя подтвердившего')
+        if not rows:
+            raise LedgerError('Нельзя подтвердить пустую смену: в реестре на этот день нет сотрудников.')
+        if len({row.employee_id for row in rows}) != len(rows):
+            raise LedgerError('В начислении повторяется сотрудник.')
+        wanted = None if employee_ids is None else {int(value) for value in employee_ids}
         with closing(self._open()) as connection:
             connection.execute('BEGIN IMMEDIATE')
             try:
@@ -594,31 +666,30 @@ class FinanceStore:
                 if connection.execute('SELECT 1 FROM accountant_payroll_days WHERE day = ?',
                                       (day.isoformat(),)).fetchone():
                     connection.rollback()
-                    return False
-                if marks is not None:
-                    from .hikvision import read_manual_marks
-                    if read_manual_marks(connection, day) != marks:
-                        raise LedgerError('Отметки «был / не был» за этот день уже изменились. '
-                                          'Обновите смену и подтвердите снова.')
-                if not rows or any(row.payable is None or row.rate is None for row in rows):
-                    raise LedgerError('Нельзя подтвердить неполное начисление: проверьте ставки и посещаемость всех сотрудников.')
-                if len({row.employee_id for row in rows}) != len(rows):
-                    raise LedgerError('В начислении повторяется сотрудник.')
-                for row in rows:
-                    amount_value(row.payable, allow_zero=True)
-                    amount_value(row.rate, allow_zero=True)
+                    return PayrollConfirmation(already_confirmed=True, confirmed=True)
                 if connection.execute(
                         "SELECT 1 FROM accountant_movements WHERE day=? AND kind='other_expense' "
                         "AND item_code IN ('salary_cashier','salary_staff','salary_technical','salary_carryover')",
                         (day.isoformat(),)).fetchone():
                     raise LedgerError('За день уже записана зарплата без сотрудника. Сверьте ручные выплаты перед начислением.')
-                connection.execute('INSERT INTO accountant_payroll_days (day, approver, confirmed_at) '
-                                   'VALUES (?, ?, ?)', (day.isoformat(), approver, datetime.now().isoformat()))
-                record_audit(connection, 'payroll_day', day.isoformat(), 'create', None,
-                             dict(day=day.isoformat(), approver=approver))
-                for row in rows:
-                    if row.rate is None:
-                        raise LedgerError('Нельзя подтвердить начисление без ставки.')
+                already = {row[0] for row in connection.execute(
+                    'SELECT employee_id FROM accountant_accruals WHERE work_day = ?', (day.isoformat(),))}
+                pending = [row for row in rows if row.employee_id not in already
+                           and (wanted is None or row.employee_id in wanted)]
+                ready = [row for row in pending if blocker_reason(row) is None]
+                blockers = [dict(employee_id=row.employee_id, name=row.name, reason=blocker_reason(row))
+                            for row in pending if blocker_reason(row) is not None]
+                if marks is not None and ready:
+                    from .hikvision import read_manual_marks
+                    fresh = read_manual_marks(connection, day)
+                    if any(fresh.get(row.employee_id) != marks.get(row.employee_id) for row in ready):
+                        raise LedgerError('Отметки «был / не был» за этот день уже изменились. '
+                                          'Обновите смену и подтвердите снова.')
+                for row in ready:
+                    amount_value(row.payable, allow_zero=True)
+                    amount_value(row.rate, allow_zero=True)
+                accrued = []
+                for row in ready:
                     cursor = connection.execute(
                         'INSERT INTO accountant_accruals '
                         '(work_day, employee_id, employee_name, group_name, attendance_status, rate, amount) '
@@ -627,20 +698,29 @@ class FinanceStore:
                          row.status, str(row.rate), str(row.payable)))
                     record_audit(connection, 'accrual', cursor.lastrowid, 'create', None,
                                  self._row_dict(connection, 'accountant_accruals', cursor.lastrowid))
+                    accrued.append(row.employee_id)
+                complete = all(row.employee_id in already or row.employee_id in accrued for row in rows)
+                if complete:
+                    connection.execute('INSERT INTO accountant_payroll_days (day, approver, confirmed_at) '
+                                       'VALUES (?, ?, ?)', (day.isoformat(), approver, datetime.now().isoformat()))
+                    record_audit(connection, 'payroll_day', day.isoformat(), 'create', None,
+                                 dict(day=day.isoformat(), approver=approver))
                 connection.commit()
-                return True
+                return PayrollConfirmation(accrued=accrued, blockers=blockers, confirmed=complete,
+                                           accrued_before=sorted(already))
             except Exception:
                 connection.rollback()
                 raise
 
     def mark_manual_attendance(self, employee_id: int, day: date, present: bool,
                                approver: str) -> bool:
-        """Отметка «был / не был» за день — одной транзакцией с проверкой смены.
+        """Отметка «был / не был» за день — одной транзакцией с проверкой.
 
-        Проверка «смена ещё не подтверждена» и запись идут на одном соединении
-        под той же блокировкой дня, что и подтверждение, поэтому отметка не
-        проскочит в уже подтверждённый день. Каждая смена отметки — запись
-        аудита с «до» и «после». Повтор той же отметки ничего не пишет.
+        Отметку меняют, пока этому сотруднику за день ничего не начислено (и
+        смена не закрыта целиком). Проверка и запись идут на одном соединении
+        под той же блокировкой дня, что и начисление, поэтому отметка не
+        проскочит в начисленный день. Каждая смена отметки — запись аудита с
+        «до» и «после». Повтор той же отметки ничего не пишет.
         Возвращает, изменилось ли что-нибудь.
         """
         from .hikvision import read_manual_mark, write_manual_mark
@@ -649,9 +729,9 @@ class FinanceStore:
             connection.execute('BEGIN IMMEDIATE')
             try:
                 lock_day(connection, day)
-                if connection.execute('SELECT 1 FROM accountant_payroll_days WHERE day = ?',
-                                      (day.isoformat(),)).fetchone():
-                    raise LedgerError('Смена уже подтверждена — отметку не изменить.')
+                if self._employee_closed(connection, employee_id, day):
+                    raise LedgerError('Начисление этому сотруднику за день уже подтверждено — '
+                                      'отметку не изменить.')
                 before = read_manual_mark(connection, employee_id, day)
                 if before is not None and before['present'] == bool(present):
                     connection.rollback()
@@ -696,6 +776,9 @@ class FinanceStore:
                 'SELECT amount, item_code FROM accountant_movements '
                 "WHERE day >= ? AND day <= ? AND kind = 'other_expense'",
                 (first.isoformat(), last.isoformat())) if is_monthly_salary(row[1])), Decimal(0))
+            closed = {row[0] for row in connection.execute(
+                'SELECT day FROM accountant_payroll_days WHERE day >= ? AND day <= ?',
+                (first.isoformat(), last.isoformat()))}
         people = {}
         for row in accruals:
             person = people.setdefault(row[3], dict(
@@ -709,9 +792,14 @@ class FinanceStore:
             person['accrued'] = str(sum((Decimal(c['amount']) for c in cells), Decimal(0)))
             person['paid'] = str(sum((Decimal(c['paid']) for c in cells), Decimal(0)))
             person['debt'] = str(sum((Decimal(c['debt']) for c in cells), Decimal(0)))
+        # Смену начисляют по людям: у начисленных — ячейки, остальные ждут.
+        # partial_days — начислено не всем; такие дни ещё не закрыты.
+        accrued_days = {row[1] for row in accruals}
         return dict(shift=sorted(people.values(), key=lambda item: item['name']),
                     paid_per_day={day: str(amount) for day, amount in paid_per_day.items()},
-                    monthly_paid=str(monthly_paid))
+                    monthly_paid=str(monthly_paid),
+                    confirmed_days=sorted(closed),
+                    partial_days=sorted(accrued_days - closed))
 
     def accruals(self, day: date) -> list[dict]:
         with closing(self._open()) as connection:
@@ -1093,8 +1181,9 @@ class FinanceStore:
 
     def summary(self, day: date) -> dict:
         with closing(self._open()) as connection:
-            accrued_on_day = sum((Decimal(row[0]) for row in connection.execute(
-                'SELECT amount FROM accountant_accruals WHERE work_day = ?', (day.isoformat(),))), Decimal(0))
+            day_accruals = connection.execute(
+                'SELECT amount FROM accountant_accruals WHERE work_day = ?', (day.isoformat(),)).fetchall()
+            accrued_on_day = sum((Decimal(row[0]) for row in day_accruals), Decimal(0))
             paid_on_day = sum((Decimal(row[0]) for row in connection.execute(
                 'SELECT amount FROM accountant_salary_payments WHERE paid_day = ?', (day.isoformat(),))), Decimal(0))
             movements = [dict(id=row[0], type=row[1], operation='movement', description=row[2], amount=row[3],
@@ -1141,6 +1230,9 @@ class FinanceStore:
                     cash_flow=cash_flow,
                     salary_categories={name: str(amount) for name, amount in salary_categories.items()},
                     accruals=accruals, payroll_confirmed=bool(confirmed),
+                    # Смену начисляют по людям: часть уже начислена, день не закрыт.
+                    payroll_partial=bool(day_accruals) and not confirmed,
+                    payroll_accrued_count=len(day_accruals),
                     payroll_approver=confirmed[0] if confirmed else None)
 
     def daily_summary(self, day: date, cashier_amount: Decimal | None, *, carry_history: bool = True,

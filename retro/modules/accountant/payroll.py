@@ -44,6 +44,22 @@ PRESENT_STATUSES = frozenset({'on_time', 'late', 'manual_present'})
 ABSENT_STATUSES = frozenset({'missing', 'manual_absent'})
 
 
+def blocker_reason(row: 'PayrollRow') -> str | None:
+    """Почему начисление сотруднику за день нельзя подтвердить (None — можно).
+
+    missing_rate — нет дневной ставки; unlinked — нет привязки Hikvision и
+    ручной отметки; unavailable — данные Hikvision за день неполные. Смену
+    подтверждают по людям: такие строки ждут, остальные начисляются.
+    """
+    if row.payable is not None and row.rate is not None:
+        return None
+    if row.rate is None:
+        return 'missing_rate'
+    if row.status in ('unlinked', 'unavailable'):
+        return row.status
+    return 'unknown'
+
+
 def compute_pay(rate: Decimal | None, status: str, *, exception: bool) -> Decimal | None:
     if rate is None:
         return None

@@ -20,7 +20,7 @@ from .attendance import Entrance, export_entrances
 from .employee_export import export_employees
 from .expense_catalog import catalog_json
 from .ledger import LedgerError, amount_value, required_text
-from .payroll import draft_payroll
+from .payroll import blocker_reason, draft_payroll
 
 router = APIRouter(prefix='/api/accountant', tags=['accountant'])
 
@@ -47,8 +47,7 @@ def attendance_payroll(request: Request, day: date, roster, exceptions, *, froze
     rows = draft_payroll(day, roster, exceptions, snapshot.rows)
     if not frozen_pay:
         return snapshot, rows
-    saved = {row['employee_id']: row for row in request.app.state.accountant_finance.accruals(day)
-             if row['work_day'] == day.isoformat()}
+    saved = request.app.state.accountant_finance.day_accruals(day)
     rows = [replace(row, rate=Decimal(saved[row.employee_id]['rate']),
                     payable=Decimal(saved[row.employee_id]['amount']))
             if row.employee_id in saved else row for row in rows]
@@ -112,13 +111,44 @@ def staff_view(request: Request, date: date | None = None):
     return _day_data(request, selected_day(date), None, None, staff_only=True)
 
 
+def shift_rows_json(rows, accrued: dict[int, int], closed: bool) -> list[dict]:
+    """Строки смены с тем, что нужно экрану для выдачи по людям.
+
+    accrued — начислено ли уже (тогда сумма в строке — начисленная),
+    accrual_id — по нему выдают деньги, blocker — почему начислить пока
+    нельзя: missing_rate / unlinked / unavailable (None — можно или уже начислено).
+    """
+    result = []
+    for row in rows:
+        accrual_id = accrued.get(row.employee_id)
+        result.append(dict(row.json(), accrued=accrual_id is not None, accrual_id=accrual_id,
+                           blocker=None if accrual_id is not None or closed else blocker_reason(row)))
+    return result
+
+
+def payroll_state(rows, accrued: dict[int, int], confirmed: bool) -> dict:
+    waiting = [row for row in rows if row.employee_id not in accrued]
+    return dict(payroll_confirmed=confirmed,
+                payroll_partial=bool(accrued) and not confirmed,
+                accrued_count=len(accrued),
+                blocked_count=0 if confirmed else sum(blocker_reason(row) is not None for row in waiting),
+                pending_total=str(Decimal(0) if confirmed else sum(
+                    (row.payable for row in waiting if row.payable is not None), Decimal(0))))
+
+
 def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
     roster = request.app.state.accountant_roster.list(day)
     finance = request.app.state.accountant_finance
-    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day), frozen_pay=not staff_only)
+    # Начисленным сотрудникам сумма всегда из начисления: смену подтверждают
+    # по людям, и начисленное не должно «плыть» вслед за ставкой или отметкой.
+    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day), frozen_pay=True)
+    accrued = finance.accrued_employees(day)
+    confirmed = finance.is_payroll_confirmed(day)
+    state = payroll_state(rows, accrued, confirmed)
     if staff_only:
         return dict(demo=False, date=day.isoformat(), source='Hikvision ISAPI',
-                    attendance=attendance.health, employees=[row.json() for row in rows],
+                    attendance=attendance.health, employees=shift_rows_json(rows, accrued, confirmed),
+                    **state,
                     roster_count=len(roster), missing_rates=sum(employee.rate is None for employee in roster),
                     monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
                     groups=[dict(name=name) for name in dict.fromkeys(e.group_name for e in roster)],
@@ -144,7 +174,8 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
         item['draft_total'] += row.payable or Decimal(0)
     group_items = [dict(item, shift_cost=str(item['shift_cost']),
                         draft_total=str(item['draft_total'])) for item in groups.values()]
-    needed = summary['salary_debt'] + (Decimal(0) if summary['payroll_confirmed'] else draft_total)
+    # Долг уже начисленных — в salary_debt; к нему добавляются только ещё не начисленные.
+    needed = summary['salary_debt'] + Decimal(state['pending_total'])
     shortfall = (max(Decimal(0), needed - summary['cash_balance'])
                  if summary['cash_balance'] is not None and not any(row.payable is None for row in rows) else None)
     scenarios = [dict(group=item['name'], saving=item['shift_cost'],
@@ -155,7 +186,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
     transfers = finance.supplier_transfers(day)
     return dict(demo=False, date=day.isoformat(), source='Hikvision ISAPI',
                 attendance=attendance.health,
-                employees=[row.json() for row in rows], roster_count=len(roster), manual_handover=request.app.state.settings.manual_handover_only,
+                employees=shift_rows_json(rows, accrued, confirmed), roster_count=len(roster), manual_handover=request.app.state.settings.manual_handover_only,
                 monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
                 actual_hikvision_unlinked=sum(employee.hikvision_id is None for employee in roster),
                 missing_rates=sum(employee.rate is None for employee in roster),
@@ -166,7 +197,8 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False):
                              unlinked_count=sum(row.status == 'unlinked' for row in rows),
                              unavailable_count=sum(row.status == 'unavailable' for row in rows),
                              manual_present_count=sum(row.status == 'manual_present' for row in rows),
-                             manual_absent_count=sum(row.status == 'manual_absent' for row in rows)),
+                             manual_absent_count=sum(row.status == 'manual_absent' for row in rows),
+                             **state),
                 monthly_payments=monthly_payments_json(finance, request.app.state.accountant_roster, day),
                 # Перечисления поставщикам — безнал: в ledger (наличные) их нет.
                 supplier_transfers=transfers,
@@ -370,8 +402,8 @@ def add_exception(request: Request, body: ExceptionInput):
         raise HTTPException(404, 'Сотрудник не найден.')
     if employee.rate is None:
         raise HTTPException(422, 'Сначала укажите дневную ставку.')
-    if request.app.state.accountant_finance.summary(day)['payroll_confirmed']:
-        raise HTTPException(409, 'Начисления за день уже подтверждены.')
+    # Закрыт ли день именно этого сотрудника, проверяет grant_exception — в
+    # одной транзакции с записью.
     _, rows = attendance_payroll(request, day, roster, set())
     employee_row = next(row for row in rows if row.employee_id == body.employee_id)
     if employee_row.status != 'unlinked':
@@ -387,22 +419,27 @@ def add_exception(request: Request, body: ExceptionInput):
 class ConfirmInput(BaseModel):
     date: date
     approver: str
+    # Кого начислить сейчас; без списка — всех, кого можно.
+    employee_ids: list[int] | None = None
 
 
 @router.post('/payroll/confirm')
 def confirm_payroll(request: Request, body: ConfirmInput):
+    """Начислить смену по людям: кого можно — сейчас, остальные ждут."""
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
     roster = request.app.state.accountant_roster.list(day)
     snapshot, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
-    if any(row.status == 'unavailable' for row in rows):
-        raise HTTPException(409, 'Данные Hikvision за этот день неполные. Начисление не подтверждено.')
     try:
         # Отметки, по которым посчитаны строки, сверяются внутри транзакции.
-        confirmed = finance.confirm_payroll(day, rows, body.approver, marks=snapshot.marks)
+        result = finance.confirm_payroll(day, rows, body.approver, marks=snapshot.marks,
+                                         employee_ids=body.employee_ids)
     except LedgerError as error:
         finance_error(error)
-    return dict(demo=True, date=day.isoformat(), already_confirmed=not confirmed,
+    return dict(demo=True, date=day.isoformat(), already_confirmed=result.already_confirmed,
+                confirmed=result.confirmed, partial=not result.confirmed and bool(
+                    result.accrued or result.accrued_before),
+                accrued=result.accrued, blockers=result.blockers,
                 total=str(finance.summary(day)['accrued_on_day']))
 
 

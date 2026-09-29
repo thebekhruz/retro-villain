@@ -115,18 +115,26 @@ function noteStrip(text, tag, action) {
     h('span', {class: 'fd-strip-text', text}), action || null);
 }
 
+// Запрет на весь день бывает только в двух случаях: нет данных кассира или
+// сервер отказал в начислении всей смены (за день уже есть зарплата без
+// сотрудника). Остальные причины — у отдельных строк, их видно в строке.
+const dayBlocks = {};
 function payDisabledReason() {
-  const {data, board, blocker} = view;
+  const {data, board} = view;
   if (data.ledger.cash_balance === null) return 'Нет данных кассира за ' + longDay(data.date) + ' — выдачу записать нельзя.';
-  if (!board.confirmed && blocker === 'hikvision') return 'Данные Hikvision за ' + longDay(board.S) + ' неполные — смену нельзя подтвердить, выдача закрыта.';
-  if (!board.confirmed && blocker === 'rates') return 'Не у всех сотрудников указана ставка — укажите её в «Сотрудниках», иначе смену не подтвердить.';
+  if (dayBlocks[board.S] && !board.confirmed) return dayBlocks[board.S];
   return null;
 }
-// Запрет касается строки: без кассы закрыто всё, а неподтверждаемая смена
-// закрывает только свои строки — долги прошлых смен выдавать можно.
+const BLOCK_TEXT = {
+  rate: 'Нет ставки — смена не начисляется',
+  unlinked: 'Нет привязки к Hikvision — вход не виден',
+  hikvision: 'Входы Hikvision за этот день ещё не пришли',
+  unknown: 'Начисление не рассчитано',
+};
 function rowLock(row) {
   if (view.data.ledger.cash_balance === null) return payDisabledReason();
-  if (row.own && !view.board.confirmed) return payDisabledReason();
+  if (row.block) return BLOCK_TEXT[row.block];
+  if (row.own && !row.accrualId && dayBlocks[view.board.S]) return dayBlocks[view.board.S];
   return null;
 }
 const payable = () => view.board.toPay.filter(row => !rowLock(row));
@@ -148,6 +156,20 @@ function renderShift() {
       board.confirmed ? 'Смена подтверждена — отметки закрыты.' : 'Время входа неизвестно — нажмите на статус, чтобы отметить «был / не был».',
       absent ? 'Отмечено отсутствие: ' + absent + '.' : null];
     strips.append(strip(parts, h('button', {type: 'button', class: 'fd-strip-btn', text: 'Показать', onclick: () => { shiftTab = 'nohik'; renderShift(); }})));
+  }
+  const blocker = view.blocker;
+  if (blocker) {
+    const parts = [];
+    if (blocker.rate) parts.push(blocker.rate + ' без ставки');
+    if (blocker.unlinked) parts.push(blocker.unlinked + ' без привязки Hikvision');
+    if (blocker.hikvision) parts.push(blocker.hikvision + ' без данных Hikvision');
+    if (blocker.unknown) parts.push(blocker.unknown + ' не рассчитано');
+    const payableLeft = board.own.some(r => !r.block);
+    // Каждая часть — отдельный узел: так её переводит словарь, а не склейка.
+    const text = h('span', {class: 'fd-strip-text'}, ...parts.flatMap((part, i) => i ? [' · ', h('span', {text: part})] : [h('span', {text: part})]),
+      ' ', h('span', {text: payableLeft ? '— остальным можно выдавать.' : '— выдавать пока некому.'}));
+    strips.append(h('div', {class: 'fd-strip is-block'}, h('span', {class: 'fd-strip-tag', text: 'Не начислено'}), text,
+      h('button', {type: 'button', class: 'fd-strip-btn', text: 'Показать', onclick: () => { shiftTab = 'err'; renderShift(); }})));
   }
   const health = attendanceHealth(staff?.attendance || data.attendance);
   if (!health.ok) strips.append(noteStrip(health.text, 'Hikvision'));
@@ -206,7 +228,7 @@ function shiftRow(row, lock) {
   } else time.append(h('div', {class: 'fd-time-main is-none', text: '—'}));
 
   const [label, cls] = STATUS[row.status] || ['—', 'unlinked'];
-  const toggleable = row.noHik && row.own && !view.board.confirmed;
+  const toggleable = row.noHik && row.own && !row.accrualId;
   const pill = h(toggleable ? 'button' : 'span', {class: 'fd-pill ' + cls + (row.noHik ? ' is-manual' : '') + (toggleable ? ' is-toggle' : ''),
     title: row.noHik ? (toggleable ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был' : 'Отмечено вручную') : 'Данные Hikvision',
     type: toggleable ? 'button' : null, text: label});
@@ -217,7 +239,8 @@ function shiftRow(row, lock) {
 
   const accrued = h('div', {class: 'fd-acc num' + (row.accrued ? '' : ' is-zero')},
     h('span', {class: 'fd-m-label', text: 'Начислено '}),
-    row.accrued === null ? (row.rate === null ? 'Нет ставки' : 'Нет данных') : fmt(row.accrued));
+    // У заблокированной строки причина уже написана под кнопкой исправления.
+    row.accrued === null ? (row.block === 'rate' ? 'Нет ставки' : '—') : fmt(row.accrued));
 
   const input = h('input', {class: 'fd-pay-input', inputmode: 'numeric', placeholder: '—', autocomplete: 'off',
     'aria-label': 'Выдано сегодня · ' + row.name});
@@ -234,19 +257,61 @@ function shiftRow(row, lock) {
   input.addEventListener('change', commit);
   let note = row.note;
   if (!note && row.paidBefore > 0) note = 'раньше выдано ' + fmt(row.paidBefore);
-  const pay = h('div', {class: 'fd-pay'}, input, h('div', {class: 'fd-pay-note is-' + row.kind, text: note}));
+  const pay = row.block ? blockedCell(row) : h('div', {class: 'fd-pay'}, input, h('div', {class: 'fd-pay-note is-' + row.kind, text: note}));
   line.append(check, who, h('div', {class: 'fd-meta'}, time, statusCell), accrued, pay);
   return line;
 }
 
-async function confirmShift() {
+/* Строка, которую не начислить: своя причина и прямое исправление. После
+   исправления перечитываем день — строка становится к выдаче сама. */
+function blockedCell(row) {
+  const cell = h('div', {class: 'fd-pay fd-fix'});
+  const note = h('div', {class: 'fd-pay-note is-blocked', text: BLOCK_TEXT[row.block]});
+  if (row.block === 'rate') {
+    const open = h('button', {type: 'button', class: 'fd-fix-btn', text: 'Указать ставку'});
+    open.addEventListener('click', () => {
+      const input = h('input', {class: 'fd-pay-input fd-money', inputmode: 'numeric', placeholder: 'Ставка, сум',
+        'aria-label': 'Ставка за смену · ' + row.name, 'data-money-hint': 'off', autocomplete: 'off'});
+      const ok = h('button', {type: 'button', class: 'fd-debt-ok', title: 'Сохранить ставку', 'aria-label': 'Сохранить ставку', text: '✓'});
+      const save = () => {
+        const rate = parse(input.value);
+        if (!rate) { message('Укажите ставку за смену.', true); input.focus(); return; }
+        run(() => write('/api/accountant/employees/' + row.employeeId,
+          // Пустая ставка заполняется сервером и за прошлые дни без ставки —
+          // вчерашняя строка после этого начисляется.
+          {rate: String(rate), reason: 'Ставка указана в «Финансах дня»'}, 'PATCH'), 'Ставка сохранена: ' + row.name);
+      };
+      ok.addEventListener('click', save);
+      input.addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); save(); } if (event.key === 'Escape') renderShift(); });
+      cell.replaceChildren(h('span', {class: 'fd-debt-edit'}, input, ok), note);
+      input.focus();
+    });
+    cell.append(open, note);
+  } else if (row.block === 'unlinked') {
+    const manual = h('button', {type: 'button', class: 'fd-fix-btn', text: 'Отмечать вручную'});
+    manual.addEventListener('click', () => run(() => write('/api/accountant/employees/' + row.employeeId,
+      {rate: row.rate === null ? null : String(row.rate), reason: 'Нет привязки Hikvision — присутствие отмечается вручную', manual_attendance: true}, 'PATCH'),
+      row.name + ': присутствие отмечается вручную'));
+    cell.append(manual, note);
+  } else cell.append(note);
+  return cell;
+}
+
+async function confirmShift(employeeIds) {
   if (view.board.confirmed) return;
-  if (!view.board.own.some(r => r.accrued > 0)) return;
   const reason = payDisabledReason();
   if (reason) throw new Error(reason);
   let approver = 'бухгалтер';
   try { const config = await globalThis.RetroConfig; if (config?.user) approver = config.user; } catch { /* по умолчанию */ }
-  await write('/api/accountant/payroll/confirm', {date: view.board.S, approver});
+  // Подтверждение частичное и повторяемое: сервер начисляет тех, кого можно
+  // посчитать, в том числе тех, кого только что исправили.
+  const body = {date: view.board.S, approver};
+  if (employeeIds) body.employee_ids = employeeIds;
+  try { await write('/api/accountant/payroll/confirm', body); }
+  catch (error) {
+    if (/зарплата без сотрудника/.test(error.message)) dayBlocks[view.board.S] = error.message;
+    throw error;
+  }
   await loadDay();
 }
 function accrualFor(row) {
@@ -264,7 +329,8 @@ function setPaid(row, target, input) {
     return;
   }
   run(async () => {
-    if (!row.accrualId) await confirmShift();
+    // Одна строка — начисляем только её; «Выдать пришедшим» начисляет всех.
+    if (!row.accrualId) await confirmShift([row.employeeId]);
     const fresh = accrualFor(row);
     if (!fresh) throw new Error('Начисление не найдено — обновите страницу.');
     if (target < fresh.paidToday) {

@@ -971,8 +971,11 @@ def test_a_mark_cannot_slip_into_a_shift_being_confirmed(any_db):
     try:
         holder.execute('BEGIN IMMEDIATE')
         lock_day(holder, DAY)
-        holder.execute('INSERT INTO accountant_payroll_days (day, approver, confirmed_at) VALUES (?, ?, ?)',
-                       (DAY.isoformat(), 'Любовь', '2026-09-17T09:00:00+05:00'))
+        # Идёт начисление именно этому сотруднику (не всей смене).
+        holder.execute('INSERT INTO accountant_accruals (work_day, employee_id, employee_name, group_name, '
+                       'attendance_status, rate, amount) VALUES (?, ?, ?, ?, ?, ?, ?)',
+                       (DAY.isoformat(), person.id, person.name, person.group_name, 'manual_present',
+                        '130000', '130000'))
         worker.start()
         worker.join(0.5)
         assert worker.is_alive(), 'отметка должна ждать, пока подтверждение не закончится'
@@ -981,7 +984,7 @@ def test_a_mark_cannot_slip_into_a_shift_being_confirmed(any_db):
         holder.close()
     worker.join(10)
     assert not worker.is_alive()
-    assert 'уже подтверждена' in str(outcome.get('error')), outcome
+    assert 'уже подтверждено' in str(outcome.get('error')), outcome
     assert c.app.state.attendance_store.manual_marks(DAY) == {}
 
 

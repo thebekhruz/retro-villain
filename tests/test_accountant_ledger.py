@@ -19,8 +19,10 @@ def payroll_row(employee_id=1, amount='270000'):
 
 def test_confirmation_creates_debt_but_no_cash_expense_and_is_idempotent(tmp_path):
     store = FinanceStore(tmp_path / 'finance.sqlite3')
-    assert store.confirm_payroll(WORKDAY, [payroll_row()], 'Финансы') is True
-    assert store.confirm_payroll(WORKDAY, [payroll_row()], 'Финансы') is False
+    first = store.confirm_payroll(WORKDAY, [payroll_row()], 'Финансы')
+    assert first and first.confirmed and first.accrued == [1]
+    again = store.confirm_payroll(WORKDAY, [payroll_row()], 'Финансы')
+    assert not again and again.already_confirmed
 
     summary = FinanceStore(tmp_path / 'finance.sqlite3').summary(WORKDAY)
     assert summary['accrued_on_day'] == Decimal('270000')
