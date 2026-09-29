@@ -147,11 +147,11 @@ def test_verified_accountant_start_reconciles_september_report_and_carries_forwa
         assert tomorrow['ledger']['cash_balance'] is None
 
 
-def demo_client(tmp_path):
+def demo_client(tmp_path, **settings):
     seed_cashier_expense(
         tmp_path / 'cashier.sqlite3', date(2026, 1, 1), date(2026, 12, 31),
         'Зарплата', Decimal('350000'))
-    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
+    app = create_app(Settings(**settings), expense_db_path=tmp_path / 'cashier.sqlite3',
                      accountant_db_path=tmp_path / 'accountant-demo.sqlite3')
     source = tmp_path / 'roster.xlsx'
     book = Workbook()
@@ -481,6 +481,35 @@ def test_without_cashier_data_daily_balance_is_unknown_and_expense_is_rejected(t
         assert client.post('/api/accountant/transfers', json={
             'cashier_date': DAY.isoformat(), 'received_date': DAY.isoformat(),
             'amount': '100'}).status_code == 410
+
+
+def test_check_mode_records_payouts_without_cashier_data_and_lets_cash_go_negative(tmp_path):
+    """Временный режим прогона: гейт кассира снят, минус по остатку не отменяет операцию."""
+    with demo_client(tmp_path, payouts_without_cashier=True) as client:
+        day = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        assert day['ledger']['cash_balance'] is None
+        spend = client.post('/api/accountant/expenses', json={
+            'date': DAY.isoformat(), 'item_code': 'admin_other',
+            'note': 'Прогон без кассы', 'amount': '900000'})
+        after = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+
+    assert spend.status_code == 201
+    # Приход за день появился нулевым, поэтому расход увёл остаток в минус.
+    assert after['ledger']['cash_flow']['received_from_cashier'] == '0'
+    assert after['ledger']['cash_balance'] == '-900000'
+    # Экран обязан знать про режим: иначе он запрёт выдачу раньше сервера.
+    assert client.get('/api/config').json()['payouts_without_cashier'] is True
+
+
+def test_check_mode_is_off_unless_asked(tmp_path, monkeypatch):
+    """По умолчанию гейт на месте — снять его можно только переменной окружения."""
+    assert Settings().payouts_without_cashier is False
+    monkeypatch.delenv('ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER', raising=False)
+    assert Settings.from_env().payouts_without_cashier is False
+    monkeypatch.setenv('ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER', '1')
+    assert Settings.from_env().payouts_without_cashier is True
+    with demo_client(tmp_path) as client:
+        assert client.get('/api/config').json()['payouts_without_cashier'] is False
 
 
 def test_accountant_page_still_shows_staff_when_iiko_is_unavailable(tmp_path):

@@ -48,8 +48,8 @@ def record_debt(store, day, item_code, note, total, paid, cashier_amount):
         connection.execute('BEGIN IMMEDIATE')
         try:
             store._validate_salary_expense(connection, day, item_code)
-            if paid_value and store.available_cash(connection, day, cashier_amount) < paid_value:
-                raise LedgerError('На выбранный день недостаточно денег от кассира.')
+            if paid_value:
+                store._require_cash(connection, day, paid_value, cashier_amount)
             now = now_stamp()
             debt_id = connection.execute(
                 'INSERT INTO accountant_debts (day,item_code,description,total_amount,created_at) '
@@ -96,8 +96,7 @@ def pay_debt(store, debt_id, day, amount, cashier_amount):
             left = Decimal(total) - _payments(connection, debt_id, '9999-12-31')
             if value > left:
                 raise LedgerError('Оплата превышает оставшийся долг.')
-            if store.available_cash(connection, day, cashier_amount) < value:
-                raise LedgerError('На выбранный день недостаточно денег от кассира.')
+            store._require_cash(connection, day, value, cashier_amount)
             now = now_stamp()
             movement_id = connection.execute(
                 'INSERT INTO accountant_movements '

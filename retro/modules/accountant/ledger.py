@@ -106,10 +106,14 @@ def required_text(value: str, label: str) -> str:
 
 
 class FinanceStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, allow_negative_cash: bool = False):
         self.db = as_database(path)
         # .path остаётся для скриптов обслуживания и тестов
         self.path = self.db.path
+        # Режим проверки: остаток разрешено уводить в минус. Обычно отрицательный
+        # остаток отменяет операцию — это единственная защита от выдачи денег,
+        # которых в кассе нет.
+        self.allow_negative_cash = allow_negative_cash
         self._initialize()
 
     def _open(self):
@@ -540,7 +544,20 @@ class FinanceStore:
             raise LedgerError(f'Для переноса остатка загрузите данные кассира за {missing}.')
         return closing
 
+    def _require_cash(self, connection, day: date, value: Decimal, cashier_amount) -> None:
+        """Хватает ли наличных на операцию за день.
+
+        В режиме проверки не спрашиваем, но `available_cash` всё равно зовём:
+        у неё есть побочный эффект — она записывает приход за день, без него
+        остаток дня остался бы неизвестным.
+        """
+        available = self.available_cash(connection, day, cashier_amount)
+        if not self.allow_negative_cash and available < value:
+            raise LedgerError('На выбранный день недостаточно денег от кассира.')
+
     def _check_cash_balances(self, connection, day):
+        if self.allow_negative_cash:
+            return
         if connection.execute('SELECT 1 FROM accountant_handover_days LIMIT 1').fetchone():
             self._check_known_future_balances(connection, day)
         else:
@@ -878,9 +895,7 @@ class FinanceStore:
                 if kind == 'other_expense':
                     self._validate_salary_expense(connection, day, item_code)
                 if kind not in ('opening', 'cashier_transfer', 'other_receipt'):
-                    available = self.available_cash(connection, day, cashier_amount)
-                    if available < value:
-                        raise LedgerError('На выбранный день недостаточно денег от кассира.')
+                    self._require_cash(connection, day, value, cashier_amount)
                 cursor = connection.execute('INSERT INTO accountant_movements '
                                             '(day, kind, description, amount, item_code, reference, created_at) '
                                             'VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -1164,9 +1179,7 @@ class FinanceStore:
                     Decimal(0))
                 if value > Decimal(accrual[1]) - already_paid:
                     raise LedgerError('Выплата превышает оставшийся долг сотруднику.')
-                available = self.available_cash(connection, paid_day, cashier_amount)
-                if available < value:
-                    raise LedgerError('На выбранный день недостаточно денег от кассира.')
+                self._require_cash(connection, paid_day, value, cashier_amount)
                 cursor = connection.execute('INSERT INTO accountant_salary_payments '
                                             '(accrual_id, paid_day, amount, created_at) VALUES (?, ?, ?, ?)',
                                             (accrual_id, paid_day.isoformat(), str(value), now_stamp()))

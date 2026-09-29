@@ -84,7 +84,12 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
 async def required_handover(request: Request, day: date) -> Decimal:
     amount = await cashier_handover(request, day)
     if amount is None:
-        raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
+        # Режим проверки: вместо отказа считаем приход нулевым. Строка прихода за
+        # день появится с суммой 0 — её перезапишет обычная запись бухгалтера,
+        # когда настоящая касса приедет.
+        if not request.app.state.settings.payouts_without_cashier:
+            raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
+        amount = Decimal(0)
     # Уже записанный приход той же суммой не перезаписывается (время «получено»
     # остаётся); новый — расчёт iiko, его кассир может заменить своей передачей.
     await asyncio.to_thread(request.app.state.accountant_finance.record_handover, day, amount,

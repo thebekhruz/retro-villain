@@ -119,9 +119,14 @@ function noteStrip(text, tag, action) {
 // сервер отказал в начислении всей смены (за день уже есть зарплата без
 // сотрудника). Остальные причины — у отдельных строк, их видно в строке.
 const dayBlocks = {};
+// Режим проверки (ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER): сервер пускает выдачу без
+// данных кассира, поэтому экран не должен запирать её раньше сервера.
+let unguardedPayouts = false;
+const cashMissing = () => view.data.ledger.cash_balance === null && !unguardedPayouts;
 function payDisabledReason() {
   const {data, board} = view;
-  if (data.ledger.cash_balance === null) return 'Нет данных кассира за ' + longDay(data.date) + ' — выдачу записать нельзя.';
+  if (cashMissing())
+    return 'Нет данных кассира за ' + longDay(data.date) + ' — выдачу записать нельзя.';
   if (dayBlocks[board.S] && !board.confirmed) return dayBlocks[board.S];
   return null;
 }
@@ -141,7 +146,7 @@ function hikvisionGap() {
 }
 const blockText = row => BLOCK_TEXT[row.block === 'hikvision' && hikvisionGap() ? 'hikvision_gap' : row.block];
 function rowLock(row) {
-  if (view.data.ledger.cash_balance === null) return payDisabledReason();
+  if (cashMissing()) return payDisabledReason();
   if (row.block) return blockText(row);
   if (row.own && !row.accrualId && dayBlocks[view.board.S]) return dayBlocks[view.board.S];
   return null;
@@ -184,6 +189,11 @@ function renderShift() {
   if (!health.ok) strips.append(noteStrip(health.text, 'Hikvision'));
   if (lock) strips.append(noteStrip(lock, 'Выдача закрыта',
     data.ledger.cash_balance === null ? h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools}) : null));
+  // Снятый гейт обязан быть виден. Молчаливый режим проверки на боевом контуре
+  // означал бы выдачу против кассы, которой нет, и никто бы не заметил.
+  if (unguardedPayouts && data.ledger.cash_balance === null)
+    strips.append(noteStrip('Выдача записывается без данных кассира, остаток может уйти в минус. Это временный режим проверки.',
+      'Проверка', h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools})));
 
   const tabs = $('shift-tabs'); tabs.replaceChildren();
   L.boardTabs(board.rows).forEach(([key, label, count]) => {
@@ -386,7 +396,7 @@ $('pay-all').addEventListener('click', () => {
 function renderJournal() {
   const {journal} = view;
   const box = $('finance-journal'); box.replaceChildren();
-  const cash = view.data.ledger.cash_balance !== null;
+  const cash = !cashMissing();
   journal.rows.forEach(row => {
     const line = h('div', {class: 'fd-row fd-jr-cols fd-jr-row is-' + row.kind});
     const cat = h('span', {class: 'fd-jr-cat', text: row.cat});
@@ -477,7 +487,7 @@ function updateNewRow() {
   $('expense-debt').textContent = amount && paid < amount ? fmt(amount - paid) : '';
   paidInput.classList.toggle('is-bad', amount > 0 && paid > amount);
   const cashNeeded = !income && !(reserve && reserve.kind !== 'transfer') && paid > 0;
-  $('other-expense-form').querySelector('button').disabled = busy || (cashNeeded && view && view.data.ledger.cash_balance === null);
+  $('other-expense-form').querySelector('button').disabled = busy || (cashNeeded && view && cashMissing());
 }
 ['expense-item', 'expense-amount', 'expense-paid'].forEach(id => $(id).addEventListener('input', updateNewRow));
 // Подписи групп в списке — атрибуты, их переводчик страницы не трогает:
@@ -516,7 +526,7 @@ function renderShoh() {
   $('shoh-balance').textContent = shoh.hand === null ? '—' : fmt(shoh.hand);
   $('shoh-balance').classList.toggle('is-negative', shoh.hand !== null && shoh.hand < 0);
   $('shoh-sum').textContent = shoh.hand === null ? 'начальный остаток не задан' : 'на руках ' + money(shoh.hand) + ' · ' + shoh.count + ' ' + L.plural(shoh.count, 'покупка', 'покупки', 'покупок');
-  $('shoh-give-form').querySelector('button[type=submit]').disabled = busy || data.ledger.cash_balance === null;
+  $('shoh-give-form').querySelector('button[type=submit]').disabled = busy || cashMissing();
 
   const gives = $('shoh-gives'); gives.replaceChildren();
   shoh.gives.forEach(give => gives.append(h('div', {class: 'fd-give'},
@@ -652,7 +662,7 @@ function salaryHint() {
   const amount = parse($('salary-amount').value), hint = $('salary-hint'), button = $('salary-submit');
   hint.className = 'fd-mo-hint'; button.classList.remove('is-danger'); button.textContent = 'Записать выплату';
   $('salary-amount').classList.remove('is-bad');
-  button.disabled = busy || view.data.ledger.cash_balance === null;
+  button.disabled = busy || cashMissing();
   if (!person) { hint.textContent = 'Выберите сотрудника — покажем, сколько осталось по окладу.'; return; }
   const left = Math.max(0, person.left);
   hint.replaceChildren(h('span', {text: 'Оклад ' + fmt(person.salary) + ' · выдано ' + fmt(person.paid) + ' · осталось ' + fmt(left)}));
@@ -906,7 +916,9 @@ $('fd-export').addEventListener('click', async () => {
   try {
     const catalogRequest = fetch('/api/accountant/expenses/catalog', {cache: 'no-store'});
     catalogRequest.catch(() => {});
-    today = (await globalThis.RetroConfig).today;
+    const config = await globalThis.RetroConfig;
+    today = config.today;
+    unguardedPayouts = !!config.payouts_without_cashier;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;
     $('accountant-date').value = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today ? requested : today;
