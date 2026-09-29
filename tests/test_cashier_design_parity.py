@@ -211,7 +211,8 @@ def test_before_handover_accountant_sees_expected_but_no_income(c):
     assert day['expected_cashier'] is None
     assert day['cashier_handover'] == dict(amount=None, handed_at=None, source=None,
                                            confirmed_at=None, confirmed_by=None, expected_amount=None,
-                                           shortfall=None,
+                                           shortfall=None, checked=False, calculation=None,
+                                           expected_changed=False, cashier_active=None,
                                            expected='850000', expected_at=day['cashier_handover']['expected_at'])
     assert day['cashier_handover']['expected_at'] is not None
 
@@ -309,6 +310,131 @@ def test_correcting_the_accountants_own_record_is_not_a_shortfall(c):
     fixed = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '850000'})
     assert fixed.json()['handover']['expected_amount'] == '850000'
     assert Decimal(fixed.json()['handover']['shortfall']) == 0
+
+
+# ── T-399: недостача кассы — одно число везде ───────────────────────────
+
+def day_export_lines(c, day=DAY):
+    """Excel дня бухгалтера: {подпись строки: сумма} со всех листов."""
+    response = c.get('/api/accountant/day/export', params={'date': day.isoformat()})
+    assert response.status_code == 200, response.text
+    book = openpyxl.load_workbook(BytesIO(response.content))
+    return {row[0]: row[1] for sheet in book.worksheets for row in sheet.iter_rows(values_only=True)
+            if row and isinstance(row[0], str) and len(row) > 1}
+
+
+def founder_handover(c, day=DAY):
+    week = c.get('/api/founder/week', params={'date': day.isoformat()})
+    assert week.status_code == 200, week.text
+    return {item['date']: item for item in week.json()['days']}[day.isoformat()]['handover']
+
+
+def test_shortfall_is_one_number_on_every_screen(c):
+    """Недостача = текущий расчёт кассы − полученное. Сообщение после
+    «Подтвердить» (ответ сервера), карточка 2a, кассир, учредитель и Excel
+    показывают одно и то же число."""
+    snapshot = till_day(c)  # расчёт 850 000: Демо + предоплата + поступление − расход − Шох
+    assert hand_over(c, snapshot, '850000').status_code == 201
+    confirmed = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '550000'})
+    assert confirmed.status_code == 200, confirmed.text
+    toast = confirmed.json()['handover']
+    assert (toast['shortfall'], toast['calculation'], toast['checked']) == ('300000', '850000', True)
+    card = accountant_day(c)['cashier_handover']
+    assert (card['shortfall'], card['calculation'], card['expected_changed']) == ('300000', '850000', False)
+    cashier = c.get('/api/cashier/handover', params={'date': DAY.isoformat()}).json()['handover']
+    assert cashier['shortfall'] == '300000'
+    founder = founder_handover(c)
+    assert founder['shortfall'] == '300000' and founder['status'] == 'mismatch'
+    assert Decimal(founder['expected']) == Decimal('850000')
+    lines = day_export_lines(c)
+    assert lines['⚠ Получено меньше расчёта на'] == 300000
+
+
+def test_manual_income_is_checked_against_the_cashier_calculation_at_once(c):
+    """Приход, записанный бухгалтером вручную, сверяется с расчётом кассы сразу —
+    без «Изменить → Подтвердить»."""
+    till_day(c)
+    recorded = c.post('/api/accountant/incomes', json={'date': DAY.isoformat(), 'item_code': 'income_cashier',
+                                                       'note': 'Касса', 'amount': '450000'})
+    assert recorded.status_code == 201, recorded.text
+    card = accountant_day(c)['cashier_handover']
+    assert card['source'] == 'accountant' and card['confirmed_at'] is None
+    assert (card['checked'], card['calculation'], card['shortfall']) == (True, '850000', '400000')
+    assert founder_handover(c)['shortfall'] == '400000'
+    lines = day_export_lines(c)
+    assert lines['Передача кассира · расчёт'] == 850000
+    assert lines['⚠ Получено меньше расчёта на'] == 400000
+
+
+def test_manual_income_is_not_checked_when_the_cashier_did_not_use_the_panel(c):
+    """Прод ведёт приход вручную, модуль кассира только внедряется: в день, когда
+    кассир в панели ничего не делал, расчёт iiko не знает реальных расходов
+    кассы — ручной приход не сверяется нигде (2a, учредитель, Excel)."""
+    c.app.state.cache.put(snapshot_for())  # расчёт iiko есть: 1 200 000
+    recorded = c.post('/api/accountant/incomes', json={'date': DAY.isoformat(), 'item_code': 'income_cashier',
+                                                       'note': 'Касса', 'amount': '450000'})
+    assert recorded.status_code == 201, recorded.text
+    card = accountant_day(c)['cashier_handover']
+    assert card['cashier_active'] is False and card['expected'] == '1200000'
+    assert (card['checked'], card['calculation'], card['shortfall']) == (False, None, None)
+    founder = founder_handover(c)
+    assert founder['status'] == 'unchecked' and founder['shortfall'] is None
+    lines = day_export_lines(c)
+    assert '⚠ Получено меньше расчёта на' not in lines
+    assert 'Кассир в панели не работал — сверки с расчётом нет.' in lines
+    # Кассир отметил хоть одну операцию — сверка появляется сразу.
+    assert c.post('/api/cashier/expenses', json={'date': DAY.isoformat(), 'description': 'Хлеб',
+                                                 'amount': '50000'}).status_code == 201
+    card = accountant_day(c)['cashier_handover']
+    assert (card['cashier_active'], card['checked'], card['shortfall']) == (True, True, '700000')
+    assert founder_handover(c)['shortfall'] == '700000'
+
+
+def test_manual_income_without_a_cashier_calculation_has_no_check(c):
+    """iiko нет — сверять не с чем: проверки «получено меньше расчёта» нет,
+    даже когда кассир в панели работал."""
+    assert c.post('/api/cashier/expenses', json={'date': DAY.isoformat(), 'description': 'Хлеб',
+                                                 'amount': '50000'}).status_code == 201
+    recorded = c.post('/api/accountant/incomes', json={'date': DAY.isoformat(), 'item_code': 'income_cashier',
+                                                       'note': 'Касса', 'amount': '450000'})
+    assert recorded.status_code == 201, recorded.text
+    card = accountant_day(c)['cashier_handover']
+    assert card['checked'] is True and card['calculation'] is None and card['shortfall'] is None
+    assert '⚠ Получено меньше расчёта на' not in day_export_lines(c)
+
+
+def test_cashier_change_after_confirmation_asks_the_accountant_again(c):
+    """Кассир изменил день после подтверждения (поступление, выдача Шоху) — его
+    не блокируем; бухгалтер видит «касса изменилась», сверка идёт с ТЕКУЩИМ
+    расчётом, повторное подтверждение запоминает новый."""
+    snapshot = till_day(c)
+    assert hand_over(c, snapshot, '850000').status_code == 201
+    assert c.post('/api/accountant/handover/confirm',
+                  json={'date': DAY.isoformat(), 'amount': '850000'}).status_code == 200
+    card = accountant_day(c)['cashier_handover']
+    assert (card['expected_changed'], card['shortfall']) == (False, '0')
+    # После подтверждения кассир принял ещё 100 000 — к передаче стало 950 000.
+    extra = c.post('/api/cashier/receipts', json={'date': DAY.isoformat(), 'description': 'Возврат долга',
+                                                  'amount': '100000'})
+    assert extra.status_code == 201, extra.text
+    card = accountant_day(c)['cashier_handover']
+    assert card['expected_changed'] is True
+    assert (card['expected_amount'], card['calculation'], card['shortfall']) == ('850000', '950000', '100000')
+    assert founder_handover(c)['shortfall'] == '100000'
+    lines = day_export_lines(c)
+    assert lines['⚠ Касса изменилась после подтверждения · было'] == 850000
+    assert lines['⚠ Получено меньше расчёта на'] == 100000
+    # Кассир выдал Шоху ещё 100 000 — расчёт снова 850 000, но при подтверждении
+    # он уже был таким: ничего не изменилось, недостачи нет.
+    assert c.post('/api/cashier/shokh', json={'date': DAY.isoformat(), 'amount': '100000'}).status_code == 201
+    card = accountant_day(c)['cashier_handover']
+    assert (card['expected_changed'], card['shortfall']) == (False, '0')
+    # Ещё поступление — бухгалтер подтверждает снова: расчёт на момент подтверждения — новый.
+    c.post('/api/cashier/receipts', json={'date': DAY.isoformat(), 'description': 'Чай', 'amount': '40000'})
+    again = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '890000'})
+    assert again.status_code == 200, again.text
+    handover = again.json()['handover']
+    assert (handover['expected_amount'], handover['expected_changed'], handover['shortfall']) == ('890000', False, '0')
 
 
 def test_cashier_undo_is_allowed_while_the_money_is_not_spent(c):

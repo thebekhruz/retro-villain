@@ -62,6 +62,7 @@
 .dir-count{border:0;border-radius:14px;background:#f1f3ee;padding:12px 10px;text-align:left;color:var(--ink);min-height:44px}
 .dir-count strong{display:block;font-size:24px;font-weight:650}
 .dir-count span{display:block;font-size:11px;color:#737f74;margin-top:2px}
+.dir-count-sub{display:block;font-size:10px;color:#9a6b2e;margin-top:2px;line-height:1.25}
 .dir-count.is-late{background:#fff0f2}
 .dir-count.is-late strong{color:var(--late)}
 .dir-count.is-late span{color:#9b4b5a}

@@ -180,6 +180,15 @@ class AttendanceStore:
                          event.source, event.serial_no))
         return inserted
 
+    def forget_link(self, employee_id: int, employee_no: str) -> int:
+        """Привязку сняли или сменили вручную: первые входы, собранные по
+        старому номеру, этому сотруднику больше не принадлежат. Сами события
+        остаются — их подберёт тот, к кому номер привяжут."""
+        with closing(self._open()) as connection, connection:
+            return connection.execute(
+                'DELETE FROM hikvision_first_entries WHERE employee_id = ? AND employee_no = ?',
+                (employee_id, employee_no)).rowcount
+
     def reconcile_links(self, employee_ids: dict[str, int]) -> int:
         """Build first entries for events stored before their employees were linked."""
         if not employee_ids:

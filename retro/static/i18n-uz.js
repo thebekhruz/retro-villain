@@ -2631,3 +2631,82 @@ globalThis.RetroTemplatesUz.push(
   [/^(\d+) (?:замечание|замечания|замечаний)$/, "$1 ta izoh"],
 );
 /* ── /QA 6a Директор ── */
+
+/* ── T-399 директор ── */
+// Должности — свободный текст реестра: словарь переводит их по словам, и узбекское
+// слово в кириллице («миллий») оставалось как есть: «oshpaz миллий».
+Object.assign(globalThis.RetroDictionaryUz, {'миллий': 'milliy', 'повар миллий': 'milliy oshpaz'});
+globalThis.RetroTemplatesUz.push(
+  [/^из них (\d+) без привязки$/, "shundan $1 tasi bog'lanmagan"],
+);
+/* ── /T-399 директор ── */
+
+/* ── T-399 бухгалтер ── */
+// Ролевой аудит 29.09: недостача кассы одним числом, «Касса изменилась после
+// подтверждения», вкладка «Не начислено», бейдж «замечаний», «ID в Hikvision»
+// и русские хвосты в узбекской версии (перечислением, оклада, Кухня).
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Касса изменилась после подтверждения': "Tasdiqlangandan keyin kassa o'zgardi",
+  'Приход записан бухгалтером · кассир в панели не работал — сверки нет':
+    "Kirim buxgalter tomonidan yozilgan · kassir panelda ishlamagan — solishtirish yo'q",
+  'Кассир в панели не работал — сверки нет': "Kassir panelda ishlamagan — solishtirish yo'q",
+  'Удалить выплату оклада': "Oklad to'lovini o'chirish",
+  'Кухня': 'Oshxona',
+  'ID в Hikvision': 'Hikvision ID',
+  'Номер на устройстве, например 1024': 'Qurilmadagi raqam, masalan 1024',
+  'Выключено: должен проходить турникет, а ID Hikvision не привязан — укажите его ниже.':
+    "O'chirilgan: turniketdan o'tishi kerak, Hikvision ID esa bog'lanmagan — uni pastda kiriting.",
+  'Привязка к Hikvision': "Hikvision'ga bog'lash",
+  'Привязка к Hikvision снята': "Hikvision bog'lanishi olib tashlandi",
+  'Hikvision': 'Hikvision',
+  'ID в Hikvision — номер сотрудника на устройстве: цифры и латиница, до 32 знаков.':
+    "Hikvision ID — xodimning qurilmadagi raqami: raqamlar va lotin harflari, 32 belgigacha.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Было ([\d\s,]+) · сейчас ([\d\s,]+) сум — подтвердите снова$/, "Edi $1 · hozir $2 so'm — qayta tasdiqlang"],
+  [/^Касса изменилась после подтверждения: было ([\d\s,]+) сум, сейчас ([\d\s,]+) сум — подтвердите снова\.$/,
+    "Tasdiqlangandan keyin kassa o'zgardi: $1 so'm edi, hozir $2 so'm — qayta tasdiqlang."],
+  // Суммы Шоха бывают с тийинами («2 231 999,99») — прежний шаблон их не брал.
+  [/^Наличными ([\d\s,]+) · перечислением ([\d\s,]+) · Закуп за день:$/, "Naqd $1 · o'tkazma $2 · Kunlik xarid:"],
+  [/^(\d+) (?:сменный|сменных) · (\d+) на окладе$/, "$1 smenali · $2 okladda"],
+  [/^(\d+) (?:сменный|сменных)$/, '$1 smenali'],
+  [/^ID (.+) в Hikvision уже привязан к сотруднику «(.+)»\.$/, "Hikvision'dagi $1 ID allaqachon «$2» xodimiga bog'langan."],
+  [/^ID (.+) в Hikvision уже привязан к другому сотруднику\.$/, "Hikvision'dagi $1 ID allaqachon boshqa xodimga bog'langan."],
+  [/^ID в Hikvision: (.+) → (.+)$/, 'Hikvision ID: $1 → $2'],
+);
+/* ── /T-399 бухгалтер ── */
+
+/* ── T-399 Шох ── */
+// «+ Новый товар» (товар не из справочника iiko), наличные без тийинов,
+// черновик закупа после F5, пометка «Нет в iiko» у бухгалтера и учредителя.
+Object.assign(globalThis.RetroDictionaryUz, {
+  '+ Новый товар': "+ Yangi mahsulot",
+  'Новый товар': "Yangi mahsulot",
+  'не из справочника iiko': "iiko ma'lumotnomasida yo'q",
+  'Название': "Nomi",
+  'Единица': "O'lchov birligi",
+  'Например: лепёшка тандырная': "Masalan: tandir non",
+  'Накладной iiko не будет: бухгалтер заведёт товар и проведёт накладную вручную.': "iiko kirim hujjati bo'lmaydi: buxgalter mahsulotni qo'shadi va hujjatni qo'lda o'tkazadi.",
+  '← Выбрать из списка iiko': "← iiko ro'yxatidan tanlash",
+  'В iiko уже есть': "iiko da allaqachon bor:",
+  '— лучше выберите его из списка.': "— uni ro'yxatdan tanlagan ma'qul.",
+  'Введите название нового товара': "Yangi mahsulot nomini kiriting",
+  'Товар не найден в iiko. Нажмите «+ Новый товар» ниже.': "Mahsulot iiko da topilmadi. Pastdagi «+ Yangi mahsulot»ni bosing.",
+  'Нет в iiko · накладную проведёт бухгалтер': "iiko da yo'q · hujjatni buxgalter o'tkazadi",
+  'Запись для бухгалтера · без накладной': "Buxgalter uchun yozuv · hujjatsiz",
+  'Товара нет в справочнике iiko — накладную проведёт бухгалтер.': "Mahsulot iiko ma'lumotnomasida yo'q — hujjatni buxgalter o'tkazadi.",
+  'Нет в iiko — бухгалтер заведёт товар и проведёт накладную': "iiko da yo'q — buxgalter mahsulotni qo'shib, hujjatni o'tkazadi",
+  'Черновик восстановлен.': "Qoralama tiklandi.",
+  'Черновик восстановлен. Прикрепите фото заново.': "Qoralama tiklandi. Fotoni qayta biriktiring.",
+  'нет в iiko': "iiko da yo'q",
+  'Нет в iiko — заведите товар и проведите накладную вручную': "iiko da yo'q — mahsulotni qo'shing va hujjatni qo'lda o'tkazing",
+  // Единицы нового товара: кг, шт и уп уже в словаре.
+  'л': 'l',
+  'пучок': "bog'",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^нет в iiko · (.+)$/, "iiko da yo'q · $1"],
+  [/^В накладную уйдёт (.+) сум, наличными — (.+) сум$/, "Hujjatga $1 so'm ketadi, naqd — $2 so'm"],
+  [/^Нет в iiko — заведите товар и проведите накладную вручную: (.+)$/, "iiko da yo'q — mahsulotni qo'shing va hujjatni qo'lda o'tkazing: $1"],
+);
+/* ── /T-399 Шох ── */

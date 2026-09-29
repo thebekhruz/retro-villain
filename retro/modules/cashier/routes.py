@@ -18,7 +18,7 @@ from .expenses import AutomaticExpense, Expense
 from .export import export_report
 from .service import DataError, TZ, demo_snapshot, today_tashkent
 from .till import (HandoverChanged, NothingToHandOver, add_usd_deposit, delete_shokh_give,
-                   delete_usd_deposit, give_shokh, hand_over, shokh_gives, shokh_total,
+                   delete_usd_deposit, give_shokh, hand_over, handover_check, shokh_gives, shokh_total,
                    till_summary, usd_balance, usd_day)
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
@@ -224,7 +224,7 @@ def day_summary(request: Request, date: date,
 def handover_state(request: Request, date: date):
     day = selected_day(date)
     return dict(date=day.isoformat(),
-                handover=request.app.state.accountant_finance.handover_state(day))
+                handover=handover_check(request.app.state, day))
 
 
 @router.post('/handover', status_code=201)
@@ -324,8 +324,7 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
                                      allow_stale=allow_stale)
         state.cache.put(result)
         # Передача дня бухгалтеру: «Передано в 21:40» у кассира. В демо — никогда.
-        handover = None if result.demo else await asyncio.to_thread(
-            state.accountant_finance.handover_state, day)
+        handover = None if result.demo else await asyncio.to_thread(handover_check, state, day)
         return {**result.json(),
                 'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured),
                 'handover': handover,

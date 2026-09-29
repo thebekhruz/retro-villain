@@ -359,6 +359,43 @@ def expected_from_saved(state, day: date):
     return expected_handover(snapshot, till_totals(state, day)), snapshot.fetched_at
 
 
+def cashier_active(state, day: date) -> bool:
+    """Работал ли кассир в панели в этот день: свой расход (не авто-строка
+    «Зарплата кассира»), поступление, выдача Шоху из кассы, доллары в сейф
+    (не перенесённые со старого поля) или «Передать» — хоть раз, даже если
+    потом отменил. Только тогда расчёт кассы знает её реальные расходы, и
+    ручной приход бухгалтера есть с чем сверять."""
+    if any(not item.automatic for item in state.expenses.list(day)) or state.expenses.list_receipts(day):
+        return True
+    finance = state.accountant_finance
+    with closing(finance._open()) as connection:
+        if connection.execute('SELECT 1 FROM cashier_shokh_gives WHERE day = ? LIMIT 1',
+                              (day.isoformat(),)).fetchone():
+            return True
+        if connection.execute('SELECT 1 FROM cashier_usd_deposits WHERE day = ? AND legacy = 0 LIMIT 1',
+                              (day.isoformat(),)).fetchone():
+            return True
+        if connection.execute("SELECT 1 FROM accountant_handover_days WHERE day = ? AND source = 'cashier'",
+                              (day.isoformat(),)).fetchone():
+            return True
+    # Передача, которую потом подтвердили, исправили или отменили: след — в журнале.
+    return any((entry['before'] or {}).get('source') == CASHIER or (entry['after'] or {}).get('source') == CASHIER
+               for entry in finance.audit_entries(entity_type='handover', entity_id=day.isoformat()))
+
+
+def handover_check(state, day: date, expected: Decimal | None = None) -> dict | None:
+    """Передача дня со сверкой к ТЕКУЩЕМУ расчёту кассы: одна недостача для
+    2a (тост, карточка, «Проверки»), кассира, учредителя и Excel.
+    `expected` — уже посчитанный расчёт (учредитель берёт его из свежего
+    снимка iiko той же формулой); без него — по снимку на сервере. Ручной
+    приход бухгалтера сверяется, только если кассир в этот день работал в
+    панели (cashier_active)."""
+    if expected is None:
+        expected, _ = expected_from_saved(state, day)
+    return state.accountant_finance.handover_state(day, current_expected=expected,
+                                                   cashier_active=cashier_active(state, day))
+
+
 class HandoverChanged(LedgerError):
     """Сумма на сервере разошлась с той, что видел кассир."""
 
@@ -381,4 +418,4 @@ def hand_over(state, day: date, snapshot, *, expected: Decimal | None = None) ->
                                 'Проверьте расходы и выдачи Шоху.')
     finance = state.accountant_finance
     finance.record_handover(day, amount, source=CASHIER, replace_sources=CASHIER_MAY_REPLACE)
-    return finance.handover_state(day)
+    return finance.handover_state(day, current_expected=amount, cashier_active=True)

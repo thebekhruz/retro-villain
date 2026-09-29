@@ -183,7 +183,8 @@
   /** Поле, которое сохраняется само (по Enter / уходу из поля): «сохраняю…»
    *  внутри поля, затем зелёная галочка и подсветка строки; ошибка — красная
    *  рамка и текст под полем, введённое остаётся для повтора.
-   *  opts.row — строка для подсветки; opts.message=false — без текста под полем. */
+   *  opts.row — строка для подсветки; opts.message=false — без текста под полем;
+   *  opts.restore — при ошибке поле не возвращает набранное (показывает сохранённое). */
   function field(input, work, opts = {}) {
     const promise = asPromise(work);
     if (!input) return promise;
@@ -213,6 +214,9 @@
         if (key && states.get(key) === entry) states.delete(key);
       } else {
         entry.state = 'error';
+        // opts.restore — отклонённое значение в поле не держим: после
+        // перерисовки в нём сохранённое, а ошибка остаётся рамкой и текстом.
+        if (opts.restore) entry.value = undefined;
         entry.message = opts.message === false ? '' : (error && error.message) || tr('Не сохранено. Проверьте и повторите.');
         paintField(live(input, key), entry);
       }

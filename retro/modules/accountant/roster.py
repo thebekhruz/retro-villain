@@ -6,6 +6,7 @@
 # поэтому локально всё работало, а на сервере приложение не поднималось.
 from __future__ import annotations
 
+import re
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
@@ -31,6 +32,18 @@ GROUPS = {
     'техперсонал': 'Уборка',
     'охрана': 'Охрана',
 }
+
+HIKVISION_ID = re.compile(r'[0-9A-Za-z_-]+')
+
+
+class HikvisionIdTaken(ValueError):
+    """Номер в Hikvision уже привязан к другому сотруднику."""
+
+    def __init__(self, employee_no: str, owner: str | None):
+        self.employee_no, self.owner = employee_no, owner
+        super().__init__(f'ID {employee_no} в Hikvision уже привязан к сотруднику «{owner}».' if owner
+                         else f'ID {employee_no} в Hikvision уже привязан к другому сотруднику.')
+
 
 UNASSIGNED_ROLE = 'Должность не указана'
 UNASSIGNED_GROUP = 'Не распределено'
@@ -99,6 +112,8 @@ class Employee:
         return dict(id=self.id, name=self.name, role=self.role, group=self.group_name,
                     rate=str(self.rate) if self.rate is not None else None,
                     hikvision_registered=self.hikvision_id is not None,
+                    # Номер на устройстве — для поля «ID в Hikvision» в «Сотрудниках».
+                    hikvision_id=self.hikvision_id,
                     manual_attendance=self.manual_attendance,
                     manual_since=self.manual_since.isoformat() if self.manual_since else None)
 
@@ -391,6 +406,46 @@ class RosterStore:
         if not changed:
             raise ValueError('Сотрудник не найден.')
         return next(person for person in self.list() if person.id == employee_id)
+
+    def set_hikvision_id(self, employee_id: int, value: str | None, *, by: str | None = None) -> tuple[str | None, str | None]:
+        """Привязать сотрудника к устройству вручную: его номер в Hikvision
+        (employeeNo). Пусто — снять привязку. Номер уникален: занятый другим
+        сотрудником — HikvisionIdTaken (409 с именем владельца).
+
+        Номер — не свойство дня, а то, кто этот человек на устройстве, поэтому
+        он же записывается и в историю версий: иначе прошлые дни смотрели бы на
+        старый номер. Возвращает (было, стало)."""
+        new = (value or '').strip() or None
+        if new is not None and (len(new) > 32 or not HIKVISION_ID.fullmatch(new)):
+            raise ValueError('ID в Hikvision — номер сотрудника на устройстве: цифры и латиница, до 32 знаков.')
+        with closing(self._open()) as connection, connection:
+            row = connection.execute('SELECT hikvision_id, rate, group_name FROM accountant_employees WHERE id = ?',
+                                     (employee_id,)).fetchone()
+            if row is None:
+                raise ValueError('Сотрудник не найден.')
+            old = row[0]
+            if old == new:
+                return old, new
+            if new is not None:
+                owner = connection.execute('SELECT id, name FROM accountant_employees WHERE hikvision_id = ? AND id <> ?',
+                                           (new, employee_id)).fetchone()
+                if owner is not None:
+                    raise HikvisionIdTaken(new, owner[1])
+            try:
+                connection.execute('UPDATE accountant_employees SET hikvision_id = ? WHERE id = ?', (new, employee_id))
+            except Exception as error:
+                # Гонка двух привязок: уникальность держит сама база (SQLite и Postgres).
+                if 'unique' in str(error).lower() or 'integrity' in type(error).__name__.lower():
+                    raise HikvisionIdTaken(new, None) from None
+                raise
+            connection.execute('UPDATE accountant_employee_versions SET hikvision_id = ? WHERE employee_id = ?',
+                               (new, employee_id))
+            self._stamp_version(connection, employee_id)
+            self._audit(connection, employee_id, action='hikvision', by=by,
+                        reason='Привязка к Hikvision' if new else 'Привязка к Hikvision снята',
+                        old_rate=row[1], new_rate=row[1], old_group=row[2], new_group=row[2],
+                        details=f'ID в Hikvision: {old or "—"} → {new or "—"}')
+        return old, new
 
     def link_hikvision_people(self, people: tuple[HikvisionPerson, ...]) -> dict[str, int]:
         """Link only two-sided unique exact normalized names; never overwrite IDs."""

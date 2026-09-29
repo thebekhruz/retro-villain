@@ -301,7 +301,10 @@ def team(request: Request, date: date | None = None):
                 roles=sorted(set(GROUPS) | {'повар', 'кондитер'}),
                 counts=dict(late=sum(row['status'] == 'late' for row in shift),
                             missing=sum(row['status'] in ABSENT_STATUSES for row in shift),
-                            no_hikvision=sum(not row['hikvision_registered'] for row in shift)))
+                            no_hikvision=sum(not row['hikvision_registered'] for row in shift),
+                            # Из них без привязки: не на ручной отметке, начисление заблокировано.
+                            unlinked_hikvision=sum(not row['hikvision_registered'] and not row['manual_attendance']
+                                                   for row in shift)))
 
 
 def _who(request: Request) -> str:
