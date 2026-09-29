@@ -119,10 +119,10 @@ function noteStrip(text, tag, action) {
 // сервер отказал в начислении всей смены (за день уже есть зарплата без
 // сотрудника). Остальные причины — у отдельных строк, их видно в строке.
 const dayBlocks = {};
-// Режим проверки (ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER): сервер пускает выдачу без
+// Режим проверки (ACCOUNTANT_CHECK_MODE): сервер пускает выдачу без
 // данных кассира, поэтому экран не должен запирать её раньше сервера.
-let unguardedPayouts = false;
-const cashMissing = () => view.data.ledger.cash_balance === null && !unguardedPayouts;
+let checkMode = false;
+const cashMissing = () => view.data.ledger.cash_balance === null && !checkMode;
 function payDisabledReason() {
   const {data, board} = view;
   if (cashMissing())
@@ -189,11 +189,13 @@ function renderShift() {
   if (!health.ok) strips.append(noteStrip(health.text, 'Hikvision'));
   if (lock) strips.append(noteStrip(lock, 'Выдача закрыта',
     data.ledger.cash_balance === null ? h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools}) : null));
-  // Снятый гейт обязан быть виден. Молчаливый режим проверки на боевом контуре
-  // означал бы выдачу против кассы, которой нет, и никто бы не заметил.
-  if (unguardedPayouts && data.ledger.cash_balance === null)
-    strips.append(noteStrip('Выдача записывается без данных кассира, остаток может уйти в минус. Это временный режим проверки.',
-      'Проверка', h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools})));
+  // Снятые гейты обязаны быть видны. Молчаливый режим проверки на боевом
+  // контуре означал бы выдачу против кассы, которой нет, и начисление людям,
+  // чей день никто не подтверждал, — и никто бы этого не заметил.
+  if (checkMode)
+    strips.append(noteStrip('Временный режим проверки: выдача идёт без данных кассира, «нет привязки Hikvision» не держит начисление, остаток может уйти в минус.',
+      'Проверка', data.ledger.cash_balance === null
+        ? h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools}) : null));
 
   const tabs = $('shift-tabs'); tabs.replaceChildren();
   L.boardTabs(board.rows).forEach(([key, label, count]) => {
@@ -918,7 +920,7 @@ $('fd-export').addEventListener('click', async () => {
     catalogRequest.catch(() => {});
     const config = await globalThis.RetroConfig;
     today = config.today;
-    unguardedPayouts = !!config.payouts_without_cashier;
+    checkMode = !!config.check_mode;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;
     $('accountant-date').value = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today ? requested : today;

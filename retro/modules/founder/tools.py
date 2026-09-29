@@ -337,7 +337,8 @@ class FounderChatTools:
 
         roster = self.app.state.accountant_roster.list()
         snapshot = self.app.state.attendance.snapshot(day, roster)
-        rows = draft_payroll(day, roster, set(), snapshot.rows)
+        rows = draft_payroll(day, roster, set(), snapshot.rows,
+                             pay_unlinked=self.app.state.settings.check_mode)
         counts = {
             status: sum(row.status == status for row in rows)
             for status in ('on_time', 'late', 'missing', 'unlinked', 'unavailable',

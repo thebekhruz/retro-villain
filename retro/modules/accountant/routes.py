@@ -44,7 +44,8 @@ def money_json(summary: dict) -> dict:
 
 def attendance_payroll(request: Request, day: date, roster, exceptions, *, frozen_pay=False):
     snapshot = request.app.state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, exceptions, snapshot.rows)
+    rows = draft_payroll(day, roster, exceptions, snapshot.rows,
+                         pay_unlinked=request.app.state.settings.check_mode)
     if not frozen_pay:
         return snapshot, rows
     saved = request.app.state.accountant_finance.day_accruals(day)
@@ -87,7 +88,7 @@ async def required_handover(request: Request, day: date) -> Decimal:
         # Режим проверки: вместо отказа считаем приход нулевым. Строка прихода за
         # день появится с суммой 0 — её перезапишет обычная запись бухгалтера,
         # когда настоящая касса приедет.
-        if not request.app.state.settings.payouts_without_cashier:
+        if not request.app.state.settings.check_mode:
             raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
         amount = Decimal(0)
     # Уже записанный приход той же суммой не перезаписывается (время «получено»

@@ -202,7 +202,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     accountant_path = accountant_db_path or shared or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(
-        accountant_path, allow_negative_cash=settings.payouts_without_cashier)
+        accountant_path, allow_negative_cash=settings.check_mode)
     # Старое поле «Доллары в кассе» (одна сумма на день) → по взносу на день.
     migrate_legacy_usd_safely(app.state.usd_rates, app.state.accountant_finance)
     app.state.attendance_store = AttendanceStore(accountant_path)
@@ -391,7 +391,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                     role=role, user=getattr(request.state, 'dashboard_user', None),
                     # Экран запирает выдачу сам, до похода на сервер: без этого
                     # флага кнопки остались бы мёртвыми даже при снятом гейте.
-                    payouts_without_cashier=settings.payouts_without_cashier,
+                    check_mode=settings.check_mode,
                     modules=modules, planned_modules=0)
 
     app.include_router(cashier_router)

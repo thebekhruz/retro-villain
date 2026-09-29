@@ -483,9 +483,9 @@ def test_without_cashier_data_daily_balance_is_unknown_and_expense_is_rejected(t
             'amount': '100'}).status_code == 410
 
 
-def test_check_mode_records_payouts_without_cashier_data_and_lets_cash_go_negative(tmp_path):
+def test_check_mode_records_check_mode_data_and_lets_cash_go_negative(tmp_path):
     """Временный режим прогона: гейт кассира снят, минус по остатку не отменяет операцию."""
-    with demo_client(tmp_path, payouts_without_cashier=True) as client:
+    with demo_client(tmp_path, check_mode=True) as client:
         day = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         assert day['ledger']['cash_balance'] is None
         spend = client.post('/api/accountant/expenses', json={
@@ -498,18 +498,38 @@ def test_check_mode_records_payouts_without_cashier_data_and_lets_cash_go_negati
     assert after['ledger']['cash_flow']['received_from_cashier'] == '0'
     assert after['ledger']['cash_balance'] == '-900000'
     # Экран обязан знать про режим: иначе он запрёт выдачу раньше сервера.
-    assert client.get('/api/config').json()['payouts_without_cashier'] is True
+    assert client.get('/api/config').json()['check_mode'] is True
+
+
+def test_check_mode_pays_people_without_a_hikvision_link(tmp_path):
+    """В режиме прогона «нет привязки» не держит начисление: ставка идёт как пришедшему."""
+    guarded = demo_client(tmp_path / 'off')
+    with guarded as client:
+        blocked = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+    unguarded = demo_client(tmp_path / 'on', check_mode=True)
+    with unguarded as client:
+        opened = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+
+    unlinked = [row for row in blocked['employees'] if row['status'] == 'unlinked']
+    assert unlinked, 'демо-реестр обязан содержать людей без привязки'
+    assert all(row['blocker'] == 'unlinked' and row['payable'] is None for row in unlinked)
+
+    same = {row['employee_id'] for row in unlinked}
+    after = [row for row in opened['employees'] if row['employee_id'] in same]
+    assert all(row['blocker'] is None and row['payable'] == row['rate'] for row in after)
+    # Статус не подменяем: человек по-прежнему без привязки, просто оплачен.
+    assert all(row['status'] == 'unlinked' for row in after)
 
 
 def test_check_mode_is_off_unless_asked(tmp_path, monkeypatch):
     """По умолчанию гейт на месте — снять его можно только переменной окружения."""
-    assert Settings().payouts_without_cashier is False
-    monkeypatch.delenv('ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER', raising=False)
-    assert Settings.from_env().payouts_without_cashier is False
-    monkeypatch.setenv('ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER', '1')
-    assert Settings.from_env().payouts_without_cashier is True
+    assert Settings().check_mode is False
+    monkeypatch.delenv('ACCOUNTANT_CHECK_MODE', raising=False)
+    assert Settings.from_env().check_mode is False
+    monkeypatch.setenv('ACCOUNTANT_CHECK_MODE', '1')
+    assert Settings.from_env().check_mode is True
     with demo_client(tmp_path) as client:
-        assert client.get('/api/config').json()['payouts_without_cashier'] is False
+        assert client.get('/api/config').json()['check_mode'] is False
 
 
 def test_accountant_page_still_shows_staff_when_iiko_is_unavailable(tmp_path):

@@ -39,8 +39,8 @@ class Settings:
     # Временный режим проверки: выдачу можно записать без данных кассира за день,
     # и отрицательный остаток не отменяет операцию. Ставит фиктивный приход 0,
     # поэтому на боевом контуре держать включённым нельзя — только на время
-    # прогона. Выключается снятием ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER.
-    payouts_without_cashier: bool = False
+    # прогона. Выключается снятием ACCOUNTANT_CHECK_MODE.
+    check_mode: bool = False
     claude_api_key: str = field(default='', repr=False)
     claude_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
@@ -96,7 +96,7 @@ class Settings:
         proxy_value = os.getenv('TRUSTED_PROXY_NETWORK', '').strip()
         trusted_proxy_network = ip_network(proxy_value, strict=False) if proxy_value else None
         manual = os.getenv('ACCOUNTANT_MANUAL_HANDOVER', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
-        unguarded_payouts = os.getenv('ACCOUNTANT_PAYOUTS_WITHOUT_CASHIER', '').strip().casefold() \
+        check_mode_on = os.getenv('ACCOUNTANT_CHECK_MODE', '').strip().casefold() \
             in {'1', 'true', 'yes', 'да'}
         categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
@@ -129,7 +129,7 @@ class Settings:
             dashboard_allowed_network=allowed_network,
             trusted_proxy_network=trusted_proxy_network,
             manual_handover_only=manual,
-            payouts_without_cashier=unguarded_payouts,
+            check_mode=check_mode_on,
             claude_api_key=os.getenv('CLAUDE_API_KEY', ''),
             claude_model=os.getenv('CLAUDE_MODEL', 'claude-sonnet-4-6'),
             director_categories=categories,
