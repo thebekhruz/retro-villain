@@ -89,3 +89,126 @@ test('переключение месяца не выпадает из года'
   assert.equal(logic.shiftMonth('2026-01', -1), '2025-12');
   assert.equal(logic.shiftMonth('2026-12', 1), '2027-01');
 });
+
+/* ── 2b: одна сетка для помесячных и сменных ───────────────────────────── */
+const TODAY = '2026-09-29';
+const cell = extra => Object.assign({accrual_id: 7, status: 'on_time', amount: '180000', paid: '180000', debt: '0'}, extra);
+
+test('ячейка сменного: выдано, опоздал, н/я, сумма ≠ ставке, выдано без входа', () => {
+  const at = (extra, day = '2026-09-20') => logic.gridCell(cell(extra), {rate: '180000', day, today: TODAY});
+  assert.equal(at({}).kind, 'paid');
+  assert.equal(at({}).text, '✓');
+  assert.equal(at({status: 'late'}).late, true);
+  assert.equal(at({status: 'missing', amount: '0', paid: '0'}).text, 'н/я');
+  assert.equal(at({status: 'manual_absent', amount: '0', paid: '0'}).kind, 'missing');
+  // Сумма не равна ставке — показываем выданную сумму, а не галочку.
+  const odd = at({amount: '200000', paid: '200000'});
+  assert.equal(odd.kind, 'odd');
+  assert.match(odd.text, /^200\s000$/);
+  // Выдали, хотя входа не было, — ошибка.
+  assert.equal(at({status: 'missing', amount: '0', paid: '180000'}).kind, 'nopass');
+});
+
+test('невыданная смена: вчерашняя — «к выдаче», старая — «✕»; обе можно выдать', () => {
+  const owed = day => logic.gridCell(cell({paid: '0', debt: '180000'}), {rate: '180000', day, today: TODAY});
+  assert.equal(owed('2026-09-28').kind, 'topay');
+  assert.equal(owed('2026-09-28').text, 'к выдаче');
+  assert.equal(owed('2026-09-10').kind, 'unpaid');
+  assert.equal(owed('2026-09-10').text, '✕');
+  assert.ok(owed('2026-09-28').payable && owed('2026-09-10').payable);
+  assert.equal(owed('2026-09-10').debt, 180000);
+});
+
+test('неподтверждённая вчерашняя смена берётся из прохода и не выдаётся из сетки', () => {
+  const pending = logic.gridCell(null, {rate: '180000', day: '2026-09-28', today: TODAY,
+    pending: {status: 'late', payable: '180000'}});
+  assert.equal(pending.kind, 'pending');
+  assert.equal(pending.late, true);
+  assert.equal(pending.payable, false);
+  assert.equal(logic.gridCell(null, {day: '2026-09-28', today: TODAY,
+    pending: {status: 'manual_absent', payable: '0'}}).text, 'н/я');
+  assert.equal(logic.gridCell(null, {day: '2026-09-29', today: TODAY}).kind, 'future');
+  assert.equal(logic.gridCell(null, {day: '2026-09-02', today: TODAY}).kind, 'empty');
+});
+
+const month2b = () => ({
+  days: ['2026-09-27', '2026-09-28', '2026-09-29'],
+  shift: [{employee_id: 5, name: 'Санжар Холматов', group: 'Обслуживание зала', rate: '150000',
+    accrued: '300000', paid: '150000', debt: '150000', cells: {
+      '2026-09-27': cell({accrual_id: 1, status: 'manual_present', amount: '150000', paid: '0', debt: '150000'}),
+    }}],
+  paid_per_day: {'2026-09-28': '150000'},
+  monthly: [{id: 3, name: 'Фаррух Султанов', role: 'шеф-повар', salary: '9000000'},
+    {id: 8, name: 'Лола Нурматова', role: 'техперсонал', salary: '3500000'}],
+  monthly_cells: {'3': {'2026-09-27': '9500000'}},
+  monthly_total: '12500000', monthly_paid: '9500000',
+});
+
+test('строка сменного: остаток включает вчерашнюю смену к выдаче, ручная отметка даёт «⊘ Hik»', () => {
+  const [row] = logic.shiftRows(month2b(), {today: TODAY, pending: {5: {status: 'on_time', payable: '150000'}}});
+  // 27-е старше вчерашнего дня — это уже «✕ не выдана», вчерашнее 28-е ждёт подтверждения.
+  assert.deepEqual(row.cells.map(c => c.kind), ['unpaid', 'pending', 'future']);
+  assert.equal(row.rest, 300000);
+  assert.equal(row.noHik, true);
+});
+
+test('строка помесячного: части оклада по дням, переплата и «нет выплат»', () => {
+  const [chef, lola] = logic.monthlyRows(month2b(), {today: TODAY});
+  assert.equal(chef.cells[0].amount, 9500000);
+  assert.equal(chef.cells[0].over, true);
+  assert.equal(chef.rest, -500000);
+  assert.equal(chef.over, true);
+  assert.equal(lola.none, true);
+  assert.equal(lola.cells[2].today, true);
+});
+
+test('подвал складывает сменных и части окладов за день выдачи', () => {
+  assert.deepEqual(logic.dayTotals(month2b()).map(d => d.amount), [9500000, 150000, 0]);
+  const totals = logic.totals(month2b());
+  assert.equal(totals.monthlyPaid, 9500000);
+  assert.equal(totals.monthlyRest, 3000000);
+});
+
+test('проверки месяца: ошибки первыми, «нет выплат» — последним напоминанием', () => {
+  const data = month2b();
+  data.shift[0].cells['2026-09-10'] = cell({accrual_id: 2, status: 'on_time', amount: '150000', paid: '0', debt: '150000'});
+  data.shift[0].cells['2026-09-12'] = cell({accrual_id: 3, status: 'missing', amount: '0', paid: '150000'});
+  data.days = ['2026-09-10', '2026-09-12', ...data.days];
+  const checks = logic.checks(data, {today: TODAY});
+  assert.deepEqual(checks.map(c => c.lvl), ['err', 'err', 'warn', 'warn', 'todo']);
+  assert.equal(checks[0].text, 'Переплата оклада: Фаррух Султанов');
+  assert.equal(checks[1].text, 'Выдано без входа 12.09: Санжар Холматов');
+  assert.equal(checks[2].text, 'Смена 10.09 не выдана: Санжар Холматов');
+  assert.equal(checks[3].text, 'Смена 27.09 не выдана: Санжар Холматов');
+  assert.equal(checks[4].text, 'Нет выплат с начала месяца: Лола Нурматова');
+  assert.equal(checks[2].row, 's5');
+  assert.equal(checks[2].day, '2026-09-10');
+});
+
+test('выдача за смену — на следующий день, но не позже сегодня', () => {
+  assert.equal(logic.payday('2026-09-10', TODAY), '2026-09-11');
+  assert.equal(logic.payday('2026-09-28', TODAY), '2026-09-29');
+  assert.equal(logic.payday('2026-09-29', TODAY), '2026-09-29');
+  assert.equal(logic.payday('2026-09-30', '2026-10-05'), '2026-10-01');
+});
+
+test('ячейка оклада: больше — доплата, меньше — правка последней выплаты, ноль — удаление всех', () => {
+  const ops = [{id: 11, amount: 1000000}, {id: 12, amount: 500000}];
+  assert.deepEqual(logic.monthlyEditPlan(ops, 1500000, 1500000), []);
+  assert.deepEqual(logic.monthlyEditPlan(ops, 1500000, 2000000), [{action: 'add', amount: 500000}]);
+  assert.deepEqual(logic.monthlyEditPlan(ops, 1500000, 1200000), [{action: 'update', id: 12, amount: 200000}]);
+  assert.deepEqual(logic.monthlyEditPlan(ops, 1500000, 1000000), [{action: 'delete', id: 12}]);
+  assert.deepEqual(logic.monthlyEditPlan(ops, 1500000, 400000), [{action: 'delete', id: 12}, {action: 'update', id: 11, amount: 400000}]);
+  assert.deepEqual(logic.monthlyEditPlan(ops, 1500000, 0), [{action: 'delete', id: 12}, {action: 'delete', id: 11}]);
+  // Выплат в данных меньше, чем в ячейке, — данные устарели, ничего не трогаем.
+  assert.equal(logic.monthlyEditPlan([], 1500000, 0), null);
+});
+
+test('строка помесячного несёт выплаты дня, если сервер их прислал', () => {
+  const data = month2b();
+  assert.equal(logic.monthlyRows(data, {today: TODAY})[0].cells[0].ops, null);
+  data.monthly_cell_ops = {'3': {'2026-09-27': [{id: 5, amount: '6000000'}, {id: 9, amount: '3500000'}]}};
+  const [chef, lola] = logic.monthlyRows(data, {today: TODAY});
+  assert.deepEqual(chef.cells[0].ops, [{id: 5, amount: 6000000}, {id: 9, amount: 3500000}]);
+  assert.deepEqual(lola.cells[0].ops, []);
+});
