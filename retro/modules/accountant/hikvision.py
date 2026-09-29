@@ -297,6 +297,34 @@ class AttendanceService:
         self.enabled = enabled
         self.poll_seconds = poll_seconds
 
+    def _day_complete(self, day: date, now: datetime, state: SyncState | None = None) -> bool:
+        """Накрыта ли выгрузка весь день целиком — только тогда «нет прохода» = «не пришёл»."""
+        state = state or self.store.sync_state(self.source)
+        start = datetime.combine(day, time.min, TZ)
+        end = start + timedelta(days=1)
+        return bool(day < now.date() and state.covered_from is not None
+                    and state.covered_through is not None
+                    and state.covered_from <= start and state.covered_through >= end)
+
+    def manual_markable(self, day: date, employee: Employee, *,
+                        now: datetime | None = None) -> bool:
+        """Можно ли поставить «был / не был» за этот день руками.
+
+        Да — если человек и так на ручной отметке. Иначе только когда устройство
+        за этот день промолчало и уже не ответит: прохода нет, а выгрузка день не
+        накрывает. Выгрузка идёт только вперёд, поэтому дни до её начала иначе
+        остаются без начисления навсегда. Есть проход или день выгружен целиком —
+        отметку не даём: данные устройства сильнее.
+        """
+        if employee.manual_attendance:
+            return True
+        if employee.hikvision_id is None:
+            return False
+        now = (now or datetime.now(TZ)).astimezone(TZ)
+        if self.store.first_entries(day).get(employee.id) is not None:
+            return False
+        return not self._day_complete(day, now)
+
     def snapshot(self, day: date, employees: list[Employee], *,
                  now: datetime | None = None) -> AttendanceSnapshot:
         now = now or datetime.now(TZ)
@@ -306,20 +334,20 @@ class AttendanceService:
         entries = self.store.first_entries(day)
         marks = self.store.manual_marks(day)
         state = self.store.sync_state(self.source)
-        start = datetime.combine(day, time.min, TZ)
-        end = start + timedelta(days=1)
-        complete = bool(day < now.date() and state.covered_from is not None
-                        and state.covered_through is not None
-                        and state.covered_from <= start and state.covered_through >= end)
+        complete = self._day_complete(day, now, state)
         rows = []
         for employee in employees:
             entry = entries.get(employee.id)
+            mark = marks.get(employee.id)
             if employee.manual_attendance:
-                rows.append(self._manual_row(employee, day, marks.get(employee.id), entry))
+                rows.append(self._manual_row(employee, day, mark, entry))
             elif entry is not None:
                 rows.append(AttendanceRow(employee.id, _entry_status(entry), entry.occurred_at))
             elif employee.hikvision_id is None:
                 rows.append(AttendanceRow(employee.id, 'unlinked', None))
+            elif mark is not None and not complete:
+                # День вне выгрузки: отметка бухгалтера — единственный источник.
+                rows.append(AttendanceRow(employee.id, 'manual_present' if mark else 'manual_absent', None))
             else:
                 rows.append(AttendanceRow(employee.id, 'missing' if complete else 'unavailable', None))
         return AttendanceSnapshot(tuple(rows), complete, self._health(state, now, complete), marks)

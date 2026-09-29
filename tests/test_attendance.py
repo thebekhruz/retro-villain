@@ -73,6 +73,15 @@ def test_attendance_frontend_has_real_source_and_unavailable_states():
         assert 'Проходы демонстрационные' not in source
     assert 'unavailable' in employees_js
     assert "unavailable: 'Нет данных'" in employees_js
+    # Запертую выдачу видно и она сама объясняет причину: выключенная кнопка
+    # не ловит наведение, поэтому держим её живой через aria-disabled.
+    accountant_css = (root / 'retro/static/accountant.css').read_text(encoding='utf-8')
+    assert "'aria-disabled': String(!active)" in accountant_js
+    assert 'message(why, true)' in accountant_js
+    assert '.fd-cb:not(.is-on).is-locked' in accountant_css
+    assert 'border-style:dashed' in accountant_css
+    # День раньше начала выгрузки не «ждёт входов» — их не будет.
+    assert 'hikvision_gap' in accountant_js and 'covered_from' in accountant_js
     assert 'arrivalText(row.first_entry)' in employees_js
     assert "timeZone: 'Asia/Tashkent'" in employees_js
     assert 'демо Hikvision' not in director_html

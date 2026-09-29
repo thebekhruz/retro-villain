@@ -164,6 +164,49 @@ def test_current_day_without_entry_is_not_final_absence(tmp_path):
     assert snapshot.complete is False
 
 
+def covered(store, *, since, until):
+    store.record_success('entry', at=until, cursor_at=until, covered_from=since, covered_through=until)
+
+
+def test_day_before_the_sync_started_can_be_filled_by_hand(tmp_path):
+    """Выгрузка идёт только вперёд: за день до её начала входов не будет никогда.
+
+    Без ручной отметки такая смена не начисляется вообще — деньги зависают.
+    """
+    store = AttendanceStore(tmp_path / 'accountant.sqlite3')
+    person = linked_employee(1, 'Нет входа', '20')
+    unlinked = linked_employee(2, 'Нет ID', None)
+    covered(store, since=datetime(2026, 9, 22, 0, tzinfo=TZ), until=datetime(2026, 9, 23, 9, tzinfo=TZ))
+    service = AttendanceService(store, source='entry', enabled=True, poll_seconds=30)
+    now = datetime(2026, 9, 23, 9, tzinfo=TZ)
+
+    assert service.manual_markable(DAY, person, now=now) is True
+    # Без привязки человека переводят на ручную отметку целиком, а не по дню.
+    assert service.manual_markable(DAY, unlinked, now=now) is False
+    assert service.snapshot(DAY, [person], now=now).rows[0].status == 'unavailable'
+
+    store.set_manual_mark(person.id, DAY, True, 'Бухгалтер')
+
+    assert service.snapshot(DAY, [person], now=now).rows[0].status == 'manual_present'
+    assert compute_pay(Decimal('250000'), 'manual_present', exception=False) == Decimal('250000')
+
+
+def test_covered_day_keeps_the_device_answer_over_a_stray_mark(tmp_path):
+    """День выгружен целиком — «нет прохода» значит «не пришёл», и отметка его не перебьёт."""
+    store = AttendanceStore(tmp_path / 'accountant.sqlite3')
+    person = linked_employee(1, 'Нет входа', '20')
+    arrived = linked_employee(2, 'Вовремя', '10')
+    store.ingest(HikvisionEvent('entry', 's1', '10', datetime(2026, 9, 21, 10, 0, tzinfo=TZ)), arrived.id)
+    covered(store, since=datetime(2026, 9, 21, 0, tzinfo=TZ), until=datetime(2026, 9, 22, 0, tzinfo=TZ))
+    store.set_manual_mark(person.id, DAY, True, 'Бухгалтер')
+    service = AttendanceService(store, source='entry', enabled=True, poll_seconds=30)
+    now = datetime(2026, 9, 22, 9, tzinfo=TZ)
+
+    assert service.manual_markable(DAY, person, now=now) is False
+    assert service.manual_markable(DAY, arrived, now=now) is False
+    assert [row.status for row in service.snapshot(DAY, [person, arrived], now=now).rows] == ['missing', 'on_time']
+
+
 def test_sync_failure_preserves_cursor_and_reports_safe_code(tmp_path):
     store = AttendanceStore(tmp_path / 'accountant.sqlite3')
     first = datetime(2026, 9, 21, 9, tzinfo=TZ)

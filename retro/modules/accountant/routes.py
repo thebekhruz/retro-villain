@@ -557,13 +557,13 @@ class ManualAttendanceInput(BaseModel):
 
 @router.post('/manual-attendance')
 def mark_manual_attendance(request: Request, body: ManualAttendanceInput):
-    """«Был / не был» для сотрудника без Hikvision — по одному дню."""
+    """«Был / не был» по одному дню: без Hikvision или когда день вне выгрузки."""
     day = selected_day(body.date)
     employee = next((item for item in request.app.state.accountant_roster.list(day)
                      if item.id == body.employee_id), None)
     if employee is None:
         raise HTTPException(404, 'Сотрудник не найден.')
-    if not employee.manual_attendance:
+    if not request.app.state.attendance.manual_markable(day, employee):
         raise HTTPException(422, 'Сотрудник отмечается через Hikvision.')
     approver = getattr(request.state, 'dashboard_user', None) or 'бухгалтер'
     try:
