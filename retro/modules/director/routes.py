@@ -41,7 +41,8 @@ def attendance(request: Request, date: date | None = None):
         raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
     roster = request.app.state.accountant_roster.list(day)
     snapshot = request.app.state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, set(), snapshot.rows)
+    rows = draft_payroll(day, roster, set(), snapshot.rows,
+                         pay_unlinked=request.app.state.settings.check_mode)
     # Ручная отметка «был / не был» считается наравне с проходом Hikvision.
     arrived = [row for row in rows if row.status in PRESENT_STATUSES]
     late = [row for row in rows if row.status == 'late']
@@ -245,7 +246,8 @@ def team(request: Request, date: date | None = None):
     state = request.app.state
     roster = state.accountant_roster.list(day)
     snapshot = state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows)
+    rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows,
+                         pay_unlinked=state.settings.check_mode)
     by_id = {employee.id: employee for employee in roster}
     shifts_month, paid_month = month_shift_totals(state.accountant_finance, day)
     shift = [dict(row.json(), manual_attendance=by_id[row.employee_id].manual_attendance,

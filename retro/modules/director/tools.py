@@ -79,7 +79,8 @@ class DirectorChatTools:
             raise DataError('Неизвестный статус посещаемости.')
         roster = self.app.state.accountant_roster.list()
         snapshot = self.app.state.attendance.snapshot(day, roster)
-        rows = draft_payroll(day, roster, set(), snapshot.rows)
+        rows = draft_payroll(day, roster, set(), snapshot.rows,
+                             pay_unlinked=self.app.state.settings.check_mode)
         groups = {'arrived': PRESENT_STATUSES, 'absent': ABSENT_STATUSES}
         selected = rows if status == 'all' else [
             row for row in rows if row.status in groups.get(status, {status})]

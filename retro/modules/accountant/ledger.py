@@ -106,10 +106,14 @@ def required_text(value: str, label: str) -> str:
 
 
 class FinanceStore:
-    def __init__(self, path: Path):
+    def __init__(self, path: Path, *, allow_negative_cash: bool = False):
         self.db = as_database(path)
         # .path остаётся для скриптов обслуживания и тестов
         self.path = self.db.path
+        # Режим проверки: остаток разрешено уводить в минус. Обычно отрицательный
+        # остаток отменяет операцию — это единственная защита от выдачи денег,
+        # которых в кассе нет.
+        self.allow_negative_cash = allow_negative_cash
         self._initialize()
 
     def _open(self):
@@ -577,8 +581,15 @@ class FinanceStore:
             row = connection.execute('SELECT day,amount,note FROM accountant_cash_opening WHERE id=1').fetchone()
         return dict(day=row[0], amount=row[1], note=row[2]) if row else None
 
-    def cash_position(self, connection, day: date, start_day: date | None = None, *, current_amount=None):
-        """Carry verified daily handovers forward; never silently fill an unobserved day."""
+    def cash_position(self, connection, day: date, start_day: date | None = None, *, current_amount=None,
+                      tolerate_gaps: bool = False):
+        """Carry verified daily handovers forward; never silently fill an unobserved day.
+
+        `tolerate_gaps` — только для режима проверки (ACCOUNTANT_CHECK_MODE):
+        пропущенный день считается нулевым приходом вместо отказа. Вне режима
+        дыра в цепочке обязана останавливать операцию: перенесённый через неё
+        остаток был бы выдумкой, а не деньгами.
+        """
         rows = connection.execute('SELECT day, amount FROM accountant_handover_days '
                                   'WHERE day <= ? ORDER BY day', (day.isoformat(),)).fetchall()
         if current_amount is not None:
@@ -594,10 +605,10 @@ class FinanceStore:
         first = date.fromisoformat(anchor[0] if anchor and day.isoformat() >= anchor[0] else rows[0][0])
         expected = first
         for recorded, _ in rows:
-            if date.fromisoformat(recorded) != expected:
+            if date.fromisoformat(recorded) != expected and not tolerate_gaps:
                 return None, None, expected.isoformat(), first.isoformat()
-            expected = date.fromordinal(expected.toordinal() + 1)
-        if expected < day:
+            expected = date.fromordinal(date.fromisoformat(recorded).toordinal() + 1)
+        if expected < day and not tolerate_gaps:
             return None, None, expected.isoformat(), first.isoformat()
         opening = Decimal(anchor[1]) if anchor and first.isoformat() == anchor[0] else Decimal(0)
         opening += sum((Decimal(value) for recorded, value in rows if recorded < day.isoformat()), Decimal(0))
@@ -635,12 +646,26 @@ class FinanceStore:
                                (day.isoformat(), str(cashier_amount), datetime.now().isoformat()))
             record_audit(connection, 'handover', day.isoformat(), 'create', None,
                          dict(day=day.isoformat(), amount=str(cashier_amount), source='cash_operation'))
-        opening, closing, missing, _ = self.cash_position(connection, day)
+        opening, closing, missing, _ = self.cash_position(
+            connection, day, tolerate_gaps=self.allow_negative_cash)
         if missing:
             raise LedgerError(f'Для переноса остатка загрузите данные кассира за {missing}.')
         return closing
 
+    def _require_cash(self, connection, day: date, value: Decimal, cashier_amount) -> None:
+        """Хватает ли наличных на операцию за день.
+
+        В режиме проверки не спрашиваем, но `available_cash` всё равно зовём:
+        у неё есть побочный эффект — она записывает приход за день, без него
+        остаток дня остался бы неизвестным.
+        """
+        available = self.available_cash(connection, day, cashier_amount)
+        if not self.allow_negative_cash and available < value:
+            raise LedgerError('На выбранный день недостаточно денег от кассира.')
+
     def _check_cash_balances(self, connection, day):
+        if self.allow_negative_cash:
+            return
         if connection.execute('SELECT 1 FROM accountant_handover_days LIMIT 1').fetchone():
             self._check_known_future_balances(connection, day)
         else:
@@ -1006,9 +1031,7 @@ class FinanceStore:
                 if kind == 'other_expense':
                     self._validate_salary_expense(connection, day, item_code)
                 if kind not in ('opening', 'cashier_transfer', 'other_receipt'):
-                    available = self.available_cash(connection, day, cashier_amount)
-                    if available < value:
-                        raise LedgerError('На выбранный день недостаточно денег от кассира.')
+                    self._require_cash(connection, day, value, cashier_amount)
                 cursor = connection.execute('INSERT INTO accountant_movements '
                                             '(day, kind, description, amount, item_code, reference, created_at) '
                                             'VALUES (?, ?, ?, ?, ?, ?, ?)',
@@ -1292,9 +1315,7 @@ class FinanceStore:
                     Decimal(0))
                 if value > Decimal(accrual[1]) - already_paid:
                     raise LedgerError('Выплата превышает оставшийся долг сотруднику.')
-                available = self.available_cash(connection, paid_day, cashier_amount)
-                if available < value:
-                    raise LedgerError('На выбранный день недостаточно денег от кассира.')
+                self._require_cash(connection, paid_day, value, cashier_amount)
                 cursor = connection.execute('INSERT INTO accountant_salary_payments '
                                             '(accrual_id, paid_day, amount, created_at) VALUES (?, ?, ?, ?)',
                                             (accrual_id, paid_day.isoformat(), str(value), now_stamp()))
@@ -1395,7 +1416,8 @@ class FinanceStore:
         result['salary_recorded_on_day'] = paid + result['salary_unallocated_on_day']
         with closing(self._open()) as connection:
             opening, remaining, missing, first_day = self.cash_position(
-                connection, day, carry_start, current_amount=cashier_amount)
+                connection, day, carry_start, current_amount=cashier_amount,
+                tolerate_gaps=self.allow_negative_cash)
         if opening is not None and opening > 0:
             movements.insert(0, dict(id=None, type='opening',
                                      description='Остаток на начало дня',

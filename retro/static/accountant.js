@@ -146,9 +146,14 @@ function noteStrip(text, tag, action) {
 // сервер отказал в начислении всей смены (за день уже есть зарплата без
 // сотрудника). Остальные причины — у отдельных строк, их видно в строке.
 const dayBlocks = {};
+// Режим проверки (ACCOUNTANT_CHECK_MODE): сервер пускает выдачу без
+// данных кассира, поэтому экран не должен запирать её раньше сервера.
+let checkMode = false;
+const cashMissing = () => view.data.ledger.cash_balance === null && !checkMode;
 function payDisabledReason() {
   const {data, board} = view;
-  if (data.ledger.cash_balance === null) return 'Нет данных кассира за ' + longDay(data.date) + ' — выдачу записать нельзя.';
+  if (cashMissing())
+    return 'Нет данных кассира за ' + longDay(data.date) + ' — выдачу записать нельзя.';
   if (dayBlocks[board.S] && !board.confirmed) return dayBlocks[board.S];
   return null;
 }
@@ -156,11 +161,20 @@ const BLOCK_TEXT = {
   rate: 'Нет ставки — смена не начисляется',
   unlinked: 'Нет привязки к Hikvision — вход не виден',
   hikvision: 'Входы Hikvision за этот день ещё не пришли',
+  hikvision_gap: 'Данных Hikvision за этот день нет — отметьте «был / не был»',
   unknown: 'Начисление не рассчитано',
 };
+/* Выгрузка Hikvision идёт только вперёд и назад не достраивается: за день
+   раньше её начала входов не будет никогда. Ждать нечего — такую смену
+   отмечают руками, и текст блокировки обязан это говорить. */
+function hikvisionGap() {
+  const from = (view.staff?.attendance || view.data.attendance)?.covered_from;
+  return !!from && view.board.S < from.slice(0, 10);
+}
+const blockText = row => BLOCK_TEXT[row.block === 'hikvision' && hikvisionGap() ? 'hikvision_gap' : row.block];
 function rowLock(row) {
-  if (view.data.ledger.cash_balance === null) return payDisabledReason();
-  if (row.block) return BLOCK_TEXT[row.block];
+  if (cashMissing()) return payDisabledReason();
+  if (row.block) return blockText(row);
   if (row.own && !row.accrualId && dayBlocks[view.board.S]) return dayBlocks[view.board.S];
   return null;
 }
@@ -204,6 +218,13 @@ function renderShift() {
   if (!health.ok) strips.append(noteStrip(health.text, 'Hikvision'));
   if (lock) strips.append(noteStrip(lock, 'Выдача закрыта',
     data.ledger.cash_balance === null ? h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools}) : null));
+  // Снятые гейты обязаны быть видны. Молчаливый режим проверки на боевом
+  // контуре означал бы выдачу против кассы, которой нет, и начисление людям,
+  // чей день никто не подтверждал, — и никто бы этого не заметил.
+  if (checkMode)
+    strips.append(noteStrip('Временный режим проверки: выдача идёт без данных кассира, «нет привязки Hikvision» не держит начисление, остаток может уйти в минус.',
+      'Проверка', data.ledger.cash_balance === null
+        ? h('button', {type: 'button', class: 'fd-strip-btn', text: 'Ввести приход', onclick: openTools}) : null));
 
   const tabs = $('shift-tabs'); tabs.replaceChildren();
   L.boardTabs(board.rows).forEach(([key, label, count]) => {
@@ -224,9 +245,11 @@ function renderShift() {
   $('shift-sum').textContent = 'выдано ' + t.paidCount + ' · ' + money(t.paid) + (errors ? ' · ' + errors + ' ' + L.plural(errors, 'ошибка', 'ошибки', 'ошибок') : '');
 
   const n = payable().length;
-  // Выдача закрыта (нет кассы) — не «все получили», а «нельзя»: причина в подсказке.
+  // «Все получили» — только когда было что получать; выдача закрыта (нет кассы) —
+  // не «все получили», а «нельзя»: причина в подсказке.
   const waiting = board.handOut.length;
-  $('pay-all-label').textContent = n ? 'Выдать пришедшим · ' + n : lock && waiting ? 'Выдать пришедшим · ' + waiting : 'Все пришедшие получили';
+  $('pay-all-label').textContent = n ? 'Выдать пришедшим · ' + n : lock && waiting ? 'Выдать пришедшим · ' + waiting
+    : board.toPay.length ? 'Выдать пришедшим' : t.payableCount ? 'Все пришедшие получили' : 'Выдавать пока некому';
   $('pay-all').disabled = !n || busy;
   $('pay-all').title = n ? 'Выдать ставку всем пришедшим, кому ещё ничего не выдано'
     : lock || (board.toPay.length ? 'Всем пришедшим уже выдано. Остаток частичных выдач и долги прошлых смен — в их строках.' : 'Всем пришедшим уже выдано.');
@@ -238,15 +261,20 @@ function shiftRow(row, lock) {
     'data-busy-key': 'shift:' + dayKey(stable(row))});
 
   const on = row.paid > 0;
-  const check = h('button', {type: 'button', class: 'fd-cb' + (on ? ' is-on' : '') + (row.kind === 'err' ? ' is-err' : ''),
-    title: on ? 'Выдано' : 'Отметить выдачу', 'aria-label': (on ? 'Выдано: ' : 'Отметить выдачу: ') + row.name,
-    'aria-pressed': String(on), text: on ? '✓' : '', 'data-busy-key': 'cb:' + dayKey(stable(row))});
   const canPay = !lock && row.accrued > 0 && row.debt > 0;
   const canUndo = !lock && row.paidToday > 0;
-  check.disabled = !(canPay || canUndo);
-  // Выключенная галочка объясняет, почему её не нажать.
-  if (check.disabled) check.title = lock || (row.accrued === 0 ? 'Входа нет — начисление 0 сум, выдавать нечего' : 'Выдано полностью в прошлые дни');
+  const active = canPay || canUndo;
+  // Причина запрета — на самой кнопке. Выключенная кнопка не ловит наведение,
+  // поэтому держим её живой через aria-disabled: подсказка видна, а клик
+  // вместо тишины отвечает, почему выдать нельзя.
+  const why = lock || (row.accrued === 0 ? 'Входа нет — начисление 0 сум, выдавать нечего' : 'Выдавать по этой строке нечего');
+  const check = h('button', {type: 'button', class: 'fd-cb' + (on ? ' is-on' : '') + (row.kind === 'err' ? ' is-err' : '') + (active ? '' : ' is-locked'),
+    title: active ? (on ? 'Выдано' : 'Отметить выдачу') : why,
+    'aria-label': (on ? 'Выдано: ' : 'Отметить выдачу: ') + row.name,
+    'aria-disabled': String(!active), 'aria-pressed': String(on), text: on ? '✓' : '',
+    'data-busy-key': 'cb:' + dayKey(stable(row))});
   check.addEventListener('click', () => {
+    if (!active) { message(why, true); return; }
     const fb = {button: check, row: line};
     if (row.debt > 0 && row.accrued > 0) setPaid(row, row.paidToday + row.debt, null, fb);
     else if (row.paidToday > 0) setPaid(row, 0, null, fb);
@@ -265,9 +293,15 @@ function shiftRow(row, lock) {
   } else time.append(h('div', {class: 'fd-time-main is-none', text: '—'}));
 
   const [label, cls] = STATUS[row.status] || ['—', 'unlinked'];
-  const toggleable = row.noHik && row.own && !row.accrualId;
+  // День раньше начала выгрузки отмечают так же, как человека без Hikvision:
+  // входов не будет, и без отметки строка не начислится никогда. Пока выгрузка
+  // просто отстаёт, отметку не предлагаем — данные ещё придут.
+  const markable = row.noHik || (row.status === 'unavailable' && hikvisionGap());
+  const toggleable = markable && row.own && !row.accrualId;
   const pill = h(toggleable ? 'button' : 'span', {class: 'fd-pill ' + cls + (row.noHik ? ' is-manual' : '') + (toggleable ? ' is-toggle' : ''),
-    title: row.noHik ? (toggleable ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был' : 'Отмечено вручную · смена уже начислена, отметку не изменить') : 'Данные Hikvision',
+    title: toggleable ? (row.noHik ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был'
+        : 'Данных Hikvision за этот день нет. Нажмите, чтобы отметить: был / не был')
+      : row.noHik ? 'Отмечено вручную · смена уже начислена, отметку не изменить' : 'Данные Hikvision',
     type: toggleable ? 'button' : null, text: label, 'data-busy-key': toggleable ? 'pill:' + dayKey(stable(row)) : null});
   if (toggleable) pill.addEventListener('click', () => run(() => write('/api/accountant/manual-attendance',
     {date: view.board.S, employee_id: row.employeeId, present: row.status !== 'manual_present'}),
@@ -314,7 +348,7 @@ function shiftRow(row, lock) {
    исправления перечитываем день — строка становится к выдаче сама. */
 function blockedCell(row, line) {
   const cell = h('div', {class: 'fd-pay fd-fix'});
-  const note = h('div', {class: 'fd-pay-note is-blocked', text: BLOCK_TEXT[row.block]});
+  const note = h('div', {class: 'fd-pay-note is-blocked', text: blockText(row)});
   if (row.block === 'rate') {
     const open = h('button', {type: 'button', class: 'fd-fix-btn', text: 'Указать ставку'});
     open.addEventListener('click', () => {
@@ -413,7 +447,7 @@ $('pay-all').addEventListener('click', () => {
 function renderJournal() {
   const {journal} = view;
   const box = $('finance-journal'); box.replaceChildren();
-  const cash = view.data.ledger.cash_balance !== null;
+  const cash = !cashMissing();
   journal.rows.forEach(row => {
     const rowKey = 'jr:' + dayKey(row.debtId || row.group || (row.ops || []).map(op => op.operation + op.id).join(',') || row.name);
     const line = h('div', {class: 'fd-row fd-jr-cols fd-jr-row is-' + row.kind, 'data-busy-key': rowKey});
@@ -514,7 +548,7 @@ function updateNewRow() {
   $('expense-debt').textContent = amount && paid < amount ? fmt(amount - paid) : '';
   paidInput.classList.toggle('is-bad', amount > 0 && paid > amount);
   const cashNeeded = !income && !(reserve && reserve.kind !== 'transfer') && paid > 0;
-  $('other-expense-form').querySelector('button').disabled = busy || (cashNeeded && view && view.data.ledger.cash_balance === null);
+  $('other-expense-form').querySelector('button').disabled = busy || (cashNeeded && view && cashMissing());
 }
 ['expense-item', 'expense-amount', 'expense-paid'].forEach(id => $(id).addEventListener('input', updateNewRow));
 // Подписи групп в списке — атрибуты, их переводчик страницы не трогает:
@@ -555,7 +589,7 @@ function renderShoh() {
   $('shoh-balance').textContent = shoh.hand === null ? '—' : fmt(shoh.hand);
   $('shoh-balance').classList.toggle('is-negative', shoh.hand !== null && shoh.hand < 0);
   $('shoh-sum').textContent = shoh.hand === null ? 'начальный остаток не задан' : 'на руках ' + money(shoh.hand) + ' · ' + shoh.count + ' ' + L.plural(shoh.count, 'покупка', 'покупки', 'покупок');
-  $('shoh-give-form').querySelector('button[type=submit]').disabled = busy || data.ledger.cash_balance === null;
+  $('shoh-give-form').querySelector('button[type=submit]').disabled = busy || cashMissing();
 
   const gives = $('shoh-gives'); gives.replaceChildren();
   shoh.gives.forEach(give => gives.append(h('div', {class: 'fd-give', 'data-busy-key': 'give:' + dayKey(give.id || give.time)},
@@ -701,7 +735,7 @@ function salaryHint() {
   const amount = parse($('salary-amount').value), hint = $('salary-hint'), button = $('salary-submit');
   hint.className = 'fd-mo-hint'; button.classList.remove('is-danger'); button.textContent = 'Записать выплату';
   $('salary-amount').classList.remove('is-bad');
-  button.disabled = busy || view.data.ledger.cash_balance === null;
+  button.disabled = busy || cashMissing();
   if (!person) { hint.textContent = 'Выберите сотрудника — покажем, сколько осталось по окладу.'; return; }
   const left = Math.max(0, person.left);
   hint.replaceChildren(h('span', {text: 'Оклад ' + fmt(person.salary) + ' · выдано ' + fmt(person.paid) + ' · осталось ' + fmt(left)}));
@@ -1022,7 +1056,9 @@ async function exportDay() {
   try {
     const catalogRequest = fetch('/api/accountant/expenses/catalog', {cache: 'no-store'});
     catalogRequest.catch(() => {});
-    today = (await globalThis.RetroConfig).today;
+    const config = await globalThis.RetroConfig;
+    today = config.today;
+    checkMode = !!config.check_mode;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;
     const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today;

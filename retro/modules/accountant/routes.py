@@ -50,7 +50,8 @@ def money_json(summary: dict) -> dict:
 
 def attendance_payroll(request: Request, day: date, roster, exceptions, *, frozen_pay=False):
     snapshot = request.app.state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, exceptions, snapshot.rows)
+    rows = draft_payroll(day, roster, exceptions, snapshot.rows,
+                         pay_unlinked=request.app.state.settings.check_mode)
     if not frozen_pay:
         return snapshot, rows
     saved = request.app.state.accountant_finance.day_accruals(day)
@@ -90,7 +91,12 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
 async def required_handover(request: Request, day: date) -> Decimal:
     amount = await cashier_handover(request, day)
     if amount is None:
-        raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
+        # Режим проверки: вместо отказа считаем приход нулевым. Строка прихода за
+        # день появится с суммой 0 — её перезапишет обычная запись бухгалтера,
+        # когда настоящая касса приедет.
+        if not request.app.state.settings.check_mode:
+            raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
+        amount = Decimal(0)
     # Уже записанный приход той же суммой не перезаписывается (время «получено»
     # остаётся); новый — расчёт iiko, его кассир может заменить своей передачей.
     await asyncio.to_thread(request.app.state.accountant_finance.record_handover, day, amount,
@@ -630,13 +636,13 @@ class ManualAttendanceInput(BaseModel):
 
 @router.post('/manual-attendance')
 def mark_manual_attendance(request: Request, body: ManualAttendanceInput):
-    """«Был / не был» для сотрудника без Hikvision — по одному дню."""
+    """«Был / не был» по одному дню: без Hikvision или когда день вне выгрузки."""
     day = selected_day(body.date)
     employee = next((item for item in request.app.state.accountant_roster.list(day)
                      if item.id == body.employee_id), None)
     if employee is None:
         raise HTTPException(404, 'Сотрудник не найден.')
-    if not employee.manual_attendance:
+    if not request.app.state.attendance.manual_markable(day, employee):
         raise HTTPException(422, 'Сотрудник отмечается через Hikvision.')
     approver = getattr(request.state, 'dashboard_user', None) or 'бухгалтер'
     try:

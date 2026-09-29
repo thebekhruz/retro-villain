@@ -516,8 +516,12 @@ button.fd-sec-toggle.fd-sec-head{padding:18px;justify-content:flex-start}
 .fd-cb:before{content:"";position:absolute;inset:-10px}
 .fd-cb.is-on{border-color:#24594b;background:#24594b}
 .fd-cb.is-on.is-err{border-color:#ab445e;background:#ab445e}
-.fd-cb:disabled{opacity:1;cursor:default}
-.fd-cb:not(.is-on):disabled{background:#f7f8f4;border-color:#dfe5dc}
+/* Запертая кнопка обязана читаться запертой: пустой квадрат цвета фона люди
+   принимают за рабочий чекбокс и жмут его до посинения. Пунктир виден и в
+   чёрно-белой печати, и при дальтонизме — одной заливки мало. */
+.fd-cb.is-locked{cursor:not-allowed}
+.fd-cb.is-on.is-locked{opacity:.5}
+.fd-cb:not(.is-on).is-locked{background:#f1f2ee;border-color:#d2d8cd;border-style:dashed}
 .fd-who{min-width:0}
 .fd-who-line{display:flex;align-items:center;gap:7px;min-width:0;flex-wrap:wrap}
 .fd-who-name{font-size:13px;font-weight:600;overflow-wrap:anywhere}
