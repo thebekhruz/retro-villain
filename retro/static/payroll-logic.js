@@ -31,21 +31,28 @@
     return {kind:cell.status==='late'?'late':'owed',amount,paid,debt};
   }
 
+  /* Почему начисление за день ждёт: код из /staff (blocker) → подпись ячейки. */
+  const BLOCKER={missing_rate:'нет ставки',unlinked:'нет привязки',unavailable:'нет данных',unknown:'не начислено'};
+
   /* Ячейка сменного в сетке 2b. Колонка — день смены, выдают на следующий
      день, поэтому «к выдаче» — только вчерашняя смена, а всё, что старше и не
      выдано, — «✕ смена не выдана».
-       pending — вчерашняя смена, которую ещё не подтвердили в «Финансах дня»:
-       начисления нет, есть только проход (из /staff за вчера). */
-  function gridCell(cell,{rate,day,today,pending}={}){
+       pending — строка /staff за этот день, если начисления у человека ещё нет:
+       день не закрыт (вчерашний или начислен частично). Смену начисляют по
+       людям: кто без препятствий — «к выдаче», у кого blocker — ждёт. */
+  function gridCell(cell,{rate,day,today,pending,waiting}={}){
     const yesterday=today?addDays(today,-1):null;
     const late=(cell&&cell.status==='late')||(!cell&&pending&&pending.status==='late');
     const base={day,late,text:'',payable:false,debt:0,accrualId:cell?cell.accrual_id:null};
     if(!cell){
-      if(pending){
+      if(pending&&!pending.accrued){
         if(ABSENT.has(pending.status))return {...base,kind:'missing',text:'н/я'};
+        if(pending.blocker)return {...base,kind:'blocked',text:BLOCKER[pending.blocker]||BLOCKER.unknown,blocker:pending.blocker};
         if(PRESENT.has(pending.status)&&n(pending.payable)>0)
           return {...base,kind:'pending',text:'к выдаче',debt:n(pending.payable)};
       }
+      // День начислен частично, а данных по человеку нет — он ждёт начисления.
+      if(waiting)return {...base,kind:'blocked',text:'ждёт',blocker:'unknown'};
       return {...base,kind:today&&day>=today?'future':'empty'};
     }
     const amount=n(cell.amount), paid=n(cell.paid), debt=n(cell.debt);
@@ -65,25 +72,38 @@
     return {...base,kind:'paid',text:'✓',paid};
   }
 
-  /* Строки сменных для сетки. pending — {employee_id: строка /staff за вчера}. */
+  /* Строки сменных для сетки. pending — {день: {employee_id: строка /staff}}
+     для открытых дней (вчерашний неподтверждённый и начисленные частично).
+     Закрытые дни (confirmed_days) берутся только из начислений. */
   function shiftRows(data,{today,pending}={}){
-    const days=data.days||[], yesterday=today?addDays(today,-1):null;
+    const days=data.days||[];
+    const closed=new Set(data.confirmed_days||[]), partial=new Set(data.partial_days||[]);
     // Порядок — как в реестре (по номеру сотрудника), а не по алфавиту:
     // так строки стоят на тех же местах, что и в макете и в «Сотрудниках».
-    return byId(data.shift||[],'employee_id').map(person=>{
+    // Кому за месяц ещё ничего не начислено (новые в реестре, все смены ждут),
+    // в ведомости нет — добавляем по строкам /staff открытых дней.
+    const people=[...(data.shift||[])], known=new Set(people.map(person=>person.employee_id));
+    Object.values(pending||{}).forEach(rows=>Object.entries(rows||{}).forEach(([key,row])=>{
+      const id=Number(row.employee_id??key);
+      if(known.has(id))return;
+      known.add(id);
+      people.push({employee_id:id,name:row.name,group:row.group||'',rate:row.rate,accrued:0,paid:0,debt:0,cells:{}});
+    }));
+    return byId(people,'employee_id').map(person=>{
       const id=person.employee_id, cells=person.cells||{};
-      const wait=pending&&pending[id];
-      let extra=0;
+      let extra=0, manual=Object.values(cells).some(c=>String(c.status).startsWith('manual_'));
       const row=days.map(day=>{
         const cell=cells[day]||null;
-        const item=gridCell(cell,{rate:person.rate,day,today,pending:day===yesterday&&!cell?wait:null});
+        const open=!cell&&!closed.has(day);
+        const wait=open&&pending&&pending[day]?pending[day][id]||null:null;
+        if(wait&&String(wait.status).startsWith('manual_'))manual=true;
+        const item=gridCell(cell,{rate:person.rate,day,today,pending:wait,waiting:open&&!wait&&partial.has(day)});
         if(item.kind==='pending')extra+=item.debt;
         return item;
       });
-      const manual=Object.values(cells).some(c=>String(c.status).startsWith('manual_'))
-        ||(wait&&String(wait.status).startsWith('manual_'));
       const rest=n(person.debt)+extra;
-      return {id,name:person.name,group:person.group||'',rate:n(person.rate),
+      const noRate=person.rate==null||person.rate==='';
+      return {id,name:person.name,group:person.group||'',rate:noRate?null:n(person.rate),
         paid:n(person.paid),accrued:n(person.accrued),rest,noHik:!!manual,cells:row};
     });
   }
@@ -154,6 +174,8 @@
   /* «Проверки за месяц»: ошибки (красные), предупреждения (жёлтые),
      напоминания (серые). Ключ ведёт к строке и дню в сетке. */
   const LEVEL={err:0,warn:1,todo:2};
+  const BLOCKER_NOTE={missing_rate:'Нет ставки — укажите её в «Сотрудниках»',unlinked:'Нет привязки Hikvision — отметьте «был» вручную в «Финансах дня»',
+    unavailable:'Данные Hikvision за день неполные',unknown:'Смена начислена не всем — ждёт начисления'};
   function checks(data,{today,pending}={}){
     const out=[], yesterday=today?addDays(today,-1):null;
     monthlyRows(data,{today}).forEach(m=>{
@@ -166,6 +188,8 @@
           sub:fmt(c.paid)+' сум',row:'s'+p.id,day:c.day});
         else if(c.kind==='unpaid'&&(!yesterday||c.day<yesterday))out.push({lvl:'warn',
           text:'Смена '+dm(c.day)+' не выдана: '+p.name,sub:'Ставка '+fmt(p.rate)+' сум',row:'s'+p.id,day:c.day});
+        else if(c.kind==='blocked')out.push({lvl:'warn',text:'Не начислено '+dm(c.day)+': '+p.name,
+          sub:BLOCKER_NOTE[c.blocker]||BLOCKER_NOTE.unknown,row:'s'+p.id,day:c.day});
         else if(c.kind==='odd')out.push({lvl:'warn',text:'Сумма ≠ ставке '+dm(c.day)+': '+p.name,
           sub:'Выдано '+fmt(c.paid)+' при ставке '+fmt(p.rate),row:'s'+p.id,day:c.day});
       });
@@ -208,5 +232,5 @@
     return today&&next>today?today:next;
   }
 
-  return {cellState,gridCell,shiftRows,monthlyRows,monthlyEditPlan,sheet,totals,dayTotals,checks,shiftMonth,payday,addDays};
+  return {BLOCKER,cellState,gridCell,shiftRows,monthlyRows,monthlyEditPlan,sheet,totals,dayTotals,checks,shiftMonth,payday,addDays};
 });

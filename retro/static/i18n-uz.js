@@ -2251,6 +2251,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'уборщица': 'farrosh',
   'техперсонал': 'texnik xodim',
   'менеджер': 'menejer',
+  'Менеджер': 'Menejer',
+  'Хостес': 'Xostes',
   'охрана': "qo'riqchi",
   'кондитер': 'qandolatchi',
   'повар': 'oshpaz',

@@ -69,19 +69,32 @@ async function payPending(person, cell) {
   try {
     let approver = 'бухгалтер';
     try { const config = await globalThis.RetroConfig; if (config?.user) approver = config.user; } catch { /* по умолчанию */ }
-    await postJson('/api/accountant/payroll/confirm', {date: cell.day, approver}, true);
+    // Начисляем только этого человека: препятствия у других его не держат.
+    const result = await postJson('/api/accountant/payroll/confirm', {date: cell.day, approver, employee_ids: [Number(person.id)]}, true);
+    const blocked = (result.blockers || []).find(item => Number(item.employee_id) === Number(person.id));
+    if (blocked) throw new Error(blockerMessage(person.name, cell.day, blocked.code || blocked.reason));
     await load();
     const fresh = (current.shift || []).find(row => row.employee_id === person.id)?.cells?.[cell.day];
-    if (!fresh || !fresh.accrual_id) throw new Error('Смена ' + dm(cell.day) + ' подтверждена, но начисления для «' + person.name + '» нет.');
+    if (!fresh || !fresh.accrual_id) throw new Error('Смена ' + dm(cell.day) + ': начисления для «' + person.name + '» нет.');
     const debt = Number(fresh.debt || 0);
     if (debt > 0) await postJson('/api/accountant/salary-payments', {date, accrual_id: Number(fresh.accrual_id), amount: String(debt)}, true);
     await load();
-    message('Смена ' + dm(cell.day) + ' подтверждена · выдано: ' + person.name + ' · ' + money(debt));
+    message('Начислено и выдано: ' + person.name + ' · ' + money(debt) + ' · смена ' + dm(cell.day));
   } catch (error) {
     // Сначала перерисовка (она гасит старые сообщения), потом причина отказа.
     await load().catch(() => {});
     message(error.message, true);
   } finally { saving = false; }
+}
+
+/* Почему человеку не начислить смену — и что сделать. */
+const BLOCKER_FIX = {
+  missing_rate: 'нет ставки — укажите её в «Сотрудниках»',
+  unlinked: 'нет привязки Hikvision — отметьте «был» вручную в «Финансах дня»',
+  unavailable: 'данные Hikvision за день неполные — дождитесь синхронизации',
+  unknown: 'начисление не посчитать — проверьте в «Финансах дня»'};
+function blockerMessage(name, day, code) {
+  return 'Не начислено ' + dm(day) + ': ' + name + ' — ' + (BLOCKER_FIX[code] || (typeof code === 'string' && code) || BLOCKER_FIX.unknown);
 }
 
 async function send(url, method, body) {
@@ -243,12 +256,13 @@ function monthlyRow(person) {
   return line;
 }
 function shiftCellTitle(person, cell) {
-  const raw = person.source[cell.day] || (cell.kind === 'pending' ? pending?.[person.id] : null);
+  const raw = person.source[cell.day] || pending?.[cell.day]?.[person.id] || null;
   const status = raw ? STATUS[raw.status] || raw.status : '';
   const parts = [person.name, dm(cell.day)];
   if (status) parts.push(status);
   if (cell.paid) parts.push('выдано ' + money(cell.paid));
-  if (cell.kind === 'pending') parts.push('к выдаче ' + money(cell.debt) + ' — нажмите: смена подтвердится и выдача запишется');
+  if (cell.kind === 'blocked') parts.push('не начислено: ' + (BLOCKER_FIX[cell.blocker] || BLOCKER_FIX.unknown));
+  else if (cell.kind === 'pending') parts.push('к выдаче ' + money(cell.debt) + ' — нажмите: смена подтвердится и выдача запишется');
   else if (cell.payable) parts.push('к выдаче ' + money(cell.debt) + ' — нажмите, чтобы выдать');
   return parts.join(' · ');
 }
@@ -257,15 +271,16 @@ function shiftRow(person) {
   const line = node('div', 'pr-row is-shift' + (isFocused(key) ? ' is-focus' : ''));
   line.dataset.row = key;
   line.append(whoCell(person.name, personRole(person), person.noHik),
-    node('div', 'pr-c pr-c-sum rm-num', fmt(person.rate)));
+    person.rate == null ? node('div', 'pr-c pr-c-sum is-norate', 'нет ставки') : node('div', 'pr-c pr-c-sum rm-num', fmt(person.rate)));
   person.cells.forEach(cell => {
-    const interactive = cell.payable || cell.kind === 'pending';
+    const interactive = cell.payable || cell.kind === 'pending' || cell.kind === 'blocked';
     const box = node(interactive ? 'button' : 'div', 'pr-s is-' + cell.kind + (cell.late ? ' is-late' : '') +
       (cell.day === today ? ' is-today' : '') + (isFocused(key, cell.day) ? ' is-focus' : ''), cell.text);
     if (cell.kind !== 'future' && cell.kind !== 'empty') box.title = shiftCellTitle(person, cell);
     if (interactive) {
       box.type = 'button';
-      box.addEventListener('click', () => (cell.kind === 'pending' ? payPending(person, cell) : payShift(person, cell)));
+      box.addEventListener('click', () => (cell.kind === 'pending' ? payPending(person, cell)
+        : cell.kind === 'blocked' ? message(blockerMessage(person.name, cell.day, cell.blocker), true) : payShift(person, cell)));
     }
     line.append(box);
   });
@@ -281,7 +296,7 @@ function renderSheet(data) {
   const monthly = L.monthlyRows(data, {today});
   const shift = L.shiftRows(data, {today, pending}).map(row => {
     const source = (data.shift || []).find(p => p.employee_id === row.id);
-    return {...row, source: source?.cells || {}, role: pending?.[row.id]?.role || roles[row.id] || ''};
+    return {...row, source: source?.cells || {}, role: roles[row.id] || ''};
   });
   grid.replaceChildren();
   const empty = !monthly.length && !shift.length;
@@ -294,6 +309,8 @@ function renderSheet(data) {
     grid.append(sectionRow('Помесячные · оклад выдаётся частями'));
     monthly.forEach(person => grid.append(monthlyRow(person)));
   }
+  // Пометка «ждёт начисления» в легенде — только когда такие ячейки есть.
+  $('legend-blocked').hidden = !shift.some(row => row.cells.some(cell => cell.kind === 'blocked'));
   if (shift.length) {
     grid.append(sectionRow('Сменные · колонка = день смены, выдача на следующий день'));
     shift.forEach(person => grid.append(shiftRow(person)));
@@ -385,20 +402,31 @@ function scrollToDay(day, center) {
   scroller.scrollLeft = Math.max(0, base + steps * width);
 }
 
-async function loadPending(month) {
-  // Вчерашняя смена, которую ещё не подтвердили: начислений нет, но проход
-  // уже есть. Её показываем в колонке «к выдаче», как в макете.
-  pending = null;
+/* Открытые дни — вчерашний неподтверждённый и начисленные частично: по ним
+   нужны строки /staff (проход, ставка, blocker), чтобы показать, кто «к выдаче»,
+   а кто ждёт начисления. Вчерашний /staff заодно даёт должности. */
+async function loadPending(data) {
   const yesterday = L.addDays(today, -1);
+  const closed = new Set(data.confirmed_days || []);
+  const days = new Set((data.partial_days || []).filter(day => day <= today));
+  if ((data.days || []).includes(yesterday) && !closed.has(yesterday)) days.add(yesterday);
+  const staff = async day => {
+    const response = await fetch('/api/accountant/staff?date=' + encodeURIComponent(day), {cache: 'no-store'});
+    return response.ok ? response.json() : null;
+  };
+  const next = {};
   try {
-    const response = await fetch('/api/accountant/staff?date=' + encodeURIComponent(yesterday), {cache: 'no-store'});
-    if (!response.ok) return;
-    const data = await response.json();
-    const inMonth = yesterday.slice(0, 7) === month;
-    pending = inMonth ? {} : null;
+    const wanted = [...new Set([yesterday, ...days])];
+    const answers = await Promise.all(wanted.map(day => staff(day).catch(() => null)));
     roles = {};
-    (data.employees || []).forEach(row => { if (inMonth) pending[row.employee_id] = row; roles[row.employee_id] = row.role; });
-  } catch { pending = null; }
+    answers.forEach((answer, index) => {
+      if (!answer) return;
+      const day = wanted[index];
+      (answer.employees || []).forEach(row => { if (!roles[row.employee_id]) roles[row.employee_id] = row.role; });
+      if (days.has(day)) next[day] = Object.fromEntries((answer.employees || []).map(row => [row.employee_id, row]));
+    });
+  } catch { /* без открытых дней сетка всё равно рисуется */ }
+  pending = next;
 }
 
 async function load() {
@@ -413,11 +441,10 @@ async function load() {
   $('month-label').textContent = monthYear(month);
   $('month-next').disabled = month >= today.slice(0, 7);
   try {
-    const [response] = await Promise.all([
-      fetch('/api/accountant/payroll/month?month=' + encodeURIComponent(month), {cache: 'no-store'}),
-      loadPending(month)]);
+    const response = await fetch('/api/accountant/payroll/month?month=' + encodeURIComponent(month), {cache: 'no-store'});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить ведомость.');
+    await loadPending(data);
     if (sequence !== requestNo) return;
     current = data;
     const keep = $('sheet-scroll').scrollLeft;
