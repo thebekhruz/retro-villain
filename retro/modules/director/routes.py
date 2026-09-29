@@ -119,10 +119,10 @@ def reports(request: Request):
 @router.get('/menu')
 def menu(request: Request, scope: Literal['menu', 'all'] = 'menu',
          query: str = Query('', max_length=80), group: str = Query('', max_length=120),
-         missing: bool = False):
+         missing: bool = False, limit: int = Query(2000, ge=1, le=10000)):
     store = request.app.state.menu_store
     items = store.items(scope=scope, include_missing=missing, query=query.strip(),
-                        group=group.strip())
+                        group=group.strip(), limit=limit)
     return dict(source='iiko · номенклатура', scope=scope, items=items,
                 shown=len(items), **store.status())
 

@@ -171,7 +171,7 @@ class MenuStore:
                 raise
         return counts
 
-    def items(self, *, scope='menu', include_missing=False, query='', group=''):
+    def items(self, *, scope='menu', include_missing=False, query='', group='', limit=None):
         """Сохранённое меню. `scope='all'` — вся номенклатура, включая склад."""
         if scope not in ('menu', 'all'):
             raise MenuError('Неизвестный срез меню.')
@@ -193,6 +193,12 @@ class MenuStore:
         sql = ('SELECT ' + ', '.join(ROW) + ' FROM menu_items'
                + (' WHERE ' + ' AND '.join(where) if where else '')
                + ' ORDER BY group_path, name')
+        if limit is not None:
+            # Потолок ответа: вся номенклатура — это и складские товары тоже,
+            # а отдавать их одним куском никому не нужно. Сколько всего — в
+            # `count()`, поэтому обрезание видно, а не выглядит как «меню кончилось».
+            sql += ' LIMIT ?'
+            params.append(max(1, int(limit)))
         with closing(self._open()) as connection:
             rows = connection.execute(sql, params).fetchall()
         return [self._item(row) for row in rows]

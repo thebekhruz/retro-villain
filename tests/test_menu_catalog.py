@@ -221,6 +221,8 @@ def test_menu_scope_hides_storage_goods_and_deleted_cards(store):
     assert [row['product_id'] for row in store.items(query='вино')] == ['wine']
     assert [row['product_id'] for row in store.items(group='горячие')] == ['dish']
     assert store.count() == dict(total=4, missing=0)
+    # Потолок ответа режет выдачу, но общее число всё равно видно.
+    assert len(store.items(scope='all', limit=2)) == 2
 
 
 def test_nonsense_price_is_refused(store):
