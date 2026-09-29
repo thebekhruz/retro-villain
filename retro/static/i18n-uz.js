@@ -1955,6 +1955,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Входа нет — выдавать не нужно': "Kirish yo'q — berish shart emas",
   'Входа нет — начисление 0 сум': "Kirish yo'q — hisoblangan 0 so'm",
   'Выдача закрыта': "To'lov yopiq",
+  'Временный режим проверки: выдача идёт без данных кассира, «нет привязки Hikvision» не держит начисление, остаток может уйти в минус.': "Vaqtinchalik tekshiruv rejimi: to'lov kassir ma'lumotisiz ketadi, «Hikvision'ga bog'lanmagan» hisoblashni to'xtatmaydi, qoldiq minusga ketishi mumkin.",
   'Ввести приход': 'Kirimni kiritish',
   'Не у всех сотрудников указана ставка — укажите её в «Сотрудниках», иначе смену не подтвердить.': "Hamma xodimlarga stavka ko'rsatilmagan — uni «Xodimlar»da kiriting, aks holda smenani tasdiqlab bo'lmaydi.",
   'Все пришедшие получили': 'Kelganlarning hammasi oldi',
