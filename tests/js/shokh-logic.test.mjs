@@ -44,6 +44,29 @@ test('подсказка по цене сравнивает с обычной, �
   assert.equal(logic.priceHint(draft({price: ''}), '8000').kind, 'empty');
 });
 
+test('до +10% к обычной — «в норме», выше — «дороже на N% — бухгалтер увидит»', () => {
+  assert.equal(logic.priceHint(draft({price: '8800'}), '8000').kind, 'same');
+  assert.equal(logic.priceHint(draft({price: '8800'}), '8000').text, 'В норме');
+  const above = logic.priceHint(draft({price: '8801'}), '8000');
+  assert.equal(above.kind, 'above');
+  assert.equal(above.text, 'Дороже обычного на 10% — бухгалтер увидит');
+  assert.equal(logic.priceHint(draft({price: '6000'}), '8000').text, 'Дешевле обычного на 25%');
+  // Проценты целые: «13.5%» не узнал бы узбекский перевод.
+  assert.equal(logic.priceHint(draft({price: '10440'}), '9200').delta, 13);
+});
+
+test('поиск товара: слова в любом порядке, частые — первыми', () => {
+  const items = [{item: 'Овощ Помидор черри', code: '00011', times: 0},
+    {item: 'Овощ Помидор', code: '00010', times: 4}, {item: 'Агар', code: '01503', times: 0},
+    {item: 'Зелень Лук зелёный', code: '00020', times: 9}];
+  assert.deepEqual(logic.searchItems(items, '').map(r => r.item),
+    ['Зелень Лук зелёный', 'Овощ Помидор', 'Агар', 'Овощ Помидор черри']);
+  assert.deepEqual(logic.searchItems(items, 'черри помидор').map(r => r.item), ['Овощ Помидор черри']);
+  assert.deepEqual(logic.searchItems(items, 'зеленый').map(r => r.item), ['Зелень Лук зелёный']);
+  assert.deepEqual(logic.searchItems(items, '00010').map(r => r.item), ['Овощ Помидор']);
+  assert.equal(logic.searchItems(items, '', 2).length, 2);
+});
+
 test('остаток после покупки может уйти в минус и это видно', () => {
   assert.equal(logic.pocketAfter('900000', draft()), 792000);
   // Записали больше, чем выдали — прятать нельзя.
@@ -60,11 +83,9 @@ test('таймер закупа считает минуты', () => {
   assert.equal(logic.clock(null), '—');
 });
 
-test('доля отчитанных денег считается от всего выданного', () => {
-  // На руках 792 000, ждёт проверки 108 000 → выдано 900 000, отчитались за 12%.
-  assert.equal(logic.reportedShare('792000', '108000'), 12);
-  assert.equal(logic.reportedShare('900000', '0'), 0);
-  assert.equal(logic.reportedShare(null, '0'), null);
+test('долю «Отчитались» считает сервер, своей формулы у экрана нет', () => {
+  // «Функционал» §1: формулы раздела 3 — в одном серверном модуле.
+  assert.equal(logic.reportedShare, undefined);
 });
 
 /* «За всё»: сумму покупки переводим в цену за единицу так, как её примет

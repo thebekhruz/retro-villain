@@ -2404,3 +2404,224 @@ globalThis.RetroTemplatesUz.push(
   [/^Отчёт сохранён в архиве · (\d+:\d\d)$/, "Hisobot arxivga saqlandi · $1"],
 );
 /* ── /T-393 директор/учредитель ── */
+/* ── QA 2b Ведомость ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Ячейка «к выдаче» или ✕ — выдать, ✓ — отменить выдачу. Номер дня открывает его в «Финансах дня»':
+    "«berilishi kerak» yoki ✕ katak — berish, ✓ — berishni bekor qilish. Kun raqami uni «Kunlik moliya»da ochadi",
+  'Сменные · за этот месяц смен в ведомости нет': "Smenalilar · bu oy vedomostida smenalar yo'q",
+  'Отменить выдачу': 'Berishni bekor qilish',
+  'нажмите, чтобы отменить выдачу': 'berishni bekor qilish uchun bosing',
+  'удалён из реестра': "reyestrdan o'chirilgan",
+  'Сотрудника нет в реестре — выплаты за месяц сохранены': "Xodim reyestrda yo'q — oylik to'lovlar saqlangan",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^переплата −([\d\s]+)$/, "ortiqcha to'lov −$1"],
+  [/^Сотрудник удалён · №(\d+)$/, "Xodim o'chirilgan · №$1"],
+  [/^Отменить выдачу за смену (\d\d\.\d\d): (.+) · ([\d\s]+) сум \(выдано (.+)\)\? Деньги вернутся в остаток кассы\.$/,
+    "$1 smenasi uchun berish bekor qilinsinmi: $2 · $3 so'm ($4 berilgan)? Pul kassa qoldig'iga qaytadi."],
+  [/^Выдача отменена: (.+) · ([\d\s]+) сум · смена (\d\d\.\d\d)$/, "Berish bekor qilindi: $1 · $2 so'm · $3 smenasi"],
+  [/^Больше оклада: (.+) получит ([\d\s]+) сум из ([\d\s]+) сум, переплата ([\d\s]+) сум\.$/,
+    "Okladdan ko'p: $1 $3 so'mdan $2 so'm oladi, ortiqcha to'lov $4 so'm."],
+  [/^Оклад за (\d\d\.\d\d): (.+) · \+([\d\s]+), всего ([\d\s]+) сум$/, "$1 uchun oklad: $2 · +$3, jami $4 so'm"],
+  [/^Оклад за (\d\d\.\d\d): (.+) · ([\d\s]+) сум$/, "$1 uchun oklad: $2 · $3 so'm"],
+  [/^Оклад за (\d\d\.\d\d): «(.*)» — не сумма\. Введите цифрами, например 500 000\.$/,
+    "$1 uchun oklad: «$2» — summa emas. Raqamlar bilan kiriting, masalan 500 000."],
+  [/^Будущий месяц ещё не открыт — показываем (.+)\.$/, "Kelgusi oy hali ochilmagan — $1 ko'rsatilmoqda."],
+  [/^Остаток ушёл в минус (\d\d\.\d\d)$/, "$1 qoldiq minusga ketdi"],
+  [/^На конец дня (.+) сум$/, "Kun oxirida $1 so'm"],
+  [/^к выдаче ([\d\s]+) сум — нажмите: выдача запишется сегодня, (\d\d\.\d\d)$/, "berilishi kerak $1 so'm — bosing: to'lov bugun, $2 sanasiga yoziladi"],
+  [/^к выдаче ([\d\s]+) сум — нажмите: смена подтвердится и выдача запишется сегодня, (\d\d\.\d\d)$/,
+    "berilishi kerak $1 so'm — bosing: smena tasdiqlanadi va to'lov bugun, $2 sanasiga yoziladi"],
+  [/^ставка дня ([\d\s]+) сум$/, "kun stavkasi $1 so'm"],
+);
+/* ── /QA 2b Ведомость ── */
+/* ── QA 7a/7b Учредитель ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Прошлые недели': "O'tgan haftalar",
+  'Перечислениями': "O'tkazma bilan",
+  'Проверьте даты': "Sanalarni tekshiring",
+  'Не удалось связаться с AI. Попробуйте ещё раз.': "AI bilan bog'lanib bo'lmadi. Qayta urinib ko'ring.",
+  'Дата начала должна быть не позже даты конца.': "Boshlanish sanasi tugash sanasidan keyin bo'lmasligi kerak.",
+  'Период не может быть длиннее 366 дней.': "Davr 366 kundan uzun bo'lishi mumkin emas.",
+  'Укажите сумму больше нуля.': "Noldan katta summani kiriting.",
+  'Меньше на 500 000': "500 000 ga kam",
+  'Больше на 500 000': "500 000 ga ko'p",
+  'Сумма дивидендов в неделю, сум': "Haftalik dividend summasi, so'm",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^(\d+) замечани\S* к бухгалтеру · подробно — на компьютере$/, "Buxgalterga $1 ta izoh · batafsil — kompyuterda"],
+  [/^собрано (.+) · цели не было$/, "$1 yig'ildi · maqsad yo'q edi"],
+  [/^собрано (.+) из (.+)$/, "$2 dan $1 yig'ildi"],
+  [/^выдано (\d\d\.\d\d) · (.+)$/, "$1 da berildi · $2"],
+  [/^От кассира получено меньше расчёта · (.+)$/, "Kassirdan hisobdan kam olindi · $1"],
+  [/^От кассира получено больше расчёта · (.+)$/, "Kassirdan hisobdan ko'p olindi · $1"],
+  [/^Кассир передал больше расчёта · (.+)$/, "Kassir hisobdan ko'p topshirdi · $1"],
+  [/^Получено (.+) при расчёте (.+) · недостача (.+)$/, "Olindi $1, hisob $2 · kamomad $3"],
+  [/^Получено (.+) при расчёте (.+)$/, "Olindi $1, hisob $2"],
+  [/^Бухгалтер подтвердил: получено (.+) — совпало с расчётом$/, "Buxgalter tasdiqladi: $1 olindi — hisob bilan mos"],
+  [/^Выдано без входа: (.+) · (\d\d\.\d\d)$/, "Kirishsiz berildi: $1 · $2"],
+  [/^Смена (\d\d\.\d\d) · (.+) сум$/, "Smena $1 · $2 so'm"],
+  [/^Замечания: (.+)$/, "Izohlar: $1"],
+  [/^\+ наличными напрямую (.+)$/, "+ naqd to'g'ridan-to'g'ri $1"],
+);
+/* ── /QA 7a/7b Учредитель ── */
+/* ── QA 3a Закуп · Шох ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Выберите точку': 'Xarid joyini tanlang',
+  'Для приходной накладной iiko': 'iiko kirim hujjati uchun',
+  'Часто покупаете': 'Tez-tez olasiz',
+  'В норме': 'Me\'yorida',
+  'Покупка не сохранена. Выйти без неё?': 'Xarid saqlanmadi. Usiz chiqilsinmi?',
+  'Покупка уже записана — она в списке «Сегодня».': 'Xarid allaqachon yozilgan — u «Bugun» ro\'yxatida.',
+  'Прошлая покупка не сохранена — нажмите, чтобы продолжить': 'Oldingi xarid saqlanmadi — davom etish uchun bosing',
+  'Это не фото. Сфотографируйте товар или чек камерой.': 'Bu foto emas. Mahsulot yoki chekni kamera bilan suratga oling.',
+  'Цена выше обычной больше чем на 10% — бухгалтер увидит.': "Narx odatdagidan 10% dan ko'proq yuqori — buxgalter ko'radi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Выдано сегодня ([\d\s,]+) · потрачено ([\d\s,]+)$/, "Bugun berildi $1 · sarflandi $2"],
+  [/^Дороже обычного на (\d+)% — бухгалтер увидит$/, "Odatdagidan $1% qimmat — buxgalter ko'radi"],
+  [/^Приходная накладная iiko № (.+)$/, 'iiko kirim hujjati № $1'],
+);
+/* ── /QA 3a Закуп · Шох ── */
+/* ── QA 2a Финансы дня ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  '− Сменным · выдано сегодня': "− Smenalilarga · bugun berildi",
+  'Выдать ставку всем пришедшим, кому ещё ничего не выдано': "Hali hech narsa berilmagan barcha kelganlarga stavkani berish",
+  'Всем пришедшим уже выдано.': "Barcha kelganlarga allaqachon berilgan.",
+  'Всем пришедшим уже выдано. Остаток частичных выдач и долги прошлых смен — в их строках.':
+    "Barcha kelganlarga berilgan. Qisman berilganlar qoldig'i va o'tgan smenalar qarzi — o'z qatorlarida.",
+  'Входа нет — начисление 0 сум, выдавать нечего': "Kirish yo'q — hisoblangan 0 so'm, beradigan narsa yo'q",
+  'Выдано полностью в прошлые дни': "O'tgan kunlarda to'liq berilgan",
+  'Отмечено вручную · смена уже начислена, отметку не изменить': "Qo'lda belgilangan · smena hisoblangan, belgini o'zgartirib bo'lmaydi",
+  'Смена начислена — отметки закрыты.': "Smena hisoblangan — belgilar yopiq.",
+  'Операцию сейфа не удалить: исправьте встречной записью': "Seyf amalini o'chirib bo'lmaydi: qarama-qarshi yozuv bilan tuzating",
+  'Авто-строка: удаляют сами выплаты': "Avto-qator: to'lovlarning o'zi o'chiriladi",
+  'Строка журнала «Закуп · Шох» · в остатке': "«Xarid · Shoh» jurnal qatori · qoldiqda",
+  'Получено от кассира': "Kassirdan olindi",
+  'Получено от кассира, сум': "Kassirdan olindi, so'm",
+  'Подтвердить': "Tasdiqlash",
+  'Изменить': "O'zgartirish",
+  '✓ Сумма от кассира подтверждена': "✓ Kassirdan summa tasdiqlandi",
+  'Укажите полученную сумму цифрами.': "Olingan summani raqamlar bilan kiriting.",
+  'От кассира получено меньше расчёта': "Kassirdan hisobdan kam olindi",
+  'Будущие дни недоступны: выберите сегодня или прошедший день.': "Kelgusi kunlar mavjud emas: bugun yoki o'tgan kunni tanlang.",
+  'Приход записан бухгалтером': "Kirim buxgalter tomonidan yozilgan",
+  'Ручная запись прихода, если сумма не пришла из модуля кассира. Дата — выбранный день выплат. Исправить уже записанную сумму — «Изменить» в карточке «Деньги на расходы».':
+    "Kirimni qo'lda yozish, agar summa kassir modulidan kelmagan bo'lsa. Sana — tanlangan to'lov kuni. Yozilgan summani tuzatish — «Xarajatga pul» kartasidagi «O'zgartirish».",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^(\d+) покуп\S* · отчитался за (\d+)%$/, "$1 ta xarid · $2% hisobot berdi"],
+  [/^Расчёт ([\d\s]+) · получено ([\d\s]+) · не хватает ([\d\s]+) сум$/, "Hisob $1 · olindi $2 · yetishmaydi $3 so'm"],
+  [/^⚠ Получено на ([\d\s]+) сум меньше расчёта \(([\d\s]+) сум\)$/, "⚠ Hisobdan $1 so'm kam olindi ($2 so'm)"],
+  [/^Кассир передал ([\d\s]+) сум\. Пересчитайте и подтвердите\.$/, "Kassir $1 so'm topshirdi. Sanab, tasdiqlang."],
+  [/^Кассир ещё не нажал «Передать» — по расчёту ([\d\s]+) сум\.$/, "Kassir hali «Topshirish»ni bosmagan — hisob bo'yicha $1 so'm."],
+  [/^Исправление: расчёт ([\d\s]+) сум\.$/, "Tuzatish: hisob $1 so'm."],
+  [/^Исправление записанного прихода ([\d\s]+) сум\.$/, "Yozilgan $1 so'm kirimni tuzatish."],
+  [/^\+ От кассира · касса (\d\d\.\d\d) · передано (\d\d:\d\d) · подтвердите$/, "+ Kassirdan · $1 kassasi · $2 da topshirildi · tasdiqlang"],
+  [/^Получено от кассира: ([\d\s]+) сум\.$/, "Kassirdan olindi: $1 so'm."],
+  [/^Получено от кассира: ([\d\s]+) сум\. Не хватает ([\d\s]+) сум — это видно в проверках\.$/,
+    "Kassirdan olindi: $1 so'm. $2 so'm yetishmaydi — bu tekshiruvlarda ko'rinadi."],
+  [/^Сумма — только цифрами: (.+)$/, "Summa — faqat raqamlar bilan: $1"],
+  [/^Выдано: (.+) · ([\d\s]+) сум$/, "Berildi: $1 · $2 so'm"],
+  [/^Выдача снята: (.+)$/, "Berish bekor qilindi: $1"],
+  [/^Больше долга: (.+) можно выдать ещё ([\d\s]+) сум \(итого за сегодня до ([\d\s]+) сум\)\.$/,
+    "Qarzdan ko'p: $1 ga yana $2 so'm berish mumkin (bugun jami $3 so'mgacha)."],
+  [/^Удалить запись целиком: долг ([\d\s]+) сум и оплату этого дня ([\d\s]+) сум\?$/,
+    "Yozuv butunlay o'chirilsinmi: $1 so'm qarz va shu kungi $2 so'm to'lov?"],
+  [/^Удалить запись целиком: долг ([\d\s]+) сум\?$/, "Yozuv butunlay o'chirilsinmi: $1 so'm qarz?"],
+);
+/* ── /QA 2a Финансы дня ── */
+/* ── QA 1a Сотрудники ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Нет в Hikvision': "Hikvision'da yo'q",
+  'Нет в Hikvision · отмечается вручную': "Hikvision'da yo'q · qo'lda belgilanadi",
+  'Турникет не нужен: по умолчанию «был», в «Финансах дня» можно отметить «не был».':
+    "Turniket kerak emas: odatda «keldi», «Kunlik moliya»da «kelmadi» deb belgilash mumkin.",
+  'Выключено: день берётся из Hikvision.': "O'chirilgan: kun Hikvision'dan olinadi.",
+  'Выключено: должен проходить турникет, а ID Hikvision не привязан — начисление заблокировано.':
+    "O'chirilgan: turniketdan o'tishi kerak, lekin Hikvision ID bog'lanmagan — hisoblash bloklangan.",
+  'Пометка «⊘ Hik» в реестре и ведомости. На оклад не влияет.': "Reyestr va vedomostda «⊘ Hik» belgisi. Okladga ta'sir qilmaydi.",
+  'Нет привязки Hikvision — начисление заблокировано. Если турникет ему не нужен, включите «Нет в Hikvision».':
+    "Hikvision bog'lanmagan — hisoblash bloklangan. Turniket kerak bo'lmasa, «Hikvision'da yo'q»ni yoqing.",
+  'Например, 6 000 000': 'Masalan, 6 000 000',
+  'Например, повышение с октября': "Masalan, oktyabrdan oshirish",
+  'Из новых списков уйдёт. Прошлые дни, выплаты и ведомость сохранятся.':
+    "Yangi ro'yxatlardan chiqadi. O'tgan kunlar, to'lovlar va vedomost saqlanadi.",
+  'ИСТОРИЯ ИЗМЕНЕНИЙ': "O'ZGARISHLAR TARIXI",
+  'Историю не удалось загрузить.': "Tarixni yuklab bo'lmadi.",
+  'Загружаем историю…': 'Tarix yuklanmoqda…',
+  'Изменений пока не было.': "Hozircha o'zgarishlar yo'q.",
+  'Добавлен': "Qo'shildi",
+  'Изменение': "O'zgarish",
+  'Удалён': "O'chirildi",
+  'Добавлен в реестр': "Reyestrga qo'shildi",
+  'Снова по Hikvision': "Yana Hikvision bo'yicha",
+  'Удалён из реестра: прошлые дни сохранены': "Reyestrdan o'chirildi: o'tgan kunlar saqlangan",
+  'Удалён из реестра': "Reyestrdan o'chirildi",
+  'Добавлен на оклад': "Okladga qo'shildi",
+  'Изменение оклада': "Okladni o'zgartirish",
+  'Без Hikvision': "Hikvision'siz",
+  'По Hikvision': "Hikvision bo'yicha",
+  'Сумма — только цифры, например 180 000.': "Summa — faqat raqamlar, masalan 180 000.",
+  'Оклад — только цифры, например 6 000 000.': "Oklad — faqat raqamlar, masalan 6 000 000.",
+  'Выберите группу.': 'Guruhni tanlang.',
+  'Сотрудник удалён. Прошлые дни сохранены.': "Xodim o'chirildi. O'tgan kunlar saqlangan.",
+  'нет привязки Hikvision': "Hikvision bog'lanmagan",
+  'нет данных Hikvision': "Hikvision ma'lumotlari yo'q",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Без ставки (\d+) · без привязки (\d+) · нет данных (\d+)$/, "Stavkasiz $1 · bog'lanmagan $2 · ma'lumot yo'q $3"],
+  [/^Ставка ([\d\s,]+|нет) → ([\d\s,]+|нет)$/, (all, a, b) => 'Stavka ' + (a === 'нет' ? "yo'q" : a) + ' → ' + (b === 'нет' ? "yo'q" : b)],
+  [/^Ставка была ([\d\s,]+|нет)$/, (all, a) => 'Stavka edi ' + (a === 'нет' ? "yo'q" : a)],
+  [/^Ставка ([\d\s,]+)$/, 'Stavka $1'],
+  [/^Оклад ([\d\s,]+) → ([\d\s,]+)$/, 'Oklad $1 → $2'],
+  [/^Оклад был ([\d\s,]+)$/, 'Oklad edi $1'],
+  [/^Оклад ([\d\s,]+)$/, 'Oklad $1'],
+  [/^Имя: (.+) → (.+)$/, 'Ism: $1 → $2'],
+  [/^Должность: (.+) → (.+)$/, 'Lavozim: $1 → $2'],
+  [/^Группа (.+) → (.+)$/, 'Guruh: $1 → $2'],
+);
+/* ── /QA 1a Сотрудники ── */
+/* ── QA 5a Кассир ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Зарплата кассира': "Kassir maoshi",
+  'Будущий день недоступен: отчёта за него ещё нет.': "Kelajakdagi kun mavjud emas: uning hisoboti hali yo'q.",
+  'Отчёт на экране устарел. Обновите его.': "Ekrandagi hisobot eskirgan. Uni yangilang.",
+  'Бухгалтер уже подтвердил получение кассы — отменить передачу нельзя.':
+    "Buxgalter kassani olganini tasdiqlagan — topshirishni bekor qilib bo'lmaydi.",
+  'Бухгалтер уже подтвердил получение кассы — передачу не изменить.':
+    "Buxgalter kassani olganini tasdiqlagan — topshirishni o'zgartirib bo'lmaydi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Бухгалтер подтвердил: получено (.+?) сум в (.+?) · недостача (.+)$/, "Buxgalter tasdiqladi: $2 da $1 so'm olindi · kamomad $3"],
+  [/^Бухгалтер подтвердил: получено (.+?) сум в (.+)$/, "Buxgalter tasdiqladi: $2 da $1 so'm olindi"],
+  [/^Бухгалтер подтвердил: получено (.+?) сум · недостача (.+)$/, "Buxgalter tasdiqladi: $1 so'm olindi · kamomad $2"],
+  [/^Бухгалтер подтвердил: получено (.+?) сум$/, "Buxgalter tasdiqladi: $1 so'm olindi"],
+  [/^После подтверждения сумма изменилась на (.+) сум\. Передачу уже не изменить — скажите бухгалтеру\.$/,
+    "Tasdiqlangandan keyin summa $1 so'mga o'zgardi. Topshirishni endi o'zgartirib bo'lmaydi — buxgalterga ayting."],
+  [/^Авто-строку «(.+)» удалить нельзя: она добавляется каждый день\.$/, "«$1» avto-qatorini o'chirib bo'lmaydi: u har kuni qo'shiladi."],
+);
+/* ── /QA 5a Кассир ── */
+/* ── QA 6a Директор ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Официанты Retro · 7 дней': "Retro ofitsiantlari · 7 kun",
+  'по выручке': "tushum bo'yicha",
+  'iiko не вернул продажи официантов Retro за неделю.': "iiko hafta uchun Retro ofitsiantlari savdosini qaytarmadi.",
+  'чеки не посчитаны': "cheklar hisoblanmagan",
+  'Очистить': "Tozalash",
+  'Точно очистить?': "Rostdan tozalansinmi?",
+  'Не удалось связаться с AI. Попробуйте ещё раз.': "AI bilan bog'lanib bo'lmadi. Qayta urinib ko'ring.",
+  'Ошибок нет': "Xato yo'q",
+  'Что важнее всего? · AI →': "Eng muhimi nima? · AI →",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^выдано (.+) из (.+)$/, "$2 dan $1 berildi"],
+  [/^переплата (.+)$/, "ortiqcha to'lov $1"],
+  [/^(\d+) (?:смена|смены|смен) в месяце · выдано (.+)$/, "oyda $1 smena · $2 berildi"],
+  [/^(\d+) (?:чек|чека|чеков) · (\d+) (?:смена|смены|смен) · средний чек (.+)$/, "$1 chek · $2 smena · o'rtacha chek $3"],
+  [/^Все официанты · (\d+)$/, "Barcha ofitsiantlar · $1"],
+  [/^ещё (\d+) — спросить AI →$/, "yana $1 — AI'dan so'rash →"],
+  [/^(\d+) (?:ошибка|ошибки|ошибок)$/, "$1 ta xato"],
+  [/^(\d+) (?:замечание|замечания|замечаний)$/, "$1 ta izoh"],
+);
+/* ── /QA 6a Директор ── */

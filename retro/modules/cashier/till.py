@@ -323,6 +323,25 @@ def expected_handover(snapshot, totals: TillTotals) -> Decimal:
     return cash_to_finance(snapshot, totals.cash_out, totals.receipts)
 
 
+def till_summary(state, day: date, snapshot) -> dict:
+    """Готовые числа карточки «К передаче бухгалтеру» и «Касса за день» (5a).
+
+    Экран их не пересчитывает (Функционал §1): формула одна — здесь и в
+    cash_to_finance. К передаче = «Демо» + предоплаты наличными + прочие
+    поступления − расходы наличными − выдано Шоху из кассы. Доллары и открытые
+    счета в неё не входят. В демо ручных операций нет."""
+    totals = TillTotals(Decimal(0), Decimal(0), Decimal(0)) if snapshot.demo else till_totals(state, day)
+    demo_cash = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
+    register = snapshot.register_received_total
+    base = register if register is not None else snapshot.revenue + snapshot.new_prepayment
+    return dict(date=day.isoformat(), snapshot_id=snapshot.id,
+                demo_cash=str(demo_cash), cash_prepayment=str(snapshot.cash_prepayment),
+                receipts=str(totals.receipts), expenses=str(totals.expenses),
+                shokh=str(totals.shokh), cash_out=str(totals.cash_out),
+                handover=str(expected_handover(snapshot, totals)),
+                sales=str(snapshot.revenue), total_inflow=str(base + totals.receipts))
+
+
 def expected_from_saved(state, day: date):
     """«Ожидается» для бухгалтера: расчёт по последнему снимку iiko, который уже
     есть на сервере (кэш страницы кассира или архив дня), — без похода в iiko.

@@ -164,7 +164,9 @@ function rowLock(row) {
   if (row.own && !row.accrualId && dayBlocks[view.board.S]) return dayBlocks[view.board.S];
   return null;
 }
-const payable = () => view.board.toPay.filter(row => !rowLock(row));
+// «Выдать пришедшим»: своя смена, кому ещё ничего не выдано (частичных и
+// прошлые смены выдают строкой).
+const payable = () => view.board.handOut.filter(row => !rowLock(row));
 
 function renderShift() {
   const {board, staff, data} = view;
@@ -180,7 +182,7 @@ function renderShift() {
     const n = noHik.length;
     const parts = [n + ' ' + L.plural(n, 'сотрудник не зарегистрирован', 'сотрудника не зарегистрированы', 'сотрудников не зарегистрированы') + ' в Hikvision'
         + (roles ? '' : '.'), roles ? '(' + roles + ').' : null,
-      board.confirmed ? 'Смена подтверждена — отметки закрыты.' : 'Время входа неизвестно — нажмите на статус, чтобы отметить «был / не был».',
+      noHik.some(r => !r.accrualId) ? 'Время входа неизвестно — нажмите на статус, чтобы отметить «был / не был».' : 'Смена начислена — отметки закрыты.',
       absent ? 'Отмечено отсутствие: ' + absent + '.' : null];
     strips.append(strip(parts, h('button', {type: 'button', class: 'fd-strip-btn', text: 'Показать', onclick: () => { shiftTab = 'nohik'; renderShift(); }})));
   }
@@ -222,8 +224,12 @@ function renderShift() {
   $('shift-sum').textContent = 'выдано ' + t.paidCount + ' · ' + money(t.paid) + (errors ? ' · ' + errors + ' ' + L.plural(errors, 'ошибка', 'ошибки', 'ошибок') : '');
 
   const n = payable().length;
-  $('pay-all-label').textContent = n ? 'Выдать пришедшим · ' + n : board.toPay.length ? 'Выдать пришедшим' : 'Все пришедшие получили';
+  // Выдача закрыта (нет кассы) — не «все получили», а «нельзя»: причина в подсказке.
+  const waiting = board.handOut.length;
+  $('pay-all-label').textContent = n ? 'Выдать пришедшим · ' + n : lock && waiting ? 'Выдать пришедшим · ' + waiting : 'Все пришедшие получили';
   $('pay-all').disabled = !n || busy;
+  $('pay-all').title = n ? 'Выдать ставку всем пришедшим, кому ещё ничего не выдано'
+    : lock || (board.toPay.length ? 'Всем пришедшим уже выдано. Остаток частичных выдач и долги прошлых смен — в их строках.' : 'Всем пришедшим уже выдано.');
 }
 
 function shiftRow(row, lock) {
@@ -238,6 +244,8 @@ function shiftRow(row, lock) {
   const canPay = !lock && row.accrued > 0 && row.debt > 0;
   const canUndo = !lock && row.paidToday > 0;
   check.disabled = !(canPay || canUndo);
+  // Выключенная галочка объясняет, почему её не нажать.
+  if (check.disabled) check.title = lock || (row.accrued === 0 ? 'Входа нет — начисление 0 сум, выдавать нечего' : 'Выдано полностью в прошлые дни');
   check.addEventListener('click', () => {
     const fb = {button: check, row: line};
     if (row.debt > 0 && row.accrued > 0) setPaid(row, row.paidToday + row.debt, null, fb);
@@ -259,7 +267,7 @@ function shiftRow(row, lock) {
   const [label, cls] = STATUS[row.status] || ['—', 'unlinked'];
   const toggleable = row.noHik && row.own && !row.accrualId;
   const pill = h(toggleable ? 'button' : 'span', {class: 'fd-pill ' + cls + (row.noHik ? ' is-manual' : '') + (toggleable ? ' is-toggle' : ''),
-    title: row.noHik ? (toggleable ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был' : 'Отмечено вручную') : 'Данные Hikvision',
+    title: row.noHik ? (toggleable ? 'Нет в Hikvision. Нажмите, чтобы отметить: был / не был' : 'Отмечено вручную · смена уже начислена, отметку не изменить') : 'Данные Hikvision',
     type: toggleable ? 'button' : null, text: label, 'data-busy-key': toggleable ? 'pill:' + dayKey(stable(row)) : null});
   if (toggleable) pill.addEventListener('click', () => run(() => write('/api/accountant/manual-attendance',
     {date: view.board.S, employee_id: row.employeeId, present: row.status !== 'manual_present'}),
@@ -278,7 +286,18 @@ function shiftRow(row, lock) {
   if (lock) input.title = lock;
   else if (row.accrued === 0 && !row.paidToday) input.title = 'Входа нет — начисление 0 сум';
   const commit = () => {
-    const value = parse(input.value);
+    const raw = input.value.trim();
+    // «abc» — не ноль: без проверки такая опечатка снимала бы выдачу.
+    if (raw && !/^[\d\s\u00a0\u202f.,]+$/.test(raw)) {
+      message('Сумма — только цифрами: ' + raw, true); input.classList.add('is-bad'); input.focus(); return;
+    }
+    const value = parse(raw);
+    // Больше долга сервер не примет — говорим сразу и сколько можно.
+    const most = row.paidToday + Math.max(0, row.debt);
+    if (value > most) {
+      message('Больше долга: ' + row.name + ' можно выдать ещё ' + money(Math.max(0, row.debt)) + ' (итого за сегодня до ' + money(most) + ').', true);
+      input.focus(); return;
+    }
     if (value === row.paidToday) { input.value = row.paidToday ? fmt(row.paidToday) : ''; return; }
     setPaid(row, value, input, {field: input, row: line});
   };
@@ -416,12 +435,14 @@ function renderJournal() {
     const x = h('span', {class: 'fd-x-cell'});
     if (row.ops && row.ops.length) {
       x.append(h('button', {type: 'button', class: 'fd-x', 'aria-label': 'Удалить строку', title: 'Удалить', text: '×', onclick: event => {
-        const text = row.kind === 'debt' ? 'Удалить оплату по этой строке? Сам долг останется в «Долгах к оплате».' : 'Удалить эту операцию?';
+        const text = row.kind === 'debt' ? 'Удалить запись целиком: долг ' + money(row.amount) + (row.paid ? ' и оплату этого дня ' + money(row.paid) : '') + '?' : 'Удалить эту операцию?';
         if (!ask(text)) return;
         run(async () => { for (const op of row.ops) await remove(op.operation, op.id, view.data.date); }, 'Операция удалена.',
           {button: event.currentTarget, row: line, collapse: true});
       }}));
     }
+    else if (row.kind === 'reserve') x.title = 'Операцию сейфа не удалить: исправьте встречной записью';
+    else if (row.kind === 'auto') x.title = 'Авто-строка: удаляют сами выплаты';
     if (row.children) {
       line.classList.add('is-expandable');
       const open = expanded.has(row.group);
@@ -474,11 +495,13 @@ function fillCatalog() {
     if (!items.length) return;
     const og = document.createElement('optgroup');
     og.label = tr(L.GROUP_SHORT[group.code] || group.label);
+    // Дивиденды в сейф — строка категории «Дивиденды / переводы» (Функционал §3.7).
+    if (group.code === 'distributions') og.append(new Option(special.reserve_dividends_transfer.label, 'reserve_dividends_transfer'));
     items.forEach(item => og.append(new Option(item.label, item.code)));
     select.append(og);
   });
   const og = document.createElement('optgroup'); og.label = tr('Резервы и сейф');
-  Object.entries(special).forEach(([code, item]) => og.append(new Option(item.label, code)));
+  Object.entries(special).filter(([code]) => code !== 'reserve_dividends_transfer').forEach(([code, item]) => og.append(new Option(item.label, code)));
   select.append(og);
   if (keep) select.value = keep;
 }
@@ -527,7 +550,8 @@ function renderShoh() {
   $('shoh-start').textContent = shoh.known ? fmt(shoh.start) : unknown;
   $('shoh-given').textContent = fmt(shoh.given);
   $('shoh-spent').textContent = fmt(shoh.spent);
-  $('shoh-spent-sub').textContent = shoh.count + ' ' + L.plural(shoh.count, 'покупка', 'покупки', 'покупок');
+  $('shoh-spent-sub').textContent = shoh.count + ' ' + L.plural(shoh.count, 'покупка', 'покупки', 'покупок')
+    + (shoh.reported !== null && shoh.reported !== undefined ? ' · отчитался за ' + shoh.reported + '%' : '');
   $('shoh-balance').textContent = shoh.hand === null ? '—' : fmt(shoh.hand);
   $('shoh-balance').classList.toggle('is-negative', shoh.hand !== null && shoh.hand < 0);
   $('shoh-sum').textContent = shoh.hand === null ? 'начальный остаток не задан' : 'на руках ' + money(shoh.hand) + ' · ' + shoh.count + ' ' + L.plural(shoh.count, 'покупка', 'покупки', 'покупок');
@@ -536,7 +560,8 @@ function renderShoh() {
   const gives = $('shoh-gives'); gives.replaceChildren();
   shoh.gives.forEach(give => gives.append(h('div', {class: 'fd-give', 'data-busy-key': 'give:' + dayKey(give.id || give.time)},
     give.time ? h('span', {class: 'fd-give-time', text: give.time}) : null,
-    h('span', {class: 'fd-give-label', text: give.fromKassa ? 'Выдал кассир · уже вычтено из передачи кассы' : 'Выдано бухгалтером · попадает в журнал и остаток'}),
+    h('span', {class: 'fd-give-label', text: give.fromKassa ? 'Выдал кассир · уже вычтено из передачи кассы'
+      : give.fromJournal ? 'Строка журнала «Закуп · Шох» · в остатке' : 'Выдано бухгалтером · попадает в журнал и остаток'}),
     h('strong', {class: 'num', text: money(give.amount)}),
     give.fromKassa ? h('span', {class: 'fd-x-gap'}) : h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить выдачу', 'aria-label': 'Удалить выдачу Шоху', onclick: event => {
       if (!ask('Удалить выдачу Шоху ' + money(give.amount) + '?')) return;
@@ -693,7 +718,7 @@ $('salary-payment-form').addEventListener('submit', event => {
   const person = view.monthly.people.find(p => String(p.id) === $('salary-employee').value);
   const amount = parse($('salary-amount').value);
   if (!person || !amount) { message('Выберите сотрудника и сумму.', true); return; }
-  if (amount > Math.max(0, person.left) && !salaryConfirm) { salaryConfirm = true; salaryHint(); return; }
+  if (amount > Math.max(0, person.left) && !salaryConfirm) { salaryConfirm = true; message(''); salaryHint(); $('salary-amount').focus(); return; }
   salaryConfirm = false;
   run(() => write('/api/accountant/monthly-payments', {date: view.data.date, employee_id: person.id, amount: String(amount)}),
     'Записано: ' + person.name + ', ' + money(amount) + '. Ведомость и остаток обновлены.', {button: $('salary-submit')}).then(ok => {
@@ -705,21 +730,63 @@ $('salary-payment-form').addEventListener('submit', event => {
 function railLine(label, value, cls) {
   return h('div', {class: cls}, h('span', {text: label}), h('b', {text: value}));
 }
+/* Подтверждение суммы от кассира (Функционал 2a, «Нет в макете»). Поле
+   «Получено» по умолчанию = переданное кассиром (или расчёт iiko). После
+   подтверждения остаток считается от полученного, а недостача — ошибка. */
+let confirmEditing = false, confirmDirty = false;
+function renderCashConfirm(handover) {
+  const {cash} = view, form = $('cash-confirm'), done = $('cash-confirmed');
+  const handed = cash.cashier !== null ? cash.cashier : cash.expected;
+  // Подтверждать нужно передачу кассира; свою ручную запись бухгалтер уже ввёл сам.
+  const needs = !cash.confirmedAt && (handover.source === 'cashier' || (cash.cashier === null && cash.expected !== null));
+  form.hidden = !(needs || confirmEditing) || handed === null;
+  if (!form.hidden && !confirmDirty) $('cash-confirm-amount').value = fmt(cash.confirmedAt ? cash.cashier : handed);
+  $('cash-confirm-note').textContent = cash.confirmedAt ? 'Исправление: расчёт ' + money(cash.calculation) + '.'
+    : handover.source !== 'cashier' && cash.cashier !== null ? 'Исправление записанного прихода ' + money(cash.cashier) + '.'
+    : handover.source === 'cashier' ? 'Кассир передал ' + money(cash.cashier) + '. Пересчитайте и подтвердите.'
+    : 'Кассир ещё не нажал «Передать» — по расчёту ' + money(cash.expected) + '.';
+  $('cash-confirm-submit').disabled = busy;
+  // Записанный вручную приход тоже можно исправить отсюда — «Изменить».
+  const manual = !cash.confirmedAt && cash.cashier !== null && handover.source !== 'cashier';
+  done.hidden = !(cash.confirmedAt || manual) || !form.hidden;
+  done.classList.toggle('is-short', cash.shortfall > 0);
+  done.replaceChildren(h('span', {text: cash.shortfall > 0
+      ? '⚠ Получено на ' + money(cash.shortfall) + ' меньше расчёта (' + money(cash.calculation) + ')'
+      : manual ? 'Приход записан бухгалтером' : '✓ Сумма от кассира подтверждена'}), ' ',
+    h('button', {type: 'button', class: 'fd-link-btn', text: 'Изменить', onclick: () => { confirmEditing = true; confirmDirty = false; renderCashConfirm(handover); $('cash-confirm-amount').focus(); }}));
+}
+$('cash-confirm-amount').addEventListener('input', () => { confirmDirty = true; $('cash-confirm-amount').classList.remove('is-bad'); });
+$('cash-confirm').addEventListener('submit', event => {
+  event.preventDefault();
+  if (!view) return;
+  const input = $('cash-confirm-amount'), raw = input.value.trim();
+  if (!raw || !/^[\d\s\u00a0\u202f.,]+$/.test(raw)) { message('Укажите полученную сумму цифрами.', true); input.classList.add('is-bad'); input.focus(); return; }
+  const amount = parse(raw), day = view.data.date;
+  const calc = view.cash.confirmedAt ? view.cash.calculation : (view.cash.cashier !== null ? view.cash.cashier : view.cash.expected);
+  const note = calc !== null && amount < calc ? ' Не хватает ' + money(calc - amount) + ' — это видно в проверках.' : '';
+  run(() => write('/api/accountant/handover/confirm', {date: day, amount: String(amount)}), 'Получено от кассира: ' + money(amount) + '.' + note,
+    {button: $('cash-confirm-submit')}).then(ok => { if (ok) { confirmEditing = false; confirmDirty = false; renderAll(); } });
+});
+
 function renderRail() {
   const {cash, data, board, monthly, shoh} = view;
+  const handover = data.cashier_handover || {};
   const day = data.date, missing = 'нет данных';
   $('finance-cash-total').textContent = cash.end === null ? '—' : fmt(cash.end);
   $('finance-cash-total').classList.toggle('is-negative', cash.end !== null && cash.end < 0);
   const lines = $('fd-cash-lines'); lines.replaceChildren();
   lines.append(railLine('На начало дня', cash.opening === null ? missing : fmt(cash.opening), 'fd-cash-line'),
-    railLine('+ От кассира · касса ' + dm(day) + (cash.cashier === null ? ' · ожидается' : cash.handedAt ? ' · получено ' + cash.handedAt : ''),
+    railLine('+ От кассира · касса ' + dm(day) + (cash.cashier === null ? ' · ожидается' : cash.confirmedAt ? ' · получено ' + cash.confirmedAt
+      : handover.source === 'cashier' ? ' · передано ' + (cash.handedAt || '') + ' · подтвердите' : cash.handedAt ? ' · получено ' + cash.handedAt : ''),
       cash.cashier !== null ? fmt(cash.cashier) : cash.expected !== null ? fmt(cash.expected) : '—', 'fd-cash-line' + (cash.cashier === null ? ' is-expected' : '')));
   if (cash.receipts) lines.append(railLine('+ Прочие поступления', fmt(cash.receipts), 'fd-cash-line'));
-  lines.append(railLine('− Сменным за ' + dm(board.S), fmt(cash.shift), 'fd-cash-line'),
+  // Выдачи сегодня — и за вчерашнюю смену, и долги прошлых смен.
+  lines.append(railLine('− Сменным · выдано сегодня', fmt(cash.shift), 'fd-cash-line'),
     railLine('− Оклады частями', fmt(cash.monthly), 'fd-cash-line'),
     railLine('− Выдано Шоху на закуп', fmt(cash.shoh), 'fd-cash-line'),
     railLine('− Прочие расходы', fmt(cash.other), 'fd-cash-line'));
   $('fd-cash-set').hidden = cash.opening !== null;
+  renderCashConfirm(handover);
   $('fd-cash').classList.toggle('is-focus', focusKey === 'cash');
 
   const shiftDebt = Number(data.ledger.salary_debt) + board.totals.unconfirmedDebt;
@@ -754,17 +821,21 @@ function renderChecks() {
 function focusOn(target) {
   focusKey = target;
   if (!target) return;
-  const section = target.startsWith('row:') || target === 'todo' || target === 'shift' ? 'shift'
+  const section = target.startsWith('row:') || target === 'todo' || target === 'shift' || target === 'blocked' ? 'shift'
     : target.startsWith('buy:') || target === 'shoh' ? 'shoh' : target.startsWith('month:') ? 'salary' : null;
   if (section) setSection(section, true);
   if (target.startsWith('row:') || target === 'todo') shiftTab = 'all';
+  if (target === 'blocked') shiftTab = 'err';
   renderAll();
   const el = target.startsWith('row:') ? document.querySelector('[data-key="' + target.slice(4) + '"]')
     : target === 'todo' ? document.querySelector('.fd-row.is-focus')
     : target.startsWith('buy:') || target.startsWith('month:') ? document.querySelector('[data-key="' + target + '"]')
     : target === 'cash' ? $('fd-cash') : target === 'dividends' ? $('dividends-card')
-    : target === 'shoh' ? $('shoh-section') : target === 'shift' ? $('shift-section') : null;
-  if (target.startsWith('month:') && !el) { $('salary-employee').value = target.slice(6); salaryHint(); $('salary-section').scrollIntoView({block: 'center', behavior: 'smooth'}); }
+    : target === 'shoh' ? $('shoh-section') : target === 'shift' ? $('shift-section')
+    : target === 'blocked' ? document.querySelector('#shift-rows .fd-row.is-blocked') : null;
+  if (target === 'blocked') document.querySelectorAll('#shift-rows .fd-row.is-blocked').forEach(n => n.classList.add('is-focus'));
+  // Выплат сегодня нет — подсвечиваем форму с выбранным сотрудником.
+  if (target.startsWith('month:') && !el) { $('salary-employee').value = target.slice(6); salaryHint(); $('salary-payment-form').classList.add('is-focus'); $('salary-payment-form').scrollIntoView({block: 'center', behavior: 'smooth'}); }
   if (el) el.scrollIntoView({block: 'center', behavior: 'smooth'});
   setTimeout(() => { if (focusKey === target) { focusKey = null; document.querySelectorAll('.is-focus').forEach(n => n.classList.remove('is-focus')); } }, 4000);
 }
@@ -804,7 +875,7 @@ $('dividends-fill-button').addEventListener('click', () => {
   setSection('journal', true);
   $('expense-item').value = 'reserve_dividends_transfer';
   $('expense-note').value = 'Дивиденды в сейф';
-  $('expense-amount').value = week.suggest_today === null ? '' : fmt(Math.round(Number(week.suggest_today)));
+  $('expense-amount').value = Number(week.suggest_today) > 0 ? fmt(Math.round(Number(week.suggest_today))) : '';
   updateNewRow();
   $('other-expense-form').scrollIntoView({block: 'center', behavior: 'smooth'});
   $('expense-amount').focus({preventScroll: true});
@@ -881,7 +952,7 @@ async function loadDay() {
     const board = L.shiftBoard({payday: day, staff, accruals: data.ledger.accruals, movements: data.ledger.movements});
     const blocker = L.shiftBlocker(staff, board);
     const monthly = L.monthlyBoard(data);
-    const shoh = L.shohBoard(data.reserves.shoh, buys.purchases, data.ledger.movements, data.supplier_transfers, data.cashier_shokh_gives);
+    const shoh = L.shohBoard(data.reserves.shoh, buys.purchases, data.ledger.movements, data.supplier_transfers, data.cashier_shokh_gives, data.shoh_pocket);
     const cash = L.cashCard(data);
     const journal = L.journal(data, index);
     const issues = L.financeIssues({data, board, blocker, monthly, shoh, cash});
@@ -903,9 +974,14 @@ async function loadDay() {
   }
 }
 function go(day) {
-  if (!day || day > today) return;
+  if (!day || day > today) {
+    // Будущий или пустой день: возвращаем поле к показанному дню и говорим почему.
+    $('accountant-date').value = view ? view.data.date : today;
+    if (day > today) message('Будущие дни недоступны: выберите сегодня или прошедший день.', true);
+    return;
+  }
   $('accountant-date').value = day;
-  focusKey = null; expanded.clear();
+  focusKey = null; expanded.clear(); confirmEditing = false; confirmDirty = false;
   const url = new URL(location.href); url.searchParams.set('date', day); history.replaceState(null, '', url);
   message('');
   reload().catch(() => {});
@@ -930,7 +1006,10 @@ $('fd-export').addEventListener('click', () => {
 async function exportDay() {
   const day = selectedDay();
   try {
-    const response = await fetch('/api/accountant/day/export?date=' + encodeURIComponent(day), {cache: 'no-store'});
+    // «Проверки» считает экран — отдаём их серверу, чтобы лист в файле совпал с правой колонкой.
+    const checks = view && view.data.date === day ? view.issues.map(i => ({lvl: i.lvl, text: i.text, sub: i.sub || null})) : [];
+    const response = await fetch('/api/accountant/day/export', {method: 'POST', cache: 'no-store',
+      headers: {'Content-Type': 'application/json'}, body: JSON.stringify({date: day, checks})});
     if (!response.ok) throw new Error('Не удалось сформировать Excel.');
     const url = URL.createObjectURL(await response.blob()), link = h('a', {href: url, download: 'Retro-finance-' + day + '.xlsx'});
     document.body.append(link); link.click(); link.remove(); setTimeout(() => URL.revokeObjectURL(url), 30000);
@@ -946,7 +1025,10 @@ async function exportDay() {
     today = (await globalThis.RetroConfig).today;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;
-    $('accountant-date').value = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today ? requested : today;
+    const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today;
+    $('accountant-date').value = valid ? requested : today;
+    // Адрес с будущей или кривой датой не должен расходиться с показанным днём.
+    if (requested && !valid) { const url = new URL(location.href); url.searchParams.set('date', today); history.replaceState(null, '', url); }
     const catalogResponse = await catalogRequest;
     if (!catalogResponse.ok) throw new Error('Не удалось загрузить наименования затрат.');
     catalog = (await catalogResponse.json()).groups;

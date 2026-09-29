@@ -190,3 +190,46 @@ def test_existing_finance_database_keeps_legacy_expenses_when_catalog_is_added(t
     summary = store.summary(WORKDAY)
     assert summary['cash_balance'] == Decimal('400000')
     assert [item['item_code'] for item in summary['movements']] == [None, 'admin_other']
+
+
+def test_payroll_month_rows_by_employee_with_day_rate_payments_and_cash_day(tmp_path):
+    """Ведомость 2b: однофамильцы — разные строки; в ячейке ставка дня смены и
+    сами выплаты (их отменяют нажатием); «выдано из кассы» — по дню выдачи,
+    в том числе за смену последнего дня прошлого месяца."""
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    last_august, first, second = date(2026, 8, 31), date(2026, 9, 1), date(2026, 9, 2)
+    for day in (last_august, first, second):
+        store.record_handover(day, Decimal('5000000'))
+    twins = lambda rate: [PayrollRow(1, 'Абдулганиева Сельвинара', 'официант', 'Зал', 'on_time', None,
+                                     Decimal(rate), Decimal(rate), False),
+                          PayrollRow(2, 'Абдулганиева Сельвинара', 'повар', 'Кухня', 'on_time', None,
+                                     Decimal('150000'), Decimal('150000'), False)]
+    store.confirm_payroll(last_august, twins('180000'), 'Финансы')
+    store.confirm_payroll(first, twins('180000'), 'Финансы')
+    store.confirm_payroll(second, twins('200000'), 'Финансы')  # новая ставка со 2-го
+    august = {row['employee_id']: row['id'] for row in store.accruals(last_august) if row['work_day'] == '2026-08-31'}
+    store.pay_salary(august[1], first, '180000')  # смену 31.08 выдали 1.09
+    accrual = {row['employee_id']: row['id'] for row in store.accruals(first) if row['work_day'] == '2026-09-01'}
+    payment_id = store.pay_salary(accrual[1], second, '180000')
+
+    data = store.payroll_month(first, date(2026, 9, 30))
+    assert [person['employee_id'] for person in data['shift']] == [1, 2]
+    person = next(p for p in data['shift'] if p['employee_id'] == 1)
+    assert person['rate'] == '200000'  # ставка последней смены месяца
+    assert person['cells']['2026-09-01']['rate'] == '180000'
+    assert person['cells']['2026-09-02']['rate'] == '200000'
+    assert person['cells']['2026-09-01']['payments'] == [dict(id=payment_id, day='2026-09-02', amount='180000')]
+    assert data['paid_per_day'] == {'2026-09-01': '180000', '2026-09-02': '180000'}
+
+
+def test_negative_cash_days_lists_days_below_zero_and_skips_days_without_data(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    store.record_handover(WORKDAY, Decimal('100000'))
+    store.record_handover(NEXT_DAY, Decimal('0'))
+    assert store.negative_cash_days(WORKDAY, date(2026, 9, 18)) == []
+    # Старая запись в обход проверки остатка (так бывает в перенесённых данных).
+    with sqlite3.connect(tmp_path / 'finance.sqlite3') as connection:
+        connection.execute("INSERT INTO accountant_movements (day, kind, description, amount, item_code, created_at) "
+                           "VALUES (?, 'other_expense', 'Старый расход', '250000', 'admin_other', '2026-09-16T10:00:00')",
+                           (NEXT_DAY.isoformat(),))
+    assert store.negative_cash_days(WORKDAY, date(2026, 9, 18)) == [dict(day='2026-09-16', balance='-150000')]

@@ -182,6 +182,10 @@ function render(data){
 async function load(options = {}) {
   const directions = selectedDirections();
   if (!directions.length) { setMessage('Выберите хотя бы одно направление.', true); return; }
+  // Неверный период ловим до запроса: ответ 422 иначе выглядел бы как
+  // «Источник iiko недоступен» в строке статуса.
+  const periodError = globalThis.FounderLogic?.periodError ? globalThis.FounderLogic.periodError($('start').value, $('end').value) : null;
+  if (periodError) { setMessage(periodError, true); $('updated').textContent = 'Проверьте даты'; return false; }
   controller?.abort();
   controller = new AbortController();
   const signal = controller.signal, requestId = gate.next();

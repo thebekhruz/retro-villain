@@ -105,7 +105,8 @@
     // Недельную цель ставит учредитель; отставание — повод отложить сегодня.
     const dividends=data.dividends_week;
     if(dividends&&dividends.behind)
-      add('warn','Отстаём от недельных дивидендов',{amount:Number(dividends.due)-Number(dividends.collected)});
+      // Отставание — от плана к сегодняшнему дню (pace, Функционал §3.7), как в 2a.
+      add('warn','Отстаём от недельных дивидендов',{amount:Math.round(Number(dividends.pace)-Number(dividends.collected))});
     return items;
   }
 
@@ -210,9 +211,13 @@
           accrued:a.amount,paid:a.paid,debt:a.debt,day:a.work_day,own:false});});
     const rows=other.concat(ownRows);
     const toPay=rows.filter(r=>r.debt>0&&r.accrued>0);
+    // «Выдать пришедшим» (Функционал 2a): ставку всем пришедшим за вчера, у
+    // кого ещё нет выплаты. Частично выданных и долги прошлых смен не трогаем —
+    // их выдают строкой, иначе кнопка молча доплатила бы то, что решили иначе.
+    const handOut=ownRows.filter(r=>r.accrued>0&&r.paid===0&&!r.block);
     const payable=ownRows.filter(r=>r.accrued>0);
     const blocked=ownRows.filter(r=>r.block);
-    return {S,confirmed,partial,rows,own:ownRows,other,toPay,blocked,
+    return {S,confirmed,partial,rows,own:ownRows,other,toPay,handOut,blocked,
       totals:{accrued:ownRows.reduce((s,r)=>s+(r.accrued||0),0),
         paid:ownRows.reduce((s,r)=>s+r.paid,0),
         paidCount:ownRows.filter(r=>r.paid>0).length,payableCount:payable.length,
@@ -264,7 +269,8 @@
       const info=index[d.item_code]||{};
       rows.push({kind:'debt',cat:info.short||'Расход',name:stripItem(d.description,info.label),
         title:d.description,amount:num(d.total),paid:num(d.paid),debt:num(d.debt),debtId:d.id,
-        ops:own.map(m=>({operation:'movement',id:m.id}))});
+        // × удаляет ошибочную запись целиком: долг вместе с оплатой этого дня.
+        ops:[{operation:'debt',id:d.id}]});
     });
     const bySalaryDay=new Map();
     mv.filter(m=>m.type==='salary_payment').forEach(m=>{
@@ -332,7 +338,9 @@
     const l=data.ledger, cf=l.cash_flow||{}, mv=l.movements||[];
     const sumOf=f=>mv.filter(f).reduce((s,m)=>s+num(m.amount),0);
     const monthly=sumOf(m=>m.type==='other_expense'&&m.item_code==='salary_monthly');
-    const shoh=sumOf(m=>m.type==='procurement_advance');
+    // Расход «Закуп · Шох» из журнала — тоже выдача в подотчёт (сервер кладёт
+    // его в баланс Шоха), поэтому он в строке «Шоху», а не в «прочих».
+    const shoh=sumOf(m=>m.type==='procurement_advance'||(m.type==='other_expense'&&m.item_code==='proc_shoh'));
     const other=num(cf.other_outflows)-monthly-shoh;
     return {end:l.cash_balance===null?null:num(l.cash_balance),
       opening:cf.opening_balance===null||cf.opening_balance===undefined?null:num(cf.opening_balance),
@@ -341,6 +349,10 @@
       handedAt:data.cashier_handover&&data.cashier_handover.handed_at?String(data.cashier_handover.handed_at).slice(11,16):null,
       expected:data.cashier_handover&&data.cashier_handover.amount===null&&data.cashier_handover.expected!==null
         &&data.cashier_handover.expected!==undefined?num(data.cashier_handover.expected):null,
+      // Подтверждение бухгалтера: сколько реально получено и недостача к расчёту.
+      confirmedAt:data.cashier_handover&&data.cashier_handover.confirmed_at?String(data.cashier_handover.confirmed_at).slice(11,16):null,
+      calculation:data.cashier_handover&&data.cashier_handover.expected_amount!=null?num(data.cashier_handover.expected_amount):null,
+      shortfall:data.cashier_handover&&data.cashier_handover.shortfall!=null?num(data.cashier_handover.shortfall):0,
       receipts:num(cf.other_receipts),shift:num(cf.salary_paid),monthly,shoh,other};
   }
 
@@ -359,7 +371,7 @@
       overpaid:people.filter(p=>p.paid>p.salary)};
   }
 
-  function shohBoard(shoh,purchases,movements,transfers,cashierGives){
+  function shohBoard(shoh,purchases,movements,transfers,cashierGives,pocket){
     const pos=shohPosition(shoh), list=purchases||[];
     // Перечисления поставщику: безнал, не меняют ни подотчёт Шоха, ни кассу.
     const trs=(transfers||[]).map(t=>({id:t.id,supplier:t.supplier||'',item:t.item||t.purpose||t.note||'',
@@ -378,13 +390,23 @@
     };
     const gives=(movements||[]).filter(m=>m.type==='procurement_advance').map(m=>({id:m.id,amount:num(m.amount),note:m.description,
       time:m.created_at?String(m.created_at).slice(11,16):''}));
+    // Строка журнала «Закуп · Шох» тоже пополняет подотчёт — видна среди выдач.
+    (movements||[]).filter(m=>m.type==='other_expense'&&m.item_code==='proc_shoh').forEach(m=>gives.push({id:m.id,amount:num(m.amount),
+      note:m.description,fromJournal:true,time:m.created_at?String(m.created_at).slice(11,16):''}));
     // Выдачи Шоху из кассы: уже вошли в подотчёт и уже вычтены из передачи
     // кассы, поэтому из денег бухгалтера второй раз не списываются.
     ((cashierGives&&cashierGives.gives)||[]).forEach(g=>gives.push({id:g.id,amount:num(g.amount),fromKassa:true,
       time:g.created_at?String(g.created_at).slice(11,16):''}));
     gives.sort((a,b)=>(a.time||'99').localeCompare(b.time||'99'));
-    return {known:pos.known,start:pos.start,given:pos.given,spent,count:list.length,
-      hand:pos.known?pos.start+pos.given-spent:null,gives,trs,trSum:trs.reduce((s,t)=>s+t.amount,0),
+    // «На руках» считает сервер (shokh.store.pocket_position) — та же сумма,
+    // что у Шоха в 3a и у учредителя. Без неё — по дню, как раньше.
+    const server=pocket&&pocket.pocket!==undefined;
+    const known=server?pocket.pocket!==null:pos.known;
+    const start=server?(pocket.day_start===null?null:num(pocket.day_start)):pos.start;
+    const given=server?num(pocket.given_today):pos.given;
+    const hand=server?(pocket.pocket===null?null:num(pocket.pocket)):(pos.known?pos.start+pos.given-spent:null);
+    return {known,start,given,spent:server?num(pocket.spent_day):spent,count:list.length,hand,
+      reported:server?pocket.reported_percent:null,gives,trs,trSum:trs.reduce((s,t)=>s+t.amount,0),
       buys:list.map(p=>({...p,flags:flags(p)}))};
   }
 
@@ -417,6 +439,8 @@
     const todo=board.own.filter(r=>r.kind==='todo');
     if(todo.length)add('todo',todo.length+' '+plural(todo.length,'сменный ждёт','сменных ждут','сменных ждут')+' выплату за '+dm(board.S),
       fmt(todo.reduce((s,r)=>s+r.debt,0))+' сум','todo');
+    if(cash.shortfall>0)add('err','От кассира получено меньше расчёта',
+      'Расчёт '+fmt(cash.calculation)+' · получено '+fmt(cash.cashier)+' · не хватает '+fmt(cash.shortfall)+' сум','cash');
     if(data.expected_cashier===null)add('todo','Кассир ещё не передал кассу','Касса за '+dm(data.date)+' не записана','cash');
     return out.sort((a,b)=>LEVEL_ORDER[a.lvl]-LEVEL_ORDER[b.lvl]);
   }

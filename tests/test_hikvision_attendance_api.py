@@ -141,7 +141,10 @@ def test_real_employee_and_entrance_exports_use_same_rows_without_demo_claim(tmp
     employee_sheet = load_workbook(BytesIO(employees.content), data_only=True).active
     entrance_sheet = load_workbook(BytesIO(entrances.content), data_only=True).active
     assert 'ДЕМО' not in employee_sheet['A1'].value
-    assert employee_sheet['D7'].value == 'Вовремя'
-    assert employee_sheet['D8'].value == 'Не пришёл'
+    # Выгрузка 1a: люди под заголовками групп, статус — колонка E.
+    statuses = {row[1].value: row[4].value for row in employee_sheet.iter_rows(min_row=7)
+                if isinstance(row[0].value, int)}
+    assert statuses[arrived.name] == 'Вовремя'
+    assert statuses[missing.name] == 'Не пришёл'
     assert entrance_sheet['B4'].value == 1
     assert entrance_sheet['B7'].value == 'Азиза Каримова'

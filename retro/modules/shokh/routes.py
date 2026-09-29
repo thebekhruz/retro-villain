@@ -74,7 +74,9 @@ async def catalog(request: Request):
     history = {(r['item'], r['unit']): r for r in frequent}
     result['items'] = [dict(r, times=history.get((r['item'], r['unit']), {}).get('times', 0),
         usual_price=history.get((r['item'], r['unit']), {}).get('usual_price')) for r in result['items']]
-    return dict(result, points=points, units=sorted({r['unit'] for r in result['items']}))
+    defaults = await asyncio.to_thread(request.app.state.shokh_sync.point_defaults)
+    return dict(result, points=points, point_defaults=defaults,
+                units=sorted({r['unit'] for r in result['items']}))
 
 
 @router.post('/trip', status_code=201)
@@ -100,6 +102,21 @@ def finish_trip(request: Request, trip_id: int):
             if row['trip_id'] == trip_id]
     return dict(trip=dict(trip, minutes=trip_minutes(trip)),
                 purchases=request.app.state.shokh_sync.decorate(rows), spent=str(spent(rows)))
+
+
+@router.post('/trip/{trip_id}/close')
+def close_trip(request: Request, trip_id: int):
+    """× во время закупа: есть покупки — закуп завершается, нет — отменяется.
+
+    Пустую поездку удаляем: иначе следующий «Новый закуп» продолжил бы её, и
+    таймер начался бы с часа, когда Шох просто открыл и закрыл экран."""
+    store = request.app.state.shokh
+    trip = store.trip(trip_id)
+    if trip is None:
+        raise HTTPException(404, 'Закуп не найден.')
+    if trip['finished_at'] is None and store.cancel_trip(trip_id):
+        return dict(cancelled=True)
+    return dict(finish_trip(request, trip_id), cancelled=False)
 
 
 @router.post('/purchase', status_code=201)

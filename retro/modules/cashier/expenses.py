@@ -26,6 +26,18 @@ class Expense:
         return result
 
 
+class AutomaticExpense(DataError):
+    """Строку политики (зарплата кассира) кассир удалить не может."""
+
+
+def policy_key(day: date, name: str, value: Decimal) -> str:
+    return f'policy:{day.isoformat()}:{name}:{value}'
+
+
+def is_policy_key(key) -> bool:
+    return isinstance(key, str) and key.startswith('policy:')
+
+
 @dataclass(frozen=True)
 class SeedResult:
     inserted: int
@@ -76,13 +88,44 @@ class ExpenseStore:
                 connection.rollback()
                 raise
 
+    def _policy(self, connection):
+        row = connection.execute(
+            'SELECT date_from, description, amount FROM cashier_expense_policy WHERE id=1').fetchone()
+        return (date.fromisoformat(row[0]), row[1], Decimal(row[2])) if row else None
+
+    def _ensure_policy(self, connection, first: date, last: date):
+        """Авто-строка «Зарплата кассира» (экран 5a): после явной настройки
+        политики (scripts/retro_data.py seed-cashier-expense) строка есть в
+        каждом дне с начала политики, а не только в засеянном диапазоне.
+        Без настройки ничего не создаётся. Будущие дни не трогаем."""
+        policy = self._policy(connection)
+        if policy is None:
+            return
+        start, name, value = policy
+        from .service import today_tashkent
+        day, last = max(first, start), min(last, today_tashkent())
+        if day > last:
+            return
+        present = {row[0] for row in connection.execute(
+            "SELECT day FROM cashier_expenses WHERE day >= ? AND day <= ? AND operation_key LIKE 'policy:%'",
+            (day.isoformat(), last.isoformat()))}
+        while day <= last:
+            if day.isoformat() not in present:
+                connection.execute(
+                    'INSERT OR IGNORE INTO cashier_expenses (day,description,amount,operation_key) '
+                    'VALUES (?,?,?,?)', (day.isoformat(), name, str(value), policy_key(day, name, value)))
+            day += timedelta(days=1)
+
     def list(self, day: date):
         with closing(self._open()) as connection:
+            with connection:
+                self._ensure_policy(connection, day, day)
             rows = connection.execute(
-                'SELECT id, description, amount FROM cashier_expenses WHERE day = ? ORDER BY id',
+                'SELECT id, description, amount, operation_key FROM cashier_expenses '
+                'WHERE day = ? ORDER BY id',
                 (day.isoformat(),),
             ).fetchall()
-        return [Expense(row[0], day, row[1], Decimal(row[2])) for row in rows]
+        return [Expense(row[0], day, row[1], Decimal(row[2]), is_policy_key(row[3])) for row in rows]
 
     def total(self, day: date):
         return sum((item.amount for item in self.list(day)), Decimal(0))
@@ -91,6 +134,8 @@ class ExpenseStore:
         if start > end:
             raise ValueError('expense range start must not exceed end')
         with closing(self._open()) as connection:
+            with connection:
+                self._ensure_policy(connection, start, end)
             rows = connection.execute(
                 'SELECT amount FROM cashier_expenses WHERE day >= ? AND day <= ?',
                 (start.isoformat(), end.isoformat()),
@@ -129,11 +174,16 @@ class ExpenseStore:
     def delete(self, item_id: int, day: date):
         with closing(self._open()) as connection:
             with connection:
-                result = connection.execute(
-                    'DELETE FROM cashier_expenses WHERE id = ? AND day = ?',
-                    (item_id, day.isoformat()),
-                )
-                return result.rowcount > 0
+                row = connection.execute(
+                    'SELECT operation_key, description FROM cashier_expenses WHERE id = ? AND day = ?',
+                    (item_id, day.isoformat())).fetchone()
+                if row is None:
+                    return False
+                if is_policy_key(row[0]):
+                    raise AutomaticExpense(f'Авто-строку «{row[1]}» удалить нельзя: '
+                                           'она добавляется каждый день.')
+                connection.execute('DELETE FROM cashier_expenses WHERE id = ?', (item_id,))
+                return True
 
     def list_receipts(self, day: date):
         with closing(self._open()) as connection:
@@ -189,7 +239,7 @@ def seed_cashier_expense(path: Path, date_from: date, date_to: date, description
         try:
             day = date_from
             while day <= date_to:
-                key = f'policy:{day.isoformat()}:{name}:{value}'
+                key = policy_key(day, name, value)
                 cursor = connection.execute(
                     'INSERT OR IGNORE INTO cashier_expenses '
                     '(day,description,amount,operation_key) VALUES (?,?,?,?)',

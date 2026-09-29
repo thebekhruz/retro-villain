@@ -8,6 +8,8 @@ const demo = new URLSearchParams(location.search).get('demo') === '1';
 let config, snapshot = null, financeData = null, receiptData = null, generation = 0, controller;
 // 5a: выдачи Шоху из кассы, доллары в сейф, передача бухгалтеру дня.
 let shokhData = null, usdData = null, usdRate = null, handoverRecord = null, handoverBusy = false;
+// Готовые числа «К передаче» и «Касса за день» с сервера (/day, /summary): экран их не пересчитывает.
+let summary = null;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 
 /* ── Отклик и ожидание (busy.js, T-393; docs/feedback-principles.md) ─────
@@ -84,6 +86,7 @@ function removeRow(button, url, {part, reload, done, fail}) {
     .then(async () => {
       if (current !== generation) return false;
       await loadPart(part, current, reload(current));
+      if (part !== 'usd') await refreshSummary();
       if (current === generation) done();
       return true;
     })
@@ -242,6 +245,7 @@ async function request(url, signal, options = {}) {
 }
 function clearSnapshot() {
   snapshot = null;
+  summary = null;
   handoverRecord = null;
   $('shift-pill').hidden = true;
   $('download').disabled = true;
@@ -275,29 +279,41 @@ function clearFinance() {
   $('handover-feedback').textContent = '';
   showHandover();
 }
-/* Всё, что ушло из кассы наличными: расходы кассира и выдачи Шоху. Пока
-   одна из частей не загрузилась, суммы нет — неполная цифра хуже прочерка. */
-function cashOutTotal() {
-  if (!financeData || !shokhData) return null;
-  return Number(financeData.total) + Number(shokhData.total);
-}
-function currentHandover() {
-  return CashierLogic.handover(snapshot, cashOutTotal(), receiptData && receiptData.total);
+/* Числа карточки передачи — только с сервера (одна формула на всех: кассир,
+   бухгалтер, учредитель, XLSX). Пока их нет — прочерк, а не своя оценка. */
+const summaryValue = key => (summary && snapshot && summary.snapshot_id === snapshot.snapshot_id ? Number(summary[key]) : null);
+function currentHandover() { return summaryValue('handover'); }
+let summaryRetry = -1;
+/* После записи кассира (расход, поступление, выдача Шоху) — свежие итоги с
+   сервера по тому же снимку iiko. Снимок истёк — перечитываем день. */
+function refreshSummary() {
+  if (!snapshot) return Promise.resolve(false);
+  const current = generation, day = snapshot.date, id = snapshot.snapshot_id;
+  const work = request(`/api/cashier/summary?date=${encodeURIComponent(day)}&snapshot_id=${id}`, controller.signal)
+    .then(response => response.json())
+    .then(data => { if (current === generation) { summary = data; showHandover(); } return true; })
+    .catch(error => {
+      if (current !== generation || error.name === 'AbortError') return false;
+      if (summaryRetry !== current) { summaryRetry = current; load(); }
+      else handoverMessage(error.message, true);
+      return false;
+    });
+  for (const id of ['metrics', 'handover-panel']) Busy.section($(id), work);
+  return work;
 }
 function showHandover() {
   $('download').disabled = !snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData;
-  const demoAmount = CashierLogic.cashPayment(snapshot);
-  const cashPrepay = snapshot ? Number(snapshot.cash_prepayment || 0) : null;
-  $('demo-cash').textContent = demoAmount === null ? '—' : money.format(demoAmount);
-  const prepayText = cashPrepay === null ? '—' : money.format(cashPrepay);
+  const text = key => { const value = summaryValue(key); return value === null ? '—' : money.format(value); };
+  $('demo-cash').textContent = text('demo_cash');
+  const prepayText = snapshot ? money.format(Number(snapshot.cash_prepayment || 0)) : '—';
   // Предоплаты показаны и карточкой сверху, и строкой в расчёте передачи.
-  $('cash-prepay').textContent = prepayText;
+  $('cash-prepay').textContent = text('cash_prepayment');
   $('card-prepay').textContent = prepayText;
-  const inflow = CashierLogic.totalInflow(snapshot, receiptData && receiptData.total);
-  $('total-inflow').textContent = inflow === null ? '—' : money.format(inflow);
-  $('payments-inflow').textContent = inflow === null ? '—' : money.format(inflow);
+  const inflow = summaryValue('total_inflow');
+  $('total-inflow').textContent = text('total_inflow');
+  $('payments-inflow').textContent = text('total_inflow');
   // Полоса в главной карточке: продажи против всего остального прихода.
-  const sales = snapshot ? Number(snapshot.revenue || 0) : 0;
+  const sales = summaryValue('sales') || 0;
   const salesShare = inflow ? Math.max(0, Math.min(100, sales / inflow * 100)) : 0;
   const [salesBar, otherBar] = $('composition').children;
   salesBar.style.width = (inflow ? salesShare : 0) + '%';
@@ -306,9 +322,9 @@ function showHandover() {
   $('receipt-auto').hidden = !snapshot;
   $('receipt-auto-value').textContent = prepayText;
   $('receipts-empty').hidden = Boolean(snapshot) || Boolean(receiptData && receiptData.receipts.length);
-  const cashOut = cashOutTotal();
-  $('expense-total').textContent = cashOut === null ? '—' : money.format(cashOut);
-  $('handover-expenses').textContent = cashOut === null ? '—' : money.format(cashOut);
+  $('expense-total').textContent = text('cash_out');
+  $('handover-expenses').textContent = text('cash_out');
+  $('handover-receipts').textContent = text('receipts');
   const result = currentHandover();
   $('handover').textContent = result === null ? '—' : money.format(result);
   $('handover-number').classList.toggle('is-negative', result !== null && result < 0);
@@ -320,18 +336,32 @@ function showHandoverAction(result) {
   const record = handoverRecord, view = CashierLogic.handoverView(record, result);
   const live = Boolean(snapshot && !snapshot.demo && !snapshot.stale && !snapshot.refreshing);
   const ready = !demo && live && result !== null && result >= 0 && !handoverBusy;
+  const confirmed = view.state === 'confirmed';
   $('handover-action').hidden = view.state !== 'none';
   $('handover-button').disabled = !ready;
   $('handover-done').hidden = view.state === 'none';
-  $('handover-diff').hidden = view.state !== 'diff';
-  $('handover-undo').hidden = view.state === 'accountant';
+  $('handover-diff').hidden = view.state !== 'diff' && !(confirmed && view.difference !== null);
+  // «Отменить» — только пока бухгалтер не подтвердил получение (Функционал 5a).
+  $('handover-undo').hidden = view.state === 'accountant' || confirmed;
   $('handover-undo').disabled = handoverBusy;
+  $('handover-again').hidden = confirmed;
   $('handover-again').disabled = !ready;
   // «Передано: …» больше не про текущую сумму, раз она изменилась.
   if (view.state === 'diff' && !$('handover-feedback').classList.contains('is-error')) $('handover-feedback').textContent = '';
   if (!record) return;
   const day = snapshot ? snapshot.date : $('report-date').value;
   const at = clockOf(record.handed_at, day);
+  if (confirmed) {
+    const when = clockOf(record.confirmed_at, day);
+    $('handover-done-text').textContent = 'Бухгалтер подтвердил: получено ' + money.format(Number(record.amount)) + ' сум'
+      + (when ? ' в ' + when : '') + (view.shortfall > 0 ? ' · недостача ' + money.format(view.shortfall) : '');
+    if (view.difference !== null) {
+      const sign = view.difference > 0 ? '+' : '−';
+      $('handover-diff-text').textContent = 'После подтверждения сумма изменилась на ' + sign
+        + money.format(Math.abs(view.difference)) + ' сум. Передачу уже не изменить — скажите бухгалтеру.';
+    }
+    return;
+  }
   $('handover-done-text').textContent = view.state === 'accountant'
     ? 'Бухгалтер записал приход ' + money.format(Number(record.amount)) + ' сум' + (at ? ' в ' + at : '')
     : 'Передано бухгалтеру' + (at ? ' в ' + at : '') + (view.state === 'diff' ? ' · ' + money.format(Number(record.amount)) + ' сум' : '');
@@ -368,6 +398,7 @@ async function handOver() {
     await Promise.all([loadPart('expenses', current, loadExpenses(day, current, controller.signal)),
       loadPart('receipts', current, loadReceipts(day, current, controller.signal)),
       loadPart('shokh', current, loadShokh(day, current, controller.signal))]);
+    await refreshSummary();
     if (/iiko|Обновите/.test(error.message)) load({refresh:true});
   } finally {
     handoverBusy = false;
@@ -450,6 +481,8 @@ async function giveShokh(day, value) {
     if (current !== generation) return false;
     $('shokh-amount').value = ''; $('shokh-amount').dispatchEvent(new Event('input', {bubbles: true}));
     showShokh(data);
+    await refreshSummary();
+    if (current !== generation) return false;
     if (data.give) flashKey('cash-give:' + data.give.id);
     const text = 'Выдано Шоху ' + money.format(value) + ' сум. Баланс Шоха и отчёт бухгалтера обновлены.';
     entryFeedback('expense', text); globalThis.RetroToast?.show(text);
@@ -470,7 +503,6 @@ function showReceipts(data) {
   $('receipt-list').replaceChildren();
   $('receipts-empty').hidden = data.receipts.length > 0 || Boolean(snapshot);
   $('receipt-total').textContent = money.format(Number(data.total));
-  $('handover-receipts').textContent = money.format(Number(data.total));
   for (const item of data.receipts) {
     const row = document.createElement('div'); row.className = 'expense-item'; row.dataset.busyKey = 'cash-rcp:' + item.id;
     const name = document.createElement('span'); name.className = 'expense-item-name'; name.textContent = item.description;
@@ -551,6 +583,7 @@ function showStatus() {
 function show(data) {
   snapshot = data;
   if ('handover' in data) handoverRecord = data.handover;
+  if (data.summary) summary = data.summary;
   const shift = CashierLogic.shiftLabel(data.shift, data.date);
   $('shift-pill').hidden = !shift;
   if (shift) {
@@ -611,16 +644,22 @@ function load(options = {}) {
   return work;
 }
 async function loadDay(options = {}) {
+  const day = $('report-date').value;
+  // Будущий или пустой день (ввод с клавиатуры мимо календаря): остаёмся на
+  // показанном дне, цифры не стираем — подпись даты и данные не расходятся.
+  if (!config || !day || !$('report-date').checkValidity()) {
+    if (config) $('report-date').value = snapshot?.date || config.today;
+    message(day && config && day > config.today ? 'Будущий день недоступен: отчёта за него ещё нет.' : 'Выберите корректную дату.', true);
+    return false;
+  }
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
   const signal = controller.signal;
   $('refresh').disabled = false;
-  const day = $('report-date').value;
   const keepSnapshot = snapshot?.date === day;
   if (!keepSnapshot) { clearSnapshot(); clearFinance(); }
   $('download').disabled = true;
   message('');
-  if (!config || !day || !$('report-date').checkValidity()) { expect([]); message('Выберите корректную дату.', true); return false; }
   // Другой день — прежние цифры не показываем даже приглушёнными: скелет до ответа.
   if (!keepSnapshot) { clearUsdRate(day); expect(CashierLogic.PARTS); }
   $('report-date-text').classList.remove('is-skel');
@@ -698,6 +737,7 @@ async function addEntry(kind) {
     if (current !== generation) return false;
     $(entry.description).value = ''; $(entry.amount).value = ''; $(entry.amount).dispatchEvent(new Event('input', {bubbles: true}));
     await loadPart(entry.part, current, entry.load(day, current, controller.signal));
+    await refreshSummary();
     if (current !== generation) return false;
     if (item && item.id != null) flashKey(entry.key + item.id);
     entryFeedback(kind, entry.saved); globalThis.RetroToast?.show(entry.saved); $(entry.description).focus({preventScroll: true});
@@ -736,7 +776,7 @@ $('download').addEventListener('click', () => {
 async function downloadReport() {
   const data = snapshot, current = generation;
   try {
-    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}`);
+    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}${shokhData && shokhData.revision ? "&shokh_revision=" + shokhData.revision : ""}`);
     const blob = await response.blob();
     if (current !== generation) return false;
     const url = URL.createObjectURL(blob), link = document.createElement('a');

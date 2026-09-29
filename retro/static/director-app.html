@@ -94,7 +94,7 @@
 
     <!-- ── AI ──────────────────────────────────────────────────────────── -->
     <section id="tab-ai" class="dir-screen dir-chat-screen" aria-label="AI-помощник" hidden>
-      <div class="dir-chat-head"><span class="dir-spark is-lg" aria-hidden="true">✦</span><div><strong>AI-помощник</strong><span>Меню, продажи, команда, отчёт бухгалтера</span></div></div>
+      <div class="dir-chat-head"><span class="dir-spark is-lg" aria-hidden="true">✦</span><div><strong>AI-помощник</strong><span>Меню, продажи, команда, отчёт бухгалтера</span></div><button id="chat-clear" class="dir-chat-clear" type="button" hidden>Очистить</button></div>
       <div id="chat-messages" class="rm-chat dir-chat" aria-live="polite">
         <div class="rm-msg is-ai">Салом! Я вижу продажи Retro, Oxbridge и Бехруза, маржу блюд, опоздания и отчёт бухгалтера. Спросите про любое блюдо или что сделать сегодня.</div>
       </div>
@@ -116,7 +116,7 @@
     <section id="tab-team" class="dir-screen" aria-label="Команда" hidden>
       <div class="dir-team-top"><h1 class="dir-h1">Команда</h1><button id="team-add" class="dir-add" type="button"><span>+</span> Добавить</button></div>
       <p id="team-toast" class="dir-toast" role="status" aria-live="polite" hidden></p>
-      <form id="team-editor" class="rm-phone-card dir-editor" hidden>
+      <form id="team-editor" class="rm-phone-card dir-editor" novalidate hidden>
         <div class="dir-card-head"><strong id="editor-title">Новый сотрудник</strong><button id="editor-close" class="dir-close" type="button" aria-label="Закрыть">×</button></div>
         <div id="editor-type" class="dir-segment is-compact" role="group" aria-label="Тип оплаты">
           <button type="button" data-type="shift" class="is-active">Смена</button><button type="button" data-type="monthly">Оклад</button>
@@ -134,7 +134,7 @@
         </div>
       </form>
       <article class="rm-phone-card">
-        <div class="dir-card-head"><strong>Официанты · продажи за 7 дней</strong><span class="dir-muted">все заведения</span></div>
+        <div class="dir-card-head"><strong>Официанты Retro · 7 дней</strong><span class="dir-muted">по выручке</span></div>
         <div id="waiters" class="dir-waiters"></div>
         <button id="ask-waiters" class="dir-link" type="button">✦ Почему такая разница? · AI →</button>
       </article>

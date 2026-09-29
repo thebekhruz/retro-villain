@@ -162,6 +162,11 @@
       $('tips').replaceChildren(node('li', 'is-muted', 'Меню за неделю недоступно: ' + error.message));
       settled($('tips'));
     });
+    loadToday();
+  }
+
+  /** Живые цифры «Сегодня»: касса, остаток и замечания бухгалтера, команда. */
+  function loadToday() {
     request('/api/director/cash-today').then(data => {
       $('kassa').textContent = short(data.retro);
       const orders = data.retro_checks;
@@ -175,20 +180,37 @@
     loadTeam();
   }
 
-  function issueText(item, day) {
-    const parts = [];
-    if (item.sub.count) parts.push(item.sub.count + ' ' + plural(item.sub.count, 'строка', 'строки', 'строк'));
-    if (item.sub.amount !== undefined) parts.push(sum(item.sub.amount) + ' сум');
-    parts.push(day === view.today ? 'сегодня' : 'вчера');
-    return parts.join(' · ');
+  /** «Сегодня» обновляется само раз в минуту, пока экран открыт и виден:
+   *  касса и замечания бухгалтера меняются в течение дня. Это фон — верхняя
+   *  полоса не зажигается, прежние цифры на месте до прихода новых. */
+  const REFRESH_MS = 60000;
+  function autoRefresh() {
+    setInterval(() => {
+      if (view.tab !== 'home' || document.visibilityState !== 'visible' || view.saving) return;
+      if (view.teamDay !== 'today') return;
+      if (Busy && Busy.silent) Busy.silent(loadToday); else loadToday();
+    }, REFRESH_MS);
+  }
+
+  /** Проверки дня — тем же модулем, что «Финансы дня» (2a): директор видит
+   *  сегодняшний день бухгалтера ровно с теми ошибками, что и бухгалтер
+   *  (раздел 4: «выдано без входа», «переплата оклада», минус остатка…). */
+  function accountingIssues(data, staff, purchases) {
+    const board = checks.shiftBoard({payday: data.date, staff, accruals: data.ledger.accruals, movements: data.ledger.movements});
+    const monthly = checks.monthlyBoard(data);
+    const shoh = checks.shohBoard(data.reserves && data.reserves.shoh, purchases, data.ledger.movements,
+      data.supplier_transfers, data.cashier_shokh_gives);
+    return checks.financeIssues({data, board, blocker: checks.shiftBlocker(staff, board), monthly, shoh, cash: checks.cashCard(data)});
   }
 
   async function loadAccounting() {
     const yesterday = shiftDay(view.today, -1);
     try {
-      const [today, previous] = await Promise.all([
+      const [today, previous, staff, buys] = await Promise.all([
         request('/api/director/accounting/day?date=' + view.today),
         request('/api/director/accounting/day?date=' + yesterday),
+        request('/api/director/accounting/staff?date=' + yesterday).catch(() => null),
+        request('/api/director/accounting/purchases?date=' + view.today).catch(() => ({purchases: []})),
       ]);
       // Пока кассир не передал сегодняшнюю кассу, остаток дня не посчитан —
       // показываем вчерашний конец дня и прямо об этом пишем.
@@ -197,28 +219,25 @@
       $('cash').textContent = balance === null ? '—' : short(balance);
       $('cash').classList.toggle('is-negative', balance !== null && Number(balance) < 0);
       $('cash-sub').textContent = balance === null ? 'нет начального остатка' : known ? 'на конец дня' : 'на конец вчера · касса ещё не передана';
-      // «Касса не передана» за сегодня — не ошибка: смена ещё идёт.
-      // Отставание по дивидендам считается на неделю — берём его только сегодняшним.
-      const items = checks.dayChecks(previous).filter(item => item.text !== 'Отстаём от недельных дивидендов')
-        .map(item => ({...item, day: yesterday}))
-        .concat(checks.dayChecks(today).filter(item => item.text !== 'Касса не передана')
-          .map(item => ({...item, day: view.today})));
-      const bad = items.filter(item => item.level === 'bad').length;
+      const items = accountingIssues(today, staff, buys.purchases || []);
+      const errors = items.filter(item => item.lvl === 'err').length;
       const badge = $('err-badge');
-      badge.textContent = items.length ? items.length + ' ' + plural(items.length, 'замечание', 'замечания', 'замечаний') : 'Ошибок нет';
-      badge.className = 'dir-badge ' + (bad ? 'is-bad' : items.length ? '' : 'is-ok');
+      badge.textContent = errors ? errors + ' ' + plural(errors, 'ошибка', 'ошибки', 'ошибок')
+        : items.length ? items.length + ' ' + plural(items.length, 'замечание', 'замечания', 'замечаний') : 'Ошибок нет';
+      badge.className = 'dir-badge ' + (errors ? 'is-bad' : items.length ? '' : 'is-ok');
       const list = $('err-list');
       list.replaceChildren();
       settled(list);
-      items.sort((a, b) => (a.level === 'bad' ? 0 : 1) - (b.level === 'bad' ? 0 : 1)).slice(0, 3).forEach(item => {
+      // Список уже отсортирован по уровню: ошибка, внимание, к выполнению.
+      items.slice(0, 3).forEach(item => {
         const row = node('div');
         const text = node('div');
-        text.append(node('strong', '', item.text), node('small', '', issueText(item, item.day)));
-        row.append(node('i', item.level === 'bad' ? 'is-bad' : ''), text);
+        text.append(node('strong', '', item.text), node('small', '', item.sub));
+        row.append(node('i', item.lvl === 'err' ? 'is-bad' : item.lvl === 'todo' ? 'is-todo' : ''), text);
         list.append(row);
       });
       $('ask-err').hidden = !items.length;
-      $('ask-err').textContent = (items.length > 3 ? 'и ещё ' + (items.length - 3) + ' · ' : '') + 'Что важнее всего? · AI →';
+      $('ask-err').textContent = (items.length > 3 ? 'ещё ' + (items.length - 3) + ' — спросить AI →' : 'Что важнее всего? · AI →');
       view.accountingIssues = items;
     } catch (error) {
       $('cash').textContent = '—';
@@ -412,21 +431,29 @@
       button.dataset.busyKey = 'dir-team:' + row.type + ':' + row.id;
       const main = node('span', 'dir-person-main');
       const name = node('span', 'dir-person-name');
-      name.append(node('strong', '', row.name));
+      // Имя — данные реестра: «(оклад)» в имени не переводится в «(oklad)».
+      const personName = node('strong', '', row.name);
+      personName.dataset.i18n = 'off';
+      name.append(personName);
       if (row.noHik) name.append(node('span', 'rm-flag-nohik', row.manual ? '⊘ вручную' : '⊘ Hik'));
       main.append(name, node('small', '', row.role + ' · ' + (row.hasRate ? sum(row.rate) + (row.type === 'monthly' ? ' в месяц' : ' за смену') : 'нет ставки')));
       if (row.type === 'monthly') {
-        const progress = node('span', 'rm-bar');
+        // Оклад за месяц (3.5): полоса «выдано X из Y» и «осталось», «закрыт»
+        // или «переплата» — выдано частями с 1-го числа, считает сервер.
+        const progress = node('span', 'rm-bar' + (row.state === 'over' ? ' is-over' : ''));
         const fill = node('span');
         fill.style.width = Math.min(100, row.rate ? row.paid / row.rate * 100 : 0) + '%';
         progress.append(fill);
         const paid = node('span', 'dir-paid');
-        // «Выдано полностью» — только когда выдано не меньше оклада. Ручной
-        // реестр без месяца отдаёт остаток 0 при нуле выплат: это не «закрыт».
-        const settled = row.rest <= 0 && row.rate > 0 && row.paid >= row.rate;
-        const restText = row.rest > 0 ? 'осталось ' + short(row.rest) : settled ? 'выдано полностью' : 'остаток не сверен';
-        paid.append(node('span', '', 'выдано ' + short(row.paid)), node('span', row.rest > 0 || !settled ? 'is-rest' : '', restText));
+        const restText = row.state === 'over' ? 'переплата ' + short(row.paid - row.rate)
+          : row.state === 'closed' ? 'закрыт' : 'осталось ' + short(row.rest);
+        paid.append(node('span', '', 'выдано ' + short(row.paid) + ' из ' + short(row.rate)),
+          node('span', row.state === 'over' ? 'is-over' : row.state === 'closed' ? 'is-closed' : 'is-rest', restText));
         main.append(progress, paid);
+      } else if (row.monthShifts !== null) {
+        // Смена: сколько смен отработано в месяце и сколько за них выдано.
+        main.append(node('small', 'dir-month', row.monthShifts + ' ' + plural(row.monthShifts, 'смена', 'смены', 'смен')
+          + ' в месяце · выдано ' + short(row.monthPaid)));
       }
       let pill = STATUS[row.status] || 'Оклад';
       if (row.status === 'late' || row.status === 'on_time') pill += ' ' + hm(row.firstEntry);
@@ -441,20 +468,26 @@
     });
   }
 
+  /** Официанты Retro за 7 дней (3.11): по выручке, чеки, смены и средний
+   *  чек. «Больше всех» и «меньше всех» — по всему списку; видно первые
+   *  шесть, остальные — по кнопке. */
+  const WAITERS_PREVIEW = 6;
   function renderWaiters(snapshot) {
-    const rows = logic.waiters(snapshot.waiter_metrics || {}).filter(row => row.revenue > 0).slice(0, 6);
+    const rows = logic.retroWaiters(snapshot);
     const target = $('waiters');
     target.replaceChildren();
     settled(target);
-    if (!rows.length) { target.append(node('p', 'dir-empty', 'iiko не вернул продажи официантов за неделю.')); return; }
+    if (!rows.length) { target.append(node('p', 'dir-empty', 'iiko не вернул продажи официантов Retro за неделю.')); return; }
     const max = Math.max(1, ...rows.map(row => row.revenue));
     rows.forEach((row, index) => {
-      const item = node('div');
+      const item = node('div', index >= WAITERS_PREVIEW ? 'is-folded' : '');
       const line = node('div', 'dir-waiter-line');
       // Первый и последний в рейтинге подписаны и окрашены, как в макете.
       const top = index === 0 && rows.length > 1, low = index === rows.length - 1 && rows.length > 1;
       const who = node('span', 'dir-waiter-name');
-      who.append(node('strong', '', row.name));
+      const waiterName = node('strong', '', row.name);
+      waiterName.dataset.i18n = 'off';
+      who.append(waiterName);
       if (top) who.append(node('span', 'dir-waiter-tag is-top', 'больше всех'));
       if (low) who.append(node('span', 'dir-waiter-tag is-low', 'меньше всех'));
       line.append(node('span', '', String(index + 1)), who, node('b', 'rm-num', short(row.revenue)));
@@ -463,9 +496,22 @@
       fill.style.width = Math.max(4, row.revenue / max * 100) + '%';
       fill.style.background = top ? '#d8b977' : low ? '#e9a0af' : '#24594b';
       bar.append(fill);
-      item.append(line, bar, node('small', '', 'маржа ' + (row.margin === null ? '—' : Math.round(row.margin) + '%') + ' · ' + money.format(Math.round(row.quantity)) + ' позиций'));
+      item.append(line, bar, node('small', '', row.checks === null ? 'чеки не посчитаны'
+        : row.checks + ' ' + plural(row.checks, 'чек', 'чека', 'чеков') + ' · ' + row.shifts + ' '
+          + plural(row.shifts, 'смена', 'смены', 'смен') + ' · средний чек ' + (row.averageCheck === null ? '—' : short(row.averageCheck))));
       target.append(item);
     });
+    if (rows.length > WAITERS_PREVIEW) {
+      const more = node('button', 'dir-link dir-more', 'Все официанты · ' + rows.length);
+      more.type = 'button';
+      more.setAttribute('aria-expanded', 'false');
+      more.addEventListener('click', () => {
+        const open = target.classList.toggle('is-unfolded');
+        more.setAttribute('aria-expanded', String(open));
+        more.textContent = open ? 'Свернуть' : 'Все официанты · ' + rows.length;
+      });
+      target.append(more);
+    }
   }
 
   // ── Редактор сотрудника ──────────────────────────────────────────────
@@ -515,6 +561,9 @@
 
   async function saveEditor(event) {
     event.preventDefault();
+    // Второе касание «Сохранить», пока идёт первая запись, завело бы второго
+    // человека: форма отправляется, даже когда кнопка уже крутится.
+    if (view.saving) return;
     const name = $('editor-name').value.trim(), role = $('editor-role').value.trim();
     const amount = $('editor-amount').value.replace(/\D/g, '');
     if (!name || !role || !Number(amount)) {
@@ -534,6 +583,7 @@
     // редактор закрывается, а строка человека в списке вспыхивает зелёным.
     const work = request(url, {method: row ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)})
       .then(() => loadTeam());
+    view.saving = true;
     editor.setAttribute('aria-busy', 'true');
     editor.classList.add('is-saving');
     busyButton($('editor-save'), work);
@@ -548,6 +598,7 @@
     } catch (error) {
       $('editor-error').textContent = error.message;
     } finally {
+      view.saving = false;
       editor.setAttribute('aria-busy', 'false');
       editor.classList.remove('is-saving');
     }
@@ -555,7 +606,8 @@
 
   async function deleteEditor() {
     const row = view.editing;
-    if (!row) return;
+    if (!row || view.saving) return;
+    view.saving = true;
     $('editor-error').textContent = '';
     const line = document.querySelector('[data-busy-key="dir-team:' + row.type + ':' + row.id + '"]');
     const removal = request('/api/director/team/' + row.type + '/' + row.id, {method: 'DELETE'});
@@ -569,6 +621,8 @@
       await loadTeam();
     } catch (error) {
       $('editor-error').textContent = error.message;
+    } finally {
+      view.saving = false;
     }
   }
 
@@ -577,7 +631,9 @@
     document.querySelectorAll('.dir-tabs .rm-tab').forEach(button =>
       button.addEventListener('click', () => openTab(button.dataset.tab)));
     $('ask-tip').addEventListener('click', () => ask('Что лучше всего сделать сегодня, чтобы увеличить продажи? Учитывай данные по всем заведениям.'));
-    $('ask-err').addEventListener('click', () => ask('Какие ошибки сегодня и вчера у бухгалтера и что из них самое важное?'));
+    $('ask-err').addEventListener('click', () => ask('Разбери замечания к сегодняшнему отчёту бухгалтера'
+      + (view.accountingIssues && view.accountingIssues.length ? ' (' + view.accountingIssues.map(item => item.text).join('; ') + ')' : '')
+      + ': что из них самое важное и что сделать?'));
     $('ask-waiters').addEventListener('click', () => ask('Почему у официантов такая разница в продажах за неделю?'));
     document.querySelectorAll('[data-team-filter]').forEach(button => button.addEventListener('click', () => {
       view.teamFilter = button.dataset.teamFilter;
@@ -638,11 +694,12 @@
       .replace(/^./, letter => letter.toUpperCase());
     chat = globalThis.RetroChat.mount({
       messages: $('chat-messages'), form: $('chat-form'), input: $('chat-input'),
-      status: $('chat-status'), prompts: $('chat-prompts'), endpoint: '/api/director/chat',
+      status: $('chat-status'), prompts: $('chat-prompts'), clear: $('chat-clear'), endpoint: '/api/director/chat',
     });
     bind();
     skeletonList($('waiters'), 4, true);
     loadHome();
+    autoRefresh();
     loadReport(7).then(renderWaiters).catch(error => {
       $('waiters').replaceChildren(node('p', 'dir-empty', error.message));
       settled($('waiters'));

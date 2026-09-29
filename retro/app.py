@@ -76,7 +76,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # Бухгалтер: финансы дня, сотрудники, ведомость
         'accountant.html': {'accountant'}, 'employees.html': {'accountant'},
         'payroll.html': {'accountant'}, 'accountant.js': {'accountant'},
-        'employees.js': {'accountant'}, 'payroll.js': {'accountant'},
+        'employees.js': {'accountant'}, 'employees-logic.js': {'accountant'}, 'payroll.js': {'accountant'},
         'payroll-logic.js': {'accountant'}, 'accountant.css': {'accountant'},
         'employees.css': {'accountant'}, 'payroll.css': {'accountant'},
         # Расчёты бухгалтерии читают экраны директора и учредителя

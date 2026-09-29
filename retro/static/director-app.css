@@ -50,6 +50,7 @@
 .dir-issues>div{display:flex;gap:10px;padding:10px 0 0;margin-top:10px;border-top:1px solid #eef1ea}
 .dir-issues i{flex:none;width:8px;height:8px;border-radius:50%;margin-top:5px;background:#d2a54a}
 .dir-issues i.is-bad{background:var(--late)}
+.dir-issues i.is-todo{background:#b9c2b5}
 .dir-issues strong{display:block;font-size:13px;font-weight:600;line-height:1.35}
 .dir-issues small{display:block;font-size:11px;color:var(--muted-3);margin-top:2px}
 .dir-link{display:inline-flex;align-items:center;min-height:40px;margin-top:4px;border:0;background:none;padding:0;
@@ -119,6 +120,10 @@
 .dir-chat-head{display:flex;align-items:center;gap:10px}
 .dir-chat-head strong{display:block;font-size:18px;font-weight:650}
 .dir-chat-head div>span{display:block;font-size:11px;color:var(--muted-2)}
+.dir-chat-head>div{flex:1;min-width:0}
+/* «Очистить» — переписка хранится на сервере, кнопка стирает её там. */
+.dir-chat-clear{flex:none;min-height:36px;padding:0 12px;border:1px solid #dfe5dc;border-radius:10px;background:#fff;color:var(--ink-2);font:inherit;font-size:12px;font-weight:600;cursor:pointer}
+.dir-chat-clear[data-confirm]{border-color:var(--late);color:var(--late)}
 .dir-chat{padding:0;overflow:visible;flex:1}
 .dir-chat .rm-msg{font-size:14px;border-radius:18px 18px 18px 6px}
 .dir-chat .rm-msg.is-user{border-radius:18px 18px 6px 18px}
@@ -167,6 +172,10 @@
 .dir-waiter-line>b{font-size:14px;font-weight:650;white-space:nowrap}
 .dir-waiters .rm-bar{margin:7px 0 0 22px}
 .dir-waiters small{display:block;font-size:10px;color:var(--muted-3);margin:4px 0 0 22px}
+/* Официанты сверх первых шести — по кнопке «Все официанты». */
+.dir-waiters>div.is-folded{display:none}
+.dir-waiters.is-unfolded>div.is-folded{display:block}
+.dir-waiters .dir-more{margin-top:8px}
 .dir-team-list{padding:4px 14px}
 .dir-person{width:100%;display:flex;align-items:center;gap:10px;border:0;border-top:1px solid #eef1ea;background:none;padding:11px 0;text-align:left;color:var(--ink);min-height:56px}
 .dir-person:first-child{border-top:0}
@@ -178,6 +187,10 @@
 .dir-person .rm-bar{margin-top:7px}
 .dir-paid{display:flex;justify-content:space-between;gap:8px;font-size:10px;margin-top:4px;color:var(--ink-2)}
 .dir-paid .is-rest{color:var(--warn)}
+.dir-paid .is-over{color:var(--late);font-weight:650}
+.dir-paid .is-closed{color:#24594b}
+.dir-person .rm-bar.is-over>span{background:var(--late)}
+.dir-month{display:block;font-size:10px;color:var(--muted-3);margin-top:3px}
 .dir-pill{flex:none;padding:4px 8px;border-radius:20px;font-size:10px;font-weight:650;background:#ebeeea;color:#737f74;white-space:nowrap}
 .dir-pill.on_time{background:var(--ok-bg);color:var(--ok)}
 .dir-pill.late{background:#fde9ed;color:var(--late)}
@@ -259,7 +272,7 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 @media(min-width:651px){.dir-back{display:none!important}}
 /* Под палец (≥ 40 точек): подсказки AI, фильтры, закрытие редактора. */
 .dir-prompts .rm-prompt,.dir-chips button{min-height:40px}
-.dir-close{width:40px;height:40px}
+.dir-close{flex:none;width:44px;height:44px}
 .dir-pill.manual_present{background:var(--ok-bg);color:var(--ok)}
 .dir-pill.manual_absent{background:#ebeeea;color:#737f74}
 /* Ссылка на полный отчёт в шапке — только там, где меню скрыто или без подписей. */
@@ -285,6 +298,7 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 .rm-msg-error-text{font-size:13px;line-height:1.45}
 .rm-msg-error-text::before{content:"!";display:inline-grid;place-items:center;width:17px;height:17px;margin-right:7px;border-radius:50%;
   background:var(--rm-err,#a33f2b);color:#fff;font-size:11px;font-weight:700;vertical-align:1px}
+.rm-msg-error-detail{display:block;margin:-4px 0 0 24px;font-size:11px;line-height:1.4;opacity:.8}
 .rm-msg-retry{min-height:34px;padding:0 14px;border:1px solid #e3b9ad;border-radius:17px;background:#fff;color:var(--rm-err,#a33f2b);font-size:12px;font-weight:650}
 .rm-msg-skel{display:flex;flex-direction:column;gap:8px;width:70%;background:#fff}
 .rm-msg-skel .rm-skel:first-child{width:92%}.rm-msg-skel .rm-skel:last-child{width:58%}

@@ -10,7 +10,10 @@ from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.founder.tools import ATTENDANCE_STATUSES, FounderChatTools
 
 
-DELEGATED_NAMES = {'get_iiko_sales_details', 'get_saved_director_reports'}
+# Директор видит на телефоне кассу дня, остаток и замечания бухгалтера (6a),
+# поэтому и AI получает эти дни целиком — только чтение, как у учредителя.
+DELEGATED_NAMES = {'get_iiko_sales_details', 'get_saved_director_reports',
+                   'get_cashier_day', 'get_accounting_day'}
 TOOL_DEFINITIONS = (
     {
         'name': 'get_director_dashboard',
@@ -31,6 +34,8 @@ TOOL_DEFINITIONS = (
     next(item for item in FounderChatTools.definitions if item['name'] == 'get_iiko_sales_details'),
     next(item for item in FounderChatTools.definitions if item['name'] == 'get_employee_attendance'),
     next(item for item in FounderChatTools.definitions if item['name'] == 'get_saved_director_reports'),
+    next(item for item in FounderChatTools.definitions if item['name'] == 'get_cashier_day'),
+    next(item for item in FounderChatTools.definitions if item['name'] == 'get_accounting_day'),
 )
 
 

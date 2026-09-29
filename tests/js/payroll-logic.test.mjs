@@ -166,7 +166,10 @@ test('подвал складывает сменных и части оклад�
   assert.deepEqual(logic.dayTotals(month2b()).map(d => d.amount), [9500000, 150000, 0]);
   const totals = logic.totals(month2b());
   assert.equal(totals.monthlyPaid, 9500000);
-  assert.equal(totals.monthlyRest, 3000000);
+  // Осталось выдать — по людям: переплата шефу (500 000) не уменьшает оклад,
+  // который должны Лоле (3 500 000). Так же считает итог в XLSX.
+  assert.equal(totals.monthlyRest, 3500000);
+  assert.equal(totals.monthlyOver, 500000);
 });
 
 test('проверки месяца: ошибки первыми, «нет выплат» — последним напоминанием', () => {
@@ -185,11 +188,18 @@ test('проверки месяца: ошибки первыми, «нет вы�
   assert.equal(checks[2].day, '2026-09-10');
 });
 
-test('выдача за смену — на следующий день, но не позже сегодня', () => {
-  assert.equal(logic.payday('2026-09-10', TODAY), '2026-09-11');
-  assert.equal(logic.payday('2026-09-28', TODAY), '2026-09-29');
-  assert.equal(logic.payday('2026-09-29', TODAY), '2026-09-29');
-  assert.equal(logic.payday('2026-09-30', '2026-10-05'), '2026-10-01');
+test('выдача из сетки — сегодняшней датой: старая смена не меняет кассу прошлого дня', () => {
+  assert.equal(logic.payday('2026-09-28', TODAY), '2026-09-29'); // вчерашняя: то же, что смена + 1
+  assert.equal(logic.payday('2026-09-10', TODAY), TODAY);
+  assert.equal(logic.payday('2026-09-30', '2026-10-05'), '2026-10-05');
+  assert.equal(logic.payday('2026-09-10'), '2026-09-11');
+});
+
+test('номер дня открывает день выдачи по плану: смена + 1, не позже сегодня', () => {
+  assert.equal(logic.shiftScreenDay('2026-09-10', TODAY), '2026-09-11');
+  assert.equal(logic.shiftScreenDay('2026-09-28', TODAY), '2026-09-29');
+  assert.equal(logic.shiftScreenDay('2026-09-29', TODAY), '2026-09-29');
+  assert.equal(logic.shiftScreenDay('2026-09-30', '2026-10-05'), '2026-10-01');
 });
 
 test('ячейка оклада: больше — доплата, меньше — правка последней выплаты, ноль — удаление всех', () => {
@@ -246,4 +256,78 @@ test('новый в реестре без начислений за месяц �
   assert.equal(added.name, 'Новый Официант');
   assert.equal(added.cells[1].kind, 'pending');
   assert.equal(added.rest, 170000);
+});
+
+test('сумма из ячейки оклада: только цифры, иначе null — не 15 сумов и не удаление', () => {
+  assert.equal(logic.parseAmount(''), 0);
+  assert.equal(logic.parseAmount('  '), 0);
+  assert.equal(logic.parseAmount('500000'), 500000);
+  assert.equal(logic.parseAmount('500 000'), 500000);
+  assert.equal(logic.parseAmount('500 000'), 500000);
+  assert.equal(logic.parseAmount('1,5 млн'), null);
+  assert.equal(logic.parseAmount('abc'), null);
+  assert.equal(logic.parseAmount('-5'), null);
+  assert.equal(logic.parseAmount('12.5'), null);
+});
+
+test('переплата после правки ячейки: только при увеличении сверх оклада', () => {
+  const person = {salary: 3500000, paid: 400000};
+  assert.equal(logic.overpayAfter(person, {amount: 400000}, 3600000), 100000);
+  assert.equal(logic.overpayAfter(person, {amount: 400000}, 3500000), 0);
+  assert.equal(logic.overpayAfter({salary: 9000000, paid: 9500000}, {amount: 3500000}, 3000000), 0);
+  assert.equal(logic.overpayAfter({salary: null, paid: 0}, {amount: 0}, 100), 0);
+});
+
+test('«сумма ≠ ставке» сверяется со ставкой дня смены, выданное можно отменить', () => {
+  const at = extra => logic.gridCell(cell(Object.assign({accrual_id: 9, status: 'on_time', rate: '180000',
+    amount: '180000', paid: '180000', debt: '0', payments: [{id: 77, day: '2026-09-11', amount: '180000'}]}, extra)),
+  {rate: '200000', day: '2026-09-10', today: TODAY});
+  // Сегодня ставка 200 000, но 10-го действовала 180 000 — выдано ровно.
+  const paid = at({});
+  assert.equal(paid.kind, 'paid');
+  assert.equal(paid.cancellable, true);
+  assert.deepEqual(paid.payments, [{id: 77, day: '2026-09-11', amount: 180000}]);
+  const odd = at({paid: '150000', debt: '30000', payments: [{id: 78, day: '2026-09-11', amount: '150000'}]});
+  assert.equal(odd.kind, 'odd');
+  assert.equal(odd.rate, 180000);
+  assert.equal(odd.payable, true);
+  // Без выплат отменять нечего.
+  assert.equal(at({paid: '0', debt: '180000', payments: []}).cancellable, false);
+});
+
+test('итоги окладов: выплачено — с сервера, осталось — по людям, переплата отдельно; удалённый из реестра не пропадает', () => {
+  const data = month2b();
+  data.monthly_cells['99'] = {'2026-09-28': '700000'};
+  data.monthly_paid = '10500000'; // + 300 000 общим расходом без сотрудника
+  const t = logic.totals(data);
+  assert.equal(t.monthlyPaid, 10500000);
+  assert.equal(t.monthlyRest, 3500000);
+  assert.equal(t.monthlyOver, 500000);
+  const rows = logic.monthlyRows(data, {today: TODAY});
+  const gone = rows.find(row => row.gone);
+  assert.equal(gone.name, 'Сотрудник удалён · №99');
+  assert.equal(gone.paid, 700000);
+  assert.equal(gone.rest, null);
+  assert.equal(gone.cells[1].over, false);
+  // Удалённый не попадает в «нет выплат» и в переплаты.
+  assert.ok(!logic.checks(data, {today: TODAY}).some(item => item.row === 'm99'));
+  // Удалённый в архиве — с именем из monthly_archived.
+  data.monthly_archived = [{id: 99, name: 'Акмаль Рашидов', role: 'охрана', no_hikvision: false}];
+  const named = logic.monthlyRows(data, {today: TODAY}).find(row => row.gone);
+  assert.equal(named.name, 'Акмаль Рашидов');
+  assert.equal(named.role, 'охрана · удалён из реестра');
+});
+
+test('«⊘ Hik» у окладника из реестра и проверка «Остаток ушёл в минус»', () => {
+  const data = month2b();
+  data.monthly[1].no_hikvision = true;
+  assert.equal(logic.monthlyRows(data, {today: TODAY})[1].noHik, true);
+  data.negative_cash = [{day: '2026-09-12', balance: '-150000'}];
+  const list = logic.checks(data, {today: TODAY});
+  const minus = list.find(item => item.text.startsWith('Остаток ушёл в минус'));
+  assert.equal(minus.lvl, 'err');
+  assert.equal(minus.day, '2026-09-12');
+  assert.equal(minus.row, null);
+  assert.equal(minus.sub.replace(/\s/g, ' '), 'На конец дня −150 000 сум');
+  assert.equal(list[list.length - 1].lvl, 'todo');
 });

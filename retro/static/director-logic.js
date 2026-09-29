@@ -116,6 +116,8 @@
     const start = String(startIso || '').split('-');
     const end = String(endIso || '').split('-');
     if (start.length !== 3 || end.length !== 3) return '—';
+    // Один день («Вчера») — «28 сентября 2026», а не «28 — 28 сентября».
+    if (String(startIso) === String(endIso)) return dayLabel(startIso);
     const startDay = Number(start[2]);
     const endDay = Number(end[2]);
     const startMonth = MONTHS[Number(start[1]) - 1];
@@ -177,8 +179,20 @@
 
   /** Позиции iiko, которые не блюда: упаковка, аренда, сервис. В рейтинге
    *  меню они только мешают — «Контейнер» не продвигают и не убирают. */
-  const NOT_DISH = /контейнер|пакет|упаковк|аренд|депозит|обслуживан|сервисн|доставк/i;
-  function isDish(row) { return !NOT_DISH.test(row.name); }
+  const NOT_DISH = /контейнер|пакет|упаковк|одноразов|аренд|депозит|обслуживан|сервисн|доставк/i;
+  const NOT_DISH_GROUP = /контейнер/i;
+  function isDish(row, group) { return !NOT_DISH.test(row.name) && !NOT_DISH_GROUP.test(group || ''); }
+
+  /** «Слабые» — без напитков и выпечки (3.11): чай и хлеб всегда продаются
+   *  понемногу, и убирать их из меню никто не станет. Группа — DishGroup iiko;
+   *  у позиций без группы (и в группе «Доставка Яндекс») решает название. */
+  const DRINK_OR_BAKERY_GROUP = /напит|лимонад|кофе|чай|вино|водк|коньяк|коктейл|алкогол|пиво|хлеб|выпеч|соус/i;
+  // \b в JS не видит границ кириллических слов, поэтому начало слова — явно:
+  // иначе «кола» находилась бы в каждой «ШКОЛА …», а «чай» — в «случайный».
+  const DRINK_OR_BAKERY_NAME = /напиток|(^|[^а-яё])(сок|чай|кола|лед)([^а-яё]|$)|вода|кофе|капучино|латте|американо|эспрессо|лимонад|cola|fanta|sprite|pepsi|пиво|вино|водка|коньяк|коктейл|молоко|компот|айран|морс|хлеб|лепешк|самса|булочк|круассан|выпечк|соус/i;
+  function isDrinkOrBakery(name, group) {
+    return DRINK_OR_BAKERY_GROUP.test(group || '') || DRINK_OR_BAKERY_NAME.test(name || '');
+  }
 
   /** Низкая маржа — по тому же округлению, что видит директор: иначе
    *  блюдо с «45%» на экране попадало в список «ниже 45%». */
@@ -188,6 +202,8 @@
    *  `snapshot` — отчёт директора; `venue` — all | retro | oxbridge | banquet. */
   function menuSlice(snapshot, venue, view, limit) {
     const metrics = (snapshot && snapshot.item_metrics) || {};
+    const groups = (snapshot && snapshot.item_groups) || {};
+    const dish = function (row) { return isDish(row, groups[row.name]); };
     const count = limit || 5;
     let rows;
     if (view === 'notb') {
@@ -207,13 +223,14 @@
         const row = hall[name];
         row.margin = row.revenue > 0 ? row.profit / row.revenue * 100 : null;
         return row;
-      }).filter(function (row) { return row.revenue > 0 && isDish(row) && !banquet.has(dishKey(row.name)); });
+      }).filter(function (row) { return row.revenue > 0 && dish(row) && !banquet.has(dishKey(row.name)); });
       rows.sort(SORTS.quantity);
     } else {
       const sold = entries(metrics[venue === 'all' ? 'all' : venue])
-        .filter(function (row) { return row.revenue > 0 && isDish(row); });
+        .filter(function (row) { return row.revenue > 0 && dish(row); });
       if (view === 'weak') {
-        rows = sold.slice().sort(function (a, b) { return a.revenue - b.revenue; });
+        rows = sold.filter(function (row) { return !isDrinkOrBakery(row.name, groups[row.name]); })
+          .sort(function (a, b) { return a.revenue - b.revenue; });
       } else if (view === 'lowm') {
         rows = sold.filter(lowMargin)
           .sort(SORTS.quantity);
@@ -244,7 +261,8 @@
    *  главном экране должен открываться мгновенно и не стоить запроса. */
   function dayTips(snapshot) {
     const metrics = (snapshot && snapshot.item_metrics) || {};
-    const sold = entries(metrics.retro).filter(function (row) { return row.revenue > 0 && isDish(row); });
+    const groups = (snapshot && snapshot.item_groups) || {};
+    const sold = entries(metrics.retro).filter(function (row) { return row.revenue > 0 && isDish(row, groups[row.name]); });
     const tips = [];
     const promo = sold.filter(function (row) { return row.margin !== null && row.margin >= 60; })
       .sort(function (a, b) { return b.profit - a.profit; })[0];
@@ -252,28 +270,60 @@
     const trap = sold.filter(lowMargin)
       .sort(SORTS.revenue)[0];
     if (trap) tips.push({dish: trap.name, kind: 'trap', margin: trap.margin});
-    const weak = sold.filter(function (row) { return row.quantity > 0; })
+    // «Убрать из меню» — как срез «Слабые»: без напитков и выпечки.
+    const weak = sold.filter(function (row) { return row.quantity > 0 && !isDrinkOrBakery(row.name, groups[row.name]); })
       .sort(function (a, b) { return a.quantity - b.quantity || a.revenue - b.revenue; })[0];
     if (weak && (!promo || weak.name !== promo.name)) tips.push({dish: weak.name, kind: 'weak', quantity: weak.quantity});
     return tips;
   }
 
-  /** Строки «Команды»: сменные из Hikvision и оклады из реестра бухгалтера. */
+  /** Строки «Команды»: сменные из Hikvision и оклады из реестра бухгалтера.
+   *  Месяц считает сервер (3.5): у сменного — смены и выдано с 1-го числа, у
+   *  оклада — выдано частями и остаток; остаток меньше нуля — переплата. */
   function teamRows(team) {
     if (!team) return [];
     const shift = (team.shift || []).map(function (row) {
       return {id: row.employee_id, type: 'shift', name: row.name, role: row.role, rate: amount(row.rate),
         hasRate: row.rate !== null && row.rate !== undefined, status: row.status,
         firstEntry: row.first_entry, manual: Boolean(row.manual_attendance),
-        noHik: !row.hikvision_registered};
+        noHik: !row.hikvision_registered,
+        monthShifts: row.month_shifts === undefined ? null : Number(row.month_shifts) || 0,
+        monthPaid: amount(row.month_paid)};
     });
     const monthly = (team.monthly || []).map(function (row) {
       const salary = amount(row.salary);
-      const paid = amount(row.card) + amount(row.cash) + amount(row.advances);
+      const known = row.month_paid !== undefined && row.month_paid !== null;
+      // Старый ответ без месяца — ручной реестр: полей выплат хватает только на «выдано».
+      const paid = known ? amount(row.month_paid) : amount(row.card) + amount(row.cash) + amount(row.advances);
+      const rest = known ? amount(row.month_left) : amount(row.remaining);
       return {id: row.id, type: 'monthly', name: row.name, role: row.role, rate: salary, hasRate: true,
-        status: 'monthly', paid: paid, rest: amount(row.remaining), noHik: false, manual: false};
+        status: 'monthly', paid: paid, rest: rest, monthKnown: known,
+        state: salaryState(salary, paid), noHik: false, manual: false};
     });
     return shift.concat(monthly);
+  }
+
+  /** Оклад за месяц: «осталось», «закрыт» (выдано ровно оклад) или «переплата». */
+  function salaryState(salary, paid) {
+    if (paid > salary) return 'over';
+    if (salary > 0 && paid === salary) return 'closed';
+    return 'left';
+  }
+
+  /** Официанты Retro за период (3.11): по выручке, с чеками, сменами и
+   *  средним чеком. Ответ без разбивки Retro — общий список без чеков. */
+  function retroWaiters(snapshot) {
+    const stats = snapshot && snapshot.waiter_retro;
+    if (!stats) return waiters((snapshot && snapshot.waiter_metrics) || {}).map(function (row) {
+      return {name: row.name, revenue: row.revenue, checks: null, shifts: null, averageCheck: null};
+    });
+    return Object.keys(stats).map(function (name) {
+      const row = stats[name];
+      const checks = Number(row.checks) || 0;
+      return {name: name, revenue: amount(row.revenue), checks: checks, shifts: Number(row.shifts) || 0,
+        averageCheck: checks ? amount(row.revenue) / checks : null};
+    }).filter(function (row) { return row.revenue > 0; })
+      .sort(function (a, b) { return b.revenue - a.revenue; });
   }
 
   function teamMatches(row, filter) {
@@ -289,6 +339,9 @@
   return {
     dishKey: dishKey,
     isDish: isDish,
+    isDrinkOrBakery: isDrinkOrBakery,
+    salaryState: salaryState,
+    retroWaiters: retroWaiters,
     lowMargin: lowMargin,
     menuSlice: menuSlice,
     trend: trend,

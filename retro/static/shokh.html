@@ -105,16 +105,19 @@
       <!-- Шаг 1: точка -->
       <div id="step-point" class="shokh-step">
         <h1>Где закупаете?</h1>
-        <p class="shokh-note">Выберите поставщика и склад для приходной накладной iiko.</p>
+        <!-- Как в макете: сначала точки, нажатие ведёт сразу к товару.
+             Поставщик и склад накладной iiko подставляются с прошлой накладной
+             этой точки; первый раз их выбирают ниже. -->
+        <div id="point-list" class="shokh-points"></div>
+        <label class="shokh-field"><span>Другая точка</span>
+          <input id="point-other" type="text" maxlength="80" placeholder="Название точки">
+        </label>
+        <p class="shokh-note shokh-iiko-note">Для приходной накладной iiko</p>
         <label class="shokh-field"><span>Поставщик iiko</span>
           <select id="iiko-supplier" required></select>
         </label>
         <label class="shokh-field"><span>Склад поступления</span>
           <select id="iiko-storage" required></select>
-        </label>
-        <div id="point-list" class="shokh-points"></div>
-        <label class="shokh-field"><span>Место закупа (необязательно)</span>
-          <input id="point-other" type="text" maxlength="80" placeholder="Название точки">
         </label>
       </div>
 

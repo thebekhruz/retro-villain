@@ -187,6 +187,14 @@
           <div class="fd-cash-sub" id="finance-hero-title">Остаток на конец дня</div>
           <div class="fd-cash-total"><span id="finance-cash-total">—</span><small>сум</small></div>
           <div id="fd-cash-lines"></div>
+          <!-- Бухгалтер подтверждает, сколько наличных реально получил от кассира.
+               Разница с расчётом — ошибка в «Проверках» и ⚠ у учредителя. -->
+          <form id="cash-confirm" class="fd-cash-confirm" novalidate hidden>
+            <label for="cash-confirm-amount">Получено от кассира</label>
+            <div class="fd-cash-confirm-row"><input id="cash-confirm-amount" class="fd-money" data-money-hint="off" inputmode="decimal" autocomplete="off" aria-label="Получено от кассира, сум"><button type="submit" id="cash-confirm-submit">Подтвердить</button></div>
+            <p id="cash-confirm-note" class="fd-cash-confirm-note"></p>
+          </form>
+          <p id="cash-confirmed" class="fd-cash-confirmed" hidden></p>
           <button type="button" class="fd-cash-set" id="fd-cash-set" hidden>Задать начальные остатки →</button>
         </section>
 
@@ -236,7 +244,7 @@
   <div class="fd-dialog-body">
     <section class="fd-tool">
       <h3>Передано от кассира</h3>
-      <p>Ручная запись прихода, если сумма не пришла из модуля кассира. Дата — выбранный день выплат.</p>
+      <p>Ручная запись прихода, если сумма не пришла из модуля кассира. Дата — выбранный день выплат. Исправить уже записанную сумму — «Изменить» в карточке «Деньги на расходы».</p>
       <form id="handover-form" class="fd-tool-form">
         <input id="handover-amount" name="amount" class="fd-money" data-money-hint="off" inputmode="decimal" required autocomplete="off" placeholder="Сумма, сум" aria-label="Сумма, сум">
         <input id="handover-note" name="note" maxlength="160" required placeholder="Например, касса за вчерашний день" aria-label="Примечание">

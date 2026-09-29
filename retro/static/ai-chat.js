@@ -21,14 +21,23 @@
     return dots;
   }
 
+  const FAILED = 'Не удалось связаться с AI. Попробуйте ещё раз.';
+
   function mount(options) {
     const {messages, form, input, status, endpoint} = options;
     const prompts = options.prompts || null;
+    const clear = options.clear || null;
     const send = form.querySelector('[type=submit]');
     let loaded = false, loading = null, pendingAsk = false, configured = true;
     // История встаёт сразу после приветствия, даже если вопрос задан раньше,
     // чем она пришла: иначе новый вопрос оказался бы над старой перепиской.
     let anchor = messages.lastElementChild;
+    const greeting = anchor;
+    /** «Очистить» видна, только когда в ленте есть что стирать. */
+    function syncClear() {
+      if (!clear) return;
+      clear.hidden = !messages.querySelector('.rm-msg.is-user, .rm-msg.is-error') || pendingAsk;
+    }
 
     function setStatus(text, error) {
       if (!status) return;
@@ -55,18 +64,27 @@
         messages.append(node);
         node.scrollIntoView({block: 'end', behavior: 'smooth'});
       }
+      syncClear();
       return node;
     }
 
-    /** Ошибка — в ленте, рядом с вопросом, с повтором. */
+    /** Ошибка — в ленте, рядом с вопросом, с повтором. Первая строка всегда
+     *  одна и та же (спецификация AI: «Не удалось связаться с AI…»), причина
+     *  от сервера — мелко под ней, чтобы было что сказать администратору. */
     function errorBubble(message, question) {
       const node = document.createElement('div');
       node.className = 'rm-msg is-ai is-error';
       node.setAttribute('role', 'alert');
       const text = document.createElement('span');
       text.className = 'rm-msg-error-text';
-      text.textContent = message;
+      text.textContent = FAILED;
       node.append(text);
+      if (message && message !== FAILED) {
+        const detail = document.createElement('small');
+        detail.className = 'rm-msg-error-detail';
+        detail.textContent = message;
+        node.append(detail);
+      }
       if (question && configured) {
         const retry = document.createElement('button');
         retry.type = 'button';
@@ -77,6 +95,7 @@
       }
       messages.append(node);
       node.scrollIntoView({block: 'end', behavior: 'smooth'});
+      syncClear();
       return node;
     }
 
@@ -108,6 +127,7 @@
         (data.messages || []).forEach(item => bubble(item.role, item.content, 'history'));
         loaded = true;
         configured = data.configured !== false;
+        syncClear();
         if (!configured) setStatus('Помощник ещё не настроен на сервере.', true);
       }).catch(error => setStatus(error.message, true)).finally(() => {
         clearTimeout(timer);
@@ -159,6 +179,7 @@
       } finally {
         pendingAsk = false;
         lockForm(false);
+        syncClear();
         if (!opts.fromButton) input.focus({preventScroll: true});
       }
     }
@@ -171,6 +192,31 @@
       input.value = '';
       ask(text);
     });
+    if (clear) {
+      // Два нажатия: первое спрашивает «Точно?», второе стирает переписку на
+      // сервере. Без ответа за пять секунд кнопка возвращается как была.
+      let armed = null;
+      const disarm = () => { clearTimeout(armed); armed = null; clear.textContent = 'Очистить'; delete clear.dataset.confirm; };
+      clear.addEventListener('click', () => {
+        if (pendingAsk) return;
+        if (!armed) {
+          clear.textContent = 'Точно очистить?';
+          clear.dataset.confirm = 'true';
+          armed = setTimeout(disarm, 5000);
+          return;
+        }
+        disarm();
+        const work = request(endpoint, {method: 'DELETE'}).then(() => {
+          [...messages.children].forEach(child => { if (child !== greeting) child.remove(); });
+          anchor = greeting;
+          setStatus('');
+          syncClear();
+          input.focus({preventScroll: true});
+        });
+        if (busy()) busy().button(clear, work, {done: false});
+        work.catch(error => setStatus(error.message, true));
+      });
+    }
     if (prompts) {
       prompts.addEventListener('click', event => {
         const button = event.target.closest('button');

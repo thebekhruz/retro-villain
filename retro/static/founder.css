@@ -339,3 +339,6 @@
 @media(prefers-reduced-motion:reduce){.broadcast-result.is-running::before{animation:none}}
 .booking-panel.is-unavailable .booking-chart{min-height:0;height:auto}
 .booking-panel.is-unavailable .booking-source-head,.booking-panel.is-unavailable .booking-sources{display:none}
+
+/* Причина ошибки AI под общей фразой */
+.ai-chat-error-detail{display:block;margin-top:4px;font-size:11.5px;opacity:.75}

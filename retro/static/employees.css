@@ -147,7 +147,10 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-salary-empty{margin:0;padding:14px 18px;border-top:1px solid #f0f3ec;font-size:12px;color:#7d8881}
 
 /* Правая колонка */
-.emp-aside{position:sticky;top:20px;display:grid;gap:14px;align-content:start;min-width:0}
+/* Колонка липкая, но не выше окна: иначе низ длинной панели правки (удаление,
+   история) уходил за экран и не прокручивался. */
+.emp-aside{position:sticky;top:20px;display:grid;gap:14px;align-content:start;min-width:0;
+  max-height:calc(100vh - 40px);overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
 .emp-side-card{background:#fff;border:1px solid #e3e7df;border-radius:18px;padding:22px;min-width:0}
 .emp-side-eyebrow{font-size:10px;font-weight:650;letter-spacing:1.8px;color:#818c80;margin:0 0 12px}
 .emp-side-eyebrow.is-gold{color:#906c2b;margin:0 0 9px}
@@ -192,7 +195,7 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-field{display:grid;gap:6px;font-size:11px;color:#64776c}
 .emp-field input,.emp-field select{height:42px;border:1px solid #dbe3d8;border-radius:8px;padding:0 12px;background:#fff;
   color:#203d33;font-size:13px;width:100%;min-width:0}
-.emp-field input[type=number]{font-variant-numeric:tabular-nums}
+.emp-field input[type=number],.emp-field input.emp-money{font-variant-numeric:tabular-nums}
 .emp-drawer-feedback{min-height:16px;margin:0;font-size:11px;color:#4f795c}
 .emp-drawer-feedback.is-error{color:#aa4656}
 .emp-drawer-actions{display:flex;gap:8px}
@@ -200,7 +203,32 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-drawer-actions .emp-btn--primary{flex:1 1 auto}
 .emp-drawer-delete{margin-top:18px;padding-top:14px;border-top:1px solid #edf1e9;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .emp-delete-link{border:0;background:none;padding:0;color:#a96039;font-size:12px}
-.emp-delete-q{font-size:12px;color:#7b6257;flex:1}
+.emp-delete-q{font-size:12px;color:#7b6257;flex:1 1 100%;display:grid;gap:3px}
+.emp-delete-q span{font-size:11px;color:#8b7a70;line-height:1.45}
+/* «⊘ Hik» — не проходит турникет (норма); «Нет привязки» — пилюля статуса. */
+.emp-who-name{display:flex;align-items:baseline;gap:6px;flex-wrap:wrap}
+.emp-nohik{font-size:9.5px;font-weight:600;letter-spacing:.2px;color:#607368;background:#eef2ea;border-radius:5px;
+  padding:2px 5px;white-space:nowrap}
+/* Переключатель «Нет в Hikvision» */
+.emp-toggle-box{display:grid;gap:5px}
+.emp-toggle{display:flex;align-items:center;gap:10px;width:100%;min-height:42px;border:1px solid #dbe3d8;border-radius:8px;
+  background:#fff;padding:8px 12px;font:inherit;font-size:12.5px;color:#203d33;text-align:left;cursor:pointer}
+.emp-toggle:disabled{cursor:not-allowed;opacity:.6}
+.emp-toggle-box-mark{width:18px;height:18px;border:1.5px solid #9fb0a3;border-radius:5px;flex:none;display:grid;place-items:center}
+.emp-toggle.is-on{border-color:#9dbba6;background:#f3f8f1}
+.emp-toggle.is-on .emp-toggle-box-mark{background:#143e35;border-color:#143e35}
+.emp-toggle.is-on .emp-toggle-box-mark::after{content:'';width:9px;height:5px;border:2px solid #fff;border-top:0;border-right:0;
+  transform:translateY(-1px) rotate(-45deg)}
+.emp-toggle-hint{margin:0;font-size:11px;line-height:1.45;color:#7d8881}
+/* История изменений */
+.emp-history{margin-top:18px;padding-top:14px;border-top:1px solid #edf1e9}
+.emp-history-empty{margin:0;font-size:11.5px;color:#88978a}
+.emp-history-list{list-style:none;margin:0;padding:0;display:grid;gap:10px;max-height:260px;overflow:auto}
+.emp-history-item{font-size:11.5px;color:#4d6358;line-height:1.45}
+.emp-history-head{display:flex;justify-content:space-between;gap:8px;flex-wrap:wrap}
+.emp-history-head strong{font-size:12px;color:#203d33;font-weight:600}
+.emp-history-head span{color:#88978a;font-size:11px}
+.emp-history-change{color:#607368;font-variant-numeric:tabular-nums}
 .emp-delete-keep{border:1px solid #dbe3d8;border-radius:7px;background:#fff;color:#35624e;padding:7px 10px;font-size:11px}
 .emp-delete-yes{border:1px solid #e4cfc2;border-radius:7px;background:#fff0eb;color:#a33f2b;padding:7px 10px;font-size:11px}
 
@@ -217,7 +245,14 @@ button.emp-stat--attention:hover{background:#f8f1e0}
   .emp-stats{grid-template-columns:repeat(4,minmax(0,1fr))}
   .emp-stat--accrued{grid-column:1/-1}
   .emp-layout{grid-template-columns:minmax(0,1fr)}
-  .emp-aside{position:static;grid-template-columns:repeat(auto-fit,minmax(280px,1fr))}
+  .emp-aside{position:static;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));max-height:none;overflow:visible}
+  /* Панель правки — лист поверх реестра: место в длинном списке не теряется,
+     касание по затемнению закрывает. */
+  .emp-drawer-open{overflow:hidden}
+  .emp-drawer-open .emp-aside{position:fixed;inset:0;z-index:80;display:flex;align-items:flex-end;justify-content:center;
+    max-height:none;background:#0f221c73;overflow-y:auto;overscroll-behavior:contain;padding:max(24px,env(safe-area-inset-top)) 0 0}
+  .emp-drawer-open .emp-aside>.emp-drawer{width:100%;max-width:560px;margin-top:auto;border-radius:18px 18px 0 0;
+    padding-bottom:calc(22px + env(safe-area-inset-bottom));box-shadow:0 -12px 40px #0f221c33}
 }
 /* Сенсорные ширины: всё, по чему тапают, не ниже 40 px. */
 @media(max-width:900px){

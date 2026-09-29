@@ -170,6 +170,15 @@
 .fo-save{width:100%;min-height:44px;margin-top:10px;border:0;border-radius:12px;background:var(--gold);color:var(--green);font-size:14px;font-weight:700}
 .fo-msg{margin:6px 0 0;min-height:14px;font-size:11px;color:#e8cf95}
 .fo-msg.is-error{color:#f4b8c3}
+.fo-tile-note{display:block;margin-top:2px;font-size:10.5px;color:var(--muted,#6b7d74)}
+/* История недель «собрано X из Y» (Функционал §3.7) */
+.fo-div-history{margin-top:12px;border-top:1px solid #ffffff1f;padding-top:8px;font-size:12px;color:#c5d3c9}
+.fo-div-history summary{cursor:pointer;min-height:32px;display:flex;align-items:center;gap:6px;color:#e8cf95;font-weight:600;list-style:none}
+.fo-div-history summary::-webkit-details-marker{display:none}
+.fo-div-history-row{display:grid;grid-template-columns:auto 1fr;gap:2px 10px;padding:6px 0;border-top:1px solid #ffffff12}
+.fo-div-history-row b{font-weight:600;color:#fff;text-align:right}
+.fo-div-history-row b.is-warn{color:#f0cf8a}
+.fo-div-history-row small{grid-column:2;text-align:right;font-size:11px;color:#a9bfb1}
 
 /* ── Телефон 7a ───────────────────────────────────────────────────────── */
 .fo-phone-body{gap:10px;padding:14px 14px 34px}

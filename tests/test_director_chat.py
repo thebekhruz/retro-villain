@@ -34,7 +34,12 @@ def test_director_chat_uses_least_privilege_tools_and_separate_history(tmp_path)
     assert {tool['name'] for tool in seen['body']['tools']} == {
         'get_director_dashboard', 'get_iiko_sales_details',
         'get_employee_attendance', 'get_saved_director_reports',
+        # 6a: касса дня и замечания бухгалтера — тот же контекст, что на экране.
+        'get_cashier_day', 'get_accounting_day',
     }
+    # Ответ по спецификации: по-русски, до 120 слов, без markdown, только по данным.
+    assert 'до 120 слов' in seen['body']['system']
+    assert 'без markdown' in seen['body']['system']
     assert seen['body']['max_tokens'] == 5600
 
 

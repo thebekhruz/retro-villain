@@ -426,8 +426,10 @@ function reportCard(report) {
   const body = text('div', 'report-body');
   // Сводку список отдаёт отдельным полем, вместе с временем формирования.
   const summary = report.analysis_summary || (report.analysis && report.analysis.summary) || '';
-  body.append(text('strong', '', logic.periodLabel(report.period_start, report.period_end)),
-    text('span', '', summary));
+  // Сводку пишет AI по-русски: переводчик по кускам делал из неё смесь языков.
+  const summaryNode = text('span', '', summary);
+  summaryNode.dataset.i18n = 'off';
+  body.append(text('strong', '', logic.periodLabel(report.period_start, report.period_end)), summaryNode);
   if (report.created_at) body.append(text('span', 'report-created', created.format(new Date(report.created_at))));
   link.append(text('span', 'report-icon', '▤'), body, text('span', 'report-format', 'PDF'));
   return link;

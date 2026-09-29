@@ -147,6 +147,46 @@ def test_verified_accountant_start_reconciles_september_report_and_carries_forwa
         assert tomorrow['ledger']['cash_balance'] is None
 
 
+def test_mistaken_debt_is_deleted_whole_but_not_over_another_days_payment(tmp_path):
+    """Долг, записанный по ошибке, удаляется целиком — с оплатой того же дня.
+    Если долг уже гасили в другой день, сначала удаляют ту оплату."""
+    with demo_client(tmp_path) as client:
+        first_day = DAY - timedelta(days=1)
+        for day in (first_day, DAY):
+            client.app.state.cache.put(replace(demo_snapshot(day), demo=False,
+                                               payments=(Payment('Демо', Decimal('1350000')),)))
+        def post(day, paid):
+            response = client.post('/api/accountant/expenses', json={
+                'date': day.isoformat(), 'item_code': 'ops_rent', 'note': 'Аренда',
+                'amount': '1000000', 'paid_amount': paid})
+            assert response.status_code == 201, response.text
+        ledger = lambda day: client.get('/api/accountant/day', params={'date': day.isoformat()}).json()['ledger']
+        post(first_day, '0')  # весь в долг — операций кассы нет, удалить можно только сам долг
+        debt_id = ledger(first_day)['debts_created_today'][0]['id']
+        gone = client.delete(f'/api/accountant/operations/debt/{debt_id}', params={'date': first_day.isoformat()})
+        assert gone.status_code == 204, gone.text
+        assert ledger(first_day)['manual_debt_total'] == '0'
+        post(first_day, '300000')
+        one = ledger(first_day)
+        debt_id = one['debts_created_today'][0]['id']
+        assert one['cash_balance'] == '700000'
+        assert client.post('/api/accountant/debts/pay', json={
+            'date': DAY.isoformat(), 'debt_id': debt_id, 'amount': '100000'}).status_code == 201
+        blocked = client.delete(f'/api/accountant/operations/debt/{debt_id}', params={'date': first_day.isoformat()})
+        assert blocked.status_code == 422 and 'другие дни' in blocked.json()['detail']
+        assert client.delete(f'/api/accountant/operations/debt/{debt_id}',
+                             params={'date': DAY.isoformat()}).status_code == 422  # чужая дата
+        later = [m for m in ledger(DAY)['movements'] if 'погашение' in (m['description'] or '')][0]
+        assert client.delete(f"/api/accountant/operations/movement/{later['id']}",
+                             params={'date': DAY.isoformat()}).status_code == 204
+        assert client.delete(f'/api/accountant/operations/debt/{debt_id}',
+                             params={'date': first_day.isoformat()}).status_code == 204
+        after = ledger(first_day)
+        assert after['manual_debt_total'] == '0' and after['cash_balance'] == '1000000'
+        audit = client.app.state.accountant_finance.audit_entries(entity_type='debt', entity_id=str(debt_id))
+        assert audit[-1]['action'] == 'delete'
+
+
 def demo_client(tmp_path):
     seed_cashier_expense(
         tmp_path / 'cashier.sqlite3', date(2026, 1, 1), date(2026, 12, 31),
@@ -373,6 +413,91 @@ def test_employee_registry_can_add_worker_and_change_group(tmp_path):
         assert client.delete(f'/api/accountant/employees/{employee_id}').status_code == 404
 
 
+def test_staff_rows_carry_manual_flag_and_new_worker_can_start_manual(tmp_path):
+    """«Сотрудники»: переключатель «Нет в Hikvision · отмечать вручную» в
+    панели правки видит флаг из /staff и задаётся при добавлении."""
+    today = today_tashkent().isoformat()
+    with demo_client(tmp_path) as client:
+        created = client.post('/api/accountant/employees', json={
+            'name': 'Охранник Вручную', 'role': 'охрана', 'group': 'Охрана',
+            'rate': '150000', 'manual_attendance': True})
+        assert created.status_code == 201
+        assert created.json()['employee']['manual_attendance'] is True
+        employee_id = created.json()['employee']['id']
+        plain = client.post('/api/accountant/employees', json={
+            'name': 'Без флага', 'role': 'официант', 'group': 'Обслуживание зала', 'rate': '150000'})
+        assert plain.json()['employee']['manual_attendance'] is False
+        staff = {row['employee_id']: row for row in
+                 client.get('/api/accountant/staff', params={'date': today}).json()['employees']}
+        assert staff[employee_id]['manual_attendance'] is True
+        assert staff[employee_id]['hikvision_registered'] is False
+        assert staff[employee_id]['status'] == 'manual_present'
+        assert staff[plain.json()['employee']['id']]['manual_attendance'] is False
+        assert staff[plain.json()['employee']['id']]['status'] == 'unlinked'
+        # Снятие флага из панели правки возвращает «Нет привязки».
+        off = client.patch(f'/api/accountant/employees/{employee_id}', json={
+            'rate': '150000', 'reason': 'Поставили на турникет', 'manual_attendance': False})
+        assert off.status_code == 200
+        row = next(item for item in client.get('/api/accountant/day', params={'date': today}).json()['employees']
+                   if item['employee_id'] == employee_id)
+        assert row['manual_attendance'] is False
+        assert row['status'] == 'unlinked'
+
+
+def test_employee_history_records_every_change_and_delete_keeps_past_days(tmp_path):
+    """1a: история сотрудника — добавление, ставка, «без Hikvision», архив.
+    Удалённый пропадает из сегодняшнего списка, прошлые дни его помнят."""
+    today = today_tashkent()
+    with demo_client(tmp_path) as client:
+        past = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()['employees']
+        person = past[0]
+        employee_id = person['employee_id']
+        assert client.patch(f'/api/accountant/employees/{employee_id}', json={
+            'name': 'Переименован', 'rate': '300000', 'reason': 'Новая ставка',
+            'manual_attendance': True}).status_code == 200
+        history = client.get(f'/api/accountant/employees/{employee_id}/history').json()['history']
+        assert [row['action'] for row in history] == ['manual', 'update']
+        assert history[1]['reason'] == 'Новая ставка'
+        assert (history[1]['old_rate'], history[1]['new_rate']) == (person['rate'], '300000')
+        assert 'Имя: ' in history[1]['details'] and history[1]['changed_at']
+        # Прошлый день — со старой ставкой: новая действует с даты изменения.
+        old_day = next(row for row in client.get('/api/accountant/staff', params={'date': DAY.isoformat()})
+                       .json()['employees'] if row['employee_id'] == employee_id)
+        assert old_day['rate'] == person['rate']
+        assert client.delete(f'/api/accountant/employees/{employee_id}').status_code == 204
+        today_ids = [row['employee_id'] for row in client.get(
+            '/api/accountant/staff', params={'date': today.isoformat()}).json()['employees']]
+        assert employee_id not in today_ids
+        past_ids = [row['employee_id'] for row in client.get(
+            '/api/accountant/staff', params={'date': DAY.isoformat()}).json()['employees']]
+        assert employee_id in past_ids
+        history = client.get(f'/api/accountant/employees/{employee_id}/history').json()['history']
+        assert history[0]['action'] == 'delete'
+
+
+def test_monthly_employee_no_hikvision_flag_and_history(tmp_path):
+    with demo_client(tmp_path) as client:
+        created = client.post('/api/accountant/monthly-employees', json={
+            'name': 'Окладник', 'role': 'бухгалтер', 'salary': '5000000', 'no_hikvision': True})
+        assert created.status_code == 201
+        employee = created.json()['employee']
+        assert employee['no_hikvision'] is True
+        body = dict(name='Окладник', role='бухгалтер', salary='5500000', reason='Повышение')
+        changed = client.patch(f'/api/accountant/monthly-employees/{employee["id"]}', json=body)
+        # Флаг не передан — не меняется.
+        assert changed.json()['employee']['no_hikvision'] is True
+        off = client.patch(f'/api/accountant/monthly-employees/{employee["id"]}',
+                           json=dict(body, no_hikvision=False))
+        assert off.json()['employee']['no_hikvision'] is False
+        listed = client.get('/api/accountant/staff').json()['monthly_employees']
+        assert next(row for row in listed if row['id'] == employee['id'])['no_hikvision'] is False
+        history = client.get(f'/api/accountant/monthly-employees/{employee["id"]}/history').json()['history']
+        assert [row['action'] for row in history] == ['update', 'update', 'create']
+        assert history[1]['reason'] == 'Повышение'
+        assert (history[1]['old_rate'], history[1]['new_rate']) == ('5000000', '5500000')
+        assert history[0]['details'] == 'По Hikvision'
+
+
 def test_expected_cashier_amount_is_read_only_and_requires_fresh_real_snapshot(tmp_path):
     with demo_client(tmp_path) as client:
         assert client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['expected_cashier'] is None
@@ -426,7 +551,8 @@ def test_employee_exports_split_late_and_everyone_without_claiming_real_hikvisio
         assert all_sheet['B4'].value == 20
         assert 'ДЕМО' not in late_sheet['A1'].value
         assert 'ДЕМО' not in all_sheet['A1'].value
-        assert all_sheet['D7'].value in ('Вовремя', 'Опоздал', 'Не пришёл', 'Нет привязки', 'Данных нет')
+        # Строка 7 — заголовок первой группы, под ним люди со статусами экрана.
+        assert all_sheet['E8'].value in ('Вовремя', 'Опоздал', 'Не пришёл', 'Нет привязки', 'Нет данных')
         assert client.get('/api/accountant/employees/export', params={
             'date': DAY.isoformat(), 'scope': 'invalid'}).status_code == 422
         page = client.get('/accountant/employees')
@@ -560,3 +686,84 @@ def test_payroll_month_rejects_a_malformed_or_future_month(tmp_path):
     with demo_client(tmp_path) as client:
         assert client.get('/api/accountant/payroll/month', params={'month': 'сентябрь'}).status_code == 422
         assert client.get('/api/accountant/payroll/month', params={'month': '2099-01'}).status_code == 422
+
+
+def test_deleted_monthly_employee_is_archived_with_name_kept_for_past_payments(tmp_path):
+    """§1: удаление — архив. Окладника нет в новых списках, но его выплаты
+    прошлых дней и ведомость месяца остаются с именем."""
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        created = client.post('/api/accountant/monthly-employees', json={
+            'name': 'Архивный Окладник', 'role': 'бухгалтер', 'salary': '5000000'}).json()['employee']
+        assert client.post('/api/accountant/handover', json={
+            'date': DAY.isoformat(), 'amount': '9000000', 'note': 'Передано'}).status_code == 201
+        assert client.post('/api/accountant/monthly-payments', json={
+            'date': DAY.isoformat(), 'employee_id': created['id'], 'amount': '1000000'}).status_code == 201
+        assert client.delete(f"/api/accountant/monthly-employees/{created['id']}").status_code == 204
+        assert client.delete(f"/api/accountant/monthly-employees/{created['id']}").status_code == 404
+        assert client.patch(f"/api/accountant/monthly-employees/{created['id']}", json={
+            'name': 'x', 'role': 'y', 'salary': '1'}).status_code == 422
+        day = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        assert all(row['id'] != created['id'] for row in day['monthly_employees'])
+        assert [row['name'] for row in day['monthly_payments']['today']] == ['Архивный Окладник']
+        month = client.get('/api/accountant/payroll/month', params={'month': DAY.strftime('%Y-%m')}).json()
+        assert all(row['id'] != created['id'] for row in month['monthly'])
+        assert [row['name'] for row in month['monthly_archived']] == ['Архивный Окладник']
+        assert month['monthly_cells'][str(created['id'])] == {DAY.isoformat(): '1000000'}
+
+
+def test_employee_export_matches_screen_totals_groups_and_salaried(tmp_path):
+    """XLSX «Сотрудники» = экран и API: статусы экрана, группы с итогами, общий
+    итог к начислению, «⊘ Hik», окладники с выданным с 1-го числа."""
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        staff = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+        manual_id = staff['employees'][1]['employee_id']
+        assert client.patch(f'/api/accountant/employees/{manual_id}', json={
+            'rate': staff['employees'][1]['rate'], 'reason': 'без турникета',
+            'manual_attendance': True}).status_code == 200
+        worker = client.post('/api/accountant/monthly-employees', json={
+            'name': 'Окладник Выгрузки', 'role': 'бухгалтер', 'salary': '5000000',
+            'no_hikvision': True}).json()['employee']
+        client.post('/api/accountant/monthly-employees', json={
+            'name': 'Переплаченный', 'role': 'кассир', 'salary': '1000000'})
+        over = next(row for row in client.get('/api/accountant/staff').json()['monthly_employees']
+                    if row['name'] == 'Переплаченный')
+        assert client.post('/api/accountant/handover', json={
+            'date': DAY.isoformat(), 'amount': '9000000', 'note': 'Передано'}).status_code == 201
+        for employee_id, amount in ((worker['id'], '2000000'), (over['id'], '1500000')):
+            assert client.post('/api/accountant/monthly-payments', json={
+                'date': DAY.isoformat(), 'employee_id': employee_id, 'amount': amount}).status_code == 201
+        staff = client.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()
+        response = client.get('/api/accountant/employees/export', params={'date': DAY.isoformat(), 'scope': 'all'})
+        sheet = load_workbook(BytesIO(response.content), data_only=True).active
+        rows = [[cell.value for cell in row] for row in sheet.iter_rows(min_row=7)]
+        screen_total = sum(Decimal(row['payable']) for row in staff['employees'] if row['payable'] is not None)
+        assert Decimal(str(sheet['F4'].value)) == screen_total
+        total = next(row for row in rows if row[1] == 'Итого к начислению за день')
+        assert Decimal(str(total[8])) == screen_total
+        people = [row for row in rows if isinstance(row[0], int) and row[4] in {
+            'Вовремя', 'Опоздал', 'Не пришёл', 'Нет привязки', 'Нет данных', 'Был · вручную', 'Не был · вручную'}]
+        assert len(people) == len(staff['employees'])
+        by_name = {row[1]: row for row in people}
+        for api_row in staff['employees']:
+            sheet_row = by_name[api_row['name']]
+            assert sheet_row[2] == api_row['role'] and sheet_row[3] == api_row['group']
+            assert (sheet_row[8] is None) == (api_row['payable'] is None)
+            assert (sheet_row[6] == '⊘ Hik') == (api_row['employee_id'] == manual_id)
+        labels = {'on_time': 'Вовремя', 'late': 'Опоздал', 'missing': 'Не пришёл', 'unlinked': 'Нет привязки',
+                  'unavailable': 'Нет данных', 'manual_present': 'Был · вручную', 'manual_absent': 'Не был · вручную'}
+        assert all(by_name[row['name']][4] == labels[row['status']] for row in staff['employees'])
+        # Итог каждой группы = сумма её людей, группы в порядке реестра.
+        groups = [row for row in rows if row[7] == 'Итого группы']
+        assert [row[1] for row in groups] == [item['name'] for item in staff['groups']]
+        for group in groups:
+            members = [Decimal(p['payable']) for p in staff['employees']
+                       if p['group'] == group[1] and p['payable'] is not None]
+            assert Decimal(str(group[8])) == sum(members, Decimal(0))
+        # Окладники: оклад, выдано по день, осталось/переплата, «⊘ Hik».
+        salaried = {row[1]: row for row in rows if row[1] in ('Окладник Выгрузки', 'Переплаченный')}
+        assert salaried['Окладник Выгрузки'][4:9] == [5000000, None, '⊘ Hik', 2000000, 3000000]
+        assert salaried['Переплаченный'][4:9] == [1000000, 'переплата', None, 1500000, -500000]
+        salary_total = next(row for row in rows if row[1] == 'Итого на окладе')
+        assert salary_total[4] == 6000000 and salary_total[7] == 3500000 and salary_total[8] == 2500000

@@ -46,7 +46,7 @@
       <section class="pr-cards" aria-label="Итоги месяца">
         <article class="pr-card"><div class="pr-card-label">Фонд окладов</div><div class="pr-card-value rm-num" id="kpi-fund">—</div></article>
         <article class="pr-card"><div class="pr-card-label">Оклады выплачены</div><div class="pr-card-value rm-num" id="kpi-mpaid">—</div></article>
-        <article class="pr-card"><div class="pr-card-label">Осталось по окладам</div><div class="pr-card-value rm-num" id="kpi-mrest">—</div></article>
+        <article class="pr-card"><div class="pr-card-label">Осталось по окладам</div><div class="pr-card-value rm-num" id="kpi-mrest">—</div><div class="pr-card-sub rm-num" id="kpi-mover" hidden></div></article>
         <article class="pr-card"><div class="pr-card-label">Сменным выдано</div><div class="pr-card-value rm-num" id="kpi-spaid">—</div></article>
         <button type="button" class="pr-card pr-card--issues" id="kpi-issues-card"><div class="pr-card-label">Ошибки и пропуски</div><div class="pr-card-value rm-num" id="kpi-issues">—</div></button>
       </section>
@@ -63,7 +63,7 @@
             <span><i class="pr-hik">⊘ Hik</i>нет в Hikvision, отмечается вручную</span>
             <span id="legend-blocked" hidden><i class="pr-key is-blocked">…</i>ждёт начисления</span>
           </div>
-          <span class="pr-hint">Нажмите на номер дня, чтобы открыть его в «Финансах дня»</span>
+          <span class="pr-hint">Ячейка «к выдаче» или ✕ — выдать, ✓ — отменить выдачу. Номер дня открывает его в «Финансах дня»</span>
         </div>
         <div class="pr-scroll" id="sheet-scroll">
           <div class="pr-grid" id="sheet-grid"></div>

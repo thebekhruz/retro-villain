@@ -457,7 +457,10 @@ body.fd-page{background:#f6f7f2}
 
 .fd-grid{display:grid;grid-template-columns:minmax(0,1fr) 310px;gap:20px;align-items:start}
 .fd-main{display:grid;gap:20px;min-width:0}
-.fd-rail{position:sticky;top:20px;display:grid;gap:14px;min-width:0}
+/* Колонка выше экрана: без своей прокрутки нижние карточки (резервы,
+   дивиденды) были недостижимы, пока не долистаешь страницу до конца. */
+.fd-rail{position:sticky;top:20px;display:grid;gap:14px;min-width:0;max-height:calc(100vh - 40px);overflow-y:auto;
+  overscroll-behavior:contain;scrollbar-width:thin;padding:3px;margin:-3px}
 
 /* секции */
 .fd-sec{background:#fff;border:1px solid #e3e7df;border-radius:18px;overflow:hidden;min-width:0}
@@ -581,7 +584,7 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-jr-new select,.fd-mo-form select{padding:0 8px}
 .fd :is(.fd-jr-new,.fd-mo-form,.fd-sh-give) :is(input,select):focus{border-color:#8fae98;box-shadow:0 0 0 3px #23574a1f}
 .fd-jr-new input.num{text-align:right}
-.fd-jr-new input.is-bad,.fd-mo-form input.is-bad{border-color:#e9a0af}
+.fd-jr-new input.is-bad,.fd-mo-form input.is-bad,.fd-pay-input.is-bad,.fd-cash-confirm input.is-bad{border-color:#e9a0af}
 .fd-jr-new input:disabled{background:#f3f5f0}
 .fd-jr-newdebt{font-size:12px;color:#a96039}
 .fd-plus{width:30px;height:30px;border:0;border-radius:8px;background:#143e35;color:#d8b977;font-size:18px;line-height:1;padding:0;position:relative}
@@ -670,6 +673,18 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-cash-line b{color:#fff;font-size:12px;font-weight:550;font-variant-numeric:tabular-nums;white-space:nowrap}
 .fd-cash-set{position:relative;margin-top:6px;border:0;background:none;padding:6px 0;color:#d8b977;font-size:11px;font-weight:600}
 .fd-cash.is-focus,.fd-dv.is-focus{box-shadow:0 0 0 3px #d2af59}
+/* «Получено от кассира» — подтверждение суммы прямо в тёмной карточке. */
+.fd-cash-confirm{position:relative;margin-top:12px;padding-top:12px;border-top:1px solid #ffffff20}
+.fd-cash-confirm label{display:block;font-size:11px;color:#d8b977;font-weight:600;margin-bottom:6px}
+.fd-cash-confirm-row{display:flex;gap:8px}
+.fd-cash-confirm input{flex:1;min-width:0;height:36px;border-radius:9px;border:1px solid #ffffff40;background:#0f3029;color:#fff;padding:0 10px;font:inherit;font-size:13px;font-variant-numeric:tabular-nums}
+.fd-cash-confirm button{height:36px;border:0;border-radius:9px;background:#d8b977;color:#143e35;font-weight:650;font-size:12px;padding:0 12px;cursor:pointer}
+.fd-cash-confirm button:disabled{opacity:.5;cursor:default}
+.fd-cash-confirm-note{margin:6px 0 0;font-size:10.5px;color:#b9cbbd}
+.fd-cash-confirmed{position:relative;margin:10px 0 0;font-size:11px;color:#b9e0c6;display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.fd-cash-confirmed.is-short{color:#f2b1b4}
+.fd-cash-confirmed .fd-link-btn{color:#d8b977;background:none;border:0;padding:0;font-size:11px;text-decoration:underline;cursor:pointer}
+.fd-mo-form.is-focus{box-shadow:0 0 0 3px #d2af59;border-radius:12px}
 .fd-card{background:#fff;border:1px solid #e3e7df;border-radius:18px;padding:20px;min-width:0}
 .fd-checks-head{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
 .fd-checks-head .fd-kicker{margin:0}

@@ -55,7 +55,9 @@
   function errorBubble(message,question){
     const article=document.createElement('article');article.className='ai-chat-message is-assistant is-error';article.setAttribute('role','alert');
     const label=document.createElement('span');label.textContent='Помощник';
-    const body=document.createElement('p');const text=document.createElement('span');text.className='ai-chat-error-text';text.textContent=message;body.append(text);
+    // Функционал, раздел AI: при ошибке — «Не удалось связаться с AI. Попробуйте ещё раз.», причина — мелко ниже.
+    const body=document.createElement('p');const text=document.createElement('span');text.className='ai-chat-error-text';text.textContent='Не удалось связаться с AI. Попробуйте ещё раз.';body.append(text);
+    if(message){const detail=document.createElement('small');detail.className='ai-chat-error-detail';detail.textContent=message;body.append(detail)}
     if(question&&configured){const retry=document.createElement('button');retry.type='button';retry.className='ai-chat-retry';retry.textContent='Повторить';
       retry.addEventListener('click',()=>{article.remove();submit(question)});body.append(retry)}
     article.append(label,body);messages.append(article);empty.hidden=true;scrollBottom();
