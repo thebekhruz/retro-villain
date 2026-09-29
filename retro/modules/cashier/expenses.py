@@ -107,8 +107,8 @@ class ExpenseStore:
         if day > last:
             return
         present = {row[0] for row in connection.execute(
-            "SELECT day FROM cashier_expenses WHERE day >= ? AND day <= ? AND operation_key LIKE 'policy:%'",
-            (day.isoformat(), last.isoformat()))}
+            'SELECT day FROM cashier_expenses WHERE day >= ? AND day <= ? AND operation_key LIKE ?',
+            (day.isoformat(), last.isoformat(), 'policy:%'))}
         while day <= last:
             if day.isoformat() not in present:
                 connection.execute(

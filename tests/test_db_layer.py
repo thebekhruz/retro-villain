@@ -200,6 +200,47 @@ def test_transaction_block_commits_and_keeps_the_connection_open(tmp_path, label
 
 # ── История ставок без триггеров ────────────────────────────────────────────
 
+@pytest.mark.parametrize('label', ['sqlite', 'postgres'])
+def test_cashier_salary_policy_loads_without_duplicate_expenses(tmp_path, label):
+    """Авто-зарплата читается на обоих диалектах, включая LIKE с символом %."""
+    from datetime import date, timedelta
+    from uuid import uuid4
+    from retro.modules.cashier.expenses import ExpenseStore, seed_cashier_expense
+
+    schema = None
+    if label == 'postgres':
+        if not POSTGRES_URL:
+            pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
+        import psycopg
+        from psycopg import sql
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+        schema = 'probe_cashier_' + uuid4().hex
+        with psycopg.connect(POSTGRES_URL, autocommit=True) as connection:
+            connection.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+        parts = urlsplit(POSTGRES_URL)
+        query = dict(parse_qsl(parts.query))
+        query['options'] = f'-csearch_path={schema}'
+        database = Database(urlunsplit(parts._replace(query=urlencode(query))))
+    else:
+        database = Database(tmp_path / 'policy.sqlite3')
+    try:
+        first = date(2026, 9, 12)
+        second = first + timedelta(days=1)
+        seed_cashier_expense(database, first, first, 'Зарплата кассира', Decimal('350000'))
+        store = ExpenseStore(database)
+        store.add(second, 'Такси', '20000')
+        for _ in range(2):
+            rows = store.list(second)
+            assert len(rows) == 2
+            assert sum(item.amount for item in rows) == Decimal('370000')
+            assert sum(item.automatic for item in rows) == 1
+        assert store.total_between(first, second) == Decimal('720000')
+        assert len(ExpenseStore(database).list(second)) == 2
+    finally:
+        if schema:
+            with psycopg.connect(POSTGRES_URL, autocommit=True) as connection:
+                connection.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
 def roster_for(tmp_path, label):
     """Реестр на выбранном диалекте, с чистой схемой."""
     from retro.modules.accountant.roster import RosterStore
