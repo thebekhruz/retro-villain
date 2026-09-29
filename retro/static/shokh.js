@@ -1,12 +1,13 @@
 const $ = id => document.getElementById(id);
 const money = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
+const quantityText = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 3});
 const L = () => globalThis.ShokhLogic;
 
 // Сервер хранит историю. Незавершённая отправка сохраняет ключ и черновик
 // в этой вкладке, чтобы после перезагрузки продолжить ту же покупку.
 let state = {
   screen: 'home', step: 'point', tripId: null, tripStartedAt: null,
-  draft: {point: '', item: '', unit: 'кг', quantity: '', price: '', hasPhoto: false},
+  draft: {point: '', item: '', unit: 'кг', quantity: '', price: '', priceMode: 'unit', priceInput: '', hasPhoto: false},
   photoFile: null, usual: null, catalog: {points: [], units: ['кг'], items: []},
   home: null, timer: null, lastPocket: null, catalogReady: false, submitting: false, recovery: null, expectedPhoto: false
 };
@@ -44,7 +45,7 @@ async function api(path, options = {}) {
 }
 
 /* ── Главная ───────────────────────────────────────────────────────────── */
-const WEEKDAYS = ['', 'пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс'];
+const WEEKDAYS = ['', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'];
 
 function renderHome(data) {
   state.home = data;
@@ -56,6 +57,12 @@ function renderHome(data) {
   const unknown = data.pocket === null;
   $('home-pocket').textContent = unknown ? 'Не задан' : money.format(Number(data.pocket));
   $('home-pocket-note').textContent = unknown ? 'бухгалтер ещё не выдал подотчёт' : 'сум';
+  // Строка под суммой, как в макете: откуда деньги и сколько уже ушло.
+  const issued = data.accounting_balance == null ? null : Number(data.accounting_balance);
+  $('home-pocket-sub').textContent = [
+    issued === null ? '' : 'Подотчёт ' + money.format(issued),
+    'потрачено сегодня ' + money.format(Number(data.spent_today || 0)),
+  ].filter(Boolean).join(' · ');
 
   const share = L().reportedShare(data.pocket, data.pending);
   $('home-reported').textContent = share === null
@@ -70,17 +77,20 @@ function renderHome(data) {
   $('home-xp-bar').style.width = Math.round(level.progress * 100) + '%';
   $('home-xp-next').textContent = level.next_at === null
     ? 'Максимальный уровень'
-    : 'До следующего уровня ' + level.to_next + ' XP';
+    : 'ещё ' + level.to_next + ' XP до уровня ' + (level.level + 1);
 
   const week = $('home-week'); week.replaceChildren();
   data.week.forEach(day => {
     const box = node('div', 'shokh-day' + (day.active ? ' is-active' : '') + (day.today ? ' is-today' : ''));
-    box.append(node('span', 'shokh-day-mark', day.active ? '✓' : '·'),
+    // Как в макете: отмеченный день — галочка, остальные — число месяца.
+    const number = day.day ? String(Number(day.day.slice(8, 10))) : '·';
+    box.append(node('span', 'shokh-day-mark', day.active ? '✓' : number),
       node('small', '', WEEKDAYS[day.weekday]));
     week.append(box);
   });
   $('home-streak').textContent = data.streak + ' ' +
-    (data.streak === 1 ? 'день' : data.streak >= 2 && data.streak <= 4 ? 'дня' : 'дней');
+    (data.streak % 10 === 1 && data.streak % 100 !== 11 ? 'день'
+      : [2, 3, 4].includes(data.streak % 10) && ![12, 13, 14].includes(data.streak % 100) ? 'дня' : 'дней') + ' подряд';
 
   const quests = $('home-quests'); quests.replaceChildren();
   data.quests.forEach(quest => {
@@ -99,12 +109,30 @@ function renderHome(data) {
     quests.append(row);
   });
 
+  // Перечисления поставщикам за сегодня (поле transfers в ответе /home).
+  const transfers = Array.isArray(data.transfers) ? data.transfers : [];
+  $('home-transfers-card').hidden = !transfers.length;
+  $('home-transfers').replaceChildren(...transfers.map(row => {
+    // Поставщик, товар и точка — данные, переводчик их не трогает; «сум» — да.
+    const item = node('div', 'shokh-transfer');
+    // Пустой товар сервер отдаёт как «—»: в заголовке он лишний.
+    const title = node('span', '', [row.supplier, row.item].filter(value => value && value !== '—').join(' · '));
+    title.dataset.i18n = 'off';
+    const sub = node('small');
+    if (row.point) { const point = node('span', '', row.point); point.dataset.i18n = 'off'; sub.append(point); }
+    if (row.amount != null) sub.append((row.point ? ' · ' : '') + money.format(Number(row.amount)) + ' сум');
+    item.append(title, sub);
+    return item;
+  }));
+
   $('home-pending-card').hidden = Number(data.pending) <= 0;
   $('home-pending-note').textContent = 'На ' + money.format(Number(data.pending)) +
     ' сум — бухгалтер ещё не принял накладные. Эти деньги уже не на руках.';
 
-  $('home-spent').textContent = Number(data.spent_today) > 0
-    ? money.format(Number(data.spent_today)) + ' сум' : '';
+  // Как в макете: «Сегодня · 4 покупки»; сколько потрачено — в шапке.
+  const count = data.purchases.length;
+  $('home-purchases-title').textContent = count
+    ? 'Сегодня · ' + count + ' ' + purchasesWord(count) : 'Сегодня покупок нет';
   renderPurchases($('home-purchases'), data.purchases);
   $('cta-note').textContent = 'Уложитесь в ' + data.fast_trip_minutes + ' минут — +' +
     L().XP_FAST_TRIP + ' XP';
@@ -128,11 +156,18 @@ function renderPurchases(container, rows) {
     }
     const body = node('div', 'shokh-purchase-body');
     const title = node('div', 'shokh-purchase-title');
-    title.append(node('span', '', row.item));
+    const itemName = node('span', '', row.item);
+    itemName.dataset.i18n = 'off';  // название из iiko
+    title.append(itemName);
+    if (!row.has_photo) title.append(node('span', 'shokh-flag', 'нет фото'));
     if (row.price_above_usual) title.append(node('span', 'shokh-flag', 'дороже обычного'));
     if (row.accepted_at) title.append(node('span', 'shokh-ok', 'принято'));
-    body.append(title, node('div', 'shokh-note',
-      row.point + ' · ' + row.quantity + ' ' + row.unit + ' × ' + money.format(Number(row.price))));
+    // Как в макете: «10 кг · RETRO». Количество без хвостовых нулей
+    // («3.000» → «3»), точка закупа — данные, её не переводим.
+    const sub = node('div', 'shokh-note', quantityText.format(Number(row.quantity)) + ' ' + row.unit + ' · ');
+    const where = node('span', '', row.point); where.dataset.i18n = 'off';
+    sub.append(where);
+    body.append(title, sub);
     if (row.iiko && row.iiko.status !== 'legacy') {
       const synced = row.iiko.status === 'synced';
       body.append(node('small', synced ? 'shokh-ok' : 'shokh-warning', synced
@@ -170,7 +205,7 @@ async function loadHome() {
 }
 
 /* ── Флоу ──────────────────────────────────────────────────────────────── */
-const STEP_NAMES = {point: 'Точка', item: 'Товар', amount: 'Количество и цена', confirm: 'Проверка'};
+const STEP_NAMES = {point: 'Точка', item: 'Товар', amount: 'Сколько', confirm: 'Проверка'};
 
 function renderSegments() {
   const box = $('flow-segments'); box.replaceChildren();
@@ -209,18 +244,35 @@ function renderStep() {
   if (step === 'confirm') renderConfirm();
 }
 
+function purchasesWord(count) {
+  if (count % 10 === 1 && count % 100 !== 11) return 'покупка';
+  if ([2, 3, 4].includes(count % 10) && ![12, 13, 14].includes(count % 100)) return 'покупки';
+  return 'покупок';
+}
+
 function renderPoints() {
   const box = $('point-list'); box.replaceChildren();
+  const today = (state.home && state.home.purchases) || [];
   state.catalog.points.forEach(point => {
     const button = node('button', 'shokh-point' + (state.draft.point === point ? ' is-active' : ''));
     button.type = 'button';
-    button.append(node('span', 'shokh-point-mark', point.slice(0, 2).toUpperCase()),
-      node('span', 'shokh-point-name', point));
+    button.setAttribute('aria-pressed', String(state.draft.point === point));
+    // Под названием — сколько раз здесь уже покупали сегодня, как в макете.
+    const count = today.filter(row => row.point === point).length;
+    const name = node('span', 'shokh-point-name');
+    const pointName = node('span', '', point);
+    pointName.dataset.i18n = 'off';  // точка — данные, не перевод
+    name.append(pointName);
+    name.append(node('small', '', count ? 'сегодня: ' + count + ' ' + purchasesWord(count) : 'сегодня не были'));
+    button.append(node('span', 'shokh-point-mark', point.slice(0, 2).toUpperCase()), name);
     button.addEventListener('click', () => {
       state.draft.point = point;
       $('point-other').value = '';
-      // Точку выбрали — сразу к товару, как в макете.
+      renderPoints();
       $('flow-next').disabled = !ready('point');
+      // Точку выбрали — сразу к товару, как в макете; но только когда
+      // поставщик и склад iiko уже выбраны, иначе накладную не провести.
+      if (ready('point')) { state.step = L().nextStep('point'); renderStep(); }
     });
     box.append(button);
   });
@@ -234,8 +286,13 @@ function renderItems() {
   matches.slice(0, 10).forEach(row => {
     const button = node('button', 'shokh-item' + (state.draft.item === row.item ? ' is-active' : ''));
     button.type = 'button';
-    button.append(node('span', 'shokh-item-name', row.item),
-      node('small', '', 'Арт. ' + row.code + ' · ' + row.unit));
+    // Как в макете: под названием — обычная цена, если она уже есть в истории.
+    const itemName = node('span', 'shokh-item-name', row.item);
+    itemName.dataset.i18n = 'off';
+    button.append(itemName,
+      node('small', '', row.usual_price != null
+        ? 'обычно ' + money.format(Number(row.usual_price)) + ' / ' + row.unit
+        : 'Арт. ' + row.code + ' · ' + row.unit));
     button.addEventListener('click', () => {
       state.draft.item = row.item;
       state.draft.productId = row.id;
@@ -253,7 +310,9 @@ function renderItems() {
   $('item-add-custom').hidden = true;
   $('item-add-custom').textContent = custom ? 'Добавить «' + custom + '»' : '';
   $('item-chosen').hidden = !state.draft.item;
-  $('item-chosen').textContent = 'Выбрано: ' + state.draft.item;
+  const chosen = node('span', '', state.draft.item);
+  chosen.dataset.i18n = 'off';
+  $('item-chosen').replaceChildren('Выбрано: ', chosen);
 }
 
 async function chooseItem() {
@@ -269,31 +328,75 @@ async function chooseItem() {
 
 function renderUnits() {
   const box = $('unit-switch'); box.replaceChildren();
-  [state.draft.unit].forEach(unit => {
-    const button = node('button', 'shokh-switch-btn' + (state.draft.unit === unit ? ' is-on' : ''), unit);
-    button.type = 'button';
-    button.addEventListener('click', () => { state.draft.unit = unit; renderUnits(); renderAmount(); });
-    box.append(button);
-  });
+  // Единица приходит из карточки товара iiko и одна — это подпись, а не
+  // переключатель, по ней нечего нажимать.
+  box.append(node('span', 'shokh-switch-btn is-on', state.draft.unit));
+  // Одной строкой: в узбекском порядок слов другой («1 kg uchun»).
+  $('price-mode-unit').textContent = 'за 1 ' + state.draft.unit;
   const quick = $('qty-quick'); quick.replaceChildren();
+  // Быстрые кнопки прибавляют, как «+1 кг / +5 кг / +10 кг» в макете.
   [1, 5, 10].forEach(value => {
-    const button = node('button', 'shokh-quick-btn', String(value));
+    const button = node('button', 'shokh-quick-btn', '+' + value + ' ' + state.draft.unit);
     button.type = 'button';
-    button.addEventListener('click', () => { state.draft.quantity = String(value); $('qty-input').value = String(value); renderAmount(); });
+    button.addEventListener('click', () => {
+      const next = (L().number(state.draft.quantity) || 0) + value;
+      state.draft.quantity = String(Math.round(next * 1000) / 1000);
+      $('qty-input').value = state.draft.quantity; renderAmount();
+    });
     quick.append(button);
   });
 }
 
+/* Цена, которая уйдёт на сервер. «За 1 кг» — то, что ввели. «За всё» —
+   цена за единицу из введённой суммы, подобранная так, чтобы итог сервера
+   (и накладной iiko) совпал с суммой, а если ровно нельзя — был ближайшим. */
+function applyPrice() {
+  const draft = state.draft;
+  const typed = String(draft.priceInput || '').replace(/[\s\u00a0\u202f]/g, '');
+  state.priceFit = null;
+  if (draft.priceMode === 'total') {
+    state.priceFit = typed ? L().priceFromTotal(draft.quantity, typed) : null;
+    draft.price = state.priceFit ? state.priceFit.price : '';
+  } else {
+    draft.price = typed;
+  }
+}
+
+function renderPriceMode() {
+  $('price-mode').querySelectorAll('[data-mode]').forEach(button => {
+    const on = button.dataset.mode === state.draft.priceMode;
+    button.classList.toggle('is-on', on);
+    button.setAttribute('aria-pressed', String(on));
+  });
+  $('price-input').setAttribute('aria-label', state.draft.priceMode === 'total' ? 'Сумма за всё' : 'Цена за единицу');
+}
+
 function renderAmount() {
   const draft = state.draft;
+  applyPrice();
+  renderPriceMode();
   const total = L().total(draft);
   $('amount-total').textContent = total === null ? '0' : money.format(total);
   $('amount-formula').textContent = (draft.quantity || '0') + ' ' + draft.unit +
     ' × ' + (draft.price ? money.format(Number(draft.price)) : '0') + ' сум';
-  $('usual-price').textContent = state.usual == null ? '' : 'обычно ' + money.format(Number(state.usual));
+  // «За всё»: показываем цену за единицу, а если сумма не делится ровно —
+  // честно говорим, какой итог уйдёт в накладную.
+  const fit = state.priceFit, derived = $('price-derived');
+  derived.hidden = !fit;
+  derived.classList.toggle('is-adjusted', !!fit && !fit.exact);
+  if (fit) {
+    derived.textContent = fit.exact
+      ? 'Цена за 1 ' + draft.unit + ': ' + money.format(Number(fit.price)) + ' сум'
+      : 'Ровно ' + money.format(fit.entered) + ' сум на ' + draft.quantity + ' ' + draft.unit +
+        ' не делится — в накладную уйдёт ' + money.format(fit.total) + ' сум (' +
+        money.format(Number(fit.price)) + ' за 1 ' + draft.unit + ')';
+  }
+  const problem = L().amountProblem(draft);
   const hint = L().priceHint(draft, state.usual);
-  $('price-hint').textContent = hint.text;
-  $('price-hint').className = 'shokh-price-hint is-' + hint.kind;
+  const text = problem || (hint.kind === 'empty' && state.usual != null
+    ? 'Обычно ' + money.format(Number(state.usual)) + ' сум за ' + draft.unit : hint.text);
+  $('price-hint').textContent = text;
+  $('price-hint').className = 'shokh-price-hint is-' + (problem ? 'error' : hint.kind);
   $('flow-next').disabled = !L().stepReady('amount', draft);
 }
 
@@ -314,10 +417,15 @@ function renderConfirm() {
   preview.parts.forEach(part => row.append(node('span', 'shokh-xp-tag', part.label + ' +' + part.xp)));
 
   const warnings = [];
+  if (state.priceFit && !state.priceFit.exact) warnings.push('Введено ' + money.format(state.priceFit.entered) +
+    ' сум, но ровно на ' + draft.quantity + ' ' + draft.unit + ' не делится: в накладную уйдёт ' +
+    money.format(state.priceFit.total) + ' сум.');
   if (!draft.hasPhoto) warnings.push('Без фото: бухгалтер отметит покупку как непроверенную.');
   if (L().priceHint(draft, state.usual).kind === 'above') warnings.push('Цена выше обычной — бухгалтер проверит.');
   if (after !== null && after < 0) warnings.push('Записали больше, чем выдано под отчёт.');
-  $('confirm-warning').textContent = warnings.join(' ');
+  // Каждое предупреждение — своей строкой: так их видно по отдельности и
+  // переводчик узнаёт каждое целиком.
+  $('confirm-warning').replaceChildren(...warnings.map(text => node('span', '', text)));
 
   const photo = $('confirm-photo');
   photo.hidden = !state.photoFile;
@@ -326,9 +434,9 @@ function renderConfirm() {
 
 function resetDraft() {
   state.draft = {point: state.draft.point, item: '', unit: state.draft.unit,
-    quantity: '', price: '', hasPhoto: false, productId: null, unitId: null,
+    quantity: '', price: '', priceMode: 'unit', priceInput: '', hasPhoto: false, productId: null, unitId: null,
     supplierId: state.draft.supplierId, storageId: state.draft.storageId, operationId: crypto.randomUUID()};
-  state.photoFile = null; state.usual = null;
+  state.photoFile = null; state.usual = null; state.priceFit = null;
   $('qty-input').value = ''; $('price-input').value = '';
   $('item-search').value = '';
   $('photo-empty').hidden = false; $('photo-filled').hidden = true;
@@ -357,12 +465,15 @@ async function beginTrip() {
 }
 
 async function submitPurchase() {
+  applyPrice();
   if (state.submitting || !ready('point') || !ready('item') || !ready('amount')) return;
   state.submitting = true;
   const draft = state.draft;
   const form = new FormData();
   form.append('point', draft.point); form.append('item', draft.item);
-  form.append('unit', draft.unit); form.append('quantity', draft.quantity);
+  // Сервер не понимает пробелов-разделителей в числе — отправляем чистое.
+  form.append('unit', draft.unit);
+  form.append('quantity', String(draft.quantity).replace(/[\s\u00a0\u202f]/g, '').replace(',', '.'));
   form.append('price', draft.price);
   form.append('operation_id', draft.operationId);
   form.append('product_id', draft.productId); form.append('supplier_id', draft.supplierId);
@@ -379,8 +490,11 @@ async function submitPurchase() {
     sessionStorage.removeItem('shokh-pending-draft');
     state.expectedPhoto = false;
     const before = state.lastPocket;
+    $('done-more').textContent = '+ Ещё товар' + (draft.point ? ' · ' + draft.point : '');
     state.lastPocket = result.pocket;
-    $('done-item').textContent = result.purchase.item + ' · ' + money.format(Number(result.purchase.total)) + ' сум';
+    const doneName = node('span', '', result.purchase.item);
+    doneName.dataset.i18n = 'off';
+    $('done-item').replaceChildren(doneName, ' · ' + money.format(Number(result.purchase.total)) + ' сум');
     $('done-xp').textContent = '+' + result.xp.total + ' XP';
     const parts = $('done-parts'); parts.replaceChildren();
     result.xp.parts.forEach(part => parts.append(node('span', 'shokh-xp-tag', part.label + ' +' + part.xp)));
@@ -469,7 +583,15 @@ $('photo-input').addEventListener('change', event => {
   $('flow-next').disabled = !ready(state.step);
 });
 $('qty-input').addEventListener('input', event => { state.draft.quantity = event.target.value; renderAmount(); });
-$('price-input').addEventListener('input', event => { state.draft.price = event.target.value; renderAmount(); });
+$('price-input').addEventListener('input', event => { state.draft.priceInput = event.target.value; renderAmount(); });
+// Переключатель оставляет введённое число и читает его по-новому, как в
+// макете: ошиблись режимом — нажали другой, перепечатывать не нужно.
+$('price-mode').addEventListener('click', event => {
+  const button = event.target.closest('[data-mode]');
+  if (!button || button.dataset.mode === state.draft.priceMode) return;
+  state.draft.priceMode = button.dataset.mode;
+  renderAmount();
+});
 $('qty-minus').addEventListener('click', () => {
   const current = L().number(state.draft.quantity) || 0;
   const next = Math.max(0, Math.round((current - 1) * 1000) / 1000);
@@ -494,7 +616,8 @@ function renderSelectors() {
                                 ['iiko-storage', state.catalog.storages, 'storageId']]) {
     const select = $(id); select.replaceChildren();
     const empty = node('option', '', 'Выберите из iiko'); empty.value = ''; select.append(empty);
-    rows.forEach(row => { const option = node('option', '', row.name); option.value = row.id; select.append(option); });
+    // Названия поставщиков и складов — данные iiko, их не переводим.
+    rows.forEach(row => { const option = node('option', '', row.name); option.value = row.id; option.dataset.i18n = 'off'; select.append(option); });
     select.value = state.draft[key] || '';
   }
 }
@@ -549,7 +672,10 @@ async function reloadData() {
     state.draft.hasPhoto = false; state.photoFile = null;
     state.step = 'item';
     $('qty-input').value = state.draft.quantity;
-    $('price-input').value = state.draft.price;
+    // Черновик до переключателя «за всё» хранил только цену за единицу.
+    if (!state.draft.priceMode) state.draft.priceMode = 'unit';
+    if (state.draft.priceInput == null) state.draft.priceInput = state.draft.price || '';
+    $('price-input').value = state.draft.priceInput;
     renderSelectors(); renderPoints(); renderStep(); show('flow'); startTimer();
     if (state.expectedPhoto) message('Прикрепите прежнее фото и повторите сохранение этой покупки.', true);
   }

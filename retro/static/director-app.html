@@ -28,6 +28,9 @@
       <span class="rm-phone-mark" aria-hidden="true">R</span>
       <div class="dir-hello"><span id="today-label">Сегодня</span><strong id="screen-title">Салом, директор</strong></div>
       <div class="dir-head-actions">
+        <!-- На телефоне меню модулей скрыто. Тем, кому открыт ещё какой-то
+             модуль (администратор), нужна дорога назад — как у Шоха. -->
+        <a id="dir-back" class="logout-button dir-logout dir-back" href="/login" hidden>‹ Панель</a>
         <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
         <button id="logout" class="logout-button dir-logout" type="button">Выйти</button>
       </div>

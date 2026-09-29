@@ -280,7 +280,8 @@
     if (filter === 'shift') return row.type === 'shift';
     if (filter === 'monthly') return row.type === 'monthly';
     if (filter === 'late') return row.status === 'late';
-    if (filter === 'missing') return row.status === 'missing';
+    // «Не пришли» — как счётчик сервера: и по турникету, и отмеченные вручную.
+    if (filter === 'missing') return row.status === 'missing' || row.status === 'manual_absent';
     if (filter === 'nohik') return row.noHik;
     return true;
   }

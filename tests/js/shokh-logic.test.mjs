@@ -80,3 +80,41 @@ test('доля отчитанных денег считается от всег�
   assert.equal(logic.reportedShare('900000', '0'), 0);
   assert.equal(logic.reportedShare(null, '0'), null);
 });
+
+/* «За всё»: сумму покупки переводим в цену за единицу так, как её примет
+   сервер (цена до тийина, итог = количество × цена с округлением половиной
+   вверх), чтобы экран и накладная iiko не расходились. */
+test('цена «за всё» даёт ровно введённую сумму, когда это возможно', () => {
+  assert.deepEqual(logic.priceFromTotal('10', '120000'),
+    {price: '12000', total: 120000, entered: 120000, exact: true});
+  // Из всех цен с тем же итогом берём честное частное, а не «3 999,98».
+  assert.equal(logic.priceFromTotal('0,25', '1000').price, '4000');
+  assert.equal(logic.priceFromTotal('2.5', '12 500').price, '5000');
+  assert.equal(logic.priceFromTotal('1,5', '4999,5').price, '3333');
+  // Меньше единицы: 0,007 кг за 1 сум — цена с тийинами, итог тот же.
+  const tiny = logic.priceFromTotal('0.007', '1');
+  assert.equal(tiny.exact, true);
+  assert.equal(logic.total({quantity: '0.007', price: tiny.price}), 1);
+});
+
+test('если ровно не делится — показываем итог, который уйдёт в накладную', () => {
+  const fit = logic.priceFromTotal('3', '100000');
+  assert.deepEqual(fit, {price: '33333.33', total: 99999.99, entered: 100000, exact: false});
+  // Итог совпадает с тем, что посчитает сервер по отправленной цене.
+  assert.equal(logic.total({quantity: '3', price: fit.price}), fit.total);
+  assert.equal(logic.priceFromTotal('7.5', '100000').total, 99999.98);
+  // Ближайший итог, даже если он больше введённого.
+  assert.equal(logic.priceFromTotal('1000', '999999999').total, 1000000000);
+});
+
+test('больше знаков, чем примет сервер, — не считаем и объясняем', () => {
+  assert.equal(logic.priceFromTotal('1.2345', '100'), null);
+  assert.equal(logic.priceFromTotal('3', '100.001'), null);
+  assert.equal(logic.amountProblem(draft({quantity: '1.2345'})), 'Количество — не больше трёх знаков после запятой');
+  assert.equal(logic.amountProblem(draft({price: '10.555'})), 'Цена — не больше двух знаков после запятой');
+  assert.equal(logic.amountProblem(draft({quantity: '1000', price: '2000000'})), 'Слишком большая сумма покупки');
+  assert.equal(logic.amountProblem(draft({price: '12 000'})), '');
+  assert.equal(logic.stepReady('amount', draft({quantity: '1.2345'})), false);
+  // Пробелы-разделители в цене не мешают: «12 000» — это 12000.
+  assert.equal(logic.total(draft({price: '12 000'})), 144000);
+});

@@ -40,6 +40,7 @@
         <span>На руках</span>
         <strong id="home-pocket" class="rm-num">—</strong>
         <small id="home-pocket-note">сум</small>
+        <p id="home-pocket-sub" class="shokh-balance-sub"></p>
       </div>
       <div class="shokh-progress">
         <span id="home-reported">Отчитались за — денег на руках</span>
@@ -48,10 +49,12 @@
     </header>
 
     <div class="shokh-body-scroll">
-      <article class="rm-phone-card">
-        <strong class="shokh-card-title">Связь с iiko</strong>
-        <p id="iiko-status" class="shokh-note" role="status">Загружаем справочники…</p>
-        <button id="reload-data" class="shokh-secondary" type="button">Обновить данные</button>
+      <!-- В макете этой карточки нет: без справочников iiko закуп не начать,
+           поэтому связь с iiko — одной строкой, а не отдельным блоком. -->
+      <article class="rm-phone-card shokh-iiko">
+        <div><strong class="shokh-card-title">Связь с iiko</strong>
+        <p id="iiko-status" class="shokh-note" role="status">Загружаем справочники…</p></div>
+        <button id="reload-data" class="shokh-secondary shokh-iiko-reload" type="button">Обновить данные</button>
       </article>
       <article class="rm-phone-card shokh-level">
         <div class="shokh-level-head"><strong id="home-level-title">—</strong><span id="home-xp">—</span></div>
@@ -68,13 +71,20 @@
         <div id="home-quests" class="shokh-quests"></div>
       </article>
 
+      <!-- Макет 3a: что бухгалтер сегодня оплатил поставщикам переводом —
+           Шох не должен платить за это наличными. Показываем только когда есть. -->
+      <article class="rm-phone-card shokh-transfers" id="home-transfers-card" hidden>
+        <strong class="shokh-transfers-title">Оплачено переводом — наличными не платить</strong>
+        <div id="home-transfers"></div>
+      </article>
+
       <article class="rm-phone-card" id="home-pending-card" hidden>
         <strong class="shokh-card-title">Ждёт проверки бухгалтера</strong>
         <p class="shokh-note" id="home-pending-note"></p>
       </article>
 
       <article class="rm-phone-card">
-        <strong class="shokh-card-title">Покупки за день <span id="home-spent" class="shokh-spent"></span></strong>
+        <strong id="home-purchases-title" class="shokh-card-title">Сегодня покупок нет</strong>
         <div id="home-purchases" class="shokh-purchases"></div>
       </article>
     </div>
@@ -115,7 +125,7 @@
 
       <!-- Шаг 2: товар и фото -->
       <div id="step-item" class="shokh-step" hidden>
-        <button id="item-back-point" class="shokh-chip" type="button"><span id="item-point-label">—</span> · сменить</button>
+        <button id="item-back-point" class="shokh-chip" type="button"><span id="item-point-label" data-i18n="off">—</span> · сменить</button>
         <h1>Что купили?</h1>
         <input id="item-search" type="search" maxlength="120" placeholder="Поиск: помидоры, лук, мясо…" class="shokh-search">
         <p id="item-chosen" class="shokh-chosen" hidden></p>
@@ -140,7 +150,7 @@
 
       <!-- Шаг 3: количество и цена -->
       <div id="step-amount" class="shokh-step" hidden>
-        <div class="shokh-step-top"><span id="amount-point">—</span><h1 id="amount-item">—</h1></div>
+        <div class="shokh-step-top"><span id="amount-point" data-i18n="off">—</span><h1 id="amount-item" data-i18n="off">—</h1></div>
         <article class="rm-phone-card">
           <div class="shokh-row-head"><span>Сколько</span><div id="unit-switch" class="shokh-switch"></div></div>
           <div class="shokh-stepper">
@@ -151,8 +161,14 @@
           <div id="qty-quick" class="shokh-quick"></div>
         </article>
         <article class="rm-phone-card">
-          <div class="shokh-row-head"><span>Цена за единицу, включая НДС</span><span id="usual-price" class="shokh-note"></span></div>
-          <div class="shokh-price"><input id="price-input" type="text" inputmode="numeric" placeholder="0" aria-label="Цена"><span>сум</span></div>
+          <!-- Как в макете: «Цена [за 1 кг | за всё]». «За всё» — вводят сумму
+               покупки, цену за единицу считает экран так, как её примет сервер. -->
+          <div class="shokh-row-head"><span>Цена <small class="shokh-vat">с НДС</small></span>
+            <div id="price-mode" class="shokh-switch shokh-mode" role="group" aria-label="Как ввести цену">
+              <button id="price-mode-unit" type="button" class="shokh-switch-btn is-on" data-mode="unit" aria-pressed="true">за 1 кг</button><button type="button" class="shokh-switch-btn" data-mode="total" aria-pressed="false">за всё</button>
+            </div></div>
+          <div class="shokh-price"><input id="price-input" type="text" inputmode="decimal" placeholder="0" aria-label="Цена" data-money-hint="off"><span>сум</span></div>
+          <p id="price-derived" class="shokh-price-derived" hidden></p>
           <p id="price-hint" class="shokh-price-hint"></p>
         </article>
         <article class="rm-phone-card is-dark">
@@ -166,9 +182,9 @@
         <h1>Всё верно?</h1>
         <article class="rm-phone-card shokh-summary">
           <img id="confirm-photo" alt="Фото покупки" hidden>
-          <div class="shokh-summary-row"><span>Точка</span><strong id="confirm-point">—</strong></div>
-          <div class="shokh-summary-row"><span>Поставщик / склад</span><strong id="confirm-iiko">—</strong></div>
-          <div class="shokh-summary-row"><span>Товар</span><strong id="confirm-item">—</strong></div>
+          <div class="shokh-summary-row"><span>Точка</span><strong id="confirm-point" data-i18n="off">—</strong></div>
+          <div class="shokh-summary-row"><span>Поставщик / склад</span><strong id="confirm-iiko" data-i18n="off">—</strong></div>
+          <div class="shokh-summary-row"><span>Товар</span><strong id="confirm-item" data-i18n="off">—</strong></div>
           <div class="shokh-summary-row"><span>Расчёт</span><strong id="confirm-formula">—</strong></div>
           <div class="shokh-summary-row is-total"><span>Итого</span><strong id="confirm-total" class="rm-num">—</strong></div>
         </article>

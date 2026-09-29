@@ -228,6 +228,8 @@
       setText('fo-evening', evening === null ? '—' : rough(evening));
     }
     const issues = logic.accountantIssues({days: [yesterday, today].filter(Boolean)}, null, globalThis.AccountantLogic.dayChecks);
+    state.phoneIssues = issues;
+    $('fo-phone-ask-checks').hidden = !issues.length;
     const line = $('fo-acc-line');
     line.textContent = issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') + ' к бухгалтеру' : 'Бухгалтер без замечаний';
     line.className = 'fo-acc-line ' + (issues.length ? 'is-bad' : 'is-ok');
@@ -273,7 +275,10 @@
       const line = node('div', 'fo-row' + (row.balance ? ' is-balance' : ''));
       line.setAttribute('role', 'row');
       line.append(node('span', '', row.label));
-      row.cells.forEach(cell => line.append(node('span', cell.tone ? 'is-' + cell.tone : '', cell.text)));
+      // Пустая клетка — прочерк, как в макете: видно, что данных ещё нет.
+      row.cells.forEach(cell => line.append(cell.text
+        ? node('span', cell.tone ? 'is-' + cell.tone : '', cell.text)
+        : node('span', 'is-none', '—')));
       line.append(node('span', '', row.total));
       table.append(line);
     });
@@ -305,14 +310,16 @@
     setText('fo-checks-title', issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') : 'Замечаний нет');
     const list = $('fo-checks');
     list.replaceChildren();
-    issues.slice(0, 7).forEach(item => {
+    // Компьютер: семь и «ещё N — спросите AI»; телефон: весь список, ничего не прячем.
+    const shown = desk.matches ? issues.slice(0, 7) : issues;
+    shown.forEach(item => {
       const row = node('div');
       const text = node('div');
       text.append(node('strong', '', item.text), node('small', '', item.sub));
       row.append(node('i', item.level === 'bad' ? 'is-bad' : ''), text);
       list.append(row);
     });
-    setText('fo-checks-more', issues.length > 7 ? 'Ещё ' + (issues.length - 7) + ' — спросите AI' : '');
+    setText('fo-checks-more', shown.length < issues.length ? 'Ещё ' + (issues.length - shown.length) + ' — спросите AI' : '');
     $('fo-ask-checks').hidden = !issues.length;
   }
 
@@ -413,6 +420,7 @@
       const line = node('div', 'fo-dish');
       const margin = row.margin === null ? '—' : Math.round(row.margin) + '%';
       const dish = node('strong', '', row.name);
+      dish.dataset.i18n = 'off';  // название из iiko, не переводим
       dish.dataset.i18n = 'off';  // название из iiko не переводим
       line.append(node('span', '', String(index + 1)), dish,
         node('span', '', Math.round(row.quantity) + ' шт'), node('b', '', short(row.revenue)),
@@ -429,7 +437,7 @@
     $(id).replaceChildren(node('p', 'fo-empty', error.message));
   }
 
-  function loadDesk() {
+  function mountChat() {
     if (!chat) {
       chat = globalThis.RetroChat.mount({
         messages: $('fo-chat-messages'), form: $('fo-chat-form'), input: $('fo-chat-input'),
@@ -437,6 +445,28 @@
       });
       chat.load();
     }
+    return chat;
+  }
+
+  /* Телефон: тот же чат, что справа на компьютере, открывается поверх
+     экрана и закрывается крестиком или «Esc». */
+  function openPhoneChat(question) {
+    mountChat();
+    document.body.classList.add('fo-chat-open');
+    if (question) chat.ask(question);
+    else $('fo-chat-input').focus({preventScroll: true});
+  }
+  function closePhoneChat() {
+    document.body.classList.remove('fo-chat-open');
+  }
+
+  function checksQuestion(issues) {
+    const lines = (issues || []).slice(0, 15).map(item => '— ' + item.text + ' (' + item.sub + ')').join('\n');
+    return 'Разбери замечания к бухгалтеру за неделю: что критично, что можно игнорировать?\n' + lines;
+  }
+
+  function loadDesk() {
+    mountChat();
     load('week', '/api/founder/week?date=' + state.today).then(week => {
       renderWeek(week);
       renderChecks();
@@ -448,16 +478,42 @@
   }
 
   function loadForLayout() {
-    if (desk.matches) loadDesk(); else loadPhone().catch(() => {});
+    // Телефон показывает 7a и под ним всю картину компьютера — данные нужны обе.
+    if (desk.matches) loadDesk(); else { loadPhone().catch(() => {}); if (!state.deskLoaded) loadDesk(); }
+    if (!desk.matches) state.deskLoaded = true;
+    renderChecks();
     renderEditor();
+  }
+
+  /* Телефон: разделы «Всей картины» раскрываются по заголовку. */
+  function setFold(id, open) {
+    const link = document.querySelector('.fo-fold[data-fold="' + id + '"]');
+    $(id).classList.toggle('fo-open', open);
+    if (link) link.setAttribute('aria-expanded', String(open));
   }
 
   function bind() {
     $('fo-div-toggle').addEventListener('click', toggleEditor);
     $('k-div-edit').addEventListener('click', toggleEditor);
-    $('fo-ask-checks').addEventListener('click', () => {
-      const lines = (state.issues || []).slice(0, 15).map(item => '— ' + item.text + ' (' + item.sub + ')').join('\n');
-      chat.ask('Разбери замечания к бухгалтеру за неделю: что критично, что можно игнорировать?\n' + lines);
+    $('fo-ask-checks').addEventListener('click', () => mountChat().ask(checksQuestion(state.issues)));
+    $('fo-phone-ask-checks').addEventListener('click', () => openPhoneChat(checksQuestion(state.phoneIssues)));
+    $('fo-phone-ai').addEventListener('click', () => openPhoneChat());
+    document.querySelectorAll('.fo-fold').forEach(link => link.addEventListener('click', event => {
+      event.preventDefault();
+      setFold(link.dataset.fold, link.getAttribute('aria-expanded') !== 'true');
+    }));
+    // «Все замечания» на 7a раскрывает полный список прямо на телефоне.
+    $('fo-acc-open').addEventListener('click', () => {
+      setFold('fo-acc', true);
+      document.querySelector('.fo-fold[data-fold="fo-acc"]').scrollIntoView({block: 'start', behavior: 'smooth'});
+    });
+    // Ссылка «Изменить сумму» в карточке недели на телефоне ведёт к редактору наверху.
+    $('k-div-edit').addEventListener('click', () => {
+      if (!desk.matches && state.editor.open) $('fo-div-editor-phone').scrollIntoView({block: 'center', behavior: 'smooth'});
+    });
+    $('fo-chat-close').addEventListener('click', closePhoneChat);
+    document.addEventListener('keydown', event => {
+      if (event.key === 'Escape' && document.body.classList.contains('fo-chat-open')) closePhoneChat();
     });
     document.querySelectorAll('.fo-subnav a[href^="#"]').forEach(link => link.addEventListener('click', () => {
       document.querySelectorAll('.fo-subnav a').forEach(other => other.classList.toggle('is-current', other === link));
@@ -470,6 +526,9 @@
     try {
       const config = await globalThis.RetroConfig;
       if (config && config.today) state.today = config.today;
+      // «‹ Панель» — только если учётной записи открыт не один учредитель.
+      $('fo-back').hidden = !(config && Array.isArray(config.modules)
+        && config.modules.some(module => module.path !== '/founder'));
     } catch (error) {
       setText('updated', error.message);
     }
@@ -479,6 +538,8 @@
     const month = state.today.slice(0, 7);
     $('fo-excel').href = '/api/founder/export/month?month=' + month;
     setText('fo-excel-label', 'Отчёт бухгалтера · ' + MONTHS[Number(month.slice(5, 7)) - 1]);
+    $('fo-phone-excel').href = $('fo-excel').href;
+    setText('fo-phone-excel-label', 'Отчёт бухгалтера · ' + MONTHS[Number(month.slice(5, 7)) - 1] + ' · Excel');
     bind();
     load('dividends', '/api/founder/dividends/weekly').then(renderDividends).catch(error => setText('fo-div-status', error.message));
     load('chef', '/api/founder/chef-account?date=' + state.today).then(renderChef).catch(error => renderChef({error: error.message}));

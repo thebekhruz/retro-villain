@@ -75,6 +75,9 @@
     });
     ['home', 'menu', 'ai', 'team'].forEach(name => { $('tab-' + name).hidden = name !== tab; });
     $('screen-title').textContent = TITLES[tab];
+    // Как в макете: приветствие — только на «Сегодня»; на других вкладках
+    // свой заголовок, а в шапке остаются язык и выход.
+    document.body.dataset.dirTab = tab;
     if (tab === 'menu') loadMenu();
     if (tab === 'team') { loadTeam(); loadReport(7); }
     if (tab === 'ai') chat.load();
@@ -199,7 +202,10 @@
     const meta = node('small');
     meta.append(document.createTextNode(short(row.revenue) + ' сум · '));
     meta.append(node('span', marginClass(row.margin), row.margin === null ? 'маржа —' : 'маржа ' + Math.round(row.margin) + '%'));
-    name.append(node('strong', '', row.name), meta);
+    // Название блюда — данные iiko: переводчик не трогает («Хлеб» → «Non»).
+    const dishName = node('strong', '', row.name);
+    dishName.dataset.i18n = 'off';
+    name.append(dishName, meta);
     const qty = node('span', 'dir-dish-qty');
     qty.append(node('strong', 'rm-num', money.format(Math.round(row.quantity)) + ' шт'));
     const change = logic.trend(row.name, view.slice === 'notb' ? 'all' : view.venue, view.reports[3], view.reports[30]);
@@ -244,7 +250,9 @@
       const card = node('article', 'rm-phone-card dir-found-card');
       const head = node('div', 'dir-found-head');
       const title = node('div');
-      title.append(node('strong', '', row.name), node('small', '', 'маржа ' + (row.margin === null ? '—' : Math.round(row.margin) + '%') + ' · ' + short(row.revenue) + ' сум'));
+      const foundName = node('strong', '', row.name);
+      foundName.dataset.i18n = 'off';
+      title.append(foundName, node('small', '', 'маржа ' + (row.margin === null ? '—' : Math.round(row.margin) + '%') + ' · ' + short(row.revenue) + ' сум'));
       head.append(title, node('b', 'rm-num', money.format(Math.round(row.quantity)) + ' шт'));
       const split = node('div', 'dir-split');
       [['retro', 'Retro'], ['oxbridge', 'Oxbridge'], ['banquet', 'Бехруз']].forEach(([group, label]) => {
@@ -280,7 +288,7 @@
 
   // ── Команда ──────────────────────────────────────────────────────────
   const STATUS = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Без Hikvision',
-    unavailable: 'Нет данных'};
+    unavailable: 'Нет данных', manual_present: 'Был · вручную', manual_absent: 'Не был · вручную'};
 
   function hm(iso) {
     if (!iso) return '';
@@ -339,13 +347,20 @@
         fill.style.width = Math.min(100, row.rate ? row.paid / row.rate * 100 : 0) + '%';
         progress.append(fill);
         const paid = node('span', 'dir-paid');
-        paid.append(node('span', '', 'выдано ' + short(row.paid)), node('span', row.rest > 0 ? 'is-rest' : '', row.rest > 0 ? 'осталось ' + short(row.rest) : 'выдано полностью'));
+        // «Выдано полностью» — только когда выдано не меньше оклада. Ручной
+        // реестр без месяца отдаёт остаток 0 при нуле выплат: это не «закрыт».
+        const settled = row.rest <= 0 && row.rate > 0 && row.paid >= row.rate;
+        const restText = row.rest > 0 ? 'осталось ' + short(row.rest) : settled ? 'выдано полностью' : 'остаток не сверен';
+        paid.append(node('span', '', 'выдано ' + short(row.paid)), node('span', row.rest > 0 || !settled ? 'is-rest' : '', restText));
         main.append(progress, paid);
       }
       let pill = STATUS[row.status] || 'Оклад';
       if (row.status === 'late' || row.status === 'on_time') pill += ' ' + hm(row.firstEntry);
-      if (row.manual) pill = 'Вручную';
-      const status = node('span', 'dir-pill ' + (row.manual ? 'manual' : row.status), pill);
+      // Сервер уже говорит «был / не был · вручную» — это точнее, чем просто
+      // «Вручную»; общая плашка остаётся для старых ответов без статуса.
+      const manualKnown = row.status === 'manual_present' || row.status === 'manual_absent';
+      if (row.manual && !manualKnown) pill = 'Вручную';
+      const status = node('span', 'dir-pill ' + (row.manual && !manualKnown ? 'manual' : row.status), pill);
       button.append(main, status, node('span', 'dir-chevron', '›'));
       button.addEventListener('click', () => openEditor(row));
       list.append(button);
@@ -361,11 +376,17 @@
     rows.forEach((row, index) => {
       const item = node('div');
       const line = node('div', 'dir-waiter-line');
-      line.append(node('span', '', String(index + 1)), node('strong', '', row.name), node('b', 'rm-num', short(row.revenue)));
+      // Первый и последний в рейтинге подписаны и окрашены, как в макете.
+      const top = index === 0 && rows.length > 1, low = index === rows.length - 1 && rows.length > 1;
+      const who = node('span', 'dir-waiter-name');
+      who.append(node('strong', '', row.name));
+      if (top) who.append(node('span', 'dir-waiter-tag is-top', 'больше всех'));
+      if (low) who.append(node('span', 'dir-waiter-tag is-low', 'меньше всех'));
+      line.append(node('span', '', String(index + 1)), who, node('b', 'rm-num', short(row.revenue)));
       const bar = node('div', 'rm-bar');
       const fill = node('span');
       fill.style.width = Math.max(4, row.revenue / max * 100) + '%';
-      if (logic.lowMargin(row)) fill.style.background = '#c9a15a';
+      fill.style.background = top ? '#d8b977' : low ? '#e9a0af' : '#24594b';
       bar.append(fill);
       item.append(line, bar, node('small', '', 'маржа ' + (row.margin === null ? '—' : Math.round(row.margin) + '%') + ' · ' + money.format(Math.round(row.quantity)) + ' позиций'));
       target.append(item);
@@ -509,6 +530,9 @@
     try {
       const config = await globalThis.RetroConfig;
       if (config && config.today) view.today = config.today;
+      // «‹ Панель» — только если учётной записи открыт не один директор.
+      $('dir-back').hidden = !(config && Array.isArray(config.modules)
+        && config.modules.some(module => module.path !== '/director'));
     } catch (error) {
       say(error.message, true);
     }
