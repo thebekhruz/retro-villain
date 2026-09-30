@@ -110,6 +110,82 @@ def required_text(value: str, label: str) -> str:
     return text
 
 
+class CashBook:
+    """Всё, из чего складывается остаток бухгалтера, прочитанное один раз.
+
+    Строки берутся по `through` включительно, а `position(day)` отбирает из
+    них нужные дню так же, как раньше это делали запросы с `day <= ?`.
+    Остаток за любой день до `through` поэтому считается без базы: месячная
+    ведомость читает её пять раз, а не по девять раз на каждый день.
+    """
+
+    CASH_KINDS = ('other_expense', 'procurement_advance', 'other_receipt')
+
+    def __init__(self, connection, through: date):
+        last = through.isoformat()
+        self.handovers = connection.execute('SELECT day, amount FROM accountant_handover_days '
+                                            'WHERE day <= ? ORDER BY day', (last,)).fetchall()
+        self.anchor = connection.execute('SELECT day,amount FROM accountant_cash_opening WHERE id=1').fetchone()
+        self.movements = connection.execute(
+            "SELECT day, kind, amount FROM accountant_movements WHERE day <= ? "
+            "AND kind IN ('other_expense','procurement_advance','other_receipt')", (last,)).fetchall()
+        self.salaries = connection.execute(
+            'SELECT paid_day, amount FROM accountant_salary_payments WHERE paid_day <= ?', (last,)).fetchall()
+        self.transfers = connection.execute(
+            "SELECT day, amount FROM accountant_reserves WHERE kind='transfer' AND day <= ?", (last,)).fetchall()
+        self.through = last
+
+    def position(self, day: date, start_day: date | None = None, *, current_amount=None,
+                 tolerate_gaps: bool = False):
+        today = day.isoformat()
+        if today > self.through:
+            raise ValueError('CashBook прочитана только по ' + self.through)
+        rows = [row for row in self.handovers if row[0] <= today]
+        if current_amount is not None:
+            rows = sorted([row for row in rows if row[0] != today] + [(today, str(current_amount))])
+        if start_day is not None:
+            rows = [row for row in rows if row[0] >= start_day.isoformat()]
+        anchor = self.anchor
+        if anchor and today >= anchor[0]:
+            rows = [row for row in rows if row[0] >= anchor[0]]
+        if not rows:
+            return None, None, today, None
+        first = date.fromisoformat(anchor[0] if anchor and today >= anchor[0] else rows[0][0])
+        expected = first
+        for recorded, _ in rows:
+            if date.fromisoformat(recorded) != expected and not tolerate_gaps:
+                return None, None, expected.isoformat(), first.isoformat()
+            expected = date.fromordinal(date.fromisoformat(recorded).toordinal() + 1)
+        if expected < day and not tolerate_gaps:
+            return None, None, expected.isoformat(), first.isoformat()
+        start = first.isoformat()
+        opening = Decimal(anchor[1]) if anchor and start == anchor[0] else Decimal(0)
+        opening += sum((Decimal(value) for recorded, value in rows if recorded < today), Decimal(0))
+        for cutoff, kind, amount in self.movements:
+            if start <= cutoff < today:
+                opening += Decimal(amount) if kind == 'other_receipt' else -Decimal(amount)
+        for cutoff, amount in self.salaries:
+            if start <= cutoff < today:
+                opening -= Decimal(amount)
+        for cutoff, amount in self.transfers:
+            if start <= cutoff < today:
+                opening -= Decimal(amount)
+        if rows[-1][0] != today:
+            return opening, None, today, start
+        receipts = sum((Decimal(amount) for cutoff, kind, amount in self.movements
+                        if cutoff == today and kind == 'other_receipt'), Decimal(0))
+        return (opening, opening + Decimal(rows[-1][1]) + receipts - self.outflows(day), None, start)
+
+    def outflows(self, day: date) -> Decimal:
+        """То же, что FinanceStore._daily_outflows, но из прочитанных строк."""
+        today = day.isoformat()
+        spent = sum((Decimal(amount) for cutoff, kind, amount in self.movements
+                     if cutoff == today and kind in ('other_expense', 'procurement_advance')), Decimal(0))
+        salaries = sum((Decimal(amount) for cutoff, amount in self.salaries if cutoff == today), Decimal(0))
+        transfers = sum((Decimal(amount) for cutoff, amount in self.transfers if cutoff == today), Decimal(0))
+        return spent + salaries + transfers
+
+
 class FinanceStore:
     def __init__(self, path: Path, *, allow_negative_cash: bool = False):
         self.db = as_database(path)
@@ -245,6 +321,12 @@ class FinanceStore:
     def reserves(self, day: date):
         from .reserves import reserve_summary
         return reserve_summary(self, day)
+
+    def reserve_entries(self, account: str) -> list[dict]:
+        """Все записи одного резерва за всё время, одним чтением."""
+        from .reserves import _entries
+        with closing(self._open()) as connection:
+            return _entries(connection, account)
 
     def expense_totals_between(self, start: date, end: date):
         """Paid expenses recorded by accounting, excluding moves of our own cash.
@@ -625,51 +707,8 @@ class FinanceStore:
         дыра в цепочке обязана останавливать операцию: перенесённый через неё
         остаток был бы выдумкой, а не деньгами.
         """
-        rows = connection.execute('SELECT day, amount FROM accountant_handover_days '
-                                  'WHERE day <= ? ORDER BY day', (day.isoformat(),)).fetchall()
-        if current_amount is not None:
-            rows = sorted([row for row in rows if row[0] != day.isoformat()]
-                          + [(day.isoformat(), str(current_amount))])
-        if start_day is not None:
-            rows = [row for row in rows if row[0] >= start_day.isoformat()]
-        anchor = connection.execute('SELECT day,amount FROM accountant_cash_opening WHERE id=1').fetchone()
-        if anchor and day.isoformat() >= anchor[0]:
-            rows = [row for row in rows if row[0] >= anchor[0]]
-        if not rows:
-            return None, None, day.isoformat(), None
-        first = date.fromisoformat(anchor[0] if anchor and day.isoformat() >= anchor[0] else rows[0][0])
-        expected = first
-        for recorded, _ in rows:
-            if date.fromisoformat(recorded) != expected and not tolerate_gaps:
-                return None, None, expected.isoformat(), first.isoformat()
-            expected = date.fromordinal(date.fromisoformat(recorded).toordinal() + 1)
-        if expected < day and not tolerate_gaps:
-            return None, None, expected.isoformat(), first.isoformat()
-        opening = Decimal(anchor[1]) if anchor and first.isoformat() == anchor[0] else Decimal(0)
-        opening += sum((Decimal(value) for recorded, value in rows if recorded < day.isoformat()), Decimal(0))
-        for cutoff, kind, amount in connection.execute(
-                "SELECT day, kind, amount FROM accountant_movements WHERE day >= ? AND day <= ? "
-                "AND kind IN ('other_expense','procurement_advance','other_receipt')",
-                (first.isoformat(), day.isoformat())):
-            if cutoff < day.isoformat():
-                opening += Decimal(amount) if kind == 'other_receipt' else -Decimal(amount)
-        for cutoff, amount in connection.execute(
-                'SELECT paid_day, amount FROM accountant_salary_payments WHERE paid_day >= ? AND paid_day <= ?',
-                (first.isoformat(), day.isoformat())):
-            if cutoff < day.isoformat():
-                opening -= Decimal(amount)
-        for cutoff, amount in connection.execute(
-                "SELECT day, amount FROM accountant_reserves WHERE kind='transfer' AND day >= ? AND day <= ?",
-                (first.isoformat(), day.isoformat())):
-            if cutoff < day.isoformat():
-                opening -= Decimal(amount)
-        if rows[-1][0] != day.isoformat():
-            return opening, None, day.isoformat(), first.isoformat()
-        receipts = sum((Decimal(row[0]) for row in connection.execute(
-            "SELECT amount FROM accountant_movements WHERE day = ? AND kind = 'other_receipt'",
-            (day.isoformat(),))), Decimal(0))
-        return (opening, opening + Decimal(rows[-1][1]) + receipts - self._daily_outflows(connection, day),
-                None, first.isoformat())
+        return CashBook(connection, day).position(day, start_day, current_amount=current_amount,
+                                                  tolerate_gaps=tolerate_gaps)
 
     def available_cash(self, connection, day: date, cashier_amount: Decimal | None):
         has_handovers = connection.execute('SELECT 1 FROM accountant_handover_days LIMIT 1').fetchone()
@@ -993,9 +1032,12 @@ class FinanceStore:
         """
         result = []
         with closing(self._open()) as connection:
+            # Одна книга на весь период: раньше каждый день месяца читал
+            # базу заново — девять запросов на день, 270 на ведомость.
+            book = CashBook(connection, last)
             day = first
             while day <= last:
-                _, remaining, _, _ = self.cash_position(connection, day, start_day)
+                _, remaining, _, _ = book.position(day, start_day)
                 if remaining is not None and remaining < 0:
                     result.append(dict(day=day.isoformat(), balance=str(remaining)))
                 day += timedelta(days=1)

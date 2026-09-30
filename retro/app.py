@@ -7,12 +7,14 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
+from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
 from retro.report_cache import ReportCache, load_iiko
 from retro.financial_requests import FinancialRequests
+from retro.static_assets import IMMUTABLE, Pages
 from retro.config import Settings
 from retro.db import Database
 from retro.integrations.iiko import IikoClient
@@ -294,8 +296,13 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         except ValueError as error:
             return JSONResponse({'detail': str(error)}, 403)
         response = await app.state.financial_requests.dispatch(request, call_next)
-        response.headers['Cache-Control'] = (
-            'private, no-cache' if request.url.path.startswith('/static/') else 'no-store')
+        if not request.url.path.startswith('/static/'):
+            response.headers['Cache-Control'] = 'no-store'
+        elif 'v' in request.query_params and response.status_code in (200, 304):
+            # Адрес с хэшем содержимого (см. static_assets): файл по нему не меняется.
+            response.headers['Cache-Control'] = IMMUTABLE
+        else:
+            response.headers['Cache-Control'] = 'private, no-cache'
         response.headers['X-Content-Type-Options'] = 'nosniff'
         response.headers['X-Frame-Options'] = 'DENY'
         response.headers['Referrer-Policy'] = 'no-referrer'
@@ -305,16 +312,21 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         return response
 
+    # Сжатие: статика панели — 1,4 МБ JS и CSS, JSON отчётов тоже крупный.
+    # Стоит снаружи всех слоёв, чтобы сжимать уже готовый ответ.
+    app.add_middleware(GZipMiddleware, minimum_size=1024)
+    app.state.pages = Pages(STATIC)
+
     @app.get('/')
     def index():
-        return FileResponse(STATIC / 'index.html')
+        return app.state.pages.response('index.html')
 
     @app.get('/login')
     def login_page(request: Request):
         role = getattr(request.state, 'dashboard_role', None)
         if role:
             return RedirectResponse(ROLE_PATHS[role], status_code=303)
-        return FileResponse(STATIC / 'login.html')
+        return app.state.pages.response('login.html')
 
     @app.post('/api/session')
     def login(request: Request, body: LoginInput):
@@ -353,39 +365,39 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     @app.get('/accountant')
     def accountant():
-        return FileResponse(STATIC / 'accountant.html')
+        return app.state.pages.response('accountant.html')
 
     @app.get('/accountant/employees')
     def accountant_employees():
-        return FileResponse(STATIC / 'employees.html')
+        return app.state.pages.response('employees.html')
 
     @app.get('/accountant/payroll')
     def accountant_payroll():
-        return FileResponse(STATIC / 'payroll.html')
+        return app.state.pages.response('payroll.html')
 
     @app.get('/shokh')
     def shokh_page():
-        return FileResponse(STATIC / 'shokh.html')
+        return app.state.pages.response('shokh.html')
 
     @app.get('/director')
     def director():
         # Телефон директора (6a). Прежний десктопный отчёт с полной таблицей
         # блюд и PDF-архивом остаётся рядом, на /director/report.
-        return FileResponse(STATIC / 'director-app.html')
+        return app.state.pages.response('director-app.html')
 
     @app.get('/director/report')
     def director_report():
-        return FileResponse(STATIC / 'director.html')
+        return app.state.pages.response('director.html')
 
     @app.get('/founder')
     def founder():
         # Кабинет учредителя (7a на телефоне, 7b на компьютере). Аналитика
         # iiko, брони и рассылки живут на /founder/analytics.
-        return FileResponse(STATIC / 'founder-cabinet.html')
+        return app.state.pages.response('founder-cabinet.html')
 
     @app.get('/founder/analytics')
     def founder_analytics():
-        return FileResponse(STATIC / 'founder.html')
+        return app.state.pages.response('founder.html')
 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
                     ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),

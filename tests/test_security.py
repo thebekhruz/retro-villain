@@ -127,7 +127,7 @@ def test_each_dashboard_page_exposes_logout_control(tmp_path):
         assert page.status_code == 200
         assert 'id="logout"' in page.text
         assert '>Выйти</button>' in page.text
-        assert 'src="/static/logout.js"' in page.text
+        assert 'src="/static/logout.js?v=' in page.text
 
 
 def test_legacy_dashboard_user_keeps_access_to_all_panels(tmp_path):

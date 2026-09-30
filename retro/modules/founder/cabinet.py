@@ -6,6 +6,7 @@
 """
 
 import asyncio
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -68,6 +69,12 @@ def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS) -
     first = monday - timedelta(days=7 * weeks)
     flows = overview.daily_flows(state.accountant_finance.cash_flows_between(
         first, monday - timedelta(days=1)))
+    # Выдачи собственнику — одним чтением резерва: раньше каждая неделя
+    # собирала полную сводку всех резервов, 18 запросов вместо одного.
+    paid_by_day = defaultdict(Decimal)
+    for row in state.accountant_finance.reserve_entries('dividends'):
+        if row['kind'] == 'withdrawal':
+            paid_by_day[row['day']] += Decimal(row['amount'])
     result = []
     for index in range(1, weeks + 1):
         start = monday - timedelta(days=7 * index)
@@ -77,9 +84,7 @@ def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS) -
         collected = sum((flows.get((start + timedelta(days=offset)).isoformat(), {}).get(
             'dividends', Decimal(0)) for offset in range(7)), Decimal(0))
         payout_day = end + timedelta(days=1)
-        paid_out = sum((Decimal(row['amount']) for row in
-                        state.accountant_finance.reserves(payout_day)['dividends']['entries']
-                        if row['kind'] == 'withdrawal'), Decimal(0))
+        paid_out = paid_by_day.get(payout_day.isoformat(), Decimal(0))
         if target is None and not collected and not paid_out:
             continue
         amount = Decimal(target['amount']) if target else None

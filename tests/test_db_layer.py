@@ -446,3 +446,112 @@ def test_dry_run_changes_nothing(tmp_path):
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = 'public'").fetchone()[0]
     assert tables == 0
+
+
+# ── Пул соединений Postgres (T-400) ─────────────────────────────────────────
+
+class FakeRaw:
+    """Соединение psycopg в миниатюре: статус транзакции, откат, закрытие."""
+
+    def __init__(self, status='IDLE', alive=True):
+        from types import SimpleNamespace
+        from psycopg.pq import TransactionStatus
+        self.statuses = TransactionStatus
+        self.info = SimpleNamespace(transaction_status=getattr(TransactionStatus, status))
+        self.closed, self.alive, self.autocommit, self.rollbacks = False, alive, False, 0
+
+    def rollback(self):
+        self.rollbacks += 1
+        self.info.transaction_status = self.statuses.IDLE
+
+    def execute(self, sql):
+        if not self.alive:
+            raise OSError('server closed the connection')
+
+    def close(self):
+        self.closed = True
+
+
+def pool_with(monkeypatch, made, **kw):
+    import psycopg
+    from retro.db import ConnectionPool
+    clock = [0.0]
+    monkeypatch.setattr(psycopg, 'connect', lambda url, **_: made.append(FakeRaw()) or made[-1])
+    return ConnectionPool(clock=lambda: clock[0], **kw), clock
+
+
+def test_pool_hands_the_released_connection_to_the_next_operation(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made)
+    first = pool.acquire('pg://a')
+    pool.release('pg://a', first)
+    assert pool.acquire('pg://a') is first
+    assert len(made) == 1
+
+
+def test_pool_keeps_databases_apart(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made)
+    pool.release('pg://a', pool.acquire('pg://a'))
+    assert pool.acquire('pg://b') is not made[0]
+
+
+def test_pool_rolls_back_an_open_read_before_reuse(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made)
+    raw = pool.acquire('pg://a')
+    raw.info.transaction_status = raw.statuses.INTRANS
+    pool.release('pg://a', raw)
+    assert raw.rollbacks == 1 and not raw.closed
+    assert pool.acquire('pg://a') is raw
+
+
+def test_pool_drops_a_dead_connection_and_opens_a_new_one(monkeypatch):
+    made = []
+    pool, clock = pool_with(monkeypatch, made, check_after=2)
+    raw = pool.acquire('pg://a')
+    pool.release('pg://a', raw)
+    raw.alive = False
+    clock[0] = 10
+    fresh = pool.acquire('pg://a')
+    assert fresh is not raw and raw.closed
+
+
+def test_pool_caps_idle_connections_across_all_databases(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made, max_idle=2)
+    held = [pool.acquire(f'pg://{name}') for name in 'abc']
+    for name, raw in zip('abc', held):
+        pool.release(f'pg://{name}', raw)
+    assert [raw.closed for raw in held] == [True, False, False]
+
+
+def test_pool_closes_connections_idle_too_long(monkeypatch):
+    made = []
+    pool, clock = pool_with(monkeypatch, made, idle_seconds=60)
+    raw = pool.acquire('pg://a')
+    pool.release('pg://a', raw)
+    clock[0] = 61
+    assert pool.acquire('pg://a') is not raw and raw.closed
+
+
+@needs_postgres
+def test_closed_wrapper_refuses_work_instead_of_borrowing_a_pooled_connection():
+    import psycopg
+    database = Database(POSTGRES_URL)
+    connection = database.connect()
+    connection.close()
+    with pytest.raises(psycopg.OperationalError):
+        connection.execute('SELECT 1')
+    connection.close()  # второй close безопасен
+
+
+@needs_postgres
+def test_postgres_operations_reuse_one_server_connection():
+    from contextlib import closing
+    database = Database(POSTGRES_URL)
+    pids = set()
+    for _ in range(5):
+        with closing(database.connect()) as connection:
+            pids.add(connection.execute('SELECT pg_backend_pid()').fetchone()[0])
+    assert len(pids) == 1
