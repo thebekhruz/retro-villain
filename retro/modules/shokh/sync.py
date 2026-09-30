@@ -29,6 +29,30 @@ class ProcurementSync:
                     updated_at TEXT NOT NULL
                 );
             ''')
+            # Покупки, записанные до колонки iiko_refs: поставщик, склад и товар
+            # берём из их накладной. По ним работают подстановка поставщика и
+            # склада по точке и «Часто покупаете» по id товара iiko.
+            missing = c.execute('SELECT p.id, o.payload FROM shokh_purchases p '
+                                'JOIN shokh_iiko_operations o ON o.purchase_id = p.id '
+                                'WHERE p.iiko_refs IS NULL').fetchall()
+            for purchase_id, payload in missing:
+                refs = self.refs_from_payload(payload)
+                if refs:
+                    c.execute('UPDATE shokh_purchases SET iiko_refs = ? WHERE id = ?',
+                              (json.dumps(refs, ensure_ascii=False), purchase_id))
+            c.commit()
+
+    @staticmethod
+    def refs_from_payload(payload):
+        try:
+            data = json.loads(payload) if isinstance(payload, str) else payload
+            refs = dict(supplier_id=data['supplier'], storage_id=data['storage'])
+            items = data.get('items') or []
+            if items and items[0].get('product'):
+                refs['product_id'] = items[0]['product']
+            return refs
+        except (ValueError, TypeError, KeyError, AttributeError, IndexError):
+            return None
 
     def operation(self, key=None, purchase_id=None):
         with closing(self.store._open()) as c:
@@ -39,6 +63,10 @@ class ProcurementSync:
         return dict(zip(('key','fingerprint','purchase_id','payload','status','document_id',
                          'document_number','error','updated_at'), row)) if row else None
 
+    def point_defaults(self, limit=300):
+        """Поставщик и склад прошлой покупки по каждой точке — см. store.point_defaults."""
+        return self.store.point_defaults(limit)
+
     def decorate(self, rows):
         if not rows:
             return rows
@@ -48,7 +76,9 @@ class ProcurementSync:
                               'FROM shokh_iiko_operations WHERE purchase_id IN ('
                               + ','.join('?' for _ in ids) + ')', ids).fetchall()
         by_id = {r[0]: dict(status=r[1], document_id=r[2], number=r[3], error=r[4]) for r in found}
-        return [dict(r, iiko=by_id.get(r['id'], dict(status='legacy'))) for r in rows]
+        # Товар не из справочника iiko: накладной нет, её проводит бухгалтер руками.
+        return [dict(r, iiko=by_id.get(r['id'], dict(status='manual' if r.get('off_catalog') else 'legacy')))
+                for r in rows]
 
     def prepare(self, key, fingerprint, payload, day, at, fields):
         with closing(self.store._open()) as c:
@@ -62,7 +92,8 @@ class ProcurementSync:
                 if existing[0] != fingerprint:
                     raise ShokhError('Этот ключ уже использован для другой покупки.')
                 return existing[1]
-            purchase_id = self.store.add_purchase(day, at, **fields, _connection=c, iiko_unit=True)
+            purchase_id = self.store.add_purchase(day, at, **fields, _connection=c, iiko_unit=True,
+                                                  refs=self.refs_from_payload(payload))
             inserted = c.execute('INSERT INTO shokh_iiko_operations '
                       '(operation_id,fingerprint,purchase_id,payload,status,updated_at) VALUES (?,?,?,?,?,?) '
                       'ON CONFLICT(operation_id) DO NOTHING',

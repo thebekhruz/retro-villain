@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/cashier.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/cashier-logic.js" defer></script><script src="/static/app.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/cashier-logic.js" defer></script><script src="/static/app.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -21,8 +21,9 @@
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
-  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Кассир</strong></span><div class="topbar-actions"><span class="top-status" id="connection">Проверка подключения</span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
-  <div class="workspace cashier-workspace">
+  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Кассир</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <!-- is-booting: до первого кадра скрипта все цифры — скелет (T-393). -->
+  <div class="workspace cashier-workspace is-booting">
     <div class="page-heading cashier-heading">
       <div><p class="eyebrow">МОДУЛЬ 01 · КАССИР · ТОЛЬКО RETRO</p><h1>День в цифрах<span>.</span></h1></div>
       <div class="emp-head-actions cashier-actions">
@@ -34,13 +35,13 @@
           <button id="day-prev" class="date-nav-arrow" type="button" aria-label="Предыдущий день">‹</button>
           <!-- Дата словами, как в макете; само поле лежит поверх подписи прозрачным —
                нажатие открывает системный календарь. -->
-          <div class="date-nav-label cashier-date"><label for="report-date">Дата отчёта</label><strong id="report-date-text" aria-hidden="true">—</strong><input id="report-date" type="date" required></div>
+          <div class="date-nav-label cashier-date"><label for="report-date">Дата отчёта</label><strong id="report-date-text" class="is-skel" aria-hidden="true">—</strong><input id="report-date" type="date" required></div>
           <button id="day-next" class="date-nav-arrow" type="button" aria-label="Следующий день">›</button>
           <span class="date-nav-sep"></span>
           <button id="today" class="date-nav-chip" type="button" aria-pressed="false">Сегодня</button>
           <button id="yesterday" class="date-nav-chip" type="button" aria-pressed="false">Вчера</button>
         </div>
-        <button id="refresh" class="button secondary cashier-icon-button" type="button" aria-label="Обновить" title="Обновить"><span aria-hidden="true">↻</span></button>
+        <button id="refresh" class="button secondary cashier-icon-button" type="button" data-busy-key="cashier:refresh" aria-label="Обновить" title="Обновить"><span aria-hidden="true">↻</span></button>
         <button id="download" class="button secondary cashier-download" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Скачать <span class="file-type">XLSX</span></button>
       </div>
     </div>
@@ -54,7 +55,7 @@
     <section class="rm-cards cashier-cards" id="metrics" aria-busy="false" aria-label="Показатели дня">
       <article class="rm-card rm-card--hero">
         <div class="rm-card-label">Касса за день · весь приход</div>
-        <div class="rm-card-value"><strong id="total-inflow" class="rm-num">—</strong><small>сум</small></div>
+        <div class="rm-card-value"><strong id="total-inflow" class="rm-num">—</strong><small id="total-inflow-unit">сум</small></div>
         <div id="composition" class="cashier-split-bar" aria-hidden="true"><span class="is-sales"></span><span class="is-other"></span></div>
         <div class="cashier-legend"><span><i class="is-sales"></i>Оплаты продаж</span><span><i class="is-other"></i>Предоплаты и поступления</span></div>
       </article>
@@ -65,8 +66,8 @@
       </article>
       <article class="rm-card rm-card--warn">
         <div class="rm-card-label">Предоплаты наличными<i class="cashier-square is-soft" aria-hidden="true"></i></div>
-        <div class="rm-card-value"><strong id="card-prepay" class="rm-num">—</strong><small>сум</small></div>
-        <div class="cashier-card-sub">iiko · оценка, не реестр авансов</div>
+        <div class="rm-card-value"><strong id="card-prepay" class="rm-num">—</strong><small id="card-prepay-unit">сум</small></div>
+        <div class="cashier-card-sub" id="card-prepay-note">iiko · оценка, не реестр авансов</div>
       </article>
     </section>
 
@@ -88,7 +89,7 @@
         <!-- Ручной учёт: расходы и поступления рядом, а не по вкладкам —
              к концу смены заполняют и то, и другое. -->
         <div class="cashier-ops">
-          <section class="rm-section">
+          <section class="rm-section" id="expenses-section">
             <div class="cashier-ops-head"><p class="eyebrow">РАСХОДЫ НАЛИЧНЫМИ</p><h2>Из кассы</h2></div>
             <div id="expenses-empty" class="expense-empty">За этот день расходы ещё не внесены.</div>
             <div id="expense-list" class="expense-list" aria-live="polite"></div>
@@ -109,7 +110,7 @@
             <div class="cashier-total"><span>Итого расходы</span><strong id="expense-total" class="rm-num">0</strong></div>
           </section>
 
-          <section class="rm-section">
+          <section class="rm-section" id="receipts-section">
             <div class="cashier-ops-head"><p class="eyebrow">ПРОЧИЕ ПОСТУПЛЕНИЯ НАЛИЧНЫМИ</p><h2>В кассу</h2></div>
             <!-- Предоплаты наличными приходят из iiko сами — строка «Авто», как в макете. -->
             <div id="receipt-auto" class="expense-item is-auto" hidden><span class="expense-item-name">Предоплаты наличными · iiko</span><span id="receipt-auto-value" class="expense-item-value rm-num">—</span><span class="expense-automatic" aria-label="Добавляется автоматически из iiko">Авто</span></div>
@@ -127,7 +128,7 @@
       </div>
 
       <aside class="rm-aside cashier-rail" aria-label="Итог смены">
-        <section class="panel handover-panel">
+        <section class="panel handover-panel" id="handover-panel">
           <p class="eyebrow">К ПЕРЕДАЧЕ БУХГАЛТЕРУ</p>
           <p id="handover-number" class="handover-number"><span id="handover" class="rm-num">—</span><small>сум</small></p>
           <div class="handover-rule"><span>Наличные («Демо»)</span><strong id="demo-cash" class="rm-num">—</strong></div>
@@ -136,6 +137,9 @@
           <div class="handover-rule"><span>− Расходы</span><strong id="handover-expenses" class="rm-num">0</strong></div>
           <!-- Нажатие записывает сумму у бухгалтера: в «Финансах дня» она из
                «ожидается» становится «получено» с временем. -->
+          <!-- Предоплаты не посчитались (возврат аванса гонит смену в минус):
+               передавать нечего до ручной сверки, кнопка остаётся выключенной. -->
+          <p id="prepay-issue" class="handover-caption is-warn" hidden></p>
           <div id="handover-action" class="handover-action">
             <button id="handover-button" class="handover-button" type="button" disabled>Передать бухгалтеру</button>
             <p class="handover-caption">Без открытых счетов</p>
@@ -152,7 +156,7 @@
           <p id="handover-feedback" class="handover-feedback" role="status" aria-live="polite"></p>
         </section>
 
-        <section class="panel usd-card">
+        <section class="panel usd-card" id="usd-card">
           <div class="usd-head"><p class="eyebrow">ДОЛЛАРЫ · СРАЗУ В СЕЙФ</p><span class="usd-aside-note">не в передаче</span></div>
           <!-- Каждый взнос — приход «Доллары в сейфе» у бухгалтера; в передачу сумов не входит. -->
           <form id="usd-form" class="usd-balance-entry" novalidate>

@@ -14,12 +14,12 @@ from retro.modules.accountant.ledger import LedgerError
 from retro.modules.shokh.store import pocket_position
 
 from .archive import archive_boundary
-from .expenses import Expense
+from .expenses import AutomaticExpense, Expense
 from .export import export_report
 from .service import DataError, TZ, demo_snapshot, today_tashkent
 from .till import (HandoverChanged, NothingToHandOver, add_usd_deposit, delete_shokh_give,
-                   delete_usd_deposit, give_shokh, hand_over, shokh_gives, shokh_total,
-                   usd_balance, usd_day)
+                   delete_usd_deposit, give_shokh, hand_over, handover_check, shokh_gives, shokh_total,
+                   till_summary, usd_balance, usd_day)
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
 
@@ -207,11 +207,24 @@ def screen_amount(value):
     return amount
 
 
+@router.get('/summary')
+def day_summary(request: Request, date: date,
+                snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$')):
+    """«К передаче» и «Касса за день» после записи кассира — числа с сервера,
+    по тому снимку iiko, что открыт на экране."""
+    day = selected_day(date)
+    try:
+        snapshot = request.app.state.cache.get(snapshot_id, day)
+    except DataError:
+        raise HTTPException(409, 'Отчёт на экране устарел. Обновите его.') from None
+    return till_summary(request.app.state, day, snapshot)
+
+
 @router.get('/handover')
 def handover_state(request: Request, date: date):
     day = selected_day(date)
     return dict(date=day.isoformat(),
-                handover=request.app.state.accountant_finance.handover_state(day))
+                handover=handover_check(request.app.state, day))
 
 
 @router.post('/handover', status_code=201)
@@ -260,7 +273,11 @@ def add_expense(request: Request, body: ExpenseInput):
 @router.delete('/expenses/{expense_id}', status_code=204)
 def delete_expense(request: Request, expense_id: int, date: date):
     day = selected_day(date)
-    if not request.app.state.expenses.delete(expense_id, day):
+    try:
+        found = request.app.state.expenses.delete(expense_id, day)
+    except AutomaticExpense as error:
+        raise HTTPException(409, str(error)) from None
+    if not found:
         raise HTTPException(404, 'Расход не найден для выбранного дня.')
     return Response(status_code=204)
 
@@ -307,11 +324,11 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
                                      allow_stale=allow_stale)
         state.cache.put(result)
         # Передача дня бухгалтеру: «Передано в 21:40» у кассира. В демо — никогда.
-        handover = None if result.demo else await asyncio.to_thread(
-            state.accountant_finance.handover_state, day)
+        handover = None if result.demo else await asyncio.to_thread(handover_check, state, day)
         return {**result.json(),
                 'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured),
-                'handover': handover}
+                'handover': handover,
+                'summary': await asyncio.to_thread(till_summary, state, day, result)}
     except TimeoutError as error:
         log_safe_failure('cashier-route', error, operation='day_report',
                          request_id=request.state.request_id)

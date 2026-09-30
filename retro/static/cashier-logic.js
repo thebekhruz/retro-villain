@@ -14,31 +14,8 @@
 
   function amount(value){return Number(value||0)}
 
-  function cashPayment(snapshot){
-    if(!snapshot||!snapshot.payments)return null;
-    const row=snapshot.payments.find(item=>item.name===CASH_PAYMENT);
-    return row?amount(row.amount):0;
-  }
-
-  /* К передаче: наличные из iiko + предоплаты наличными + прочие поступления
-     − расходы наличными. Пока какой-то части нет, суммы не показываем: неполная
-     цифра тут хуже прочерка. */
-  function handover(snapshot,expenseTotal,receiptTotal){
-    const cash=cashPayment(snapshot);
-    if(cash===null||expenseTotal===null||receiptTotal===null)return null;
-    return cash+amount(snapshot.cash_prepayment)+amount(receiptTotal)-amount(expenseTotal);
-  }
-
-  /* Весь приход смены: касса по регистру, если он есть, иначе продажи плюс
-     новые предоплаты — плюс внесённые руками поступления. */
-  function totalInflow(snapshot,receiptTotal){
-    if(!snapshot||receiptTotal===null)return null;
-    const register=snapshot.register_received_total;
-    const base=register!==null&&register!==undefined
-      ?amount(register)
-      :amount(snapshot.revenue)+amount(snapshot.new_prepayment);
-    return base+amount(receiptTotal);
-  }
+  /* «К передаче» и «Касса за день» экран не считает: готовые числа приходят
+     с сервера (till_summary в modules/cashier/till.py, Функционал §1). */
 
   /* Полоса состава оплат: доли считаем от суммы всех способов, нулевые не
      рисуем, чтобы полоса не превращалась в пунктир из невидимых кусков. */
@@ -75,7 +52,15 @@
      выдачи Шоху): показываем разницу и даём передать ещё раз;
      accountant — приход записал бухгалтер, кнопка кассира его не трогает. */
   function handoverView(record,current){
-    if(!record)return {state:'none',difference:null};
+    if(!record||record.amount===null||record.amount===undefined)return {state:'none',difference:null};
+    /* Бухгалтер подтвердил получение: передачу уже не отменить и не изменить,
+       разницу (если сумма потом изменилась) кассир говорит бухгалтеру сам. */
+    if(record.confirmed_at){
+      const base=record.expected_amount!==null&&record.expected_amount!==undefined?record.expected_amount:record.amount;
+      const difference=current===null||current===undefined?null:Math.round((current-amount(base))*100)/100;
+      return {state:'confirmed',difference:difference!==null&&Math.abs(difference)>=0.01?difference:null,
+        shortfall:amount(record.shortfall)};
+    }
     if(record.source&&record.source!=='cashier'&&record.source!=='auto')
       return {state:'accountant',difference:null};
     if(current===null||current===undefined)return {state:'done',difference:null};
@@ -91,5 +76,25 @@
     return value>0?value:null;
   }
 
-  return {CASH_PAYMENT,cashPayment,handover,totalInflow,composition,shiftLabel,handoverView,parseAmount};
+  /* Первая загрузка дня (T-393): экран собирается из шести независимых частей.
+     Цифра — скелетом, пока не пришла хотя бы одна часть, из которых она
+     считается: «К передаче» ждёт и iiko, и расходы, и поступления, и Шоха. */
+  const PARTS=['day','expenses','receipts','shokh','usd','rate'];
+  const SKELETON={
+    'total-inflow':['day','receipts'],composition:['day','receipts'],revenue:['day'],receipts:['day'],average:['day'],
+    'card-prepay':['day'],'payments-sub':['day'],'payment-total':['day'],'payments-inflow':['day','receipts'],
+    handover:['day','expenses','receipts','shokh'],'demo-cash':['day'],'cash-prepay':['day'],
+    'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],'receipt-auto-value':['day'],
+    'expense-total':['expenses','shokh'],'receipt-total':['receipts'],'shokh-pocket':['shokh'],
+    'usd-today':['usd'],'usd-safe':['usd'],'usd-official':['rate'],'usd-restaurant':['rate'],
+  };
+  /* {id: скелет ли} по набору ещё не пришедших частей. */
+  function skeletonMap(waiting){
+    const pending=waiting instanceof Set?waiting:new Set(waiting||[]);
+    const result={};
+    for(const [id,parts] of Object.entries(SKELETON))result[id]=parts.some(part=>pending.has(part));
+    return result;
+  }
+
+  return {CASH_PAYMENT,composition,shiftLabel,handoverView,parseAmount,PARTS,skeletonMap};
 });

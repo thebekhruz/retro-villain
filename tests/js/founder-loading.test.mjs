@@ -7,7 +7,7 @@ import vm from 'node:vm';
 const source = readFileSync(new URL('../../retro/static/founder.js', import.meta.url), 'utf8');
 const code = source.slice(source.indexOf('async function load('), source.indexOf('async function start(){'));
 function harness() {
-  const pending = [], rendered = [], messages = [], loading = [];
+  const pending = [], rendered = [], messages = [], loading = [], began = [];
   let generation = 0;
   const context = vm.createContext({
     AbortController, URLSearchParams, controller: null, lastAnalytics: null, lastQuery: '',
@@ -15,6 +15,8 @@ function harness() {
     selectedDirections: () => ['retro'],
     $: id => ({ value: {start:'2026-09-01', end:'2026-09-22', granularity:'day'}[id] }),
     setLoading: value => loading.push(value), clearResults() {}, renderSeriesTable() {},
+    beginLoading: (reload, analytics, bookings) => began.push({reload, analytics, bookings}), settleSkeletons() {},
+    lastBookings: null,
     setMessage: value => messages.push(value), renderBookingError: value => messages.push(value),
     RetroState: { responseJson: async value => value, analyticsAfterFailure: () => null },
     fetch: (url, options) => new Promise((resolve, reject) => pending.push({url, options, resolve, reject})),
@@ -22,7 +24,7 @@ function harness() {
     renderBookings: value => rendered.push(['bookings', value]),
   });
   vm.runInContext(code, context);
-  return {pending, rendered, messages, loading, run: () => vm.runInContext('load()', context)};
+  return {pending, rendered, messages, loading, began, context, run: () => vm.runInContext('load()', context)};
 }
 
 test('bookings appear while analytics is still pending', async () => {
@@ -64,4 +66,28 @@ test('failure of one source preserves the other source', async () => {
   await done;
   assert.deepEqual(h.rendered, [['analytics', 'analytics-ready']]);
   assert.ok(h.messages.includes('synthetic booking outage'));
+});
+
+test('load resolves true only when analytics reached the screen (for the ✓ on «Показать»)', async () => {
+  const ok = harness(), okDone = ok.run();
+  ok.pending[0].resolve('analytics-ready');
+  ok.pending[1].resolve('bookings-ready');
+  assert.equal(await okDone, true);
+  const bad = harness(), badDone = bad.run();
+  bad.pending[0].reject(new Error('iiko down'));
+  bad.pending[1].resolve('bookings-ready');
+  assert.equal(await badDone, false);
+});
+
+test('first load paints skeletons, a reload keeps previous data and dims it', async () => {
+  const h = harness(), first = h.run();
+  assert.equal(h.began[0].reload, false);
+  h.pending[0].resolve('a'); h.pending[1].resolve('b');
+  await first;
+  vm.runInContext("lastAnalytics = {revenue_series: []}", h.context);
+  const second = h.run();
+  assert.equal(h.began[1].reload, true);
+  assert.equal(typeof h.began[1].analytics.then, 'function');
+  h.pending[2].resolve('a'); h.pending[3].resolve('b');
+  await second;
 });

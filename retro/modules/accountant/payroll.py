@@ -47,8 +47,8 @@ ABSENT_STATUSES = frozenset({'missing', 'manual_absent'})
 def blocker_reason(row: 'PayrollRow') -> str | None:
     """Почему начисление сотруднику за день нельзя подтвердить (None — можно).
 
-    missing_rate — нет дневной ставки; unlinked — нет привязки Hikvision и
-    ручной отметки; unavailable — данные Hikvision за день неполные. Смену
+    missing_rate — нет дневной ставки; unavailable — данные Hikvision за день
+    неполные. Отсутствие привязки Hikvision само по себе выплату не блокирует. Смену
     подтверждают по людям: такие строки ждут, остальные начисляются.
     """
     if row.payable is not None and row.rate is not None:
@@ -60,14 +60,16 @@ def blocker_reason(row: 'PayrollRow') -> str | None:
     return 'unknown'
 
 
-def compute_pay(rate: Decimal | None, status: str, *, exception: bool,
-                pay_unlinked: bool = False) -> Decimal | None:
+def attendance_after_payment(status: str, paid: Decimal) -> str:
+    """Выдача за смену подтверждает присутствие, но не меняет проход Hikvision."""
+    return 'manual_present' if paid > 0 and status not in PRESENT_STATUSES else status
+
+
+def compute_pay(rate: Decimal | None, status: str, *, exception: bool) -> Decimal | None:
     """Сколько начислить за день. None — начислить нельзя, данных о дне нет.
 
-    `pay_unlinked` — временный режим проверки (ACCOUNTANT_CHECK_MODE): человек
-    без привязки к Hikvision считается пришедшим, как будто на него заведено
-    исключение. Вне режима такая строка ждёт исключения или ручной отметки:
-    иначе зарплата шла бы людям, чей день никто не подтверждал.
+    Без привязки к Hikvision доступна полная ставка. Статус остаётся unlinked:
+    право на выплату не является подтверждением прохода через устройство.
     """
     if rate is None:
         return None
@@ -75,7 +77,7 @@ def compute_pay(rate: Decimal | None, status: str, *, exception: bool,
         return Decimal(0)
     if status in ('on_time', 'late', 'manual_present'):
         return rate
-    if status == 'unlinked' and (exception or pay_unlinked):
+    if status == 'unlinked':
         return rate
     if status == 'unavailable':
         return None
@@ -102,13 +104,12 @@ def demo_attendance(day: date, employees: list[Employee]) -> list[AttendanceRow]
 
 
 def draft_payroll(day: date, employees: list[Employee], exceptions: set[int],
-                  attendance: list[AttendanceRow] | tuple[AttendanceRow, ...] | None = None,
-                  *, pay_unlinked: bool = False) -> list[PayrollRow]:
+                  attendance: list[AttendanceRow] | tuple[AttendanceRow, ...] | None = None) -> list[PayrollRow]:
     attendance = demo_attendance(day, employees) if attendance is None else attendance
     by_employee = {entry.employee_id: entry for entry in attendance}
     return [PayrollRow(employee.id, employee.name, employee.role, employee.group_name,
                        by_employee[employee.id].status, by_employee[employee.id].occurred_at, employee.rate,
                        compute_pay(employee.rate, by_employee[employee.id].status,
-                                   exception=employee.id in exceptions, pay_unlinked=pay_unlinked),
+                                   exception=employee.id in exceptions),
                        employee.id in exceptions)
             for employee in employees]

@@ -36,7 +36,10 @@ def read_rows(path: Path) -> list[dict]:
         workbook.close()
 
 
-def import_rows(store: RosterStore, rows: list[dict]) -> tuple[int, int]:
+def import_rows(store: RosterStore, rows: list[dict], skipped: list[str] | None = None) -> tuple[int, int]:
+    """Добавить или обновить окладников. Удалённые (в архиве) не трогаем:
+    импорт не возвращает человека, которого бухгалтер или директор удалил, и
+    не заводит его дубль — строка пропускается, её имя попадает в skipped."""
     cleaned = []
     seen_keys = set()
     seen_names = set()
@@ -62,11 +65,17 @@ def import_rows(store: RosterStore, rows: list[dict]) -> tuple[int, int]:
         for key, values in cleaned:
             if key:
                 matches = connection.execute(
-                    'SELECT id FROM accountant_monthly_employees WHERE external_key = ?', (key,)).fetchall()
+                    'SELECT id, archived FROM accountant_monthly_employees WHERE external_key = ?',
+                    (key,)).fetchall()
             else:
                 matches = connection.execute(
-                    'SELECT id FROM accountant_monthly_employees WHERE name = ? COLLATE NOCASE',
+                    'SELECT id, archived FROM accountant_monthly_employees WHERE name = ? COLLATE NOCASE',
                     (values['name'],)).fetchall()
+            if matches and all(row[1] for row in matches):
+                if skipped is not None:
+                    skipped.append(values['name'] + (f' ({key})' if key else ''))
+                continue
+            matches = [row for row in matches if not row[1]]
             if len(matches) > 1:
                 raise ValueError('В базе найдено несколько сотрудников с одинаковым именем; добавьте внешний ключ.')
             name, role, schedule, money = store._monthly_values(**values)
@@ -91,12 +100,16 @@ def main() -> int:
     parser.add_argument('source', type=Path)
     parser.add_argument('--database', type=Path, required=True)
     args = parser.parse_args()
+    skipped: list[str] = []
     try:
-        created, updated = import_rows(RosterStore(args.database), read_rows(args.source))
+        created, updated = import_rows(RosterStore(args.database), read_rows(args.source), skipped)
     except (OSError, ValueError) as error:
         print(f'Ошибка: {error}')
         return 1
     print(f'Импорт завершён: добавлено {created}, обновлено {updated}.')
+    if skipped:
+        print(f'Пропущено {len(skipped)} — удалены из реестра (в архиве), не восстанавливаем: '
+              + ', '.join(skipped) + '. Если человек вернулся, добавьте его заново на экране «Сотрудники».')
     return 0
 
 

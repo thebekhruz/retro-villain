@@ -234,6 +234,28 @@ def test_monthly_import_keeps_numeric_zero_and_is_atomic(tmp_path):
     assert next(person for person in roster.list_monthly() if person.external_key == '1').salary == 100
 
 
+def test_monthly_import_skips_archived_employee_instead_of_restoring_or_duplicating(tmp_path):
+    """Удалённый окладник в архиве: импорт с тем же ключом (или именем) его не
+    возвращает, не заводит дубль и не трогает его данные, а сообщает о пропуске."""
+    from scripts.import_monthly_payroll import import_rows
+    roster = RosterStore(tmp_path / 'roster.sqlite3')
+    row = dict(external_key='k-1', name='Архивный', role='повар', salary='100', schedule='',
+               card='0', cash='0', advances='0', remaining='0')
+    assert import_rows(roster, [row]) == (1, 0)
+    archived_id = roster.list_monthly()[0].id
+    roster.delete_monthly(archived_id)
+    no_key = dict(row, external_key='', name='Без Ключа')
+    assert import_rows(roster, [no_key]) == (1, 0)
+    roster.delete_monthly(next(p.id for p in roster.list_monthly() if p.name == 'Без Ключа'))
+    skipped = []
+    assert import_rows(roster, [dict(row, salary='900'), no_key, dict(row, external_key='k-2', name='Новый')],
+                       skipped) == (1, 0)
+    assert skipped == ['Архивный (k-1)', 'Без Ключа']
+    assert [person.name for person in roster.list_monthly()] == ['Новый']
+    archived = {person.id: person for person in roster.list_monthly(archived=True)}
+    assert archived[archived_id].salary == 100
+
+
 def test_founder_independent_report_detects_mismatch():
     from contextlib import asynccontextmanager
     from retro.integrations.iiko import IikoClient

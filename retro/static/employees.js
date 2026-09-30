@@ -2,6 +2,7 @@
    правка в боковой панели. Сотрудники на окладе — вторым разделом того же
    реестра, правятся в той же панели. */
 const $ = id => document.getElementById(id);
+const L = globalThis.EmployeesLogic;
 const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0));
 const sum = value => money(value) + ' сум';
 const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки', unavailable: 'Нет данных',
@@ -13,7 +14,8 @@ const NO_SOURCE = new Set(['unlinked', 'unavailable']);
 let today, current, monthPaid = {}, requestNo = 0;
 // UI-состояние живёт отдельно от данных API: карточки-фильтры, вкладка группы, поиск и открытый drawer.
 // sel: id сменного | 'new' | 'm:<id>' сотрудника на окладе | 'm:new'.
-const ui = {filter: 'all', tab: 'all', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false};
+const ui = {filter: 'all', tab: 'all', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false,
+  history: null};
 const SALARY_TAB = '__salary';
 
 const formattedDay = day => new Intl.DateTimeFormat('ru-RU', {weekday: 'short', day: 'numeric', month: 'long',
@@ -69,13 +71,13 @@ function attendanceHealth(value) {
 }
 const pill = value => text('span', 'emp-pill st-' + value, statuses[value] || value);
 
-// Начисление за смену считаем как в прототипе: нет ставки/привязки — не начисляется, не пришёл — 0.
+// Начисление — готовое число сервера (payable): там же учтены исключения и
+// уже начисленные суммы. Формулу во frontend не дублируем (спека §1).
+// null — не начисляется (нет ставки, привязки или данных), 0 — не пришёл.
 function payFor(row) {
-  if (row.rate == null || row.rate === '') return null;
-  if (ABSENT.has(row.status)) return 0;
-  if (row.status === 'unlinked' || row.status === 'unavailable') return null;
-  const rate = Number(row.rate);
-  return Number.isFinite(rate) ? rate : null;
+  if (row.payable == null || row.payable === '') return null;
+  const pay = Number(row.payable);
+  return Number.isFinite(pay) ? pay : null;
 }
 // rate из API приходит строкой ('180000') либо null — приводим к числу для расчётов и сумм.
 function people() {
@@ -102,6 +104,14 @@ const editable = () => current && current.date === today;
 const needsAttention = p => p.rate == null || NO_SOURCE.has(p.status);
 
 function loadDay() { return fetchDay(); }
+// Отклик (busy.js): при перечитывании реестр и карточки гаснут, а не пропадают.
+const B = globalThis.RetroBusy;
+function reloadDay() {
+  const work = fetchDay();
+  if (!B) return work;
+  B.section($('employees-stats'), work);
+  return B.section(document.querySelector('.emp-layout'), work);
+}
 
 // ── Отрисовка ────────────────────────────────────────────────────────────────
 function render() {
@@ -150,12 +160,21 @@ function statCard({key, label, accent, value, unit, total, footer, progress, dot
   }
   return card;
 }
+// «Нет привязки» и «Нет данных» — разные причины: считаем их порознь.
+function attentionFooter(s) {
+  const unlinked = s.unlinked.filter(p => p.status === 'unlinked').length;
+  const unavailable = s.unlinked.length - unlinked;
+  return 'Без ставки ' + s.noRate.length + ' · без привязки ' + unlinked + (unavailable ? ' · нет данных ' + unavailable : '');
+}
 function renderStats(s) {
   const box = $('employees-stats');
   const pct = Math.round(s.present.length / (s.total || 1) * 100);
   box.replaceChildren(
     statCard({label: 'К начислению за день', accent: 'accrued', value: money(s.accrued), unit: 'сум',
-      footer: s.total + ' в реестре · ' + s.noRate.length + ' без ставки'}),
+      // Реестр ниже считает и окладников («Реестр 77 сотрудников»): здесь
+      // подписываем, кто есть кто, чтобы 60 и 77 не спорили.
+      footer: s.total + ' ' + plural(s.total, ['сменный', 'сменных', 'сменных'])
+        + ((current?.monthly_employees || []).length ? ' · ' + current.monthly_employees.length + ' на окладе' : '')}),
     statCard({key: 'present', filterable: true, label: 'На месте', value: s.present.length, total: s.total,
       progress: pct}),
     statCard({key: 'late', filterable: true, accent: 'late', label: 'Опоздали', value: s.late.length, dot: 'late',
@@ -163,7 +182,7 @@ function renderStats(s) {
     statCard({key: 'missing', filterable: true, label: 'Не пришли', value: s.missing.length, dot: 'idle',
       footer: 'Начисление 0 сум'}),
     statCard({key: 'attention', filterable: true, accent: 'attention', label: 'Требуют внимания', value: s.attention.length,
-      dot: 'gold', footer: 'Без ставки ' + s.noRate.length + ' · без привязки ' + s.unlinked.length})
+      dot: 'gold', footer: attentionFooter(s)})
   );
 }
 function renderTabs(all) {
@@ -183,10 +202,8 @@ function renderTabs(all) {
     return button;
   }));
 }
-function queryMatches(name, role) {
-  const q = ui.q.trim().toLowerCase();
-  return !q || name.toLowerCase().includes(q) || (role || '').toLowerCase().includes(q);
-}
+// Без регистра, «ё» = «е», латиницей тоже: «Shoxrux» находит «Шохрух».
+const queryMatches = (name, role) => L.matchesQuery(ui.q, name, role);
 function matches(row) {
   if (ui.tab !== 'all' && row.group !== ui.tab) return false;
   if (!queryMatches(row.name, row.role)) return false;
@@ -196,17 +213,27 @@ function matches(row) {
   if (ui.filter === 'attention') return needsAttention(row);
   return true;
 }
-function whoCell(name, role, warn) {
+function whoCell(name, role, warn, noHik) {
   const who = text('div', 'emp-cell-who', null);
   who.append(text('span', 'emp-avatar' + (warn ? ' is-warn' : ''), initials(name)));
   const idBox = text('div', 'emp-who-text', null);
-  idBox.append(text('div', 'emp-who-name', name));
+  const nameLine = text('div', 'emp-who-name', null);
+  nameLine.append(text('span', null, name));
+  // «⊘ Hik» — не проходит турникет, это нормально (отмечают вручную);
+  // «Нет привязки» — должен проходить, но ID не привязан: это другая беда.
+  if (noHik) {
+    const tag = text('span', 'emp-nohik', '⊘ Hik');
+    tag.title = 'Нет в Hikvision · отмечается вручную';
+    nameLine.append(tag);
+  }
+  idBox.append(nameLine);
   if (role != null) idBox.append(text('div', 'emp-who-role', role));
   who.append(idBox);
   return who;
 }
 function registryRow(row) {
   const line = el('div', 'emp-row' + (ui.sel === row.employee_id ? ' is-selected' : ''), {tabIndex: 0});
+  line.dataset.busyKey = 'emp:' + row.employee_id;
   line.setAttribute('role', 'button');
   line.setAttribute('aria-label', row.name + ' — изменить');
   line.addEventListener('click', () => openDrawer(row.employee_id));
@@ -232,7 +259,7 @@ function registryRow(row) {
   const meta = text('div', 'emp-cell-meta', null);
   meta.append(entry, statusCell);
   if (row.rate != null) rate.prepend(text('span', 'emp-m-label', 'ставка '));
-  line.append(whoCell(row.name, row.role), meta, rate, pay);
+  line.append(whoCell(row.name, row.role, false, row.manual_attendance), meta, rate, pay);
   return line;
 }
 function renderRegistry(all) {
@@ -298,6 +325,7 @@ function renderMonthly() {
   rows.forEach(row => {
     const key = 'm:' + row.id;
     const line = el('div', 'emp-salary-row' + (ui.sel === key ? ' is-selected' : ''), {tabIndex: 0});
+    line.dataset.busyKey = 'emp:' + key;
     line.setAttribute('role', 'button');
     line.setAttribute('aria-label', row.name + ' — изменить');
     line.addEventListener('click', () => openMonthly(row.id));
@@ -310,7 +338,7 @@ function renderMonthly() {
     const paid = text('div', 'emp-cell-num emp-cell-pay emp-salary-paid' + (row.paid ? '' : ' is-none'), null);
     paid.append(text('span', 'emp-m-label', 'выдано '), money(row.paid));
     rest.prepend(text('span', 'emp-m-label', 'осталось'));
-    line.append(whoCell(row.name, null), text('div', 'emp-salary-role', row.role || '—'), salary, paid, rest);
+    line.append(whoCell(row.name, null, false, row.no_hikvision), text('div', 'emp-salary-role', row.role || '—'), salary, paid, rest);
     container.append(line);
   });
 }
@@ -321,31 +349,44 @@ function openDrawer(id) {
   if (!row) return;
   ui.sel = id;
   ui.confirm = false; ui.feedback = ''; ui.fbErr = false;
-  ui.draft = {name: row.name, role: row.role, rate: row.rate == null ? '' : String(row.rate), group: row.group, reason: ''};
+  ui.draft = shiftDraft(row);
+  loadHistory('shift', id);
   render(); revealDrawer();
 }
+const shiftDraft = row => ({name: row.name, role: row.role, rate: L.formatAmount(row.rate), group: row.group, reason: '',
+  manual: !!row.manual_attendance, hikId: row.hikvision_id || '', groupTouched: false});
+const monthlyDraft = row => ({name: row.name, role: row.role, salary: L.formatAmount(row.salary), schedule: row.schedule || '',
+  noHik: !!row.no_hikvision, reason: ''});
 function openMonthly(id) {
   const row = salaried().find(p => p.id === id);
   if (!row) return;
   ui.sel = 'm:' + id; ui.confirm = false; ui.feedback = ''; ui.fbErr = false;
-  ui.draft = {name: row.name, role: row.role, salary: String(row.salary), schedule: row.schedule || ''};
+  ui.draft = monthlyDraft(row);
+  loadHistory('monthly', id);
   render(); revealDrawer();
 }
-function openNew(kind = 'shift') {
+function openNew(kind = 'shift', keep = {}) {
   const groups = groupOrder();
-  ui.confirm = false; ui.feedback = ''; ui.fbErr = false;
-  if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name: '', role: '', salary: '', schedule: ''}; }
-  else { ui.sel = 'new'; ui.draft = {name: '', role: '', rate: '', group: groups[0] || '', reason: ''}; }
+  ui.confirm = false; ui.feedback = ''; ui.fbErr = false; ui.history = null;
+  // Переключение «За смену / Оклад» не стирает уже набранные имя и должность.
+  const name = keep.name || '', role = keep.role || '';
+  if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name, role, salary: '', schedule: '', noHik: false, reason: ''}; }
+  else {
+    ui.sel = 'new';
+    ui.draft = {name, role, rate: '', group: L.groupForRole(role) || groups[0] || '', reason: '', manual: false, groupTouched: false};
+  }
   render(); revealDrawer();
   const nameInput = document.querySelector('.emp-drawer input[name=name]');
   if (nameInput) nameInput.focus({preventScroll: true});
 }
-// На телефоне и планшете панель стоит под реестром — подводим к ней экран.
+// На телефоне и планшете панель — лист поверх реестра (см. employees.css):
+// место в списке не теряется, лист прокручиваем к началу.
 function revealDrawer() {
-  const drawer = document.querySelector('.emp-drawer');
-  if (drawer && matchMedia('(max-width:900px)').matches) drawer.scrollIntoView({block: 'start', behavior: 'smooth'});
+  const aside = $('employees-aside');
+  if (aside && overlayMode()) aside.scrollTop = 0;
 }
-function closeDrawer() { ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; render(); }
+const overlayMode = () => matchMedia('(max-width:1180px)').matches;
+function closeDrawer() { ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; ui.history = null; render(); }
 function setDraft(key, value) { ui.draft[key] = value; ui.feedback = ''; }
 
 function fieldLabel(labelText, input) {
@@ -356,6 +397,7 @@ function fieldLabel(labelText, input) {
 function renderAside(all, ctx) {
   const box = $('employees-aside');
   box.replaceChildren();
+  document.body.classList.toggle('emp-drawer-open', ui.sel != null);
   if (ui.sel == null) { box.append(attentionCard(ctx.attention), groupSummaryCard(all)); return; }
   box.append(String(ui.sel).startsWith('m:') ? monthlyDrawer() : drawerCard());
 }
@@ -368,9 +410,8 @@ function attentionCard(attention) {
     item.addEventListener('click', () => openDrawer(row.employee_id));
     item.append(text('span', 'emp-avatar is-warn is-sm', initials(row.name)));
     const info = text('span', 'emp-side-info', null);
-    info.append(text('span', 'emp-side-name', row.name),
-      text('span', 'emp-side-reason', row.rate == null ? 'Нет ставки'
-        : row.status === 'unavailable' ? 'Нет данных Hikvision' : 'Нет привязки Hikvision'));
+    // Все причины сразу: «Нет ставки · нет привязки Hikvision».
+    info.append(text('span', 'emp-side-name', row.name), text('span', 'emp-side-reason', L.attentionReasons(row).join(' · ')));
     item.append(info, text('span', 'emp-side-chevron', '›'));
     card.append(item);
   });
@@ -409,7 +450,7 @@ function kindSwitch(kind) {
   [['shift', 'За смену'], ['salary', 'Оклад в месяц']].forEach(([key, label]) => {
     const button = el('button', 'emp-kind-btn' + (kind === key ? ' is-active' : ''), {type: 'button', textContent: label});
     button.setAttribute('aria-pressed', String(kind === key));
-    button.addEventListener('click', () => { if (kind !== key) openNew(key); });
+    button.addEventListener('click', () => { if (kind !== key) openNew(key, {name: ui.draft?.name, role: ui.draft?.role}); });
     box.append(button);
   });
   return box;
@@ -418,7 +459,9 @@ function drawerActions(saveLabel, onSave, disabled) {
   const actions = text('div', 'emp-drawer-actions', null);
   const save = el('button', 'emp-btn emp-btn--primary', {type: 'button', textContent: saveLabel});
   save.disabled = !!disabled;
-  save.addEventListener('click', onSave);
+  // Панель перерисовывается целиком: ключ переносит спиннер и ✓ на новую кнопку.
+  save.dataset.busyKey = 'emp-save';
+  save.addEventListener('click', () => { const work = onSave(); if (B) B.button(save, work); });
   const cancel = el('button', 'emp-btn', {type: 'button', textContent: 'Отмена'});
   cancel.addEventListener('click', closeDrawer);
   actions.append(save, cancel);
@@ -454,7 +497,8 @@ function drawerCard() {
       text('strong', selP.pay ? '' : 'is-none', selP.pay == null ? '—' : sum(selP.pay)));
     facts.append(payRow);
     const notes = {on_time: 'Пришёл до 10:00 — ставка начисляется полностью.', late: 'Опоздание не уменьшает ставку.',
-      missing: 'Входа нет — начисление 0 сум.', unlinked: 'Нет привязки Hikvision — начисление заблокировано.',
+      missing: 'Входа нет — начисление 0 сум.',
+      unlinked: 'Нет привязки Hikvision — начисление заблокировано. Если турникет ему не нужен, включите «Нет в Hikvision».',
       unavailable: 'Нет данных источника — начисление заблокировано.',
       manual_present: 'Нет в Hikvision — отмечен «был» вручную, ставка начисляется.',
       manual_absent: 'Нет в Hikvision — отмечен «не был» вручную, начисление 0 сум.'};
@@ -470,22 +514,41 @@ function drawerCard() {
   const roleInput = el('input', null, {name: 'role', value: d.role, placeholder: 'Должность', maxLength: 80,
     autocomplete: 'off'});
   roleInput.setAttribute('list', 'emp-roles');
-  roleInput.addEventListener('input', event => setDraft('role', event.target.value));
+  const groupSelect = el('select', null, {name: 'group'});
+  roleInput.addEventListener('input', event => {
+    setDraft('role', event.target.value);
+    // Группа определяется по должности, пока её не выбрали руками.
+    // Незнакомая должность («сомелье») — группу выбирают из списка.
+    const guess = L.groupForRole(event.target.value);
+    if (!d.groupTouched && guess && guess !== d.group) { d.group = guess; groupSelect.value = guess; }
+  });
   form.append(fieldLabel('Должность', roleInput));
   const datalist = el('datalist', null, {id: 'emp-roles'});
   [...new Set(people().map(p => p.role).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'ru'))
     .forEach(role => datalist.append(new Option(role, role)));
   form.append(datalist);
 
-  const groupSelect = el('select', null, {name: 'group'});
   groupOrder().forEach(name => groupSelect.add(new Option(name, name, false, name === d.group)));
-  groupSelect.addEventListener('change', event => setDraft('group', event.target.value));
+  if (d.group && !groupOrder().includes(d.group)) groupSelect.add(new Option(d.group, d.group, false, true));
+  groupSelect.addEventListener('change', event => { setDraft('group', event.target.value); d.groupTouched = true; });
   form.append(fieldLabel('Группа', groupSelect));
 
-  const rateInput = el('input', null, {name: 'rate', type: 'number', min: '0', step: '0.01',
-    value: d.rate, placeholder: 'Не указана', inputMode: 'numeric'});
-  rateInput.addEventListener('input', event => setDraft('rate', event.target.value));
-  form.append(fieldLabel('Ставка за смену, сум', rateInput));
+  form.append(fieldLabel('Ставка за смену, сум', moneyInput('rate', d.rate, 'Не указана')));
+
+  form.append(manualToggle('Нет в Hikvision · отмечать вручную', d.manual, value => setDraft('manual', value),
+    d.manual ? 'Турникет не нужен: по умолчанию «был», в «Финансах дня» можно отметить «не был».'
+      : selP?.hikvision_registered ? 'Выключено: день берётся из Hikvision.'
+        : isEdit ? 'Выключено: должен проходить турникет, а ID Hikvision не привязан — укажите его ниже.'
+          : 'Выключено: должен проходить турникет, а ID Hikvision не привязан — начисление заблокировано.', !editable()));
+  // Сняли «Нет в Hikvision» — привязать человека к устройству можно прямо
+  // здесь: номер сотрудника на устройстве (employeeNo), без синхронизации.
+  if (isEdit && !d.manual) {
+    const hikInput = el('input', null, {name: 'hikvision_id', value: d.hikId, placeholder: 'Номер на устройстве, например 1024',
+      maxLength: 32, autocomplete: 'off', inputMode: 'text', spellcheck: false});
+    hikInput.disabled = !editable();
+    hikInput.addEventListener('input', event => setDraft('hikId', event.target.value));
+    form.append(fieldLabel('ID в Hikvision', hikInput));
+  }
 
   if (isEdit) {
     const reasonInput = el('input', null, {name: 'reason', value: d.reason,
@@ -499,7 +562,34 @@ function drawerCard() {
   if (!editable()) card.append(text('p', 'emp-drawer-note', 'Изменения доступны только на сегодняшнюю дату.'));
 
   if (isEdit && editable()) card.append(deleteBlock(doDelete));
+  if (isEdit) card.append(historyBlock());
   return card;
+}
+// Сумма в поле — текстом: «180 000» и «180 000,50» принимаются как есть
+// (поле number на iPhone такое молча обнуляло), при уходе с поля — разряды.
+function moneyInput(name, value, placeholder) {
+  const input = el('input', 'emp-money', {name, value, placeholder, inputMode: 'numeric', autocomplete: 'off'});
+  input.addEventListener('input', event => setDraft(name, event.target.value));
+  input.addEventListener('change', () => {
+    const parsed = L.parseAmount(input.value);
+    // Панель могли закрыть раньше, чем поле потеряло фокус.
+    if (parsed.value && ui.draft && input.isConnected) { input.value = L.formatAmount(parsed.value); ui.draft[name] = input.value; }
+  });
+  return input;
+}
+// Переключатель-галочка: состояние видно сразу, запись — кнопкой «Сохранить».
+function manualToggle(label, on, onChange, hint, disabled) {
+  const box = text('div', 'emp-toggle-box', null);
+  const button = el('button', 'emp-toggle' + (on ? ' is-on' : ''), {type: 'button', name: 'manual'});
+  button.setAttribute('role', 'switch');
+  button.setAttribute('aria-checked', String(on));
+  button.disabled = !!disabled;
+  if (disabled) button.title = 'Изменения доступны только на сегодняшнюю дату.';
+  button.append(el('span', 'emp-toggle-box-mark'), text('span', null, label));
+  const note = text('p', 'emp-toggle-hint', hint);
+  button.addEventListener('click', () => { onChange(!on); render(); });
+  box.append(button, note);
+  return box;
 }
 function monthlyDrawer() {
   const isEdit = ui.sel !== 'm:new';
@@ -533,16 +623,22 @@ function monthlyDrawer() {
   nameInput.addEventListener('input', event => setDraft('name', event.target.value));
   const roleInput = el('input', null, {name: 'role', value: d.role, placeholder: 'Должность', maxLength: 80});
   roleInput.addEventListener('input', event => setDraft('role', event.target.value));
-  const salaryInput = el('input', null, {name: 'salary', type: 'number', min: '0', step: '0.01', value: d.salary,
-    placeholder: 'Например, 6000000', inputMode: 'numeric'});
-  salaryInput.addEventListener('input', event => setDraft('salary', event.target.value));
   const scheduleInput = el('input', null, {name: 'schedule', value: d.schedule, placeholder: 'Например, 5/2, с 9:00', maxLength: 160});
   scheduleInput.addEventListener('input', event => setDraft('schedule', event.target.value));
   form.append(fieldLabel('Имя', nameInput), fieldLabel('Должность', roleInput),
-    fieldLabel('Оклад в месяц, сум', salaryInput), fieldLabel('График (необязательно)', scheduleInput),
-    feedbackLine(), drawerActions(isEdit ? 'Сохранить' : 'Добавить на оклад', () => saveMonthly()));
+    fieldLabel('Оклад в месяц, сум', moneyInput('salary', d.salary, 'Например, 6 000 000')),
+    fieldLabel('График (необязательно)', scheduleInput),
+    manualToggle('Нет в Hikvision', d.noHik, value => setDraft('noHik', value),
+      'Пометка «⊘ Hik» в реестре и ведомости. На оклад не влияет.'));
+  if (isEdit) {
+    const reasonInput = el('input', null, {name: 'reason', value: d.reason,
+      placeholder: 'Например, повышение с октября', maxLength: 200});
+    reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
+    form.append(fieldLabel('Причина изменения', reasonInput));
+  }
+  form.append(feedbackLine(), drawerActions(isEdit ? 'Сохранить' : 'Добавить на оклад', () => saveMonthly()));
   card.append(form);
-  if (isEdit) card.append(deleteBlock(doDeleteMonthly));
+  if (isEdit) card.append(deleteBlock(doDeleteMonthly), historyBlock());
   return card;
 }
 function deleteBlock(onDelete) {
@@ -553,36 +649,120 @@ function deleteBlock(onDelete) {
     box.append(ask);
     return box;
   }
-  box.append(text('span', 'emp-delete-q', 'Удалить сотрудника?'));
+  const question = text('div', 'emp-delete-q', null);
+  question.append(text('strong', null, 'Удалить сотрудника?'),
+    text('span', null, 'Из новых списков уйдёт. Прошлые дни, выплаты и ведомость сохранятся.'));
+  box.append(question);
   const keep = el('button', 'emp-delete-keep', {type: 'button', textContent: 'Оставить'});
   keep.addEventListener('click', () => { ui.confirm = false; render(); });
   const remove = el('button', 'emp-delete-yes', {type: 'button', textContent: 'Удалить'});
-  remove.addEventListener('click', () => onDelete());
+  remove.dataset.busyKey = 'emp-delete';
+  remove.addEventListener('click', () => { const work = onDelete(); if (B) B.button(remove, work, {done: false}); });
   box.append(keep, remove);
   return box;
 }
 
+// ── История изменений (1a: «запись в истории») ──────────────────────────────
+async function loadHistory(kind, id) {
+  const key = kind + ':' + id;
+  ui.history = {key, rows: null, error: false};
+  try {
+    const url = (kind === 'monthly' ? '/api/accountant/monthly-employees/' : '/api/accountant/employees/') +
+      encodeURIComponent(id) + '/history';
+    const response = await fetch(url, {cache: 'no-store'});
+    if (!response.ok) throw new Error();
+    const data = await response.json();
+    if (ui.history?.key !== key) return;
+    ui.history.rows = data.history || [];
+  } catch { if (ui.history?.key === key) ui.history.error = true; }
+  if (ui.history?.key === key) renderAside(people(), {attention: people().filter(needsAttention)});
+}
+const historyActions = {create: 'Добавлен', update: 'Изменение', manual: 'Hikvision', hikvision: 'Hikvision', delete: 'Удалён'};
+function historyWhen(value) {
+  const at = new Date(/[zZ]|[+-]\d\d:\d\d$/.test(value) ? value : value + '+05:00');
+  return Number.isNaN(at.getTime()) ? value : new Intl.DateTimeFormat('ru-RU', {day: 'numeric', month: 'short',
+    hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'}).format(at);
+}
+function historyBlock() {
+  const box = text('div', 'emp-history', null);
+  box.append(text('p', 'emp-side-eyebrow', 'ИСТОРИЯ ИЗМЕНЕНИЙ'));
+  const state = ui.history;
+  const unit = String(ui.sel).startsWith('m:') ? 'Оклад' : 'Ставка';
+  if (!state || state.rows == null) {
+    box.append(text('p', 'emp-history-empty', state?.error ? 'Историю не удалось загрузить.' : 'Загружаем историю…'));
+    return box;
+  }
+  if (!state.rows.length) { box.append(text('p', 'emp-history-empty', 'Изменений пока не было.')); return box; }
+  const list = text('ol', 'emp-history-list', null);
+  state.rows.slice(0, 20).forEach(row => {
+    const item = text('li', 'emp-history-item', null);
+    const head = text('div', 'emp-history-head', null);
+    head.append(text('strong', null, historyActions[row.action] || 'Изменение'),
+      text('span', null, historyWhen(row.changed_at) + (row.changed_by ? ' · ' + row.changed_by : '')));
+    item.append(head, text('div', 'emp-history-reason', row.reason));
+    const changes = [];
+    if ((row.old_rate || '') !== (row.new_rate || '') && row.action !== 'manual' && row.action !== 'hikvision') {
+      const fmt = value => value == null ? 'нет' : money(value);
+      changes.push(row.action === 'create' ? unit + ' ' + fmt(row.new_rate)
+        : row.action === 'delete' ? unit + ' был' + (unit === 'Ставка' ? 'а ' : ' ') + fmt(row.old_rate)
+          : unit + ' ' + fmt(row.old_rate) + ' → ' + fmt(row.new_rate));
+    }
+    if (row.old_group && row.new_group && row.old_group !== row.new_group) changes.push('Группа ' + row.old_group + ' → ' + row.new_group);
+    if (row.details) changes.push(...row.details.split('; '));
+    // Каждое изменение — отдельным узлом: переводчик берёт их по одному.
+    if (changes.length) {
+      const line = text('div', 'emp-history-change', null);
+      changes.forEach((change, index) => { if (index) line.append(' · '); line.append(text('span', null, change)); });
+      item.append(line);
+    }
+    list.append(item);
+  });
+  box.append(list);
+  return box;
+}
+
 // ── Запись ───────────────────────────────────────────────────────────────────
-const fail = value => { ui.feedback = value; ui.fbErr = true; render(); };
+// false — «не удалось»: так кнопка в busy.js не покажет ✓.
+const fail = value => { ui.feedback = value; ui.fbErr = true; render(); return false; };
+// Сохранённую строку реестра подсвечиваем — видно, что именно изменилось.
+const flashRow = key => B?.flash(document.querySelector('[data-busy-key="' + CSS.escape(key) + '"]'));
+const amountError = {bad: 'Сумма — только цифры, например 180 000.', zero: 'Ставка должна быть больше нуля.'};
 async function saveDraft() {
   const d = ui.draft, name = d.name.trim();
   if (!name) return fail('Укажите имя.');
   if (!d.role.trim()) return fail('Укажите должность.');
-  if (d.rate !== '' && Number(d.rate) <= 0) return fail('Ставка должна быть больше нуля.');
+  if (!d.group) return fail('Выберите группу.');
+  const parsed = L.parseAmount(d.rate);
+  if (parsed.error) return fail(amountError[parsed.error]);
   // API ждёт ставку строкой (rate: str | None) — число pydantic не принимает.
-  const rate = d.rate === '' ? null : String(d.rate).trim();
+  const rate = parsed.value;
   const isEdit = ui.sel !== 'new';
   if (isEdit && !d.reason.trim()) return fail('Укажите причину — она попадёт в историю изменений.');
   try {
     if (isEdit) {
+      const id = ui.sel;
+      const before = people().find(p => p.employee_id === id);
       const payload = {name, role: d.role.trim(), rate, group: d.group, reason: d.reason.trim()};
-      const response = await fetch('/api/accountant/employees/' + encodeURIComponent(ui.sel), {
+      if (!before || !!before.manual_attendance !== d.manual) payload.manual_attendance = d.manual;
+      // Номер Hikvision отправляем, только если его поменяли: пусто — снять привязку.
+      const hikId = (d.hikId || '').trim();
+      if (!d.manual && hikId !== (before?.hikvision_id || '')) {
+        if (hikId && !/^[0-9A-Za-z_-]{1,32}$/.test(hikId)) return fail('ID в Hikvision — номер сотрудника на устройстве: цифры и латиница, до 32 знаков.');
+        payload.hikvision_id = hikId || null;
+      }
+      const response = await fetch('/api/accountant/employees/' + encodeURIComponent(id), {
         method: 'PATCH', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить.');
-      await fetchDay(); message('Изменение сохранено с сегодняшнего дня.');
+      await reloadDay();
+      // Панель остаётся открытой с новыми данными: причина очищена, история
+      // пополнилась — следующая правка не унаследует прежнюю причину.
+      const fresh = people().find(p => p.employee_id === id);
+      if (ui.sel === id && fresh) { ui.draft = shiftDraft(fresh); loadHistory('shift', id); render(); }
+      message('Изменение сохранено с сегодняшнего дня.');
+      flashRow('emp:' + id);
     } else {
-      const payload = {name, role: d.role.trim(), rate, group: d.group};
+      const payload = {name, role: d.role.trim(), rate, group: d.group, manual_attendance: d.manual};
       // Создание — через RetroFinancialWrite: у сотрудника есть ставка, и повтор
       // после потерянного ответа иначе завёл бы второго человека.
       const response = await RetroFinancialWrite('/api/accountant/employees', {
@@ -590,29 +770,36 @@ async function saveDraft() {
       const result = await response.json();
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить.');
       ui.sel = null; ui.draft = null;
-      await fetchDay(); message('Новый сотрудник добавлен.');
+      await reloadDay(); message('Новый сотрудник добавлен.');
+      const newId = result?.employee?.id;
+      if (newId != null) flashRow('emp:' + newId);
     }
-  } catch (error) { fail(error.message); }
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 async function doDelete() {
   try {
     const response = await fetch('/api/accountant/employees/' + encodeURIComponent(ui.sel), {method: 'DELETE'});
-    if (!response.ok) { const result = await response.json(); throw new Error(result.detail || 'Не удалось удалить.'); }
-    ui.sel = null; ui.draft = null; ui.confirm = false;
-    await fetchDay(); message('Сотрудник удалён.');
-  } catch (error) { fail(error.message); }
+    if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.detail || 'Не удалось удалить.'); }
+    ui.sel = null; ui.draft = null; ui.confirm = false; ui.history = null;
+    await reloadDay(); message('Сотрудник удалён. Прошлые дни сохранены.');
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 async function saveMonthly() {
   const d = ui.draft, name = d.name.trim(), role = d.role.trim();
   if (!name) return fail('Укажите имя.');
   if (!role) return fail('Укажите должность.');
-  if (!(Number(d.salary) > 0)) return fail('Оклад должен быть больше нуля.');
+  const parsed = L.parseAmount(d.salary);
+  if (parsed.error === 'bad') return fail('Оклад — только цифры, например 6 000 000.');
+  if (!parsed.value) return fail('Оклад должен быть больше нуля.');
   const isEdit = ui.sel !== 'm:new';
   const id = isEdit ? Number(String(ui.sel).slice(2)) : null;
   // Поля ручного реестра (карта, наличные, авансы, остаток) на экране не
   // показываем — при правке отправляем их как были, у нового — нули.
   const before = isEdit ? (current.monthly_employees || []).find(p => p.id === id) || {} : {};
-  const payload = {name, role, salary: String(d.salary).trim(), schedule: d.schedule.trim(),
+  const payload = {name, role, salary: parsed.value, schedule: d.schedule.trim(), no_hikvision: !!d.noHik,
+    reason: (d.reason || '').trim(),
     card: before.card ?? '0', cash: before.cash ?? '0', advances: before.advances ?? '0', remaining: before.remaining ?? '0'};
   try {
     const options = {method: isEdit ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)};
@@ -622,24 +809,38 @@ async function saveMonthly() {
     const result = await response.json();
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить оклад.');
     if (!isEdit) { ui.sel = null; ui.draft = null; }
-    await fetchDay();
+    await reloadDay();
+    if (isEdit && ui.sel === 'm:' + id) {
+      const fresh = salaried().find(p => p.id === id);
+      if (fresh) { ui.draft = monthlyDraft(fresh); loadHistory('monthly', id); render(); }
+    }
     message(isEdit ? 'Оклад сохранён.' : 'Сотрудник на окладе добавлен.');
-  } catch (error) { fail(error.message); }
+    flashRow('emp:m:' + (isEdit ? id : result?.employee?.id));
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 async function doDeleteMonthly() {
   const id = Number(String(ui.sel).slice(2));
   try {
     const response = await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(id), {method: 'DELETE'});
     if (!response.ok) { const result = await response.json().catch(() => ({})); throw new Error(result.detail || 'Не удалось удалить сотрудника.'); }
-    ui.sel = null; ui.draft = null; ui.confirm = false;
-    await fetchDay(); message('Сотрудник удалён.');
-  } catch (error) { fail(error.message); }
+    ui.sel = null; ui.draft = null; ui.confirm = false; ui.history = null;
+    await reloadDay(); message('Сотрудник удалён. Прошлые дни сохранены.');
+    return true;
+  } catch (error) { return fail(error.message); }
 }
 
 // ── День / загрузка ──────────────────────────────────────────────────────────
 const shift = (day, delta) => { const d = new Date(day + 'T12:00:00Z'); d.setUTCDate(d.getUTCDate() + delta); return d.toISOString().slice(0, 10); };
 let day;
-function setDay(next) { if (!next || next > today) return; day = next; fetchDay(); }
+function setDay(next) {
+  if (!next || next > today) return;
+  day = next;
+  // День — в адресе: F5 и ссылка открывают тот же день.
+  try { const url = new URL(location.href); if (day === today) url.searchParams.delete('date'); else url.searchParams.set('date', day);
+    history.replaceState(null, '', url); } catch { /* адрес не меняем */ }
+  reloadDay();
+}
 function paintDayControls() {
   $('day-label').textContent = day ? formattedDay(day) : '—';
   $('day-next').disabled = !day || day >= today;
@@ -666,7 +867,8 @@ async function fetchDay() {
   if (!day) return;
   const sequence = ++requestNo;
   paintDayControls();
-  status('Загрузка данных за ' + formattedDay(day));
+  // Пока идёт день, в шапке остаётся прежняя подпись, а реестр гаснет
+  // (reloadDay); самая первая загрузка — скелет в разметке.
   try {
     const [response, paid] = await Promise.all([
       fetch('/api/accountant/staff?date=' + encodeURIComponent(day), {cache: 'no-store'}), fetchMonthPaid(day)]);
@@ -692,11 +894,24 @@ $('day-yesterday').addEventListener('click', () => setDay(shift(today, -1)));
 $('employees-search').addEventListener('input', event => { ui.q = event.target.value; renderRegistry(people()); renderMonthly(); });
 $('employees-clear-filter').addEventListener('click', () => { ui.filter = 'all'; render(); });
 $('employees-add').addEventListener('click', () => openNew('shift'));
+// Закрыть панель: ×, Esc, а на телефоне и планшете — касание мимо листа.
+document.addEventListener('keydown', event => {
+  if (event.key !== 'Escape' || ui.sel == null) return;
+  if (ui.confirm) { ui.confirm = false; render(); return; }
+  closeDrawer();
+});
+$('employees-aside').addEventListener('click', event => {
+  if (event.target === $('employees-aside') && ui.sel != null && overlayMode()) closeDrawer();
+});
 $('monthly-add').addEventListener('click', () => openNew('salary'));
-$('employees-download').addEventListener('click', async () => {
+$('employees-download').addEventListener('click', () => {
   if (!day) return;
   const button = $('employees-download');
-  button.disabled = true;
+  // Кнопка в работе, пока файл не начал скачиваться.
+  const work = downloadAll();
+  if (B) B.button(button, work); else { button.disabled = true; work.finally(() => { button.disabled = false; }); }
+});
+async function downloadAll() {
   try {
     const response = await fetch('/api/accountant/employees/export?scope=all&date=' + encodeURIComponent(day), {cache: 'no-store'});
     if (!response.ok) throw new Error('Не удалось скачать файл сотрудников.');
@@ -706,8 +921,9 @@ $('employees-download').addEventListener('click', async () => {
     document.body.append(link); link.click(); link.remove();
     setTimeout(() => URL.revokeObjectURL(url), 30000);
     message('Полный список скачан.');
-  } catch (error) { message(error.message, true); } finally { button.disabled = false; }
-});
+    return true;
+  } catch (error) { message(error.message, true); return false; }
+}
 
 (async () => {
   try {

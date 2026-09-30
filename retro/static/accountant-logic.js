@@ -105,7 +105,8 @@
     // Недельную цель ставит учредитель; отставание — повод отложить сегодня.
     const dividends=data.dividends_week;
     if(dividends&&dividends.behind)
-      add('warn','Отстаём от недельных дивидендов',{amount:Number(dividends.due)-Number(dividends.collected)});
+      // Отставание — от плана к сегодняшнему дню (pace, Функционал §3.7), как в 2a.
+      add('warn','Отстаём от недельных дивидендов',{amount:Math.round(Number(dividends.pace)-Number(dividends.collected))});
     return items;
   }
 
@@ -170,7 +171,8 @@
       const accrued=src.accrued===null||src.accrued===undefined?null:num(src.accrued);
       const paid=num(src.paid), debt=src.debt===null?(accrued||0):num(src.debt);
       const row={...src,accrued,paid,paidToday,paidBefore:Math.max(0,paid-paidToday),debt,
-        todayPayments:today,noHik:MANUAL.has(src.status),
+        todayPayments:today,noHik:src.noHik||src.status==='unlinked'||MANUAL.has(src.status),
+        manualAttendance:MANUAL.has(src.status),
         time:src.own?entryClock(src.entry):null,late:src.status==='late'?lateMinutes(src.entry):0};
       let kind='ok', note='';
       // Начисление не посчитать — строка заблокирована своей причиной, а
@@ -193,11 +195,11 @@
     const ownAcc=new Map(own.map(a=>[a.employee_id,a]));
     const fromAcc=a=>{const e=byId.get(a.employee_id)||{};
       return build({key:'a'+a.id,accrualId:a.id,employeeId:a.employee_id,name:a.name,
-        role:e.role||a.group||'',status:a.status,entry:e.first_entry||null,rate:a.rate,
+        role:e.role||a.group||'',status:a.status,entry:e.first_entry||null,rate:a.rate,noHik:e.hikvision_registered===false,
         accrued:a.amount,paid:a.paid,debt:a.debt,day:S,own:true});};
     const ownRows=staffRows.map(e=>ownAcc.has(e.employee_id)?fromAcc(ownAcc.get(e.employee_id))
       :build({key:'e'+e.employee_id,accrualId:null,employeeId:e.employee_id,
-        name:e.name,role:e.role,status:e.status,entry:e.first_entry,rate:e.rate,blocker:e.blocker||null,
+        name:e.name,role:e.role,status:e.status,entry:e.first_entry,rate:e.rate,blocker:e.blocker||null,noHik:e.hikvision_registered===false,
         accrued:e.payable,paid:0,debt:e.payable===null?0:e.payable,day:S,own:true}))
       .concat(own.filter(a=>!byId.has(a.employee_id)).map(fromAcc));
     const confirmed=ownRows.length>0&&ownRows.every(r=>r.accrualId);
@@ -206,13 +208,17 @@
       .sort((a,b)=>a.work_day.localeCompare(b.work_day)||a.name.localeCompare(b.name,'ru'))
       .map(a=>{const e=byId.get(a.employee_id)||{};
         return build({key:'a'+a.id,accrualId:a.id,employeeId:a.employee_id,name:a.name,
-          role:e.role||a.group||'',status:a.status,entry:null,rate:a.rate,
+          role:e.role||a.group||'',status:a.status,entry:null,rate:a.rate,noHik:e.hikvision_registered===false,
           accrued:a.amount,paid:a.paid,debt:a.debt,day:a.work_day,own:false});});
     const rows=other.concat(ownRows);
     const toPay=rows.filter(r=>r.debt>0&&r.accrued>0);
+    // «Выдать пришедшим» (Функционал 2a): ставку всем пришедшим за вчера, у
+    // кого ещё нет выплаты. Частично выданных и долги прошлых смен не трогаем —
+    // их выдают строкой, иначе кнопка молча доплатила бы то, что решили иначе.
+    const handOut=ownRows.filter(r=>r.accrued>0&&r.paid===0&&!r.block);
     const payable=ownRows.filter(r=>r.accrued>0);
     const blocked=ownRows.filter(r=>r.block);
-    return {S,confirmed,partial,rows,own:ownRows,other,toPay,blocked,
+    return {S,confirmed,partial,rows,own:ownRows,other,toPay,handOut,blocked,
       totals:{accrued:ownRows.reduce((s,r)=>s+(r.accrued||0),0),
         paid:ownRows.reduce((s,r)=>s+r.paid,0),
         paidCount:ownRows.filter(r=>r.paid>0).length,payableCount:payable.length,
@@ -220,10 +226,15 @@
         unconfirmedDebt:ownRows.filter(r=>!r.accrualId).reduce((s,r)=>s+(r.accrued||0),0)}};
   }
 
-  const BOARD_TABS=[['all','Все'],['late','Опоздали'],['todo','Не выдано'],['err','Ошибки'],['nohik','Без Hikvision']];
+  /* «Ошибки» — только настоящие ошибки выдачи (выдано без входа, сумма мимо
+     ставки): те же, что красные и жёлтые пункты «Проверок». Строки, которые
+     нельзя начислить (нет ставки, нет привязки Hikvision, нет данных), — своя
+     вкладка «Не начислено»: это не ошибка, а причина, по которой ждут. */
+  const BOARD_TABS=[['all','Все'],['late','Опоздали'],['todo','Не выдано'],['err','Ошибки'],['blocked','Не начислено'],['nohik','Без Hikvision']];
   function boardMatch(row,tab){
     return tab==='all'||(tab==='late'&&row.status==='late')||(tab==='todo'&&row.kind==='todo')
-      ||(tab==='err'&&(row.kind==='err'||row.kind==='warn'||row.kind==='blocked'))||(tab==='nohik'&&row.noHik);
+      ||(tab==='err'&&(row.kind==='err'||row.kind==='warn'))||(tab==='blocked'&&row.kind==='blocked')
+      ||(tab==='nohik'&&row.noHik);
   }
   function boardTabs(rows){ return BOARD_TABS.map(([k,l])=>[k,l,rows.filter(r=>boardMatch(r,k)).length]); }
 
@@ -264,7 +275,8 @@
       const info=index[d.item_code]||{};
       rows.push({kind:'debt',cat:info.short||'Расход',name:stripItem(d.description,info.label),
         title:d.description,amount:num(d.total),paid:num(d.paid),debt:num(d.debt),debtId:d.id,
-        ops:own.map(m=>({operation:'movement',id:m.id}))});
+        // × удаляет ошибочную запись целиком: долг вместе с оплатой этого дня.
+        ops:[{operation:'debt',id:d.id}]});
     });
     const bySalaryDay=new Map();
     mv.filter(m=>m.type==='salary_payment').forEach(m=>{
@@ -332,7 +344,9 @@
     const l=data.ledger, cf=l.cash_flow||{}, mv=l.movements||[];
     const sumOf=f=>mv.filter(f).reduce((s,m)=>s+num(m.amount),0);
     const monthly=sumOf(m=>m.type==='other_expense'&&m.item_code==='salary_monthly');
-    const shoh=sumOf(m=>m.type==='procurement_advance');
+    // Расход «Закуп · Шох» из журнала — тоже выдача в подотчёт (сервер кладёт
+    // его в баланс Шоха), поэтому он в строке «Шоху», а не в «прочих».
+    const shoh=sumOf(m=>m.type==='procurement_advance'||(m.type==='other_expense'&&m.item_code==='proc_shoh'));
     const other=num(cf.other_outflows)-monthly-shoh;
     return {end:l.cash_balance===null?null:num(l.cash_balance),
       opening:cf.opening_balance===null||cf.opening_balance===undefined?null:num(cf.opening_balance),
@@ -341,6 +355,20 @@
       handedAt:data.cashier_handover&&data.cashier_handover.handed_at?String(data.cashier_handover.handed_at).slice(11,16):null,
       expected:data.cashier_handover&&data.cashier_handover.amount===null&&data.cashier_handover.expected!==null
         &&data.cashier_handover.expected!==undefined?num(data.cashier_handover.expected):null,
+      // Подтверждение бухгалтера: сколько реально получено и недостача к расчёту.
+      // Недостачу считает сервер (ledger.handover_state) от ТЕКУЩЕГО расчёта
+      // кассы — то же число в тосте, карточке, «Проверках», у учредителя и в Excel.
+      // Ручная запись прихода сверяется так же (checked), без «Изменить».
+      confirmedAt:data.cashier_handover&&data.cashier_handover.confirmed_at?String(data.cashier_handover.confirmed_at).slice(11,16):null,
+      checked:!!(data.cashier_handover&&data.cashier_handover.checked),
+      // Ручной приход при кассире, который в панели не работал, не сверяется.
+      unchecked:!!(data.cashier_handover&&data.cashier_handover.source==='accountant'
+        &&!data.cashier_handover.confirmed_at&&data.cashier_handover.cashier_active===false),
+      calculation:data.cashier_handover&&data.cashier_handover.calculation!=null?num(data.cashier_handover.calculation):null,
+      shortfall:data.cashier_handover&&data.cashier_handover.shortfall!=null?num(data.cashier_handover.shortfall):0,
+      // Кассир изменил день после подтверждения: расчёт тогда и сейчас.
+      changed:!!(data.cashier_handover&&data.cashier_handover.expected_changed),
+      confirmedCalc:data.cashier_handover&&data.cashier_handover.expected_amount!=null?num(data.cashier_handover.expected_amount):null,
       receipts:num(cf.other_receipts),shift:num(cf.salary_paid),monthly,shoh,other};
   }
 
@@ -359,7 +387,7 @@
       overpaid:people.filter(p=>p.paid>p.salary)};
   }
 
-  function shohBoard(shoh,purchases,movements,transfers,cashierGives){
+  function shohBoard(shoh,purchases,movements,transfers,cashierGives,pocket){
     const pos=shohPosition(shoh), list=purchases||[];
     // Перечисления поставщику: безнал, не меняют ни подотчёт Шоха, ни кассу.
     const trs=(transfers||[]).map(t=>({id:t.id,supplier:t.supplier||'',item:t.item||t.purpose||t.note||'',
@@ -373,18 +401,32 @@
         sub:num(p.price).toLocaleString('ru-RU')+' за '+p.unit+(p.usual_price!==null?' при обычной '+num(p.usual_price).toLocaleString('ru-RU'):'')});
       if(!p.has_photo)f.push({t:'Нет фото',text:'Покупка без фото: '+p.item,
         sub:'Шох · '+(p.created_at||'').slice(11,16)+' · '+num(p.total).toLocaleString('ru-RU')+' сум'});
-      if(p.iiko&&!['synced','legacy'].includes(p.iiko.status))f.push({t:'iiko не проведено',text:'Накладная не проведена в iiko: '+p.item,sub:''});
+      // T-399: товар не из справочника iiko — накладной нет, её проводит бухгалтер.
+      if(p.iiko&&p.iiko.status==='manual')f.push({t:'Нет в iiko — заведите товар и проведите накладную вручную',
+        text:'Нет в iiko — заведите товар и проведите накладную вручную: '+p.item,
+        sub:[p.point,p.supplier,p.storage].filter(Boolean).join(' · ')});
+      else if(p.iiko&&!['synced','legacy'].includes(p.iiko.status))f.push({t:'iiko не проведено',text:'Накладная не проведена в iiko: '+p.item,sub:''});
       return f;
     };
     const gives=(movements||[]).filter(m=>m.type==='procurement_advance').map(m=>({id:m.id,amount:num(m.amount),note:m.description,
       time:m.created_at?String(m.created_at).slice(11,16):''}));
+    // Строка журнала «Закуп · Шох» тоже пополняет подотчёт — видна среди выдач.
+    (movements||[]).filter(m=>m.type==='other_expense'&&m.item_code==='proc_shoh').forEach(m=>gives.push({id:m.id,amount:num(m.amount),
+      note:m.description,fromJournal:true,time:m.created_at?String(m.created_at).slice(11,16):''}));
     // Выдачи Шоху из кассы: уже вошли в подотчёт и уже вычтены из передачи
     // кассы, поэтому из денег бухгалтера второй раз не списываются.
     ((cashierGives&&cashierGives.gives)||[]).forEach(g=>gives.push({id:g.id,amount:num(g.amount),fromKassa:true,
       time:g.created_at?String(g.created_at).slice(11,16):''}));
     gives.sort((a,b)=>(a.time||'99').localeCompare(b.time||'99'));
-    return {known:pos.known,start:pos.start,given:pos.given,spent,count:list.length,
-      hand:pos.known?pos.start+pos.given-spent:null,gives,trs,trSum:trs.reduce((s,t)=>s+t.amount,0),
+    // «На руках» считает сервер (shokh.store.pocket_position) — та же сумма,
+    // что у Шоха в 3a и у учредителя. Без неё — по дню, как раньше.
+    const server=pocket&&pocket.pocket!==undefined;
+    const known=server?pocket.pocket!==null:pos.known;
+    const start=server?(pocket.day_start===null?null:num(pocket.day_start)):pos.start;
+    const given=server?num(pocket.given_today):pos.given;
+    const hand=server?(pocket.pocket===null?null:num(pocket.pocket)):(pos.known?pos.start+pos.given-spent:null);
+    return {known,start,given,spent:server?num(pocket.spent_day):spent,count:list.length,hand,
+      reported:server?pocket.reported_percent:null,gives,trs,trSum:trs.reduce((s,t)=>s+t.amount,0),
       buys:list.map(p=>({...p,flags:flags(p)}))};
   }
 
@@ -417,11 +459,26 @@
     const todo=board.own.filter(r=>r.kind==='todo');
     if(todo.length)add('todo',todo.length+' '+plural(todo.length,'сменный ждёт','сменных ждут','сменных ждут')+' выплату за '+dm(board.S),
       fmt(todo.reduce((s,r)=>s+r.debt,0))+' сум','todo');
+    if(cash.shortfall>0)add('err','От кассира получено меньше расчёта',
+      'Расчёт '+fmt(cash.calculation)+' · получено '+fmt(cash.cashier)+' · не хватает '+fmt(cash.shortfall)+' сум','cash');
+    if(cash.changed)add('warn','Касса изменилась после подтверждения',
+      'Было '+fmt(cash.confirmedCalc)+' · сейчас '+fmt(cash.calculation)+' сум — подтвердите снова','cash');
     if(data.expected_cashier===null)add('todo','Кассир ещё не передал кассу','Касса за '+dm(data.date)+' не записана','cash');
     return out.sort((a,b)=>LEVEL_ORDER[a.lvl]-LEVEL_ORDER[b.lvl]);
   }
 
+  /* Бейдж «Проверок»: «N ошибок» — только красные (в Excel это «Ошибка»),
+     одни жёлтые — «N замечаний» («Внимание» в Excel), ничего — «чисто».
+     Пункты «ждёт» (todo) — дела, а не ошибки: в бейдж не входят. */
+  function checksBadge(issues){
+    const errors=(issues||[]).filter(i=>i.lvl==='err').length;
+    const warns=(issues||[]).filter(i=>i.lvl==='warn').length;
+    if(errors)return {text:errors+' '+plural(errors,'ошибка','ошибки','ошибок'),tone:'err',errors,warns};
+    if(warns)return {text:warns+' '+plural(warns,'замечание','замечания','замечаний'),tone:'warn',errors,warns};
+    return {text:'чисто',tone:'clean',errors,warns};
+  }
+
   return {shohPosition,shiftRows,shiftTabs,matchesTab,dayChecks,payLock,
     shiftIso,plural,entryClock,lateMinutes,todaySalaryPayments,shiftBoard,boardTabs,boardMatch,
-    shiftBlocker,catalogIndex,journal,cashCard,monthlyBoard,shohBoard,financeIssues,GROUP_SHORT};
+    shiftBlocker,catalogIndex,journal,cashCard,monthlyBoard,shohBoard,financeIssues,checksBadge,GROUP_SHORT};
 });

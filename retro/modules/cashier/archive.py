@@ -32,6 +32,9 @@ def decode_snapshot(payload):
         revenue_breakdown=RevenueBreakdown(*(Decimal(breakdown[key]) for key in
             ('retro', 'school', 'bekhruz_banquet'))) if breakdown else None,
         cash_prepayment=amount('cash_prepayment'), new_prepayment=amount('new_prepayment'),
+        # Предоплаты могли не посчитаться (возврат аванса) — тогда они None, а
+        # причина хранится рядом и переживает перезапуск вместе со снимком.
+        prepayment_issue=value.get('prepayment_issue'),
         register_payment_sales=amount('register_payment_sales'),
         register_received_total=amount('register_received_total'), source='database',
         shift=ShiftStatus(bool(shift['open']), shift.get('opened_at'), shift.get('closed_at'))

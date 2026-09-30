@@ -84,3 +84,50 @@ test('фильтр «Не пришли» включает отметку «не 
   assert.equal(logic.teamMatches({type: 'shift', status: 'missing'}, 'missing'), true);
   assert.equal(logic.teamMatches({type: 'shift', status: 'manual_present'}, 'missing'), false);
 });
+
+test('«Слабые» — без напитков и выпечки: по группе iiko и по названию', () => {
+  const data = {item_metrics: {all: {
+    'Халим': metric(1, 42000, 20000), 'Чай зелёный': metric(2, 10000, 2000),
+    'Хлеб Лепешка': metric(3, 15000, 5000), 'ШКОЛА Эклер': metric(4, 60000, 30000),
+    'Олот Самса': metric(5, 40000, 20000), 'Стакан Миллий': metric(1, 5000, 1000),
+    'Лимонад Тархун': metric(2, 30000, 9000),
+  }}, item_groups: {'Лимонад Тархун': 'Лимонад', 'Стакан Миллий': 'Контейнеры', 'ШКОЛА Эклер': 'Десерты (ШКОЛА)'}};
+  // «кола» внутри «ШКОЛА» — не напиток: кириллица без \b.
+  assert.deepEqual(logic.menuSlice(data, 'all', 'weak', 5).map(row => row.name), ['Халим', 'ШКОЛА Эклер']);
+  assert.equal(logic.isDrinkOrBakery('ШКОЛА Эклер', ''), false);
+  assert.equal(logic.isDrinkOrBakery('Напиток COCA COLA 1 L', 'ДОСТАВКА ЯНДЕКС'), true);
+  // Лидеры упаковку из группы «Контейнеры» тоже не показывают.
+  assert.ok(!logic.menuSlice(data, 'all', 'top', 10).some(row => row.name === 'Стакан Миллий'));
+});
+
+test('строка команды: месяц сменного и оклад — осталось, закрыт, переплата', () => {
+  const rows = logic.teamRows({shift: [{employee_id: 1, name: 'А', role: 'официант', rate: '180000', status: 'on_time',
+    hikvision_registered: true, month_shifts: 12, month_paid: '1980000'}],
+  monthly: [
+    {id: 7, name: 'Б', role: 'менеджер', salary: '8000000', month_paid: '3000000', month_left: '5000000'},
+    {id: 8, name: 'В', role: 'бухгалтер', salary: '6000000', month_paid: '6000000', month_left: '0'},
+    {id: 9, name: 'Г', role: 'повар', salary: '5000000', month_paid: '5500000', month_left: '-500000'},
+  ]});
+  assert.equal(rows[0].monthShifts, 12);
+  assert.equal(rows[0].monthPaid, 1980000);
+  assert.deepEqual(rows.slice(1).map(row => [row.paid, row.rest, row.state]),
+    [[3000000, 5000000, 'left'], [6000000, 0, 'closed'], [5500000, -500000, 'over']]);
+});
+
+test('официанты Retro: по выручке, чеки, смены, средний чек', () => {
+  const rows = logic.retroWaiters({waiter_retro: {
+    'Алина': {revenue: '4000000', checks: 10, shifts: 3},
+    'Музаффар': {revenue: '6000000', checks: 12, shifts: 4},
+    'Пустой': {revenue: '0', checks: 0, shifts: 0},
+  }});
+  assert.deepEqual(rows.map(row => row.name), ['Музаффар', 'Алина']);
+  assert.equal(rows[0].averageCheck, 500000);
+  assert.equal(rows[1].checks, 10);
+  // Старый ответ без разбивки Retro — общий список без чеков.
+  assert.equal(logic.retroWaiters({waiter_metrics: {'Олег': metric(1, 100, 50)}})[0].checks, null);
+});
+
+test('период из одного дня подписан одной датой', () => {
+  assert.equal(logic.periodLabel('2026-09-28', '2026-09-28'), '28 сентября 2026');
+  assert.equal(logic.periodLabel('2026-09-22', '2026-09-28'), '22 — 28 сентября 2026');
+});

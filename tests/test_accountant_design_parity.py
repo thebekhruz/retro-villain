@@ -473,7 +473,7 @@ def test_old_rows_without_zone_are_read_as_server_time(tmp_path, monkeypatch):
 
 def add_transfer(c, key=None, **changes):
     body = {'date': DAY.isoformat(), 'supplier': 'ООО «Мясной двор»', 'item': 'Говядина, 20 кг',
-            'point': 'Базар', 'amount': '1850000'}
+            'point': 'RETRO', 'amount': '1850000'}
     body.update(changes)
     headers = {'Idempotency-Key': key} if key else {}
     return c.post('/api/accountant/supplier-transfers', json=body, headers=headers)
@@ -493,7 +493,7 @@ def test_supplier_transfer_is_visible_but_moves_no_cash(tmp_path):
         transfer = created.json()['transfer']
         assert {key: transfer[key] for key in ('day', 'supplier', 'item', 'point', 'amount')} == {
             'day': DAY.isoformat(), 'supplier': 'ООО «Мясной двор»', 'item': 'Говядина, 20 кг',
-            'point': 'Базар', 'amount': '1850000'}
+            'point': 'RETRO', 'amount': '1850000'}
         assert transfer['id'] == created.json()['id'] and TASHKENT_STAMP.match(transfer['created_at'])
 
         after_day = day_json(c)
@@ -609,7 +609,7 @@ def test_day_export_pays_out_yesterdays_confirmed_shift(tmp_path):
             'date': DAY.isoformat(), 'employee_id': cleaner.id, 'present': False})
 
         book = workbook(c.get('/api/accountant/day/export', params={'date': DAY.isoformat()}))
-        assert book.sheetnames == ['Смена', 'Операции', 'Итог']
+        assert book.sheetnames == ['Смена', 'Операции', 'Итог', 'Закуп Шоха', 'Оклады']
         sheet = book['Смена']
         assert 'Смена 15.09.2026 — выдаётся 16.09.2026' in sheet['A2'].value
         assert 'подтверждена' in sheet['A2'].value and 'не подтверждена' not in sheet['A2'].value
@@ -672,10 +672,31 @@ def test_day_export_journal_and_total_match_the_cash_card(tmp_path):
         assert total['Перечислено поставщикам (не из кассы)'] == 1850000
 
 
+def test_day_export_has_checks_shoh_and_salaries_like_the_screen(tmp_path):
+    """Файл «Финансов дня» = экран: покупки и баланс Шоха, оклады дня и
+    «Проверки» в том виде, в каком их показал экран (POST с листом проверок)."""
+    with client(tmp_path) as c:
+        cash(c)
+        person = c.app.state.accountant_roster.add_monthly(name='Азиз', role='менеджер', salary='8000000')
+        assert pay_monthly(c, person.id, '2000000').status_code == 201
+        checks = [{'lvl': 'err', 'text': 'От кассира получено меньше расчёта', 'sub': 'не хватает 300 000 сум'},
+                  {'lvl': 'todo', 'text': 'Кассир ещё не передал кассу', 'sub': None}]
+        response = c.post('/api/accountant/day/export', json={'date': DAY.isoformat(), 'checks': checks})
+        assert response.status_code == 200, response.text
+        book = workbook(response)
+        assert book.sheetnames == ['Смена', 'Операции', 'Итог', 'Закуп Шоха', 'Оклады', 'Проверки']
+        found = [[cell.value for cell in row][:3] for row in book['Проверки'].iter_rows(min_row=4)]
+        assert found == [['Ошибка', 'От кассира получено меньше расчёта', 'не хватает 300 000 сум'],
+                         ['К выполнению', 'Кассир ещё не передал кассу', None]]
+        salaries = rows_by_name(book['Оклады'], 4)
+        assert salaries['Азиз'][:3] == [2000000, 8000000, 6000000]
+        assert 'Шох не вносил покупки за этот день.' in [row[0].value for row in book['Закуп Шоха'].iter_rows(min_row=3)]
+
+
 def test_exports_work_on_an_empty_database(tmp_path):
     with client(tmp_path) as c:
         day = workbook(c.get('/api/accountant/day/export', params={'date': DAY.isoformat()}))
-        assert day.sheetnames == ['Смена', 'Операции', 'Итог']
+        assert day.sheetnames == ['Смена', 'Операции', 'Итог', 'Закуп Шоха', 'Оклады']
         assert 'За смену записей нет.' in [row[0].value for row in day['Смена'].iter_rows(min_row=5)]
         total = {row[0].value: row[1].value for row in day['Итог'].iter_rows(min_row=3) if row[0].value}
         assert total['= Остаток на конец дня'] is None
@@ -703,7 +724,8 @@ def test_month_sheet_keeps_payments_of_removed_staff_and_salary_without_a_person
         paid = sheet.max_column - 1  # колонки: …, Начислено, Выдано, Осталось
         column = lambda name: rows[name][paid - 2]
         assert column('Азиз') == 2000000 and rows['Азиз'][-1] == 6000000
-        assert column(f'Сотрудник удалён · №{dilnoza.id}') == 1500000
+        # Удалённый в архиве: строка с его именем, как на экране 2b.
+        assert column('Дилноза · удалён из реестра') == 1500000
         assert column('Оклады без сотрудника (общий расход)') == 500000
         assert column('Итого оклады') == 4000000
         day_column = 2 + DAY.day - 2  # индекс в списке значений после имени
@@ -759,7 +781,7 @@ def test_new_backend_paths_behave_the_same_on_both_dialects(any_db):
 
     # Выгрузки собираются и на этих данных.
     assert workbook(c.get('/api/accountant/day/export', params={'date': DAY.isoformat()})).sheetnames == [
-        'Смена', 'Операции', 'Итог']
+        'Смена', 'Операции', 'Итог', 'Закуп Шоха', 'Оклады']
     assert workbook(c.get('/api/accountant/payroll/month/export', params={'month': '2026-09'})).sheetnames == [
         'Ведомость']
 
@@ -1056,9 +1078,11 @@ def test_day_export_shows_till_gives_and_handover_without_touching_the_balance(a
     assert total['= Остаток на конец дня'] == before['= Остаток на конец дня'] == Decimal(
         day['ledger']['cash_balance']) == 5760000
     assert total['Шоху из кассы · не из остатка'] == 300000
-    assert total['Подотчёт Шоха на конец дня'] == 720000
+    assert total['Подотчёт Шоха по бухгалтерии (выдано − принятые покупки)'] == 720000
+    assert total['На руках у Шоха на конец дня'] == 720000
     handed = next(label for label in total if str(label).startswith('Передача кассира'))
-    assert handed == f"Передача кассира · получено {day['cashier_handover']['handed_at'][11:16]} · кассир"
+    assert handed == (f"Передача кассира · получено {day['cashier_handover']['handed_at'][11:16]} · кассир"
+                      ' · не подтверждено')
     assert total[handed] == 5000000
 
     lines = [[cell.value for cell in row] for row in book['Операции'].iter_rows(min_row=4, max_col=5)]
@@ -1089,4 +1113,60 @@ def test_founder_month_excel_counts_till_gives_to_shokh_once(tmp_path):
         by_day = book['По дням']
         heads = [cell.value for cell in by_day[4]]
         day_row = next(row for row in by_day.iter_rows(min_row=5) if row[0].value.date() == DAY)
-        assert day_row[heads.index('Закуп')].value == 700000
+        assert day_row[heads.index('Закуп · Шох и напрямую')].value == 700000
+
+
+# ── T-399: привязка к Hikvision вручную из «Сотрудников» ─────────────────
+
+def test_accountant_links_a_person_to_hikvision_by_hand(any_db):
+    """Сняли «Нет в Hikvision» — номер на устройстве вводят в карточке: он
+    уникален (занятый — 409 с именем), пишется в историю, и входы, пришедшие
+    до привязки, сразу становятся первыми входами человека."""
+    c, today = any_db, today_tashkent()
+    roster = c.app.state.accountant_roster
+    jasur = roster.add(name='Жасур Алиев', role='официант', rate='180000', group_name='Обслуживание зала')
+    shahzod = roster.add(name='Шахзод Мирзаев', role='официант', rate='180000', group_name='Обслуживание зала')
+    # Событие турникета пришло, пока номер ни к кому не привязан.
+    entered = datetime.combine(today, datetime.min.time(), TZ) + timedelta(hours=9, minutes=5)
+    c.app.state.attendance_store.ingest(HikvisionEvent('retro-main-entry', 'e-1024', '1024', entered), None)
+
+    def staff(person):
+        rows = c.get('/api/accountant/staff', params={'date': today.isoformat()}).json()['employees']
+        return next(row for row in rows if row['employee_id'] == person.id)
+
+    def patch(person, **body):
+        return c.patch(f'/api/accountant/employees/{person.id}',
+                       json={'rate': '180000', 'reason': 'Привязка к турникету', **body})
+
+    assert staff(jasur)['status'] == 'unlinked'
+    linked = patch(jasur, hikvision_id=' 1024 ')
+    assert linked.status_code == 200, linked.text
+    assert linked.json()['employee']['hikvision_id'] == '1024'
+    row = staff(jasur)
+    assert (row['hikvision_registered'], row['hikvision_id'], row['status']) == (True, '1024', 'on_time')
+    assert row['first_entry'].startswith(today.isoformat() + 'T09:05')
+    def hikvision_history(person):
+        rows = c.get(f'/api/accountant/employees/{person.id}/history').json()['history']
+        return [row['details'] for row in rows if row['action'] == 'hikvision']
+
+    assert hikvision_history(jasur) == ['ID в Hikvision: — → 1024']
+
+    # Номер уже занят — 409 с именем владельца, карточка второго не меняется.
+    taken = patch(shahzod, hikvision_id='1024', name='Шахзод М.')
+    assert taken.status_code == 409
+    assert 'Жасур Алиев' in taken.json()['detail']
+    assert staff(shahzod)['name'] == 'Шахзод Мирзаев' and staff(shahzod)['hikvision_id'] is None
+    assert patch(shahzod, hikvision_id='12 34').status_code == 422
+    # Правка без поля привязку не трогает.
+    assert patch(jasur, name='Жасур Алиев').status_code == 200
+    assert staff(jasur)['hikvision_id'] == '1024'
+
+    # Сняли номер — входы по нему больше не его, человек снова «Нет привязки».
+    cleared = patch(jasur, hikvision_id='')
+    assert cleared.status_code == 200, cleared.text
+    row = staff(jasur)
+    assert (row['hikvision_id'], row['status'], row['first_entry']) == (None, 'unlinked', None)
+    assert hikvision_history(jasur) == ['ID в Hikvision: 1024 → —', 'ID в Hikvision: — → 1024']
+    # Освободившийся номер можно отдать другому — его входы переходят к нему.
+    assert patch(shahzod, hikvision_id='1024').status_code == 200
+    assert staff(shahzod)['status'] == 'on_time'

@@ -1,5 +1,7 @@
 """Persistent, account-scoped conversation history for the founder assistant."""
 
+from contextlib import closing
+
 import sqlite3
 from pathlib import Path
 
@@ -13,7 +15,7 @@ class FounderChatStore:
         self.db = as_database(path)
         # .path остаётся для скриптов обслуживания и тестов
         self.path = self.db.path
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute('''CREATE TABLE IF NOT EXISTS founder_chat_messages (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 owner TEXT NOT NULL,
@@ -32,7 +34,7 @@ class FounderChatStore:
     def list(self, owner, limit=100):
         if not isinstance(limit, int) or not 1 <= limit <= 100:
             raise ValueError('Лимит истории должен быть от 1 до 100.')
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             rows = connection.execute(
                 'SELECT role,content,created_at FROM ('
                 'SELECT id,role,content,created_at FROM founder_chat_messages '
@@ -44,7 +46,7 @@ class FounderChatStore:
     def append_exchange(self, owner, question, answer, created_at):
         if not owner or not question.strip() or not answer.strip():
             raise ValueError('Сообщения чата не могут быть пустыми.')
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
             connection.executemany(
                 'INSERT INTO founder_chat_messages(owner,role,content,created_at) '
@@ -59,7 +61,7 @@ class FounderChatStore:
             )
 
     def clear(self, owner):
-        with self._connect() as connection:
+        with closing(self._connect()) as connection, connection:
             cursor = connection.execute(
                 'DELETE FROM founder_chat_messages WHERE owner=?', (owner,))
         return cursor.rowcount

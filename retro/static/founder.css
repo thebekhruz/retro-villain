@@ -223,7 +223,7 @@
 
 /* Во время загрузки гаснут только данные: фильтры остаются живыми, чтобы
    можно было передумать, не дожидаясь ответа iiko. */
-.founder-metrics[aria-busy="true"]{opacity:.55}
+
 
 /* ── Узкие экраны ─────────────────────────────────────────────────────── */
 @media(max-width:1180px){
@@ -290,3 +290,55 @@
 
 .sales-bridge-metrics{grid-template-columns:repeat(auto-fit,minmax(220px,1fr))}
 .sales-bridge-metrics article[hidden],.founder-metrics article[hidden]{display:none}
+
+/* Отклик (busy.js, T-393): «печатает», ошибка с повтором, скелет истории, поле занято. */
+.rm-typing{display:inline-flex;align-items:center;gap:4px;height:12px;margin-right:9px;vertical-align:-1px}
+.rm-typing i{width:6px;height:6px;border-radius:50%;background:#9fb0a2;animation:rm-typing 1.1s ease-in-out infinite}
+.rm-typing i:nth-child(2){animation-delay:.16s}.rm-typing i:nth-child(3){animation-delay:.32s}
+@keyframes rm-typing{0%,60%,100%{transform:translateY(0);opacity:.45}30%{transform:translateY(-3px);opacity:1}}
+.ai-chat-message.is-pending .ai-chat-content,.ai-chat-message.is-pending>p{animation:none;font-style:normal}
+.ai-chat-message.is-error>p{display:flex;flex-direction:column;align-items:flex-start;gap:9px;background:#fff6f3;border-color:#efcfc6;color:#a33f2b}
+.ai-chat-error-text::before{content:"!";display:inline-grid;place-items:center;width:16px;height:16px;margin-right:7px;border-radius:50%;background:#a33f2b;color:#fff;font-size:10px;font-weight:700;vertical-align:1px}
+.ai-chat-retry{min-height:32px;padding:0 13px;border:1px solid #e3b9ad;border-radius:16px;background:#fff;color:#a33f2b;font:650 11px/1 inherit;cursor:pointer}
+.ai-chat-skel{display:flex;flex-direction:column;gap:9px;width:78%;padding:13px;border:1px solid #e2e9e1;border-radius:4px 14px 14px 14px;background:#fff}
+.ai-chat-skel .rm-skel:nth-child(1){width:92%}.ai-chat-skel .rm-skel:nth-child(2){width:74%}.ai-chat-skel .rm-skel:nth-child(3){width:48%}
+.ai-chat-form.is-busy .ai-chat-compose{background:#f3f5ef}
+.ai-chat-form.is-busy textarea{color:#76847c}
+@media(prefers-reduced-motion:reduce){.rm-typing i{animation:none;opacity:.7}}
+
+/* ═══ Отклик и ожидание (busy.js, T-393) ═══════════════════════════════════ */
+.founder-metrics strong .rm-skel.is-val{display:inline-block;vertical-align:middle;width:150px;max-width:100%;height:16px;border-radius:7px}
+.founder-message.is-skel{display:flex;flex-direction:column;gap:10px;padding-top:18px;padding-bottom:18px}
+.founder-message.is-skel .rm-skel{--rm-skel-a:#f3e6c8;--rm-skel-b:#fbf3e0;height:9px}
+.founder-message.is-skel .rm-skel:nth-child(1){width:92%}.founder-message.is-skel .rm-skel:nth-child(2){width:86%}.founder-message.is-skel .rm-skel:nth-child(3){width:40%}
+.booking-metrics strong .rm-skel.is-val{width:3em}
+.source-status .rm-skel.is-val{display:inline-block;width:110px;height:8px;vertical-align:middle}
+.broadcast-audience strong .rm-skel.is-val{display:inline-block;width:2.4em;height:.55em;vertical-align:middle}
+.fa-skel-chart{position:relative;display:flex;flex-direction:column;justify-content:space-between;padding:14px 18px 40px 66px;
+  border-radius:12px;background:repeating-linear-gradient(0deg,transparent 0 47px,#eef1ea 47px 48px)}
+.fa-skel-chart .rm-skel{height:8px}
+.fa-skel-chart .rm-skel:nth-child(1){width:34%}.fa-skel-chart .rm-skel:nth-child(2){width:62%}
+.fa-skel-chart .rm-skel:nth-child(3){width:48%}.fa-skel-chart .rm-skel:nth-child(4){width:80%}
+.fa-skel-card{display:flex;flex-direction:column;gap:10px;min-height:92px}
+.fa-skel-card .rm-skel:nth-child(1){width:44%}.fa-skel-card .rm-skel:nth-child(2){width:70%}.fa-skel-card .rm-skel:nth-child(3){width:52%;height:8px}
+.fa-skel-row{padding:0 12px}
+.fa-skel-recipient{pointer-events:none}
+.fa-skel-recipient>.rm-skel{width:18px;height:18px;border-radius:5px}
+.fa-skel-recipient>span:not(.rm-skel){display:flex;flex-direction:column;gap:6px;flex:1}
+.fa-skel-recipient>span:not(.rm-skel) .rm-skel:first-child{width:60%}.fa-skel-recipient>span:not(.rm-skel) .rm-skel:last-child{width:38%;height:8px}
+/* Источник не настроен или недоступен: спокойная плашка на месте графика. */
+.fa-unavailable{display:flex;align-items:flex-start;gap:12px;padding:18px 20px;border:1px dashed #e3cfc2;border-radius:12px;background:#fdf8f5;color:#7a4b3c}
+.fa-unavailable>span{display:grid;place-items:center;flex:none;width:22px;height:22px;border-radius:50%;background:#c9826b;color:#fff;font-size:12px;font-weight:700}
+.fa-unavailable p{margin:1px 0 0;font-size:13px;line-height:1.5}
+/* Ход рассылки: крутится, пока идёт; итог — зелёный или красный. */
+.broadcast-result.is-running{display:flex;align-items:center;gap:9px}
+.broadcast-result.is-running::before{content:"";flex:none;width:14px;height:14px;border-radius:50%;border:2px solid #d9e2d8;border-top-color:#143e35;animation:rm-spin .8s linear infinite}
+.broadcast-result.is-done{color:#2f6b45}
+.broadcast-result.is-done::before{content:"✓ "}
+.broadcast-result.is-error{color:#a33f2b}
+@media(prefers-reduced-motion:reduce){.broadcast-result.is-running::before{animation:none}}
+.booking-panel.is-unavailable .booking-chart{min-height:0;height:auto}
+.booking-panel.is-unavailable .booking-source-head,.booking-panel.is-unavailable .booking-sources{display:none}
+
+/* Причина ошибки AI под общей фразой */
+.ai-chat-error-detail{display:block;margin-top:4px;font-size:11.5px;opacity:.75}

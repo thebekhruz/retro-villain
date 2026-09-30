@@ -6,6 +6,7 @@
 """
 
 import asyncio
+from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -14,7 +15,7 @@ from fastapi import HTTPException
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.expenses import cash_to_finance
 from retro.modules.cashier.service import DataError, today_tashkent
-from retro.modules.cashier.till import shokh_gives, shokh_total, till_totals
+from retro.modules.cashier.till import handover_check, shokh_gives, shokh_total, till_totals
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
@@ -53,6 +54,45 @@ def dividend_summary(state, day: date) -> dict:
     result = overview.dividend_week(day, Decimal(target['amount']) if target else None, flows,
                                     free_cash=free)
     result['target_source'] = target
+    result['history'] = dividend_history(state, monday)
+    return result
+
+
+DIVIDEND_HISTORY_WEEKS = 6
+
+
+def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS) -> list[dict]:
+    """Прошлые недели для 7a: «собрано X из Y» и сколько выдано собственнику
+    из сейфа в понедельник выдачи («Выдать собственнику из сейфа» в 2a —
+    резерв уменьшается, остаток бухгалтера не меняется). Недели без цели и
+    без отложенного не показываем: истории там нет."""
+    first = monday - timedelta(days=7 * weeks)
+    flows = overview.daily_flows(state.accountant_finance.cash_flows_between(
+        first, monday - timedelta(days=1)))
+    # Выдачи собственнику — одним чтением резерва: раньше каждая неделя
+    # собирала полную сводку всех резервов, 18 запросов вместо одного.
+    paid_by_day = defaultdict(Decimal)
+    for row in state.accountant_finance.reserve_entries('dividends'):
+        if row['kind'] == 'withdrawal':
+            paid_by_day[row['day']] += Decimal(row['amount'])
+    result = []
+    for index in range(1, weeks + 1):
+        start = monday - timedelta(days=7 * index)
+        end = start + timedelta(days=6)
+        _, _, label = overview.week_of(start)
+        target = state.dividend_targets.get(label)
+        collected = sum((flows.get((start + timedelta(days=offset)).isoformat(), {}).get(
+            'dividends', Decimal(0)) for offset in range(7)), Decimal(0))
+        payout_day = end + timedelta(days=1)
+        paid_out = paid_by_day.get(payout_day.isoformat(), Decimal(0))
+        if target is None and not collected and not paid_out:
+            continue
+        amount = Decimal(target['amount']) if target else None
+        result.append(dict(week=label, start=start.isoformat(), end=end.isoformat(),
+                           payout_day=payout_day.isoformat(),
+                           target=money(amount) if amount is not None else None,
+                           collected=money(collected), paid_out=money(paid_out),
+                           done=amount is not None and collected >= amount))
     return result
 
 
@@ -76,6 +116,79 @@ async def cashier_day(request, day: date):
         fetched_at=snapshot.fetched_at.isoformat()), None
 
 
+def shift_accrued(request, day: date) -> Decimal:
+    """Начислено сменным за смену `day` — та же сумма, что «Смена {день}» в 2a:
+    у начисленных — начисление, у остальных — ставка по отметке дня."""
+    from retro.modules.accountant.routes import attendance_payroll
+
+    state = request.app.state
+    roster = state.accountant_roster.list(day)
+    _, rows = attendance_payroll(request, day, roster,
+                                 state.accountant_finance.exceptions_for_day(day), frozen_pay=True)
+    return sum((row.payable for row in rows if row.payable is not None), Decimal(0))
+
+
+async def day_outlook(request, day: date, accounting: dict, expected):
+    """«Уйдёт сегодня» и «У бухгалтера к вечеру ≈» (Функционал §3.8).
+
+    Зарплаты = начислено сменным за вчера + оклады, выданные сегодня.
+    Закуп ≈ и прочее ≈ — среднее за 7 прошлых дней (закуп бухгалтера и прочие
+    расходы без дивидендов). К вечеру ≈ = на утро + к передаче − зарплаты −
+    закуп − прочее. Оценки округляем до 10 000."""
+    state = request.app.state
+    recent, shift = await asyncio.gather(
+        asyncio.to_thread(state.accountant_finance.cash_flows_between,
+                          day - timedelta(days=7), day - timedelta(days=1)),
+        asyncio.to_thread(shift_accrued, request, day - timedelta(days=1)))
+    recent = overview.daily_flows(recent)
+    average = lambda key: overview.round_to(sum(
+        (values.get(key, Decimal(0)) for values in recent.values()), Decimal(0)) / 7, overview.OUTLOOK_STEP)
+    monthly = sum((Decimal(row['amount']) for row in accounting['monthly_payments']['today']), Decimal(0))
+    salary, procurement, other = shift + monthly, average('procurement'), average('other')
+    opening = accounting['ledger']['cash_flow'].get('opening_balance')
+    evening = None
+    if opening is not None:
+        evening = overview.round_to(Decimal(opening) + Decimal(expected or 0) - salary - procurement - other,
+                                    overview.OUTLOOK_STEP)
+    return dict(salary_due=money(salary), salary_shift=money(shift), salary_monthly=money(monthly),
+                procurement=money(procurement), other=money(other),
+                evening=money(evening) if evening is not None else None,
+                handover_expected=expected is not None, estimate=True)
+
+
+def handover_expected(cashier, handover_state):
+    """Расчёт кассира для сверки и отчёта. Полученное бухгалтером (подтверждённая
+    передача или его ручная запись) сверено сервером с текущим расчётом кассы
+    (ledger.handover_state) — берём ровно тот расчёт, иначе — расчёт по iiko.
+    Возвращает (сумма или None, подтверждено ли)."""
+    confirmed = bool(handover_state and handover_state.get('confirmed_at'))
+    if handover_state and handover_state.get('checked') and handover_state.get('calculation') is not None:
+        return money(handover_state['calculation']), confirmed
+    return (cashier['expected_handover'] if cashier else None), confirmed
+
+
+async def month_cashier(request, first: date, last: date):
+    """Демо и расчёт кассира по дням месяца для Excel: по одному отчёту iiko на
+    день, не больше шести разом. День без ответа iiko — пустые ячейки."""
+    gate = asyncio.Semaphore(6)
+    state = request.app.state
+
+    async def one(day):
+        async with gate:
+            cashier, error = await cashier_day(request, day)
+        handover_state = await asyncio.to_thread(
+            handover_check, state, day, Decimal(cashier['expected_handover']) if cashier else None)
+        expected, _ = handover_expected(cashier, handover_state)
+        if cashier is None:
+            return day, None, error
+        return day, dict(demo=cashier['demo'], expected=expected), None
+
+    days = [first + timedelta(days=offset) for offset in range((last - first).days + 1)]
+    results = await asyncio.gather(*(one(day) for day in days))
+    errors = [error for _, _, error in results if error]
+    return {day.isoformat(): value for day, value, _ in results if value}, (errors[0] if errors else None)
+
+
 async def founder_day(request, day: date, *, orders=None, flows=None):
     """Один день: касса iiko, деньги бухгалтера и сверка передачи между ними."""
     from retro.modules.accountant.routes import day_view
@@ -88,8 +201,24 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
             await asyncio.to_thread(state.accountant_finance.cash_flows_between, day, day))
     values = flows.get(day.isoformat(), {})
     recorded = await asyncio.to_thread(state.accountant_finance.handover_for_day, day)
-    expected = cashier['expected_handover'] if cashier else None
-    check = overview.handover_check(recorded, expected)
+    handover_state = await asyncio.to_thread(
+        handover_check, state, day, Decimal(cashier['expected_handover']) if cashier else None) or {}
+    expected, confirmed = handover_expected(cashier, handover_state)
+    checked = bool(handover_state.get('checked')) and handover_state.get('shortfall') is not None
+    if checked:
+        # Полученное бухгалтером (подтверждение или ручная запись, 2a) сверено
+        # сервером с текущим расчётом кассы — та же недостача, что ошибка
+        # «От кассира получено меньше расчёта» в 2a и в Excel дня.
+        shortfall = Decimal(handover_state['shortfall'] or 0)
+        check = dict(status='mismatch' if shortfall > 1 else 'ok',
+                     difference=money(Decimal(recorded) - Decimal(expected)))
+    elif (recorded is not None and handover_state.get('source') == 'accountant'
+          and not handover_state.get('cashier_active')):
+        # Приход записал бухгалтер, а кассир в панели в этот день не работал:
+        # расчёт iiko не знает реальных расходов кассы — сверки нет, как в 2a.
+        check = dict(status='unchecked', difference=None)
+    else:
+        check = overview.handover_check(recorded, expected)
     if day == today_tashkent() and check['status'] == 'missing':
         # Смена ещё идёт: не переданная касса сегодня — не недостача.
         check = dict(status='pending', difference=None)
@@ -97,20 +226,16 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
     day_orders = (orders or {}).get(day.isoformat(), {})
     outlook = None
     if day == today_tashkent():
-        # «Уйдёт сегодня»: зарплату видно по долгу начислений, а закуп и прочие
-        # расходы ещё не внесены — берём их средним за прошлую неделю.
-        recent = overview.daily_flows(await asyncio.to_thread(
-            state.accountant_finance.cash_flows_between, day - timedelta(days=7), day - timedelta(days=1)))
-        average = lambda key: sum((values.get(key, Decimal(0)) for values in recent.values()),
-                                  Decimal(0)) / 7
-        outlook = dict(salary_due=ledger.get('salary_debt'), procurement=money(average('procurement')),
-                       other=money(average('other')), estimate=True)
+        outlook = await day_outlook(request, day, accounting, expected)
     return dict(
         date=day.isoformat(), weekday=day.weekday(), today=day == today_tashkent(),
         cashier=cashier, cashier_error=cashier_error,
         orders={key: value['orders'] for key, value in day_orders.items()} if orders is not None else None,
         handover=dict(recorded=money(recorded) if recorded is not None else None,
-                      expected=expected, **check),
+                      expected=expected, confirmed=confirmed, checked=checked,
+                      confirmed_at=handover_state.get('confirmed_at') if confirmed else None,
+                      shortfall=handover_state.get('shortfall') if checked else None,
+                      expected_changed=bool(handover_state.get('expected_changed')), **check),
         flows={key: money(values.get(key, Decimal(0)))
                for key in ('salary', 'procurement', 'other', 'dividends', 'receipt')},
         opening_balance=ledger['cash_flow'].get('opening_balance'),
@@ -182,7 +307,8 @@ def founder_spending(state, day: date):
     from_till = shokh_total(shokh_gives(state.accountant_finance, first, day))
     return dict(month=first.isoformat()[:7], through=day.isoformat(),
                 expenses=overview.expense_categories(flows, transfers, shokh_from_till=from_till),
-                shokh=overview.shokh_month(purchases, flows, pocket=pocket, from_till=from_till))
+                shokh=overview.shokh_month(purchases, flows, pocket=pocket, from_till=from_till,
+                                           transfers=transfers))
 
 
 def selected_day(value: date | None) -> date:

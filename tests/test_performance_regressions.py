@@ -172,3 +172,38 @@ def test_static_files_revalidate_while_api_responses_remain_private(tmp_path):
     assert first.status_code == 200 and second.status_code == 304
     assert first.headers['cache-control'] == second.headers['cache-control'] == 'private, no-cache'
     assert api.headers['cache-control'] == 'no-store'
+
+
+def test_pages_link_static_files_by_content_hash_and_those_are_cached_for_good(tmp_path):
+    import re
+    app = create_app(Settings(data_dir=tmp_path))
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        for path in ('/', '/accountant', '/accountant/payroll', '/accountant/employees', '/shokh',
+                     '/director', '/director/report', '/founder', '/founder/analytics', '/login'):
+            page = client.get(path)
+            assert page.status_code == 200 and page.headers['cache-control'] == 'no-store', path
+            assert not re.search(r'(?:src|href)="/static/[^"?]+"', page.text), path
+            for asset in re.findall(r'(?:src|href)="(/static/[^"]+\?v=[0-9a-f]{12})"', page.text):
+                response = client.get(asset)
+                assert response.status_code == 200, asset
+                assert response.headers['cache-control'] == 'private, max-age=31536000, immutable'
+
+
+def test_asset_version_follows_the_file_content(tmp_path):
+    from retro.static_assets import Pages
+    (tmp_path / 'app.js').write_text('one')
+    (tmp_path / 'page.html').write_text('<script src="/static/app.js"></script><img src="/static/none.png">')
+    pages = Pages(tmp_path)
+    first = pages.html('page.html')
+    (tmp_path / 'app.js').write_text('two, longer')
+    second = pages.html('page.html')
+    assert first != second and '?v=' in first and '?v=' in second
+    assert 'src="/static/none.png"' in second  # несуществующий файл не трогаем
+
+
+def test_large_responses_are_compressed(tmp_path):
+    app = create_app(Settings(data_dir=tmp_path))
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        response = client.get('/static/i18n-uz.js', headers={'Accept-Encoding': 'gzip'})
+    assert response.status_code == 200
+    assert response.headers['content-encoding'] == 'gzip'

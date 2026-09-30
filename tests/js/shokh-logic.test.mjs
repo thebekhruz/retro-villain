@@ -44,6 +44,29 @@ test('подсказка по цене сравнивает с обычной, �
   assert.equal(logic.priceHint(draft({price: ''}), '8000').kind, 'empty');
 });
 
+test('до +10% к обычной — «в норме», выше — «дороже на N% — бухгалтер увидит»', () => {
+  assert.equal(logic.priceHint(draft({price: '8800'}), '8000').kind, 'same');
+  assert.equal(logic.priceHint(draft({price: '8800'}), '8000').text, 'В норме');
+  const above = logic.priceHint(draft({price: '8801'}), '8000');
+  assert.equal(above.kind, 'above');
+  assert.equal(above.text, 'Дороже обычного на 10% — бухгалтер увидит');
+  assert.equal(logic.priceHint(draft({price: '6000'}), '8000').text, 'Дешевле обычного на 25%');
+  // Проценты целые: «13.5%» не узнал бы узбекский перевод.
+  assert.equal(logic.priceHint(draft({price: '10440'}), '9200').delta, 13);
+});
+
+test('поиск товара: слова в любом порядке, частые — первыми', () => {
+  const items = [{item: 'Овощ Помидор черри', code: '00011', times: 0},
+    {item: 'Овощ Помидор', code: '00010', times: 4}, {item: 'Агар', code: '01503', times: 0},
+    {item: 'Зелень Лук зелёный', code: '00020', times: 9}];
+  assert.deepEqual(logic.searchItems(items, '').map(r => r.item),
+    ['Зелень Лук зелёный', 'Овощ Помидор', 'Агар', 'Овощ Помидор черри']);
+  assert.deepEqual(logic.searchItems(items, 'черри помидор').map(r => r.item), ['Овощ Помидор черри']);
+  assert.deepEqual(logic.searchItems(items, 'зеленый').map(r => r.item), ['Зелень Лук зелёный']);
+  assert.deepEqual(logic.searchItems(items, '00010').map(r => r.item), ['Овощ Помидор']);
+  assert.equal(logic.searchItems(items, '', 2).length, 2);
+});
+
 test('остаток после покупки может уйти в минус и это видно', () => {
   assert.equal(logic.pocketAfter('900000', draft()), 792000);
   // Записали больше, чем выдали — прятать нельзя.
@@ -60,11 +83,9 @@ test('таймер закупа считает минуты', () => {
   assert.equal(logic.clock(null), '—');
 });
 
-test('доля отчитанных денег считается от всего выданного', () => {
-  // На руках 792 000, ждёт проверки 108 000 → выдано 900 000, отчитались за 12%.
-  assert.equal(logic.reportedShare('792000', '108000'), 12);
-  assert.equal(logic.reportedShare('900000', '0'), 0);
-  assert.equal(logic.reportedShare(null, '0'), null);
+test('долю «Отчитались» считает сервер, своей формулы у экрана нет', () => {
+  // «Функционал» §1: формулы раздела 3 — в одном серверном модуле.
+  assert.equal(logic.reportedShare, undefined);
 });
 
 /* «За всё»: сумму покупки переводим в цену за единицу так, как её примет
@@ -108,4 +129,62 @@ test('больше знаков, чем примет сервер, — не сч
 test('в расчётах закупа нет опыта и бонуса за скорость', () => {
   assert.equal(logic.xpPreview, undefined);
   assert.equal(logic.tripOnTime, undefined);
+});
+
+test('T-399: наличные — целые сумы, накладная — до тийина', () => {
+  // 3 × 33 333,33: в накладную 99 999,99, из кармана — 100 000.
+  assert.equal(logic.total(draft({quantity: '3', price: '33333.33'})), 99999.99);
+  assert.equal(logic.cashTotal(draft({quantity: '3', price: '33333.33'})), 100000);
+  // Половина сума — вверх, как ROUND_HALF_UP на сервере.
+  assert.equal(logic.cashTotal(draft({quantity: '1', price: '10.50'})), 11);
+  assert.equal(logic.cashTotal(draft({quantity: '1', price: '10.49'})), 10);
+  assert.equal(logic.cashTotal(draft({price: ''})), null);
+  // «На руках после» считается по наличным: целое число.
+  assert.equal(logic.pocketAfter('1000000', draft({quantity: '3', price: '33333.33'})), 900000);
+});
+
+test('T-399: история покупок цепляется к товарам iiko по id, старые записи — по названию', () => {
+  const items = [{id: 'p1', item: 'Овощ Помидор', unit: 'кг', code: '1'},
+    {id: 'p2', item: 'Лук', unit: 'кг', code: '2'}, {id: 'p3', item: 'Агар', unit: 'кг', code: '3'}];
+  const history = [
+    // Название в iiko поправили — id тот же, история не теряется.
+    {product_id: 'p1', item: 'Помидор', unit: 'кг', times: 2, points: {RETRO: 2}, usual_price: '9000.00'},
+    // Запись до связи с iiko: без id, по названию («ё» = «е», регистр не важен).
+    {product_id: null, item: 'лук', unit: 'кг', times: 5, points: {'Школа MU': 5}, usual_price: '4000.00'},
+    // Товар не из справочника iiko — отдельной строкой «новый товар».
+    {product_id: null, item: 'Лепёшка тандырная', unit: 'шт', times: 4, points: {RETRO: 4},
+     usual_price: '5000.00', off_catalog: true},
+  ];
+  const rows = logic.withHistory(items, history);
+  const by = name => rows.find(r => r.item === name);
+  assert.deepEqual([by('Овощ Помидор').times, by('Овощ Помидор').usual_price], [2, '9000.00']);
+  assert.deepEqual([by('Лук').times, by('Лук').points], [5, {'Школа MU': 5}]);
+  assert.equal(by('Агар').times, 0);
+  assert.equal(by('Агар').usual_price, null);
+  assert.equal(by('Лепёшка тандырная').custom, true);
+  // Повторное слияние (после каждой покупки) не дублирует строки.
+  assert.equal(logic.withHistory(rows, history).length, rows.length);
+  // На точке первыми — её товары, потом частые вообще, потом по алфавиту.
+  assert.deepEqual(logic.searchItems(rows, '', 10, 'RETRO').map(r => r.item),
+    ['Лепёшка тандырная', 'Овощ Помидор', 'Лук', 'Агар']);
+  assert.deepEqual(logic.searchItems(rows, '', 10, 'Школа MU').map(r => r.item),
+    ['Лук', 'Лепёшка тандырная', 'Овощ Помидор', 'Агар']);
+});
+
+test('T-399: черновик закупа переживает F5 только для открытого закупа того же дня', () => {
+  const now = Date.parse('2026-09-29T10:00:00Z');
+  const snap = logic.draftSnapshot({tripId: 7, tripStartedAt: 'x', date: '2026-09-29', step: 'amount',
+    draft: {point: 'RETRO', item: 'Лук', quantity: '3', priceInput: '1000', supplierId: 's', storageId: 't',
+            productId: 'p', hasPhoto: true, junk: 'не сохраняем'}}, now);
+  assert.equal(snap.draft.junk, undefined);
+  assert.equal(snap.draft.hasPhoto, true);
+  const saved = JSON.parse(JSON.stringify(snap));
+  const home = {date: '2026-09-29', trips: [{id: 7, finished_at: null}]};
+  assert.equal(logic.restorableDraft(saved, home, now + 60000).step, 'amount');
+  assert.equal(logic.restorableDraft(saved, {...home, date: '2026-09-30'}, now), null);
+  assert.equal(logic.restorableDraft(saved, {...home, trips: [{id: 7, finished_at: 'y'}]}, now), null);
+  assert.equal(logic.restorableDraft(saved, home, now + 13 * 3600 * 1000), null);
+  assert.equal(logic.restorableDraft({...saved, draft: {}}, home, now), null);
+  assert.equal(logic.restorableDraft(null, home, now), null);
+  assert.equal(logic.draftKey(7), 'shokh-draft:7');
 });

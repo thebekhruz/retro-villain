@@ -110,13 +110,19 @@ def _status(value: str) -> str:
 
 # ── Финансы дня ─────────────────────────────────────────────────────────────
 
-def day_workbook(data: dict, staff: dict | None = None) -> bytes:
-    """`data` — ответ `/day` за день выплат, `staff` — `/staff` за вчерашнюю смену."""
+def day_workbook(data: dict, staff: dict | None = None, *, purchases=None, checks=None) -> bytes:
+    """`data` — ответ `/day` за день выплат, `staff` — `/staff` за вчерашнюю смену,
+    `purchases` — покупки Шоха за день, `checks` — «Проверки» так, как их
+    показал экран (уровень, текст, пояснение)."""
     payday = date.fromisoformat(data['date'])
     workbook = Workbook()
     _shift_sheet(workbook.active, payday, data['ledger'], staff or {})
     _journal_sheet(workbook.create_sheet('Операции'), payday, data)
     _total_sheet(workbook.create_sheet('Итог'), payday, data)
+    _shoh_sheet(workbook.create_sheet('Закуп Шоха'), payday, data, purchases or [])
+    _monthly_sheet(workbook.create_sheet('Оклады'), payday, data)
+    if checks is not None:
+        _checks_sheet(workbook.create_sheet('Проверки'), payday, checks)
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -133,26 +139,36 @@ def _shift_sheet(sheet, payday: date, ledger: dict, staff: dict):
     people = {row['employee_id']: row for row in staff.get('employees') or []}
     # Как на экране: есть начисления за S — смена подтверждена, строки из
     # ведомости; нет — черновик из проходов и ставок за S.
-    confirmed = bool(own)
+    # Смену подтверждают по людям: у начисленных строка из ведомости, у
+    # остальных — черновик из проходов и ставок, как на экране.
+    by_employee = {item['employee_id']: item for item in own}
+    confirmed = bool(own) and all(row['employee_id'] in by_employee for row in staff.get('employees') or [])
     _note(sheet, 2, f'Смена {shift_day.strftime("%d.%m.%Y")} — выдаётся {payday.strftime("%d.%m.%Y")}. ' + (
         'Смена подтверждена: «Начислено» — по ведомости, «Выдано» — по этот день включительно.'
         if confirmed else
+        'Начисленные — по ведомости; остальные предварительно, по проходам и ставкам.'
+        if own else
         'Смена не подтверждена: суммы предварительные, по проходам и ставкам; выдавать можно после подтверждения.'),
         width)
     sheet.row_dimensions[2].height = 30
     _head(sheet, 4, ['Сотрудник', 'Должность', 'Вход', 'Статус', 'Начислено', 'Выдано', 'Осталось'])
     lines = []
-    if confirmed:
-        for accrual in own:
-            person = people.get(accrual['employee_id'], {})
-            lines.append((accrual['name'], person.get('role') or accrual.get('group') or '',
-                          person.get('first_entry'), accrual['status'], _money(accrual['amount']),
-                          _money(accrual['paid']), _money(accrual['debt'])))
-    else:
-        for person in staff.get('employees') or []:
-            payable = _money(person.get('payable'))
-            lines.append((person['name'], person.get('role') or '', person.get('first_entry'),
-                          person['status'], payable, Decimal(0) if payable is not None else None, payable))
+
+    def accrued_line(accrual):
+        person = people.get(accrual['employee_id'], {})
+        return (accrual['name'], person.get('role') or accrual.get('group') or '',
+                person.get('first_entry'), accrual['status'], _money(accrual['amount']),
+                _money(accrual['paid']), _money(accrual['debt']))
+    for person in staff.get('employees') or []:
+        accrual = by_employee.get(person['employee_id'])
+        if accrual is not None:
+            lines.append(accrued_line(accrual))
+            continue
+        payable = _money(person.get('payable'))
+        lines.append((person['name'], person.get('role') or '', person.get('first_entry'),
+                      person['status'], payable, Decimal(0) if payable is not None else None, payable))
+    listed = {person['employee_id'] for person in staff.get('employees') or []}
+    lines += [accrued_line(accrual) for accrual in own if accrual['employee_id'] not in listed]
     row = 5
     for name, role, entry, status, accrued, paid, debt in lines:
         _row(sheet, row, [name, role, _time(entry), _status(status), accrued, paid, debt], money_from=5)
@@ -265,7 +281,8 @@ def _total_sheet(sheet, payday: date, data: dict):
 
     # Как карточка «Деньги на расходы»: оклады и выдачи Шоху отдельно от прочих.
     monthly = spent(lambda item: item['type'] == 'other_expense' and item.get('item_code') == MONTHLY_ITEM)
-    shoh = spent(lambda item: item['type'] == 'procurement_advance')
+    shoh = spent(lambda item: item['type'] == 'procurement_advance' or (
+        item['type'] == 'other_expense' and item.get('item_code') == 'proc_shoh'))
     other = (_money(flow.get('other_outflows')) or Decimal(0)) - monthly - shoh
     _title(sheet, f'Деньги на расходы · {payday.strftime("%d.%m.%Y")}', 2)
     _widths(sheet, [46, 20])
@@ -291,9 +308,36 @@ def _total_sheet(sheet, payday: date, data: dict):
     if handover.get('amount') is not None:
         who = HANDOVER_SOURCE.get(handover.get('source'), handover.get('source') or '—')
         received = _time(handover.get('handed_at'))
-        _row(sheet, row, [f'Передача кассира · получено {received} · {who}',
-                          _money(handover['amount'])])
-        row += 1
+        if handover.get('confirmed_at') or handover.get('checked'):
+            # Недостача и расчёт — те же, что в 2a: сервер сверяет полученное с
+            # ТЕКУЩИМ расчётом кассы (ledger.handover_state).
+            calculation = handover.get('calculation') or handover.get('expected_amount')
+            if handover.get('confirmed_at'):
+                _row(sheet, row, [f'Передача кассира · расчёт · {who} {received}', _money(calculation)])
+                row += 1
+                _row(sheet, row, [f'Получено бухгалтером · подтверждено {_time(handover["confirmed_at"])}',
+                                  _money(handover['amount'])])
+                row += 1
+                if handover.get('expected_changed'):
+                    _row(sheet, row, ['⚠ Касса изменилась после подтверждения · было',
+                                      _money(handover.get('expected_amount'))], bold=True)
+                    row += 1
+            else:
+                if calculation is not None:
+                    _row(sheet, row, ['Передача кассира · расчёт', _money(calculation)])
+                    row += 1
+                _row(sheet, row, [f'Получено бухгалтером · записано вручную {received}', _money(handover['amount'])])
+                row += 1
+            if (_money(handover.get('shortfall')) or 0) > 0:
+                _row(sheet, row, ['⚠ Получено меньше расчёта на', _money(handover['shortfall'])], bold=True)
+                row += 1
+        else:
+            _row(sheet, row, [f'Передача кассира · получено {received} · {who} · не подтверждено',
+                              _money(handover['amount'])])
+            row += 1
+            if handover.get('source') == 'accountant' and handover.get('cashier_active') is False:
+                _note(sheet, row, 'Кассир в панели не работал — сверки с расчётом нет.', 2)
+                row += 1
     elif handover:
         _row(sheet, row, ['Передача кассира · ещё не записана', None])
         row += 1
@@ -304,9 +348,13 @@ def _total_sheet(sheet, payday: date, data: dict):
     if gives.get('gives'):
         _row(sheet, row, ['Шоху из кассы · не из остатка', _money(gives.get('total'))])
         row += 1
+    pocket = (data.get('shoh_pocket') or {}).get('pocket')
+    if pocket is not None:
+        _row(sheet, row, ['На руках у Шоха на конец дня', _money(pocket)])
+        row += 1
     shoh = ((data.get('reserves') or {}).get('shoh') or {}).get('balance')
     if shoh is not None:
-        _row(sheet, row, ['Подотчёт Шоха на конец дня', _money(shoh)])
+        _row(sheet, row, ['Подотчёт Шоха по бухгалтерии (выдано − принятые покупки)', _money(shoh)])
         row += 1
     for label, value in (('Долг сотрудникам по сменам', _money(ledger.get('salary_debt'))),
                          ('Долги по расходам', _money(ledger.get('manual_debt_total'))),
@@ -314,6 +362,101 @@ def _total_sheet(sheet, payday: date, data: dict):
                           _money(data.get('supplier_transfers_total')))):
         _row(sheet, row, [label, value])
         row += 1
+
+
+def _shoh_sheet(sheet, payday: date, data: dict, purchases: list):
+    """Баланс Шоха, его покупки наличными и перечисления — как блок «Баланс Шох»."""
+    width = 7
+    _title(sheet, f'Закуп · Шох · {payday.strftime("%d.%m.%Y")}', width)
+    _widths(sheet, [10, 18, 34, 12, 14, 16, 30])
+    pocket = data.get('shoh_pocket') or {}
+    row = 3
+    for label, key in (('На начало дня', 'day_start'), ('+ Выдано сегодня', 'given_today'),
+                       ('− Потрачено наличными', 'spent_day'), ('= На руках у Шоха', 'pocket')):
+        _row(sheet, row, [label, None, None, None, None, _money(pocket.get(key))], money_from=6,
+             bold=label.startswith('='))
+        row += 1
+    row += 1
+    _section(sheet, row, 'Покупки наличными · вносит Шох')
+    row += 1
+    _head(sheet, row, ['Время', 'Точка', 'Товар', 'Кол-во', 'Цена', 'Сумма', 'Проверка'])
+    row += 1
+    for item in purchases:
+        marks = []
+        if item.get('accepted_at'):
+            marks.append('принято бухгалтером')
+        else:
+            if item.get('price_above_usual'):
+                delta = item.get('price_delta_percent')
+                marks.append(f'Цена +{Decimal(delta):.0f}%' if delta else 'Цена выше обычной')
+            if not item.get('has_photo'):
+                marks.append('Нет фото')
+        _row(sheet, row, [_time(item.get('created_at')), item.get('point'), item.get('item'),
+                          f'{item.get("quantity")} {item.get("unit")}', _money(item.get('price')),
+                          _money(item.get('total')), ' · '.join(marks) or 'в норме'], money_from=5)
+        sheet.cell(row, 7).number_format = 'General'
+        row += 1
+    if not purchases:
+        _note(sheet, row, 'Шох не вносил покупки за этот день.', width)
+        row += 1
+    _row(sheet, row, ['Итого', None, None, None, None, _sum(_money(item.get('total')) for item in purchases)],
+         bold=True, money_from=6)
+    row += 2
+    _section(sheet, row, 'Перечисления поставщикам · безнал, баланс и остаток не меняют')
+    row += 1
+    _head(sheet, row, ['', 'Точка', 'Поставщик', 'За что', None, 'Сумма', None])
+    row += 1
+    transfers = data.get('supplier_transfers') or []
+    for item in transfers:
+        _row(sheet, row, [None, item.get('point'), item.get('supplier'), item.get('item'), None,
+                          _money(item.get('amount'))], money_from=6)
+        row += 1
+    if not transfers:
+        _note(sheet, row, 'Перечислений нет.', width)
+        row += 1
+    _row(sheet, row, ['Итого', None, None, None, None, _sum(_money(item.get('amount')) for item in transfers)],
+         bold=True, money_from=6)
+
+
+def _monthly_sheet(sheet, payday: date, data: dict):
+    """Оклады, выданные в этот день, и сколько осталось каждому по окладу."""
+    width = 4
+    _title(sheet, f'Оклады, выданные {payday.strftime("%d.%m.%Y")}', width)
+    _widths(sheet, [40, 16, 16, 18])
+    _head(sheet, 3, ['Сотрудник', 'Выдано сегодня', 'Оклад', 'Осталось'])
+    payments = data.get('monthly_payments') or {}
+    paid = payments.get('paid_by_employee') or {}
+    staff = {person['id']: person for person in data.get('monthly_employees') or []}
+    row = 4
+    today = payments.get('today') or []
+    for item in today:
+        person = staff.get(item.get('employee_id'), {})
+        salary = _money(person.get('salary'))
+        left = None if salary is None else salary - (_money(paid.get(str(item.get('employee_id')))) or Decimal(0))
+        _row(sheet, row, [item.get('name'), _money(item.get('amount')), salary, left])
+        row += 1
+    if not today:
+        _note(sheet, row, 'Сегодня оклады не выдавались.', width)
+        row += 1
+    _row(sheet, row, ['Итого', _sum(_money(item.get('amount')) for item in today)], bold=True)
+
+
+LEVELS = {'err': 'Ошибка', 'warn': 'Внимание', 'todo': 'К выполнению'}
+
+
+def _checks_sheet(sheet, payday: date, checks: list):
+    width = 3
+    _title(sheet, f'Проверки · {payday.strftime("%d.%m.%Y")}', width)
+    _widths(sheet, [16, 60, 60])
+    _head(sheet, 3, ['Уровень', 'Проверка', 'Подробности'])
+    row = 4
+    for item in checks:
+        _row(sheet, row, [LEVELS.get(item.get('lvl'), item.get('lvl')), item.get('text'), item.get('sub')])
+        if item.get('lvl') == 'err':
+            sheet.cell(row, 1).fill = PatternFill('solid', fgColor=PINK)
+        row += 1
+    if not checks:
+        _note(sheet, row, 'Ошибок не найдено.', width)
 
 
 # ── Ведомость месяца ────────────────────────────────────────────────────────
@@ -336,8 +479,10 @@ def payroll_workbook(data: dict) -> bytes:
     known = {str(person['id']) for person in roster}
     people = [(person['name'], _money(person['salary']), cells.get(str(person['id']), {}))
               for person in roster]
-    # Выплаты удалённым из реестра не пропадают из месяца: деньги ушли.
-    people += [(f'Сотрудник удалён · №{key}', None, own)
+    # Выплаты удалённым из реестра не пропадают из месяца: деньги ушли. Имя
+    # удалённого (он в архиве) — из monthly_archived, как на экране 2b.
+    archived = {str(person['id']): person['name'] for person in data.get('monthly_archived') or []}
+    people += [(f'{archived[key]} · удалён из реестра' if key in archived else f'Сотрудник удалён · №{key}', None, own)
                for key, own in sorted(cells.items(), key=lambda item: int(item[0]) if item[0].isdigit() else 0)
                if key not in known]
     per_day = [Decimal(0)] * len(days)

@@ -83,6 +83,8 @@ function renderHighlights(group) {
     'выручка ' + sums(row.revenue))));
   const second = $('drains');
   second.replaceChildren();
+  first.setAttribute('aria-busy', 'false');
+  second.setAttribute('aria-busy', 'false');
   if (!bad.length) second.append(text('p', 'empty-state', 'Заметных позиций с низкой маржой нет'));
   bad.forEach((row, index) => second.append(highlightRow(row, index, sums(row.revenue),
     'прибыль ' + sums(row.profit))));
@@ -254,42 +256,108 @@ function periodQuery() {
   return '?start=' + encodeURIComponent(chosen.start) + '&end=' + encodeURIComponent(chosen.end);
 }
 
-/** Пока считается новый период, прежние цифры на экране — чужие: они
- *  относятся к другому диапазону. Гасим их, иначе кажется, что страница
- *  уже готова, а потом числа скачком меняются сами. */
-function busy(on) {
-  const workspace = document.querySelector('.workspace');
-  if (workspace) workspace.setAttribute('aria-busy', String(Boolean(on)));
+// ── Отклик и ожидание (busy.js, T-393) ─────────────────────────────────
+const Busy = globalThis.RetroBusy;
+const busyButton = (button, work, opts) => (Busy ? Busy.button(button, work, opts) : Promise.resolve(work));
+
+/** Разделы с цифрами периода. Пока считается новый период, прежние цифры
+ *  на экране чужие — они гаснут (не стираются); управление живое. */
+const DATA_SECTIONS = '.workspace > .shift, .workspace > .profit-summary, .workspace > .highlights, .workspace > .menu-panel, .workspace > details.fold';
+
+function skel(className = 'rm-skel is-val') { return text('span', className); }
+
+/** Строки-скелеты списка (топы, опоздавшие, архив). */
+function skeletonLines(target, rows) {
+  const lines = [];
+  for (let index = 0; index < rows; index += 1) {
+    const line = text('div', 'dr-skel-line');
+    const body = text('span');
+    body.append(skel('rm-skel'), skel('rm-skel'));
+    line.append(skel('rm-skel is-dot'), body, skel('rm-skel is-end'));
+    lines.push(line);
+  }
+  target.replaceChildren(...lines);
+  target.setAttribute('aria-busy', 'true');
 }
 
+/** Первая загрузка: вместо «—» полосы в строке каждой цифры, в таблице и
+ *  топах — строки-скелеты. Всё это заменят данные при отрисовке. */
+function paintSkeleton() {
+  ['cash', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'gross-profit', 'cost-total', 'positions',
+    'summary-revenue', 'sales-profit', 'internal-cost', 'summary-profit', 'arrived', 'late']
+    .forEach(id => $(id).replaceChildren(skel()));
+  $('report-period').replaceChildren(skel());
+  skeletonLines($('locomotives'), 3);
+  skeletonLines($('drains'), 3);
+  skeletonLines($('attendance-list'), 2);
+  skeletonLines($('reports'), 2);
+  const rows = [];
+  for (let index = 0; index < 6; index += 1) {
+    const row = document.createElement('tr');
+    row.className = 'dr-skel-tr';
+    row.setAttribute('aria-hidden', 'true');
+    const cell = document.createElement('td');
+    cell.colSpan = 8;
+    const line = text('div', 'dr-skel-row');
+    line.append(skel('rm-skel'), skel('rm-skel'), skel('rm-skel'), skel('rm-skel'));
+    cell.append(line);
+    row.append(cell);
+    rows.push(row);
+  }
+  $('menu-rows').replaceChildren(...rows);
+}
+
+/** Данные не пришли — прочерк вместо вечной полосы. */
+function dashSkeletons(ids) {
+  ids.forEach(id => { const node = $(id); if (node && node.querySelector('.rm-skel')) node.textContent = '—'; });
+}
+
+function stateText(message, kind) {
+  const node = $('state');
+  node.textContent = message;
+  node.classList.toggle('is-working', kind === 'working');
+  node.classList.toggle('is-error', kind === 'error');
+}
+
+/** Вернёт true, если новый отчёт на экране, false — если нет (для ✓ кнопки). */
 async function loadSnapshot(refresh = false) {
   if (period && !period.valid()) {
-    $('state').textContent = 'Поправьте даты периода.';
-    return;
+    stateText('Поправьте даты периода.', 'error');
+    return false;
   }
   snapshotController?.abort();
   snapshotController = new AbortController();
   const requestId = ++snapshotRequest;
-  busy(true);
-  $('refresh').disabled = true;
-  $('state').textContent = 'Загружаем данные…';
+  const first = !view.snapshot;
+  stateText(first ? 'Считаем период в iiko…' : 'Пересчитываем период в iiko — на экране прежние цифры…', 'working');
+  let finish;
+  const done = new Promise(resolve => { finish = resolve; });
+  if (Busy && !first) document.querySelectorAll(DATA_SECTIONS).forEach(section => Busy.section(section, done));
   try {
     const query = periodQuery();
     const refreshParam = refresh === true ? (query ? '&refresh=1' : '?refresh=1') : '';
     const snapshot = await request('/api/director/report' + query + refreshParam,
                                    {signal: snapshotController.signal});
-    if (requestId !== snapshotRequest) return;
+    if (requestId !== snapshotRequest) return false;
     $('setup').hidden = true;
     renderSnapshot(snapshot);
-    $('state').textContent = 'Данные за период получены · «Обновить» проверит изменения iiko';
+    stateText('Данные за период получены · «Обновить» проверит изменения iiko');
     $('connection').textContent = 'iiko отвечает';
+    return true;
   } catch (error) {
-    if (requestId !== snapshotRequest || error.name === 'AbortError') return;
-    $('state').textContent = error.message + (view.snapshot ? ' На экране прежний отчёт за ' + logic.periodLabel(view.snapshot.period_start, view.snapshot.period_end) + '; обновление не выполнено.' : '');
+    if (requestId !== snapshotRequest || error.name === 'AbortError') return false;
+    stateText(error.message + (view.snapshot ? ' На экране прежний отчёт за ' + logic.periodLabel(view.snapshot.period_start, view.snapshot.period_end) + '; обновление не выполнено.' : ''), 'error');
+    if (!view.snapshot) {
+      dashSkeletons(['cash', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'gross-profit', 'cost-total',
+        'positions', 'summary-revenue', 'sales-profit', 'internal-cost', 'summary-profit', 'report-period']);
+      ['locomotives', 'drains'].forEach(id => { $(id).replaceChildren(); $(id).setAttribute('aria-busy', 'false'); });
+      $('menu-rows').replaceChildren();
+    }
     if (error.status === 503) showSetup(error.message);
     else $('connection').textContent = 'Нет данных';
+    return false;
   } finally {
-    if (requestId === snapshotRequest) { $('refresh').disabled = false; busy(false); }
+    finish();
   }
 }
 
@@ -306,9 +374,10 @@ async function loadAttendance() {
     const late = (data.employees || []).filter(row => row.status === 'late');
     const target = $('attendance-list');
     target.replaceChildren();
+    target.setAttribute('aria-busy', 'false');
     if (!late.length) {
       target.append(text('p', 'empty-state', 'Опоздавших сегодня нет'));
-      return;
+      return true;
     }
     target.append(text('p', 'attendance-title', 'Опоздали'));
     target.classList.remove('is-unfolded');
@@ -338,7 +407,11 @@ async function loadAttendance() {
     $('arrived').textContent = '—';
     $('late').textContent = '—';
     $('attendance-note').textContent = error.message;
+    $('attendance-list').replaceChildren();
+    $('attendance-list').setAttribute('aria-busy', 'false');
+    return false;
   }
+  return true;
 }
 
 const created = new Intl.DateTimeFormat('ru-RU',
@@ -348,14 +421,44 @@ function reportCard(report) {
   const link = document.createElement('a');
   link.className = 'report-link';
   link.href = '/api/director/reports/' + report.id + '/pdf';
+  link.dataset.busyKey = 'dir-report:' + report.id;
+  link.addEventListener('click', downloadPdf);
   const body = text('div', 'report-body');
   // Сводку список отдаёт отдельным полем, вместе с временем формирования.
   const summary = report.analysis_summary || (report.analysis && report.analysis.summary) || '';
-  body.append(text('strong', '', logic.periodLabel(report.period_start, report.period_end)),
-    text('span', '', summary));
+  // Сводку пишет AI по-русски: переводчик по кускам делал из неё смесь языков.
+  const summaryNode = text('span', '', summary);
+  summaryNode.dataset.i18n = 'off';
+  body.append(text('strong', '', logic.periodLabel(report.period_start, report.period_end)), summaryNode);
   if (report.created_at) body.append(text('span', 'report-created', created.format(new Date(report.created_at))));
   link.append(text('span', 'report-icon', '▤'), body, text('span', 'report-format', 'PDF'));
   return link;
+}
+
+/** PDF скачиваем сами: карточка «в работе», пока файл не пришёл, потом
+ *  вспыхивает; ошибка — тостом, а не пустой вкладкой с текстом ответа. */
+function downloadPdf(event) {
+  const link = event.currentTarget;
+  if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || !Busy) return;
+  event.preventDefault();
+  if (link.getAttribute('aria-busy') === 'true') return;
+  const work = (async () => {
+    const response = await fetch(link.href);
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new Error(body.detail || 'Не удалось скачать PDF.');
+    }
+    const blob = await response.blob();
+    const url = URL.createObjectURL(blob);
+    const file = document.createElement('a');
+    file.href = url;
+    file.download = 'Retro-director-report.pdf';
+    document.body.append(file);
+    file.click();
+    file.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 30000);
+  })();
+  Busy.row(link, work).catch(error => globalThis.RetroToast?.show(error.message, 'error'));
 }
 
 async function loadReports() {
@@ -363,6 +466,7 @@ async function loadReports() {
   try {
     const data = await request('/api/director/reports');
     target.replaceChildren();
+    target.setAttribute('aria-busy', 'false');
     if (!data.reports.length) {
       target.append(text('p', 'empty-state', 'Сохранённых отчётов пока нет'));
       return;
@@ -370,27 +474,87 @@ async function loadReports() {
     data.reports.forEach(report => target.append(reportCard(report)));
   } catch (error) {
     target.replaceChildren(text('p', 'empty-state', error.message));
+    target.setAttribute('aria-busy', 'false');
   }
 }
 
-$('refresh').addEventListener('click', () => { loadSnapshot(true); loadAttendance(); });
-
-$('generate').addEventListener('click', async () => {
-  const button = $('generate');
-  button.disabled = true;
-  button.classList.add('is-busy');
-  $('state').textContent = 'Собираем данные iiko и готовим разбор…';
-  try {
-    await request('/api/director/reports' + periodQuery(), { method: 'POST' });
-    $('state').textContent = 'Отчёт сохранён в архиве';
-    await loadReports();
-  } catch (error) {
-    $('state').textContent = error.message;
-  } finally {
-    button.disabled = false;
-    button.classList.remove('is-busy');
-  }
+$('refresh').addEventListener('click', () => {
+  const work = Promise.all([loadSnapshot(true), loadAttendance()]).then(([snapshot]) => snapshot);
+  busyButton($('refresh'), work);
 });
+
+/** Отчёт с разбором AI собирается долго (iiko за период + модель + PDF).
+ *  Всё это время видно, что идёт работа и сколько уже прошло: кнопка
+ *  крутится, строка состояния считает время, в архиве стоит карточка
+ *  «формируется». Готовый отчёт встаёт первым и вспыхивает; ошибка остаётся
+ *  карточкой с «Повторить». */
+function minutes(ms) {
+  const seconds = Math.floor(ms / 1000);
+  return Math.floor(seconds / 60) + ':' + String(seconds % 60).padStart(2, '0');
+}
+
+function pendingCard(label) {
+  const card = text('div', 'report-link is-pending');
+  card.setAttribute('role', 'status');
+  const body = text('div', 'report-body');
+  const note = text('span', 'report-note', 'Собираем данные iiko и пишем разбор…');
+  const bar = text('span', 'report-progress');
+  bar.append(document.createElement('i'));
+  const title = text('strong', '', label);
+  body.append(title, note, bar);
+  const clock = text('span', 'report-format report-clock', '0:00');
+  clock.dataset.i18n = 'off';
+  card.append(text('span', 'report-icon report-spin'), body, clock);
+  return {card, note, clock};
+}
+
+function generate() {
+  const button = $('generate');
+  if (period && !period.valid()) { stateText('Поправьте даты периода.', 'error'); return; }
+  const chosen = period ? period.state() : null;
+  const label = chosen ? logic.periodLabel(chosen.start, chosen.end) : '';
+  const list = $('reports');
+  list.querySelectorAll('.report-link.is-pending, .report-link.is-failed').forEach(node => node.remove());
+  list.querySelectorAll(':scope > .empty-state').forEach(node => node.remove());
+  const {card, note, clock} = pendingCard(label);
+  list.prepend(card);
+  const started = Date.now();
+  const tick = () => {
+    const elapsed = Date.now() - started;
+    clock.textContent = minutes(elapsed);
+    stateText('Формируем отчёт · ' + minutes(elapsed), 'working');
+    if (elapsed > 20000) note.textContent = 'AI пишет разбор — обычно до двух минут, страницу можно не трогать.';
+  };
+  tick();
+  const timer = setInterval(tick, 1000);
+  const work = request('/api/director/reports' + periodQuery(), { method: 'POST' });
+  busyButton(button, work);
+  work.then(async report => {
+    clearInterval(timer);
+    stateText('Отчёт сохранён в архиве · ' + minutes(Date.now() - started));
+    globalThis.RetroToast?.show('Отчёт готов · PDF в архиве');
+    await loadReports();
+    const saved = report && report.id ? list.querySelector('[data-busy-key="dir-report:' + report.id + '"]') : list.querySelector('.report-link');
+    if (saved && Busy) Busy.flash(saved);
+  }, error => {
+    clearInterval(timer);
+    stateText(error.message, 'error');
+    card.classList.remove('is-pending');
+    card.classList.add('is-failed');
+    card.setAttribute('role', 'alert');
+    note.textContent = error.message;
+    card.querySelector('.report-progress')?.remove();
+    const icon = card.querySelector('.report-spin');
+    icon.className = 'report-icon report-fail';
+    icon.textContent = '!';
+    const retry = text('button', 'report-retry', 'Повторить');
+    retry.type = 'button';
+    retry.addEventListener('click', generate);
+    clock.replaceWith(retry);
+  });
+}
+
+$('generate').addEventListener('click', generate);
 
 /** После смены направления или сортировки список начинается заново, и
  *  оставлять человека на середине прежнего — значит показать ему чужие
@@ -442,6 +606,7 @@ $('menu-more').addEventListener('click', () => {
 let period = null;
 
 (async function start() {
+  paintSkeleton();
   let today = new Date().toISOString().slice(0, 10);
   try {
     const config = await globalThis.RetroConfig;
@@ -454,6 +619,8 @@ let period = null;
     // Обработчику контрол передаёт выбранный период, и он попадал в
     // аргумент «перечитать мимо кеша»: смена периода каждый раз лезла в iiko.
     onChange: () => loadSnapshot(),
+    // Чип периода крутится, пока iiko считает новый период.
+    busy: true,
   });
   loadSnapshot();
   loadAttendance();

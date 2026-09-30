@@ -85,17 +85,16 @@ def test_iiko_formula_names_are_rejected_before_export():
         build_snapshot(DAY, [row('2026-09-10', 1, 10)], [row('=1+2', 10)])
 
 
-def test_handover_formula_matches_the_one_shown_to_the_cashier():
-    """Сервер и экран считают передачу одинаково — иначе кассир сверяет не то.
-
-    Формулу на экране держит retro/static/cashier-logic.js; здесь прогоняем ту
-    же функцию в node и сравниваем с cash_to_finance на одних данных.
-    """
-    import json
+def test_handover_formula_lives_only_on_the_server():
+    """Функционал §1: формула передачи одна — на сервере. Экран получает
+    готовые числа (till_summary), своей копии формулы у него нет, поэтому
+    сервер и экран не могут разойтись."""
     import subprocess
     from dataclasses import replace
+    from types import SimpleNamespace
 
     from retro.modules.cashier.expenses import cash_to_finance
+    from retro.modules.cashier.till import till_summary
 
     day = date(2026, 9, 16)
     snapshot = replace(demo_snapshot(day), demo=False,
@@ -103,13 +102,40 @@ def test_handover_formula_matches_the_one_shown_to_the_cashier():
                                  Payment('Карта', Decimal('12000000')),
                                  Payment('Наличные (Инкасса QR)', Decimal('2000000'))),
                        cash_prepayment=Decimal('500000'))
-    expenses, receipts = Decimal('300000'), Decimal('100000')
-    expected = cash_to_finance(snapshot, expenses, receipts)
+    expenses = SimpleNamespace(list=lambda _day: [SimpleNamespace(amount=Decimal('300000'))],
+                               list_receipts=lambda _day: [SimpleNamespace(amount=Decimal('100000'))])
 
-    script = (
-        "const logic=require('./retro/static/cashier-logic.js');"
-        f"console.log(JSON.stringify(logic.handover({json.dumps(snapshot.json())},"
-        f"'{expenses}','{receipts}')));"
-    )
+    class NoGives:
+        def _open(self):
+            raise AssertionError('not used')
+    import retro.modules.cashier.till as till
+    original = till.shokh_gives
+    till.shokh_gives = lambda *_args: []
+    try:
+        summary = till_summary(SimpleNamespace(expenses=expenses, accountant_finance=NoGives()), day, snapshot)
+    finally:
+        till.shokh_gives = original
+    assert Decimal(summary['handover']) == cash_to_finance(snapshot, Decimal('300000'), Decimal('100000'))
+    assert Decimal(summary['handover']) == Decimal('4000000') + Decimal('500000') + Decimal('100000') - Decimal('300000')
+
+    script = ("const logic=require('./retro/static/cashier-logic.js');"
+              "console.log(typeof logic.handover, typeof logic.totalInflow);")
     result = subprocess.run(['node', '-e', script], check=True, capture_output=True, text=True)
-    assert Decimal(str(json.loads(result.stdout))) == expected
+    assert result.stdout.split() == ['undefined', 'undefined']
+
+
+def test_export_with_many_expenses_does_not_hit_template_leftovers():
+    """Строки 20–21 шаблона были объединённым баннером старой формы: при семи и
+    более расходах выгрузка падала с 500 (MergedCell read-only)."""
+    from datetime import date
+    from decimal import Decimal
+    from retro.modules.cashier.expenses import Expense
+    day = date(2026, 9, 29)
+    expenses = [Expense(i, day, f'Расход {i}', Decimal('10000')) for i in range(1, 26)]
+    book = openpyxl.load_workbook(BytesIO(export_report(snapshot(), expenses)))
+    sheet = book['отчет']
+    names = [sheet.cell(row, 3).value for row in range(15, 37)]
+    assert names == [f'Расход {i}' for i in range(1, 23)]
+    assert 'ИТОГО:' not in names and 'Прочие расходы' not in names
+    assert sheet['C37'].value == 'Ещё 3 — на листе «Расходы»'
+    assert sheet['D38'].value == Decimal('250000')

@@ -8,7 +8,92 @@ const demo = new URLSearchParams(location.search).get('demo') === '1';
 let config, snapshot = null, financeData = null, receiptData = null, generation = 0, controller;
 // 5a: выдачи Шоху из кассы, доллары в сейф, передача бухгалтеру дня.
 let shokhData = null, usdData = null, usdRate = null, handoverRecord = null, handoverBusy = false;
+// Готовые числа «К передаче» и «Касса за день» с сервера (/day, /summary): экран их не пересчитывает.
+let summary = null;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
+
+/* ── Отклик и ожидание (busy.js, T-393; docs/feedback-principles.md) ─────
+   Экран собирается из шести частей, и приходят они порознь (iiko может
+   отвечать секундами). Первая загрузка дня — скелет на месте каждой ещё не
+   пришедшей цифры и строки, размеры те же. Повторная (после записи, «↻») —
+   раздел гаснет, данные остаются. Кнопка, начавшая действие, крутится сама. */
+const pass = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
+const Busy = globalThis.RetroBusy || {button: pass, row: pass, section: pass, flash() {}};
+let waiting = new Set(CashierLogic.PARTS);
+// Списки: пока часть грузится впервые — строки-заглушки в форме настоящих.
+const SKELETON_LISTS = {payments: ['day', 9, 'payment'], 'expense-list': ['expenses', 1, 'item'], 'receipt-list': ['receipts', 1, 'item']};
+// Что гаснет, пока часть перечитывается: «К передаче» считается из всех.
+const SECTIONS = {day: ['metrics', 'payments-section', 'handover-panel'], expenses: ['expenses-section', 'handover-panel'],
+  shokh: ['expenses-section', 'handover-panel'], receipts: ['receipts-section', 'handover-panel'], usd: ['usd-card'], rate: ['usd-card']};
+function skeletonRows(count, kind) {
+  const bar = width => { const node = document.createElement('span'); node.className = 'rm-skel'; node.style.width = width; return node; };
+  return Array.from({length: count}, (_, i) => {
+    const row = document.createElement('div');
+    row.className = (kind === 'payment' ? 'payment-row' : 'expense-item') + ' cashier-skel-row';
+    row.setAttribute('aria-hidden', 'true');
+    const name = bar([38, 26, 44, 30, 34, 22, 40][i % 7] + '%');
+    if (kind === 'payment') {
+      const dot = document.createElement('span'); dot.className = 'payment-dot';
+      row.append(dot, name, bar('36px'), bar([72, 64, 80][i % 3] + 'px'));
+    } else row.append(name, bar('64px'));
+    return row;
+  });
+}
+function paintWaiting() {
+  for (const [id, on] of Object.entries(CashierLogic.skeletonMap(waiting))) $(id).classList.toggle('is-skel', on);
+  for (const [id, [part]] of Object.entries(SKELETON_LISTS)) {
+    if (!waiting.has(part)) $(id).querySelectorAll('.cashier-skel-row').forEach(node => node.remove());
+  }
+  // Плашка смены: на телефоне у неё своя строка — держим место скелетом, чтобы экран не съезжал.
+  $('shift-pill').classList.toggle('is-skel', waiting.has('day'));
+  if (waiting.has('day')) $('shift-pill').hidden = false;
+  else if (!snapshot) $('shift-pill').hidden = true;
+  if (waiting.has('day')) $('payment-empty').hidden = true;
+  else if (!snapshot) $('payment-empty').hidden = false;
+  $('expenses-empty').hidden = waiting.has('expenses') || waiting.has('shokh')
+    || Boolean(financeData && financeData.expenses.length) || Boolean(shokhData && shokhData.gives.length);
+  $('receipts-empty').hidden = waiting.has('receipts') || waiting.has('day') || Boolean(snapshot)
+    || Boolean(receiptData && receiptData.receipts.length);
+  $('metrics').setAttribute('aria-busy', String(waiting.has('day')));
+}
+/* Новый день: всё, что перечислено, грузится впервые. */
+function expect(parts) {
+  waiting = new Set(parts);
+  for (const [id, [part, rows, kind]] of Object.entries(SKELETON_LISTS)) {
+    if (waiting.has(part) && !$(id).children.length) $(id).append(...skeletonRows(rows, kind));
+  }
+  paintWaiting();
+}
+function arrive(part, current) { if (current === generation && waiting.delete(part)) paintWaiting(); }
+function dim(part, work) { for (const id of SECTIONS[part]) Busy.section($(id), work); return work; }
+/* Часть экрана: впервые за день — скелет до ответа, повторно — раздел гаснет. */
+function loadPart(part, current, work) {
+  if (!waiting.has(part)) dim(part, work);
+  const done = () => arrive(part, current);
+  Promise.resolve(work).then(done, done);
+  return work;
+}
+/* Только что записанная строка коротко подсвечивается зелёным. */
+function flashKey(key) {
+  const node = document.querySelector(`[data-busy-key="${CSS.escape(key)}"]`);
+  if (node) Busy.flash(node);
+}
+/* × у строки: строка «в работе», после ответа плавно сворачивается, список
+   перечитывается (раздел гаснет, а не пустеет). */
+function removeRow(button, url, {part, reload, done, fail}) {
+  const current = generation, line = button.closest('[data-busy-key]');
+  const work = Busy.row(line, request(url, undefined, {method: 'DELETE'}), {collapse: true})
+    .then(async () => {
+      if (current !== generation) return false;
+      await loadPart(part, current, reload(current));
+      if (part !== 'usd') await refreshSummary();
+      if (current === generation) done();
+      return true;
+    })
+    .catch(error => { if (current === generation) fail(error.message); return false; });
+  Busy.button(button, work, {done: false});
+  return work;
+}
 
 function message(text, error = false) {
   $('message').textContent = text;
@@ -38,7 +123,7 @@ function clearUsdRate(day) {
   $('usd-official').textContent = '—';
   $('usd-restaurant').textContent = '—';
   $('usd-official-tile').removeAttribute('title');
-  $('usd-status').textContent = 'Загружаем курс ЦБ…';
+  $('usd-status').textContent = '';
   $('usd-status').classList.remove('is-error');
   clearUsd();
 }
@@ -89,7 +174,7 @@ function showUsd() {
   $('usd-deposits').replaceChildren();
   if (!data) return;
   for (const item of data.deposits) {
-    const row = document.createElement('div'); row.className = 'usd-deposit';
+    const row = document.createElement('div'); row.className = 'usd-deposit'; row.dataset.busyKey = 'cash-usd:' + item.id;
     const time = document.createElement('span'); time.className = 'usd-deposit-time rm-num';
     time.textContent = clockOf(item.created_at, data.date) || 'за день';
     const note = document.createElement('span'); note.className = 'usd-deposit-note';
@@ -99,7 +184,11 @@ function showUsd() {
     const remove = document.createElement('button'); remove.className = 'usd-remove'; remove.type = 'button';
     remove.textContent = '×'; remove.setAttribute('aria-label', `Удалить взнос ${usdFormat.format(Number(item.amount))} USD`);
     remove.disabled = demo;
-    remove.addEventListener('click', () => deleteUsd(item.id, data.date, remove));
+    remove.addEventListener('click', () => removeRow(remove,
+      `/api/cashier/usd-deposits/${item.id}?date=${encodeURIComponent(data.date)}`, {part: 'usd',
+        reload: current => loadUsd(data.date, current, controller.signal),
+        done: () => showUsdHint('Взнос удалён'),
+        fail: text => { showUsdHint(text, true); globalThis.RetroToast?.show(text, 'error'); }}));
     row.append(time, note, value, remove); $('usd-deposits').append(row);
   }
   const today = config && data.date === config.today;
@@ -121,31 +210,27 @@ async function loadUsd(day, current, signal) {
   }
 }
 $('usd-amount').addEventListener('input', () => showUsdHint());
-$('usd-form').addEventListener('submit', async event => {
+$('usd-form').addEventListener('submit', event => {
   event.preventDefault();
-  const day = $('report-date').value, current = generation, value = CashierLogic.parseAmount($('usd-amount').value);
+  const day = $('report-date').value, value = CashierLogic.parseAmount($('usd-amount').value);
   if (demo || !day) return;
   if (!value) { showUsdHint('Введите сумму в долларах.', true); $('usd-amount').focus(); return; }
-  const button = $('usd-add'); button.disabled = true;
+  Busy.button($('usd-add'), putUsd(day, value));
+});
+async function putUsd(day, value) {
+  const current = generation;
   try {
     const data = await RetroState.responseJson(await request('/api/cashier/usd-deposits', undefined, {method:'POST',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, amount:String(value)})}));
-    if (current !== generation) return;
-    usdData = data; $('usd-amount').value = ''; showUsd();
+    if (current !== generation) return false;
+    usdData = data; $('usd-amount').value = ''; $('usd-amount').dispatchEvent(new Event('input', {bubbles: true})); showUsd();
+    if (data.deposit) flashKey('cash-usd:' + data.deposit.id);
     const text = 'Положено в сейф: ' + usdFormat.format(value) + ' USD. Бухгалтер видит в «Резервах».';
     showUsdHint(text); globalThis.RetroToast?.show(text);
+    return true;
   } catch (error) {
     if (current === generation) { showUsdHint(error.message, true); globalThis.RetroToast?.show(error.message, 'error'); }
-  } finally { button.disabled = demo; }
-});
-async function deleteUsd(id, day, button) {
-  const current = generation;
-  button.disabled = true;
-  try {
-    await request(`/api/cashier/usd-deposits/${id}?date=${encodeURIComponent(day)}`, undefined, {method:'DELETE'});
-    if (current === generation) { await loadUsd(day, current, controller.signal); showUsdHint('Взнос удалён'); }
-  } catch (error) {
-    if (current === generation) { showUsdHint(error.message, true); button.disabled = false; globalThis.RetroToast?.show(error.message, 'error'); }
+    return false;
   }
 }
 async function request(url, signal, options = {}) {
@@ -160,6 +245,7 @@ async function request(url, signal, options = {}) {
 }
 function clearSnapshot() {
   snapshot = null;
+  summary = null;
   handoverRecord = null;
   $('shift-pill').hidden = true;
   $('download').disabled = true;
@@ -193,29 +279,60 @@ function clearFinance() {
   $('handover-feedback').textContent = '';
   showHandover();
 }
-/* Всё, что ушло из кассы наличными: расходы кассира и выдачи Шоху. Пока
-   одна из частей не загрузилась, суммы нет — неполная цифра хуже прочерка. */
-function cashOutTotal() {
-  if (!financeData || !shokhData) return null;
-  return Number(financeData.total) + Number(shokhData.total);
-}
-function currentHandover() {
-  return CashierLogic.handover(snapshot, cashOutTotal(), receiptData && receiptData.total);
+/* Числа карточки передачи — только с сервера (одна формула на всех: кассир,
+   бухгалтер, учредитель, XLSX). Пока их нет — прочерк, а не своя оценка. */
+/* null с сервера — «посчитать нельзя», и это не ноль: Number(null) === 0
+   показал бы передачу нулём при неизвестных предоплатах. */
+const summaryValue = key => (summary && snapshot && summary.snapshot_id === snapshot.snapshot_id
+  && summary[key] !== null && summary[key] !== undefined ? Number(summary[key]) : null);
+function currentHandover() { return summaryValue('handover'); }
+let summaryRetry = -1;
+/* После записи кассира (расход, поступление, выдача Шоху) — свежие итоги с
+   сервера по тому же снимку iiko. Снимок истёк — перечитываем день. */
+function refreshSummary() {
+  if (!snapshot) return Promise.resolve(false);
+  const current = generation, day = snapshot.date, id = snapshot.snapshot_id;
+  const work = request(`/api/cashier/summary?date=${encodeURIComponent(day)}&snapshot_id=${id}`, controller.signal)
+    .then(response => response.json())
+    .then(data => { if (current === generation) { summary = data; showHandover(); } return true; })
+    .catch(error => {
+      if (current !== generation || error.name === 'AbortError') return false;
+      if (summaryRetry !== current) { summaryRetry = current; load(); }
+      else handoverMessage(error.message, true);
+      return false;
+    });
+  for (const id of ['metrics', 'handover-panel']) Busy.section($(id), work);
+  return work;
 }
 function showHandover() {
   $('download').disabled = !snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData;
-  const demoAmount = CashierLogic.cashPayment(snapshot);
-  const cashPrepay = snapshot ? Number(snapshot.cash_prepayment || 0) : null;
-  $('demo-cash').textContent = demoAmount === null ? '—' : money.format(demoAmount);
-  const prepayText = cashPrepay === null ? '—' : money.format(cashPrepay);
+  const text = key => { const value = summaryValue(key); return value === null ? '—' : money.format(value); };
+  $('demo-cash').textContent = text('demo_cash');
+  // Возврат аванса гонит смену в минус, и разностная оценка предоплат
+  // перестаёт работать. День при этом валиден: выручка и чеки считаются по
+  // продажам. Показываем «требует проверки», а не ноль и не прочерк.
+  const issue = snapshot && snapshot.prepayment_issue ? snapshot.prepayment_issue : null;
+  const unknown = Boolean(issue) || (snapshot && snapshot.cash_prepayment === null);
+  const prepayText = !snapshot ? '—'
+    : unknown ? 'требует проверки' : money.format(Number(snapshot.cash_prepayment));
   // Предоплаты показаны и карточкой сверху, и строкой в расчёте передачи.
-  $('cash-prepay').textContent = prepayText;
+  $('cash-prepay').textContent = unknown ? 'требует проверки' : text('cash_prepayment');
   $('card-prepay').textContent = prepayText;
-  const inflow = CashierLogic.totalInflow(snapshot, receiptData && receiptData.total);
-  $('total-inflow').textContent = inflow === null ? '—' : money.format(inflow);
-  $('payments-inflow').textContent = inflow === null ? '—' : money.format(inflow);
+  $('card-prepay').classList.toggle('is-note', Boolean(unknown && snapshot));
+  $('card-prepay-unit').hidden = unknown;
+  $('card-prepay-note').textContent = issue || 'iiko · оценка, не реестр авансов';
+  $('prepay-issue').hidden = !issue;
+  $('prepay-issue').textContent = issue ? issue + ' Выручка и чеки за день верны.' : '';
+  const inflow = summaryValue('total_inflow');
+  // Весь приход = продажи + предоплаты: без предоплат он тоже неизвестен.
+  // Пустой прочерк здесь читается как «ещё грузится», поэтому пишем прямо.
+  const inflowUnknown = Boolean(unknown && snapshot && inflow === null);
+  $('total-inflow').textContent = inflowUnknown ? 'требует проверки' : text('total_inflow');
+  $('total-inflow').classList.toggle('is-note', inflowUnknown);
+  $('total-inflow-unit').hidden = inflowUnknown;
+  $('payments-inflow').textContent = text('total_inflow');
   // Полоса в главной карточке: продажи против всего остального прихода.
-  const sales = snapshot ? Number(snapshot.revenue || 0) : 0;
+  const sales = summaryValue('sales') || 0;
   const salesShare = inflow ? Math.max(0, Math.min(100, sales / inflow * 100)) : 0;
   const [salesBar, otherBar] = $('composition').children;
   salesBar.style.width = (inflow ? salesShare : 0) + '%';
@@ -224,31 +341,46 @@ function showHandover() {
   $('receipt-auto').hidden = !snapshot;
   $('receipt-auto-value').textContent = prepayText;
   $('receipts-empty').hidden = Boolean(snapshot) || Boolean(receiptData && receiptData.receipts.length);
-  const cashOut = cashOutTotal();
-  $('expense-total').textContent = cashOut === null ? '—' : money.format(cashOut);
-  $('handover-expenses').textContent = cashOut === null ? '—' : money.format(cashOut);
+  $('expense-total').textContent = text('cash_out');
+  $('handover-expenses').textContent = text('cash_out');
+  $('handover-receipts').textContent = text('receipts');
   const result = currentHandover();
   $('handover').textContent = result === null ? '—' : money.format(result);
   $('handover-number').classList.toggle('is-negative', result !== null && result < 0);
   showHandoverAction(result);
+  paintWaiting();
 }
 /* Кнопка «Передать бухгалтеру» и отметка «Передано в 21:40». */
 function showHandoverAction(result) {
   const record = handoverRecord, view = CashierLogic.handoverView(record, result);
   const live = Boolean(snapshot && !snapshot.demo && !snapshot.stale && !snapshot.refreshing);
   const ready = !demo && live && result !== null && result >= 0 && !handoverBusy;
+  const confirmed = view.state === 'confirmed';
   $('handover-action').hidden = view.state !== 'none';
   $('handover-button').disabled = !ready;
   $('handover-done').hidden = view.state === 'none';
-  $('handover-diff').hidden = view.state !== 'diff';
-  $('handover-undo').hidden = view.state === 'accountant';
+  $('handover-diff').hidden = view.state !== 'diff' && !(confirmed && view.difference !== null);
+  // «Отменить» — только пока бухгалтер не подтвердил получение (Функционал 5a).
+  $('handover-undo').hidden = view.state === 'accountant' || confirmed;
   $('handover-undo').disabled = handoverBusy;
+  $('handover-again').hidden = confirmed;
   $('handover-again').disabled = !ready;
   // «Передано: …» больше не про текущую сумму, раз она изменилась.
   if (view.state === 'diff' && !$('handover-feedback').classList.contains('is-error')) $('handover-feedback').textContent = '';
   if (!record) return;
   const day = snapshot ? snapshot.date : $('report-date').value;
   const at = clockOf(record.handed_at, day);
+  if (confirmed) {
+    const when = clockOf(record.confirmed_at, day);
+    $('handover-done-text').textContent = 'Бухгалтер подтвердил: получено ' + money.format(Number(record.amount)) + ' сум'
+      + (when ? ' в ' + when : '') + (view.shortfall > 0 ? ' · недостача ' + money.format(view.shortfall) : '');
+    if (view.difference !== null) {
+      const sign = view.difference > 0 ? '+' : '−';
+      $('handover-diff-text').textContent = 'После подтверждения сумма изменилась на ' + sign
+        + money.format(Math.abs(view.difference)) + ' сум. Передачу уже не изменить — скажите бухгалтеру.';
+    }
+    return;
+  }
   $('handover-done-text').textContent = view.state === 'accountant'
     ? 'Бухгалтер записал приход ' + money.format(Number(record.amount)) + ' сум' + (at ? ' в ' + at : '')
     : 'Передано бухгалтеру' + (at ? ' в ' + at : '') + (view.state === 'diff' ? ' · ' + money.format(Number(record.amount)) + ' сум' : '');
@@ -264,37 +396,45 @@ function handoverMessage(text, error = false) {
   $('handover-feedback').classList.toggle('is-error', error);
   if (text) globalThis.RetroToast?.show(text, error ? 'error' : 'ok');
 }
+/* Итог передачи виден на месте: отметка «Передано в 21:40» (или снова кнопка
+   после отмены) вспыхивает, пока кнопка, начавшая действие, крутилась. */
 async function handOver() {
   const day = $('report-date').value, current = generation, amount = currentHandover();
-  if (demo || !snapshot || amount === null || handoverBusy) return;
+  if (demo || !snapshot || amount === null || handoverBusy) return false;
   handoverBusy = true; showHandover();
+  let ok = false;
   try {
     const data = await RetroState.responseJson(await request('/api/cashier/handover', undefined, {method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({date:day, snapshot_id:snapshot.snapshot_id, expected:amount.toFixed(2)})}));
-    if (current !== generation) return;
-    handoverRecord = data.handover;
+    if (current !== generation) return false;
+    handoverRecord = data.handover; ok = true;
     handoverMessage('Передано бухгалтеру: ' + money.format(Number(data.handover.amount)) + ' сум.');
   } catch (error) {
-    if (current !== generation) return;
+    if (current !== generation) return false;
     handoverMessage(error.message, true);
     // Сумма разошлась или снимок устарел — показываем свежие цифры, передать можно снова.
-    await Promise.all([loadExpenses(day, current, controller.signal), loadReceipts(day, current, controller.signal),
-      loadShokh(day, current, controller.signal)]);
+    await Promise.all([loadPart('expenses', current, loadExpenses(day, current, controller.signal)),
+      loadPart('receipts', current, loadReceipts(day, current, controller.signal)),
+      loadPart('shokh', current, loadShokh(day, current, controller.signal))]);
+    await refreshSummary();
     if (/iiko|Обновите/.test(error.message)) load({refresh:true});
   } finally {
     handoverBusy = false;
     if (current === generation) showHandover();
   }
+  if (ok && current === generation) Busy.flash($('handover-done'));
+  return ok;
 }
 async function undoHandover() {
   const day = $('report-date').value, current = generation;
-  if (demo || handoverBusy) return;
+  if (demo || handoverBusy) return false;
   handoverBusy = true; showHandover();
+  let ok = false;
   try {
     await request(`/api/cashier/handover?date=${encodeURIComponent(day)}`, undefined, {method:'DELETE'});
-    if (current !== generation) return;
-    handoverRecord = null;
+    if (current !== generation) return false;
+    handoverRecord = null; ok = true;
     handoverMessage('Передача отменена. Бухгалтер снова видит сумму как ожидаемую.');
   } catch (error) {
     if (current === generation) handoverMessage(error.message, true);
@@ -302,10 +442,11 @@ async function undoHandover() {
     handoverBusy = false;
     if (current === generation) showHandover();
   }
+  if (ok && current === generation) Busy.flash($('handover-action'));
+  return ok;
 }
-$('handover-button').addEventListener('click', handOver);
-$('handover-again').addEventListener('click', handOver);
-$('handover-undo').addEventListener('click', undoHandover);
+for (const id of ['handover-button', 'handover-again']) $(id).addEventListener('click', event => Busy.button(event.currentTarget, handOver(), {done: false}));
+$('handover-undo').addEventListener('click', event => Busy.button(event.currentTarget, undoHandover(), {done: false}));
 
 /* ── Выдать Шоху из кассы ─────────────────────────────────────────────── */
 function showShokh(data) {
@@ -313,14 +454,18 @@ function showShokh(data) {
   $('shokh-gives').replaceChildren();
   $('shokh-pocket').textContent = data.pocket === null ? 'не задан' : money.format(Number(data.pocket));
   for (const item of data.gives) {
-    const row = document.createElement('div'); row.className = 'expense-item is-shokh';
+    const row = document.createElement('div'); row.className = 'expense-item is-shokh'; row.dataset.busyKey = 'cash-give:' + item.id;
     const name = document.createElement('span'); name.className = 'expense-item-name';
     const at = clockOf(item.created_at, data.date);
     name.textContent = 'Шоху на закуп' + (at ? ' · ' + at : '');
     const value = document.createElement('span'); value.className = 'expense-item-value'; value.textContent = money.format(Number(item.amount));
     const remove = document.createElement('button'); remove.className = 'expense-remove'; remove.type = 'button';
     remove.textContent = '×'; remove.setAttribute('aria-label', `Удалить выдачу Шоху ${money.format(Number(item.amount))}`);
-    remove.addEventListener('click', () => deleteShokh(item.id, data.date, remove));
+    remove.addEventListener('click', () => removeRow(remove,
+      `/api/cashier/shokh/${item.id}?date=${encodeURIComponent(data.date)}`, {part: 'shokh',
+        reload: current => loadShokh(data.date, current, controller.signal),
+        done: () => entryFeedback('expense', 'Выдача Шоху удалена'),
+        fail: text => entryFeedback('expense', text, true)}));
     row.append(name, value, remove); $('shokh-gives').append(row);
   }
   $('expenses-empty').hidden = Boolean(financeData && financeData.expenses.length) || data.gives.length > 0;
@@ -339,62 +484,51 @@ async function loadShokh(day, current, signal) {
     }
   }
 }
-$('shokh-form').addEventListener('submit', async event => {
+$('shokh-form').addEventListener('submit', event => {
   event.preventDefault();
-  const day = $('report-date').value, current = generation, value = CashierLogic.parseAmount($('shokh-amount').value);
+  const day = $('report-date').value, value = CashierLogic.parseAmount($('shokh-amount').value);
   if (demo || !day) return;
-  $('expense-feedback').classList.remove('is-error');
-  if (!value) {
-    $('expense-feedback').textContent = 'Укажите сумму для Шоха.'; $('expense-feedback').classList.add('is-error');
-    $('shokh-amount').focus(); return;
-  }
-  const button = $('shokh-give'); button.disabled = true;
+  if (!value) { entryFeedback('expense', 'Укажите сумму для Шоха.', true); $('shokh-amount').focus(); return; }
+  Busy.button($('shokh-give'), giveShokh(day, value));
+});
+async function giveShokh(day, value) {
+  const current = generation;
+  entryFeedback('expense', '');
   try {
     const data = await RetroState.responseJson(await request('/api/cashier/shokh', undefined, {method:'POST',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, amount:String(value)})}));
-    if (current !== generation) return;
-    $('shokh-amount').value = '';
+    if (current !== generation) return false;
+    $('shokh-amount').value = ''; $('shokh-amount').dispatchEvent(new Event('input', {bubbles: true}));
     showShokh(data);
+    await refreshSummary();
+    if (current !== generation) return false;
+    if (data.give) flashKey('cash-give:' + data.give.id);
     const text = 'Выдано Шоху ' + money.format(value) + ' сум. Баланс Шоха и отчёт бухгалтера обновлены.';
-    $('expense-feedback').textContent = text; globalThis.RetroToast?.show(text);
+    entryFeedback('expense', text); globalThis.RetroToast?.show(text);
+    return true;
   } catch (error) {
-    if (current === generation) {
-      $('expense-feedback').textContent = error.message; $('expense-feedback').classList.add('is-error');
-      globalThis.RetroToast?.show(error.message, 'error');
-    }
-  } finally { button.disabled = demo; }
-});
-async function deleteShokh(id, day, button) {
-  const current = generation;
-  button.disabled = true;
-  try {
-    await request(`/api/cashier/shokh/${id}?date=${encodeURIComponent(day)}`, undefined, {method:'DELETE'});
-    if (current === generation) {
-      await loadShokh(day, current, controller.signal);
-      $('expense-feedback').textContent = 'Выдача Шоху удалена';
-      $('expense-feedback').classList.remove('is-error');
-    }
-  } catch (error) {
-    if (current === generation) {
-      $('expense-feedback').textContent = error.message;
-      $('expense-feedback').classList.add('is-error');
-      button.disabled = false;
-    }
+    if (current === generation) { entryFeedback('expense', error.message, true); globalThis.RetroToast?.show(error.message, 'error'); }
+    return false;
   }
+}
+/* Строка под формой расходов / поступлений: итог последнего действия. */
+function entryFeedback(kind, text, error = false) {
+  const node = $(kind + '-feedback');
+  node.textContent = text;
+  node.classList.toggle('is-error', error);
 }
 function showReceipts(data) {
   receiptData = data;
   $('receipt-list').replaceChildren();
   $('receipts-empty').hidden = data.receipts.length > 0 || Boolean(snapshot);
   $('receipt-total').textContent = money.format(Number(data.total));
-  $('handover-receipts').textContent = money.format(Number(data.total));
   for (const item of data.receipts) {
-    const row = document.createElement('div'); row.className = 'expense-item';
+    const row = document.createElement('div'); row.className = 'expense-item'; row.dataset.busyKey = 'cash-rcp:' + item.id;
     const name = document.createElement('span'); name.className = 'expense-item-name'; name.textContent = item.description;
     const value = document.createElement('span'); value.className = 'expense-item-value'; value.textContent = money.format(Number(item.amount));
     const remove = document.createElement('button'); remove.className = 'expense-remove'; remove.type = 'button';
     remove.textContent = '×'; remove.setAttribute('aria-label', `Удалить поступление «${item.description}»`);
-    remove.addEventListener('click', () => deleteReceipt(item.id, data.date, remove));
+    remove.addEventListener('click', () => removeEntry('receipt', item.id, data.date, remove));
     row.append(name, value, remove); $('receipt-list').append(row);
   }
   showHandover();
@@ -419,6 +553,7 @@ function showExpenses(data) {
   $('expenses-empty').hidden = data.expenses.length > 0 || Boolean(shokhData && shokhData.gives.length);
   for (const item of data.expenses) {
     const row = document.createElement('div'); row.className = 'expense-item';
+    if (item.id != null) row.dataset.busyKey = 'cash-exp:' + item.id;
     const name = document.createElement('span'); name.className = 'expense-item-name'; name.textContent = item.description;
     const value = document.createElement('span'); value.className = 'expense-item-value'; value.textContent = money.format(Number(item.amount));
     if (item.automatic) {
@@ -428,7 +563,7 @@ function showExpenses(data) {
     } else {
       const remove = document.createElement('button'); remove.className = 'expense-remove'; remove.type = 'button';
       remove.textContent = '×'; remove.setAttribute('aria-label', `Удалить расход «${item.description}»`);
-      remove.addEventListener('click', () => deleteExpense(item.id, data.date, remove));
+      remove.addEventListener('click', () => removeEntry('expense', item.id, data.date, remove));
       row.append(name, value, remove);
     }
     $('expense-list').append(row);
@@ -460,11 +595,14 @@ function showStatus() {
   if (!snapshot || !snapshot.fetched_at) { status.textContent = base; return; }
   const time = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tashkent'}).format(new Date(snapshot.fetched_at));
   const source = snapshot.demo ? 'Демонстрация · пример' : snapshot.source === 'database' ? 'Сохранённый отчёт iiko ·' : base + ' · обновлено';
-  status.textContent = `${source} ${time}${snapshot.stale ? ' · требуют обновления' : ''}`;
+  // Фоновое обновление iiko — здесь и крутящейся «↻», без плашки, которая сдвигала бы экран.
+  const tail = snapshot.refreshing ? ' · обновляем iiko…' : snapshot.stale ? ' · требуют обновления' : '';
+  status.textContent = `${source} ${time}${tail}`;
 }
 function show(data) {
   snapshot = data;
   if ('handover' in data) handoverRecord = data.handover;
+  if (data.summary) summary = data.summary;
   const shift = CashierLogic.shiftLabel(data.shift, data.date);
   $('shift-pill').hidden = !shift;
   if (shift) {
@@ -516,19 +654,34 @@ function show(data) {
   showStatus();
   showHandover();
 }
-async function load(options = {}) {
+/* Загрузка дня. «↻» крутится, пока идёт загрузка (и фоновое обновление iiko),
+   откуда бы её ни начали: стрелки, «Сегодня/Вчера», календарь или сама «↻»;
+   ✓ — только когда обновить попросили ей. */
+function load(options = {}) {
+  const work = loadDay(options);
+  Busy.button($('refresh'), work, {done: options.refresh === true});
+  return work;
+}
+async function loadDay(options = {}) {
+  const day = $('report-date').value;
+  // Будущий или пустой день (ввод с клавиатуры мимо календаря): остаёмся на
+  // показанном дне, цифры не стираем — подпись даты и данные не расходятся.
+  if (!config || !day || !$('report-date').checkValidity()) {
+    if (config) $('report-date').value = snapshot?.date || config.today;
+    message(day && config && day > config.today ? 'Будущий день недоступен: отчёта за него ещё нет.' : 'Выберите корректную дату.', true);
+    return false;
+  }
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
   const signal = controller.signal;
-  $('refresh').disabled = false; document.body.classList.remove('loading'); $('metrics').setAttribute('aria-busy','false');
-  const day = $('report-date').value;
+  $('refresh').disabled = false;
   const keepSnapshot = snapshot?.date === day;
-  if (!keepSnapshot) clearSnapshot();
+  if (!keepSnapshot) { clearSnapshot(); clearFinance(); }
   $('download').disabled = true;
-  if (!keepSnapshot) clearFinance();
   message('');
-  if (!config || !day || !$('report-date').checkValidity()) { message('Выберите корректную дату.', true); return; }
-  clearUsdRate(day);
+  // Другой день — прежние цифры не показываем даже приглушёнными: скелет до ответа.
+  if (!keepSnapshot) { clearUsdRate(day); expect(CashierLogic.PARTS); }
+  $('report-date-text').classList.remove('is-skel');
   $('report-date-text').textContent = shortDay(day);
   const isToday = day === config.today, isYesterday = day === previousDay(config.today);
   $('today').classList.toggle('is-active', isToday);
@@ -536,31 +689,31 @@ async function load(options = {}) {
   $('yesterday').classList.toggle('is-active', isYesterday);
   $('yesterday').setAttribute('aria-pressed', String(isYesterday));
   $('day-next').disabled = day >= config.today;
-  loadExpenses(day, current, controller.signal);
-  loadReceipts(day, current, controller.signal);
-  loadUsdRate(day, current, controller.signal);
-  loadShokh(day, current, controller.signal);
-  loadUsd(day, current, controller.signal);
-  if (!config.configured && !demo) return;
-  $('metrics').setAttribute('aria-busy','true');
-  if (!keepSnapshot) document.body.classList.add('loading');
-  $('refresh').disabled = true;message(keepSnapshot ? 'Обновляем отчёт. На экране предыдущие данные…' : 'Загружаем отчёт…');
+  loadPart('expenses', current, loadExpenses(day, current, signal));
+  loadPart('receipts', current, loadReceipts(day, current, signal));
+  loadPart('rate', current, loadUsdRate(day, current, signal));
+  loadPart('shokh', current, loadShokh(day, current, signal));
+  loadPart('usd', current, loadUsd(day, current, signal));
+  if (!config.configured && !demo) { arrive('day', current); return true; }
+  $('refresh').disabled = true;
   try {
     const endpoint = `/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}&allow_stale=true`;
-    const response = await request(`${endpoint}&refresh=${options.refresh === true}`, signal);
-    let data = await response.json();
-    if (current !== generation) return;
-    show(data);
-    document.body.classList.remove('loading');
-    if (data.refreshing) message('Обновляем iiko. На экране последние сохранённые данные…');
+    const first = request(`${endpoint}&refresh=${options.refresh === true}`, signal).then(response => response.json());
+    if (!waiting.has('day')) dim('day', first);
+    let data = await first;
+    if (current !== generation) return false;
+    show(data); arrive('day', current);
+    // Фоновое обновление iiko: цифры уже на экране, опрос тихий — без полосы
+    // сверху; идёт ли он, видно по «↻» и строке статуса.
     for (let attempt = 0; data.refreshing && attempt < 45; attempt++) {
       await waitForRefresh(signal);
-      data = await (await request(`${endpoint}&refresh=false`, signal)).json();
-      if (current !== generation) return;
+      data = await (await request(`${endpoint}&refresh=false`, signal, {retroBusy: false})).json();
+      if (current !== generation) return false;
       show(data);
     }
     message(data.refresh_error || (data.refreshing ? 'Обновление продолжается. Повторите проверку позже.' :
       data.stale ? 'Показаны последние сохранённые данные. Требуется обновление iiko.' : ''), Boolean(data.refresh_error || data.stale));
+    return !data.refresh_error;
   } catch (error) {
     if (current === generation && error.name !== 'AbortError') {
       if (snapshot?.date === day) {
@@ -569,8 +722,9 @@ async function load(options = {}) {
       }
       message(error.message + (snapshot?.date === day ? ' На экране предыдущие данные.' : ''), true);
     }
+    return false;
   } finally {
-    if (current === generation) { $('refresh').disabled = false;document.body.classList.remove('loading');$('metrics').setAttribute('aria-busy','false'); }
+    if (current === generation) { $('refresh').disabled = false; arrive('day', current); }
   }
 }
 function waitForRefresh(signal) {
@@ -581,89 +735,50 @@ function waitForRefresh(signal) {
     signal.addEventListener('abort', abort, {once:true});
   });
 }
-$('expense-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const day = $('report-date').value, current = generation;
-  if (demo || !day || !$('expense-form').reportValidity()) return;
-  const button = $('expense-save'); button.disabled = true;
-  $('expense-feedback').textContent = '';
-  $('expense-feedback').classList.remove('is-error');
+/* Расходы и поступления: форма «+» и × у строки устроены одинаково. */
+const ENTRIES = {
+  expense: {form: 'expense-form', save: 'expense-save', description: 'expense-description', amount: 'expense-amount',
+    url: '/api/cashier/expenses', part: 'expenses', key: 'cash-exp:', load: loadExpenses,
+    saved: 'Расход сохранён', removed: 'Расход удалён'},
+  receipt: {form: 'receipt-form', save: 'receipt-save', description: 'receipt-description', amount: 'receipt-amount',
+    url: '/api/cashier/receipts', part: 'receipts', key: 'cash-rcp:', load: loadReceipts,
+    saved: 'Поступление сохранено', removed: 'Поступление удалено'},
+};
+async function addEntry(kind) {
+  const entry = ENTRIES[kind], day = $('report-date').value, current = generation;
+  entryFeedback(kind, '');
   try {
-    await request('/api/cashier/expenses', undefined, {
+    const response = await request(entry.url, undefined, {
       method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date:day, description:$('expense-description').value, amount:$('expense-amount').value})
+      body:JSON.stringify({date:day, description:$(entry.description).value, amount:$(entry.amount).value})
     });
-    if (current !== generation) return;
-    $('expense-description').value = ''; $('expense-amount').value = ''; $('expense-amount').dispatchEvent(new Event('input', {bubbles: true}));
-    await loadExpenses(day, current, controller.signal);
-    $('expense-feedback').textContent = 'Расход сохранён'; globalThis.RetroToast?.show('Расход сохранён'); $('expense-description').focus({preventScroll: true});
+    const item = await response.json().catch(() => null);
+    if (current !== generation) return false;
+    $(entry.description).value = ''; $(entry.amount).value = ''; $(entry.amount).dispatchEvent(new Event('input', {bubbles: true}));
+    await loadPart(entry.part, current, entry.load(day, current, controller.signal));
+    await refreshSummary();
+    if (current !== generation) return false;
+    if (item && item.id != null) flashKey(entry.key + item.id);
+    entryFeedback(kind, entry.saved); globalThis.RetroToast?.show(entry.saved); $(entry.description).focus({preventScroll: true});
+    return true;
   } catch (error) {
-    if (current === generation) {
-      $('expense-feedback').textContent = error.message;
-      $('expense-feedback').classList.add('is-error');
-      globalThis.RetroToast?.show(error.message, 'error');
-    }
-  } finally { button.disabled = demo; }
-});
-$('receipt-form').addEventListener('submit', async event => {
-  event.preventDefault();
-  const day = $('report-date').value, current = generation;
-  if (demo || !day || !$('receipt-form').reportValidity()) return;
-  const button = $('receipt-save'); button.disabled = true;
-  $('receipt-feedback').textContent = '';
-  $('receipt-feedback').classList.remove('is-error');
-  try {
-    await request('/api/cashier/receipts', undefined, {
-      method:'POST', headers:{'Content-Type':'application/json'},
-      body:JSON.stringify({date:day, description:$('receipt-description').value, amount:$('receipt-amount').value})
-    });
-    if (current !== generation) return;
-    $('receipt-description').value = ''; $('receipt-amount').value = ''; $('receipt-amount').dispatchEvent(new Event('input', {bubbles: true}));
-    await loadReceipts(day, current, controller.signal);
-    $('receipt-feedback').textContent = 'Поступление сохранено'; globalThis.RetroToast?.show('Поступление сохранено'); $('receipt-description').focus({preventScroll: true});
-  } catch (error) {
-    if (current === generation) {
-      $('receipt-feedback').textContent = error.message;
-      $('receipt-feedback').classList.add('is-error');
-      globalThis.RetroToast?.show(error.message, 'error');
-    }
-  } finally { button.disabled = demo; }
-});
-async function deleteReceipt(id, day, button) {
-  const current = generation;
-  button.disabled = true;
-  try {
-    await request(`/api/cashier/receipts/${id}?date=${encodeURIComponent(day)}`, undefined, {method:'DELETE'});
-    if (current === generation) {
-      await loadReceipts(day, current, controller.signal);
-      $('receipt-feedback').textContent = 'Поступление удалено';
-      $('receipt-feedback').classList.remove('is-error');
-    }
-  } catch (error) {
-    if (current === generation) {
-      $('receipt-feedback').textContent = error.message;
-      $('receipt-feedback').classList.add('is-error');
-      button.disabled = false;
-    }
+    if (current === generation) { entryFeedback(kind, error.message, true); globalThis.RetroToast?.show(error.message, 'error'); }
+    return false;
   }
 }
-async function deleteExpense(id, day, button) {
-  const current = generation;
-  button.disabled = true;
-  try {
-    await request(`/api/cashier/expenses/${id}?date=${encodeURIComponent(day)}`, undefined, {method:'DELETE'});
-    if (current === generation) {
-      await loadExpenses(day, current, controller.signal);
-      $('expense-feedback').textContent = 'Расход удалён';
-      $('expense-feedback').classList.remove('is-error');
-    }
-  } catch (error) {
-    if (current === generation) {
-      $('expense-feedback').textContent = error.message;
-      $('expense-feedback').classList.add('is-error');
-      button.disabled = false;
-    }
-  }
+function removeEntry(kind, id, day, button) {
+  const entry = ENTRIES[kind];
+  return removeRow(button, `${entry.url}/${id}?date=${encodeURIComponent(day)}`, {part: entry.part,
+    reload: current => entry.load(day, current, controller.signal),
+    done: () => entryFeedback(kind, entry.removed),
+    fail: text => { entryFeedback(kind, text, true); globalThis.RetroToast?.show(text, 'error'); }});
+}
+for (const [kind, entry] of Object.entries(ENTRIES)) {
+  $(entry.form).addEventListener('submit', event => {
+    event.preventDefault();
+    if (demo || !$('report-date').value || !$(entry.form).reportValidity()) return;
+    Busy.button($(entry.save), addEntry(kind));
+  });
 }
 $('report-date').addEventListener('change',load);
 // Нажатие на подпись даты открывает календарь и там, где прозрачное поле
@@ -672,21 +787,30 @@ $('report-date').addEventListener('click', event => { try { event.target.showPic
 $('refresh').addEventListener('click',()=>load({refresh:true}));
 $('today').addEventListener('click',()=>{if(config){$('report-date').value=config.today;load();}});
 $('yesterday').addEventListener('click',()=>{if(config){$('report-date').value=previousDay(config.today);load();}});
-$('download').addEventListener('click',async()=>{
+/* Excel: кнопка крутится, пока файл не начал скачиваться, затем ✓. */
+$('download').addEventListener('click', () => {
   if (!snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData) return;
+  Busy.button($('download'), downloadReport());
+});
+async function downloadReport() {
   const data = snapshot, current = generation;
-  $('download').disabled=true;
   try {
-    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}`);
+    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}${shokhData && shokhData.revision ? "&shokh_revision=" + shokhData.revision : ""}`);
     const blob = await response.blob();
-    if(current !== generation) return;
+    if (current !== generation) return false;
     const url = URL.createObjectURL(blob), link = document.createElement('a');
     link.href=url; link.download=`${data.demo?'DEMO-':''}Retro-${data.date}.xlsx`;
     document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
-    message('Отчёт скачан за '+formattedDay(data.date));
-  } catch(error) { if(current===generation) message(error.message,true); }
-  finally {if(current===generation) showHandover();}
-});
+    // Итог — ✓ на кнопке и всплывающее сообщение; плашка над карточками сдвигала бы экран.
+    globalThis.RetroToast?.show('Отчёт скачан за ' + formattedDay(data.date));
+    return true;
+  } catch(error) { if (current === generation) message(error.message, true); return false; }
+  finally { if (current === generation) showHandover(); }
+}
+// Первый кадр: скелет всего экрана, пока не пришли настройки (разметка
+// держит его классом is-booting, пока не выполнился этот файл).
+expect(CashierLogic.PARTS);
+document.querySelector('.cashier-workspace').classList.remove('is-booting');
 (async()=>{
   try {
     config = await globalThis.RetroConfig;
@@ -704,7 +828,7 @@ $('download').addEventListener('click',async()=>{
     $('connection').classList.toggle('connected',config.configured&&!demo);
 
     await load();
-  } catch(error){message(error.message,true);}
+  } catch(error){ expect([]); message(error.message,true); }
 })();
 
 // ── Дата-навигация ──────────────────────────────────────────────────────────

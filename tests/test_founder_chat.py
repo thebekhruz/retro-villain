@@ -104,7 +104,7 @@ def test_claude_chat_executes_read_only_tool_and_returns_result_to_model():
     assert {tool['name'] for tool in requests[0]['tools']} == {
         'get_revenue_analytics', 'get_bookings', 'get_employee_attendance',
         'get_iiko_sales_details', 'get_cashier_day', 'get_accounting_day',
-        'get_saved_director_reports'}
+        'get_saved_director_reports', 'get_founder_cabinet'}
     assert calls[0][0] == 'get_revenue_analytics'
     tool_result = requests[1]['messages'][-1]['content'][0]
     assert tool_result['tool_use_id'] == 'tool-1'
@@ -402,5 +402,5 @@ def test_founder_page_exposes_accessible_chat_drawer(tmp_path):
 
     assert 'id="ai-chat-toggle"' in page.text
     assert 'aria-controls="ai-chat-drawer"' in page.text
-    assert 'src="/static/founder-markdown.js"' in page.text
-    assert 'src="/static/founder-chat.js"' in page.text
+    assert 'src="/static/founder-markdown.js?v=' in page.text
+    assert 'src="/static/founder-chat.js?v=' in page.text

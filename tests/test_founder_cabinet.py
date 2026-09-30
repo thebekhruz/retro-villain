@@ -141,6 +141,18 @@ def test_free_cash_skips_days_without_a_recorded_handover():
     assert overview.free_cash_per_week({}, [date(2026, 9, 22)]) is None
 
 
+def test_free_cash_ignores_other_receipts_and_rounds_to_half_a_million():
+    # Функционал §3.7: только деньги от кассира, дивиденды не вычитаются, шаг 500 000.
+    flows = overview.daily_flows([
+        dict(day='2026-09-22', type='handover', amount='1700000'),
+        dict(day='2026-09-22', type='other_receipt', item_code='income_other', amount='5000000'),
+        dict(day='2026-09-22', type='other_expense', item_code='utilities', amount='20000'),
+        dict(day='2026-09-22', type='reserve_transfer', amount='900000'),
+    ])
+    # (1 700 000 − 20 000) × 7 = 11 760 000 → 12 000 000
+    assert overview.free_cash_per_week(flows, [date(2026, 9, 22)]) == Decimal('12000000')
+
+
 def test_handover_check_tolerates_rounding_only():
     assert overview.handover_check('1000000', '1000000.40')['status'] == 'ok'
     short = overview.handover_check('700000', '1000000')
@@ -183,17 +195,23 @@ def test_weekday_forecast_averages_history_and_ignores_the_open_day():
     assert forecast[0]['revenue'] is None  # по понедельникам истории нет
 
 
-def test_month_forecast_is_fact_through_yesterday_plus_weekday_averages():
+def test_month_forecast_is_fact_through_today_plus_the_rest():
+    # Функционал §3.8: факт с 1-го по сегодня + прогноз оставшихся дней.
     history = overview.register_days([
         dict(day='2026-09-01', direction='retro', orders=1, revenue='10'),
         dict(day='2026-09-23', direction='school', orders=1, revenue='5'),
-        dict(day='2026-09-24', direction='retro', orders=1, revenue='1000'),  # сегодня — не факт
+        dict(day='2026-09-24', direction='retro', orders=1, revenue='4'),  # сегодня: пробито 4
     ])
-    weekdays = [dict(revenue='1') for _ in range(7)]
+    weekdays = [dict(revenue='10') for _ in range(7)]
     result = overview.month_forecast(history, weekdays, TODAY)
-    assert result['fact'] == '15.00'
-    assert result['forecast'] == '7.00'  # 24–30 сентября
-    assert result['fact_through'] == '2026-09-23'
+    assert result['fact'] == '19.00'
+    # сегодня недобрано 10 − 4 = 6, и 25–30 сентября по 10
+    assert result['forecast'] == '66.00'
+    assert result['total'] == '85.00'
+    assert result['fact_through'] == '2026-09-24'
+    # День уже перерос среднее — на остаток дня прогноз 0, факт не срезается.
+    busy = overview.register_days([dict(day='2026-09-24', direction='retro', orders=1, revenue='25')])
+    assert overview.month_forecast(busy, weekdays, TODAY)['forecast'] == '60.00'
 
 
 def test_chef_bills_flag_the_limit_and_split_week_from_month():
@@ -215,9 +233,11 @@ def test_shokh_month_separates_advance_from_direct_procurement():
                       price_above_usual=False, accepted_at=None),
                  dict(id=2, day='2026-09-21', item='Мясо', total='900000', has_photo=True,
                       price_above_usual=False, accepted_at=None)]
-    result = overview.shokh_month(purchases, flows, pocket='3000000')
+    result = overview.shokh_month(purchases, flows, pocket='3000000',
+                                  transfers=[dict(amount='700000'), dict(amount='50000')])
     assert result['given'] == '4000000.00'
     assert result['direct'] == '200000.00'
+    assert result['transfers'] == '750000.00'  # «Перечислениями» в 7b — безнал поставщикам
     assert result['spent'] == '1000000.00'
     assert [row['reason'] for row in result['flagged']] == ['нет фото']
     assert result['top_items'][0] == {'item': 'Мясо', 'amount': '900000.00'}
@@ -299,12 +319,21 @@ def test_week_marks_a_short_handover_and_keeps_iiko_gaps_empty(tmp_path, today):
         # Расчёт кассира по фейку: «Демо» 9 млн, расходов нет — ровно 9 млн.
         finance.record_handover(MONDAY, Decimal('9000000'))
         finance.record_handover(date(2026, 9, 23), Decimal('8700000'))
+        # 23.09 кассир работал в панели (поступление 100 000 → расчёт 9,1 млн);
+        # 21.09 — нет: ручной приход без его данных не сверяется.
+        c.app.state.expenses.add_receipt(date(2026, 9, 23), 'Возврат долга', Decimal('100000'))
         week = c.get('/api/founder/week').json()
     days = {day['date']: day for day in week['days']}
     assert week['week'] == '2026-W39'
-    assert days['2026-09-21']['handover']['status'] == 'ok'
-    assert days['2026-09-23']['handover'] == {'recorded': '8700000.00', 'expected': '9000000.00',
-                                              'status': 'mismatch', 'difference': '-300000.00'}
+    # Кассир в панели не работал — сверки нет (T-399), даже при совпадении.
+    assert days['2026-09-21']['handover']['status'] == 'unchecked'
+    # Ручная запись бухгалтера при работавшем кассире сверяется с расчётом кассы
+    # сразу — та же недостача, что в «Проверках» 2a (T-399).
+    assert days['2026-09-23']['handover'] == {'recorded': '8700000.00', 'expected': '9100000.00',
+                                              'confirmed': False, 'checked': True, 'confirmed_at': None,
+                                              'shortfall': '400000', 'expected_changed': False,
+                                              'status': 'mismatch', 'difference': '-400000.00'}
+    assert days['2026-09-21']['handover']['shortfall'] is None
     # iiko не ответил — день не превращается в нули.
     assert days['2026-09-22']['cashier'] is None
     assert days['2026-09-22']['cashier_error'] == 'iiko временно недоступен'
@@ -332,7 +361,7 @@ def test_forecast_uses_eight_weeks_of_history(tmp_path, today):
     assert data['estimate'] is True and data['weeks'] == 8
     assert data['weekdays'][3]['retro'] == '33000000.00'
     assert data['today']['orders'] == {'retro': 103, 'school': 50}
-    assert data['month']['fact_through'] == '2026-09-23'
+    assert data['month']['fact_through'] == '2026-09-24'
 
 
 def test_chef_account_lists_bills_with_the_limit(tmp_path, today):
@@ -354,9 +383,28 @@ def test_month_export_is_an_xlsx_even_without_iiko(tmp_path, today):
     sheet = book['По дням']
     assert 'iiko недоступен' in sheet['A2'].value
     assert sheet.max_row == 4 + 24  # шапка и дни с 1 по 24 сентября
-    assert sheet['F25'].value == 9000000  # получено от кассира 21.09
+    heads = [cell.value for cell in sheet[4]]
+    assert heads[:12] == ['Дата', 'Retro · выручка', 'Oxbridge · выручка', 'Демо · Retro', 'Передал кассир',
+                          'Расчёт кассира', 'Сменные', 'Оклады', 'Закуп · Шох и напрямую', 'Прочие расходы',
+                          'Дивиденды', 'Остаток на конец дня']
+    assert sheet['E25'].value == 9000000  # получено от кассира 21.09
+    assert sheet['D25'].value == 9000000  # Демо 21.09 из отчёта кассы iiko
+    assert sheet['F25'].value == 9000000  # расчёт кассира: Демо без расходов
     assert sheet['B25'].value is None  # iiko нет — выручка пустая, а не ноль
     assert 'Расходы' in book.sheetnames
+
+
+def test_month_export_splits_shift_and_monthly_salaries(tmp_path, today):
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        finance.record_handover(MONDAY, Decimal('9000000'))
+        finance.set_cash_opening(MONDAY, '0', 'Старт')
+        finance.add_expense(MONDAY, 'salary_monthly', 'Оклад', '2000000', cashier_amount=Decimal('9000000'))
+        finance.add_expense(MONDAY, 'salary_staff', 'Сменные', '300000', cashier_amount=Decimal('9000000'))
+        response = c.get('/api/founder/export/month', params={'month': '2026-09'})
+    sheet = load_workbook(BytesIO(response.content))['По дням']
+    assert sheet['G25'].value == 300000 and sheet['H25'].value == 2000000
+    assert sheet['L25'].value == 9000000 - 2300000
 
 
 def test_cabinet_is_closed_to_other_roles(tmp_path):
@@ -391,7 +439,12 @@ def test_on_plan_morning_is_not_behind_and_suggestion_counts_today():
     # План на сегодня 100 000 уже отложен — больше не советуем.
     assert result['suggest_today'] == '0.00'
     assert result['behind'] is False
-    assert overview.dividend_week(MONDAY, Decimal('700000'), {})['behind'] is False  # утро понедельника
+    # Функционал §3.7: план к сегодня включает сегодня — утром понедельника без
+    # отложенного статус «Отстаём» подсказывает отложить сегодняшнюю долю.
+    assert overview.dividend_week(MONDAY, Decimal('700000'), {})['behind'] is True
+    # 85 % плана — ещё не отставание.
+    enough = overview.daily_flows([dict(day='2026-09-21', type='reserve_transfer', amount='85000')])
+    assert overview.dividend_week(MONDAY, Decimal('700000'), enough)['behind'] is False
 
 
 def test_suggestion_never_exceeds_what_is_left():
@@ -410,3 +463,84 @@ def test_week_label_must_be_canonical():
     for broken in ('2026-W 9', '2026-W+9'):
         with pytest.raises(ValueError):
             overview.parse_week(broken)
+
+
+def test_today_outlook_follows_the_spec_formulas(tmp_path, today):
+    """Функционал §3.8: зарплаты = начислено сменным за вчера + оклады сегодня;
+    закуп и прочее — среднее за 7 дней до 10 000; к вечеру = утро + к передаче − всё это."""
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        for offset in range(7):
+            day = TODAY - timedelta(days=offset + 1)
+            finance.record_handover(day, Decimal('9000000'))
+        finance.set_cash_opening(date(2026, 9, 17), '5000000', 'Старт')
+        for offset in range(7):
+            day = TODAY - timedelta(days=offset + 1)
+            finance.add_expense(day, 'utilities', 'Свет', '100000', cashier_amount=Decimal('9000000'))
+        finance.add_expense(date(2026, 9, 23), 'distribution_dividends', 'Дивиденды', '700000',
+                            cashier_amount=Decimal('9000000'))
+        with patch('retro.modules.founder.cabinet.shift_accrued', return_value=Decimal('1234000')):
+            day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+    outlook = day['outlook']
+    assert outlook['salary_shift'] == '1234000.00' and outlook['salary_monthly'] == '0.00'
+    assert outlook['salary_due'] == '1234000.00'
+    assert outlook['other'] == '100000.00'  # дивиденды в «прочее» не входят
+    assert outlook['procurement'] == '0.00'
+    opening = Decimal(day['opening_balance'])
+    expected = Decimal(day['cashier']['expected_handover'])
+    evening = overview.round_to(opening + expected - Decimal('1234000') - Decimal('100000'), Decimal(10000))
+    assert Decimal(outlook['evening']) == evening
+
+
+def test_dividend_history_shows_collected_of_target_and_payout(tmp_path, today):
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        c.app.state.dividend_targets.set('2026-W38', '5000000', 'Бехруз')
+        finance.record_handover(date(2026, 9, 14), Decimal('20000000'))
+        finance.set_cash_opening(date(2026, 9, 14), '0', 'Старт')
+        finance.reserve_entry(date(2026, 9, 14), 'dividends', 'opening', '0', 'Сейф', cashier_amount=Decimal('20000000'))
+        finance.reserve_entry(date(2026, 9, 15), 'dividends', 'transfer', '5000000', 'В сейф', cashier_amount=Decimal('20000000'))
+        finance.reserve_entry(MONDAY, 'dividends', 'withdrawal', '5000000', 'Выдано собственнику', cashier_amount=Decimal('20000000'))
+        history = c.get('/api/founder/dividends/weekly').json()['history']
+    by_week = {row['week']: row for row in history}
+    assert by_week['2026-W38'] == {'week': '2026-W38', 'start': '2026-09-14', 'end': '2026-09-20',
+                                   'payout_day': '2026-09-21', 'target': '5000000.00',
+                                   'collected': '5000000.00', 'paid_out': '5000000.00', 'done': True}
+    # На прошлую неделю цель перешла по наследству, отложить не успели.
+    assert by_week['2026-W38']['done'] is True
+    assert '2026-W35' not in by_week  # ни цели, ни денег — строки нет
+
+
+def test_week_check_uses_the_accountant_confirmation(tmp_path, today):
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        # Расчёт — передача кассира (его кнопка); свою ручную запись бухгалтер
+        # исправляет без «недостачи».
+        finance.record_handover(date(2026, 9, 23), Decimal('9000000'), source='cashier')
+        finance.confirm_handover(date(2026, 9, 23), '8700000', None, 'buh')
+        week = c.get('/api/founder/week').json()
+    day = {item['date']: item for item in week['days']}['2026-09-23']
+    assert day['handover']['confirmed'] is True
+    assert day['handover']['recorded'] == '8700000.00'
+    assert day['handover']['expected'] == '9000000.00'
+    assert day['handover']['shortfall'] == '300000'
+    assert day['handover']['status'] == 'mismatch'
+
+
+def test_founder_ai_sees_the_cabinet_numbers(tmp_path, today):
+    """Функционал, AI: основатель видит деньги недели по дням, категории, закуп, Счёт Шефа."""
+    import asyncio
+    from retro.modules.founder.tools import FounderChatTools
+    chef = [dict(day='2026-09-23', order_id='x', table=2, waiters=['Алина'], amount='520000', cost='1')]
+    with client(tmp_path, FakeIiko(chef=chef)) as c:
+        c.app.state.accountant_finance.record_handover(date(2026, 9, 23), Decimal('8700000'))
+        c.app.state.expenses.add(date(2026, 9, 23), 'Такси', Decimal('100000'))  # кассир работал в панели
+        tools = FounderChatTools(c.app)
+        assert 'get_founder_cabinet' in {tool['name'] for tool in tools.definitions}
+        data = asyncio.run(tools.execute('get_founder_cabinet', {'date': TODAY.isoformat()}))
+    days = {item['date']: item for item in data['week']['days']}
+    assert days['2026-09-23']['handover']['status'] == 'mismatch'
+    assert 'accounting' not in days['2026-09-23']
+    assert data['chef_account']['week_over'] == 1 and 'bills' not in data['chef_account']
+    assert 'categories' in data['spending']['expenses'] and 'transfers' in data['spending']['shokh']
+    assert data['dividends']['week'] == '2026-W39'

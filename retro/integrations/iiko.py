@@ -19,8 +19,8 @@ from retro.report_cache import ReportCache, refresh_source
 from retro.config import IIKO_ORIGIN
 from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
-    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, build_revenue_breakdown, build_snapshot, cell,
-    number, shift_status, today_tashkent,
+    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, PrepaymentUnavailable,
+    build_revenue_breakdown, build_snapshot, cell, number, shift_status, today_tashkent,
 )
 from retro.modules.director.models import (
     SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
@@ -223,7 +223,7 @@ def cash_prepay_from_shifts(day, sales, payments, shifts):
         if shift.get('cashRegNumber') == 1 and str(shift.get('openDate', ''))[:10] == day.isoformat():
             selected.append(shift)
     if not selected and sales:
-        raise DataError('iiko не вернул кассовую смену для расчёта предоплат.')
+        raise PrepaymentUnavailable('iiko не вернул кассовую смену за этот день — предоплаты не посчитать.')
     total_received = Decimal(0)
     cash_received = Decimal(0)
     for shift in selected:
@@ -231,15 +231,21 @@ def cash_prepay_from_shifts(day, sales, payments, shifts):
         cash = number(shift.get('salesCash'))
         card = number(shift.get('salesCard'))
         credit = number(shift.get('salesCredit'))
-        if min(paid, cash, card, credit) < 0 or cash + card + credit != paid:
-            raise DataError('iiko вернул противоречивые суммы кассовой смены.')
+        if cash + card + credit != paid:
+            raise PrepaymentUnavailable('Суммы кассовой смены в iiko не сходятся между собой.')
+        # Возврат аванса iiko проводит отрицательной продажей: смена уходит в
+        # минус, и разностная оценка предоплат перестаёт работать. День от
+        # этого валидным быть не перестаёт — неизвестны только предоплаты.
+        if min(paid, cash, card, credit) < 0:
+            raise PrepaymentUnavailable(
+                'Кассовая смена ушла в минус (возврат аванса) — предоплаты за день не посчитать.')
         total_received += paid
         cash_received += cash
     new_prepayment = total_received - sales
     cash_sales = number(payments.get('Демо', 0)) + number(payments.get('Наличные (Инкасса QR)', 0))
     cash_prepayment = cash_received - cash_sales
     if new_prepayment < 0 or not 0 <= cash_prepayment <= new_prepayment:
-        raise DataError('Продажи и предоплаты iiko не совпали с кассовой сменой. Обновите отчёт.')
+        raise PrepaymentUnavailable('Продажи и предоплаты iiko не сошлись с кассовой сменой.')
     return new_prepayment, cash_prepayment
 
 
@@ -592,13 +598,23 @@ class IikoClient:
                 amounts = defaultdict(Decimal)
                 for row in shift_payments:
                     amounts[cell(row, 0)] += number(cell(row, 1))
-                total_prepay, cash_prepay = cash_prepay_from_shifts(
-                    day, sum(amounts.values(), Decimal(0)), amounts, shifts)
-                from dataclasses import replace
                 register_sales = sum(amounts.values(), Decimal(0))
+                # Отказ расчёта предоплат не отменяет день: выручка, чеки и
+                # способы оплаты посчитаны по продажам и от смены не зависят.
+                try:
+                    total_prepay, cash_prepay = cash_prepay_from_shifts(
+                        day, register_sales, amounts, shifts)
+                    issue = None
+                except PrepaymentUnavailable as error:
+                    log_upstream_failure('iiko', error, operation='cashier_prepayment')
+                    total_prepay = cash_prepay = None
+                    issue = str(error)
+                from dataclasses import replace
                 return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay,
                                register_payment_sales=register_sales,
-                               register_received_total=register_sales + total_prepay,
+                               register_received_total=(register_sales + total_prepay
+                                                        if total_prepay is not None else None),
+                               prepayment_issue=issue,
                                # «Смена открыта / закрыта в 22:56» в шапке кассира.
                                shift=shift_status(day, shifts))
         except (httpx.HTTPError, TimeoutError) as error:

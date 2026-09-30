@@ -49,6 +49,88 @@
 
   function setText(id, value) { $(id).textContent = value; }
 
+  // ── Отклик и ожидание (busy.js, T-393) ───────────────────────────────
+  const Busy = globalThis.RetroBusy;
+  /** Цифры, которые на первой загрузке стоят скелетом, а не «—». */
+  const VALUE_IDS = ['fo-div-collected', 'fo-div-target', 'fo-y-demo', 'fo-y-recv', 'fo-morning', 'fo-t-retro', 'fo-t-ox',
+    'fo-out-sal', 'fo-out-zak', 'fo-out-oth', 'fo-evening', 'fo-acc-line', 'k-retro', 'k-ox', 'k-demo', 'k-div', 'k-month',
+    'fo-checks-title', 'fo-chef-title', 'fo-exp-total', 'z-given', 'z-spent', 'z-direct', 'z-pocket', 'z-flag-title', 'fo-week-label',
+    'fo-div-range', 'fo-div-of', 'fo-div-status', 'fo-y-date', 'fo-t-checks'];
+
+  function skeletonLines(target, rows) {
+    const list = node('div', 'dir-skel-list');
+    list.setAttribute('aria-hidden', 'true');
+    for (let index = 0; index < rows; index += 1) {
+      const line = node('div', 'dir-skel-line');
+      const text = node('span');
+      text.append(node('span', 'rm-skel'), node('span', 'rm-skel'));
+      line.append(node('span', 'rm-skel is-dot'), text, node('span', 'rm-skel is-end'));
+      list.append(line);
+    }
+    target.replaceChildren(list);
+  }
+
+  /** Первая загрузка: полосы в строке каждой цифры, строки-скелеты в списках
+   *  и таблице недели — вместо «—» и «Собираем…». */
+  function paintSkeleton() {
+    VALUE_IDS.forEach(id => $(id).replaceChildren(node('span', 'rm-skel is-val')));
+    ['fo-t-retro-fc', 'fo-t-ox-fc'].forEach(id => setText(id, ''));
+    ['fo-checks', 'fo-chef', 'fo-exp-list', 'fo-dishes'].forEach(id => skeletonLines($(id), 3));
+    const week = $('fo-week-table');
+    week.replaceChildren(...Array.from({length: 6}, (_, index) => {
+      const row = node('div', 'rm-skel-row fo-skel-row');
+      row.setAttribute('aria-hidden', 'true');
+      for (let cell = 0; cell < 9; cell += 1) row.append(node('span', 'rm-skel' + (index === 0 ? ' is-md' : '')));
+      return row;
+    }));
+    const forecast = $('fo-forecast');
+    forecast.replaceChildren(...Array.from({length: 7}, (_, index) => {
+      const column = node('div', 'fo-skel-col');
+      const bar = node('span', 'rm-skel');
+      bar.style.height = (38 + (index * 23) % 50) + '%';
+      column.append(bar, node('span', 'rm-skel'));
+      return column;
+    }));
+  }
+
+  /** Блок так и не получил данных — прочерк вместо вечной полосы. */
+  function dashSkeletons() {
+    VALUE_IDS.forEach(id => { const target = $(id); if (target.querySelector('.rm-skel')) target.textContent = '—'; });
+    ['fo-checks', 'fo-chef', 'fo-exp-list', 'fo-dishes', 'fo-forecast', 'fo-week-table'].forEach(id => {
+      if ($(id).querySelector(':scope > .dir-skel-list, :scope > .rm-skel-row, :scope > .fo-skel-col')) $(id).replaceChildren();
+    });
+  }
+
+  /** Скачать файл по ссылке: кнопка крутится, пока файл не пришёл. */
+  function download(link, fallback) {
+    link.addEventListener('click', event => {
+      if (!Busy || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      event.preventDefault();
+      if (link.getAttribute('aria-busy') === 'true') return;
+      const work = (async () => {
+        const response = await fetch(link.href);
+        if (!response.ok) {
+          const body = await response.json().catch(() => ({}));
+          throw new Error(body.detail || 'Не удалось выгрузить Excel.');
+        }
+        const disposition = response.headers.get('Content-Disposition') || '';
+        const name = (disposition.match(/filename="?([^";]+)"?/) || [])[1] || fallback;
+        const url = URL.createObjectURL(await response.blob());
+        const file = document.createElement('a');
+        file.href = url;
+        file.download = name;
+        document.body.append(file);
+        file.click();
+        file.remove();
+        setTimeout(() => URL.revokeObjectURL(url), 30000);
+      })();
+      // Кнопка компьютера крутится сама; строка телефона — золотой кромкой.
+      const shown = link.classList.contains('fo-phone-link') ? Busy.row(link, work) : Busy.button(link, work);
+      shown.then(() => globalThis.RetroToast?.show('Excel с отчётом бухгалтера скачан.'),
+        error => globalThis.RetroToast?.show(error.message, 'error'));
+    });
+  }
+
   function dismissed() {
     try { return JSON.parse(localStorage.getItem(DISMISSED_KEY) || '[]'); } catch (error) { return []; }
   }
@@ -79,6 +161,14 @@
     $('k-div-bar').style.width = view.pct + '%';
     if (!state.editor.open) state.editor.draft = view.target || 0;
     renderEditor();
+    const history = $('fo-div-history');
+    history.hidden = !view.history.length;
+    $('fo-div-history-list').replaceChildren(...view.history.map(week => {
+      const row = node('div', 'fo-div-history-row');
+      row.append(node('span', '', week.range), node('b', week.tone === 'warn' ? 'is-warn' : '', week.text));
+      if (week.paid) row.append(node('small', '', week.paid));
+      return row;
+    }));
   }
 
   function editorHost() { return desk.matches ? $('fo-div-editor-desk') : $('fo-div-editor-phone'); }
@@ -91,10 +181,10 @@
     $('k-div-edit').setAttribute('aria-expanded', String(editor.open));
     setText('fo-div-toggle-label', editor.open ? 'Свернуть' : 'Изменить');
     setText('k-div-edit', editor.open ? 'Свернуть' : 'Изменить сумму');
+    editor.refs = null;
     if (!editor.open || !data) return;
     const host = editorHost();
     host.hidden = false;
-    const view = logic.dividendView(data);
     const stepper = node('div', 'fo-stepper');
     const minus = node('button', '', '−'), plus = node('button', '', '+');
     minus.type = plus.type = 'button';
@@ -102,49 +192,91 @@
     plus.setAttribute('aria-label', 'Больше на 500 000');
     const input = node('input', 'rm-num');
     input.inputMode = 'numeric';
+    input.enterKeyHint = 'done';
+    input.dataset.busyKey = 'fo-div-amount';
     input.setAttribute('aria-label', 'Сумма дивидендов в неделю, сум');
     input.value = editor.draft ? sum(editor.draft) : '';
-    minus.addEventListener('click', () => { editor.draft = logic.stepTarget(editor.draft, -1); editor.message = ''; renderEditor(); });
-    plus.addEventListener('click', () => { editor.draft = logic.stepTarget(editor.draft, 1); editor.message = ''; renderEditor(); });
-    input.addEventListener('change', () => { editor.draft = logic.parseAmount(input.value); editor.message = ''; renderEditor(); });
+    // Кнопки и пресеты меняют черновик на месте: поле не пересоздаётся, иначе
+    // набранное и нажатие «Сохранить» сразу после набора терялись вместе с ним.
+    const choose = value => { editor.draft = value; editor.message = ''; editor.error = false; input.value = value ? sum(value) : ''; refreshEditor(); };
+    minus.addEventListener('click', () => choose(logic.stepTarget(editor.draft, -1)));
+    plus.addEventListener('click', () => choose(logic.stepTarget(editor.draft, 1)));
+    input.addEventListener('input', () => { editor.draft = logic.parseAmount(input.value); editor.message = ''; editor.error = false; refreshEditor(); });
+    input.addEventListener('change', () => { input.value = editor.draft ? sum(editor.draft) : ''; });
+    input.addEventListener('keydown', event => {
+      if (event.key !== 'Enter') return;
+      event.preventDefault();
+      if (!editor.refs.save.hidden) saveTarget({currentTarget: editor.refs.save});
+    });
     stepper.append(minus, input, plus);
     const presets = node('div', 'fo-presets');
-    logic.DIVIDEND_PRESETS.forEach(value => {
-      const button = node('button', value === editor.draft ? 'is-active' : '', short(value));
+    const presetButtons = logic.DIVIDEND_PRESETS.map(value => {
+      const button = node('button', '', short(value));
       button.type = 'button';
-      button.addEventListener('click', () => { editor.draft = value; editor.message = ''; renderEditor(); });
+      button.dataset.value = String(value);
+      button.addEventListener('click', () => choose(value));
       presets.append(button);
+      return button;
     });
-    const free = view.free;
-    const feasible = node('p', 'fo-feasible' + (free !== null && editor.draft > free ? ' is-warn' : ''),
-      free === null ? 'Средний свободный остаток кассы пока не посчитан: нет передач кассира за неделю.'
-        : editor.draft > free ? 'Касса в среднем свободно даёт ≈ ' + short(free) + ' в неделю — больше может не хватить на закуп и зарплаты.'
-          : 'Касса в среднем свободно даёт ≈ ' + short(free) + ' в неделю: после закупа, зарплат и расходов за 7 дней.');
-    host.append(stepper, presets, feasible);
-    if (editor.draft > 0 && editor.draft !== view.target) {
-      const save = node('button', 'fo-save', editor.saving ? 'Сохраняем…' : 'Сохранить ' + sum(editor.draft) + ' сум');
-      save.type = 'button';
-      save.disabled = editor.saving;
-      save.addEventListener('click', saveTarget);
-      host.append(save);
-    }
-    const source = view.source;
-    const note = editor.message || (source ? (source.inherited ? 'Сумма перешла с прошлой недели.' : 'Изменено ' +
-      new Date(source.changed_at).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'})) : '');
-    host.append(node('p', 'fo-msg' + (editor.error ? ' is-error' : ''), note));
+    const feasible = node('p', 'fo-feasible');
+    const save = node('button', 'fo-save');
+    save.type = 'button';
+    save.dataset.busyKey = 'fo-div-save';
+    save.addEventListener('click', saveTarget);
+    const note = node('p', 'fo-msg');
+    host.append(stepper, presets, feasible, save, note);
+    editor.refs = {input, presetButtons, feasible, save, note};
+    refreshEditor();
   }
 
-  async function saveTarget() {
+  /** Подписи редактора по текущему черновику — без пересборки поля. */
+  function refreshEditor() {
+    const editor = state.editor, refs = editor.refs, data = state.data.dividends;
+    if (!refs || !data) return;
+    const view = logic.dividendView(data);
+    refs.presetButtons.forEach(button => button.classList.toggle('is-active', Number(button.dataset.value) === editor.draft));
+    const free = view.free;
+    refs.feasible.className = 'fo-feasible' + (free !== null && editor.draft > free ? ' is-warn' : '');
+    refs.feasible.textContent = free === null ? 'Средний свободный остаток кассы пока не посчитан: нет передач кассира за неделю.'
+      : editor.draft > free ? 'Касса в среднем свободно даёт ≈ ' + short(free) + ' в неделю — больше может не хватить на закуп и зарплаты.'
+        : 'Касса в среднем свободно даёт ≈ ' + short(free) + ' в неделю: после закупа, зарплат и расходов за 7 дней.';
+    refs.save.hidden = !(editor.draft > 0 && editor.draft !== view.target);
+    refs.save.textContent = 'Сохранить ' + sum(editor.draft) + ' сум';
+    const source = view.source;
+    refs.note.className = 'fo-msg' + (editor.error ? ' is-error' : '');
+    refs.note.textContent = editor.message || (editor.draft === 0 && refs.input.value !== '' ? 'Укажите сумму больше нуля.'
+      : source ? (source.inherited ? 'Сумма перешла с прошлой недели.' : 'Изменено ' +
+        new Date(source.changed_at).toLocaleString('ru-RU', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'})) : '');
+  }
+
+  async function saveTarget(event) {
     const editor = state.editor, data = state.data.dividends;
+    if (editor.saving) return;
     editor.saving = true;
-    renderEditor();
-    try {
+    editor.message = '';
+    editor.error = false;
+    const work = (async () => {
       const response = await globalThis.RetroFinancialWrite('/api/founder/dividends/weekly', {
         method: 'POST', headers: {'Content-Type': 'application/json'},
         body: JSON.stringify({week: data.week, amount: String(editor.draft)}),
       });
       const body = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(body.detail || 'Не удалось сохранить сумму.');
+      return body;
+    })();
+    // Кнопка крутится; поле суммы — «сохраняю», потом зелёная галочка
+    // (кнопка после записи исчезает: сумма уже сохранена).
+    // Набранное «12500000» показываем так же, как сумму на карточке: busy.js
+    // запоминает значение поля и вернёт его перерисованному полю.
+    const amountInput = editorHost().querySelector('input');
+    if (amountInput) amountInput.value = sum(editor.draft);
+    if (Busy) {
+      Busy.clear('fo-div-', 'error');
+      Busy.button(event && event.currentTarget, work, {done: false});
+      Busy.field(amountInput, work, {row: false, message: false});
+    }
+    try {
+      const body = await work;
       state.data.dividends = body;
       editor.message = 'Сохранено. Бухгалтер видит новую сумму в «Финансах дня».';
       globalThis.RetroToast?.show(editor.message);
@@ -156,7 +288,7 @@
       globalThis.RetroToast?.show(error.message, 'error');
       editor.error = true;
       editor.saving = false;
-      renderEditor();
+      refreshEditor();
     }
   }
 
@@ -217,21 +349,24 @@
       const orders = forecast.orders ? Object.values(forecast.orders).reduce((a, b) => a + b, 0) : 0;
       setText('fo-t-checks', orders + (guess && guess.orders ? ' из ≈' + guess.orders : '') + ' ' + plural(guess && guess.orders ? guess.orders : orders, 'чек', 'чека', 'чеков'));
     }
+    // «Уйдёт сегодня» и «к вечеру ≈» считает сервер (Функционал §3.8), уже
+    // округлёнными до 10 000 — экран только показывает.
     const outlook = today.outlook;
-    // Оценки по средним — до десяти тысяч: точность до сума тут мнимая.
-    const rough = value => '≈ ' + short(Math.round((num(value) || 0) / 1e4) * 1e4);
     if (outlook) {
       setText('fo-out-sal', short(num(outlook.salary_due)));
-      setText('fo-out-zak', rough(outlook.procurement));
-      setText('fo-out-oth', rough(outlook.other));
-      const evening = logic.eveningCash(today);
-      setText('fo-evening', evening === null ? '—' : rough(evening));
+      setText('fo-out-zak', '≈ ' + short(num(outlook.procurement)));
+      setText('fo-out-oth', '≈ ' + short(num(outlook.other)));
+      setText('fo-evening', outlook.evening === null ? '—' : '≈ ' + short(num(outlook.evening)));
     }
-    const issues = logic.accountantIssues({days: [yesterday, today].filter(Boolean)}, null, globalThis.AccountantLogic.dayChecks);
-    state.phoneIssues = issues;
+  }
+
+  /** Строка замечаний на 7a — те же замечания недели, что в «Проверке
+   *  бухгалтера» на компьютере; «Все замечания ↓» раскрывает их здесь же. */
+  function renderPhoneIssues(issues) {
     $('fo-phone-ask-checks').hidden = !issues.length;
     const line = $('fo-acc-line');
-    line.textContent = issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') + ' к бухгалтеру' : 'Бухгалтер без замечаний';
+    line.textContent = issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') +
+      ' к бухгалтеру · подробно — на компьютере' : 'Бухгалтер без замечаний';
     line.className = 'fo-acc-line ' + (issues.length ? 'is-bad' : 'is-ok');
   }
 
@@ -307,6 +442,7 @@
     if (!week) return;
     const issues = logic.accountantIssues(week, state.data.spending, globalThis.AccountantLogic.dayChecks);
     state.issues = issues;
+    renderPhoneIssues(issues);
     setText('fo-checks-title', issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') : 'Замечаний нет');
     const list = $('fo-checks');
     list.replaceChildren();
@@ -357,7 +493,9 @@
       const row = node('div');
       const line = node('div', 'fo-bars-line');
       const value = node('span');
-      value.append(node('b', 'rm-num', short(num(item.amount))), node('i', '', ' · ' + (item.share_percent === null ? '—' : Math.round(num(item.share_percent)) + '%')));
+          // Доля меньше процента — «<1%», а не «0%» у статьи в миллион.
+    const share = num(item.share_percent);
+    value.append(node('b', 'rm-num', short(num(item.amount))), node('i', '', ' · ' + (share === null ? '—' : share > 0 && share < 0.5 ? '<1%' : Math.round(share) + '%')));
       line.append(node('span', '', item.label), value);
       const bar = node('div', 'rm-bar');
       const fill = node('span');
@@ -370,7 +508,11 @@
     const shokh = data.shokh;
     setText('z-given', short(num(shokh.given)));
     setText('z-spent', short(num(shokh.spent)));
-    setText('z-direct', short(num(shokh.direct)));
+    // «Перечислениями» — безнал поставщикам (Функционал 7b); закуп, оплаченный
+    // бухгалтером наличными мимо Шоха, — строкой под плиткой, если он был.
+    setText('z-direct', short(num(shokh.transfers)));
+    $('z-direct-cash').hidden = !num(shokh.direct);
+    setText('z-direct-cash', num(shokh.direct) ? '+ наличными напрямую ' + short(num(shokh.direct)) : '');
     setText('z-pocket', shokh.pocket === null ? '—' : short(num(shokh.pocket)));
     setText('z-flag-title', shokh.flagged.length ? shokh.flagged.length + ' ' + plural(shokh.flagged.length, 'покупка требует', 'покупки требуют', 'покупок требуют') + ' проверки' : 'Все покупки Шоха в норме');
     const flags = $('z-flags');
@@ -435,6 +577,9 @@
 
   function failBlock(id, error) {
     $(id).replaceChildren(node('p', 'fo-empty', error.message));
+    if (id === 'fo-week-table') ['k-retro', 'k-ox', 'k-demo', 'fo-week-label', 'fo-checks-title'].forEach(key => {
+      if ($(key).querySelector('.rm-skel')) setText(key, '—');
+    });
   }
 
   function mountChat() {
@@ -471,7 +616,10 @@
       renderWeek(week);
       renderChecks();
       setText('updated', 'Данные на ' + new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'}));
-    }).catch(error => failBlock('fo-week-table', error));
+    }).catch(error => {
+      failBlock('fo-week-table', error);
+      setText('fo-acc-line', 'Замечания: ' + error.message);
+    });
     load('spending', '/api/founder/spending?date=' + state.today).then(data => { renderSpending(data); renderChecks(); })
       .catch(error => failBlock('fo-exp-list', error));
     load('dishes', '/api/founder/dishes?days=7').then(renderDishes).catch(error => failBlock('fo-dishes', error));
@@ -496,7 +644,7 @@
     $('fo-div-toggle').addEventListener('click', toggleEditor);
     $('k-div-edit').addEventListener('click', toggleEditor);
     $('fo-ask-checks').addEventListener('click', () => mountChat().ask(checksQuestion(state.issues)));
-    $('fo-phone-ask-checks').addEventListener('click', () => openPhoneChat(checksQuestion(state.phoneIssues)));
+    $('fo-phone-ask-checks').addEventListener('click', () => openPhoneChat(checksQuestion(state.issues)));
     $('fo-phone-ai').addEventListener('click', () => openPhoneChat());
     document.querySelectorAll('.fo-fold').forEach(link => link.addEventListener('click', event => {
       event.preventDefault();
@@ -522,6 +670,7 @@
   }
 
   (async function start() {
+    paintSkeleton();
     state.today = new Date().toISOString().slice(0, 10);
     try {
       const config = await globalThis.RetroConfig;
@@ -541,9 +690,13 @@
     $('fo-phone-excel').href = $('fo-excel').href;
     setText('fo-phone-excel-label', 'Отчёт бухгалтера · ' + MONTHS[Number(month.slice(5, 7)) - 1] + ' · Excel');
     bind();
+    download($('fo-excel'), 'Retro-accountant-' + month + '.xlsx');
+    download($('fo-phone-excel'), 'Retro-accountant-' + month + '.xlsx');
     load('dividends', '/api/founder/dividends/weekly').then(renderDividends).catch(error => setText('fo-div-status', error.message));
     load('chef', '/api/founder/chef-account?date=' + state.today).then(renderChef).catch(error => renderChef({error: error.message}));
     load('forecast', '/api/founder/forecast?date=' + state.today).then(renderForecast).catch(error => renderForecast({error: error.message}));
     loadForLayout();
+    // Когда все блоки ответили (или упали) — ни одной вечной полосы.
+    setTimeout(() => Promise.allSettled(Object.values(state.pending)).then(dashSkeletons), 0);
   })();
 })();

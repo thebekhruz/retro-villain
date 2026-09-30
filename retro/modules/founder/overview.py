@@ -20,6 +20,10 @@ DIVIDEND_BEHIND_SHARE = Decimal('0.85')
 # сумму вида 1 285 714,29. Не путать с шагом кнопок ± в редакторе цели
 # (DIVIDEND_EDIT_STEP в founder-cabinet-logic.js) — тот в десять раз крупнее.
 DIVIDEND_SUGGEST_STEP = Decimal(50000)
+# «Касса свободно даёт ≈» округляем до этого шага (Функционал §3.7).
+FREE_CASH_STEP = Decimal(500000)
+# Оценки «Уйдёт сегодня» и «У бухгалтера к вечеру ≈» — до 10 000 (§3.8).
+OUTLOOK_STEP = Decimal(10000)
 # Прогноз по дню недели — среднее за последние восемь таких же дней.
 FORECAST_WEEKS = 8
 WEEKDAYS = ('Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс')
@@ -151,9 +155,10 @@ def dividend_week(day: date, target, flows, *, free_cash=None):
     if target is None or target <= 0:
         return {**result, 'pace': None, 'due': None, 'left': None, 'behind': False, 'done': False,
                 'suggest_today': None, 'days_left': 8 - elapsed}
-    # `pace` — план к концу сегодняшнего дня (метка на полосе), `due` — к концу
-    # вчерашнего. Отставание меряем по `due`: утром сегодняшнюю долю ещё не
-    # успели отложить, и это не повод поднимать тревогу каждый день.
+    # `pace` — план к сегодняшнему дню, включая сегодня (метка на полосе).
+    # По Функционалу §3.7 «Отстаём» — отложено меньше 85 % этого плана: утром,
+    # пока сегодняшнюю долю не отложили, статус подсказывает её отложить.
+    # `due` — план к концу вчера, остаётся в ответе для подписей.
     pace = target * elapsed / 7
     due = target * (elapsed - 1) / 7
     left = max(Decimal(0), target - collected)
@@ -164,13 +169,20 @@ def dividend_week(day: date, target, flows, *, free_cash=None):
     # Уже отложенное сегодня вычитаем, и больше остатка до цели не советуем.
     suggest = min(left, max(Decimal(0), share - today_amount))
     return {**result, 'pace': money(pace), 'due': money(due), 'left': money(left),
-            'behind': collected < due * DIVIDEND_BEHIND_SHARE, 'done': collected >= target,
+            'behind': collected < pace * DIVIDEND_BEHIND_SHARE, 'done': collected >= target,
             'suggest_today': money(suggest), 'days_left': days_left}
 
 
-def free_cash_per_week(flows, days):
-    """Сколько в среднем остаётся за неделю после зарплат, закупа и расходов.
+def round_to(value, step):
+    """До ближайшего кратного шага (половина — вверх)."""
+    return (Decimal(value) / step).quantize(Decimal(1), rounding=ROUND_HALF_UP) * step
 
+
+def free_cash_per_week(flows, days):
+    """«Касса свободно даёт ≈» (Функционал §3.7): среднее за день (от кассира −
+    зарплаты − закуп бухгалтера − прочие расходы без дивидендов) × 7, до 500 000.
+
+    Прочие поступления в формулу не входят — только деньги от кассира.
     Считаются только дни, где передача кассира записана: без неё день
     выглядел бы убыточным и тянул среднее вниз."""
     known = []
@@ -178,12 +190,12 @@ def free_cash_per_week(flows, days):
         values = flows.get(day.isoformat())
         if not values or 'handover' not in values:
             continue
-        known.append(values['handover'] + values.get('receipt', Decimal(0))
+        known.append(values['handover']
                      - values.get('salary', Decimal(0)) - values.get('procurement', Decimal(0))
                      - values.get('other', Decimal(0)))
     if not known:
         return None
-    return max(Decimal(0), sum(known, Decimal(0)) / len(known) * 7)
+    return max(Decimal(0), round_to(sum(known, Decimal(0)) / len(known) * 7, FREE_CASH_STEP))
 
 
 def handover_check(recorded, expected):
@@ -240,23 +252,31 @@ def weekday_forecast(history, today: date):
 
 
 def month_forecast(history, forecast, today: date):
-    """Факт месяца по вчерашний день плюс прогноз с сегодняшнего по последний."""
+    """Прогноз месяца (Функционал §3.8): факт с 1-го числа по сегодня плюс
+    прогноз оставшегося. Сегодняшний день ещё идёт: в факт входит то, что
+    уже пробито, а в прогноз — недобранное до среднего этого дня недели
+    (если день уже перерос среднее, прогноз на него 0)."""
     first = today.replace(day=1)
     last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     fact = Decimal(0)
+    today_fact = Decimal(0)
     cursor = first
-    while cursor < today:
+    while cursor <= today:
         values = history.get(cursor.isoformat(), {})
-        fact += sum((item['revenue'] for item in values.values()), Decimal(0))
+        revenue = sum((item['revenue'] for item in values.values()), Decimal(0))
+        fact += revenue
+        if cursor == today:
+            today_fact = revenue
         cursor += timedelta(days=1)
     expected = Decimal(0)
     cursor = today
     while cursor <= last:
         average = forecast[cursor.weekday()]['revenue']
-        expected += Decimal(average) if average is not None else Decimal(0)
+        average = Decimal(average) if average is not None else Decimal(0)
+        expected += max(Decimal(0), average - today_fact) if cursor == today else average
         cursor += timedelta(days=1)
     return dict(month=first.isoformat()[:7], fact=money(fact), forecast=money(expected),
-                total=money(fact + expected), fact_through=(today - timedelta(days=1)).isoformat())
+                total=money(fact + expected), fact_through=today.isoformat())
 
 
 def chef_bills(rows, *, week_start: date, week_end: date, month_start: date):
@@ -278,12 +298,14 @@ def is_shokh_advance(row):
              and str(row.get('description') or '').startswith('Шох:')))
 
 
-def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0)):
+def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0), transfers=()):
     """Закуп за месяц: сколько выдали Шоху, сколько он записал, что проверить.
 
-    «Напрямую» — закуп, который бухгалтер оплатил сам, мимо подотчёта Шоха
-    (мясо, уголь, хлеб и прочие статьи группы «Закуп»). `from_till` — выдачи
-    Шоху прямо из кассы кассира: в выдано они входят, в движениях бухгалтера их нет."""
+    «Напрямую» — закуп, который бухгалтер оплатил сам наличными, мимо подотчёта
+    Шоха (мясо, уголь, хлеб и прочие статьи группы «Закуп»). «Перечислениями»
+    (`transfers`) — оплата поставщикам со счёта, безнал (Функционал 7b).
+    `from_till` — выдачи Шоху прямо из кассы кассира: в выдано они входят, в
+    движениях бухгалтера их нет."""
     given = sum((Decimal(row['amount']) for row in flows if is_shokh_advance(row)),
                 Decimal(from_till))
     direct = sum((Decimal(row['amount']) for row in flows
@@ -292,11 +314,15 @@ def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0)):
     by_item = defaultdict(Decimal)
     for row in purchases:
         by_item[row['item']] += Decimal(row['total'])
+    # `total` покупки — наличные в целых сумах (shokh.store.cash_amount).
     flagged = [dict(id=row['id'], day=row['day'], item=row['item'], total=row['total'],
-                    reason='нет фото' if not row['has_photo'] else 'цена выше обычной')
+                    reason=('нет в iiko' if row.get('off_catalog') else
+                            'нет фото' if not row['has_photo'] else 'цена выше обычной'))
                for row in purchases
-               if row['accepted_at'] is None and (not row['has_photo'] or row['price_above_usual'])]
+               if row['accepted_at'] is None and (row.get('off_catalog') or not row['has_photo']
+                                                  or row['price_above_usual'])]
     top = sorted(by_item.items(), key=lambda item: (-item[1], item[0]))[:5]
+    transferred = sum((Decimal(row['amount']) for row in transfers), Decimal(0))
     return dict(given=money(given), given_from_till=money(from_till), spent=money(spent),
-                direct=money(direct), pocket=pocket, purchases=len(purchases), flagged=flagged,
+                direct=money(direct), transfers=money(transferred), pocket=pocket, purchases=len(purchases), flagged=flagged,
                 top_items=[dict(item=name, amount=money(amount)) for name, amount in top])

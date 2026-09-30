@@ -174,7 +174,72 @@ def test_rollback_undoes_the_whole_operation_on_both_dialects(tmp_path, label):
         assert connection.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 0
 
 
+@pytest.mark.parametrize('label', ['sqlite', 'postgres'])
+def test_transaction_block_commits_and_keeps_the_connection_open(tmp_path, label):
+    """`with closing(conn) as c, c:` — как в sqlite3: блок фиксирует или
+    откатывает, но соединение остаётся открытым до внешнего closing. На
+    Postgres оно закрывалось, и чтение после блока падало «connection is closed»."""
+    from contextlib import closing
+    found = dict(databases(tmp_path))
+    if label not in found:
+        pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
+    database = found[label]
+    prepare(database)
+    with closing(database.connect()) as connection:
+        with connection:
+            connection.execute('INSERT INTO probe_money (day, amount) VALUES (?, ?)', ('2026-09-16', '1'))
+        assert connection.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 1
+        with pytest.raises(RuntimeError):
+            with connection:
+                connection.execute('INSERT INTO probe_money (day, amount) VALUES (?, ?)', ('2026-09-17', '2'))
+                raise RuntimeError('откат')
+        assert connection.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 1
+    with closing(database.connect()) as other:
+        assert other.execute('SELECT COUNT(*) FROM probe_money').fetchone()[0] == 1
+
+
 # ── История ставок без триггеров ────────────────────────────────────────────
+
+@pytest.mark.parametrize('label', ['sqlite', 'postgres'])
+def test_cashier_salary_policy_loads_without_duplicate_expenses(tmp_path, label):
+    """Авто-зарплата читается на обоих диалектах, включая LIKE с символом %."""
+    from datetime import date, timedelta
+    from uuid import uuid4
+    from retro.modules.cashier.expenses import ExpenseStore, seed_cashier_expense
+
+    schema = None
+    if label == 'postgres':
+        if not POSTGRES_URL:
+            pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
+        import psycopg
+        from psycopg import sql
+        from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
+        schema = 'probe_cashier_' + uuid4().hex
+        with psycopg.connect(POSTGRES_URL, autocommit=True) as connection:
+            connection.execute(sql.SQL('CREATE SCHEMA {}').format(sql.Identifier(schema)))
+        parts = urlsplit(POSTGRES_URL)
+        query = dict(parse_qsl(parts.query))
+        query['options'] = f'-csearch_path={schema}'
+        database = Database(urlunsplit(parts._replace(query=urlencode(query))))
+    else:
+        database = Database(tmp_path / 'policy.sqlite3')
+    try:
+        first = date(2026, 9, 12)
+        second = first + timedelta(days=1)
+        seed_cashier_expense(database, first, first, 'Зарплата кассира', Decimal('350000'))
+        store = ExpenseStore(database)
+        store.add(second, 'Такси', '20000')
+        for _ in range(2):
+            rows = store.list(second)
+            assert len(rows) == 2
+            assert sum(item.amount for item in rows) == Decimal('370000')
+            assert sum(item.automatic for item in rows) == 1
+        assert store.total_between(first, second) == Decimal('720000')
+        assert len(ExpenseStore(database).list(second)) == 2
+    finally:
+        if schema:
+            with psycopg.connect(POSTGRES_URL, autocommit=True) as connection:
+                connection.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
 
 def roster_for(tmp_path, label):
     """Реестр на выбранном диалекте, с чистой схемой."""
@@ -381,3 +446,112 @@ def test_dry_run_changes_nothing(tmp_path):
             "SELECT COUNT(*) FROM information_schema.tables "
             "WHERE table_schema = 'public'").fetchone()[0]
     assert tables == 0
+
+
+# ── Пул соединений Postgres (T-400) ─────────────────────────────────────────
+
+class FakeRaw:
+    """Соединение psycopg в миниатюре: статус транзакции, откат, закрытие."""
+
+    def __init__(self, status='IDLE', alive=True):
+        from types import SimpleNamespace
+        from psycopg.pq import TransactionStatus
+        self.statuses = TransactionStatus
+        self.info = SimpleNamespace(transaction_status=getattr(TransactionStatus, status))
+        self.closed, self.alive, self.autocommit, self.rollbacks = False, alive, False, 0
+
+    def rollback(self):
+        self.rollbacks += 1
+        self.info.transaction_status = self.statuses.IDLE
+
+    def execute(self, sql):
+        if not self.alive:
+            raise OSError('server closed the connection')
+
+    def close(self):
+        self.closed = True
+
+
+def pool_with(monkeypatch, made, **kw):
+    import psycopg
+    from retro.db import ConnectionPool
+    clock = [0.0]
+    monkeypatch.setattr(psycopg, 'connect', lambda url, **_: made.append(FakeRaw()) or made[-1])
+    return ConnectionPool(clock=lambda: clock[0], **kw), clock
+
+
+def test_pool_hands_the_released_connection_to_the_next_operation(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made)
+    first = pool.acquire('pg://a')
+    pool.release('pg://a', first)
+    assert pool.acquire('pg://a') is first
+    assert len(made) == 1
+
+
+def test_pool_keeps_databases_apart(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made)
+    pool.release('pg://a', pool.acquire('pg://a'))
+    assert pool.acquire('pg://b') is not made[0]
+
+
+def test_pool_rolls_back_an_open_read_before_reuse(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made)
+    raw = pool.acquire('pg://a')
+    raw.info.transaction_status = raw.statuses.INTRANS
+    pool.release('pg://a', raw)
+    assert raw.rollbacks == 1 and not raw.closed
+    assert pool.acquire('pg://a') is raw
+
+
+def test_pool_drops_a_dead_connection_and_opens_a_new_one(monkeypatch):
+    made = []
+    pool, clock = pool_with(monkeypatch, made, check_after=2)
+    raw = pool.acquire('pg://a')
+    pool.release('pg://a', raw)
+    raw.alive = False
+    clock[0] = 10
+    fresh = pool.acquire('pg://a')
+    assert fresh is not raw and raw.closed
+
+
+def test_pool_caps_idle_connections_across_all_databases(monkeypatch):
+    made = []
+    pool, _ = pool_with(monkeypatch, made, max_idle=2)
+    held = [pool.acquire(f'pg://{name}') for name in 'abc']
+    for name, raw in zip('abc', held):
+        pool.release(f'pg://{name}', raw)
+    assert [raw.closed for raw in held] == [True, False, False]
+
+
+def test_pool_closes_connections_idle_too_long(monkeypatch):
+    made = []
+    pool, clock = pool_with(monkeypatch, made, idle_seconds=60)
+    raw = pool.acquire('pg://a')
+    pool.release('pg://a', raw)
+    clock[0] = 61
+    assert pool.acquire('pg://a') is not raw and raw.closed
+
+
+@needs_postgres
+def test_closed_wrapper_refuses_work_instead_of_borrowing_a_pooled_connection():
+    import psycopg
+    database = Database(POSTGRES_URL)
+    connection = database.connect()
+    connection.close()
+    with pytest.raises(psycopg.OperationalError):
+        connection.execute('SELECT 1')
+    connection.close()  # второй close безопасен
+
+
+@needs_postgres
+def test_postgres_operations_reuse_one_server_connection():
+    from contextlib import closing
+    database = Database(POSTGRES_URL)
+    pids = set()
+    for _ in range(5):
+        with closing(database.connect()) as connection:
+            pids.add(connection.execute('SELECT pg_backend_pid()').fetchone()[0])
+    assert len(pids) == 1

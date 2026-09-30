@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime, timezone
+from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -19,6 +20,9 @@ router = APIRouter(prefix='/api/director', tags=['director'])
 # Завершившийся период в iiko сам не меняется: правки вносит человек, и для них
 # есть кнопка обновления.
 CLOSED_PERIOD_TTL = 15 * 60
+# После ttl закрытый период отдаём сразу, обновляя в фоне (T-400): iiko его
+# не пересчитывает, а директор ждал отчёт 4–5 секунд каждые 15 минут.
+CLOSED_PERIOD_STALE = 24 * 60 * 60
 
 
 class ChatInput(BaseModel):
@@ -40,8 +44,7 @@ def attendance(request: Request, date: date | None = None):
         raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
     roster = request.app.state.accountant_roster.list(day)
     snapshot = request.app.state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, set(), snapshot.rows,
-                         pay_unlinked=request.app.state.settings.check_mode)
+    rows = draft_payroll(day, roster, set(), snapshot.rows)
     # Ручная отметка «был / не был» считается наравне с проходом Hikvision.
     arrived = [row for row in rows if row.status in PRESENT_STATUSES]
     late = [row for row in rows if row.status == 'late']
@@ -96,7 +99,7 @@ async def report_for_period(request: Request, start: date | None = None, end: da
         # заново выкачивали тот же сентябрь. Кнопка обновления обходит кэш.
         snapshot = await load_iiko(request.app.state, 'load_director_report', today_tashkent(),
                                    start=start, end=end, refresh=refresh, request=request,
-                                   timeout=150, ttl=CLOSED_PERIOD_TTL)
+                                   timeout=150, ttl=CLOSED_PERIOD_TTL, stale=CLOSED_PERIOD_STALE)
         return snapshot.json()
     except TimeoutError:
         raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
@@ -253,6 +256,22 @@ def _amount(value):
     return value.replace(' ', '').replace(' ', '')
 
 
+def month_shift_totals(finance, day):
+    """Смены сменного с 1-го числа по день D и выданное за них.
+
+    Считаются начисленные смены, на которые человек пришёл (или отмечен «был»),
+    выдано — выплаты по начислениям этих дней. Ведомость месяца читает те же
+    начисления, поэтому числа сходятся с 2b."""
+    data = finance.payroll_month(day.replace(day=1), day)
+    shifts, paid = {}, {}
+    for person in data['shift']:
+        key = person['employee_id']
+        shifts[key] = shifts.get(key, 0) + sum(cell['status'] in PRESENT_STATUSES
+                                               for cell in person['cells'].values())
+        paid[key] = paid.get(key, Decimal(0)) + Decimal(person['paid'])
+    return shifts, paid
+
+
 @router.get('/team')
 def team(request: Request, date: date | None = None):
     day = date or today_tashkent()
@@ -261,20 +280,39 @@ def team(request: Request, date: date | None = None):
     state = request.app.state
     roster = state.accountant_roster.list(day)
     snapshot = state.attendance.snapshot(day, roster)
-    rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows,
-                         pay_unlinked=state.settings.check_mode)
+    rows = draft_payroll(day, roster, state.accountant_finance.exceptions_for_day(day), snapshot.rows)
     by_id = {employee.id: employee for employee in roster}
+    shifts_month, paid_month = month_shift_totals(state.accountant_finance, day)
     shift = [dict(row.json(), manual_attendance=by_id[row.employee_id].manual_attendance,
                   manual_since=(by_id[row.employee_id].manual_since.isoformat()
                                 if by_id[row.employee_id].manual_since else None),
-                  hikvision_registered=by_id[row.employee_id].hikvision_id is not None)
+                  hikvision_registered=by_id[row.employee_id].hikvision_id is not None,
+                  month_shifts=shifts_month.get(row.employee_id, 0),
+                  month_paid=str(paid_month.get(row.employee_id, Decimal(0))))
              for row in rows]
+    # Оклад: выдано за месяц — сумма частичных выплат с 1-го числа (3.5), тем
+    # же расчётом, что у бухгалтера; остаток меньше нуля — переплата.
+    from retro.modules.accountant.routes import monthly_payments_json
+
+    monthly_paid = monthly_payments_json(state.accountant_finance, state.accountant_roster, day)['paid_by_employee']
+    monthly = []
+    for person in state.accountant_roster.list_monthly():
+        paid = Decimal(monthly_paid.get(str(person.id), '0'))
+        monthly.append(dict(person.json(), month_paid=str(paid), month_left=str(Decimal(str(person.salary)) - paid)))
     return dict(demo=False, date=day.isoformat(), attendance=snapshot.health,
-                shift=shift, monthly=[row.json() for row in state.accountant_roster.list_monthly()],
+                shift=shift, monthly=monthly, month=day.strftime('%Y-%m'),
                 roles=sorted(set(GROUPS) | {'повар', 'кондитер'}),
                 counts=dict(late=sum(row['status'] == 'late' for row in shift),
                             missing=sum(row['status'] in ABSENT_STATUSES for row in shift),
-                            no_hikvision=sum(not row['hikvision_registered'] for row in shift)))
+                            no_hikvision=sum(not row['hikvision_registered'] for row in shift),
+                            # Из них без привязки: не на ручной отметке, начисление заблокировано.
+                            unlinked_hikvision=sum(not row['hikvision_registered'] and not row['manual_attendance']
+                                                   for row in shift)))
+
+
+def _who(request: Request) -> str:
+    """Кто меняет реестр — в историю сотрудника (1a)."""
+    return getattr(request.state, 'dashboard_user', None) or 'директор'
 
 
 @router.post('/team', status_code=201)
@@ -283,11 +321,12 @@ def add_team_member(request: Request, body: TeamInput):
     try:
         if body.type == 'monthly':
             return dict(employee=roster.add_monthly(
-                name=body.name, role=body.role, salary=_amount(body.amount)).json())
+                name=body.name, role=body.role, salary=_amount(body.amount),
+                no_hikvision=body.manual_attendance, by=_who(request)).json())
         employee = roster.add(name=body.name, role=body.role, rate=_amount(body.amount),
-                              group_name=_group(body.role))
+                              group_name=_group(body.role), by=_who(request))
         if body.manual_attendance:
-            employee = roster.set_manual_attendance(employee.id, True)
+            employee = roster.set_manual_attendance(employee.id, True, by=_who(request))
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(employee=employee.json())
@@ -303,9 +342,9 @@ def update_shift_member(request: Request, employee_id: int, body: TeamUpdateInpu
         employee = roster.update(employee_id, name=body.name, role=body.role,
                                  rate=_amount(body.amount),
                                  group_name=_group(body.role, current.group_name),
-                                 reason='Изменено директором')
+                                 reason='Изменено директором', by=_who(request))
         if body.manual_attendance is not None and body.manual_attendance != employee.manual_attendance:
-            employee = roster.set_manual_attendance(employee_id, body.manual_attendance)
+            employee = roster.set_manual_attendance(employee_id, body.manual_attendance, by=_who(request))
     except ValueError as error:
         raise HTTPException(404 if 'не найден' in str(error) else 422, str(error)) from None
     return dict(employee=employee.json())
@@ -314,7 +353,7 @@ def update_shift_member(request: Request, employee_id: int, body: TeamUpdateInpu
 @router.delete('/team/shift/{employee_id}', status_code=204)
 def delete_shift_member(request: Request, employee_id: int):
     try:
-        request.app.state.accountant_roster.delete(employee_id)
+        request.app.state.accountant_roster.delete(employee_id, by=_who(request))
     except ValueError as error:
         raise HTTPException(404, str(error)) from None
 
@@ -326,7 +365,7 @@ def update_monthly_member(request: Request, employee_id: int, body: TeamUpdateIn
     # записанная бухгалтером в ту же секунду, не затёрлась старыми цифрами.
     try:
         employee = request.app.state.accountant_roster.update_monthly_basics(
-            employee_id, name=body.name, role=body.role, salary=_amount(body.amount))
+            employee_id, name=body.name, role=body.role, salary=_amount(body.amount), by=_who(request))
     except ValueError as error:
         raise HTTPException(404 if 'не найден' in str(error) else 422, str(error)) from None
     return dict(employee=employee.json())
@@ -335,7 +374,7 @@ def update_monthly_member(request: Request, employee_id: int, body: TeamUpdateIn
 @router.delete('/team/monthly/{employee_id}', status_code=204)
 def delete_monthly_member(request: Request, employee_id: int):
     try:
-        request.app.state.accountant_roster.delete_monthly(employee_id)
+        request.app.state.accountant_roster.delete_monthly(employee_id, by=_who(request))
     except ValueError as error:
         raise HTTPException(404, str(error)) from None
 
@@ -357,3 +396,20 @@ async def accounting_day(request: Request, date: date | None = None):
     from retro.modules.accountant.routes import day_view
 
     return await day_view(request, date or today_tashkent())
+
+
+@router.get('/accounting/staff')
+def accounting_staff(request: Request, date: date | None = None):
+    """Смена дня глазами бухгалтера, только чтение. Вместе с /accounting/day и
+    покупками Шоха из неё считаются те же проверки, что в «Финансах дня» (2a)."""
+    from retro.modules.accountant.routes import staff_view
+
+    return staff_view(request, date or today_tashkent())
+
+
+@router.get('/accounting/purchases')
+def accounting_purchases(request: Request, date: date | None = None):
+    """Покупки Шоха за день, только чтение: проверки фото и цены для 6a."""
+    from retro.modules.accountant.routes import shokh_purchases
+
+    return shokh_purchases(request, date or today_tashkent())

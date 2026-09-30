@@ -222,3 +222,21 @@ def test_founder_broadcast_rejects_empty_text_and_reports_parallel_run():
             'recipient_ids': ['A' * 32]})
     assert conflict.status_code == 409
     assert conflict.json() == {'detail': 'Другая рассылка уже выполняется.'}
+
+
+def test_founder_expense_detail_counts_monthly_salaries_as_salary(tmp_path):
+    """Оклады частями — строки «Зарплаты» журнала: в разбивке они «зарплата», а не «прочие»."""
+    source = FounderIiko({'pnl': {'net_profit': '5000'}, 'scope_note': ''})
+    app = create_app(
+        Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
+        accountant_db_path=tmp_path / 'accountant.sqlite3')
+    app.state.iiko = source
+    app.state.accountant_finance.add_opening(date(2026, 9, 1), '10000', 'Остаток')
+    app.state.accountant_finance.add_expense(date(2026, 9, 2), 'salary_monthly', 'Оклад', '1500')
+    app.state.accountant_finance.add_expense(date(2026, 9, 2), 'admin_it', 'Сервис', '200')
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        data = client.get('/api/founder/analytics', params={
+            'start': '2026-09-01', 'end': '2026-09-08'}).json()
+    assert data['dashboard_expenses'] == {
+        'cashier': '0', 'accountant_other': '200', 'accountant_salary': '1500',
+        'accountant': '1700', 'total': '1700'}

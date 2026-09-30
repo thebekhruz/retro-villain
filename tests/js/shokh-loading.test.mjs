@@ -3,14 +3,18 @@ import {readFileSync} from 'node:fs';
 import {setImmediate} from 'node:timers/promises';
 import test from 'node:test';
 import vm from 'node:vm';
+import logic from '../../retro/static/shokh-logic.js';
 const source = readFileSync(new URL('../../retro/static/shokh.js', import.meta.url), 'utf8');
 const homeCode = source.slice(source.indexOf('async function loadHome()'), source.indexOf('/* ── Флоу'));
 const loadCode = source.slice(source.indexOf('async function loadCatalog()'), source.indexOf("$('reload-data').addEventListener"));
 function harness(saved = {}) {
   const elements = new Map(), pending = [], storage = new Map(Object.entries(saved)), messages = [];
   const state = {catalogReady:false,home:null};
-  const context = vm.createContext({state,
-    $: id=>{if (!elements.has(id)) elements.set(id,{});return elements.get(id);},
+  // Элемент-заглушка: хватает того, что трогают загрузка и отклик (T-393).
+  const fake=()=>({classList:{toggle(){},add(){},remove(){}},setAttribute(){},removeAttribute(){},replaceChildren(){},dataset:{},style:{}});
+  const context = vm.createContext({state,setTimeout,clearTimeout,L:()=>logic,
+    Busy:{button:(el,work)=>work,section:(el,work)=>work,row:(el,work)=>work},homeFailed(){},
+    $: id=>{if (!elements.has(id)) elements.set(id,fake());return elements.get(id);},
     sessionStorage:{getItem:key=>storage.get(key),removeItem:key=>storage.delete(key)},
     api:path=>new Promise((resolve,reject)=>pending.push({path,resolve,reject})),
     renderHome:data=>{state.home=data;},message:text=>messages.push(text),
@@ -43,4 +47,16 @@ test('a confirmed prior reservation is recovered from the server after a lost re
   const done=h.recover();h.pending[0].resolve({purchase:{id:4}});await done;
   assert.equal(h.storage.has('shokh-pending-operation'),false);
   assert.match(h.messages[0],/найдена в журнале/);
+});
+test('T-399: справочник iiko приходит с историей покупок — «Часто покупаете» и обычная цена сразу',async()=>{
+  const h=harness(),done=h.run(); await setImmediate();
+  h.pending[0].resolve({pocket:'500000'}); await setImmediate();
+  h.pending[1].resolve({source:'iiko',can_create:true,storages:[{id:'s'}],suppliers:[],points:[],
+    items:[{id:'p1',item:'Помидор',unit:'кг'},{id:'p2',item:'Агар',unit:'кг'}],
+    history:[{product_id:'p1',item:'Помидор (старое имя)',unit:'кг',times:3,points:{RETRO:3},usual_price:'12000.00'}],
+    point_defaults:{RETRO:{supplier_id:'sup',storage_id:'s'}}});
+  await done;
+  assert.equal(h.state.catalogReady,true);
+  const tomato=h.state.catalog.items.find(r=>r.id==='p1');
+  assert.equal(tomato.times,3); assert.equal(tomato.usual_price,'12000.00'); assert.equal(tomato.points.RETRO,3);
 });
