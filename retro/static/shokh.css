@@ -15,6 +15,9 @@
 
 /* ── Герой главной ────────────────────────────────────────────────────── */
 .shokh-hero{border-radius:0 0 28px 28px;padding:calc(20px + env(safe-area-inset-top)) 20px 22px}
+/* Кольцо в углу героя — размер и тени как в макете 3a. */
+.shokh-hero.rm-phone-hero:after{width:240px;height:240px;right:-120px;top:-90px;
+  box-shadow:0 0 0 28px #d8b9770a,0 0 0 60px #d8b97706}
 .shokh-hero-top{display:flex;align-items:center;gap:12px}
 .shokh-mark{display:grid;place-items:center;width:44px;height:44px;flex:none;border-radius:14px;
   background:var(--gold);color:var(--green);font-weight:700;font-size:18px}
@@ -26,9 +29,9 @@
 .shokh-back{display:inline-flex;align-items:center;margin-right:auto;text-decoration:none}
 .shokh-balance{margin-top:22px;display:flex;flex-wrap:wrap;align-items:baseline;column-gap:8px}
 .shokh-balance>span{flex-basis:100%;font-size:12px;color:#a9bfb1}
-.shokh-balance>strong{font-size:clamp(34px,11vw,44px);font-weight:650;letter-spacing:-1.5px;margin-top:4px;line-height:1.1}
-.shokh-balance>small{font-size:14px;color:#c5d3c9}
-.shokh-balance-sub{flex-basis:100%;margin:6px 0 0;font-size:12px;color:#c5d3c9;line-height:1.45}
+.shokh-balance>strong{font-size:clamp(34px,11vw,42px);font-weight:650;letter-spacing:-1.5px;margin-top:4px;line-height:1.1}
+.shokh-balance>small{font-size:14px;color:#a9bfb1}
+.shokh-balance-sub{flex-basis:100%;margin:4px 0 0;font-size:12px;color:#c5d3c9;line-height:1.45}
 .shokh-balance-sub:empty{display:none}
 .shokh-progress{margin-top:16px}
 .shokh-progress>span{display:block;font-size:11px;color:#c5d3c9;margin-bottom:6px}
@@ -48,6 +51,8 @@
 .shokh-thumb.is-empty{display:grid;place-items:center;color:#35624e;font-weight:700}
 .shokh-purchase-body{flex:1;min-width:0}
 .shokh-purchase-title{display:flex;align-items:center;gap:6px;flex-wrap:wrap;font-size:14px;font-weight:600}
+.shokh-purchase-body>.shokh-note{font-size:11px;color:var(--muted-3);margin-top:2px;line-height:1.4}
+.shokh-purchase>strong{font-size:14px;font-weight:600;white-space:nowrap}
 .shokh-flag{padding:2px 6px;border-radius:5px;background:var(--warn-bg);color:var(--warn);
   font-size:9px;font-weight:650}
 .shokh-ok{padding:2px 6px;border-radius:5px;background:var(--ok-bg);color:var(--ok);
@@ -55,35 +60,37 @@
 
 /* ── Кнопки ───────────────────────────────────────────────────────────── */
 .shokh-cta{position:sticky;bottom:0;padding:10px 16px calc(16px + env(safe-area-inset-bottom));
-  background:linear-gradient(to top,var(--phone-bg) 70%,transparent)}
+  background:var(--phone-bg)}
 .shokh-primary{width:100%;min-height:62px;border:0;border-radius:20px;background:var(--green);
   color:#fff;display:flex;align-items:center;justify-content:center;gap:12px;
   box-shadow:0 10px 24px #143e3533;font-size:16px;font-weight:600}
-.shokh-primary.is-flat{box-shadow:none;min-height:56px}
+.shokh-primary.is-flat{box-shadow:none;min-height:58px;border-radius:18px;font-weight:650}
 .shokh-primary.is-gold{background:var(--gold);color:var(--green);font-weight:700}
 .shokh-primary:disabled{background:#b6c4ba;box-shadow:none}
 .shokh-primary b{display:block;font-size:17px;font-weight:600}
 .shokh-primary small{display:block;font-size:11px;color:#c5d3c9;font-weight:400;margin-top:2px}
 .shokh-plus{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:50%;
   background:var(--gold);color:var(--green);font-size:20px;font-weight:700}
-.shokh-secondary{min-width:100px;min-height:56px;border:1px solid #dbe3d8;border-radius:18px;
+.shokh-secondary{min-width:100px;min-height:58px;border:1px solid #dbe3d8;border-radius:18px;
   background:#fff;color:#35624e;font-size:15px;font-weight:600;padding:0 18px}
 .shokh-secondary:disabled{opacity:.45}
-.shokh-ghost{min-height:52px;border:1px solid #ffffff40;border-radius:18px;background:none;
+.shokh-ghost{min-height:54px;border:1px solid #ffffff40;border-radius:18px;background:none;
   color:#fff;font-size:15px;font-weight:600}
-.shokh-round{width:40px;height:40px;flex:none;border:0;border-radius:50%;background:#fff;
+.shokh-round{position:relative;width:40px;height:40px;flex:none;border:0;border-radius:50%;background:#fff;
   color:#53675c;font-size:20px;box-shadow:0 1px 3px #0000000f}
+/* Кнопки размером с макет, но нажимаются на 44 px (§3a): невидимое поле вокруг. */
+.shokh-round::after{content:"";position:absolute;inset:-2px}
 
 /* ── Флоу ─────────────────────────────────────────────────────────────── */
 .shokh-flow-head{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:10px;
-  padding:calc(14px + env(safe-area-inset-top)) 16px 10px;background:var(--phone-bg)}
+  padding:calc(14px + env(safe-area-inset-top)) 16px 12px;background:var(--phone-bg)}
 .shokh-step-label{flex:1;text-align:center;font-size:13px;color:var(--ink-2)}
 .shokh-step-label b{color:var(--ink);font-weight:600}
-.shokh-timer{padding:8px 11px;border-radius:20px;background:#eaf1e6;color:#35624e;
+.shokh-timer{padding:8px 11px;border-radius:20px;background:#edf5eb;color:#3f7a50;
   font-size:13px;font-weight:650;font-variant-numeric:tabular-nums;white-space:nowrap}
 .shokh-segments{display:flex;gap:5px;padding:0 16px 12px;background:var(--phone-bg);
-  position:sticky;top:64px;z-index:4}
-.shokh-segment{flex:1;height:5px;border-radius:3px;background:#dfe5da;transition:background .3s}
+  position:sticky;top:calc(66px + env(safe-area-inset-top));z-index:4}
+.shokh-segment{flex:1;height:5px;border-radius:3px;background:#dde3d9;transition:background .3s}
 .shokh-segment.is-on{background:var(--green)}
 .shokh-flow-body{flex:1;padding:6px 16px 16px}
 /* Колонка шага не шире экрана: без minmax(0,…) сетка брала ширину самой
@@ -93,42 +100,51 @@
 .shokh-step>*{min-width:0}
 .shokh-step h1{font-size:28px;font-weight:650;letter-spacing:-.8px;margin:0}
 .shokh-step-top span{font-size:12px;color:var(--muted-2)}
+.shokh-lead{font-size:13px;color:var(--muted-2);margin:6px 0 0;line-height:1.4}
+.shokh-point-iiko{display:grid;gap:14px}
+/* Шаг точки до выбора — как в макете, без «Назад / Далее». */
+#screen-flow.is-bare .shokh-flow-nav{display:none}
 .shokh-step-top h1{margin-top:2px}
 .shokh-field{display:grid;gap:6px;font-size:12px;color:var(--ink-2)}
 .shokh-field input{height:52px;border:1px solid #dbe3d8;border-radius:16px;padding:0 16px;
   background:#fff;color:var(--ink);font:inherit;font-size:16px}
 .shokh-search{height:54px;border:1px solid #dbe3d8;border-radius:16px;padding:0 16px;
   background:#fff;color:var(--ink);font:inherit;font-size:16px}
-.shokh-chip{align-self:flex-start;justify-self:start;border:0;border-radius:20px;background:#e3ebdf;
-  color:#285140;padding:8px 14px;font-size:12px;font-weight:600}
-.shokh-chosen{margin:0;padding:10px 14px;border-radius:14px;background:var(--green);color:#fff;
-  font-size:14px;font-weight:600}
-.shokh-list-title{font-size:12px;font-weight:650;color:var(--ink-2)}
+.shokh-chip{position:relative;align-self:flex-start;justify-self:start;border:0;border-radius:20px;background:#e3ebdf;
+  color:#285140;padding:7px 12px;font-size:12px;font-weight:600}
+.shokh-chip::after{content:"";position:absolute;inset:-7px 0}
+.shokh-chosen{display:flex;align-items:center;gap:8px;margin:0;padding:10px 14px;border-radius:14px;
+  background:var(--green);color:#fff;font-size:14px;font-weight:600;overflow-wrap:anywhere}
+.shokh-chosen-tag{margin-left:auto;flex:none;padding:3px 8px;border-radius:8px;background:#ffffff1f;
+  color:#e8cf95;font-size:11px;font-weight:650}
+.shokh-list-title{font-size:12px;font-weight:650;color:var(--ink-2);margin-bottom:-6px}
 .shokh-points{display:grid;grid-template-columns:1fr 1fr;gap:12px}
-.shokh-point{min-height:150px;border-radius:22px;background:#fff;border:2px solid #eef1ea;
+.shokh-point{min-height:168px;border-radius:22px;background:#fff;border:2px solid #e3e7df;
   padding:16px;display:flex;flex-direction:column;align-items:flex-start;justify-content:space-between;
   text-align:left;color:var(--ink)}
 .shokh-point.is-active{border-color:var(--green)}
 .shokh-point:active{transform:scale(.97)}
-.shokh-point-mark{display:grid;place-items:center;width:54px;height:54px;border-radius:18px;
-  background:#edf2e9;color:var(--green);font-size:18px;font-weight:750}
+.shokh-point-mark{display:grid;place-items:center;width:58px;height:58px;border-radius:18px;
+  background:#edf2e9;color:var(--green);font-size:20px;font-weight:750}
 .shokh-point-name{font-size:17px;font-weight:650;overflow-wrap:anywhere}
-.shokh-point-name small{display:block;margin-top:4px;font-size:11px;font-weight:400;color:var(--muted-2)}
+.shokh-point-name small{display:block;margin-top:3px;font-size:11px;font-weight:400;color:var(--muted-3)}
 .shokh-items{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 /* Пустая история — подпись на всю строку, а не в одну колонку из двух. */
 .shokh-items>.shokh-note{grid-column:1/-1;margin:0}
-.shokh-item{min-height:62px;border-radius:16px;border:1px solid #dbe3d8;background:#fff;
+.shokh-item{min-height:62px;border-radius:16px;border:1px solid #e3e7df;background:#fff;
   color:var(--ink);padding:10px 12px;text-align:left}
-.shokh-item.is-active{border-color:var(--green);background:#eaf1e6}
+/* Выбранный товар — тёмная плитка, как в макете. */
+.shokh-item.is-active{border-color:var(--green);background:var(--green);color:#fff}
 .shokh-item-name{display:block;font-size:15px;font-weight:600;overflow-wrap:anywhere}
-.shokh-item small{display:block;font-size:10px;margin-top:3px;color:var(--muted-3)}
+.shokh-item small{display:block;font-size:11px;margin-top:3px;color:var(--muted-3)}
+.shokh-item.is-active small{color:#c5d3c9}
 .shokh-dashed{min-height:52px;border:1.5px dashed #9fb4a2;border-radius:16px;background:none;
   color:#285140;font-size:14px;font-weight:600}
 
 /* Фото: пустое состояние приглашает, заполненное показывает снимок. */
 .shokh-photo{display:block}
-.shokh-photo-empty{min-height:110px;border:1.5px dashed #c9b27a;border-radius:18px;
-  background:var(--accent-soft);display:flex;align-items:center;gap:14px;padding:14px 16px}
+.shokh-photo-empty{min-height:112px;border:1.5px dashed #c9b27a;border-radius:18px;
+  background:var(--accent-soft);display:flex;align-items:center;gap:14px;padding:14px 18px}
 .shokh-photo-icon{display:grid;place-items:center;width:52px;height:52px;flex:none;
   border-radius:16px;background:#fff;color:var(--warn)}
 .shokh-photo-icon svg{width:26px;height:26px;stroke:currentColor;fill:none;stroke-width:1.6}
@@ -136,29 +152,38 @@
 .shokh-photo-empty small{display:block;font-size:11px;color:#7a6a45;margin-top:3px}
 .shokh-photo-empty>span:nth-child(2){flex:1;min-width:0}
 .shokh-photo-filled{position:relative}
-.shokh-photo-filled img{width:100%;height:180px;object-fit:cover;border-radius:18px;display:block}
+.shokh-photo-filled img{width:100%;height:170px;object-fit:cover;border-radius:18px;display:block}
 .shokh-retake{position:absolute;right:10px;bottom:10px;padding:7px 11px;border-radius:20px;
   background:#143e35d9;color:#fff;font-size:12px}
 
 .shokh-row-head{display:flex;justify-content:space-between;align-items:center;gap:10px;
   font-size:13px;font-weight:600;color:var(--ink-2)}
 .shokh-switch{display:flex;padding:3px;border-radius:10px;background:#f1f3ee}
-.shokh-switch-btn{border:0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;
-  background:transparent;color:var(--ink-2)}
-.shokh-switch-btn.is-on{background:#fff;color:var(--green);box-shadow:0 1px 2px #16301f14}
+.shokh-switch-btn{position:relative;min-width:40px;border:0;border-radius:8px;padding:6px 10px;font-size:12px;font-weight:600;
+  background:transparent;color:#718075}
+.shokh-switch-btn.is-on{background:#fff;color:var(--green);box-shadow:0 1px 3px #0000001a}
+button.shokh-switch-btn::after{content:"";position:absolute;inset:-8px 0}
+/* Подписи переключателей не рвутся на две строки («1 kg uchun»): сжимается
+   подпись слева, а единицы нового товара на узком экране переносятся рядом. */
+.shokh-switch-btn{white-space:nowrap}
+.shokh-row-head>span{min-width:0}
+.shokh-row-head>.shokh-switch{flex:none;max-width:100%}
+#unit-switch{flex:0 1 auto;flex-wrap:wrap;justify-content:flex-end}
+@media(max-width:379px){#unit-switch .shokh-switch-btn{padding:6px 8px}}
 .shokh-stepper{display:flex;align-items:center;gap:10px;margin-top:14px}
 .shokh-step-btn{width:56px;height:56px;flex:none;border:0;border-radius:18px;background:#f1f3ee;
   color:var(--green);font-size:26px}
 .shokh-step-btn.is-dark{background:var(--green);color:#fff}
 .shokh-stepper input{flex:1;min-width:0;height:64px;border:0;background:none;text-align:center;
-  font:inherit;font-size:42px;font-weight:650;letter-spacing:-1px;color:var(--ink);
+  font:inherit;font-size:46px;font-weight:650;letter-spacing:-1px;color:var(--ink);
   font-variant-numeric:tabular-nums;outline:none}
 .shokh-quick{display:flex;gap:8px;margin-top:12px}
-.shokh-quick-btn{flex:1;height:40px;border:1px solid #dbe3d8;border-radius:12px;background:#fff;
+.shokh-quick-btn{position:relative;flex:1;height:40px;border:1px solid #dbe3d8;border-radius:12px;background:#fff;
   color:#35624e;font-size:13px;font-weight:600}
+.shokh-quick-btn::after{content:"";position:absolute;inset:-3px 0}
 .shokh-price{display:flex;align-items:baseline;gap:8px;margin-top:10px;
   border-bottom:2px solid #dbe3d8;padding-bottom:6px}
-.shokh-price input{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:30px;
+.shokh-price input{flex:1;min-width:0;border:0;background:none;font:inherit;font-size:32px;
   font-weight:650;color:var(--ink);font-variant-numeric:tabular-nums;outline:none}
 .shokh-price span{font-size:15px;color:var(--muted-2)}
 .shokh-price-hint{margin:8px 0 0;font-size:12px;font-weight:550;min-height:16px}
@@ -169,19 +194,23 @@
   justify-content:space-between;gap:12px}
 .rm-phone-card.is-dark span{font-size:12px;color:#c5d3c9}
 .rm-phone-card.is-dark small{display:block;font-size:11px;color:#a9bfb1;margin-top:3px}
-.rm-phone-card.is-dark strong{font-size:26px;font-weight:650;letter-spacing:-.8px}
+.rm-phone-card.is-dark strong{font-size:28px;font-weight:650;letter-spacing:-.8px}
 
-.shokh-summary{padding:0;overflow:hidden}
+/* Как в макете: фото во всю ширину, строки с отступом 16 px, линии между
+   ними не до края. */
+.shokh-summary{padding:6px 16px 14px;overflow:hidden;border-radius:22px}
 .shokh-summary img{width:100%;height:150px;object-fit:cover;display:block}
+.shokh-summary-photo{margin:-6px -16px 6px}
 .shokh-summary-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;
-  padding:11px 16px;border-bottom:1px solid #eef1ea;font-size:14px}
+  padding:10px 0;border-bottom:1px solid #eef1ea;font-size:14px}
 .shokh-summary-row:last-child{border-bottom:0}
-.shokh-summary-row span{color:var(--muted-2)}
+.shokh-summary-row span{color:var(--muted-2);flex:none;max-width:45%}
 .shokh-summary-row strong{font-weight:600;text-align:right;overflow-wrap:anywhere}
-.shokh-summary-row.is-total strong{font-size:24px;letter-spacing:-.6px}
-.shokh-after{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px}
+.shokh-summary-row.is-total{padding:12px 0 0}
+.shokh-summary-row.is-total strong{font-size:26px;font-weight:650;letter-spacing:-.6px}
+.shokh-after{display:flex;justify-content:space-between;align-items:center;gap:12px;font-size:13px;border-radius:18px}
 .shokh-after span{color:var(--muted-2)}
-.shokh-after strong{font-size:18px;font-weight:650}
+.shokh-after strong{font-size:18px;font-weight:650;color:var(--green)}
 .shokh-after strong.is-negative{color:var(--late)}
 .shokh-warning{margin:0;font-size:12px;color:#b0663a;line-height:1.5;min-height:16px}
 .shokh-flow-nav{position:sticky;bottom:0;display:flex;gap:10px;
@@ -192,29 +221,47 @@
 /* ── Записано ─────────────────────────────────────────────────────────── */
 .shokh-done{flex:1;display:flex;flex-direction:column;align-items:center;text-align:center;
   padding:calc(70px + env(safe-area-inset-top)) 22px calc(24px + env(safe-area-inset-bottom))}
-.shokh-done-mark{display:grid;place-items:center;width:120px;height:120px;border-radius:50%;
+.shokh-done-mark{display:grid;place-items:center;width:124px;height:124px;border-radius:50%;
   border:2px solid var(--gold);box-shadow:0 0 0 16px #d8b97714,0 0 0 34px #d8b97709;
-  color:var(--gold);font-size:54px}
-.shokh-done-title{font-size:30px;font-weight:650;letter-spacing:-.8px;margin-top:38px}
+  color:var(--gold);font-size:56px}
+.shokh-done-title{font-size:30px;font-weight:650;letter-spacing:-.8px;margin-top:42px}
 .shokh-done-item{font-size:14px;color:#c5d3c9;margin-top:6px}
-.shokh-done-pocket{width:100%;margin-top:24px;padding:16px;border-radius:18px;background:#ffffff0f;
+/* Номер накладной iiko — наша строка, в макете её нет: тихо под суммой. */
+.shokh-done-iiko{margin:8px 0 0;font-size:12px;color:#a9bfb1;line-height:1.45}
+.shokh-done-iiko:empty{display:none}
+.shokh-done-pocket{width:100%;margin-top:26px;padding:16px;border-radius:18px;background:#ffffff0f;
   border:1px solid #ffffff1a;display:flex;justify-content:space-between;align-items:center;gap:12px}
 .shokh-done-pocket span{font-size:12px;color:#c5d3c9;text-align:left}
 .shokh-done-pocket small{display:block;font-size:11px;color:#8fa898}
-.shokh-done-pocket strong{font-size:22px;font-weight:650}
+.shokh-done-pocket strong{font-size:24px;font-weight:650}
 .shokh-done .shokh-note{color:#a9bfb1;margin-top:12px}
 .shokh-done-actions{margin-top:auto;width:100%;display:grid;gap:10px;padding-top:24px}
+.shokh-done-actions .shokh-primary{min-height:58px;border-radius:18px;box-shadow:none;font-size:16px}
 
 /* ── Итог закупа ──────────────────────────────────────────────────────── */
-.shokh-summary-screen{padding-top:calc(24px + env(safe-area-inset-top))}
-.shokh-time{display:flex;justify-content:space-between;align-items:center;gap:12px}
+/* Итог — колонкой на весь экран, «На главную» прижата к низу, как в макете. */
+.shokh-summary-screen{display:flex;flex-direction:column;gap:14px;
+  padding:calc(24px + env(safe-area-inset-top)) 18px calc(24px + env(safe-area-inset-bottom))}
+.shokh-summary-screen .eyebrow{margin:0;font-size:11px;letter-spacing:1.6px;color:#818c80}
+.shokh-summary-screen .shokh-h1{font-size:30px}
+.shokh-time{display:flex;justify-content:space-between;align-items:center;gap:12px;border-radius:22px;padding:18px}
 .shokh-time span{font-size:12px;color:var(--muted-2)}
 .shokh-time-value{display:flex;align-items:baseline;gap:6px;margin-top:4px}
-.shokh-time-value strong{font-size:34px;font-weight:650;letter-spacing:-1px}
+.shokh-time-value strong{font-size:38px;font-weight:650;letter-spacing:-1px}
 .shokh-sum-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:8px}
-.shokh-sum-grid .rm-phone-card{padding:12px}
+.shokh-sum-grid .rm-phone-card{padding:12px;border-radius:16px}
 .shokh-sum-grid span{font-size:11px;color:var(--muted-2)}
-.shokh-sum-grid strong{display:block;font-size:20px;font-weight:650;margin-top:4px;overflow-wrap:anywhere}
+.shokh-sum-grid strong{display:block;font-size:22px;font-weight:650;margin-top:4px;overflow-wrap:anywhere}
+.shokh-sum-grid .is-money strong{font-size:15px;margin-top:8px}
+.shokh-sum-list{padding:6px 16px}
+.shokh-sum-row{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:10px 0;
+  border-bottom:1px solid #eef1ea;font-size:13px}
+.shokh-sum-name{min-width:0;overflow-wrap:anywhere}
+.shokh-sum-name b{font-weight:600}
+.shokh-sum-qty{color:var(--muted-3)}
+.shokh-sum-name .shokh-flag{display:inline-block;margin-left:6px;vertical-align:1px;white-space:nowrap}
+.shokh-sum-row strong{font-weight:600;white-space:nowrap}
+#summary-home{margin-top:auto}
 
 @media(min-width:560px){
   .shokh-points{grid-template-columns:repeat(3,1fr)}
@@ -227,8 +274,20 @@
 .shokh-hero-actions .lang-button{border:0;border-radius:7px;background:transparent;color:#a9bfb1;
   min-height:36px;min-width:40px;padding:6px 10px;font-size:11px;font-weight:600}
 .shokh-hero-actions .lang-button[aria-pressed=true]{background:#ffffff1f;color:#fff}
+/* В макете этой строки нет, поэтому она не спорит с суммой: плашки в тон
+   «Ур. 7» из макета — полупрозрачные, без белой рамки. Видом 32 px, но
+   нажимаются на 44 px (невидимое поле сверху и снизу). */
+.shokh-body .shokh-hero-actions{margin-top:12px;gap:8px}
+.shokh-body .shokh-hero-actions .lang-switch{border:1px solid #ffffff1f;border-radius:20px;padding:2px;background:#ffffff0f}
+.shokh-body .shokh-hero .lang-button{position:relative;min-height:28px;min-width:40px;border-radius:16px;padding:4px 10px;font-size:11px}
+.shokh-body .shokh-hero .lang-button::after{content:"";position:absolute;inset:-9px 0}
+.shokh-body .shokh-hero .shokh-logout{position:relative;min-height:32px;border-radius:20px;border-color:#ffffff26;
+  background:#ffffff0f;color:#c5d3c9;padding:4px 12px;font-size:12px}
+.shokh-body .shokh-hero .shokh-logout::after{content:"";position:absolute;inset:-6px 0}
 
-.shokh-field select { width: 100%; padding: 14px; border: 1px solid #cbd5ce; border-radius: 12px; background: white; color: #163e34; font: inherit; }
+/* Поставщик и склад — в том же виде, что поле «Другая точка». */
+.shokh-field select{width:100%;height:52px;padding:0 14px;border:1px solid #dbe3d8;border-radius:16px;
+  background:#fff;color:var(--ink);font:inherit;font-size:15px}
 .shokh-purchase-body small { display: block; margin-top: 6px; }
 .shokh-purchase-body .shokh-secondary { margin-top: 8px; }
 button:disabled { opacity: .55; cursor: not-allowed; }
@@ -237,8 +296,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 /* Язык, выход и «‹ Панель» в макете не нарисованы; они нужны, но не должны
    спорить с суммой: тонкие кнопки 40 px под палец, без плашек. */
 .shokh-hero-actions{margin-top:14px;gap:8px}
-.shokh-hero-actions .shokh-logout{min-height:40px;padding:6px 12px;background:transparent;font-size:12px}
-.shokh-hero-actions .lang-switch{padding:2px}
+
 /* Связь с iiko — строкой: статус слева, обновление справа. */
 .shokh-iiko{display:flex;align-items:center;justify-content:space-between;gap:12px;padding-top:12px;padding-bottom:12px}
 .shokh-iiko>div{min-width:0}
@@ -249,7 +307,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .shokh-cta .shokh-primary{justify-content:flex-start;padding:0 20px;text-align:left}
 /* Единица — тёмная плашка, режим цены — белая с тенью, как в макете 3a. */
 #unit-switch .shokh-switch-btn.is-on{background:var(--green);color:#fff;box-shadow:none}
-.shokh-mode .shokh-switch-btn{min-height:32px}
+
 .shokh-vat{font-size:11px;font-weight:500;color:var(--muted-3)}
 .shokh-price-derived{margin:8px 0 0;font-size:12px;font-weight:550;color:var(--ink-2);line-height:1.45}
 .shokh-price-derived.is-adjusted{color:#b0663a}
@@ -261,14 +319,14 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .shokh-transfer small{display:block;margin-top:2px;font-size:11px;font-weight:400;color:#607368}
 .shokh-warning>span{display:block}
 .shokh-warning>span+span{margin-top:6px}
-/* Под палец (≥ 40 точек): смена точки, режим цены, язык; поле цены выше. */
-.shokh-chip{min-height:40px}
-.shokh-mode .shokh-switch-btn{min-height:40px}
-.shokh-hero-actions .lang-button{min-height:40px}
+/* Поле цены — не ниже 44 px под палец. */
 .shokh-price input{min-height:44px}
-#unit-switch .shokh-switch-btn{display:inline-grid;place-items:center;cursor:default}
-/* Номер накладной iiko — наша подпись, не из макета: читаемый размер. */
-.shokh-purchase-body small.shokh-ok,.shokh-purchase-body small.shokh-warning{font-size:11px}
+#unit-switch .shokh-switch-btn{display:inline-grid;place-items:center;cursor:default;color:#53675c}
+#unit-switch button.shokh-switch-btn{cursor:pointer}
+/* Номер накладной iiko — наша подпись, не из макета: строкой текста под
+   покупкой, без плашки во всю ширину. */
+.shokh-purchase-body small.shokh-ok,.shokh-purchase-body small.shokh-warning{display:block;margin-top:3px;
+  padding:0;background:none;font-size:11px;font-weight:600;line-height:1.4}
 /* Числа дней без закупа — темнее, чтобы читались на светлом круге. */
 .shokh-day-mark{color:#6d7a70}
 
@@ -319,7 +377,7 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 
 /* «Далее», когда шаг не готов: нажимается и объясняет, но выглядит
    неготовым. Сохранение — зелёная кнопка со спиннером и словами. */
-.shokh-primary[aria-disabled=true]:not(.is-saving){background:#dfe6de;color:#46564d;box-shadow:none}
+.shokh-primary[aria-disabled=true]:not(.is-saving){background:#b9c4bb;color:#fff;box-shadow:none}
 .shokh-primary.is-saving{cursor:progress;gap:10px}
 .shokh-spin{width:18px;height:18px;flex:none;border-radius:50%;box-sizing:border-box;
   border:2px solid #ffffff4d;border-top-color:#fff;animation:rm-spin .7s linear infinite}
@@ -329,8 +387,9 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .shokh-need{animation:shokh-need 1.6s ease-out}
 @keyframes shokh-need{0%,35%{box-shadow:0 0 0 4px #d8b97799;border-color:var(--gold)}}
 
-/* Над кнопками флоу: подсказка и ход сохранения — поверх контента. */
-.shokh-flow-status{position:absolute;left:12px;right:12px;bottom:calc(100% + 8px);z-index:6}
+/* Над кнопками флоу: подсказка и ход сохранения — поверх контента. Нажатия
+   проходят сквозь них: подсказка не должна мешать выбрать склад под ней. */
+.shokh-flow-status{position:absolute;left:12px;right:12px;bottom:calc(100% + 8px);z-index:6;pointer-events:none}
 .shokh-flow-hint{display:flex;align-items:center;gap:10px;margin:0;padding:11px 14px;border-radius:14px;
   background:#fff8e8;border:1px solid #ead7a6;color:#5e4715;font-size:13px;font-weight:600;line-height:1.35;
   box-shadow:0 8px 24px #143e351f}
@@ -416,27 +475,13 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 @keyframes shokh-fade{from{opacity:0}}
 
 /* «Функционал» §3a: закуп — на ходу и одной рукой, поэтому каждая кнопка
-   не меньше 44 px по обеим сторонам. */
-.shokh-body .shokh-hero .lang-button{min-width:44px;min-height:44px}
-.shokh-body .shokh-logout{min-height:44px}
+   нажимается не меньше чем на 44 px. Где макет рисует кнопку меньше, вид —
+   как в макете, а 44 px даёт невидимое поле вокруг (::after у .shokh-chip,
+   .shokh-round, переключателей, языка и выхода). */
 .shokh-iiko-reload{min-height:44px}
-.shokh-round{width:44px;height:44px}
-.shokh-chip{min-height:44px}
-.shokh-quick-btn{height:44px}
-.shokh-mode .shokh-switch-btn{min-height:44px;min-width:64px}
-.shokh-iiko-note{margin-top:6px}
+.shokh-mode .shokh-switch-btn{min-width:64px}
 
-/* T-399: «+ Новый товар» — товар не из справочника iiko. Карточка ввода
-   названия и единицы вместо списка iiko; метка на строке покупки. */
-.shokh-custom{display:grid;gap:12px}
-.shokh-custom-head{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap}
-.shokh-custom-head strong{font-size:16px;color:var(--ink)}
-.shokh-custom-tag{padding:4px 9px;border-radius:20px;background:var(--accent-soft);color:#7a5a1e;
-  font-size:11px;font-weight:650}
-.shokh-custom .shokh-note{margin:0}
-.shokh-custom .shokh-switch{flex-wrap:wrap;justify-content:flex-end}
-#custom-units .shokh-switch-btn{min-height:36px;min-width:44px}
-#custom-units .shokh-switch-btn.is-on{background:var(--green);color:#fff;box-shadow:none}
+/* T-399: товар не из справочника iiko, который уже брали, — пунктирная плитка. */
 .shokh-item.is-custom{border-style:dashed}
 .shokh-restored{margin:0 0 4px;padding:9px 12px;border-radius:12px;background:#eaf1e6;color:#285140;
   font-size:12px;font-weight:600}

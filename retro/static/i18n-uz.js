@@ -1783,7 +1783,7 @@ globalThis.RetroTemplatesUz.push(
   [/^ещё (\d+) XP до уровня (\d+)$/, '$2-darajagacha yana $1 XP'],
   [/^сегодня: (\d+) (покупка|покупки|покупок)$/, 'bugun: $1 ta xarid'],
   [/^\+ Ещё товар · (.+)$/, '+ Yana mahsulot · $1'],
-  [/^Отчитались за (\d+)% выданных денег$/, "Berilgan pulning $1% i uchun hisobot berildi"],
+  [/^Отчитались за (\d+)% денег на руках$/, "Qo'ldagi pulning $1% i uchun hisobot berildi"],
   [/^было (.+)$/, 'avval $1'],
   // Цена «за 1 кг | за всё» на шаге «Сколько».
   [/^за 1 (.+)$/, '1 $1 uchun'],
@@ -2710,3 +2710,15 @@ globalThis.RetroTemplatesUz.push(
   [/^Нет в iiko — заведите товар и проведите накладную вручную: (.+)$/, "iiko da yo'q — mahsulotni qo'shing va hujjatni qo'lda o'tkazing: $1"],
 );
 /* ── /T-399 Шох ── */
+
+/* ── T-401 Шох: сверка с макетом 3a ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'цена выше': "narx yuqori",
+  'ждёт iiko': "iiko kutilmoqda",
+});
+globalThis.RetroTemplatesUz.push(
+  // «Записано!»: «2 товара в этом закупе · 04:15».
+  [/^(\d+) (?:товар|товара|товаров) в этом закупе · (.+)$/, "Bu xaridda $1 ta mahsulot · $2"],
+  [/^(\d+) (?:товар|товара|товаров) в этом закупе$/, "Bu xaridda $1 ta mahsulot"],
+);
+/* ── /T-401 Шох ── */
