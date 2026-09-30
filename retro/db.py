@@ -24,7 +24,10 @@
 """
 import re
 import sqlite3
+import threading
+from collections import deque
 from contextlib import closing, contextmanager
+from time import monotonic
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -98,6 +101,124 @@ def table_declares_id(statement: str) -> str | None:
     return None
 
 
+# ── Пул соединений Postgres ─────────────────────────────────────────────────
+#
+# Хранилища открывают соединение на каждую операцию: так писался код под
+# SQLite, где открыть файл почти ничего не стоит. В Postgres каждое новое
+# соединение — TCP, рукопожатие и SCRAM-авторизация, и «Неделя» учредителя
+# открывала их ~200 за один запрос. Поэтому закрытое соединение не рвётся,
+# а откладывается и отдаётся следующей операции.
+#
+# Пул свой, а не psycopg_pool: у того на каждую базу свои фоновые потоки, а
+# тесты заводят сотни схем (своя строка подключения у каждой). Здесь потоков
+# нет, и общий потолок простаивающих соединений держится на все базы сразу.
+
+POOL_MAX_IDLE = 12         # простаивающих соединений на все базы разом
+POOL_IDLE_SECONDS = 300    # дольше в запасе не держим: закрываем
+POOL_CHECK_AFTER = 2.0     # пролежавшее дольше проверяем пустым запросом
+
+
+class ConnectionPool:
+    def __init__(self, *, max_idle=POOL_MAX_IDLE, idle_seconds=POOL_IDLE_SECONDS,
+                 check_after=POOL_CHECK_AFTER, clock=monotonic):
+        self.max_idle, self.idle_seconds, self.check_after = max_idle, idle_seconds, check_after
+        self.clock = clock
+        self._idle = deque()   # (url, raw, отложено_в); справа — свежие
+        self._lock = threading.Lock()
+
+    def acquire(self, url):
+        import psycopg
+        while True:
+            found = self._take(url)
+            if found is None:
+                return psycopg.connect(url, autocommit=False)
+            raw, idle_for = found
+            if idle_for <= self.check_after or self._alive(raw):
+                return raw
+            _close_quietly(raw)
+
+    def release(self, url, raw):
+        from psycopg.pq import TransactionStatus
+        if raw.closed:
+            return
+        try:
+            # Операция, которая только читала, коммит не делает: транзакция
+            # открыта. Раньше её откатывал разрыв соединения, теперь — мы.
+            if raw.info.transaction_status != TransactionStatus.IDLE:
+                raw.rollback()
+            reusable = raw.info.transaction_status == TransactionStatus.IDLE
+        except Exception:
+            reusable = False
+        if not reusable:
+            _close_quietly(raw)
+            return
+        evicted = []
+        with self._lock:
+            self._idle.append((url, raw, self.clock()))
+            while len(self._idle) > self.max_idle:
+                evicted.append(self._idle.popleft()[1])
+        for old in evicted:
+            _close_quietly(old)
+
+    def close_all(self):
+        with self._lock:
+            idle, self._idle = list(self._idle), deque()
+        for _, raw, _ in idle:
+            _close_quietly(raw)
+
+    def _take(self, url):
+        now = self.clock()
+        stale, found = [], None
+        with self._lock:
+            for item in list(self._idle):
+                if now - item[2] > self.idle_seconds:
+                    self._idle.remove(item)
+                    stale.append(item[1])
+            # Берём самое свежее: оно вероятнее всего живо и уже прогрето.
+            for index in range(len(self._idle) - 1, -1, -1):
+                if self._idle[index][0] == url:
+                    _, raw, since = self._idle[index]
+                    del self._idle[index]
+                    found = (raw, now - since)
+                    break
+        for raw in stale:
+            _close_quietly(raw)
+        return found
+
+    @staticmethod
+    def _alive(raw):
+        # Как check_connection в psycopg_pool: пустой запрос вне транзакции,
+        # одна поездка до сервера вместо нового рукопожатия.
+        try:
+            raw.autocommit = True
+            raw.execute('')
+            raw.autocommit = False
+            return True
+        except Exception:
+            return False
+
+
+def _close_quietly(raw):
+    try:
+        raw.close()
+    except Exception:
+        pass
+
+
+POOL = ConnectionPool()
+
+
+class _Released:
+    """Место соединения, которое уже вернули в пул: им пользуется другая
+    операция, и случайное обращение должно падать, а не писать в чужую
+    транзакцию."""
+    closed = True
+
+    def __getattr__(self, name):
+        import psycopg
+        raise psycopg.OperationalError('the connection is closed')
+
+
 class PostgresConnection:
     """Обёртка, чтобы код хранилищ не различал диалекты.
 
@@ -105,9 +226,10 @@ class PostgresConnection:
     там же, где раньше работал sqlite3. Всё остальное отдаём psycopg как есть.
     """
 
-    def __init__(self, raw, database=None):
+    def __init__(self, raw, database=None, pool=None):
         self._raw = raw
         self._database = database
+        self._pool = pool
 
     def execute(self, sql, params=()):
         if needs_do_nothing(sql):
@@ -169,7 +291,13 @@ class PostgresConnection:
         self._raw.rollback()
 
     def close(self):
-        self._raw.close()
+        raw, self._raw = self._raw, _Released()
+        if isinstance(raw, _Released):
+            return
+        if self._pool is not None and self._database is not None:
+            self._pool.release(self._database.url, raw)
+        else:
+            raw.close()
 
     # `with closing(conn) as c, c:` — второй `with` открывает транзакцию.
     # Как в sqlite3: на выходе фиксируем или откатываем, но НЕ закрываем.
@@ -247,8 +375,7 @@ class Database:
             secure_file(self.path)
             connection.execute('PRAGMA foreign_keys = ON')
             return connection
-        import psycopg
-        return PostgresConnection(psycopg.connect(self.url, autocommit=False), self)
+        return PostgresConnection(POOL.acquire(self.url), self, POOL)
 
     @contextmanager
     def cursor(self):

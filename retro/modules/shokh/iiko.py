@@ -4,6 +4,7 @@ Contract verified against Retro's documents/nomenclature applications (9.9.1).
 Reads may retry authorization; creation is NEVER automatically retried.
 """
 import asyncio
+import logging
 from datetime import datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from time import monotonic
@@ -12,6 +13,9 @@ from urllib.parse import quote
 import httpx
 
 from retro.modules.cashier.service import DataError, TZ
+
+CATALOG_TTL = 300
+CATALOG_STALE_LIMIT = 60 * 60
 
 TYPE = 'INCOMING_INVOICE'
 POST_PERMISSION = 'DOCUMENT_BUNDLE_INCOMING_INVOICE_POST'
@@ -43,6 +47,8 @@ class ProcurementIiko:
         self.client = client
         self._catalog = None
         self._until = 0
+        self._loaded_at = 0
+        self._refreshing = None
         self._lock = asyncio.Lock()
 
     async def read(self, path, *, params=None, body=None):
@@ -71,6 +77,17 @@ class ProcurementIiko:
             raise DataError('Не удалось связаться с iiko. Повторите загрузку справочников.') from None
 
     async def catalog(self, *, fresh=False):
+        # Истёкший справочник отдаём сразу и обновляем в фоне (T-400): иначе
+        # каждые пять минут Шох ждал iiko 4–10 секунд. Старше часа не отдаём —
+        # тогда ждём загрузку, чтобы ошибка iiko не пряталась бесконечно.
+        if not fresh and self._catalog is not None:
+            now = monotonic()
+            if now < self._until:
+                return self._catalog
+            if now < self._loaded_at + CATALOG_STALE_LIMIT:
+                if self._refreshing is None or self._refreshing.done():
+                    self._refreshing = asyncio.create_task(self._refresh())
+                return self._catalog
         async with self._lock:
             if not fresh and self._catalog is not None and monotonic() < self._until:
                 return self._catalog
@@ -115,8 +132,16 @@ class ProcurementIiko:
                           updated_at=datetime.now(TZ).isoformat(), settings=settings)
             if not result['items'] or not result['suppliers'] or not result['storages']:
                 raise DataError('В iiko не хватает товаров, поставщиков или складов для закупа.')
-            self._catalog, self._until = result, monotonic() + 300
+            self._catalog, self._until = result, monotonic() + CATALOG_TTL
+            self._loaded_at = monotonic()
             return result
+
+    async def _refresh(self):
+        try:
+            await self.catalog(fresh=True)
+        except Exception as error:  # прежний справочник остаётся; следующий заход попробует снова
+            logging.getLogger('retro.performance').warning(
+                'operation=shokh_catalog cache=stale refresh_failed=%s', type(error).__name__)
 
     def invoice(self, catalog, *, key, day, at, product, supplier, storage, quantity, price):
         quantity, price = Decimal(quantity), Decimal(price)

@@ -190,3 +190,46 @@ def test_disconnected_request_stops_its_work():
         assert cancelled.is_set()
 
     asyncio.run(scenario())
+
+
+def test_expired_closed_period_is_served_at_once_and_refreshed_in_background():
+    async def scenario():
+        now = [0.0]
+        cache = ReportCache(clock=lambda: now[0])
+        calls = []
+        release = asyncio.Event()
+
+        async def operation():
+            calls.append(len(calls))
+            if len(calls) > 1:
+                await release.wait()
+            return f'v{len(calls)}'
+
+        assert await cache.get('k', operation, ttl=10, stale=100) == 'v1'
+        now[0] = 20                       # ttl истёк, окно stale — нет
+        assert await cache.get('k', operation, ttl=10, stale=100) == 'v1'   # сразу, без ожидания
+        assert await cache.get('k', operation, ttl=10, stale=100) == 'v1'   # второе обновление не заводим
+        release.set()
+        await asyncio.sleep(0)
+        await asyncio.gather(*[f.task for f in cache.pending.values()])
+        assert calls == [0, 1]
+        assert await cache.get('k', operation, ttl=10, stale=100) == 'v2'
+        now[0] = 200                      # вышло и окно stale — ждём заново
+        assert await cache.get('k', operation, ttl=10, stale=100) == 'v3'
+    asyncio.run(scenario())
+
+
+def test_without_stale_an_expired_entry_is_reloaded_as_before():
+    async def scenario():
+        now = [0.0]
+        cache = ReportCache(clock=lambda: now[0])
+        calls = []
+
+        async def operation():
+            calls.append(1)
+            return len(calls)
+
+        assert await cache.get('k', operation, ttl=10) == 1
+        now[0] = 11
+        assert await cache.get('k', operation, ttl=10) == 2
+    asyncio.run(scenario())

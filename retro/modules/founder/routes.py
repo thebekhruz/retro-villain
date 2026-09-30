@@ -25,6 +25,8 @@ router = APIRouter(prefix='/api/founder', tags=['founder'])
 # Завершившийся период в iiko сам не меняется: правки вносит человек, и для них
 # есть кнопка обновления.
 CLOSED_PERIOD_TTL = 15 * 60
+# Закрытый период после ttl отдаём сразу и обновляем в фоне (T-400).
+CLOSED_PERIOD_STALE = 24 * 60 * 60
 
 
 class ChatInput(BaseModel):
@@ -81,7 +83,8 @@ async def analytics(
         data = await load_iiko(request.app.state, 'load_founder_analytics',
                                start, end, granularity, selected, refresh=refresh,
                                request=request, timeout=180,
-                               ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None)
+                               ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None,
+                               stale=CLOSED_PERIOD_STALE if end < today_tashkent() else 0)
         if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
             return data
         # Чистая прибыль iiko уже содержит себестоимость товаров, прошедших через

@@ -1,5 +1,6 @@
 """Procurement contracts and failure recovery, without production writes."""
 import asyncio
+from types import SimpleNamespace
 import copy
 import json
 import os
@@ -139,6 +140,9 @@ def test_catalog_maps_iiko_ids_filters_deleted_and_home_is_independent(live):
     assert 'settings' not in catalog
     c.app.state.shokh_iiko._until = 0
     upstream.catalog_down = True
+    # Просрочен, но моложе часа: прежний справочник, iiko обновит фоном (T-400).
+    assert c.get('/api/shokh/catalog').status_code == 200
+    c.app.state.shokh_iiko._loaded_at = -10 ** 9
     assert c.get('/api/shokh/catalog').status_code == 503
     home = c.get('/api/shokh/home')
     assert home.status_code == 200 and 'level' not in home.json()
@@ -435,3 +439,45 @@ def test_legacy_purchase_gets_whole_cash_total_on_start(tmp_path):
         connection.execute('UPDATE shokh_purchases SET cash_total = NULL')
         connection.commit()
     assert ShokhStore(path).purchase(row['id'])['total'] == '100000.00'
+
+
+def test_expired_catalog_is_served_at_once_and_refreshed_in_background(monkeypatch):
+    """T-400: после пяти минут Шох не ждёт iiko — видит прежний справочник, новый едет фоном."""
+    import retro.modules.shokh.iiko as procurement
+    now = [1000.0]
+    monkeypatch.setattr(procurement, 'monotonic', lambda: now[0])
+    source = procurement.ProcurementIiko(SimpleNamespace(settings=SimpleNamespace(configured=True, store_id=82907)))
+    loads = []
+    release = asyncio.Event()
+
+    async def read(path, *, params=None, body=None):
+        if path == '/api/productV3/list':
+            loads.append(path)
+            if len(loads) > 1:
+                await release.wait()
+            return [dict(id='p1', name=f'Лук {len(loads)}', num='1', mainUnit='kg', type='GOODS')]
+        return dict({
+            '/api/documents/storage/list': [dict(id='s1', name='Склад', storageType='INVENTORY_ASSETS')],
+            '/api/documents/suppliers/list': {'x': dict(id='sp1', name='Базар')},
+            '/api/entities/list-of-type': [dict(id='kg', name='кг')],
+            '/api/permissions/my': [],
+            '/api/documents/config/store-settings': {},
+        })[path]
+    source.read = read
+
+    async def scenario():
+        first = await source.catalog()
+        now[0] += procurement.CATALOG_TTL + 1
+        stale = await source.catalog()
+        assert stale is first                           # отдали сразу, не дожидаясь iiko
+        for _ in range(20):
+            await asyncio.sleep(0)
+        assert len(loads) == 2                          # обновление идёт фоном
+        assert await source.catalog() is first          # второе фоновое не заводим
+        assert len(loads) == 2
+        release.set()
+        await source._refreshing
+        assert (await source.catalog())['items'][0]['item'] == 'Лук 2'
+        now[0] += procurement.CATALOG_STALE_LIMIT + 1   # слишком старый — ждём загрузку
+        assert (await source.catalog())['items'][0]['item'] == 'Лук 3'
+    asyncio.run(scenario())

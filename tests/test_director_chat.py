@@ -79,6 +79,6 @@ def test_director_page_exposes_scoped_accessible_chat(tmp_path):
     assert 'id="ai-chat-toggle"' in page.text
     assert 'data-endpoint="/api/director/chat"' in page.text
     assert 'ПОМОЩНИК ДИРЕКТОРА' in page.text
-    assert 'src="/static/founder-markdown.js"' in page.text
-    assert 'src="/static/founder-chat.js"' in page.text
-    assert 'href="/static/ai-chat.css"' in page.text
+    assert 'src="/static/founder-markdown.js?v=' in page.text
+    assert 'src="/static/founder-chat.js?v=' in page.text
+    assert 'href="/static/ai-chat.css?v=' in page.text
