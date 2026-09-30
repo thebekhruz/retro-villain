@@ -63,11 +63,20 @@ def attendance_payroll(request: Request, day: date, roster, exceptions, *, froze
 
 
 async def cashier_handover(request: Request, day: date) -> Decimal | None:
-    """Use manual handovers when enabled; otherwise retain the iiko fallback."""
+    amount, _ = await cashier_handover_detail(request, day)
+    return amount
+
+
+async def cashier_handover_detail(request: Request, day: date) -> tuple[Decimal | None, str | None]:
+    """Передача кассира и причина, по которой её нет.
+
+    Use manual handovers when enabled; otherwise retain the iiko fallback.
+    Вторым значением — почему суммы нет, когда день у нас есть, а посчитать её
+    нельзя (неизвестные предоплаты). Иначе None."""
     finance = request.app.state.accountant_finance
     recorded = await asyncio.to_thread(finance.handover_for_day, day)
     if recorded is not None or request.app.state.settings.manual_handover_only:
-        return recorded
+        return recorded, None
     state = request.app.state
     snapshot = state.cache.latest_for_day(day)
     if state.settings.configured:
@@ -83,20 +92,23 @@ async def cashier_handover(request: Request, day: date) -> Decimal | None:
                              request_id=request.state.request_id)
             raise HTTPException(503, str(error)) from None
     if snapshot is None:
-        return None
+        return None, None
     # Расходы кассы вместе с выдачами Шоху из кассы: одна формула для всех экранов.
     totals = await asyncio.to_thread(till_totals, state, day)
-    return cash_to_finance(snapshot, totals.cash_out, totals.receipts)
+    amount = cash_to_finance(snapshot, totals.cash_out, totals.receipts)
+    return amount, snapshot.prepayment_issue if amount is None else None
 
 
 async def required_handover(request: Request, day: date) -> Decimal:
-    amount = await cashier_handover(request, day)
+    amount, issue = await cashier_handover_detail(request, day)
     if amount is None:
         # Режим проверки: вместо отказа считаем приход нулевым. Строка прихода за
         # день появится с суммой 0 — её перезапишет обычная запись бухгалтера,
         # когда настоящая касса приедет.
         if not request.app.state.settings.check_mode:
-            raise HTTPException(409, 'Нет данных кассира за этот день. Обновите отчёт и повторите.')
+            # Неверную сумму не пишем: неизвестные предоплаты — это не ноль.
+            raise HTTPException(409, f'{issue} Передайте кассу вручную.' if issue else
+                                'Нет данных кассира за этот день. Обновите отчёт и повторите.')
         amount = Decimal(0)
     # Уже записанный приход той же суммой не перезаписывается (время «получено»
     # остаётся); новый — расчёт iiko, его кассир может заменить своей передачей.
@@ -138,7 +150,7 @@ async def day_view(request: Request, date: date | None = None):
     day = selected_day(date)
     cashier_error = None
     try:
-        cashier_amount = await cashier_handover(request, day)
+        cashier_amount, cashier_error = await cashier_handover_detail(request, day)
     except HTTPException as error:
         if error.status_code not in (429, 503, 504):
             raise

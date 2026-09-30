@@ -333,13 +333,24 @@ def till_summary(state, day: date, snapshot) -> dict:
     totals = TillTotals(Decimal(0), Decimal(0), Decimal(0)) if snapshot.demo else till_totals(state, day)
     demo_cash = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
     register = snapshot.register_received_total
-    base = register if register is not None else snapshot.revenue + snapshot.new_prepayment
+    if register is not None:
+        base = register
+    elif snapshot.new_prepayment is not None:
+        base = snapshot.revenue + snapshot.new_prepayment
+    else:
+        # Предоплаты неизвестны — неизвестен и весь приход. Экран покажет
+        # «требует проверки», а не продажи, выданные за полный приход.
+        base = None
+    handover = expected_handover(snapshot, totals)
     return dict(date=day.isoformat(), snapshot_id=snapshot.id,
-                demo_cash=str(demo_cash), cash_prepayment=str(snapshot.cash_prepayment),
+                demo_cash=str(demo_cash),
+                cash_prepayment=str(snapshot.cash_prepayment) if snapshot.cash_prepayment is not None else None,
                 receipts=str(totals.receipts), expenses=str(totals.expenses),
                 shokh=str(totals.shokh), cash_out=str(totals.cash_out),
-                handover=str(expected_handover(snapshot, totals)),
-                sales=str(snapshot.revenue), total_inflow=str(base + totals.receipts))
+                handover=str(handover) if handover is not None else None,
+                prepayment_issue=snapshot.prepayment_issue,
+                sales=str(snapshot.revenue),
+                total_inflow=str(base + totals.receipts) if base is not None else None)
 
 
 def expected_from_saved(state, day: date):
@@ -356,7 +367,9 @@ def expected_from_saved(state, day: date):
         snapshot = days.archive.get(day)
     if snapshot is None or snapshot.demo:
         return None, None
-    return expected_handover(snapshot, till_totals(state, day)), snapshot.fetched_at
+    expected = expected_handover(snapshot, till_totals(state, day))
+    # Предоплаты неизвестны — сверять не с чем, как и без расчёта вообще.
+    return (expected, snapshot.fetched_at) if expected is not None else (None, None)
 
 
 def cashier_active(state, day: date) -> bool:

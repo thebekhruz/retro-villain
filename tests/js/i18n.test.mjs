@@ -54,3 +54,15 @@ test('подписи с данными внутри — шаблонами, да
   assert.equal(translate('Новые типы оплаты iiko показаны отдельно: Перечисления.'),
     "iiko'ning yangi to'lov turlari alohida ko'rsatilgan: Перечисления.");
 });
+
+test('T-402: непосчитанные предоплаты объясняются и по-узбекски', () => {
+  assert.equal(translate('требует проверки'), 'tekshirish kerak');
+  // Причина склеена из сообщения сервера и постоянной фразы — по кускам.
+  assert.equal(
+    translate('Кассовая смена ушла в минус (возврат аванса) — предоплаты за день не посчитать.'
+              + ' Выручка и чеки за день верны.'),
+    "Kassa smenasi minusga ketdi (oldindan to'lov qaytarilgan) — kunlik oldindan to'lovlarni"
+    + " hisoblab bo'lmaydi. Kunlik tushum va cheklar to'g'ri.");
+  assert.equal(translate('iiko не вернул кассовую смену за этот день — предоплаты не посчитать.'),
+    "iiko bu kun uchun kassa smenasini qaytarmadi — oldindan to'lovlarni hisoblab bo'lmaydi.");
+});
