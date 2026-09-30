@@ -96,7 +96,8 @@
   <section id="screen-flow" class="shokh-screen" hidden>
     <header class="shokh-flow-head">
       <button id="flow-close" class="shokh-round" type="button" aria-label="Закрыть">×</button>
-      <div class="shokh-step-label">Шаг <b id="flow-step-no">1</b> из 4 · <span id="flow-step-name">Точка</span></div>
+      <!-- Как в макете: номер шага обычным, название — жирным. -->
+      <div class="shokh-step-label">Шаг <span id="flow-step-no">1</span> из 4 · <b id="flow-step-name">Точка</b></div>
       <span id="flow-timer" class="shokh-timer">⏱ 00:00</span>
     </header>
     <div id="flow-segments" class="shokh-segments" aria-hidden="true"></div>
@@ -104,21 +105,24 @@
     <div class="shokh-flow-body">
       <!-- Шаг 1: точка -->
       <div id="step-point" class="shokh-step">
-        <h1>Где закупаете?</h1>
+        <div><h1>Где закупаете?</h1><p class="shokh-lead">Нажмите на точку — сразу перейдём к товару</p></div>
         <!-- Как в макете: сначала точки, нажатие ведёт сразу к товару.
              Поставщик и склад накладной iiko подставляются с прошлой накладной
-             этой точки; первый раз их выбирают ниже. -->
+             этой точки; первый раз их выбирают ниже. Пока точка не выбрана,
+             поля накладной и «Далее» скрыты — экран как в макете. -->
         <div id="point-list" class="shokh-points"></div>
         <label class="shokh-field"><span>Другая точка</span>
           <input id="point-other" type="text" maxlength="80" placeholder="Название точки">
         </label>
-        <p class="shokh-note shokh-iiko-note">Для приходной накладной iiko</p>
-        <label class="shokh-field"><span>Поставщик iiko</span>
-          <select id="iiko-supplier" required></select>
-        </label>
-        <label class="shokh-field"><span>Склад поступления</span>
-          <select id="iiko-storage" required></select>
-        </label>
+        <div id="point-iiko" class="shokh-point-iiko" hidden>
+          <p class="shokh-note shokh-iiko-note">Для приходной накладной iiko</p>
+          <label class="shokh-field"><span>Поставщик iiko</span>
+            <select id="iiko-supplier" required></select>
+          </label>
+          <label class="shokh-field"><span>Склад поступления</span>
+            <select id="iiko-storage" required></select>
+          </label>
+        </div>
       </div>
 
       <!-- Шаг 2: товар и фото -->
@@ -126,23 +130,16 @@
         <button id="item-back-point" class="shokh-chip" type="button"><span id="item-point-label" data-i18n="off">—</span> · сменить</button>
         <h1>Что купили?</h1>
         <input id="item-search" type="search" maxlength="120" placeholder="Поиск: помидоры, лук, мясо…" class="shokh-search">
+        <!-- «Выбрано: …» — как в макете, для нового товара и для товара iiko,
+             которого не видно в списке ниже. -->
         <p id="item-chosen" class="shokh-chosen" hidden></p>
         <div id="item-list-title" class="shokh-list-title">Частые товары</div>
         <div id="item-list" class="shokh-items"></div>
-        <!-- §3a: товара нет среди номенклатуры iiko — «+ Новый товар». Такая
+        <!-- §3a: товара нет среди номенклатуры iiko — «+ Новый товар «…»»,
+             как в макете: появляется, когда набранного нет в iiko. Такая
              покупка сохраняется без накладной; бухгалтер заводит товар в iiko
-             и проводит накладную руками. -->
-        <button id="item-add-custom" class="shokh-dashed" type="button">+ Новый товар</button>
-        <div id="item-custom" class="rm-phone-card shokh-custom" hidden>
-          <div class="shokh-custom-head"><strong>Новый товар</strong><span class="shokh-custom-tag">не из справочника iiko</span></div>
-          <label class="shokh-field"><span>Название</span>
-            <input id="custom-name" type="text" maxlength="120" autocomplete="off" placeholder="Например: лепёшка тандырная">
-          </label>
-          <div class="shokh-row-head"><span>Единица</span><div id="custom-units" class="shokh-switch" role="group" aria-label="Единица"></div></div>
-          <p id="custom-known" class="shokh-note" hidden></p>
-          <p class="shokh-note">Накладной iiko не будет: бухгалтер заведёт товар и проведёт накладную вручную.</p>
-          <button id="custom-cancel" class="shokh-chip" type="button">← Выбрать из списка iiko</button>
-        </div>
+             и проводит накладную руками. Единицу выбирают на шаге «Сколько». -->
+        <button id="item-add-custom" class="shokh-dashed" type="button" hidden>+ Новый товар</button>
         <label class="shokh-photo">
           <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
           <div id="photo-empty" class="shokh-photo-empty">
@@ -164,7 +161,7 @@
       <div id="step-amount" class="shokh-step" hidden>
         <div class="shokh-step-top"><span id="amount-point" data-i18n="off">—</span><h1 id="amount-item" data-i18n="off">—</h1></div>
         <article class="rm-phone-card">
-          <div class="shokh-row-head"><span>Сколько</span><div id="unit-switch" class="shokh-switch"></div></div>
+          <div class="shokh-row-head"><span>Сколько</span><div id="unit-switch" class="shokh-switch" role="group" aria-label="Единица"></div></div>
           <div class="shokh-stepper">
             <button id="qty-minus" class="shokh-step-btn" type="button" aria-label="Меньше">−</button>
             <input id="qty-input" type="text" inputmode="decimal" placeholder="0" aria-label="Количество">
@@ -235,8 +232,8 @@
     <div class="shokh-done">
       <span id="done-mark" class="shokh-done-mark" aria-hidden="true">✓</span>
       <strong id="done-title" class="shokh-done-title">Записано!</strong>
-      <p id="done-iiko" role="status"></p>
       <span id="done-item" class="shokh-done-item">—</span>
+      <p id="done-iiko" class="shokh-done-iiko" role="status"></p>
       <div class="shokh-done-pocket"><span>На руках<small id="done-before"></small></span><strong id="done-pocket" class="rm-num">—</strong></div>
       <p id="done-trip" class="shokh-note"></p>
       <div class="shokh-done-actions">
@@ -257,9 +254,9 @@
       </article>
       <div class="shokh-sum-grid">
         <div class="rm-phone-card"><span>Товаров</span><strong id="sum-count">—</strong></div>
-        <div class="rm-phone-card"><span>Потрачено</span><strong id="sum-total" class="rm-num">—</strong></div>
+        <div class="rm-phone-card is-money"><span>Потрачено</span><strong id="sum-total" class="rm-num">—</strong></div>
       </div>
-      <article class="rm-phone-card"><div id="sum-list" class="shokh-purchases"></div></article>
+      <article class="rm-phone-card shokh-sum-list"><div id="sum-list"></div></article>
       <button id="summary-home" class="shokh-primary is-flat" type="button">На главную</button>
     </div>
   </section>
