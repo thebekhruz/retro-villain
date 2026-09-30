@@ -223,6 +223,13 @@ class ExpenseStore:
 
 
 def cash_to_finance(snapshot, expense_total, other_receipts=Decimal(0)):
+    """Сколько наличных кассир передаёт бухгалтеру; None — посчитать нельзя.
+
+    Предоплаты наличными входят в сумму слагаемым, поэтому неизвестные
+    предоплаты делают неизвестной и передачу. Подставлять вместо них ноль
+    нельзя: это молча занизило бы передачу на весь возврат аванса."""
+    if snapshot.cash_prepayment is None:
+        return None
     demo_amount = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
     return demo_amount + snapshot.cash_prepayment + other_receipts - expense_total
 

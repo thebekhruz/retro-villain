@@ -21,6 +21,18 @@ class DataError(Exception):
     """Safe user-facing validation error, never an upstream response body."""
 
 
+class PrepaymentUnavailable(DataError):
+    """Предоплаты за день посчитать нельзя, но сам день — валиден.
+
+    Оценка предоплат выводится из кассовой смены (см. `cash_prepay_from_shifts`),
+    и её модель держится на допущении «суммы смены неотрицательны». Возврат
+    аванса это допущение ломает: 30.09.2026 смена ушла в минус на 21 809 000 и
+    роняла весь снимок дня, хотя выручка, чеки и способы оплаты были верны.
+    Поэтому отказ расчёта предоплат — отдельный класс: он делает предоплаты
+    неизвестными, а не отменяет день. Битую структуру ответа iiko по-прежнему
+    несёт обычный `DataError` — такой день доверия не заслуживает целиком."""
+
+
 def today_tashkent(now=None):
     return (now or datetime.now(TZ)).astimezone(TZ).date()
 
@@ -102,8 +114,9 @@ class Snapshot:
     fetched_at: datetime
     demo: bool = False
     revenue_breakdown: RevenueBreakdown | None = None
-    cash_prepayment: Decimal = Decimal(0)
-    new_prepayment: Decimal = Decimal(0)
+    # None — «неизвестно», а не ноль: расчёт предоплат отказал (prepayment_issue).
+    cash_prepayment: Decimal | None = Decimal(0)
+    new_prepayment: Decimal | None = Decimal(0)
     register_payment_sales: Decimal | None = None
     register_received_total: Decimal | None = None
     source: str = 'iiko'
@@ -112,6 +125,12 @@ class Snapshot:
     refresh_error: str | None = None
     # Смена кассы на момент снимка; None — iiko её не отдал (или старый архив).
     shift: ShiftStatus | None = None
+    # Почему предоплаты неизвестны; None — они посчитаны.
+    prepayment_issue: str | None = None
+
+    @property
+    def prepayments_known(self):
+        return self.cash_prepayment is not None and self.new_prepayment is not None
 
     @property
     def average_receipt(self):
@@ -126,9 +145,10 @@ class Snapshot:
                     payments=[dict(name=p.name, amount=str(p.amount)) for p in self.payments],
                     fetched_at=self.fetched_at.isoformat(), demo=self.demo, currency='UZS',
                     payment_total=str(sum((p.amount for p in self.payments), Decimal(0))),
-                    cash_prepayment=str(self.cash_prepayment),
-                    new_prepayment=str(self.new_prepayment),
+                    cash_prepayment=str(self.cash_prepayment) if self.cash_prepayment is not None else None,
+                    new_prepayment=str(self.new_prepayment) if self.new_prepayment is not None else None,
                     prepayment_verified=False,
+                    prepayment_issue=self.prepayment_issue,
                     register_payment_sales=str(self.register_payment_sales) if self.register_payment_sales is not None else None,
                     register_received_total=str(self.register_received_total) if self.register_received_total is not None else None,
                     prepayment_scope='Полная смена кассы Retro, включая банкетное отделение; авансы по отделениям не разделены.',

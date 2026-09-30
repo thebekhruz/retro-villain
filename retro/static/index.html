@@ -55,7 +55,7 @@
     <section class="rm-cards cashier-cards" id="metrics" aria-busy="false" aria-label="Показатели дня">
       <article class="rm-card rm-card--hero">
         <div class="rm-card-label">Касса за день · весь приход</div>
-        <div class="rm-card-value"><strong id="total-inflow" class="rm-num">—</strong><small>сум</small></div>
+        <div class="rm-card-value"><strong id="total-inflow" class="rm-num">—</strong><small id="total-inflow-unit">сум</small></div>
         <div id="composition" class="cashier-split-bar" aria-hidden="true"><span class="is-sales"></span><span class="is-other"></span></div>
         <div class="cashier-legend"><span><i class="is-sales"></i>Оплаты продаж</span><span><i class="is-other"></i>Предоплаты и поступления</span></div>
       </article>
@@ -66,8 +66,8 @@
       </article>
       <article class="rm-card rm-card--warn">
         <div class="rm-card-label">Предоплаты наличными<i class="cashier-square is-soft" aria-hidden="true"></i></div>
-        <div class="rm-card-value"><strong id="card-prepay" class="rm-num">—</strong><small>сум</small></div>
-        <div class="cashier-card-sub">iiko · оценка, не реестр авансов</div>
+        <div class="rm-card-value"><strong id="card-prepay" class="rm-num">—</strong><small id="card-prepay-unit">сум</small></div>
+        <div class="cashier-card-sub" id="card-prepay-note">iiko · оценка, не реестр авансов</div>
       </article>
     </section>
 
@@ -137,6 +137,9 @@
           <div class="handover-rule"><span>− Расходы</span><strong id="handover-expenses" class="rm-num">0</strong></div>
           <!-- Нажатие записывает сумму у бухгалтера: в «Финансах дня» она из
                «ожидается» становится «получено» с временем. -->
+          <!-- Предоплаты не посчитались (возврат аванса гонит смену в минус):
+               передавать нечего до ручной сверки, кнопка остаётся выключенной. -->
+          <p id="prepay-issue" class="handover-caption is-warn" hidden></p>
           <div id="handover-action" class="handover-action">
             <button id="handover-button" class="handover-button" type="button" disabled>Передать бухгалтеру</button>
             <p class="handover-caption">Без открытых счетов</p>

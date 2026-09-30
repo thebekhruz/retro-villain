@@ -15,9 +15,25 @@ TEMPLATE = Path(__file__).parent / 'templates' / 'cashier.xlsx'
 MONEY = '#,##0.00'
 
 
+UNKNOWN = 'требует проверки'
+
+
 def text(cell, value):
     cell.value = value
     cell.data_type = 's'  # iiko labels must never become executable Excel formulas.
+
+
+def money_cell(cell, value):
+    """Сумма или «требует проверки».
+
+    Неизвестную сумму нельзя оставлять пустой клеткой с денежным форматом: в
+    распечатке она читается как ноль. Предоплаты неизвестны, когда смена ушла
+    в минус (возврат аванса), и вместе с ними неизвестны передача и приход."""
+    if value is None:
+        text(cell, UNKNOWN)
+    else:
+        cell.value = value
+        cell.number_format = MONEY
 
 
 def export_report(snapshot, expenses=(), receipts=()):
@@ -58,18 +74,26 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['B25'] = snapshot.receipt_count
     sheet['B26'] = snapshot.average_receipt
     sheet['B26'].number_format = MONEY
-    sheet['A20'], sheet['B20'] = 'ОЦЕНКА НОВЫХ ПРЕДОПЛАТ', snapshot.new_prepayment
-    register_total = snapshot.register_received_total if snapshot.register_received_total is not None else snapshot.revenue + snapshot.new_prepayment
-    sheet['A21'], sheet['B21'] = 'ПРИХОД КАССЫ, ВКЛЮЧАЯ БАНКЕТ', register_total + receipt_total
-    sheet['B20'].number_format = MONEY
-    sheet['B21'].number_format = MONEY
-    sheet['A27'], sheet['B27'] = 'Оценка предоплат наличными · разница', snapshot.cash_prepayment
+    sheet['A20'] = 'ОЦЕНКА НОВЫХ ПРЕДОПЛАТ'
+    money_cell(sheet['B20'], snapshot.new_prepayment)
+    if snapshot.register_received_total is not None:
+        register_total = snapshot.register_received_total
+    elif snapshot.new_prepayment is not None:
+        register_total = snapshot.revenue + snapshot.new_prepayment
+    else:
+        register_total = None
+    sheet['A21'] = 'ПРИХОД КАССЫ, ВКЛЮЧАЯ БАНКЕТ'
+    money_cell(sheet['B21'], register_total + receipt_total if register_total is not None else None)
+    sheet['A27'] = 'Оценка предоплат наличными · разница'
+    money_cell(sheet['B27'], snapshot.cash_prepayment)
     sheet['A28'], sheet['B28'] = 'Расходы наличными (включая зарплату)', expense_total
-    sheet['A29'], sheet['B29'] = 'К передаче в финансовый отдел', handover
+    sheet['A29'] = 'К передаче в финансовый отдел'
+    money_cell(sheet['B29'], handover)
     sheet['A30'], sheet['B30'] = 'Прочие поступления наличными', receipt_total
-    for position in ('B27', 'B28', 'B29', 'B30'):
+    for position in ('B28', 'B30'):
         sheet[position].number_format = MONEY
-    sheet['A31'] = 'Расчёт: Демо + предоплаты наличными + прочие поступления − расходы − выдано Шоху.'
+    sheet['A31'] = ('Расчёт: Демо + предоплаты наличными + прочие поступления − расходы − выдано Шоху.'
+                    + (' ' + snapshot.prepayment_issue if snapshot.prepayment_issue else ''))
     sheet['A39'] = ('ДЕМОНСТРАЦИЯ — НЕ ОТЧЁТ iiko' if snapshot.demo else
                     'Сформировано из iiko • только Retro, без школы и зала Бехруз')
     amounts = {p.name: p.amount for p in snapshot.payments}
@@ -98,9 +122,9 @@ def export_report(snapshot, expenses=(), receipts=()):
     if len(expenses) > 22:
         sheet['C37'] = f'Ещё {len(expenses) - 22} — на листе «Расходы»'
     sheet['C38'], sheet['D38'] = 'ИТОГО РАСХОДЫ', expense_total
-    sheet['C39'], sheet['D39'] = 'К ПЕРЕДАЧЕ', handover
-    for position in ('D38', 'D39'):
-        sheet[position].number_format = MONEY
+    sheet['C39'] = 'К ПЕРЕДАЧЕ'
+    money_cell(sheet['D39'], handover)
+    sheet['D38'].number_format = MONEY
     sheet.print_area = 'A1:D40'
     sheet.sheet_properties.pageSetUpPr.fitToPage = True
     sheet.page_setup.fitToWidth = 1
@@ -174,10 +198,14 @@ def export_report(snapshot, expenses=(), receipts=()):
     manual['A4'], manual['B4'] = 'Демо · по данным iiko', next(
         (p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
     manual['A5'], manual['B5'] = 'Расходы наличными · включая зарплату', expense_total
-    manual['A6'], manual['B6'] = 'К передаче в финансовый отдел', handover
-    manual['C4'], manual['D4'] = 'Предоплаты наличными · iiko', snapshot.cash_prepayment
+    manual['A6'] = 'К передаче в финансовый отдел'
+    money_cell(manual['B6'], handover)
+    manual['C4'] = 'Предоплаты наличными · iiko'
+    money_cell(manual['D4'], snapshot.cash_prepayment)
     manual['C5'], manual['D5'] = 'Прочие поступления · вручную', receipt_total
-    manual['C6'], manual['D6'] = 'Общий приход · все источники', snapshot.revenue + snapshot.new_prepayment + receipt_total
+    manual['C6'] = 'Общий приход · все источники'
+    money_cell(manual['D6'], snapshot.revenue + snapshot.new_prepayment + receipt_total
+               if snapshot.new_prepayment is not None else None)
     manual['A7'], manual['B7'] = 'Название расхода', 'Сумма, сум'
     manual['C7'], manual['D7'] = 'Прочее поступление', 'Сумма, сум'
     for row, item in enumerate(expenses, 8):

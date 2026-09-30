@@ -281,7 +281,10 @@ function clearFinance() {
 }
 /* Числа карточки передачи — только с сервера (одна формула на всех: кассир,
    бухгалтер, учредитель, XLSX). Пока их нет — прочерк, а не своя оценка. */
-const summaryValue = key => (summary && snapshot && summary.snapshot_id === snapshot.snapshot_id ? Number(summary[key]) : null);
+/* null с сервера — «посчитать нельзя», и это не ноль: Number(null) === 0
+   показал бы передачу нулём при неизвестных предоплатах. */
+const summaryValue = key => (summary && snapshot && summary.snapshot_id === snapshot.snapshot_id
+  && summary[key] !== null && summary[key] !== undefined ? Number(summary[key]) : null);
 function currentHandover() { return summaryValue('handover'); }
 let summaryRetry = -1;
 /* После записи кассира (расход, поступление, выдача Шоху) — свежие итоги с
@@ -305,12 +308,28 @@ function showHandover() {
   $('download').disabled = !snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData;
   const text = key => { const value = summaryValue(key); return value === null ? '—' : money.format(value); };
   $('demo-cash').textContent = text('demo_cash');
-  const prepayText = snapshot ? money.format(Number(snapshot.cash_prepayment || 0)) : '—';
+  // Возврат аванса гонит смену в минус, и разностная оценка предоплат
+  // перестаёт работать. День при этом валиден: выручка и чеки считаются по
+  // продажам. Показываем «требует проверки», а не ноль и не прочерк.
+  const issue = snapshot && snapshot.prepayment_issue ? snapshot.prepayment_issue : null;
+  const unknown = Boolean(issue) || (snapshot && snapshot.cash_prepayment === null);
+  const prepayText = !snapshot ? '—'
+    : unknown ? 'требует проверки' : money.format(Number(snapshot.cash_prepayment));
   // Предоплаты показаны и карточкой сверху, и строкой в расчёте передачи.
-  $('cash-prepay').textContent = text('cash_prepayment');
+  $('cash-prepay').textContent = unknown ? 'требует проверки' : text('cash_prepayment');
   $('card-prepay').textContent = prepayText;
+  $('card-prepay').classList.toggle('is-note', Boolean(unknown && snapshot));
+  $('card-prepay-unit').hidden = unknown;
+  $('card-prepay-note').textContent = issue || 'iiko · оценка, не реестр авансов';
+  $('prepay-issue').hidden = !issue;
+  $('prepay-issue').textContent = issue ? issue + ' Выручка и чеки за день верны.' : '';
   const inflow = summaryValue('total_inflow');
-  $('total-inflow').textContent = text('total_inflow');
+  // Весь приход = продажи + предоплаты: без предоплат он тоже неизвестен.
+  // Пустой прочерк здесь читается как «ещё грузится», поэтому пишем прямо.
+  const inflowUnknown = Boolean(unknown && snapshot && inflow === null);
+  $('total-inflow').textContent = inflowUnknown ? 'требует проверки' : text('total_inflow');
+  $('total-inflow').classList.toggle('is-note', inflowUnknown);
+  $('total-inflow-unit').hidden = inflowUnknown;
   $('payments-inflow').textContent = text('total_inflow');
   // Полоса в главной карточке: продажи против всего остального прихода.
   const sales = summaryValue('sales') || 0;
