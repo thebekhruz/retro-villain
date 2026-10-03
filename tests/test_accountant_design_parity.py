@@ -200,7 +200,7 @@ def test_hikvision_employee_cannot_be_marked_by_hand(tmp_path):
 
 def test_manual_attendance_is_an_accountant_action(tmp_path):
     users = {'buh': ('pw', 'accountant'), 'kassa': ('pw', 'cashier'), 'shokh': ('pw', 'shokh')}
-    with client(tmp_path, dashboard_panel_users=users) as c:
+    with client(tmp_path, dashboard_panel_users=users, shokh_module=True) as c:
         person = manual_person(c)
         body = {'date': DAY.isoformat(), 'employee_id': person.id, 'present': False}
         for other in ('kassa', 'shokh'):
@@ -480,7 +480,7 @@ def add_transfer(c, key=None, **changes):
 
 
 def test_supplier_transfer_is_visible_but_moves_no_cash(tmp_path):
-    with client(tmp_path) as c:
+    with client(tmp_path, shokh_module=True) as c:
         cash(c)
         c.app.state.accountant_finance.reserve_entry(DAY, 'shoh', 'opening', '420000', 'Остаток у Шоха')
         before_day = day_json(c)
@@ -552,7 +552,7 @@ def test_supplier_transfer_retry_with_the_same_key_records_once(tmp_path):
 
 def test_shokh_reads_transfers_but_only_the_accountant_records_them(tmp_path):
     users = {'buh': ('pw', 'accountant'), 'shokh': ('pw', 'shokh')}
-    with client(tmp_path, dashboard_panel_users=users) as c:
+    with client(tmp_path, dashboard_panel_users=users, shokh_module=True) as c:
         c.post('/api/session', json={'username': 'buh', 'password': 'pw'})
         assert add_transfer(c).status_code == 201
         c.post('/api/session/logout')

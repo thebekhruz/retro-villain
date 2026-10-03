@@ -2850,15 +2850,6 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'СЧЁТ ШОХРУХА': "SHOHRUX HISOBI",
   'Выдано бухгалтером': "Buxgalter berdi",
   'Выдано из кассы кассиром': "Kassir kassadan berdi",
-  // Шох на телефоне
-  'Баланс': "Balans",
-  'Остаток = выделено − расходы. Ведёт бухгалтер.': "Qoldiq = ajratilgan − xarajatlar. Buxgalter yuritadi.",
-  'Покупки вносит бухгалтер': "Xaridlarni buxgalter kiritadi",
-  'С телефона ничего вносить не нужно: расходы записывает бухгалтер по счёт-фактуре. Здесь виден ваш баланс.': "Telefondan hech narsa kiritish shart emas: xarajatlarni buxgalter hisob-faktura bo'yicha yozadi. Bu yerda balansingiz ko'rinadi.",
-  'Этот месяц': "Shu oy",
-  'История за месяц': "Oy tarixi",
-  'В этом месяце выдач и расходов ещё нет.': "Bu oyda hali to'lov va xarajatlar yo'q.",
-  'Покупки теперь вносит бухгалтер по счёт-фактуре. С телефона вносить ничего не нужно — здесь виден ваш баланс.': "Endi xaridlarni buxgalter hisob-faktura bo'yicha kiritadi. Telefondan hech narsa kiritish shart emas — bu yerda balansingiz ko'rinadi.",
   // Кабинет учредителя
   'Отчёты бухгалтера': "Buxgalter hisobotlari",
   'ОТЧЁТЫ БУХГАЛТЕРА': "BUXGALTER HISOBOTLARI",
@@ -2935,7 +2926,6 @@ globalThis.RetroTemplatesUz.push(
   [/^Базар добавлен: (.+)\.$/, "Bozor qo'shildi: $1."],
   [/^Удалить выдачу Шоху (.+) сум\?$/, "Shohga berilgan $1 so'm o'chirilsinmi?"],
   [/^Удалить расход (.+) сум\?$/, "$1 so'm xarajat o'chirilsinmi?"],
-  [/^Баланс на (\d\d\.\d\d)$/, "$1 dagi balans"],
   [/^Счёт Шохруха на (\d\d\.\d\d): (.+)\. Сверьте с тем, что у Шоха на руках: после закрытия расходы за этот месяц не внести\.$/, "$1 dagi Shohrux hisobi: $2. Shohning qo'lidagi bilan solishtiring: yopilgandan keyin bu oy xarajatlarini kiritib bo'lmaydi."],
   [/^(\S+ \d{4}) закрыт · остаток (.+) сум$/, "$1 yopildi · qoldiq $2 so'm"],
   [/^Сдано отчётов дня: (\d+)$/, "Topshirilgan kunlik hisobotlar: $1"],
@@ -2943,3 +2933,28 @@ globalThis.RetroTemplatesUz.push(
   [/^сдан (\d\d:\d\d)$/, "topshirildi $1"],
 );
 /* ── /T-403 ── */
+
+/* ── T-404 «Баланс Шохруха» в языке панели, модуль закупа убран ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Сколько выделили, сколько потратил': "Qancha ajratildi, qancha sarfladi",
+  'Выделить деньги из кассы': "Kassadan pul ajratish",
+  'Расходы по счёт-фактуре': "Hisob-faktura bo'yicha xarajatlar",
+  'баланс Шоха уменьшается, касса — нет': "Shoh balansi kamayadi, kassa — yo'q",
+  'Расходы за день:': "Kun xarajatlari:",
+  'Скрыть отчёт': "Hisobotni yashirish",
+  'Касса бухгалтера на этот день не посчитана.': "Buxgalter kassasi bu kun uchun hisoblanmagan.",
+  'Добавить базар': "Bozor qo'shish",
+  'Записать расход': "Xarajatni yozish",
+  'Дата по счёт-фактуре': "Hisob-faktura sanasi",
+  'Сумма для Шоха': "Shoh uchun summa",
+  'Сумма расхода': "Xarajat summasi",
+  'Новый базар': "Yangi bozor",
+  'Выбрать день': "Kunni tanlash",
+  'Дата — день по счёт-фактуре. Касса второй раз не трогается: деньги ушли из неё, когда их выделили.': "Sana — hisob-faktura kuni. Kassaga ikkinchi marta tegilmaydi: pul ajratilganda undan chiqqan.",
+  'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс Шохруха».': "Xarid moduli o'chirilgan: Shoh xarajatlarini buxgalter «Shohrux balansi» sahifasida yuritadi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^В кассе бухгалтера (.+) сум\. Выдача уменьшит кассу и попадёт в «Операции за день»\.$/, "Buxgalter kassasida $1 so'm. To'lov kassani kamaytiradi va «Kun amallari»ga tushadi."],
+  [/^(\d+) (?:счёт-фактура|счёт-фактуры|счёт-фактур)$/, "$1 ta hisob-faktura"],
+);
+/* ── /T-404 ── */

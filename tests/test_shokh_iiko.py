@@ -106,7 +106,7 @@ def live(tmp_path, request):
         query = dict(parse_qsl(parts.query)); query['options'] = '-csearch_path=' + schema
         database_url = urlunsplit(parts._replace(query=urlencode(query)))
     settings = Settings(database_url=database_url, login='test', password='test', store_id=82907, data_dir=tmp_path,
-                        shokh_phone_input=True)
+                        shokh_module=True)
     app = create_app(settings)
     upstream = Upstream()
     app.state.iiko = IikoClient(settings, transport=httpx.MockTransport(upstream))

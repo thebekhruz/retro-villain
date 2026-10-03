@@ -75,12 +75,16 @@
     $('sb-start').textContent = data.start === null ? '—' : fmt(data.start);
     $('sb-given').textContent = fmt(data.given_today);
     $('sb-spent').textContent = fmt(data.spent_today);
+    const invoices = data.today.filter(row => row.kind === 'expense').length;
+    $('sb-spent-sub').textContent = invoices ? invoices + ' ' + plural(invoices, 'счёт-фактура', 'счёт-фактуры', 'счёт-фактур') : '';
+    $('sb-day-total').textContent = money(data.spent_today);
     const month = Number(data.month.slice(5, 7)) - 1;
     $('sb-month-title').textContent = MONTHS[month][0].toUpperCase() + MONTHS[month].slice(1) + ' ' + data.month.slice(0, 4) + ' · по ' + dm(data.date);
     $('sb-month-given').textContent = money(data.month_given);
     $('sb-month-spent').textContent = money(data.month_spent);
-    $('sb-give-hint').textContent = 'Касса бухгалтера ' + (data.cash_balance === null ? 'на этот день не посчитана' : 'сейчас ' + money(data.cash_balance))
-      + '. Выдача уменьшит кассу, баланс Шоха вырастет — она попадёт в «Операции за день».';
+    $('sb-give-hint').textContent = data.cash_balance === null
+      ? 'Касса бухгалтера на этот день не посчитана.'
+      : 'В кассе бухгалтера ' + money(data.cash_balance) + '. Выдача уменьшит кассу и попадёт в «Операции за день».';
 
     const places = $('sb-exp-place'), keep = places.value;
     places.replaceChildren(new Option(tr('Базар'), ''), ...data.bazaars.map(name => new Option(name, name)));
@@ -91,15 +95,15 @@
     $('sb-exp-date').max = today;
 
     const box = $('sb-day-rows'); box.replaceChildren();
-    data.today.forEach(row => box.append(entryRow(row, false)));
+    data.today.slice().reverse().forEach(row => box.append(entryRow(row, false)));
     if (!data.today.length) box.append(h('div', {class: 'fd-empty is-left', text: 'За ' + longDay(data.date) + ' выдач и расходов нет.'}));
 
     $('sb-history').hidden = !historyOpen;
     $('sb-report').setAttribute('aria-expanded', String(historyOpen));
-    $('sb-report').textContent = historyOpen ? 'Скрыть месячный отчёт' : 'Месячный отчёт';
+    $('sb-report').textContent = historyOpen ? 'Скрыть отчёт' : 'Месячный отчёт';
     if (historyOpen) {
       const list = $('sb-history-rows'); list.replaceChildren(
-        h('div', {class: 'sb-tr is-head'}, ...['Дата', 'Что', 'Базар', 'Комментарий', 'Сумма', ''].map(text => h('span', {text}))));
+        h('div', {class: 'fd-thead sb-cols'}, ...['Дата', 'Что', 'Базар', 'Комментарий', 'Сумма', ''].map((text, i) => h('span', {class: i === 4 ? 'num' : null, text}))));
       (data.history || []).forEach(row => list.append(entryRow(row, true)));
       if (!(data.history || []).length) list.append(h('div', {class: 'fd-empty is-left', text: 'В этом месяце выдач и расходов нет.'}));
     }
@@ -109,15 +113,21 @@
     if (closed) chips.append(h('span', {class: 'fd-chip is-closed'}, '🔒 Закрыто · ' + stamp(closed.closed_at) + ' · ' + closed.closed_by,
       h('small', {text: ' · ' + closed.name + ' — дни только для чтения'})));
     chips.hidden = !closed;
-    document.querySelectorAll('#sb-give-form :is(input,button), #sb-exp-form :is(input,select,button)').forEach(el => { el.disabled = !!closed; });
+    document.querySelectorAll('#sb-give-form :is(input,button), #sb-exp-form :is(input,select,button), #sb-bazaar-row :is(input,button)')
+      .forEach(el => { el.disabled = !!closed; });
+  }
+  function plural(n, one, few, many) {
+    const a = Math.abs(n) % 100, b = a % 10;
+    if (a > 10 && a < 20) return many; if (b === 1) return one; if (b > 1 && b < 5) return few; return many;
   }
   function stamp(iso) { return iso ? iso.slice(8, 10) + '.' + iso.slice(5, 7) + '.' + iso.slice(0, 4) + ' ' + iso.slice(11, 16) : ''; }
+  /* Строка выдачи или расхода. За день первая колонка — время записи, в
+     месячном отчёте — дата. Комментарий и базар вводит бухгалтер: переводчик
+     их не трогает. */
   function entryRow(row, withDate) {
     const give = row.kind === 'give';
     const what = give ? (row.source === 'cashier' ? 'Выдано кассиром' : 'Выделено') : 'Расход';
-    const line = h('div', {class: (withDate ? 'sb-tr' : 'sb-entry') + (give ? ' is-give' : ' is-expense'),
-      'data-busy-key': 'sb:' + row.kind + ':' + row.id});
-    const amount = h('strong', {class: 'num', text: (give ? '+' : '−') + fmt(row.amount)});
+    const line = h('div', {class: 'fd-row sb-cols ' + (give ? 'is-give' : 'is-expense'), 'data-busy-key': 'sb:' + row.kind + ':' + row.id});
     let remove = h('span', {class: 'fd-x-gap'});
     const deletable = !view.closed && (row.operation === 'shoh_expense' || row.operation === 'movement') && row.day === view.date;
     if (deletable) remove = h('button', {type: 'button', class: 'fd-x', text: '×', title: 'Удалить', 'aria-label': 'Удалить запись', onclick: event => {
@@ -130,12 +140,13 @@
         if (!response.ok) { let detail = 'Не удалось удалить.'; try { detail = (await response.json()).detail || detail; } catch { /* нет тела */ } throw new Error(detail); }
       }, give ? 'Выдача удалена.' : 'Расход удалён.', event.currentTarget);
     }});
-    // Комментарий и базар вводит бухгалтер — переводчик их не трогает.
-    const note = h('span', {class: 'sb-note', 'data-i18n': give ? null : 'off', text: give ? (withDate ? row.note || '' : (row.created_at || '').slice(11, 16)) : row.note || ''});
-    if (withDate) line.append(h('span', {text: dm(row.day)}), h('span', {text: what}), h('span', {'data-i18n': 'off', text: row.place || '—'}),
-      note, amount, remove);
-    else line.append(h('span', {class: 'sb-entry-what'}, what, row.place ? h('span', {'data-i18n': 'off', text: ' · ' + row.place}) : null),
-      note, amount, remove);
+    line.append(
+      h('span', {class: 'sb-when', text: withDate ? dm(row.day) : (row.created_at || '').slice(11, 16) || '—'}),
+      h('span', {class: 'sb-what', text: what}),
+      h('span', {class: 'sb-place-cell' + (row.place ? '' : ' is-empty'), 'data-i18n': 'off', text: row.place || '—'}),
+      h('span', {class: 'sb-note', 'data-i18n': give ? null : 'off', text: give ? '' : row.note || ''}),
+      h('strong', {class: 'num sb-amount', text: (give ? '+' : '−') + fmt(row.amount)}),
+      h('span', {class: 'fd-x-cell'}, remove));
     return line;
   }
 
@@ -212,7 +223,7 @@
     if (!amount) { message('Укажите сумму расхода.', true); $('sb-exp-amount').focus(); return Promise.resolve(false); }
     return run(() => write('/api/accountant/shoh/expenses', {date: day, place, amount: String(amount), note}),
       'Расход записан: ' + place + ' · ' + money(amount) + '.', button || $('sb-exp-form').querySelector('button[type=submit]'))
-      .then(ok => { if (ok) { $('sb-exp-amount').value = ''; $('sb-exp-note').value = ''; $('sb-exp-amount').focus(); } return ok; });
+      .then(ok => { if (ok) { $('sb-exp-amount').value = ''; $('sb-exp-note').value = ''; $('sb-exp-note').focus(); } return ok; });
   }
   $('sb-exp-form').addEventListener('submit', event => { event.preventDefault(); submitExpense(event.submitter); });
   globalThis.RetroSave?.register($('sb-exp-form'), () => submitExpense(),
@@ -221,13 +232,14 @@
   // Новый базар: бухгалтер пополняет список сам.
   $('sb-add-bazaar').addEventListener('click', () => {
     $('sb-bazaar-row').hidden = !$('sb-bazaar-row').hidden;
+    $('sb-add-bazaar').setAttribute('aria-expanded', String(!$('sb-bazaar-row').hidden));
     if (!$('sb-bazaar-row').hidden) $('sb-bazaar-name').focus();
   });
   function saveBazaar() {
     const name = $('sb-bazaar-name').value.trim();
     if (!name) { message('Укажите название базара.', true); $('sb-bazaar-name').focus(); return Promise.resolve(false); }
     return run(() => write('/api/accountant/bazaars', {name}), 'Базар добавлен: ' + name + '.', $('sb-bazaar-save')).then(ok => {
-      if (ok) { $('sb-bazaar-name').value = ''; $('sb-bazaar-row').hidden = true; $('sb-exp-place').value = name; }
+      if (ok) { $('sb-bazaar-name').value = ''; $('sb-bazaar-row').hidden = true; $('sb-add-bazaar').setAttribute('aria-expanded', 'false'); $('sb-exp-place').value = name; }
       return ok;
     });
   }
@@ -235,6 +247,9 @@
   $('sb-bazaar-name').addEventListener('keydown', event => { if (event.key === 'Enter') { event.preventDefault(); saveBazaar(); } });
   globalThis.RetroSave?.register($('sb-bazaar-row'), () => saveBazaar());
 
+  // Подпись «Базар» в списке — атрибут option, переводчик страницы её не видит:
+  // после смены языка перерисовываем сами.
+  document.querySelectorAll('[data-lang]').forEach(button => button.addEventListener('click', () => setTimeout(() => { if (view) render(); }, 0)));
   document.addEventListener('change', event => {
     const input = event.target;
     if (!(input instanceof HTMLInputElement) || !input.classList.contains('fd-money')) return;

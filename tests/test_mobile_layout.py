@@ -8,7 +8,7 @@ STATIC = Path(__file__).resolve().parent.parent / 'retro' / 'static'
 # что она грузит, должно быть в списке публичных путей приложения. Своей
 # вёрстки у неё одна карточка по центру, правила рабочей области ей не нужны.
 PAGES = ['index.html', 'accountant.html', 'employees.html', 'payroll.html', 'salary-day.html',
-         'shoh-balance.html', 'shokh-view.html',
+         'shoh-balance.html',
          'director.html', 'founder.html', 'shokh.html',
          'director-app.html', 'founder-cabinet.html']
 

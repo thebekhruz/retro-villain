@@ -540,9 +540,8 @@ def test_till_give_raises_shokh_balance_but_not_accountant_spending(c):
     assert Decimal(day['ledger']['cash_flow']['other_outflows']) == Decimal('3000000')
     assert day['cashier_shokh_gives']['total'] == '500000'
     assert day['cashier_shokh_gives']['gives'][0]['amount'] == '500000'
-    # Телефон Шоха видит те же деньги.
-    home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
-    assert Decimal(home['pocket']) == Decimal('3920000')
+    # Счёт Шохруха у бухгалтера — те же деньги (одна формула, shokh.store.pocket_position).
+    assert Decimal(day['shoh_pocket']['pocket']) == Decimal('3920000')
     # Кассир: выдача уменьшает передачу вместе с расходами.
     assert till_totals(c.app.state, DAY).cash_out == Decimal('500000')
 

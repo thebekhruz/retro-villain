@@ -21,7 +21,7 @@ PNG = bytes.fromhex(
 
 
 def client(tmp_path):
-    app = create_app(Settings(shokh_phone_input=True), expense_db_path=tmp_path / 'cashier.sqlite3',
+    app = create_app(Settings(shokh_module=True), expense_db_path=tmp_path / 'cashier.sqlite3',
                      accountant_db_path=tmp_path / 'accountant.sqlite3')
     return TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000))
 
