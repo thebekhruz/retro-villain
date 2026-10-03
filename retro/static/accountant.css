@@ -1026,3 +1026,137 @@ body.fd-busy .fd :is(.fd-btn-pay,.fd-plus,.fd-btn-give,.fd-accept){cursor:progre
 .fd-skeleton .fd-card{min-height:96px}
 /* Кнопка в работе остаётся яркой, даже если модуль на это время её отключил. */
 .fd .rm-busy:disabled,.fd .rm-done:disabled{opacity:1}
+
+/* ── ТЗ 02.10: сдача отчёта, закрытие месяца, дэшборд бухгалтера ───────── */
+.fd-btn-submit{gap:8px}
+.fd-btn-submit>span:first-child{color:#d8b977}
+.fd-btn-close{border-color:#d8b977;color:#6d5c38;background:#fbf6ea}
+.fd-btn-close:hover:not(:disabled){filter:none;background:#f5ecd6}
+.fd-status{display:flex;flex-wrap:wrap;gap:8px;margin:-10px 0 16px}
+.fd-status[hidden],.fd-status:empty{display:none}
+.fd-chip{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:5px 12px;border-radius:20px;border:1px solid #e3e7df;background:#fff;color:#53675c;font-size:12px;font-weight:550}
+.fd-chip small{font-weight:450;color:inherit;opacity:.85}
+.fd-chip.is-ok{background:#edf5eb;border-color:#d6e5d2;color:#35624e}
+.fd-chip.is-warn{background:#fff6e0;border-color:#f0dca8;color:#7a5a12}
+.fd-chip.is-muted{color:#7d8881}
+.fd-chip.is-closed{background:#143e35;border-color:#143e35;color:#f1e6c8}
+button.fd-chip.is-alert{background:#fff0f2;border-color:#f1c6cf;color:#aa4656;cursor:pointer}
+button.fd-chip.is-alert:hover{filter:none;background:#ffe5e9}
+body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
+
+/* «На начало дня» с расшифровкой по щелчку. */
+.fd-cash-open{position:relative;width:100%;border:0;background:none;text-align:left;font:inherit;cursor:pointer}
+.fd-cash-open:hover:not(:disabled){filter:none;color:#fff}
+.fd-cash-open>span{display:inline-flex;align-items:center;gap:6px}
+.fd-chev-sm{display:inline-block;font-style:normal;color:#d8b977;transition:transform .15s}
+.fd-cash-open.is-open .fd-chev-sm{transform:rotate(90deg)}
+.fd-breakdown{position:relative;margin:2px 0 8px;padding:10px 12px;border-radius:11px;background:#0f3029;border:1px solid #ffffff1a}
+.fd-breakdown[hidden]{display:none}
+.fd-bd-title{margin:0 0 6px;font-size:11px;color:#d8b977;font-weight:600}
+.fd-bd-line{display:flex;justify-content:space-between;gap:10px;padding:5px 0;font-size:11px;color:#b9cbbd}
+.fd-bd-line b{color:#fff;font-weight:550;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fd-bd-line.is-total{border-top:1px solid #ffffff26;margin-top:4px;padding-top:8px;color:#fff;font-weight:600}
+.fd-bd-warn{margin:6px 0;font-size:10.5px;line-height:1.45;color:#f0cf8a}
+.fd-bd-warn .fd-link-btn{color:#d8b977;padding:0}
+.fd-bd-link{display:inline-block;margin-top:8px;font-size:11px;color:#d8b977;font-weight:600;text-decoration:none}
+
+/* Прогноз расхода и счёт Шохруха — плитки дэшборда. */
+.fd-dash-tiles{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+.fd-dash-tile{display:flex;flex-direction:column;gap:4px;padding:11px 12px;border-radius:11px;background:#ffffff12;color:#c5d3c9;font-size:10.5px;text-decoration:none;min-width:0}
+.fd-dash-tile b{color:#fff;font-size:14px;font-weight:600;font-variant-numeric:tabular-nums}
+.fd-dash-tile small{font-size:10px;color:#9fb3a5;line-height:1.35}
+.fd-dash-tile.is-link:hover{background:#ffffff1f}
+.fd-jr-foot .fd-save{margin-left:12px;height:34px}
+
+/* Окно закрытия месяца. */
+.fd-month-dialog{width:min(720px,calc(100vw - 32px))}
+.fd-month-dialog .fd-dialog-body{padding:4px 20px 12px;gap:10px}
+.fd-dialog-foot{position:sticky;bottom:0;display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:14px 20px;border-top:1px solid #e7ece3;background:#f9fbf7}
+.fd-dialog-gap{flex:1}
+.fd-mc-tiles{display:grid;grid-template-columns:1.4fr repeat(3,1fr);gap:8px}
+.fd-mc-tiles.is-small{grid-template-columns:repeat(3,1fr)}
+.fd-mc-tile{display:flex;flex-direction:column;gap:6px;padding:12px;border-radius:12px;background:#f5f7f1;min-width:0;font-size:11px;color:#748376}
+.fd-mc-tile b{font-size:16px;color:#1c302b;font-weight:600;font-variant-numeric:tabular-nums}
+.fd-mc-tile.is-hero{background:#143e35;color:#c5d3c9}
+.fd-mc-tile.is-hero b{color:#fff;font-size:20px}
+.fd-mc-sub{margin:8px 0 0;font-size:11px;font-weight:650;letter-spacing:.6px;text-transform:uppercase;color:#818c80}
+.fd-mc-remarks{display:grid;gap:6px}
+.fd-mc-remark{display:flex;gap:10px;align-items:flex-start;padding:10px 12px;border:1px solid #eef1ea;border-radius:11px;font-size:12px}
+.fd-mc-remark .fd-dot{margin-top:5px}
+.fd-mc-remark-body{display:flex;flex-direction:column;gap:6px;min-width:0}
+.fd-mc-days{display:flex;flex-wrap:wrap;gap:4px;font-size:11px;color:#809084;align-items:center}
+.fd-mc-day{border:1px solid #e3e7df;background:#fff;border-radius:7px;padding:3px 7px;font-size:11px;color:#35624e;font-variant-numeric:tabular-nums}
+.fd-mc-recon summary{cursor:pointer;font-size:12px;font-weight:600;color:#315e4c;padding:6px 0}
+.fd-mc-table{display:grid;border:1px solid #eef1ea;border-radius:11px;overflow:hidden;font-size:11.5px}
+.fd-mc-tr{display:grid;grid-template-columns:64px repeat(4,minmax(0,1fr));gap:8px;padding:6px 12px;border-top:1px solid #f0f3ec}
+.fd-mc-tr.is-head{border-top:0;background:#f5f7f1;font-size:10px;font-weight:650;color:#818c80;text-transform:uppercase;letter-spacing:.5px}
+.fd-mc-tr.is-flag{background:#fff7f8}
+.fd-mc-tr .num,.fd-mc-tr.is-head span:not(:first-child){text-align:right}
+.fd-mc-note{margin:4px 0 0;font-size:11px;color:#809084}
+.fd-mc-warn{margin:6px 0 0;padding:10px 12px;border-radius:11px;background:#fff6e0;border:1px solid #f0dca8;color:#7a5a12;font-size:12px;line-height:1.5}
+@media (max-width:650px){
+  .fd-mc-tiles,.fd-mc-tiles.is-small{grid-template-columns:1fr 1fr}
+  .fd-mc-tile.is-hero{grid-column:1 / -1}
+  .fd-dialog-foot .fd-btn{flex:1 1 auto;justify-content:center}
+  .fd-dialog-gap{display:none}
+}
+
+/* «Зарплата · день»: одна таблица и итог «выдано / осталось». */
+.fd-totals{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:10px;margin-bottom:20px}
+.fd-total{display:flex;flex-direction:column;gap:6px;padding:16px;border:1px solid #e3e7df;border-radius:14px;background:#fff;font-size:11px;color:#748376;min-width:0}
+.fd-total b{font-size:20px;font-weight:600;color:#1c302b;font-variant-numeric:tabular-nums;letter-spacing:-.4px}
+.fd-total small{font-size:10.5px;color:#88978a;line-height:1.35}
+.fd-total.is-left{background:#143e35;border-color:#143e35;color:#c5d3c9}
+.fd-total.is-left b{color:#fff}
+.fd-total.is-left small{color:#acbcae}
+.fd-single{display:grid;gap:20px}
+.fd-single[hidden],.fd-skeleton-wide[hidden]{display:none}
+@media (max-width:900px){.fd-totals{grid-template-columns:1fr 1fr}}
+
+/* «Баланс Шохруха»: главная цифра слева, ввод справа, итог месяца и история. */
+.sb-grid{display:grid;grid-template-columns:minmax(280px,340px) minmax(0,1fr);gap:20px;align-items:start}
+.sb-grid[aria-busy=true]{opacity:.75}
+.sb-hero{grid-column:1;grid-row:1 / span 2}
+.sb-formula{position:relative;margin:12px 0 0;font-size:11px;color:#b9cbbd}
+.sb-card{padding-bottom:6px}
+.sb-card-head{padding:18px 18px 6px}
+.sb-card-head .fd-kicker{margin-bottom:6px}
+.sb-h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.3px;color:#1c302b}
+.sb-form{display:grid;gap:10px;padding:8px 18px 12px;margin:0}
+.sb-row{display:flex;gap:8px;align-items:center;min-width:0}
+.sb-row-wrap{flex-wrap:wrap}
+.sb-row>input,.sb-row>select{flex:1 1 140px;min-width:0;height:38px}
+.sb-row .fd-money{text-align:right;flex:0 1 180px}
+.sb-date-input{flex:0 0 160px!important}
+.sb-add{white-space:nowrap}
+.sb-hint{margin:0;font-size:11px;line-height:1.45;color:#809084}
+#sb-give-form,#sb-exp-form{grid-column:auto}
+.sb-give{grid-column:2;grid-row:1}
+.sb-exp{grid-column:2;grid-row:2}
+.sb-month{grid-column:1;grid-row:3}
+.sb-day{grid-column:2;grid-row:3}
+.sb-month-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 18px 14px}
+.sb-history{grid-column:1 / -1;grid-row:4}
+.sb-entry{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) auto 30px;gap:10px;align-items:center;padding:10px 18px;border-top:1px solid #f0f3ec;font-size:12px}
+.sb-entry strong,.sb-tr strong{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.sb-entry.is-give strong,.sb-tr.is-give strong{color:#2f6b4f}
+.sb-entry.is-expense strong,.sb-tr.is-expense strong{color:#8a3d4f}
+.sb-entry-what{font-weight:600;color:#285140}
+.sb-note{color:#748376;min-width:0;overflow:hidden;text-overflow:ellipsis}
+.sb-table{min-width:640px}
+.sb-tr{display:grid;grid-template-columns:64px 120px 150px minmax(0,1fr) 120px 30px;gap:10px;align-items:center;padding:9px 18px;border-top:1px solid #f0f3ec;font-size:12px}
+.sb-tr.is-head{background:#f5f7f1;font-size:10px;font-weight:650;color:#818c80;text-transform:uppercase;letter-spacing:.5px}
+.sb-tr.is-head span:nth-child(5){text-align:right}
+@media (max-width:1180px){
+  .sb-grid{grid-template-columns:minmax(0,1fr)}
+  .sb-grid>*{grid-column:1!important;grid-row:auto!important}
+}
+@media (max-width:760px){
+  .sb-grid{grid-template-columns:minmax(0,1fr);gap:14px}
+  .sb-row{flex-wrap:wrap}
+  .sb-row>input,.sb-row>select,.sb-row>.fd-btn-give{height:44px;font-size:14px}
+  .sb-row>.fd-btn-give{flex:1 1 100%}
+  .sb-date-input{flex:1 1 100%!important}
+  .sb-entry{grid-template-columns:minmax(0,1fr) auto 40px;grid-template-areas:"what amt x" "note note x";row-gap:2px;padding:10px 16px}
+  .sb-entry>.sb-entry-what{grid-area:what}.sb-entry>.sb-note{grid-area:note}.sb-entry>strong{grid-area:amt}.sb-entry>:last-child{grid-area:x}
+}

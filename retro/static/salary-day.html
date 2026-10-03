@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#143e35">
+  <title>Зарплата · день · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/accountant.js" defer></script>
+</head>
+<body class="fd-page" data-page="salary-day">
+<aside class="sidebar">
+  <a href="/accountant" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+  <nav aria-label="Модули"><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a>
+    <div class="rm-subnav"><a href="/accountant">Финансы дня</a><a href="/accountant/salary-day" class="is-current" aria-current="page">Зарплата · день<span class="nav-dot"></span></a><a href="/accountant/payroll">Зарплата · месяц</a><a href="/accountant/shoh">Баланс Шохруха</a><a href="/accountant/employees">Сотрудники</a></div></nav>
+  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
+</aside>
+<main>
+  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Зарплата · день</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <div class="workspace accountant-workspace fd">
+    <div class="fd-head">
+      <div><p class="fd-kicker">СМЕННЫЕ · ВЫДАЧА ЗА ВЧЕРАШНЮЮ СМЕНУ</p><h1 class="fd-h1">Зарплата · день<span>.</span></h1></div>
+      <div class="fd-head-actions">
+        <div class="fd-date" role="group" aria-label="День выплат">
+          <button id="accountant-prev" class="fd-date-arrow" type="button" aria-label="Предыдущий день">‹</button>
+          <label class="fd-date-label" for="accountant-date" id="fd-date-label"><span>День выплат</span><strong id="fd-day-label">—</strong><input id="accountant-date" class="fd-date-input" type="date" required aria-label="Выбрать день выплат"></label>
+          <button id="accountant-next" class="fd-date-arrow" type="button" aria-label="Следующий день">›</button>
+          <span class="fd-date-sep"></span>
+          <button id="accountant-today" class="fd-date-today" type="button" aria-pressed="false">Сегодня</button>
+        </div>
+        <button class="fd-btn fd-btn-dark" type="button" data-save><span aria-hidden="true">✓</span>Сохранить</button>
+      </div>
+    </div>
+    <div id="fd-status" class="fd-status" aria-live="polite"></div>
+    <p id="accountant-message" class="fd-notice" role="status" aria-live="polite" hidden></p>
+    <!-- Итог страницы: выдано / осталось (ТЗ 02.10, п. 4). -->
+    <section class="fd-totals" aria-label="Итог смены">
+      <div class="fd-total"><span>Начислено за смену</span><b id="sd-accrued">—</b></div>
+      <div class="fd-total"><span>Выдано</span><b id="sd-paid">—</b></div>
+      <div class="fd-total is-left"><span>Осталось выдать</span><b id="sd-left">—</b><small id="sd-left-sub"></small></div>
+      <div class="fd-total"><span id="sd-cash-label">Касса сегодня</span><b id="sd-cash">—</b><small>выданное уменьшает кассу и попадает в «Операции за день»</small></div>
+    </section>
+    <div class="fd-skeleton fd-skeleton-wide" id="fd-skeleton" aria-hidden="true">
+      <section class="fd-sec"><div class="fd-skel-head"><span class="rm-skel" style="width:120px"></span><span class="rm-skel is-md" style="width:210px"></span></div>
+        <div class="rm-skel-row"><span class="rm-skel" style="width:34%"></span><span class="rm-skel" style="width:14%"></span><span class="rm-skel" style="width:18%"></span></div>
+        <div class="rm-skel-row"><span class="rm-skel" style="width:28%"></span><span class="rm-skel" style="width:12%"></span><span class="rm-skel" style="width:18%"></span></div>
+        <div class="rm-skel-row"><span class="rm-skel" style="width:38%"></span><span class="rm-skel" style="width:15%"></span><span class="rm-skel" style="width:18%"></span></div></section>
+    </div>
+    <div class="fd-main fd-single" id="finance-layout" hidden>
+        <!-- ── Сменные: выдача за вчерашнюю смену ──────────────────────────
+             Главное действие дня — раздать деньги за вчера. Сумма вводится в
+             строке сотрудника; первая выдача сама подтверждает начисления смены. -->
+        <section class="fd-sec" id="shift-section">
+          <div class="fd-sec-head">
+            <button class="fd-sec-toggle" type="button" data-section="shift" aria-expanded="true">
+              <span class="fd-chev" aria-hidden="true">⌄</span>
+              <span class="fd-sec-titles"><span class="fd-kicker">СМЕННЫЕ · ВЫДАЧА ЗА ВЧЕРА</span><span class="fd-sec-title" id="shift-title">Смена —</span></span>
+              <span class="fd-sec-sum" id="shift-sum"></span>
+            </button>
+            <button id="pay-all" class="fd-btn-pay" type="button"><span aria-hidden="true">✓</span><span id="pay-all-label">Выдать пришедшим</span></button>
+          </div>
+          <div class="fd-sec-body">
+            <div id="shift-strips"></div>
+            <div class="fd-tabs" id="shift-tabs" role="group" aria-label="Фильтр смены"></div>
+            <div class="fd-shift">
+              <div class="fd-thead fd-shift-cols"><span></span><span>Сотрудник</span><span class="fd-th-time">Вход</span><span class="fd-th-status">Статус</span><span class="num fd-th-acc">Начислено</span><span class="num fd-th-pay">Выдано сегодня</span></div>
+              <div id="shift-rows" aria-live="polite"></div>
+              <div class="fd-tfoot fd-shift-cols"><span></span><span class="fd-tfoot-label">Итого за смену</span><span class="fd-tfoot-gap"></span><span id="shift-paid-count" class="fd-tfoot-count"></span><strong id="shift-accrued" class="num fd-tfoot-acc">—</strong><strong id="shift-paid" class="num fd-tfoot-paid">—</strong></div>
+            </div>
+          </div>
+        </section>
+
+    </div>
+    <footer class="fd-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Зарплата · день</span><span>Время Ташкента · UZS</span></footer>
+  </div>
+</main>
+</body>
+</html>

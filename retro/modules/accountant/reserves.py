@@ -3,7 +3,7 @@ from contextlib import closing, nullcontext
 from datetime import datetime
 from decimal import Decimal
 
-from .ledger import LedgerError, amount_value, now_stamp, required_text
+from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
 
 SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}
@@ -15,9 +15,13 @@ def is_monthly_salary(item_code):
         and item_code not in SHIFT_SALARY_CODES)
 
 
+# День «до начала учёта» для подразумеваемого нулевого остатка Шоха.
+BEFORE_ALL = '0001-01-01'
+
+
 def _entries(connection, account, through=None):
-    rows = [dict(id=r[0], day=r[1], kind=r[2], amount=r[3], note=r[4]) for r in connection.execute(
-        'SELECT id, day, kind, amount, note FROM accountant_reserves WHERE account = ? ORDER BY day, id',
+    rows = [dict(id=r[0], day=r[1], kind=r[2], amount=r[3], note=r[4], place=r[5]) for r in connection.execute(
+        'SELECT id, day, kind, amount, note, place FROM accountant_reserves WHERE account = ? ORDER BY day, id',
         (account,))]
     if account == 'shoh':
         rows += [dict(id=None, day=r[0], kind='deposit', amount=r[1], note=r[2]) for r in connection.execute(
@@ -28,6 +32,12 @@ def _entries(connection, account, through=None):
     # Деньги бухгалтера они не трогают — см. modules/cashier/till.py.
     from retro.modules.cashier.till import reserve_rows
     rows += reserve_rows(connection, account)
+    # Баланс Шохруха = выделено − расходы (ТЗ 02.10, п. 5): начальный остаток
+    # не обязателен. Пока его не задали, счёт начинается с нуля — иначе остаток
+    # Шоха так и висел бы «не задан», как на проде 02.10.
+    if account == 'shoh' and not any(r['kind'] == 'opening' for r in rows):
+        rows.append(dict(id=None, day=BEFORE_ALL, kind='opening', amount='0',
+                         note='Счёт Шоха с нуля', place=None, implicit=True))
     return sorted((r for r in rows if through is None or r['day'] <= through), key=lambda r: r['day'])
 
 
@@ -37,7 +47,8 @@ def _balance(rows):
     return sum((Decimal(r['amount']) * (-1 if r['kind'] == 'withdrawal' else 1) for r in rows), Decimal(0))
 
 
-def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *, existing_connection=None):
+def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *, existing_connection=None,
+                      place=None):
     allowed = {'dividends': {'opening', 'transfer', 'withdrawal'},
                'usd': {'opening', 'deposit', 'withdrawal'}, 'shoh': {'opening', 'withdrawal'}}
     if account not in allowed or kind not in allowed[account]:
@@ -48,13 +59,14 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *
         if existing_connection is None:
             connection.execute('BEGIN IMMEDIATE')
         try:
-            rows = _entries(connection, account)
+            ensure_open(connection, day)
+            rows = [r for r in _entries(connection, account) if not r.get('implicit')]
             if kind == 'opening':
                 if any(r['kind'] == 'opening' for r in rows):
                     raise LedgerError('Начальный остаток уже указан.')
                 if any(r['day'] < day.isoformat() for r in rows):
                     raise LedgerError('Начальный остаток должен быть не позже первой операции.')
-            elif not any(r['kind'] == 'opening' and r['day'] <= day.isoformat() for r in rows):
+            elif account != 'shoh' and not any(r['kind'] == 'opening' and r['day'] <= day.isoformat() for r in rows):
                 raise LedgerError('Сначала укажите подтверждённый начальный остаток на этот день или раньше.')
             if kind == 'transfer':
                 if cashier_amount is None:
@@ -62,8 +74,9 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *
                 if store.available_cash(connection, day, cashier_amount) < value:
                     raise LedgerError('Недостаточно денег от кассира для перевода в сейф.')
             cursor = connection.execute(
-                'INSERT INTO accountant_reserves (day, account, kind, amount, note, created_at) VALUES (?, ?, ?, ?, ?, ?)',
-                (day.isoformat(), account, kind, str(value), note, now_stamp()))
+                'INSERT INTO accountant_reserves (day, account, kind, amount, note, created_at, place) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?)',
+                (day.isoformat(), account, kind, str(value), note, now_stamp(), place))
             after = store._row_dict(connection, 'accountant_reserves', cursor.lastrowid)
             record_audit(connection, 'reserve', cursor.lastrowid, 'create', None, after)
             rows = _entries(connection, account)
@@ -87,6 +100,7 @@ def set_monthly_plan(store, day, amount, note):
     with closing(store._open()) as connection:
         try:
             with connection:
+                ensure_open(connection, day)
                 connection.execute('INSERT INTO accountant_monthly_plans VALUES (?, ?, ?, ?)',
                                    (day.isoformat()[:7], str(value), note, datetime.now().isoformat()))
                 record_audit(connection, 'monthly_plan', day.isoformat()[:7], 'create', None,

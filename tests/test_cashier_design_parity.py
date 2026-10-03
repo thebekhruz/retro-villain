@@ -242,25 +242,28 @@ def test_cashier_cannot_overwrite_or_cancel_the_accountant_record(c):
     assert c.get('/api/cashier/handover', params={'date': DAY.isoformat()}).json()['handover']['source'] == 'accountant'
 
 
-def test_undo_removes_the_income_until_the_accountant_spends_it(c):
+def test_undo_removes_the_income_until_the_accountant_confirms_it(c):
+    """Передача кассира — «ожидается»: тратить её нельзя, пока бухгалтер не
+    подтвердил сумму (ТЗ 02.10). После подтверждения кассир её не отменит."""
     snapshot = till_day(c)
     assert hand_over(c, snapshot, '850000').status_code == 201
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 204
     assert c.app.state.accountant_finance.handover_for_day(DAY) is None
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 204  # уже нет
-    # Бухгалтер потратил из этой передачи — отменить её кассир не может.
     assert hand_over(c, snapshot, '850000').status_code == 201
     finance = c.app.state.accountant_finance
     finance.set_cash_opening(DAY, '0', 'Пересчёт')
-    spent = c.post('/api/accountant/expenses', json={'date': DAY.isoformat(), 'item_code': 'admin_other',
-                                                     'note': 'Канцтовары', 'amount': '800000'})
+    expense = {'date': DAY.isoformat(), 'item_code': 'admin_other', 'note': 'Канцтовары', 'amount': '800000'}
+    unconfirmed = c.post('/api/accountant/expenses', json=expense)
+    assert unconfirmed.status_code == 422 and 'недостаточно' in unconfirmed.json()['detail']
+    assert c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(),
+                                                            'amount': '850000'}).status_code == 200
+    spent = c.post('/api/accountant/expenses', json=expense)
     assert spent.status_code == 201, spent.text
     blocked = c.delete('/api/cashier/handover', params={'date': DAY.isoformat()})
     assert blocked.status_code == 409 and 'отменить передачу нельзя' in blocked.json()['detail']
-    # И уменьшить передачу ниже потраченного тоже нельзя: остаток ушёл бы в минус.
-    c.post('/api/cashier/shokh', json={'date': DAY.isoformat(), 'amount': '100000'})
     lower = hand_over(c, snapshot, '750000')
-    assert lower.status_code == 409 and 'отрицательным' in lower.json()['detail']
+    assert lower.status_code == 409
     assert finance.handover_for_day(DAY) == Decimal('850000')
 
 

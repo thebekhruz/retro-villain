@@ -1,5 +1,6 @@
-/* Ведомость месяца (2b): одна сетка «сотрудник × день» для помесячных и
-   сменных, итоги по дням из кассы и проверки месяца. Считает payroll-logic.js,
+/* «Зарплата · месяц» (ТЗ 02.10, п. 4): сотрудники на окладе — оклад, выдано
+   частями, осталось. Одна сетка «сотрудник × день», под ней «Оклады, выданные
+   сегодня». Сменные живут на «Зарплате · день». Считает payroll-logic.js,
    здесь только отрисовка и запись выплат. */
 const $ = id => document.getElementById(id);
 const number = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
@@ -327,7 +328,8 @@ function monthlyRow(person) {
     input.addEventListener('focus', () => { const shown = parse(input.value); if (shown !== null) input.value = shown ? String(shown) : ''; input.select(); });
     input.addEventListener('blur', () => { if (parse(input.value) === cell.amount) input.value = cell.amount ? fmt(cell.amount) : ''; });
     input.addEventListener('keydown', event => { if (event.key === 'Enter') input.blur(); if (event.key === 'Escape') { input.value = String(cell.amount || ''); input.blur(); } });
-    input.addEventListener('change', () => editMonthly(person, cell, input));
+    input.addEventListener('change', () => { globalThis.RetroSave?.track(editMonthly(person, cell, input)); });
+    if (current?.closed) { input.disabled = true; input.title = 'Месяц закрыт — только для чтения'; }
     line.append(input);
   });
   const paid = node('div', 'pr-c pr-c-paid rm-num' + (person.over ? ' is-over' : ''), fmt(person.paid));
@@ -381,10 +383,8 @@ function personRole(person) { return person.role || person.group; }
 function renderSheet(data) {
   const grid = $('sheet-grid'), days = data.days || [];
   const monthly = L.monthlyRows(data, {today});
-  const shift = L.shiftRows(data, {today, pending}).map(row => {
-    const source = (data.shift || []).find(p => p.employee_id === row.id);
-    return {...row, source: source?.cells || {}, role: roles[row.id] || ''};
-  });
+  // Сменные — на «Зарплате · день» (ТЗ 02.10): здесь только оклады.
+  const shift = [];
   // Ввод продолжается после записи: Tab из сохранённой ячейки уводит в
   // соседнюю, а перерисовка не должна выбивать из неё фокус и набранное.
   const active = document.activeElement;
@@ -397,22 +397,13 @@ function renderSheet(data) {
   if (empty) return;
   grid.style.setProperty('--days', String(days.length));
   grid.append(headRow(days));
-  if (monthly.length) {
-    grid.append(sectionRow('Помесячные · оклад выдаётся частями'));
-    monthly.forEach(person => grid.append(monthlyRow(person)));
-  }
-  // Пометка «ждёт начисления» в легенде — только когда такие ячейки есть.
-  $('legend-blocked').hidden = !shift.some(row => row.cells.some(cell => cell.kind === 'blocked'));
-  if (shift.length) {
-    grid.append(sectionRow('Сменные · колонка = день смены, выдача на следующий день'));
-    shift.forEach(person => grid.append(shiftRow(person)));
-  } else if (monthly.length) grid.append(sectionRow('Сменные · за этот месяц смен в ведомости нет'));
+  monthly.forEach(person => grid.append(monthlyRow(person)));
   const foot = node('div', 'pr-row is-foot');
   // Подпись занимает колонку имени, а колонка суммы пустая: так на телефоне,
   // где закреплено только имя, подпись строки остаётся на месте при прокрутке.
-  foot.append(node('div', 'pr-c pr-c-label', 'Выдано из кассы за день'), node('div', 'pr-c pr-c-sum pr-c-sumfoot'));
+  foot.append(node('div', 'pr-c pr-c-label', 'Выдано окладов за день'), node('div', 'pr-c pr-c-sum pr-c-sumfoot'));
   let grand = 0;
-  L.dayTotals(data).forEach(item => {
+  L.dayTotals({...data, paid_per_day: {}}).forEach(item => {
     grand += item.amount;
     foot.append(node('div', 'pr-t rm-num' + (item.day === today ? ' is-today' : ''), item.amount ? fmt(item.amount) : ''));
   });
@@ -436,7 +427,6 @@ function renderTotals(data, checks) {
   // Переплата не прячется в «осталось»: отдельной красной строкой.
   $('kpi-mover').hidden = !t.monthlyOver;
   $('kpi-mover').textContent = t.monthlyOver ? 'переплата −' + fmt(t.monthlyOver) : '';
-  $('kpi-spaid').textContent = fmt(t.paid);
   $('kpi-issues').textContent = String(checks.filter(item => item.lvl !== 'todo').length);
 }
 
@@ -568,22 +558,23 @@ async function loadMonth() {
     if (lastNote === DOWNLOADED) { globalThis.RetroToast?.hide(); lastNote = ''; }
   }
   const name = monthName(month);
-  $('month-title').replaceChildren('Зарплаты · ' + name, node('span', '', '.'));
-  $('crumb-month').textContent = 'Зарплаты · ' + name;
+  $('month-title').replaceChildren('Зарплата · ' + name, node('span', '', '.'));
+  $('crumb-month').textContent = 'Зарплата · ' + name;
   $('month-label').textContent = monthYear(month);
   $('month-next').disabled = month >= today.slice(0, 7);
   try {
     const response = await fetch('/api/accountant/payroll/month?month=' + encodeURIComponent(month), {cache: 'no-store'});
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || 'Не удалось загрузить ведомость.');
-    await loadPending(data);
     if (sequence !== requestNo) return;
     current = data;
     const keep = $('sheet-scroll').scrollLeft;
-    const checks = L.checks(data, {today, pending});
+    const checks = monthlyChecks(data);
     renderTotals(data, checks);
     renderSheet(data);
     renderChecks(checks);
+    renderSalary();
+    renderClosed();
     $('payroll-body').hidden = false;
     $('payroll-skeleton').hidden = true;
     if (fresh) {
@@ -607,17 +598,19 @@ async function loadMonth() {
   }
 }
 
-$('month-input').addEventListener('change', load);
+const leaveOk = () => globalThis.RetroSave?.confirmLeave() ?? true;
+$('month-input').addEventListener('change', () => { if (leaveOk()) load(); else $('month-input').value = shownMonth; });
 $('month-prev').addEventListener('click', () => {
+  if (!leaveOk()) return;
   $('month-input').value = L.shiftMonth($('month-input').value, -1); load();
 });
 $('month-next').addEventListener('click', () => {
   const next = L.shiftMonth($('month-input').value, 1);
-  if (next <= today.slice(0, 7)) { $('month-input').value = next; load(); }
+  if (next <= today.slice(0, 7) && leaveOk()) { $('month-input').value = next; load(); }
 });
 $('checks-more').addEventListener('click', () => {
   checksOpen = !checksOpen;
-  renderChecks(L.checks(current, {today, pending}));
+  renderChecks(monthlyChecks(current));
 });
 $('kpi-issues-card').addEventListener('click', () => $('checks-title').scrollIntoView({block: 'start', behavior: 'smooth'}));
 $('payroll-download').addEventListener('click', () => {
@@ -641,6 +634,119 @@ async function download() {
     return true;
   } catch (error) { message(error.message, true); return false; }
 }
+/* Проверки месяца без сменных: переплаты окладов и минус по остатку. */
+function monthlyChecks(data) {
+  return L.checks({...data, shift: []}, {today, pending: {}}).filter(item => !String(item.row || '').startsWith('s'));
+}
+
+/* Закрытый месяц: «Закрыто · дата · кем», ячейки только для чтения. */
+function renderClosed() {
+  const box = $('payroll-status'), closed = current?.closed;
+  box.replaceChildren();
+  if (closed) {
+    const at = closed.closed_at || '';
+    const chip = node('span', 'fd-chip is-closed', '🔒 Закрыто · ' + at.slice(8, 10) + '.' + at.slice(5, 7) + '.' + at.slice(0, 4) + ' ' + at.slice(11, 16) + ' · ' + closed.closed_by);
+    chip.append(node('small', '', ' · ' + closed.name + ' — только для чтения'));
+    box.append(chip);
+  }
+  box.hidden = !closed;
+  document.querySelectorAll('#salary-payment-form :is(input,select,button)').forEach(el => { el.disabled = !!closed; });
+}
+
+/* ── «Оклады, выданные сегодня» (раньше — в «Финансах дня») ───────────── */
+function monthlyPeople() {
+  const paid = id => Object.values((current.monthly_cells || {})[String(id)] || {}).reduce((s, v) => s + Number(v || 0), 0);
+  return (current.monthly || []).map(e => ({id: e.id, name: e.name, role: e.role, salary: Number(e.salary || 0),
+    paid: paid(e.id), left: Number(e.salary || 0) - paid(e.id)}));
+}
+function renderSalary() {
+  const section = $('salary-section');
+  // Выплата пишется сегодняшним днём — блок живёт в текущем месяце.
+  const own = current && current.month === today.slice(0, 7);
+  section.hidden = !own;
+  if (!own) return;
+  const people = monthlyPeople(), byId = new Map(people.map(p => [String(p.id), p]));
+  const box = $('salary-today'); box.replaceChildren();
+  let count = 0, sum = 0;
+  Object.entries(current.monthly_cell_ops || {}).forEach(([id, days]) => (days[today] || []).forEach(op => {
+    const person = byId.get(id) || {name: 'Сотрудник удалён', role: '', left: 0};
+    count += 1; sum += Number(op.amount);
+    const line = node('div', 'fd-mo-row' + (person.left < 0 ? ' is-over' : ''));
+    const who = node('div', 'fd-mo-who');
+    who.append(node('div', 'fd-who-name', person.name), node('div', 'fd-who-role', person.role));
+    const left = person.left < 0 ? 'переплата ' + fmt(-person.left) : person.left === 0 ? 'оклад закрыт' : 'осталось ' + fmt(person.left);
+    const x = node('button', 'fd-x', '×');
+    x.type = 'button'; x.title = 'Удалить выплату'; x.setAttribute('aria-label', 'Удалить выплату оклада');
+    x.disabled = !!current.closed;
+    x.addEventListener('click', async () => {
+      if (!await confirmAt(x, 'Удалить выплату оклада ' + person.name + ' · ' + money(op.amount) + '?')) return;
+      const work = send('/api/accountant/operations/movement/' + encodeURIComponent(op.id) + '?date=' + encodeURIComponent(today), 'DELETE');
+      globalThis.RetroSave?.track(work);
+      try { await (B ? B.button(x, work) : work); await load(); message('Выплата оклада удалена.'); }
+      catch (error) { message(error.message, true); }
+    });
+    line.append(who, node('strong', 'num', fmt(op.amount)), node('span', 'num fd-mo-left' + (person.left < 0 ? ' is-over' : person.left === 0 ? ' is-closed' : ''), left), x);
+    box.append(line);
+  }));
+  if (!count) box.append(node('div', 'fd-mo-empty', 'Сегодня оклады не выдавались.'));
+  $('salary-sum').textContent = count ? count + ' · ' + money(sum) : 'не выдавались';
+  const select = $('salary-employee'), keep = select.value;
+  select.replaceChildren(new Option('Кому выдаём оклад', ''));
+  people.forEach(p => select.add(new Option(p.name + ' · ' + (p.left < 0 ? 'переплата ' + fmt(-p.left) : 'осталось ' + fmt(p.left)), String(p.id))));
+  if (keep) select.value = keep;
+  const wanted = new URLSearchParams(location.search).get('employee');
+  if (wanted && !keep && byId.has(wanted)) select.value = wanted;
+  salaryHint();
+}
+let salaryConfirm = false;
+function salaryHint() {
+  if (!current) return;
+  const person = monthlyPeople().find(p => String(p.id) === $('salary-employee').value);
+  const amount = parse($('salary-amount').value) || 0, hint = $('salary-hint'), button = $('salary-submit');
+  hint.className = 'fd-mo-hint'; button.classList.remove('is-danger'); button.textContent = 'Записать выплату';
+  $('salary-amount').classList.remove('is-bad');
+  button.disabled = saving || !!current.closed;
+  if (!person) { hint.textContent = 'Выберите сотрудника — покажем, сколько осталось по окладу.'; return; }
+  const left = Math.max(0, person.left);
+  hint.textContent = 'Оклад ' + fmt(person.salary) + ' · выдано ' + fmt(person.paid) + ' · осталось ' + fmt(left);
+  hint.classList.add('is-info');
+  if (amount > left) {
+    hint.textContent += ' — сумма больше остатка на ' + fmt(amount - left);
+    hint.classList.add('is-bad'); $('salary-amount').classList.add('is-bad');
+    if (salaryConfirm) { button.textContent = 'Всё равно записать'; button.classList.add('is-danger'); }
+  }
+}
+['salary-employee', 'salary-amount'].forEach(id => $(id).addEventListener('input', () => { salaryConfirm = false; salaryHint(); }));
+async function submitSalary() {
+  const person = monthlyPeople().find(p => String(p.id) === $('salary-employee').value);
+  const amount = parse($('salary-amount').value) || 0;
+  if (!person || !amount) { message('Выберите сотрудника и сумму.', true); return false; }
+  if (amount > Math.max(0, person.left) && !salaryConfirm) { salaryConfirm = true; salaryHint(); $('salary-amount').focus(); return false; }
+  salaryConfirm = false;
+  if (saving) return false;
+  saving = true;
+  const work = postJson('/api/accountant/monthly-payments', {date: today, employee_id: person.id, amount: String(amount)}, true);
+  globalThis.RetroSave?.track(work);
+  try {
+    await (B ? B.button($('salary-submit'), work) : work);
+    $('salary-employee').value = ''; $('salary-amount').value = '';
+    saving = false;
+    await load();
+    message('Записано: ' + person.name + ', ' + money(amount) + '. Выплата попала в «Операции за день» и уменьшила кассу.');
+    return true;
+  } catch (error) { message(error.message, true); return false; }
+  finally { saving = false; salaryHint(); }
+}
+$('salary-payment-form').addEventListener('submit', event => { event.preventDefault(); submitSalary(); });
+globalThis.RetroSave?.register($('salary-payment-form'), () => submitSalary(),
+  {dirty: () => !!$('salary-amount').value.trim()});
+document.addEventListener('change', event => {
+  const input = event.target;
+  if (!(input instanceof HTMLInputElement) || !input.classList.contains('fd-money')) return;
+  const value = parse(input.value);
+  if (value) input.value = fmt(value);
+});
+
 (async () => {
   try {
     today = (await globalThis.RetroConfig).today;

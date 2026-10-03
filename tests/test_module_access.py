@@ -15,7 +15,8 @@ USERS = {role: ('secret', role) for role in ROLES} | {'boss': ('secret', 'admin'
 # Страница → панель, которой она принадлежит.
 PAGES = {'index.html': 'cashier', 'accountant.html': 'accountant', 'employees.html': 'accountant',
          'payroll.html': 'accountant', 'director.html': 'director', 'director-app.html': 'director',
-         'founder.html': 'founder', 'founder-cabinet.html': 'founder', 'shokh.html': 'shokh'}
+         'founder.html': 'founder', 'founder-cabinet.html': 'founder', 'shokh.html': 'shokh',
+         'salary-day.html': 'accountant', 'shoh-balance.html': 'accountant', 'shokh-view.html': 'shokh'}
 PATHS = {'cashier': '/', 'accountant': '/accountant', 'director': '/director',
          'founder': '/founder', 'shokh': '/shokh'}
 
@@ -140,6 +141,6 @@ def test_static_table_matches_what_pages_really_load():
 
 
 def test_every_dashboard_page_loads_the_menu_script():
-    for page in ('index.html', 'accountant.html', 'employees.html', 'payroll.html',
-                 'director.html', 'founder.html', 'director-app.html', 'founder-cabinet.html'):
+    for page in ('index.html', 'accountant.html', 'employees.html', 'payroll.html', 'salary-day.html',
+                 'shoh-balance.html', 'director.html', 'founder.html', 'director-app.html', 'founder-cabinet.html'):
         assert 'nav.js' in (STATIC / page).read_text(encoding='utf-8'), page

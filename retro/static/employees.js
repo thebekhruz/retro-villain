@@ -386,7 +386,28 @@ function revealDrawer() {
   if (aside && overlayMode()) aside.scrollTop = 0;
 }
 const overlayMode = () => matchMedia('(max-width:1180px)').matches;
-function closeDrawer() { ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; ui.history = null; render(); }
+function closeDrawer() {
+  // Набранное в карточке не теряем молча (ТЗ 02.10, п. 6).
+  const question = 'Есть несохранённые изменения. Закрыть без сохранения?';
+  const asked = document.documentElement.lang === 'uz' && globalThis.RetroI18n ? RetroI18n.translate(question) || question : question;
+  if (drawerDirty() && !confirm(asked)) return;
+  ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; ui.history = null; render();
+}
+/* Есть ли в открытой карточке несохранённое: новое — любое набранное поле,
+   правка — отличие от того, что сейчас в реестре. */
+function drawerDirty() {
+  if (ui.sel == null || !ui.draft) return false;
+  const d = ui.draft, monthly = String(ui.sel).startsWith('m:');
+  if (ui.sel === 'new' || ui.sel === 'm:new') return ['name', 'role', 'rate', 'salary'].some(key => String(d[key] || '').trim());
+  const base = monthly ? salaried().find(p => 'm:' + p.id === ui.sel) : people().find(p => p.employee_id === ui.sel);
+  if (!base) return false;
+  const origin = monthly ? monthlyDraft(base) : shiftDraft(base);
+  const keys = monthly ? ['name', 'role', 'salary', 'schedule', 'noHik', 'reason'] : ['name', 'role', 'rate', 'group', 'reason', 'manual', 'hikId'];
+  return keys.some(key => String(d[key] ?? '') !== String(origin[key] ?? ''));
+}
+// «Сохранить» в шапке страницы сохраняет открытую карточку.
+globalThis.RetroSave?.register($('employees-aside'), () => (String(ui.sel).startsWith('m:') ? saveMonthly() : saveDraft()),
+  {dirty: drawerDirty});
 function setDraft(key, value) { ui.draft[key] = value; ui.feedback = ''; }
 
 function fieldLabel(labelText, input) {
@@ -556,7 +577,7 @@ function drawerCard() {
     reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
     form.append(fieldLabel('Причина изменения', reasonInput));
   }
-  form.append(feedbackLine(), drawerActions(isEdit ? 'Сохранить' : 'Добавить в реестр', () => saveDraft(), !editable()));
+  form.append(feedbackLine(), drawerActions('Сохранить', () => saveDraft(), !editable()));
   card.append(form);
 
   if (!editable()) card.append(text('p', 'emp-drawer-note', 'Изменения доступны только на сегодняшнюю дату.'));
@@ -636,7 +657,7 @@ function monthlyDrawer() {
     reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
     form.append(fieldLabel('Причина изменения', reasonInput));
   }
-  form.append(feedbackLine(), drawerActions(isEdit ? 'Сохранить' : 'Добавить на оклад', () => saveMonthly()));
+  form.append(feedbackLine(), drawerActions('Сохранить', () => saveMonthly()));
   card.append(form);
   if (isEdit) card.append(deleteBlock(doDeleteMonthly), historyBlock());
   return card;

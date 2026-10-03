@@ -37,21 +37,26 @@ def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
     with TestClient(create_app(Settings()), base_url='http://127.0.0.1',
                     client=('127.0.0.1', 50000)) as client:
         accountant = client.get('/accountant')
+        salary_day = client.get('/accountant/salary-day')
         cashier = client.get('/')
         modules = client.get('/api/config').json()['modules']
     assert accountant.status_code == 200
     assert 'ДЕМО' not in accountant.text
     # Макет 2a: состояние Hikvision и сотрудники без него — полосой в секции
     # смены, опоздавшие — вкладкой «Опоздали» в той же таблице, а выгрузка
-    # входов живёт у «Сотрудников». Отдельного блока опоздавших больше нет.
-    assert 'id="shift-strips"' in accountant.text
-    assert 'id="shift-tabs"' in accountant.text
+    # входов живёт у «Сотрудников». С ТЗ 02.10 смена — на «Зарплате · день»,
+    # в «Финансах дня» её нет.
+    assert salary_day.status_code == 200
+    assert 'id="shift-strips"' in salary_day.text and 'id="shift-tabs"' in salary_day.text
+    assert 'id="shift-strips"' not in accountant.text and 'id="shoh-section"' not in accountant.text
+    assert 'id="salary-section"' not in accountant.text
+    assert 'Сохранить и сдать отчёт' in accountant.text
     assert 'Опоздавшие сотрудники' not in accountant.text
     assert 'href="/accountant/employees"' in accountant.text
     assert 'name="item_code"' in accountant.text
     assert 'Подтвердить получение' not in accountant.text
     assert 'id="accountant-date"' in accountant.text
-    assert 'Сохранить в Excel' in accountant.text
+    assert 'id="fd-export"' in accountant.text
     assert 'Зарплата к выплате' not in cashier.text
     # T-383: в разметке кассы чужих модулей нет — пункт «Бухгалтер» дорисует
     # меню, только если он открыт этой учётной записи (здесь — полный доступ).

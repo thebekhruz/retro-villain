@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#143e35">
+  <title>Баланс Шохруха · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/shoh-balance.js" defer></script>
+</head>
+<body class="fd-page" data-page="shoh">
+<aside class="sidebar">
+  <a href="/accountant" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+  <nav aria-label="Модули"><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a>
+    <div class="rm-subnav"><a href="/accountant">Финансы дня</a><a href="/accountant/salary-day">Зарплата · день</a><a href="/accountant/payroll">Зарплата · месяц</a><a href="/accountant/shoh" class="is-current" aria-current="page">Баланс Шохруха<span class="nav-dot"></span></a><a href="/accountant/employees">Сотрудники</a></div></nav>
+  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
+</aside>
+<main>
+  <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong>Баланс Шохруха</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <div class="workspace accountant-workspace fd">
+    <div class="fd-head">
+      <div><p class="fd-kicker">ЗАКУП · ПОДОТЧЁТ</p><h1 class="fd-h1">Баланс Шохруха<span>.</span></h1></div>
+      <div class="fd-head-actions">
+        <div class="fd-date" role="group" aria-label="День">
+          <button id="sb-prev" class="fd-date-arrow" type="button" aria-label="Предыдущий день">‹</button>
+          <label class="fd-date-label" for="sb-date" id="sb-date-label"><span>День</span><strong id="sb-day-label">—</strong><input id="sb-date" class="fd-date-input" type="date" required aria-label="Выбрать день"></label>
+          <button id="sb-next" class="fd-date-arrow" type="button" aria-label="Следующий день">›</button>
+          <span class="fd-date-sep"></span>
+          <button id="sb-today" class="fd-date-today" type="button" aria-pressed="false">Сегодня</button>
+        </div>
+        <button id="sb-report" class="fd-btn fd-btn-light" type="button" aria-expanded="false">Месячный отчёт</button>
+        <button class="fd-btn fd-btn-dark" type="button" data-save><span aria-hidden="true">✓</span>Сохранить</button>
+      </div>
+    </div>
+    <div id="sb-status" class="fd-status" aria-live="polite" hidden></div>
+    <p id="sb-message" class="fd-notice" role="status" aria-live="polite" hidden></p>
+
+    <div class="sb-grid" id="sb-layout" aria-busy="true">
+      <!-- Главная цифра: остаток = выделено − расходы (ТЗ 02.10, п. 5). -->
+      <section class="fd-cash sb-hero" aria-labelledby="sb-balance-title">
+        <p class="fd-kicker">СЧЁТ ШОХРУХА</p>
+        <div class="fd-cash-sub" id="sb-balance-title">Остаток · на руках у Шоха</div>
+        <div class="fd-cash-total"><span id="sb-balance">—</span><small>сум</small></div>
+        <div class="fd-cash-line"><span>На начало дня</span><b id="sb-start">—</b></div>
+        <div class="fd-cash-line"><span>+ Выделено за день</span><b id="sb-given">—</b></div>
+        <div class="fd-cash-line"><span>− Расходы за день</span><b id="sb-spent">—</b></div>
+        <p class="sb-formula">Остаток = выделено − расходы. Всё вносит бухгалтер.</p>
+      </section>
+
+      <section class="fd-sec sb-card sb-give" aria-labelledby="sb-give-title">
+        <div class="sb-card-head"><p class="fd-kicker">ВЫДЕЛИТЬ ДЕНЬГИ</p><h2 id="sb-give-title" class="sb-h2">Выдать Шоху из кассы</h2></div>
+        <form id="sb-give-form" class="sb-form" novalidate>
+          <span class="fd-sh-quick" id="sb-quick"><button type="button" data-amount="1000000">1 000 000</button><button type="button" data-amount="2000000">2 000 000</button><button type="button" data-amount="3000000">3 000 000</button></span>
+          <div class="sb-row"><input id="sb-give-amount" class="fd-money" data-money-hint="off" inputmode="decimal" placeholder="Сумма, сум" aria-label="Сумма для Шоха" autocomplete="off"><button type="submit" class="fd-btn-give">Выделить</button></div>
+          <p class="sb-hint" id="sb-give-hint">Касса бухгалтера уменьшится, баланс Шоха вырастет. Выдача попадёт в «Операции за день».</p>
+        </form>
+      </section>
+
+      <section class="fd-sec sb-card sb-exp" aria-labelledby="sb-exp-title">
+        <div class="sb-card-head"><p class="fd-kicker">РАСХОД ПО СЧЁТ-ФАКТУРЕ</p><h2 id="sb-exp-title" class="sb-h2">Что потратил Шох</h2></div>
+        <form id="sb-exp-form" class="sb-form" novalidate>
+          <div class="sb-row sb-row-wrap">
+            <input id="sb-exp-date" type="date" required aria-label="Дата расхода" class="sb-date-input">
+            <select id="sb-exp-place" required aria-label="Базар"><option value="">Базар</option></select>
+            <button type="button" id="sb-add-bazaar" class="fd-link-btn sb-add">+ базар</button>
+          </div>
+          <div class="sb-row" id="sb-bazaar-row" hidden><input id="sb-bazaar-name" maxlength="80" placeholder="Название нового базара" aria-label="Новый базар" autocomplete="off"><button type="button" id="sb-bazaar-save" class="fd-btn-give">Добавить в список</button></div>
+          <div class="sb-row"><input id="sb-exp-amount" class="fd-money" data-money-hint="off" inputmode="decimal" placeholder="Сумма, сум" aria-label="Сумма расхода" autocomplete="off"><input id="sb-exp-note" maxlength="160" placeholder="Расчёт по счёт-фактуре №…" aria-label="Комментарий" autocomplete="off"><button type="submit" class="fd-btn-give">Записать</button></div>
+          <p class="sb-hint">Баланс Шоха уменьшится. Касса второй раз не трогается: деньги ушли из неё, когда их выделили.</p>
+        </form>
+      </section>
+
+      <section class="fd-sec sb-card sb-day" aria-labelledby="sb-day-title">
+        <div class="sb-card-head"><p class="fd-kicker">ЗА ДЕНЬ</p><h2 id="sb-day-title" class="sb-h2">Выдачи и расходы</h2></div>
+        <div id="sb-day-rows" aria-live="polite"></div>
+      </section>
+
+      <section class="fd-sec sb-card sb-month" aria-labelledby="sb-month-title">
+        <div class="sb-card-head"><p class="fd-kicker">ИТОГ ЗА МЕСЯЦ</p><h2 id="sb-month-title" class="sb-h2">—</h2></div>
+        <div class="sb-month-tiles">
+          <div class="fd-total"><span>Выделено Шоху</span><b id="sb-month-given">—</b></div>
+          <div class="fd-total"><span>Потрачено</span><b id="sb-month-spent">—</b></div>
+        </div>
+      </section>
+
+      <!-- История за месяц — только по кнопке «Месячный отчёт» (ТЗ 02.10). -->
+      <section class="fd-sec sb-card sb-history" id="sb-history" aria-labelledby="sb-history-title" hidden>
+        <div class="sb-card-head"><p class="fd-kicker">МЕСЯЧНЫЙ ОТЧЁТ</p><h2 id="sb-history-title" class="sb-h2">Все выдачи и расходы</h2></div>
+        <div class="fd-scroll"><div class="sb-table" id="sb-history-rows"></div></div>
+      </section>
+    </div>
+    <footer class="fd-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Баланс Шохруха</span><span>Время Ташкента · UZS</span></footer>
+  </div>
+</main>
+</body>
+</html>
