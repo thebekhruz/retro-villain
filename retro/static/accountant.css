@@ -1032,8 +1032,9 @@ body.fd-busy .fd :is(.fd-btn-pay,.fd-plus,.fd-btn-give,.fd-accept){cursor:progre
 .fd-btn-submit>span:first-child{color:#d8b977}
 .fd-btn-close{border-color:#d8b977;color:#6d5c38;background:#fbf6ea}
 .fd-btn-close:hover:not(:disabled){filter:none;background:#f5ecd6}
-.fd-status{display:flex;flex-wrap:wrap;gap:8px;margin:-10px 0 16px}
-.fd-status[hidden],.fd-status:empty{display:none}
+/* Состояние дня над страницей. Не путать с .fd-status — ячейкой статуса в строке смены. */
+.fd-daystate{display:flex;flex-wrap:wrap;gap:8px;margin:-10px 0 16px}
+.fd-daystate[hidden],.fd-daystate:empty{display:none}
 .fd-chip{display:inline-flex;align-items:center;gap:4px;min-height:30px;padding:5px 12px;border-radius:20px;border:1px solid #e3e7df;background:#fff;color:#53675c;font-size:12px;font-weight:550}
 .fd-chip small{font-weight:450;color:inherit;opacity:.85}
 .fd-chip.is-ok{background:#edf5eb;border-color:#d6e5d2;color:#35624e}
@@ -1113,50 +1114,61 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
 .fd-single[hidden],.fd-skeleton-wide[hidden]{display:none}
 @media (max-width:900px){.fd-totals{grid-template-columns:1fr 1fr}}
 
-/* «Баланс Шохруха»: главная цифра слева, ввод справа, итог месяца и история. */
-.sb-grid{display:grid;grid-template-columns:minmax(280px,340px) minmax(0,1fr);gap:20px;align-items:start}
-.sb-grid[aria-busy=true]{opacity:.75}
-.sb-hero{grid-column:1;grid-row:1 / span 2}
-.sb-formula{position:relative;margin:12px 0 0;font-size:11px;color:#b9cbbd}
-.sb-card{padding-bottom:6px}
-.sb-card-head{padding:18px 18px 6px}
-.sb-card-head .fd-kicker{margin-bottom:6px}
-.sb-h2{margin:0;font-size:17px;font-weight:600;letter-spacing:-.3px;color:#1c302b}
-.sb-form{display:grid;gap:10px;padding:8px 18px 12px;margin:0}
-.sb-row{display:flex;gap:8px;align-items:center;min-width:0}
-.sb-row-wrap{flex-wrap:wrap}
-.sb-row>input,.sb-row>select{flex:1 1 140px;min-width:0;height:38px}
-.sb-row .fd-money{text-align:right;flex:0 1 180px}
-.sb-date-input{flex:0 0 160px!important}
-.sb-add{white-space:nowrap}
-.sb-hint{margin:0;font-size:11px;line-height:1.45;color:#809084}
-#sb-give-form,#sb-exp-form{grid-column:auto}
-.sb-give{grid-column:2;grid-row:1}
-.sb-exp{grid-column:2;grid-row:2}
-.sb-month{grid-column:1;grid-row:3}
-.sb-day{grid-column:2;grid-row:3}
-.sb-month-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;padding:8px 18px 14px}
-.sb-history{grid-column:1 / -1;grid-row:4}
-.sb-entry{display:grid;grid-template-columns:minmax(0,1fr) minmax(0,1.2fr) auto 30px;gap:10px;align-items:center;padding:10px 18px;border-top:1px solid #f0f3ec;font-size:12px}
-.sb-entry strong,.sb-tr strong{font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-.sb-entry.is-give strong,.sb-tr.is-give strong{color:#2f6b4f}
-.sb-entry.is-expense strong,.sb-tr.is-expense strong{color:#8a3d4f}
-.sb-entry-what{font-weight:600;color:#285140}
-.sb-note{color:#748376;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* «Баланс Шохруха» (ТЗ 02.10, п. 5): одна колонка в языке «Финансов дня» —
+   плитки и выдача как в блоке «Баланс Шох» макета 2a, расходы — таблицей с
+   вводом в строке, как журнал. */
+.sb-page{display:grid;gap:20px;max-width:1180px}
+.sb-page[aria-busy=true]{opacity:.75}
+.sb-head-note{margin-left:auto;font-size:11px;color:#809084;text-align:right}
+.sb-give-hint{flex-basis:100%;font-size:11px;color:#809084;line-height:1.4}
+.sb-give-hint:empty{display:none}
 .sb-table{min-width:640px}
-.sb-tr{display:grid;grid-template-columns:64px 120px 150px minmax(0,1fr) 120px 30px;gap:10px;align-items:center;padding:9px 18px;border-top:1px solid #f0f3ec;font-size:12px}
-.sb-tr.is-head{background:#f5f7f1;font-size:10px;font-weight:650;color:#818c80;text-transform:uppercase;letter-spacing:.5px}
-.sb-tr.is-head span:nth-child(5){text-align:right}
-@media (max-width:1180px){
-  .sb-grid{grid-template-columns:minmax(0,1fr)}
-  .sb-grid>*{grid-column:1!important;grid-row:auto!important}
+.sb-cols{grid-template-columns:64px 118px 150px minmax(0,1fr) 120px 30px}
+.sb-cols .num{text-align:right}
+.sb-cols.fd-row{font-size:12px;padding:9px 18px}
+.sb-when{color:#809084;font-variant-numeric:tabular-nums}
+.sb-what{font-weight:600;color:#285140}
+.sb-place-cell{color:#35624e}
+.sb-note{color:#607368;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sb-amount{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sb-cols.is-give .sb-amount{color:#2f6b4f}
+.sb-cols.is-expense .sb-amount{color:#8a3d4f}
+/* Новый расход — строка под таблицей: дата · базар (+) · комментарий · сумма · +. */
+.sb-new{grid-template-columns:150px minmax(150px,220px) minmax(0,1fr) 140px 30px}
+.sb-place{display:flex;gap:6px;min-width:0}
+.sb-place select{flex:1;min-width:0}
+.sb-add{flex:none;width:36px;height:36px;border:1px dashed #c9b27a;border-radius:7px;background:#f7f3e8;color:#6d5c38;font-size:16px;line-height:1;padding:0}
+.sb-add[aria-expanded=true]{background:#efe5c9}
+.sb-bazaar{grid-template-columns:minmax(0,320px) auto;justify-content:start;border-top:0;padding-top:0}
+.sb-bazaar[hidden]{display:none}
+.sb-month-head{flex-wrap:wrap}
+.sb-month-stats{margin-left:auto;display:flex;gap:18px;font-size:12px;color:#607368}
+.sb-month-stats b{color:#1c302b;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;margin-left:4px}
+.sb-report{min-height:40px}
+#sb-history .sb-table{border-top:1px solid #e7ece3}
+@media (max-width:1100px){
+  .fd-sh-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
 }
-@media (max-width:760px){
-  .sb-grid{grid-template-columns:minmax(0,1fr);gap:14px}
-  .sb-row{flex-wrap:wrap}
-  .sb-row>input,.sb-row>select,.sb-row>.fd-btn-give{height:44px;font-size:14px}
-  .sb-row>.fd-btn-give{flex:1 1 100%}
-  .sb-date-input{flex:1 1 100%!important}
-  .sb-entry{grid-template-columns:minmax(0,1fr) auto 40px;grid-template-areas:"what amt x" "note note x";row-gap:2px;padding:10px 16px}
-  .sb-entry>.sb-entry-what{grid-area:what}.sb-entry>.sb-note{grid-area:note}.sb-entry>strong{grid-area:amt}.sb-entry>:last-child{grid-area:x}
+@media (max-width:820px){
+  .sb-head-note{margin-left:0;text-align:left}
+  .sb-page .fd-scroll>.sb-table{min-width:0}
+  .sb-page .sb-table .fd-thead{display:none}
+  .sb-cols.fd-row{grid-template-columns:minmax(0,1fr) auto 40px;grid-template-areas:"what amount x" "meta meta x";row-gap:2px;padding:10px 16px}
+  .sb-cols.fd-row>.sb-what{grid-area:what}
+  .sb-cols.fd-row>.sb-amount{grid-area:amount}
+  .sb-cols.fd-row>.fd-x-cell{grid-area:x;align-self:center}
+  .sb-cols.fd-row>.sb-when,.sb-cols.fd-row>.sb-place-cell,.sb-cols.fd-row>.sb-note{grid-area:auto;grid-column:1 / 3;font-size:11px}
+  /* Своя раскладка: общие области строки журнала (.fd-jr-new) здесь не подходят. */
+  .fd .sb-new{grid-template-columns:minmax(0,1fr) 44px;grid-template-areas:"date date" "place place" "note note" "amt plus";padding:12px 16px}
+  .sb-new>#sb-exp-date{grid-area:date;min-width:100%}
+  .sb-new>.sb-place{grid-area:place}
+  .sb-new>#sb-exp-note{grid-area:note}
+  .sb-new>#sb-exp-amount{grid-area:amt}
+  .sb-new>.fd-plus{grid-area:plus;width:44px;height:44px}
+  .fd .sb-bazaar{grid-template-columns:minmax(0,1fr);grid-template-areas:none;padding:0 16px 12px}
+  .sb-cols.fd-row>.sb-place-cell.is-empty{display:none}
+  .fd .sb-new :is(input,select),.sb-add{height:44px;font-size:14px}
+  .sb-add{width:44px}
+  .sb-month-stats{margin-left:0;width:100%}
+  .sb-report{width:100%;justify-content:center}
 }

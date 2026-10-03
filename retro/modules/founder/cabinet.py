@@ -298,8 +298,8 @@ def founder_spending(state, day: date):
     flows = state.accountant_finance.cash_flows_between(first, day)
     transfers = state.accountant_finance.supplier_transfers(first, day)
     # С ТЗ 02.10 Шох ничего не вносит: потрачено — расходы по счёт-фактуре,
-    # которые записал бухгалтер. Прежний закуп с телефона — только при SHOKH_PHONE_INPUT.
-    phone = state.settings.shokh_phone_input
+    # которые записал бухгалтер. Прежний закуп с телефона — только при SHOKH_MODULE.
+    phone = state.settings.shokh_module
     purchases = state.shokh.purchases_between(first, day) if phone else []
     expenses = None if phone else [
         row for row in state.accountant_finance.reserve_entries('shoh')

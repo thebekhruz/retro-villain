@@ -6,7 +6,7 @@ import secrets
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, Request
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
@@ -60,6 +60,7 @@ ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'shokh': '/shokh', 'admin': '/', 'all': '/'}
 FULL_ACCESS_ROLES = {'admin', 'all'}
+SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс Шохруха».'
 
 
 class LoginInput(BaseModel):
@@ -106,8 +107,6 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # Закуп · Шох
         'shokh.html': {'shokh'}, 'shokh.js': {'shokh'}, 'shokh-logic.js': {'shokh'},
         'shokh.css': {'shokh'},
-        # Шох с ТЗ 02.10 только видит свой баланс (ввод с телефона выключен)
-        'shokh-view.html': {'shokh'}, 'shokh-view.js': {'shokh'},
     }.items()
 }
 
@@ -348,6 +347,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 role = 'all'
         if role is None:
             return JSONResponse({'detail': 'Неверный логин или пароль.'}, 401)
+        if role == 'shokh' and not settings.shokh_module:
+            return JSONResponse({'detail': SHOKH_MODULE_OFF}, 403)
         token = app.state.sessions.create(body.username, role)
         response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
         response.set_cookie(
@@ -389,10 +390,14 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         return app.state.pages.response('shoh-balance.html')
 
     @app.get('/shokh')
-    def shokh_page():
-        # Ввод закупа с телефона выключен (ТЗ 02.10): Шох видит только баланс.
-        return app.state.pages.response('shokh.html' if app.state.settings.shokh_phone_input
-                                        else 'shokh-view.html')
+    def shokh_page(request: Request):
+        if not app.state.settings.shokh_module:
+            # Модуля закупа нет (ТЗ 02.10): Шох со старой сессией уходит на вход,
+            # где ему скажут почему; остальным страницы просто нет.
+            if getattr(request.state, 'dashboard_role', None) == 'shokh':
+                return finish_logout(request, RedirectResponse('/login', status_code=303))
+            raise HTTPException(404, SHOKH_MODULE_OFF)
+        return app.state.pages.response('shokh.html')
 
     @app.get('/director')
     def director():
@@ -426,7 +431,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         role = getattr(request.state, 'dashboard_role', 'all')
         modules = [dict(id=panel, name=name, path=path, available=True)
                    for panel, name, path in MODULE_NAMES
-                   if role in FULL_ACCESS_ROLES or role == panel]
+                   if (role in FULL_ACCESS_ROLES or role == panel)
+                   and (panel != 'shokh' or settings.shokh_module)]
         # Имя вошедшего нужно бухгалтеру: первая выдача за смену подтверждает её
         # от его имени, отдельной формы «Кто подтвердил» в макете нет.
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
@@ -439,7 +445,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     app.include_router(cashier_router)
     app.include_router(accountant_router)
-    app.include_router(shokh_router)
+    def shokh_module_on():
+        if not app.state.settings.shokh_module:
+            raise HTTPException(404, SHOKH_MODULE_OFF)
+
+    app.include_router(shokh_router, dependencies=[Depends(shokh_module_on)])
     app.include_router(director_router)
     app.include_router(founder_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')

@@ -176,9 +176,10 @@ def test_static_files_revalidate_while_api_responses_remain_private(tmp_path):
 
 def test_pages_link_static_files_by_content_hash_and_those_are_cached_for_good(tmp_path):
     import re
-    app = create_app(Settings(data_dir=tmp_path))
+    app = create_app(Settings(data_dir=tmp_path, shokh_module=True))
     with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
         for path in ('/', '/accountant', '/accountant/payroll', '/accountant/employees', '/shokh',
+                     '/accountant/salary-day', '/accountant/shoh',
                      '/director', '/director/report', '/founder', '/founder/analytics', '/login'):
             page = client.get(path)
             assert page.status_code == 200 and page.headers['cache-control'] == 'no-store', path

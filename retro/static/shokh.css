@@ -485,13 +485,3 @@ button:disabled { opacity: .55; cursor: not-allowed; }
 .shokh-item.is-custom{border-style:dashed}
 .shokh-restored{margin:0 0 4px;padding:9px 12px;border-radius:12px;background:#eaf1e6;color:#285140;
   font-size:12px;font-weight:600}
-
-/* Баланс Шоха без ввода (ТЗ 02.10): плитки месяца и строки истории. */
-.sv-tiles{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:10px}
-.sv-tiles>div{display:flex;flex-direction:column;gap:4px;padding:12px;border-radius:12px;background:#f5f7f1;font-size:12px;color:var(--muted-2)}
-.sv-tiles b{font-size:18px;color:var(--ink);font-weight:600}
-.sv-row{justify-content:space-between}
-.sv-row-body{display:flex;flex-direction:column;gap:2px;min-width:0}
-.sv-row-body small{font-size:11px;color:var(--muted-2)}
-.sv-row b.is-give{color:#2f6b4f}
-.sv-row b.is-spent{color:#8a3d4f}

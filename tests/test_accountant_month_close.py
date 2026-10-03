@@ -246,11 +246,20 @@ def test_shoh_balance_is_allocated_less_invoice_expenses(tmp_path, monkeypatch, 
             == '900000'
 
 
-def test_shokh_phone_input_is_off_and_he_sees_his_balance(tmp_path, monkeypatch):
-    with client(tmp_path, monkeypatch) as c:
-        gone = c.post('/api/shokh/trip')
-        assert gone.status_code == 410 and 'бухгалтер' in gone.json()['detail']
-        assert c.post('/api/shokh/purchase', data={'point': 'RETRO', 'item': 'Лук', 'unit': 'кг',
-                                                   'quantity': '1', 'price': '1'}).status_code == 410
-        balance = c.get('/api/shokh/balance').json()
-        assert balance['balance'] == '0' and balance['history'] == []
+def test_shokh_module_is_gone_entirely(tmp_path, monkeypatch):
+    """ТЗ 02.10: Шох ничего не вносит — модуля «Закуп · Шох» нет ни в меню, ни на
+    входе, ни в API. Его счёт ведёт бухгалтер на «Балансе Шохруха»."""
+    monkeypatch.setattr('retro.modules.accountant.routes.today_tashkent', lambda: OCT_1)
+    users = {'shokh': ('pw', 'shokh'), 'buh': ('pw', 'accountant')}
+    app = create_app(Settings(manual_handover_only=True, dashboard_panel_users=users, dashboard_user='boss',
+                              dashboard_password='pw'),
+                     expense_db_path=tmp_path / 'cashier.sqlite3', accountant_db_path=tmp_path / 'accountant.sqlite3')
+    with TestClient(app, base_url='http://dashboard.example.com', client=('203.0.113.10', 50000)) as c:
+        refused = c.post('/api/session', json={'username': 'shokh', 'password': 'pw'})
+        assert refused.status_code == 403 and 'Баланс Шохруха' in refused.json()['detail']
+        assert c.post('/api/session', json={'username': 'boss', 'password': 'pw'}).status_code == 200
+        assert 'shokh' not in [row['id'] for row in c.get('/api/config').json()['modules']]
+        assert c.get('/shokh').status_code == 404
+        assert c.get('/api/shokh/home').status_code == 404
+        assert c.post('/api/shokh/trip').status_code == 404
+        assert c.get('/accountant/shoh').status_code == 200

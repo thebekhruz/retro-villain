@@ -34,24 +34,6 @@ def _fail(error: ShokhError):
     raise HTTPException(422, str(error)) from None
 
 
-PHONE_INPUT_OFF = ('Покупки теперь вносит бухгалтер по счёт-фактуре. '
-                   'С телефона вносить ничего не нужно — здесь виден ваш баланс.')
-
-
-def _phone_input(request: Request) -> None:
-    """Ввод закупа с телефона выключен (ТЗ 02.10, п. 5): Шох ничего не вносит."""
-    if not request.app.state.settings.shokh_phone_input:
-        raise HTTPException(410, PHONE_INPUT_OFF)
-
-
-@router.get('/balance')
-def balance(request: Request, date_: date | None = Query(None, alias='date')):
-    """Баланс Шоха для его телефона: то же, что «Баланс Шохруха» у бухгалтера."""
-    from retro.modules.accountant.shoh_balance import shoh_view
-    day = _day(date_)
-    return shoh_view(request.app.state.accountant_finance, day, history=True)
-
-
 def _pocket(request: Request, day: date) -> dict:
     """Деньги на руках у Шоха. Формула — в store.pocket_position, одна на всех."""
     return pocket_position(request.app.state.shokh, request.app.state.accountant_finance, day)
@@ -113,7 +95,6 @@ async def catalog(request: Request):
 
 @router.post('/trip', status_code=201)
 def start_trip(request: Request, date_: date | None = Query(None, alias='date')):
-    _phone_input(request)
     day = _day(date_)
     store = request.app.state.shokh
     trip_id = store.open_trip(day, _now())
@@ -126,7 +107,6 @@ def start_trip(request: Request, date_: date | None = Query(None, alias='date'))
 
 @router.post('/trip/{trip_id}/finish')
 def finish_trip(request: Request, trip_id: int):
-    _phone_input(request)
     store = request.app.state.shokh
     if store.trip(trip_id) is None:
         raise HTTPException(404, 'Закуп не найден.')
@@ -144,7 +124,6 @@ def close_trip(request: Request, trip_id: int):
 
     Пустую поездку удаляем: иначе следующий «Новый закуп» продолжил бы её, и
     таймер начался бы с часа, когда Шох просто открыл и закрыл экран."""
-    _phone_input(request)
     store = request.app.state.shokh
     trip = store.trip(trip_id)
     if trip is None:
@@ -165,7 +144,6 @@ async def add_purchase(request: Request,
                        off_catalog: bool = Form(False),
                        date_: date | None = Form(None, alias='date'),
                        photo: UploadFile | None = File(None)):
-    _phone_input(request)
     day = _day(date_)
     content, content_type = None, None
     if photo is not None and photo.filename:
@@ -249,7 +227,6 @@ async def check_sync(request: Request, purchase_id: int):
 
 @router.post('/purchase/{purchase_id}/retry')
 async def retry_sync(request: Request, purchase_id: int):
-    _phone_input(request)
     operation = await asyncio.to_thread(request.app.state.shokh_sync.operation, purchase_id=purchase_id)
     if operation is None:
         raise HTTPException(404, 'Покупка iiko не найдена.')
