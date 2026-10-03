@@ -1114,18 +1114,89 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
 .fd-single[hidden],.fd-skeleton-wide[hidden]{display:none}
 @media (max-width:900px){.fd-totals{grid-template-columns:1fr 1fr}}
 
-/* «Баланс Шохруха» (ТЗ 02.10, п. 5): одна колонка в языке «Финансов дня» —
-   плитки и выдача как в блоке «Баланс Шох» макета 2a, расходы — таблицей с
-   вводом в строке, как журнал. */
+/* «Баланс Шохруха» (ТЗ 02.10, п. 5; иерархия — T-405).
+   1. Главная цифра «на руках у Шоха» — тёмная карточка, как касса в «Финансах
+      дня», рядом итог месяца с долей потраченного.
+   2. Два действия на равных: «Выделить деньги» (+, зелёный) и «Расход по
+      счёт-фактуре» (−, бордо). Поля с подписями, кнопка на всю ширину.
+   3. Операции за день. 4. Месячный отчёт — по кнопке. */
 .sb-page{display:grid;gap:20px;max-width:1180px}
 .sb-page[aria-busy=true]{opacity:.75}
-.sb-head-note{margin-left:auto;font-size:11px;color:#809084;text-align:right}
-.sb-give-hint{flex-basis:100%;font-size:11px;color:#809084;line-height:1.4}
-.sb-give-hint:empty{display:none}
+.sb-h2{margin:0;font-size:18px;font-weight:600;letter-spacing:-.3px;color:#1c302b;line-height:1.25}
+.fd-card .fd-kicker{margin-bottom:8px}
+
+/* 1 · Главная цифра и месяц */
+.sb-top{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:20px;align-items:stretch}
+.sb-hero{display:flex;flex-direction:column;padding:24px 26px}
+.sb-hero-total{position:relative;display:flex;align-items:baseline;gap:8px;margin:6px 0 4px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
+.sb-hero-total span{font-size:44px;font-weight:650;letter-spacing:-1.6px;line-height:1.05}
+.sb-hero-total span.is-negative{color:#f2b1b4}
+.sb-hero-total small{font-size:13px;color:#b5c6b9}
+.sb-hero-sub{position:relative;margin:0 0 18px;font-size:12px;color:#b9cbbd}
+.sb-hero-facts{position:relative;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:1px;margin:auto 0 0;padding:0;border-radius:12px;overflow:hidden;background:#ffffff1f}
+.sb-hero-facts>div{display:flex;flex-direction:column;gap:5px;padding:12px 14px;background:#143e35}
+.sb-hero-facts dt{font-size:11px;color:#b2c8b7}
+.sb-hero-facts dd{margin:0;font-size:17px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums}
+.sb-hero-facts small{font-size:10px;color:#9fb3a5}
+.sb-hero-facts small:empty{display:none}
+.sb-month{display:flex;flex-direction:column;gap:10px}
+.sb-month .sb-h2{margin-bottom:4px}
+.sb-month-line{display:flex;justify-content:space-between;align-items:baseline;gap:12px;font-size:13px;color:#53675c}
+.sb-month-line span{display:inline-flex;align-items:center;gap:8px}
+.sb-month-line i{width:8px;height:8px;border-radius:50%;background:#2f6b4f}
+.sb-month-line.is-spent i{background:#ab445e}
+.sb-month-line b{font-size:18px;font-weight:600;color:#1c302b;font-variant-numeric:tabular-nums}
+.sb-month-bar{height:6px;border-radius:6px;background:#e3ece5;overflow:hidden;margin-top:2px}
+.sb-month-bar span{display:block;height:100%;width:0;border-radius:6px;background:#ab445e;transition:width .3s}
+.sb-month-bar span.is-over{background:#d0423d}
+.sb-month-share{margin:0;font-size:11px;color:#809084}
+/* Общее правило для кнопок шапки на телефоне растягивает .fd-btn — здесь нельзя. */
+.sb-page .sb-report{margin-top:auto;justify-content:center;flex:none}
+.sb-page .sb-submit{flex:none}
+
+/* 2 · Два действия */
+.sb-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;align-items:stretch}
+/* Карточки действий одной высоты: кнопка «Выделить Шоху» стоит внизу, вровень с «Записать расход». */
+#sb-give-form{display:flex;flex-direction:column;gap:12px;flex:1}
+#sb-give-form .sb-submit{margin-top:auto}
+.sb-action{display:flex;flex-direction:column;gap:16px}
+.sb-action-head{display:flex;gap:12px;align-items:flex-start}
+.sb-badge{flex:none;display:grid;place-items:center;width:36px;height:36px;border-radius:11px;font-size:20px;font-weight:600;line-height:1}
+.sb-action.is-give .sb-badge{background:#e5efe7;color:#2f6b4f}
+.sb-action.is-spent .sb-badge{background:#f8e7eb;color:#ab445e}
+.sb-action-sub{margin:4px 0 0;font-size:12px;line-height:1.45;color:#748376}
+.sb-form{display:grid;gap:12px;margin:0}
+.sb-field{display:flex;flex-direction:column;gap:6px;min-width:0}
+.sb-field>span:first-child{font-size:11px;font-weight:600;color:#607368;letter-spacing:.02em}
+.sb-field input,.sb-field select{height:42px;width:100%;min-width:0;border:1px solid #dbe3d8;border-radius:9px;padding:0 12px;background:#fff;color:#203d33;font:inherit;font-size:14px;outline:0}
+.sb-field select{padding:0 10px}
+.sb-field input:focus,.sb-field select:focus{border-color:#8fae98;box-shadow:0 0 0 3px #23574a1f}
+.sb-field input.num{text-align:right;font-variant-numeric:tabular-nums}
+.sb-field input[type=date]{min-width:100%;-webkit-appearance:none;appearance:none}
+.sb-field input.is-bad{border-color:#e9a0af}
+.sb-field input:disabled,.sb-field select:disabled{background:#f3f5f0}
+#sb-give-amount{height:48px;font-size:20px;font-weight:600}
+.sb-quick{display:flex;gap:8px;flex-wrap:wrap}
+.sb-submit{width:100%;justify-content:center;min-height:46px}
+.sb-exp{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"place amount" "bazaar bazaar" "note note" "date submit"}
+.sb-f-place{grid-area:place}.sb-f-amount{grid-area:amount}.sb-f-bazaar{grid-area:bazaar}
+.sb-f-note{grid-area:note}.sb-f-date{grid-area:date}.sb-f-submit{grid-area:submit;align-self:end}
+.sb-f-bazaar[hidden]{display:none}
+.sb-place{display:flex;gap:6px;min-width:0}
+.sb-place>select,.sb-place>input{flex:1;min-width:0}
+.sb-add{flex:none;width:42px;height:42px;border:1px dashed #c9b27a;border-radius:9px;background:#f7f3e8;color:#6d5c38;font-size:18px;line-height:1;padding:0}
+.sb-add[aria-expanded=true]{background:#efe5c9}
+.sb-f-bazaar .fd-btn-give{height:42px}
+
+/* 3 · Операции за день, 4 · месячный отчёт */
+.sb-day-sums{margin-left:auto;display:flex;gap:16px;font-size:13px;font-variant-numeric:tabular-nums}
+.sb-day-sums .is-give{color:#2f6b4f}
+.sb-day-sums .is-spent{color:#8a3d4f}
+.sb-day-sums b{font-weight:600}
 .sb-table{min-width:640px}
 .sb-cols{grid-template-columns:64px 118px 150px minmax(0,1fr) 120px 30px}
 .sb-cols .num{text-align:right}
-.sb-cols.fd-row{font-size:12px;padding:9px 18px}
+.sb-cols.fd-row{font-size:12px;padding:10px 18px}
 .sb-when{color:#809084;font-variant-numeric:tabular-nums}
 .sb-what{font-weight:600;color:#285140}
 .sb-place-cell{color:#35624e}
@@ -1133,42 +1204,28 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
 .sb-amount{font-variant-numeric:tabular-nums;white-space:nowrap}
 .sb-cols.is-give .sb-amount{color:#2f6b4f}
 .sb-cols.is-expense .sb-amount{color:#8a3d4f}
-/* Новый расход — строка под таблицей: дата · базар (+) · комментарий · сумма · +. */
-.sb-new{grid-template-columns:150px minmax(150px,220px) minmax(0,1fr) 140px 30px}
-.sb-place{display:flex;gap:6px;min-width:0}
-.sb-place select{flex:1;min-width:0}
-.sb-add{flex:none;width:36px;height:36px;border:1px dashed #c9b27a;border-radius:7px;background:#f7f3e8;color:#6d5c38;font-size:16px;line-height:1;padding:0}
-.sb-add[aria-expanded=true]{background:#efe5c9}
-.sb-bazaar{grid-template-columns:minmax(0,320px) auto;justify-content:start;border-top:0;padding-top:0}
-.sb-bazaar[hidden]{display:none}
-.sb-month-head{flex-wrap:wrap}
-.sb-month-stats{margin-left:auto;display:flex;gap:18px;font-size:12px;color:#607368}
-.sb-month-stats b{color:#1c302b;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums;margin-left:4px}
-.sb-report{min-height:40px}
-#sb-history .sb-table{border-top:1px solid #e7ece3}
+.sb-history[hidden]{display:none}
+
 @media (max-width:1100px){
-  .fd-sh-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .sb-top,.sb-actions{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:820px){
-  .sb-head-note{margin-left:0;text-align:left}
+  .sb-page{gap:14px}
+  .sb-hero{padding:20px}
+  .sb-hero-total span{font-size:36px}
+  .sb-hero-facts{grid-template-columns:minmax(0,1fr)}
+  .sb-hero-facts>div{flex-direction:row;justify-content:space-between;align-items:baseline;padding:10px 12px}
+  .sb-hero-facts small{display:none}
+  .sb-exp{grid-template-columns:minmax(0,1fr);grid-template-areas:"place" "bazaar" "amount" "note" "date" "submit"}
+  .sb-field input,.sb-field select,.sb-add{height:46px;font-size:16px}
+  .sb-add{width:46px}
+  .sb-day-sums{margin-left:0;width:100%}
   .sb-page .fd-scroll>.sb-table{min-width:0}
   .sb-page .sb-table .fd-thead{display:none}
-  .sb-cols.fd-row{grid-template-columns:minmax(0,1fr) auto 40px;grid-template-areas:"what amount x" "meta meta x";row-gap:2px;padding:10px 16px}
+  .sb-cols.fd-row{grid-template-columns:minmax(0,1fr) auto 40px;grid-template-areas:"what amount x";row-gap:2px;padding:10px 16px}
   .sb-cols.fd-row>.sb-what{grid-area:what}
   .sb-cols.fd-row>.sb-amount{grid-area:amount}
-  .sb-cols.fd-row>.fd-x-cell{grid-area:x;align-self:center}
-  .sb-cols.fd-row>.sb-when,.sb-cols.fd-row>.sb-place-cell,.sb-cols.fd-row>.sb-note{grid-area:auto;grid-column:1 / 3;font-size:11px}
-  /* Своя раскладка: общие области строки журнала (.fd-jr-new) здесь не подходят. */
-  .fd .sb-new{grid-template-columns:minmax(0,1fr) 44px;grid-template-areas:"date date" "place place" "note note" "amt plus";padding:12px 16px}
-  .sb-new>#sb-exp-date{grid-area:date;min-width:100%}
-  .sb-new>.sb-place{grid-area:place}
-  .sb-new>#sb-exp-note{grid-area:note}
-  .sb-new>#sb-exp-amount{grid-area:amt}
-  .sb-new>.fd-plus{grid-area:plus;width:44px;height:44px}
-  .fd .sb-bazaar{grid-template-columns:minmax(0,1fr);grid-template-areas:none;padding:0 16px 12px}
-  .sb-cols.fd-row>.sb-place-cell.is-empty{display:none}
-  .fd .sb-new :is(input,select),.sb-add{height:44px;font-size:14px}
-  .sb-add{width:44px}
-  .sb-month-stats{margin-left:0;width:100%}
-  .sb-report{width:100%;justify-content:center}
+  .sb-cols.fd-row>.fd-x-cell{grid-area:x;grid-row:1 / span 4;align-self:center}
+  .sb-cols.fd-row>.sb-when,.sb-cols.fd-row>.sb-place-cell,.sb-cols.fd-row>.sb-note{grid-column:1 / 3;font-size:11px}
+  .sb-cols.fd-row>.sb-place-cell.is-empty,.sb-cols.fd-row>.sb-note:empty{display:none}
 }
