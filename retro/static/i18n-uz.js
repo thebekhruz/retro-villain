@@ -2958,3 +2958,29 @@ globalThis.RetroTemplatesUz.push(
   [/^(\d+) (?:счёт-фактура|счёт-фактуры|счёт-фактур)$/, "$1 ta hisob-faktura"],
 );
 /* ── /T-404 ── */
+
+/* ── T-405 «Баланс Шохруха»: иерархия страницы ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'НА РУКАХ У ШОХА': "SHOHNING QO'LIDA",
+  '· остаток = выделено − расходы': "· qoldiq = ajratilgan − xarajatlar",
+  '+ Выделено': "+ Ajratildi",
+  '− Расходы': "− Xarajatlar",
+  'В этом месяце Шоху ещё не выделяли': "Bu oyda Shohga hali pul ajratilmagan",
+  'Выделить деньги': "Pul ajratish",
+  'Из кассы бухгалтера: касса уменьшится, баланс Шоха вырастет.': "Buxgalter kassasidan: kassa kamayadi, Shoh balansi oshadi.",
+  'Выделить Шоху': "Shohga ajratish",
+  'Баланс Шоха уменьшится. Касса не трогается: деньги ушли из неё при выдаче.': "Shoh balansi kamayadi. Kassaga tegilmaydi: pul berilganda undan chiqqan.",
+  'Выберите базар': "Bozorni tanlang",
+  'Например, Чорсу': "Masalan, Chorsu",
+  'Счёт-фактура, комментарий': "Hisob-faktura, izoh",
+  'Операции': "Amallar",
+  'Все выдачи и расходы': "Barcha to'lovlar va xarajatlar",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^На конец (.+)$/, "$1 oxirida"],
+  [/^Потрачено (\d+)% выделенного$/, "Ajratilganning $1% sarflandi"],
+  [/^В кассе бухгалтера (.+) сум\. Выдача уменьшит кассу, баланс Шоха вырастет\.$/, "Buxgalter kassasida $1 so'm. To'lov kassani kamaytiradi, Shoh balansi oshadi."],
+  [/^Операции · (.+)$/, "Amallar · $1"],
+  [/^Выдачи и расходы · (.+)$/, "To'lovlar va xarajatlar · $1"],
+);
+/* ── /T-405 ── */

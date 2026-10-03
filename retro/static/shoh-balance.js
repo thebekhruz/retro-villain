@@ -75,19 +75,28 @@
     $('sb-start').textContent = data.start === null ? '—' : fmt(data.start);
     $('sb-given').textContent = fmt(data.given_today);
     $('sb-spent').textContent = fmt(data.spent_today);
+    $('sb-hero-date').textContent = data.date === today ? 'Сегодня' : 'На конец ' + longDay(data.date);
     const invoices = data.today.filter(row => row.kind === 'expense').length;
     $('sb-spent-sub').textContent = invoices ? invoices + ' ' + plural(invoices, 'счёт-фактура', 'счёт-фактуры', 'счёт-фактур') : '';
-    $('sb-day-total').textContent = money(data.spent_today);
+    $('sb-day-given').textContent = fmt(data.given_today);
+    $('sb-day-total').textContent = fmt(data.spent_today);
+    $('sb-day-title').textContent = 'Операции · ' + longDay(data.date);
     const month = Number(data.month.slice(5, 7)) - 1;
     $('sb-month-title').textContent = MONTHS[month][0].toUpperCase() + MONTHS[month].slice(1) + ' ' + data.month.slice(0, 4) + ' · по ' + dm(data.date);
     $('sb-month-given').textContent = money(data.month_given);
     $('sb-month-spent').textContent = money(data.month_spent);
+    // Доля потраченного от выделенного за месяц — видно, отчитывается ли Шох.
+    const given = Number(data.month_given), spent = Number(data.month_spent);
+    const share = given > 0 ? Math.round(spent / given * 100) : null;
+    $('sb-month-bar').style.width = share === null ? '0%' : Math.min(100, share) + '%';
+    $('sb-month-bar').classList.toggle('is-over', share !== null && share > 100);
+    $('sb-month-share').textContent = share === null ? 'В этом месяце Шоху ещё не выделяли' : 'Потрачено ' + share + '% выделенного';
     $('sb-give-hint').textContent = data.cash_balance === null
       ? 'Касса бухгалтера на этот день не посчитана.'
-      : 'В кассе бухгалтера ' + money(data.cash_balance) + '. Выдача уменьшит кассу и попадёт в «Операции за день».';
+      : 'В кассе бухгалтера ' + money(data.cash_balance) + '. Выдача уменьшит кассу, баланс Шоха вырастет.';
 
     const places = $('sb-exp-place'), keep = places.value;
-    places.replaceChildren(new Option(tr('Базар'), ''), ...data.bazaars.map(name => new Option(name, name)));
+    places.replaceChildren(new Option(tr('Выберите базар'), ''), ...data.bazaars.map(name => new Option(name, name)));
     if (data.bazaars.includes(keep)) places.value = keep;
     if (!$('sb-exp-date').value || $('sb-exp-date').dataset.auto === '1') {
       $('sb-exp-date').value = data.date; $('sb-exp-date').dataset.auto = '1';
@@ -102,6 +111,7 @@
     $('sb-report').setAttribute('aria-expanded', String(historyOpen));
     $('sb-report').textContent = historyOpen ? 'Скрыть отчёт' : 'Месячный отчёт';
     if (historyOpen) {
+      $('sb-history-title').textContent = 'Выдачи и расходы · ' + MONTHS[month] + ' ' + data.month.slice(0, 4);
       const list = $('sb-history-rows'); list.replaceChildren(
         h('div', {class: 'fd-thead sb-cols'}, ...['Дата', 'Что', 'Базар', 'Комментарий', 'Сумма', ''].map((text, i) => h('span', {class: i === 4 ? 'num' : null, text}))));
       (data.history || []).forEach(row => list.append(entryRow(row, true)));
@@ -189,11 +199,13 @@
     event.preventDefault();
     try { $('sb-date').showPicker(); } catch { $('sb-date').focus(); }
   });
-  $('sb-report').addEventListener('click', () => {
-    historyOpen = !historyOpen;
-    const work = load();
+  function toggleReport(open) {
+    historyOpen = open;
+    const work = load().then(() => { if (historyOpen) $('sb-history').scrollIntoView({block: 'start', behavior: 'smooth'}); });
     if (B) B.button($('sb-report'), work); else work.catch(() => {});
-  });
+  }
+  $('sb-report').addEventListener('click', () => toggleReport(!historyOpen));
+  $('sb-history-close').addEventListener('click', () => toggleReport(false));
 
   /* ── Выделить деньги ───────────────────────────────────────────────── */
   $('sb-quick').addEventListener('click', event => {
