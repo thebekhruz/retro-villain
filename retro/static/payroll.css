@@ -24,6 +24,9 @@
   font-weight:550;border:1px solid #e3e7df;background:#fff;color:#53675c;white-space:nowrap}
 .pr-btn:hover:not(:disabled){background:#f5f7f1}
 .pr-btn svg{width:18px;height:18px;stroke:currentColor;fill:none;stroke-width:1.6}
+.pr-btn-dark{border-color:#143e35;background:#143e35;color:#fff}
+.pr-btn-dark>span:first-child{color:#d8b977}
+.pr-btn-dark:hover:not(:disabled){background:#1b4a3f}
 .pr-btn-type{color:#9aab9d;font-size:9px}
 
 /* Пять карточек */
@@ -233,3 +236,12 @@ button.pr-s:hover{box-shadow:inset 0 0 0 2px #d2af59;filter:none}
 .pr-skeleton .rm-skel-card{min-height:92px}
 /* Ячейка в работе: подпись спрятана, спиннер по центру, размер тот же. */
 .pr-grid .rm-busy,.pr-grid .rm-done{opacity:1}
+
+/* «Оклады, выданные сегодня» под сеткой окладов (ТЗ 02.10, п. 4). */
+.pr-today{margin-top:18px}
+.pr-today[hidden]{display:none}
+.pr-today .fd-sec-head{padding:18px}
+.pr-card--left{background:#143e35;border-color:#143e35}
+.pr-card--left .pr-card-label{color:#c5d3c9}
+.pr-card--left .pr-card-value{color:#fff}
+#payroll-status{margin:0 0 14px}

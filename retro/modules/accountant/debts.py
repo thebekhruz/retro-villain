@@ -4,7 +4,7 @@ from contextlib import closing
 from decimal import Decimal
 
 from .expense_catalog import ITEMS
-from .ledger import LedgerError, amount_value, now_stamp, required_text
+from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
 
 
@@ -47,6 +47,7 @@ def record_debt(store, day, item_code, note, total, paid, cashier_amount):
     with closing(store._open()) as connection:
         connection.execute('BEGIN IMMEDIATE')
         try:
+            ensure_open(connection, day)
             store._validate_salary_expense(connection, day, item_code)
             if paid_value:
                 store._require_cash(connection, day, paid_value, cashier_amount)
@@ -86,6 +87,7 @@ def pay_debt(store, debt_id, day, amount, cashier_amount):
     with closing(store._open()) as connection:
         connection.execute('BEGIN IMMEDIATE')
         try:
+            ensure_open(connection, day)
             debt = connection.execute('SELECT day,item_code,description,total_amount '
                                       'FROM accountant_debts WHERE id=?', (debt_id,)).fetchone()
             if debt is None:

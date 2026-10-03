@@ -286,7 +286,7 @@
   .fo-fold i{font-style:normal;font-size:20px;color:#9aa69b;transition:transform .2s}
   .fo-fold[aria-expanded=true]{border-color:var(--green)}
   .fo-fold[aria-expanded=true] i{transform:rotate(90deg)}
-  #fo-week:not(.fo-open),#fo-acc:not(.fo-open),#fo-exp:not(.fo-open),#fo-menu:not(.fo-open){display:none}
+  #fo-week:not(.fo-open),#fo-acc:not(.fo-open),#fo-reports:not(.fo-open),#fo-exp:not(.fo-open),#fo-menu:not(.fo-open){display:none}
   .fo-grid,.fo-grid.is-even{grid-template-columns:minmax(0,1fr);gap:10px}
   .fo-panel{padding:16px;border-radius:18px}
   .fo-panel-head{flex-wrap:wrap}
@@ -326,3 +326,30 @@
 .fo-phone-link.rm-row-pending .fo-phone-link-icon{background:#f6edd6}
 .fo-div-top .rm-skel.is-val,.fo-div-foot .rm-skel.is-val,.fo-label .rm-skel.is-val,.fo-card-head>span .rm-skel.is-val{width:4.5em;height:8px}
 #fo-div-of .rm-skel.is-val{width:5em;height:9px}
+
+/* Отчёты бухгалтера (ТЗ 02.10): закрытые месяцы и сданные дни. */
+.fo-reports{margin-top:18px}
+.fo-closures{display:grid;gap:10px;margin-bottom:12px}
+.fo-closure{border:1px solid #e3e7df;border-radius:14px;padding:14px 16px;display:grid;gap:10px}
+.fo-closure-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;align-items:baseline}
+.fo-closure-head strong{font-size:15px}
+.fo-closure-mark{font-size:11px;font-weight:600;color:#f1e6c8;background:#143e35;border-radius:20px;padding:4px 10px}
+.fo-closure-tiles{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px}
+.fo-closure-tiles>div{display:flex;flex-direction:column;gap:4px;padding:10px;border-radius:10px;background:#f5f7f1;font-size:11px;color:#748376}
+.fo-closure-tiles b{font-size:15px;color:#1c302b}
+.fo-closure-remarks{margin:0;padding-left:18px;font-size:12px;color:#7a5a12;display:grid;gap:2px}
+.fo-closure-link{font-size:12px;font-weight:600;color:#315e4c;text-decoration:none}
+.fo-day-reports{display:grid;border:1px solid #eef1ea;border-radius:12px;overflow:hidden}
+.fo-dr-row{display:grid;grid-template-columns:60px repeat(4,minmax(0,1fr)) minmax(0,1.6fr);gap:8px;padding:8px 12px;border-top:1px solid #f0f3ec;font-size:12px;align-items:center}
+.fo-dr-row.is-head{border-top:0;background:#f5f7f1;font-size:10px;font-weight:650;color:#818c80;text-transform:uppercase;letter-spacing:.5px}
+.fo-dr-row .rm-num{text-align:right}
+.fo-dr-row.is-changed{background:#fff8e6}
+.fo-dr-who{font-size:11px;color:#748376}
+.fo-report-mark.is-ok{color:#2f6b4f}
+.fo-report-mark.is-warn{color:#aa4656}
+@media (max-width:900px){
+  .fo-closure-tiles{grid-template-columns:1fr 1fr}
+  .fo-dr-row{grid-template-columns:52px repeat(2,minmax(0,1fr));row-gap:2px}
+  .fo-dr-row>span:nth-child(2),.fo-dr-row>span:nth-child(3){display:none}
+  .fo-dr-row>.fo-dr-who{grid-column:1 / -1}
+}

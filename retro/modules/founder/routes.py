@@ -344,3 +344,17 @@ async def export_month(request: Request, month: str | None = None):
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition':
                              f'attachment; filename="Retro-accountant-{first.isoformat()[:7]}.xlsx"'})
+
+
+@router.get('/accountant-reports')
+def accountant_reports(request: Request):
+    """Сданные бухгалтером отчёты дня и закрытые месяцы (ТЗ 02.10, п. 2.5)."""
+    from retro.modules.accountant.closing import reports_feed
+    return reports_feed(request.app.state.accountant_finance)
+
+
+@router.get('/accountant-reports/reconciliation')
+def accountant_reconciliation(request: Request, month: str):
+    """Сверка месяца по дням — та же, что скачивает бухгалтер."""
+    from retro.modules.accountant.routes import reconciliation_export
+    return reconciliation_export(request, month)

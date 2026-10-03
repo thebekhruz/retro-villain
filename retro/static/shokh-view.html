@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143e35">
+  <title>Мой баланс · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/shokh.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/shokh-view.js" defer></script>
+</head>
+<body class="shokh-body">
+<!-- С ТЗ 02.10 (п. 5) Шох ничего не вносит: расходы по счёт-фактуре вносит
+     бухгалтер. Здесь — только его баланс и история за месяц. -->
+<div class="rm-phone">
+  <section class="shokh-screen">
+    <header class="shokh-hero rm-phone-hero">
+      <div class="shokh-hero-top">
+        <span class="shokh-mark" aria-hidden="true">Ш</span>
+        <div class="shokh-hello"><strong>Салом, Шох</strong><span id="sv-date">Баланс</span></div>
+      </div>
+      <div class="shokh-hero-actions">
+        <a id="shokh-back" class="logout-button shokh-logout shokh-back" href="/login" hidden>‹ Панель</a>
+        <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+        <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
+      </div>
+      <div class="shokh-balance" aria-live="polite">
+        <span>На руках</span>
+        <strong id="sv-balance" class="rm-num">—</strong><small>сум</small>
+        <p class="shokh-balance-sub">Остаток = выделено − расходы. Ведёт бухгалтер.</p>
+      </div>
+    </header>
+    <div class="shokh-body-scroll">
+      <article class="rm-phone-card">
+        <strong class="shokh-card-title">Покупки вносит бухгалтер</strong>
+        <p class="shokh-note">С телефона ничего вносить не нужно: расходы записывает бухгалтер по счёт-фактуре. Здесь виден ваш баланс.</p>
+      </article>
+      <article class="rm-phone-card">
+        <strong class="shokh-card-title" id="sv-month-title">Этот месяц</strong>
+        <div class="sv-tiles"><div><span>Выделено</span><b id="sv-given" class="rm-num">—</b></div><div><span>Потрачено</span><b id="sv-spent" class="rm-num">—</b></div></div>
+      </article>
+      <article class="rm-phone-card">
+        <strong class="shokh-card-title">История за месяц</strong>
+        <div id="sv-history" class="shokh-purchases" aria-live="polite"></div>
+      </article>
+    </div>
+  </section>
+</div>
+</body>
+</html>

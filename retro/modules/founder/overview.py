@@ -298,22 +298,30 @@ def is_shokh_advance(row):
              and str(row.get('description') or '').startswith('Шох:')))
 
 
-def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0), transfers=()):
+def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0), transfers=(), expenses=None):
     """Закуп за месяц: сколько выдали Шоху, сколько он записал, что проверить.
 
     «Напрямую» — закуп, который бухгалтер оплатил сам наличными, мимо подотчёта
     Шоха (мясо, уголь, хлеб и прочие статьи группы «Закуп»). «Перечислениями»
     (`transfers`) — оплата поставщикам со счёта, безнал (Функционал 7b).
     `from_till` — выдачи Шоху прямо из кассы кассира: в выдано они входят, в
-    движениях бухгалтера их нет."""
+    движениях бухгалтера их нет. `expenses` — расходы Шоха по счёт-фактуре,
+    которые с ТЗ 02.10 вносит бухгалтер (базар, сумма): когда они переданы,
+    потрачено считается по ним, а покупки с телефона не учитываются."""
     given = sum((Decimal(row['amount']) for row in flows if is_shokh_advance(row)),
                 Decimal(from_till))
     direct = sum((Decimal(row['amount']) for row in flows
                   if flow_kind(row) == 'procurement' and not is_shokh_advance(row)), Decimal(0))
-    spent = sum((Decimal(row['total']) for row in purchases), Decimal(0))
     by_item = defaultdict(Decimal)
-    for row in purchases:
-        by_item[row['item']] += Decimal(row['total'])
+    if expenses is not None:
+        purchases = []
+        spent = sum((Decimal(row['amount']) for row in expenses), Decimal(0))
+        for row in expenses:
+            by_item[row.get('place') or 'Без базара'] += Decimal(row['amount'])
+    else:
+        spent = sum((Decimal(row['total']) for row in purchases), Decimal(0))
+        for row in purchases:
+            by_item[row['item']] += Decimal(row['total'])
     # `total` покупки — наличные в целых сумах (shokh.store.cash_amount).
     flagged = [dict(id=row['id'], day=row['day'], item=row['item'], total=row['total'],
                     reason=('нет в iiko' if row.get('off_catalog') else
@@ -325,4 +333,5 @@ def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0), transfers=())
     transferred = sum((Decimal(row['amount']) for row in transfers), Decimal(0))
     return dict(given=money(given), given_from_till=money(from_till), spent=money(spent),
                 direct=money(direct), transfers=money(transferred), pocket=pocket, purchases=len(purchases), flagged=flagged,
+                source='invoices' if expenses is not None else 'phone',
                 top_items=[dict(item=name, amount=money(amount)) for name, amount in top])

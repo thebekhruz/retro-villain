@@ -464,6 +464,10 @@
     if(cash.changed)add('warn','Касса изменилась после подтверждения',
       'Было '+fmt(cash.confirmedCalc)+' · сейчас '+fmt(cash.calculation)+' сум — подтвердите снова','cash');
     if(data.expected_cashier===null)add('todo','Кассир ещё не передал кассу','Касса за '+dm(data.date)+' не записана','cash');
+    // ТЗ 02.10: сумма от кассира входит в остаток только подтверждённой.
+    const handover=data.ledger&&data.ledger.cash_flow&&data.ledger.cash_flow.handover_status;
+    if(handover==='pending')add('warn','Сумма от кассира не подтверждена',
+      'В остаток не входит, отчёт дня не сдаётся — подтвердите в дэшборде','cash');
     return out.sort((a,b)=>LEVEL_ORDER[a.lvl]-LEVEL_ORDER[b.lvl]);
   }
 

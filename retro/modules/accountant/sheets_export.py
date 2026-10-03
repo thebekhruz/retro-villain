@@ -551,3 +551,52 @@ def payroll_workbook(data: dict) -> bytes:
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
+
+
+# ── Сверка месяца по дням ───────────────────────────────────────────────────
+
+HANDOVER_STATUS = {'confirmed': 'подтверждено', 'accountant': 'записал бухгалтер',
+                   'pending': 'ожидается · не в остатке', 'none': 'нет передачи'}
+
+
+def reconciliation_workbook(data: dict) -> bytes:
+    """Сверка по дням (ТЗ 02.10, п. 1.4): начало → приход → расход → конец.
+
+    Приход — только то, что входит в остаток: подтверждённая бухгалтером
+    сумма или его ручная запись. Неподтверждённая передача кассира стоит
+    отдельной колонкой, в итог дня она не входит."""
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'Сверка'
+    labels = ['День', 'Начало дня', 'Приход от кассира', 'Ожидается · не в остатке', 'Прочие поступления',
+              'Сменные', 'Оклады', 'Шоху на закуп', 'Прочие расходы', 'В сейф', 'Расход всего',
+              'Конец дня', 'Передача кассы']
+    width = len(labels)
+    _title(sheet, f'RETRO MILLIY · Сверка остатка · {data.get("name") or data["month"]}', width)
+    _note(sheet, 2, 'Конец дня = начало + приход от кассира + прочие поступления − расход. '
+          'Начало дня = конец предыдущего. Неподтверждённая передача кассира в остаток не входит.', width)
+    _widths(sheet, [12, 16, 16, 18, 14, 14, 14, 14, 16, 12, 16, 16, 26])
+    _head(sheet, 4, labels)
+    row = 5
+    totals = [Decimal(0)] * 9
+    for day in data['days']:
+        if day.get('first_day') is None:
+            continue
+        pending = (_money(day['handover']) if day['handover_status'] == 'pending' else None)
+        values = [_money(day['handover_counted']), pending, _money(day['receipts']), _money(day['salary']),
+                  _money(day['monthly']), _money(day['shoh']), _money(day['other']), _money(day['transfers']),
+                  _money(day['outflows'])]
+        for index, value in enumerate(values):
+            totals[index] += value or Decimal(0)
+        _row(sheet, row, [_dm(day['day']), _money(day['opening'])] + values
+             + [_money(day['closing']), HANDOVER_STATUS.get(day['handover_status'], day['handover_status'])])
+        if day['handover_status'] in ('pending', 'none') or (day['closing'] not in (None, '')
+                                                            and Decimal(day['closing']) < 0):
+            for column in range(1, width + 1):
+                sheet.cell(row, column).fill = PatternFill('solid', fgColor=PINK)
+        row += 1
+    _row(sheet, row, ['Итого', None] + totals + [None, None], bold=True)
+    sheet.freeze_panes = 'B5'
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()

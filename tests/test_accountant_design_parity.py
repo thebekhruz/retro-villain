@@ -1074,9 +1074,10 @@ def test_day_export_shows_till_gives_and_handover_without_touching_the_balance(a
     give = give_shokh(finance, DAY, '300000')
     day = day_json(c)
     book, total = export()
-    # Остаток бухгалтера тот же: выдача из кассы до него не доходит.
+    # Остаток бухгалтера тот же: выдача из кассы до него не доходит. Передача
+    # кассира не подтверждена — в остаток она не входит (ТЗ 02.10): 1 000 000 − 240 000.
     assert total['= Остаток на конец дня'] == before['= Остаток на конец дня'] == Decimal(
-        day['ledger']['cash_balance']) == 5760000
+        day['ledger']['cash_balance']) == 760000
     assert total['Шоху из кассы · не из остатка'] == 300000
     assert total['Подотчёт Шоха по бухгалтерии (выдано − принятые покупки)'] == 720000
     assert total['На руках у Шоха на конец дня'] == 720000

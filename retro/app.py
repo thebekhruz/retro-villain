@@ -84,6 +84,9 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'employees.js': {'accountant'}, 'employees-logic.js': {'accountant'}, 'payroll.js': {'accountant'},
         'payroll-logic.js': {'accountant'}, 'accountant.css': {'accountant'},
         'employees.css': {'accountant'}, 'payroll.css': {'accountant'},
+        # ТЗ 02.10: «Зарплата · день», «Баланс Шохруха», общая кнопка «Сохранить»
+        'salary-day.html': {'accountant'}, 'shoh-balance.html': {'accountant'},
+        'shoh-balance.js': {'accountant'}, 'save.js': {'accountant'},
         # Расчёты бухгалтерии читают экраны директора и учредителя
         'accountant-logic.js': {'accountant', 'director', 'founder'},
         # Директор
@@ -103,6 +106,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # Закуп · Шох
         'shokh.html': {'shokh'}, 'shokh.js': {'shokh'}, 'shokh-logic.js': {'shokh'},
         'shokh.css': {'shokh'},
+        # Шох с ТЗ 02.10 только видит свой баланс (ввод с телефона выключен)
+        'shokh-view.html': {'shokh'}, 'shokh-view.js': {'shokh'},
     }.items()
 }
 
@@ -375,9 +380,19 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def accountant_payroll():
         return app.state.pages.response('payroll.html')
 
+    @app.get('/accountant/salary-day')
+    def accountant_salary_day():
+        return app.state.pages.response('salary-day.html')
+
+    @app.get('/accountant/shoh')
+    def accountant_shoh():
+        return app.state.pages.response('shoh-balance.html')
+
     @app.get('/shokh')
     def shokh_page():
-        return app.state.pages.response('shokh.html')
+        # Ввод закупа с телефона выключен (ТЗ 02.10): Шох видит только баланс.
+        return app.state.pages.response('shokh.html' if app.state.settings.shokh_phone_input
+                                        else 'shokh-view.html')
 
     @app.get('/director')
     def director():

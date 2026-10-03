@@ -297,7 +297,13 @@ def founder_spending(state, day: date):
     first, _ = month_bounds(day)
     flows = state.accountant_finance.cash_flows_between(first, day)
     transfers = state.accountant_finance.supplier_transfers(first, day)
-    purchases = state.shokh.purchases_between(first, day)
+    # С ТЗ 02.10 Шох ничего не вносит: потрачено — расходы по счёт-фактуре,
+    # которые записал бухгалтер. Прежний закуп с телефона — только при SHOKH_PHONE_INPUT.
+    phone = state.settings.shokh_phone_input
+    purchases = state.shokh.purchases_between(first, day) if phone else []
+    expenses = None if phone else [
+        row for row in state.accountant_finance.reserve_entries('shoh')
+        if row['kind'] == 'withdrawal' and first.isoformat() <= row['day'] <= day.isoformat()]
     # «На руках у Шоха» считает store.pocket_position — та же формула, что на
     # экране закупа; своей копии здесь быть не должно.
     position = pocket_position(state.shokh, state.accountant_finance, day)
@@ -308,7 +314,7 @@ def founder_spending(state, day: date):
     return dict(month=first.isoformat()[:7], through=day.isoformat(),
                 expenses=overview.expense_categories(flows, transfers, shokh_from_till=from_till),
                 shokh=overview.shokh_month(purchases, flows, pocket=pocket, from_till=from_till,
-                                           transfers=transfers))
+                                           transfers=transfers, expenses=expenses))
 
 
 def selected_day(value: date | None) -> date:
