@@ -959,6 +959,8 @@ body.fd-busy .fd :is(.fd-btn-pay,.fd-plus,.fd-btn-give,.fd-accept){cursor:progre
    как два слова. Кнопки переносятся внутри своего блока. */
 .fd-head>div:first-child{flex:0 0 auto}
 .fd-head .fd-kicker,.fd-page .fd .fd-h1{white-space:nowrap}
+/* В столбик (телефон) ширину у заголовка никто не отнимает: надпись над ним переносится. */
+@media (max-width:820px){.fd-head .fd-kicker{white-space:normal}}
 .fd-head-actions{flex:1 1 auto;min-width:0}
 
 /* Перечисления · вносит бухгалтер (макет 2a) */
@@ -1120,14 +1122,17 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
    2. Два действия на равных: «Выделить деньги» (+, зелёный) и «Расход по
       счёт-фактуре» (−, бордо). Поля с подписями, кнопка на всю ширину.
    3. Операции за день. 4. Месячный отчёт — по кнопке. */
-.sb-page{display:grid;gap:20px;max-width:1180px}
+/* Ширина — как у остальных окон бухгалтера: на всю рабочую область. */
+.sb-page{display:grid;gap:20px;min-width:0}
 .sb-page[aria-busy=true]{opacity:.75}
 .sb-h2{margin:0;font-size:18px;font-weight:600;letter-spacing:-.3px;color:#1c302b;line-height:1.25}
 .fd-card .fd-kicker{margin-bottom:8px}
 
 /* 1 · Главная цифра и месяц */
 .sb-top{display:grid;grid-template-columns:minmax(0,1.5fr) minmax(280px,1fr);gap:20px;align-items:stretch}
-.sb-hero{display:flex;flex-direction:column;padding:24px 26px}
+/* Карточка берёт оформление кассы (.fd-cash), но не её раскладку в «Финансах дня»:
+   там на 900–1260 px касса растягивается на всю строку и уходит наверх. */
+.sb-top>.sb-hero{display:flex;flex-direction:column;padding:24px 26px;grid-column:auto;order:0}
 .sb-hero-total{position:relative;display:flex;align-items:baseline;gap:8px;margin:6px 0 4px;font-variant-numeric:tabular-nums;flex-wrap:wrap}
 .sb-hero-total span{font-size:44px;font-weight:650;letter-spacing:-1.6px;line-height:1.05}
 .sb-hero-total span.is-negative{color:#f2b1b4}
@@ -1178,9 +1183,10 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
 #sb-give-amount{height:48px;font-size:20px;font-weight:600}
 .sb-quick{display:flex;gap:8px;flex-wrap:wrap}
 .sb-submit{width:100%;justify-content:center;min-height:46px}
-.sb-exp{grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"place amount" "bazaar bazaar" "note note" "date submit"}
+/* Базар — во всю строку: рядом с суммой и «+» его название обрезалось на ноутбуках. */
+.sb-exp{grid-template-columns:minmax(0,1fr) minmax(0,1fr);grid-template-areas:"place place" "bazaar bazaar" "amount date" "note note" "submit submit"}
 .sb-f-place{grid-area:place}.sb-f-amount{grid-area:amount}.sb-f-bazaar{grid-area:bazaar}
-.sb-f-note{grid-area:note}.sb-f-date{grid-area:date}.sb-f-submit{grid-area:submit;align-self:end}
+.sb-f-note{grid-area:note}.sb-f-date{grid-area:date}.sb-f-submit{grid-area:submit}
 .sb-f-bazaar[hidden]{display:none}
 .sb-place{display:flex;gap:6px;min-width:0}
 .sb-place>select,.sb-place>input{flex:1;min-width:0}
@@ -1206,12 +1212,17 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
 .sb-cols.is-expense .sb-amount{color:#8a3d4f}
 .sb-history[hidden]{display:none}
 
-@media (max-width:1100px){
+/* В одну колонку — только когда рядом двум карточкам тесно (как у «Финансов дня»). */
+@media (max-width:1180px){
+  .sb-top{grid-template-columns:minmax(0,1.3fr) minmax(250px,1fr)}
+  .sb-hero-total span{font-size:38px}
+}
+@media (max-width:900px){
   .sb-top,.sb-actions{grid-template-columns:minmax(0,1fr)}
 }
 @media (max-width:820px){
   .sb-page{gap:14px}
-  .sb-hero{padding:20px}
+  .sb-top>.sb-hero{padding:20px}
   .sb-hero-total span{font-size:36px}
   .sb-hero-facts{grid-template-columns:minmax(0,1fr)}
   .sb-hero-facts>div{flex-direction:row;justify-content:space-between;align-items:baseline;padding:10px 12px}
@@ -1228,4 +1239,14 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
   .sb-cols.fd-row>.fd-x-cell{grid-area:x;grid-row:1 / span 4;align-self:center}
   .sb-cols.fd-row>.sb-when,.sb-cols.fd-row>.sb-place-cell,.sb-cols.fd-row>.sb-note{grid-column:1 / 3;font-size:11px}
   .sb-cols.fd-row>.sb-place-cell.is-empty,.sb-cols.fd-row>.sb-note:empty{display:none}
+}
+
+/* Самые узкие телефоны (320–360): плашка дня не шире экрана на всех страницах
+   бухгалтера. Стрелки остаются 44 px под палец, ужимаются подпись дня и «Сегодня». */
+@media (max-width:360px){
+  .fd-date{min-width:0;max-width:100%;padding:0 2px}
+  .fd-date-label{padding:0 6px;overflow:hidden}
+  .fd-date-label>strong{overflow:hidden;text-overflow:ellipsis}
+  .fd-date-sep{margin:0 2px}
+  .fd-date-today{padding:0 8px}
 }
