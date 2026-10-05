@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from retro.accounting_period import accounting_range_start
 from retro.db import table_exists
 from retro.logging_config import log_safe_failure
 from retro.modules.accountant.audit import record_audit
@@ -108,6 +109,7 @@ def _give_json(row: dict) -> dict:
 
 def shokh_gives(finance, first: date, last: date | None = None) -> list[dict]:
     last = last or first
+    first = accounting_range_start(first, last)
     with closing(finance._open()) as connection:
         rows = connection.execute(
             'SELECT id, day, amount, created_at FROM cashier_shokh_gives '

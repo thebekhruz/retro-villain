@@ -12,6 +12,7 @@ from io import BytesIO
 import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 
+from retro.accounting_period import accounting_range_start
 from retro.modules.accountant.reserves import is_monthly_salary
 
 from . import overview
@@ -28,7 +29,7 @@ def text(cell, value):
 def closing_balance(state, day: date, handover):
     finance = state.accountant_finance
     manual = state.settings.manual_handover_only
-    anchor = finance.cash_opening()
+    anchor = finance.cash_opening(day)
     carry_start = date.fromisoformat(anchor['day']) if anchor and manual else None
     summary = finance.daily_summary(
         day, handover, carry_history=not manual or (carry_start is not None and day >= carry_start),
@@ -57,6 +58,7 @@ def month_workbook(state, first: date, last: date, orders, orders_error, cashier
     кассир, расчёт кассира, сменные, оклады, закуп, прочие, дивиденды, остаток;
     за ними чеки и прочие поступления. `cashier` — {день: касса кассира} из
     iiko (Демо и расчёт передачи), None — iiko не ответил."""
+    first = accounting_range_start(first, last)
     flows_rows = state.accountant_finance.cash_flows_between(first, last)
     flows = overview.daily_flows(flows_rows)
     salaries = salary_split(flows_rows)

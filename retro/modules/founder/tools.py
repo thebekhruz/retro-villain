@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from retro.accounting_period import accounting_range_start
 from retro.report_cache import load_iiko
 
 import asyncio
@@ -223,7 +224,7 @@ def _period(arguments, *, with_directions):
             or len(set(directions)) != len(directions)
             or any(item not in DIRECTIONS for item in directions)):
         raise DataError('Выберите направления retro, school или banquet без повторов.')
-    return start, end, granularity, tuple(directions)
+    return accounting_range_start(start, end), end, granularity, tuple(directions)
 
 
 def _single_day(arguments):

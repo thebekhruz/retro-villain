@@ -8,6 +8,7 @@ from collections import defaultdict
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_CEILING, ROUND_HALF_UP
 
+from retro.accounting_period import accounting_range_start
 from retro.modules.accountant.expense_catalog import GROUPS, ITEMS
 from retro.modules.accountant.reserves import is_monthly_salary
 
@@ -138,7 +139,9 @@ def dividend_week(day: date, target, flows, *, free_cash=None):
     `flows` — результат `daily_flows` за неделю, `target` — Decimal или None.
     План к дню растёт ровно по дням недели: к среде — три седьмых цели."""
     monday, sunday, label = week_of(day)
-    days = [monday + timedelta(days=offset) for offset in range(7)]
+    monday = accounting_range_start(monday, day)
+    week_days = (sunday - monday).days + 1
+    days = [monday + timedelta(days=offset) for offset in range(week_days)]
     by_day = [dict(date=d.isoformat(), weekday=WEEKDAYS[d.weekday()],
                    amount=money(flows.get(d.isoformat(), {}).get('dividends', Decimal(0))),
                    future=d > day)
@@ -154,15 +157,15 @@ def dividend_week(day: date, target, flows, *, free_cash=None):
                   days=by_day, free_cash_week=money(free_cash) if free_cash is not None else None)
     if target is None or target <= 0:
         return {**result, 'pace': None, 'due': None, 'left': None, 'behind': False, 'done': False,
-                'suggest_today': None, 'days_left': 8 - elapsed}
+                'suggest_today': None, 'days_left': week_days + 1 - elapsed}
     # `pace` — план к сегодняшнему дню, включая сегодня (метка на полосе).
     # По Функционалу §3.7 «Отстаём» — отложено меньше 85 % этого плана: утром,
     # пока сегодняшнюю долю не отложили, статус подсказывает её отложить.
     # `due` — план к концу вчера, остаётся в ответе для подписей.
-    pace = target * elapsed / 7
-    due = target * (elapsed - 1) / 7
+    pace = target * elapsed / week_days
+    due = target * (elapsed - 1) / week_days
     left = max(Decimal(0), target - collected)
-    days_left = 8 - elapsed
+    days_left = week_days + 1 - elapsed
     share = max(Decimal(0), target - before) / days_left
     share = (share / DIVIDEND_SUGGEST_STEP).to_integral_value(
         rounding=ROUND_CEILING) * DIVIDEND_SUGGEST_STEP
@@ -256,7 +259,7 @@ def month_forecast(history, forecast, today: date):
     прогноз оставшегося. Сегодняшний день ещё идёт: в факт входит то, что
     уже пробито, а в прогноз — недобранное до среднего этого дня недели
     (если день уже перерос среднее, прогноз на него 0)."""
-    first = today.replace(day=1)
+    first = accounting_range_start(today.replace(day=1), today)
     last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     fact = Decimal(0)
     today_fact = Decimal(0)
