@@ -1159,6 +1159,7 @@ def reconciliation(request: Request, month: str):
     month = requested_month(month)
     first, last = month_closing.month_bounds(month)
     last = min(last, today_tashkent())
+    first = accounting_range_start(first, last)
     days = request.app.state.accountant_finance.reconciliation(first, last, carry_start_for(request, last))
     return dict(month=month, name=month_closing.month_name(month), days=[flow_json(day) for day in days])
 

@@ -18,6 +18,7 @@ from retro.config import Settings
 from retro.db import Database
 from retro.modules.accountant.ledger import CashBook, FinanceStore, LedgerError
 from retro.modules.accountant.payroll import PayrollRow
+from retro.modules.accountant import closing as month_closing, shoh_balance
 from retro.modules.cashier.archive import CashierArchive
 from retro.modules.cashier.expenses import ExpenseStore
 from retro.modules.cashier.service import TZ
@@ -125,7 +126,7 @@ def test_reserves_debts_and_shokh_do_not_carry_archival_money(tmp_path):
         store.pay_debt(old_debt, NEXT, '1')
     store.reserve_entry(OLD, 'shoh', 'opening', '9000', 'Архив')
     give_shokh(store, OLD, '1000')
-    assert store.reserves(START)['shoh']['balance'] is None
+    assert store.reserves(START)['shoh']['balance'] == '0'
     store.reserve_entry(START, 'shoh', 'opening', '200', 'Пересчёт')
     give_shokh(store, START, '100')
     shokh = ShokhStore(store.path)
@@ -134,7 +135,13 @@ def test_reserves_debts_and_shokh_do_not_carry_archival_money(tmp_path):
                                   point='RETRO', item='Товар', unit='кг', quantity='1', price=price)
     old = buy(OLD, '1000')
     buy(START, '50')
-    assert pocket_position(shokh, store, NEXT)['pocket'] == '250.00'
+    # В действующей панели расходы Шоха вносит бухгалтер; старые записи
+    # с телефона не должны списывать деньги второй раз.
+    shoh_balance.add_expense(store, START, shoh_balance.bazaars(store)[0], '50')
+    assert Decimal(pocket_position(shokh, store, NEXT)['pocket']) == Decimal('250')
+    month = shoh_balance.shoh_view(store, NEXT, history=True)
+    assert all(row['day'] >= START.isoformat() for row in month['history'])
+    assert month['month_spent'] == '50'
     with pytest.raises(ShokhError, match='архив'):
         shokh.accept_with_finance(old['id'], START, datetime(2026, 10, 2, 12, tzinfo=TZ), store)
     assert shokh.purchase(old['id'])['accepted_at'] is None
@@ -204,6 +211,35 @@ def test_founder_month_fact_and_first_week_plan_start_on_october_2():
     assert len(plan['days']) == 3
     assert plan['pace'] == '100.00' and plan['due'] == '0.00'
     assert plan['days_left'] == 3
+
+
+def test_archival_month_closure_cannot_become_the_october_opening(tmp_path):
+    store = FinanceStore(tmp_path / 'finance.sqlite3')
+    september = date(2026, 9, 30)
+    store.record_handover(september, Decimal('9000'))
+    store.set_cash_opening(september, '5000', 'Архив')
+    month_closing.close_month(store, '2026-09', 'Бухгалтер', OLD)
+    store.record_handover(OLD, Decimal('100'))
+    store.record_debt(OLD, 'admin_it', 'Архивный долг', '999', '0')
+    store.record_handover(START, Decimal('1000'))
+    unknown = store.daily_summary(START, None)
+    assert unknown['cash_balance'] is None
+    assert unknown['opening_breakdown']['previous'] is None
+    store.set_cash_opening(START, '200', 'Новый период')
+    for n in range(1, 30):
+        store.record_handover(START + timedelta(days=n), Decimal('0'))
+    preview = month_closing.month_preview(store, '2026-10', date(2026, 11, 1))
+    assert preview['first'] == START.isoformat()
+    assert preview['opening'] == '200'
+    assert preview['closing_balance'] == '1200'
+    assert preview['debts']['expenses'] == '0'
+    assert preview['includes_earlier'] is False
+    assert len(preview['days']) == 30
+    month_closing.close_month(store, '2026-10', 'Бухгалтер', date(2026, 11, 1))
+    store.record_handover(date(2026, 11, 1), Decimal('50'))
+    november = store.daily_summary(date(2026, 11, 1), None)
+    assert november['cash_flow']['opening_balance'] == '1200'
+    assert november['cash_balance'] == Decimal('1250')
 
 
 def test_postgres_migration_and_working_opening_are_idempotent(tmp_path):

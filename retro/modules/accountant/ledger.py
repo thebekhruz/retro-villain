@@ -1725,7 +1725,7 @@ class FinanceStore:
             flow = book.flow(day, carry_start, tolerate_gaps=self.allow_negative_cash)
             # «На начало дня» = конец вчерашнего: расшифровка — вчерашний день целиком.
             previous = (book.flow(day - timedelta(days=1), carry_start, tolerate_gaps=self.allow_negative_cash)
-                        if flow['anchor'] is None else None)
+                        if flow['anchor'] is None and day != ACCOUNTING_START else None)
         opening, remaining, missing, first_day = (flow['opening'], flow['closing'],
                                                   flow['missing'], flow['first_day'])
         if opening is not None and opening > 0:

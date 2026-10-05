@@ -12,6 +12,8 @@ from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 
+from retro.accounting_period import accounting_range_start
+
 from .audit import record_audit
 from .ledger import (DEFAULT_BAZAARS, LedgerError, amount_value, ensure_open, local_timestamp, now_stamp, plain,
                      required_text)
@@ -118,7 +120,7 @@ def _history(connection, first: str, last: str) -> list[dict]:
 
 
 def shoh_view(finance, day: date, *, history: bool = False) -> dict:
-    first = day.replace(day=1)
+    first = accounting_range_start(day.replace(day=1), day)
     with closing(finance._open()) as connection:
         entries = _entries(connection, 'shoh', day.isoformat())
         names = _bazaars(connection)
