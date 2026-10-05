@@ -17,6 +17,8 @@ from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 
+from retro.accounting_period import accounting_range_start, period_start
+
 from .audit import record_audit
 from .ledger import (CashBook, LedgerError, closure_row, ensure_open, flow_json, local_timestamp,
                      now_stamp, plain, required_text)
@@ -165,8 +167,8 @@ def _debts_at(connection, last: date) -> dict:
         paid[accrual_id] = paid.get(accrual_id, Decimal(0)) + Decimal(amount)
     shifts = []
     for accrual_id, work_day, name, amount in connection.execute(
-            'SELECT id, work_day, employee_name, amount FROM accountant_accruals WHERE work_day <= ? '
-            'ORDER BY work_day, employee_name', (through,)):
+            'SELECT id, work_day, employee_name, amount FROM accountant_accruals WHERE work_day >= ? AND work_day <= ? '
+            'ORDER BY work_day, employee_name', (period_start(last).isoformat(), through)):
         left = Decimal(amount) - paid.get(accrual_id, Decimal(0))
         if left > 0:
             shifts.append(dict(day=work_day, name=name, debt=plain(left)))
@@ -176,7 +178,8 @@ def _debts_at(connection, last: date) -> dict:
         paid_debts[debt_id] = paid_debts.get(debt_id, Decimal(0)) + Decimal(amount)
     expenses = sum((max(Decimal(0), Decimal(total) - paid_debts.get(debt_id, Decimal(0)))
                     for debt_id, total in connection.execute(
-                        'SELECT id, total_amount FROM accountant_debts WHERE day <= ?', (through,))), Decimal(0))
+                        'SELECT id, total_amount FROM accountant_debts WHERE day >= ? AND day <= ?',
+                        (period_start(last).isoformat(), through))), Decimal(0))
     return dict(salary=plain(_money_sum(row['debt'] for row in shifts)), expenses=plain(expenses),
                 shifts=shifts)
 
@@ -189,6 +192,7 @@ def month_preview(finance, month: str, today: date, *, carry_start: date | None 
     подтверждение. Запрещают только: месяц ещё идёт, месяц уже закрыт и
     остаток на конец месяца не посчитан (без него следующий месяц не начать)."""
     first, last = month_bounds(month)
+    first = accounting_range_start(first, last)
     with closing(finance._open()) as connection:
         latest = closure_row(connection)
         book = CashBook(connection, last)
@@ -265,7 +269,7 @@ def month_preview(finance, month: str, today: date, *, carry_start: date | None 
 
 
 def _earlier_open(finance, first: date, latest) -> bool:
-    start = finance.accounting_start()
+    start = finance.accounting_start(first)
     if start is None or start >= first:
         return False
     return latest is None or (first - timedelta(days=1)).isoformat() > latest[1]

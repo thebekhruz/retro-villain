@@ -205,12 +205,14 @@ def test_month_close_through_the_api_locks_the_day_and_shows_the_label(tmp_path,
         assert sheet['A5'].value == '30.09' and sheet['L5'].value == 1000000
 
 
-def test_unclosed_past_month_is_reminded(tmp_path, monkeypatch):
+def test_archival_month_is_not_required_for_working_accounting(tmp_path, monkeypatch):
     with client(tmp_path, monkeypatch, today=date(2026, 10, 2)) as c:
         c.app.state.accountant_finance.record_handover(SEP_30, Decimal('1000'))
         day = c.get('/api/accountant/day', params={'date': '2026-10-02'}).json()
-        assert day['month_close']['open_month'] == {'month': '2026-09', 'name': 'Сентябрь 2026',
-                                                    'last_day': '2026-09-30'}
+        assert day['month_close']['open_month'] is None
+        archive = c.get('/api/accountant/day', params={'date': '2026-10-01'}).json()
+        assert archive['month_close']['open_month'] == {'month': '2026-09', 'name': 'Сентябрь 2026',
+                                                       'last_day': '2026-09-30'}
 
 
 # ── Баланс Шохруха ─────────────────────────────────────────────────────────

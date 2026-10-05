@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.accounting_period import accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
@@ -220,7 +221,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
                     payroll={f'{status}_count': sum(row.status == status for row in rows)
                              for status in ('late', 'missing', 'unlinked', 'unavailable',
                                             'manual_present', 'manual_absent')})
-    carry_start = carry_start_for(request)
+    carry_start = carry_start_for(request, day)
     summary = finance.daily_summary(
         day, cashier_amount,
         carry_history=not request.app.state.settings.manual_handover_only or
@@ -293,8 +294,8 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
                                note='Только оценка будущей смены; уже начисленный долг не уменьшается.'))
 
 
-def carry_start_for(request) -> date | None:
-    anchor = request.app.state.accountant_finance.cash_opening()
+def carry_start_for(request, day: date) -> date | None:
+    anchor = request.app.state.accountant_finance.cash_opening(day)
     return (date.fromisoformat(anchor['day'])
             if anchor and request.app.state.settings.manual_handover_only else None)
 
@@ -311,7 +312,7 @@ def month_close_hint(request, day: date) -> dict:
     closed_through = latest['last_day'] if latest else ''
     last = month_closing.month_bounds(day.strftime('%Y-%m'))[1]
     close_month = (day == last and today >= last and last.isoformat() > closed_through)
-    start = finance.accounting_start()
+    start = finance.accounting_start(day)
     open_month = None
     if start is not None:
         month = max(start, date.fromisoformat(closed_through) + timedelta(days=1)
@@ -419,10 +420,11 @@ def payroll_month(request: Request, month: str):
     if first > today_tashkent().replace(day=1):
         raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
     last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    first = accounting_range_start(first, last)
     data = request.app.state.accountant_finance.payroll_month(first, last)
     # Проверка «Остаток ушёл в минус»: дни месяца (до сегодня) с минусом на
     # конец дня — тем же расчётом, что и остаток в «Финансах дня».
-    anchor = request.app.state.accountant_finance.cash_opening()
+    anchor = request.app.state.accountant_finance.cash_opening(last)
     carry_start = (date.fromisoformat(anchor['day'])
                    if anchor and request.app.state.settings.manual_handover_only else None)
     data['negative_cash'] = request.app.state.accountant_finance.negative_cash_days(
@@ -1102,11 +1104,11 @@ def submit_day_report(request: Request, body: DayReportInput):
     """«Сохранить и сдать отчёт»: снимок дня уходит учредителю."""
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
-    summary = finance.daily_summary(day, None, carry_start=carry_start_for(request))
+    summary = finance.daily_summary(day, None, carry_start=carry_start_for(request, day))
     pocket = pocket_position(request.app.state.shokh, finance, day)
     try:
         report = month_closing.submit_day_report(
-            finance, day, report_author(request), carry_start=carry_start_for(request),
+            finance, day, report_author(request), carry_start=carry_start_for(request, day),
             debts=dict(salary=str(summary['salary_debt']), expenses=str(summary['manual_debt_total'])),
             shoh_balance=pocket['pocket'], checks=[item.model_dump() for item in body.checks])
     except LedgerError as error:
@@ -1131,7 +1133,7 @@ def month_close_preview(request: Request, month: str):
     last = month_closing.month_bounds(month)[1]
     return month_closing.month_preview(
         request.app.state.accountant_finance, month, today_tashkent(),
-        carry_start=carry_start_for(request), monthly_left=monthly_left(request, last))
+        carry_start=carry_start_for(request, last), monthly_left=monthly_left(request, last))
 
 
 class MonthCloseInput(BaseModel):
@@ -1145,7 +1147,7 @@ def close_month(request: Request, body: MonthCloseInput):
     try:
         closed = month_closing.close_month(
             request.app.state.accountant_finance, month, report_author(request), today_tashkent(),
-            carry_start=carry_start_for(request), monthly_left=monthly_left(request, last))
+            carry_start=carry_start_for(request, last), monthly_left=monthly_left(request, last))
     except LedgerError as error:
         finance_error(error)
     return dict(demo=False, month=month, closed=closed)
@@ -1157,7 +1159,8 @@ def reconciliation(request: Request, month: str):
     month = requested_month(month)
     first, last = month_closing.month_bounds(month)
     last = min(last, today_tashkent())
-    days = request.app.state.accountant_finance.reconciliation(first, last, carry_start_for(request))
+    first = accounting_range_start(first, last)
+    days = request.app.state.accountant_finance.reconciliation(first, last, carry_start_for(request, last))
     return dict(month=month, name=month_closing.month_name(month), days=[flow_json(day) for day in days])
 
 
@@ -1180,7 +1183,7 @@ def shoh_balance(request: Request, date: date | None = None, history: bool = Fal
     finance = request.app.state.accountant_finance
     data = shoh_view(finance, day, history=history)
     data.update(closed=month_closing.closed_state(finance, day),
-                cash_balance=finance.daily_summary(day, None, carry_start=carry_start_for(request))['cash_balance'])
+                cash_balance=finance.daily_summary(day, None, carry_start=carry_start_for(request, day))['cash_balance'])
     data['cash_balance'] = str(data['cash_balance']) if data['cash_balance'] is not None else None
     return data
 

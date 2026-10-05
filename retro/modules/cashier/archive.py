@@ -6,6 +6,7 @@ from datetime import date, datetime, time, timedelta
 from decimal import Decimal
 
 from retro.db import as_database
+from retro.accounting_period import ACCOUNTING_START
 from .service import Snapshot, Payment, RevenueBreakdown, ShiftStatus, DataError, TZ, RETRO_REGISTER
 
 CALCULATION_VERSION = 'cashier-2026-09-28-v1'
@@ -106,16 +107,22 @@ class CashierArchive:
     def due_days(self, now):
         """Recent corrections first, then gaps since installation (including downtime)."""
         today = now.astimezone(TZ).date()
+        initial = ACCOUNTING_START if today >= ACCOUNTING_START else today - timedelta(days=7)
         with closing(self.db.connect()) as connection, connection:
             connection.execute('''INSERT INTO cashier_archive_start(source,first_day) VALUES (?,?)
-                ON CONFLICT(source) DO NOTHING''', (self.source, (today - timedelta(days=7)).isoformat()))
+                ON CONFLICT(source) DO NOTHING''', (self.source, initial.isoformat()))
             first = date.fromisoformat(connection.execute(
                 'SELECT first_day FROM cashier_archive_start WHERE source=?', (self.source,)).fetchone()[0])
+            if today >= ACCOUNTING_START:
+                # Даже установка спустя месяц должна догнать все дни с запуска
+                # учёта. Ранее сохранённые снимки остаются доступными в архиве.
+                first = ACCOUNTING_START
             rows = connection.execute(
                 'SELECT day,fetched_at FROM cashier_day_snapshots WHERE source=? AND day>=?',
                 (self.source, first.isoformat())).fetchall()
         saved = {date.fromisoformat(day): datetime.fromisoformat(fetched) for day, fetched in rows}
-        recent = [today - timedelta(days=n) for n in range(1, 8)]
+        recent = [today - timedelta(days=n) for n in range(1, 8)
+                  if today < ACCOUNTING_START or today - timedelta(days=n) >= ACCOUNTING_START]
         gaps = (first + timedelta(days=n) for n in range(max(0, (today - first).days - 7)))
         cutoff = datetime.combine(today, time(6), TZ)
         for day in [*recent, *gaps]:

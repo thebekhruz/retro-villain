@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from uuid import UUID
 
+from retro.accounting_period import accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
@@ -74,6 +75,7 @@ async def analytics(
         refresh: bool = False,
 ):
     start, end = _validated_period(start, end, granularity)
+    start = accounting_range_start(start, end)
     selected = tuple(item.strip() for item in directions.split(',') if item.strip())
     if not selected or len(set(selected)) != len(selected) or any(item not in DIRECTIONS for item in selected):
         raise HTTPException(422, 'Выберите известные направления без повторов.')
@@ -335,6 +337,7 @@ async def export_month(request: Request, month: str | None = None):
     if first > today:
         raise HTTPException(422, 'Будущий месяц ещё не начался.')
     last = min(today, cabinet.month_bounds(first)[1])
+    first = accounting_range_start(first, last)
     rows, error = await cabinet.iiko_or_error(request, 'load_daily_orders', first, last,
                                               operation='export_month', timeout=120)
     orders = overview.register_days(rows) if rows is not None else None

@@ -152,11 +152,13 @@ const dayBlocks = {};
 // Режим проверки (ACCOUNTANT_CHECK_MODE): сервер пускает выдачу без
 // данных кассира, поэтому экран не должен запирать её раньше сервера.
 let checkMode = false;
-const cashMissing = () => view.data.ledger.cash_balance === null && !checkMode;
+const cashMissing = () => view.data.ledger.cash_balance === null && (!checkMode || !view.data.ledger.archived);
 function payDisabledReason() {
   const {data, board} = view;
+  if (!data.ledger.archived && !data.ledger.cash_opening)
+    return 'Для начала учёта укажите подтверждённый остаток на ' + longDay(data.ledger.accounting_start) + '.';
   if (cashMissing())
-    return 'Нет данных кассира за ' + longDay(data.date) + ' — выдачу записать нельзя.';
+    return 'Нет данных кассира за ' + longDay(data.ledger.cash_flow.missing_day || data.date) + ' — выдачу записать нельзя.';
   if (dayBlocks[board.S] && !board.confirmed) return dayBlocks[board.S];
   return null;
 }
@@ -187,7 +189,8 @@ const payable = () => view.board.handOut.filter(row => !rowLock(row));
 
 function renderShift() {
   const {board, staff, data} = view;
-  $('shift-title').textContent = 'Смена ' + longDay(board.S);
+  $('shift-title').textContent = !data.ledger.archived && board.S < data.ledger.accounting_start
+    ? 'Учёт смен с ' + longDay(data.ledger.accounting_start) : 'Смена ' + longDay(board.S);
   const lock = payDisabledReason();
 
   /* Полосы-сводки сняты по решению PM (T-397): три баннера над таблицей
@@ -834,7 +837,8 @@ function openTools() {
   if (l) {
     $('cash-opening-note').textContent = l.cash_opening
       ? 'Начальный остаток уже задан: ' + money(l.cash_opening.amount) + ' на ' + longDay(l.cash_opening.day) + '.'
-      : 'Подтверждённый остаток на начало учёта. Задаётся один раз, дальше переносится сам.';
+      : l.archived ? 'Подтверждённый остаток на начало архивного учёта.'
+      : 'Учёт ведётся с ' + longDay(l.accounting_start) + '. Выберите этот день, запишите приход от кассира и укажите подтверждённый начальный остаток. Задаётся один раз.';
     $('cash-opening-form').querySelector('button').disabled = l.cash_opening !== null;
   }
   if (typeof dialog.showModal === 'function') dialog.showModal(); else dialog.setAttribute('open', '');
@@ -1071,7 +1075,8 @@ async function loadDay() {
       PAGE === 'salary-day' ? get('/api/accountant/staff?date=' + S).catch(() => null) : Promise.resolve(null),
     ]);
     if (sequence !== requestNo) return;
-    const board = L.shiftBoard({payday: day, staff, accruals: data.ledger.accruals, movements: data.ledger.movements});
+    const board = L.shiftBoard({payday: day, staff, accruals: data.ledger.accruals, movements: data.ledger.movements,
+      accountingStart: data.ledger.archived ? null : data.ledger.accounting_start});
     const blocker = PAGE === 'salary-day' ? L.shiftBlocker(staff, board) : null;
     const monthly = L.monthlyBoard(data);
     const pocket = data.shoh_pocket && data.shoh_pocket.pocket !== null && data.shoh_pocket.pocket !== undefined ? Number(data.shoh_pocket.pocket) : null;
@@ -1084,7 +1089,8 @@ async function loadDay() {
     $('finance-layout').hidden = false;
     $('fd-skeleton').hidden = true;
     if (!$('accountant-message').classList.contains('is-error')) message('');
-    status('Данные за ' + longDay(day));
+    status((data.ledger.archived ? 'Архив · ' : 'Данные за ') + longDay(day)
+      + (data.ledger.archived ? '' : ' · Учёт с ' + longDay(data.ledger.accounting_start)));
   } catch (error) {
     if (sequence === requestNo) {
       message(error.message, true); status('Данные не загрузились');

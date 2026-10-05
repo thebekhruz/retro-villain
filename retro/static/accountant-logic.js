@@ -158,11 +158,11 @@
     return map;
   }
 
-  function shiftBoard({payday,staff,accruals,movements}){
+  function shiftBoard({payday,staff,accruals,movements,accountingStart}){
     const S=shiftIso(payday,-1);
-    const staffRows=(staff&&staff.employees)||[];
+    const staffRows=accountingStart&&S<accountingStart?[]:(staff&&staff.employees)||[];
     const byId=new Map(staffRows.map(r=>[r.employee_id,r]));
-    const all=accruals||[];
+    const all=(accruals||[]).filter(a=>!accountingStart||a.work_day>=accountingStart);
     const own=all.filter(a=>a.work_day===S);
     const pays=todaySalaryPayments(movements);
     const build=(src)=>{

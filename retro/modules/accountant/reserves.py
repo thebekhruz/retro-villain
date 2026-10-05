@@ -1,7 +1,8 @@
 """Dated subsidiary ledgers. Moving cash to the safe is not an owner payout."""
 from contextlib import closing, nullcontext
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal
+from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 
 from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
@@ -19,7 +20,7 @@ def is_monthly_salary(item_code):
 BEFORE_ALL = '0001-01-01'
 
 
-def _entries(connection, account, through=None):
+def _entries(connection, account, through=None, *, since=None):
     rows = [dict(id=r[0], day=r[1], kind=r[2], amount=r[3], note=r[4], place=r[5]) for r in connection.execute(
         'SELECT id, day, kind, amount, note, place FROM accountant_reserves WHERE account = ? ORDER BY day, id',
         (account,))]
@@ -32,16 +33,25 @@ def _entries(connection, account, through=None):
     # Деньги бухгалтера они не трогают — см. modules/cashier/till.py.
     from retro.modules.cashier.till import reserve_rows
     rows += reserve_rows(connection, account)
-    # Баланс Шохруха = выделено − расходы (ТЗ 02.10, п. 5): начальный остаток
-    # не обязателен. Пока его не задали, счёт начинается с нуля — иначе остаток
-    # Шоха так и висел бы «не задан», как на проде 02.10.
-    if account == 'shoh' and not any(r['kind'] == 'opening' for r in rows):
-        rows.append(dict(id=None, day=BEFORE_ALL, kind='opening', amount='0',
-                         note='Счёт Шоха с нуля', place=None, implicit=True))
-    return sorted((r for r in rows if through is None or r['day'] <= through), key=lambda r: r['day'])
+    if since is None:
+        since = period_start(date.fromisoformat(through)) if through else date.min
+    rows = [r for r in rows if r['day'] >= since.isoformat()
+            and (through is None or r['day'] <= through)]
+    # Шох начинает с нуля в каждом периоде; архивный остаток не переносится.
+    if account == 'shoh':
+        for start, end in ((date.min, ACCOUNTING_START), (ACCOUNTING_START, date.max)):
+            if start < since or (through is not None and start.isoformat() > through):
+                continue
+            if not any(r['kind'] == 'opening' and start.isoformat() <= r['day'] < end.isoformat() for r in rows):
+                rows.append(dict(id=None, day=start.isoformat(), kind='opening', amount='0',
+                                 note='Счёт Шоха с нуля', place=None, implicit=True))
+    return sorted(rows, key=lambda r: r['day'])
 
 
 def _balance(rows):
+    if rows:
+        start = period_start(date.fromisoformat(max(r['day'] for r in rows))).isoformat()
+        rows = [r for r in rows if r['day'] >= start]
     if not any(r['kind'] == 'opening' for r in rows):
         return None
     return sum((Decimal(r['amount']) * (-1 if r['kind'] == 'withdrawal' else 1) for r in rows), Decimal(0))
@@ -49,6 +59,8 @@ def _balance(rows):
 
 def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *, existing_connection=None,
                       place=None):
+    if kind == 'opening' and day > ACCOUNTING_START:
+        raise LedgerError('Начальный остаток нужно указать на 02.10.2026 — первый день учёта.')
     allowed = {'dividends': {'opening', 'transfer', 'withdrawal'},
                'usd': {'opening', 'deposit', 'withdrawal'}, 'shoh': {'opening', 'withdrawal'}}
     if account not in allowed or kind not in allowed[account]:
@@ -60,7 +72,7 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *
             connection.execute('BEGIN IMMEDIATE')
         try:
             ensure_open(connection, day)
-            rows = [r for r in _entries(connection, account) if not r.get('implicit')]
+            rows = [r for r in _entries(connection, account, since=period_start(day)) if not r.get('implicit')]
             if kind == 'opening':
                 if any(r['kind'] == 'opening' for r in rows):
                     raise LedgerError('Начальный остаток уже указан.')
@@ -79,7 +91,7 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *
                 (day.isoformat(), account, kind, str(value), note, now_stamp(), place))
             after = store._row_dict(connection, 'accountant_reserves', cursor.lastrowid)
             record_audit(connection, 'reserve', cursor.lastrowid, 'create', None, after)
-            rows = _entries(connection, account)
+            rows = _entries(connection, account, since=period_start(day))
             for cutoff in {r['day'] for r in rows}:
                 balance = _balance([r for r in rows if r['day'] <= cutoff])
                 if balance is not None and balance < 0:
@@ -126,7 +138,8 @@ def reserve_summary(store, day):
                                   (month,)).fetchone()
         paid = sum((Decimal(r[0]) for r in connection.execute(
             'SELECT amount, item_code FROM accountant_movements WHERE day >= ? AND day <= ? '
-            "AND kind = 'other_expense'", (month + '-01', day.isoformat())) if is_monthly_salary(r[1])), Decimal(0))
+            "AND kind = 'other_expense'", (accounting_range_start(day.replace(day=1), day).isoformat(),
+                                         day.isoformat())) if is_monthly_salary(r[1])), Decimal(0))
         result['monthly'] = dict(month=month, plan=plan[0] if plan else None, paid=str(paid),
                                  balance=str(Decimal(plan[0]) - paid) if plan else None)
     return result

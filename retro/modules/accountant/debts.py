@@ -3,6 +3,8 @@
 from contextlib import closing
 from decimal import Decimal
 
+from retro.accounting_period import period_start
+
 from .expense_catalog import ITEMS
 from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
@@ -19,8 +21,8 @@ def debt_summary(store, day):
     created = []
     with closing(store._open()) as connection:
         rows = connection.execute('SELECT id, day, item_code, description, total_amount '
-                                  'FROM accountant_debts WHERE day<=? ORDER BY day,id',
-                                  (day.isoformat(),)).fetchall()
+                                  'FROM accountant_debts WHERE day>=? AND day<=? ORDER BY day,id',
+                                  (period_start(day).isoformat(), day.isoformat())).fetchall()
         for debt_id, created_day, item_code, description, total in rows:
             paid = _payments(connection, debt_id, day.isoformat())
             left = Decimal(total) - paid
@@ -93,6 +95,8 @@ def pay_debt(store, debt_id, day, amount, cashier_amount):
             if debt is None:
                 raise LedgerError('Долг не найден.')
             created_day, item_code, description, total = debt
+            if created_day < period_start(day).isoformat():
+                raise LedgerError('Долг относится к архиву до 02.10.2026.')
             if day.isoformat() < created_day:
                 raise LedgerError('Оплата не может быть раньше записи долга.')
             left = Decimal(total) - _payments(connection, debt_id, '9999-12-31')

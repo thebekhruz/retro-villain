@@ -8,6 +8,7 @@ from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 from .service import DataError
+from retro.accounting_period import accounting_range_start
 from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 
@@ -131,6 +132,7 @@ class ExpenseStore:
         return sum((item.amount for item in self.list(day)), Decimal(0))
 
     def total_between(self, start: date, end: date):
+        start = accounting_range_start(start, end)
         if start > end:
             raise ValueError('expense range start must not exceed end')
         with closing(self._open()) as connection:

@@ -26,6 +26,7 @@ NUMERIC_COLUMNS = {
         'accountant_monthly_plans': ('amount',),
         'accountant_handover_days': ('amount',),
         'accountant_cash_opening': ('amount',),
+        'accountant_working_cash_opening': ('amount',),
         'accountant_debts': ('total_amount',),
         'accountant_debt_payments': ('amount',),
         'accountant_supplier_transfers': ('amount',),
