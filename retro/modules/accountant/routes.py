@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from retro.accounting_period import accounting_range_start
 from retro.report_cache import load_iiko
@@ -413,6 +413,48 @@ class MonthlyEmployeeInput(BaseModel):
     # «⊘ Hik» у окладника; None — не менять.
     no_hikvision: bool | None = None
     reason: str = ''
+
+
+class SalaryDayCellInput(BaseModel):
+    date: date
+    employee_id: int = Field(gt=0)
+    amount: str
+    expected_amount: str
+
+
+@router.get('/salary-day/month')
+def salary_day_month(request: Request, month: str):
+    try:
+        first, last = month_closing.month_bounds(month)
+    except LedgerError as error:
+        finance_error(error)
+    if first > today_tashkent().replace(day=1):
+        raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
+    finance = request.app.state.accountant_finance
+    return dict(month=month, first=first.isoformat(), last=last.isoformat(),
+                closed=month_closing.closed_state(finance, last),
+                **finance.salary_day_month(first, last))
+
+
+@router.put('/salary-day/cell')
+async def salary_day_cell(request: Request, body: SalaryDayCellInput):
+    from .salary_day import SalaryCellChanged, _assert_day
+    day = selected_day(body.date)
+    try:
+        _assert_day(day)
+        amount = amount_value(body.amount, allow_zero=True)
+        expected = amount_value(body.expected_amount, allow_zero=True)
+    except LedgerError as error:
+        finance_error(error)
+    cashier_amount = await required_handover(request, day) if amount > expected else None
+    try:
+        return await asyncio.to_thread(request.app.state.accountant_finance.set_salary_day_cell,
+                                       day, body.employee_id, body.amount, body.expected_amount,
+                                       cashier_amount=cashier_amount)
+    except SalaryCellChanged as error:
+        raise HTTPException(409, str(error)) from None
+    except LedgerError as error:
+        finance_error(error)
 
 
 @router.get('/payroll/month')

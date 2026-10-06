@@ -87,6 +87,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'employees.css': {'accountant'}, 'payroll.css': {'accountant'},
         # ТЗ 02.10: «Зарплата · день», «Баланс Шохруха», общая кнопка «Сохранить»
         'salary-day.html': {'accountant'}, 'shoh-balance.html': {'accountant'},
+        'salary-day.js': {'accountant'}, 'salary-day-logic.js': {'accountant'},
+        'salary-day.css': {'accountant'},
         'shoh-balance.js': {'accountant'}, 'save.js': {'accountant'},
         # Расчёты бухгалтерии читают экраны директора и учредителя
         'accountant-logic.js': {'accountant', 'director', 'founder'},

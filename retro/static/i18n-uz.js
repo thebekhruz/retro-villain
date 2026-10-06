@@ -7,6 +7,24 @@
  *  систем и данных (Retro, iiko, Hikvision, «Демо», «БЕХРУЗ», Яндекс, имена
  *  людей) остаются как есть — они приходят из источников, а не из интерфейса. */
 globalThis.RetroDictionaryUz = {
+  'СМЕННЫЕ · РУЧНОЙ ВВОД': "SMENALI XODIMLAR · QO‘LDA KIRITISH",
+  'Выдано по сотрудникам': "Xodimlarga berilgan",
+  'Сотрудников в ведомости': "Qaydnomadagi xodimlar",
+  'Выдано за выбранный день': "Tanlangan kunda berilgan",
+  'Ставка / смена': "Smena stavkasi",
+  'Выплаты сменным сотрудникам': "Smenali xodimlarga to‘lovlar",
+  'Введите фактически выданную сумму. Ставка указана для справки. Пустая ячейка или 0 отменяет выплату.': "Amalda berilgan summani kiriting. Stavka ma’lumot uchun ko‘rsatilgan. Bo‘sh katak yoki 0 to‘lovni bekor qiladi.",
+  'Сменных сотрудников пока нет. Добавьте их в «Сотрудниках».': "Smenali xodimlar hozircha yo‘q. Ularni «Xodimlar» bo‘limida qo‘shing.",
+  'История — только для просмотра': "Tarix — faqat ko‘rish uchun",
+  'Будущая выплата': "Kelgusi to‘lov",
+  'Сотрудник в архиве': "Xodim arxivda",
+  'Эта дата доступна только для просмотра.': "Bu sana faqat ko‘rish uchun ochiq.",
+  'Введите неотрицательную сумму цифрами, не более двух знаков после запятой.': "Manfiy bo‘lmagan summani raqamlar bilan, verguldan keyin ko‘pi bilan ikki raqam yozing.",
+  'Дождитесь сохранения выплат.': "To‘lovlar saqlanishini kuting.",
+  'Выберите текущий или прошедший месяц.': "Joriy yoki o‘tgan oyni tanlang.",
+  'Не удалось сохранить выплату.': "To‘lovni saqlab bo‘lmadi.",
+  'Не удалось прочитать сумму выплаты. Обновите ведомость.': "To‘lov summasini o‘qib bo‘lmadi. Qaydnomani yangilang.",
+  'Не удалось проверить сохранённую сумму. Обновите ведомость.': "Saqlangan summani tekshirib bo‘lmadi. Qaydnomani yangilang.",
   'ОПЛАТЫ ПРОДАЖ И ПРЕДОПЛАТЫ': "SAVDO TO‘LOVLARI VA OLDINDAN TO‘LOVLAR",
   'Предоплаты наличными': "Naqd oldindan to‘lovlar",
   'Предоплаты картой / безналом': "Karta / naqdsiz oldindan to‘lovlar",
@@ -1215,6 +1233,11 @@ Object.assign(globalThis.RetroDictionaryUz, {
 /* Шаблоны для строк с числом внутри, где у узбекского свой порядок слов.
    Регулярное выражение на всю строку и замена с $1, $2… (см. template в i18n.js). */
 globalThis.RetroTemplatesUz = [
+  [/^Ручной ввод выплат с (.+)\. В столбце указана дата выплаты за предыдущую смену\. Прежние общие выплаты без сотрудника сохранены в «Финансах дня»\.$/, "$1 sanasidan to‘lovlar qo‘lda kiritiladi. Ustunda oldingi smena uchun to‘lov sanasi ko‘rsatilgan. Xodimi ko‘rsatilmagan avvalgi umumiy to‘lovlar «Kun moliyasi»da saqlangan."],
+  [/^Ручная ведомость · (.+)$/, "Qo‘lda to‘ldiriladigan qaydnoma · $1"],
+  [/^Выдано (\d\d\.\d\d)$/, "$1 kuni berilgan"],
+  [/^За смену (\d\d\.\d\d)$/, "$1 smenasi uchun"],
+  [/^за (\d\d\.\d\d)$/, "$1 uchun"],
   [/^(\d+) (?:покупка требует|покупки требуют|покупок требуют) проверки$/, "$1 ta xarid tekshiruvni talab qiladi"],
   [/^Сегодня (\S+): продвигайте «(.+)» — маржа (\d+)%, на нём Retro зарабатывает больше всего\.$/, "Bugun $1: «$2»ni targ'ib qiling — marja $3%, Retro undan eng ko'p ishlaydi."],
   [/^«(.+)» хорошо продаётся, но маржа (\d+)% — не ставьте его в акции\.$/, "«$1» yaxshi sotilmoqda, lekin marjasi $2% — uni aksiyaga qo'ymang."],

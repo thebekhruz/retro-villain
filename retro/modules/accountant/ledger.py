@@ -806,6 +806,8 @@ class FinanceStore:
                 stored_day = before['paid_day'] if operation_type == 'salary_payment' else before['day']
                 if stored_day != day.isoformat():
                     raise LedgerError('Нельзя изменить дату операции.')
+                if operation_type == 'salary_payment':
+                    self._guard_manual_salary_payment(connection, before['accrual_id'])
                 if operation_type == 'reserve_transfer':
                     if before['kind'] != 'transfer':
                         raise LedgerError('Эту резервную операцию нельзя удалить здесь.')
@@ -1081,6 +1083,11 @@ class FinanceStore:
             try:
                 lock_day(connection, day)
                 ensure_open(connection, day)
+                from .salary_day import MANUAL_STATUS
+                if connection.execute(
+                        'SELECT 1 FROM accountant_accruals WHERE work_day=? AND attendance_status=?',
+                        (day.isoformat(), MANUAL_STATUS)).fetchone():
+                    raise LedgerError('За смену уже введена ручная зарплата. Используйте таблицу «Зарплата · день».')
                 if connection.execute('SELECT 1 FROM accountant_payroll_days WHERE day = ?',
                                       (day.isoformat(),)).fetchone():
                     connection.rollback()
@@ -1164,6 +1171,14 @@ class FinanceStore:
             except Exception:
                 connection.rollback()
                 raise
+
+    def set_salary_day_cell(self, paid_day, employee_id, amount, expected_amount, *, cashier_amount=None):
+        from .salary_day import set_cell
+        return set_cell(self, paid_day, employee_id, amount, expected_amount, cashier_amount=cashier_amount)
+
+    def salary_day_month(self, first, last):
+        from .salary_day import month_data
+        return month_data(self, first, last)
 
     def payroll_month(self, first: date, last: date) -> dict:
         """Shift accruals and their payments for a whole month, in one pass.
@@ -1309,9 +1324,24 @@ class FinanceStore:
         return spent + salaries + transfers
 
     @staticmethod
+    def _guard_manual_salary_expense(connection, day, item_code):
+        if item_code not in {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}:
+            return
+        from .salary_day import MANUAL_STATUS
+        lock_day(connection, day)
+        if connection.execute(
+                'SELECT 1 FROM accountant_salary_payments p '
+                'JOIN accountant_accruals a ON a.id=p.accrual_id '
+                'WHERE p.paid_day=? AND a.attendance_status=?',
+                (day.isoformat(), MANUAL_STATUS)).fetchone():
+            raise LedgerError('За день уже введена зарплата по сотрудникам. '
+                              'Измените её в таблице «Зарплата · день», чтобы не задвоить общий расход.')
+
+    @staticmethod
     def _validate_salary_expense(connection, day, item_code):
         if item_code not in {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}:
             return
+        FinanceStore._guard_manual_salary_expense(connection, day, item_code)
         earned = sum((Decimal(r[0]) for r in connection.execute(
             'SELECT amount FROM accountant_accruals WHERE work_day>=? AND work_day<=?',
             (period_start(day).isoformat(), day.isoformat()))), Decimal(0))
@@ -1421,8 +1451,10 @@ class FinanceStore:
                     if item_code not in ITEMS or ITEMS[item_code][0] == 'income':
                         raise LedgerError('Выберите наименование затрат из справочника.')
                     description = f'{ITEMS[item_code][1]} · {note}' if note else ITEMS[item_code][1]
-                if kind == 'other_expense' and item_code != old_code:
-                    self._validate_salary_expense(connection, day, item_code)
+                if kind == 'other_expense':
+                    self._guard_manual_salary_expense(connection, day, item_code)
+                    if item_code != old_code:
+                        self._validate_salary_expense(connection, day, item_code)
                 linked = connection.execute(
                     'SELECT debt_id FROM accountant_debt_payments WHERE movement_id = ?',
                     (movement_id,)).fetchone()
@@ -1477,6 +1509,7 @@ class FinanceStore:
                     raise LedgerError('Выплата не найдена.')
                 if row[3] != day.isoformat():
                     raise LedgerError('Нельзя изменить дату операции.')
+                self._guard_manual_salary_payment(connection, row[2])
                 before = self._row_dict(connection, 'accountant_salary_payments', payment_id)
                 paid_elsewhere = sum((Decimal(item[0]) for item in connection.execute(
                     'SELECT amount FROM accountant_salary_payments WHERE accrual_id = ? AND id != ?',
@@ -1606,6 +1639,14 @@ class FinanceStore:
         return [dict(id=row[0], day=row[1], supplier=row[2], item=row[3], point=row[4],
                      amount=row[5], created_at=local_timestamp(row[6])) for row in rows]
 
+    @staticmethod
+    def _guard_manual_salary_payment(connection, accrual_id):
+        from .salary_day import MANUAL_STATUS
+        row = connection.execute('SELECT attendance_status FROM accountant_accruals WHERE id=?',
+                                 (accrual_id,)).fetchone()
+        if row and row[0] == MANUAL_STATUS:
+            raise LedgerError('Эта выплата ведётся в таблице «Зарплата · день». Измените сумму в её ячейке.')
+
     def pay_salary(self, accrual_id: int, paid_day: date, amount,
                    *, cashier_amount: Decimal | None = None):
         value = amount_value(amount)
@@ -1617,6 +1658,7 @@ class FinanceStore:
                                              (accrual_id,)).fetchone()
                 if accrual is None:
                     raise LedgerError('Начисление не найдено.')
+                self._guard_manual_salary_payment(connection, accrual_id)
                 if accrual[0] < period_start(paid_day).isoformat():
                     raise LedgerError('Начисление относится к архиву до 02.10.2026.')
                 if paid_day.isoformat() < accrual[0]:

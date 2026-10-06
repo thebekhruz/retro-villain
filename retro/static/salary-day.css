@@ -1,0 +1,16 @@
+.salary-day-page .pr-grid{--cols:var(--name-w) var(--sum-w) repeat(var(--days),var(--day-w)) var(--tot-w)}
+.salary-day-page .pr-c-paid{right:0}
+.salary-day-page .pr-c-grand{grid-column:span 1}
+.salary-day-page .pr-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+.salary-day-page .sd-note{font-size:12px;line-height:1.6;color:#607368;margin:0 0 18px}
+.salary-day-page .sd-day-sub{font-size:9px;font-weight:400;white-space:nowrap}
+.salary-day-page .sd-header-cell>.pr-day{width:100%;height:100%}
+.salary-day-page .sd-cell>.pr-m{height:100%}
+.salary-day-page .sd-cell{min-width:0}
+.salary-day-page .pr-day.is-selected{box-shadow:inset 0 0 0 2px #d2af59}
+.salary-day-page .pr-m.is-selected{box-shadow:inset 0 0 0 1px #d2af59}
+.salary-day-page .pr-m:focus{box-shadow:inset 0 0 0 2px #d2af59}
+.salary-day-page .sd-locked{background:#f7f8f4;color:#8c998c}
+.salary-day-page #salary-message{margin:0 0 14px}
+.salary-day-page #sheet-empty{padding:26px 18px}
+@media(max-width:650px){.salary-day-page .pr-cards{grid-template-columns:1fr}.salary-day-page .pr-card-value{margin-top:8px}}
