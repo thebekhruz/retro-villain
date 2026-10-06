@@ -30,31 +30,22 @@
   /* Что ставит клик по клетке: выдано → снять (0); не выдано → ставка;
      ставки нет → null (нужно ввести сумму). */
   function toggleTarget(amount,rate){return amount?0:rate||null;}
-  /* «Выдать всем по ставке» за день: кому можно писать, у кого есть ставка
-     и кому ещё ничего не выдано. Уже отмеченные и другие суммы не трогаем. */
-  function bulkTargets(data,day){
-    return (data.people||[]).filter(person=>canEdit(data,person,day)).flatMap(person=>{
-      const amount=parseAmount(person.cells?.[day]?.amount??0), rate=rateOf(person,day);
-      return amount===0&&rate?[{person,amount:rate}]:[];
-    });
-  }
   function matrix(data){
     const perDay=Object.fromEntries(data.days.map(day=>[day,0]));
-    const marked=Object.fromEntries(data.days.map(day=>[day,0]));
     const people=(data.people||[]).map(person=>{
       let paidCents=0;
       const cells=data.days.map(day=>{
         const cell=person.cells?.[day];
         const amount=cell?(cell.amount==null?null:parseAmount(cell.amount)):0;
         if(amount===null)throw new Error('Не удалось прочитать сумму выплаты. Обновите ведомость.');
-        const cents=Math.round(amount*100);paidCents+=cents;perDay[day]+=cents;if(cents)marked[day]++;
+        const cents=Math.round(amount*100);paidCents+=cents;perDay[day]+=cents;
         const rate=rateOf(person,day);
         return {day,amount,rate,state:cellState(amount,rate),workDay:cell?.work_day||previousDay(day),editable:canEdit(data,person,day)};
       });
       return {...person,cells,paid:paidCents/100};
     });
-    return {people,marked,perDay:Object.fromEntries(Object.entries(perDay).map(([day,value])=>[day,value/100])),
+    return {people,perDay:Object.fromEntries(Object.entries(perDay).map(([day,value])=>[day,value/100])),
       total:people.reduce((sum,person)=>sum+Math.round(person.paid*100),0)/100};
   }
-  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,bulkTargets,matrix};
+  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,matrix};
 });

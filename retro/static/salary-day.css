@@ -2,7 +2,6 @@
 .salary-day-page .pr-c-paid{right:0}
 .salary-day-page .pr-c-grand{grid-column:span 1}
 .salary-day-page .pr-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
-.salary-day-page .sd-card-sub{color:#7d8881;font-weight:500}
 .salary-day-page .sd-note{font-size:12px;line-height:1.6;color:#607368;margin:0 0 18px}
 .salary-day-page .sd-day-sub{font-size:9px;font-weight:400;white-space:nowrap}
 .salary-day-page .sd-header-cell>.pr-day{width:100%;height:100%}
@@ -10,100 +9,26 @@
 .salary-day-page #salary-message{margin:0 0 14px}
 .salary-day-page #sheet-empty{padding:26px 18px}
 
-/* ── Шапка сетки: как пользоваться + действия дня ─────────────────────── */
-.sd-head{align-items:flex-end}
-.sd-howto{display:grid;gap:8px;min-width:0;flex:1 1 420px}
-.sd-howto .pr-hint{line-height:1.5}
-.sd-key{display:grid;place-items:center;width:18px;height:18px;border-radius:5px;border:1.5px solid #c6d2c3;background:#fff;
-  color:#fff;font-style:normal;font-size:11px;line-height:1;flex:none}
-.sd-key.is-on{border-color:#24594b;background:#24594b}
-.pr-key.sd-key-odd{color:#906c2b;font-weight:600;padding:0 5px}
-.sd-acts{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end}
-.sd-act{min-height:48px;display:grid;align-content:center;justify-items:start;gap:1px;padding:7px 14px;border-radius:10px;
-  border:1px solid #e3e7df;background:#fff;color:#35624e;font:inherit;text-align:left;white-space:nowrap;cursor:pointer}
-.sd-act[hidden]{display:none}
-.sd-act:hover:not(:disabled){background:#f5f7f1}
-.sd-act-main{font-size:12px;font-weight:600}
-.sd-act-sub{font-size:10px;color:#7d8881;max-width:240px;overflow:hidden;text-overflow:ellipsis}
-.sd-act.is-primary{border-color:#143e35;background:#143e35;color:#fff}
-.sd-act.is-primary .sd-act-main>span{color:#d8b977}
-.sd-act.is-primary .sd-act-sub{color:#b9cabe}
-.sd-act.is-primary:hover:not(:disabled){background:#1b4a3f}
-.sd-act:disabled{cursor:default}
-.sd-act.is-primary:disabled{border-color:#e3e7df;background:#f5f7f1;color:#9aab9d}
-.sd-act.is-primary:disabled .sd-act-main>span,.sd-act.is-primary:disabled .sd-act-sub{color:#9aab9d}
+/* Клетки — те же .pr-s, что у сменных в «Зарплате · месяц» (макет 2b). */
+.salary-day-page .sd-cell{display:flex;min-width:0}
+.salary-day-page .sd-cell>.pr-s{flex:1;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.salary-day-page button.pr-s:focus{outline:0}
+.salary-day-page button.pr-s:focus-visible{box-shadow:inset 0 0 0 2px #d2af59}
 
-/* ── Клетка-галочка ───────────────────────────────────────────────────── */
-.sd-cell{position:relative;min-width:0;display:flex}
-.sd-tick{flex:1;min-width:0;min-height:40px;display:grid;place-items:center;padding:0 4px;border:0;border-right:1px solid #eef1ea;
-  border-radius:0;background:#fff;color:#4a8056;font:inherit;font-size:12px;font-weight:600;font-variant-numeric:tabular-nums;
-  -webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
-button.sd-tick{cursor:pointer}
-button.sd-tick:focus{outline:0}
-button.sd-tick:focus-visible,.sd-tick.is-editing{box-shadow:inset 0 0 0 2px #d2af59}
-.sd-box{display:grid;place-items:center;width:22px;height:22px;border-radius:6px;border:1.5px solid #c6d2c3;background:#fff;
-  color:#fff;font-size:13px;line-height:1;transition:background .12s,border-color .12s}
-button.sd-tick:hover .sd-box{border-color:#d2af59}
-.sd-tick.is-selected{background:#fdfaf1}
-.sd-tick.is-on{background:#f3f8f0}
-.sd-tick.is-on .sd-box{border-color:#24594b;background:#24594b}
-button.sd-tick.is-on:hover .sd-box{border-color:#1b4a3f;background:#1b4a3f}
-.sd-tick.is-odd{background:#fbf0d7}
-.sd-amt{font-size:11px;color:#906c2b;white-space:nowrap}
-button.sd-tick.is-odd:hover{background:#f8e9c6}
-/* Запертая клетка читается запертой: без рамки-квадрата, приглушённая. */
-.sd-tick.is-locked{background:#f7f8f4;color:#8c998c;font-size:11px;cursor:default}
-.sd-tick.is-locked.is-on{color:#7fa58a}
-.sd-tick.is-locked.is-odd{background:#f7f3e8;color:#a0895a}
-.sd-tick.is-future{background:#f9faf6;color:#b3bdb1}
-.sd-tick.rm-busy .sd-box,.sd-tick.rm-busy .sd-amt{visibility:hidden}
-.sd-tick.rm-busy::after{--rm-spin:14px;color:#24594b}
-
-/* ✎ — другая сумма. Видна под мышью и фокусом; на сенсорных — долгое нажатие. */
-.sd-edit{position:absolute;top:2px;right:3px;width:20px;height:20px;padding:0;border:0;border-radius:5px;background:transparent;
-  color:#8b9a8d;font-size:12px;line-height:1;cursor:pointer;opacity:0;transition:opacity .12s}
-.sd-cell:hover .sd-edit,.sd-cell:focus-within .sd-edit{opacity:1}
-.sd-edit:hover{background:#eef2ea;color:#143e35}
-@media(hover:none){.sd-edit{display:none}}
-
-/* ── Всплывашка: другая сумма / подтверждение «выдать всем» ───────────── */
-.sd-pop{position:fixed;z-index:80;width:min(280px,calc(100vw - 16px));display:grid;gap:10px;padding:14px;border:1px solid #e3e7df;
-  border-radius:12px;background:#fff;box-shadow:0 10px 30px #143e3526;color:#1c302b}
-.sd-pop-who{font-size:13px;font-weight:600;line-height:1.3}
-.sd-pop-sub{font-size:11px;color:#7d8881;margin-top:-8px}
-.sd-pop-q{margin:0;font-size:12px;line-height:1.5;color:#35624e}
-.sd-pop-field{display:grid;gap:5px;font-size:11px;color:#607368}
-.sd-pop-field input{width:100%;min-height:44px;border:1px solid #dbe3d8;border-radius:9px;padding:0 12px;font:inherit;font-size:16px;
+/* Другая сумма — окно в стиле «Удалить?» из «Зарплаты · месяц». */
+.sd-pop input{width:100%;min-height:40px;border:1px solid #dbe3d8;border-radius:8px;padding:0 10px;font:inherit;font-size:16px;
   font-weight:600;text-align:right;font-variant-numeric:tabular-nums;color:#1c302b;background:#fff}
-.sd-pop-field input:focus{outline:0;border-color:#d2af59;box-shadow:0 0 0 2px #d2af5933}
-.sd-pop-field .rm-money-hint{font-size:10px;color:#7d8881;text-align:right}
+.sd-pop input:focus{outline:0;border-color:#d2af59}
+.sd-pop .rm-money-hint{font-size:10px;color:#7d8881;text-align:right;margin-top:-6px}
 .sd-pop-error{font-size:11px;line-height:1.4;color:#ab445e}
 .sd-pop-error[hidden]{display:none}
-.sd-pop-quick{display:flex;flex-wrap:wrap;gap:6px}
-.sd-pop-chip{min-height:34px;padding:6px 10px;border:1px solid #dbe3d8;border-radius:8px;background:#f5f7f1;color:#35624e;
-  font:inherit;font-size:11px;font-weight:600;cursor:pointer}
-.sd-pop-chip:hover{background:#eaf0e6}
-.sd-pop-chip.is-off{background:#fff;color:#a96039;border-color:#ecd9cc}
-.sd-pop-actions{display:flex;justify-content:flex-end;gap:8px}
-.sd-pop .pr-confirm-keep{min-height:38px;border-radius:7px;padding:7px 12px;font-size:11px;font-weight:600;border:1px solid #dbe3d8;
-  background:#fff;color:#35624e}
-.sd-pop-save{min-height:38px;border-radius:7px;padding:7px 14px;font:inherit;font-size:11px;font-weight:600;border:1px solid #143e35;
-  background:#143e35;color:#fff;cursor:pointer}
-.sd-pop-save:hover{background:#1b4a3f}
+.sd-pop-save{min-height:36px;border-radius:7px;padding:7px 12px;font:inherit;font-size:11px;font-weight:600;border:1px solid #143e35;
+  background:#143e35;color:#fff}
 
+/* Три карточки на планшете не вмещают «3 160 000 сум» — итог месяца во всю ширину. */
 @media(max-width:1024px){
-  /* Три карточки на планшете не вмещают «3 160 000 сум» — итог месяца во всю ширину. */
   .salary-day-page .pr-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
   .salary-day-page .pr-cards>.pr-card:first-child{grid-column:1/-1}
 }
-@media(max-width:900px){
-  .sd-tick{min-height:44px}
-  .sd-pop .pr-confirm-keep,.sd-pop-save,.sd-pop-chip{min-height:40px}
-}
-@media(max-width:650px){
-  .salary-day-page .pr-cards{grid-template-columns:1fr}
-  .salary-day-page .pr-card-value{margin-top:8px}
-  .sd-acts{width:100%}
-  .sd-act{flex:1 1 100%;min-height:52px}
-  .sd-howto{flex-basis:100%}
-}
+@media(max-width:900px){.sd-pop-save{min-height:40px}}
+@media(max-width:650px){.salary-day-page .pr-cards{grid-template-columns:1fr}.salary-day-page .pr-card-value{margin-top:8px}}
