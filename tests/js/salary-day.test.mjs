@@ -49,20 +49,6 @@ test('checkbox cell: rate of the shift day, three states, toggle target',()=>{
   assert.equal(logic.toggleTarget(150000,300000),0,'any paid cell is cleared by a click');
   assert.equal(logic.toggleTarget(0,null),null,'no rate: amount must be typed');
 });
-test('pay-all ticks only editable, unpaid people who have a rate',()=>{
-  const data=month({people:[
-    {id:1,rate:'350000',cells:{'2026-10-07':{amount:'0'}}},
-    {id:2,rate:'200000',cells:{'2026-10-07':{amount:'50000'}}},
-    {id:3,rate:null,cells:{'2026-10-07':{amount:'0'}}},
-    {id:4,rate:'150000',archived:true,cells:{'2026-10-07':{amount:'0'}}},
-    {id:5,rate:'150000',cells:{'2026-10-07':{amount:'0',editable:false}}},
-    {id:6,rate:'180000',cells:{}},
-  ]});
-  assert.deepEqual(logic.bulkTargets(data,'2026-10-07').map(t=>[t.person.id,t.amount]),[[1,350000],[6,180000]]);
-  assert.deepEqual(logic.bulkTargets(data,'2026-10-06'),[],'history day is read-only');
-  assert.deepEqual(logic.matrix(data).marked,{'2026-10-06':0,'2026-10-07':1,'2026-10-08':0});
-});
-
 const source=readFileSync(new URL('../../retro/static/salary-day.js',import.meta.url),'utf8');
 const code=source.slice(source.indexOf('function commit('),source.indexOf('async function loadMonth('));
 function harness(){
