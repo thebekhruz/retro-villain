@@ -104,7 +104,7 @@
     'card-prepay':['day'],'card-prepay-cash':['day'],'card-prepay-card':['day'],'payments-sub':['day'],'payment-total':['day'],'payments-sales-total':['day'],'payments-prepay-total':['day'],'payments-inflow':['day','receipts'],
     handover:['day','expenses','receipts','shokh'],'demo-cash':['day'],'cash-prepay':['day'],
     'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],'receipt-auto-value':['day'],
-    'expense-total':['expenses','shokh'],'receipt-total':['receipts'],'shokh-pocket':['shokh'],
+    'expense-total':['expenses','shokh'],'receipt-total':['receipts'],
     'usd-today':['usd'],'usd-safe':['usd'],'usd-official':['rate'],'usd-restaurant':['rate'],
   };
   /* {id: скелет ли} по набору ещё не пришедших частей. */

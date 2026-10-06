@@ -275,7 +275,6 @@ function clearFinance() {
   $('receipt-feedback').classList.remove('is-error');
   shokhData = null;
   $('shokh-gives').replaceChildren();
-  $('shokh-pocket').textContent = '—';
   $('handover-feedback').textContent = '';
   showHandover();
 }
@@ -456,11 +455,12 @@ async function undoHandover() {
 for (const id of ['handover-button', 'handover-again']) $(id).addEventListener('click', event => Busy.button(event.currentTarget, handOver(), {done: false}));
 $('handover-undo').addEventListener('click', event => Busy.button(event.currentTarget, undoHandover(), {done: false}));
 
-/* ── Выдать Шоху из кассы ─────────────────────────────────────────────── */
+/* ── Выдачи Шоху из кассы ─────────────────────────────────────────────────
+   Новую выдачу с кассы не записать (строка «Выдать Шоху» убрана); записанные
+   раньше видны в расходах, их можно удалить, и они входят в передачу. */
 function showShokh(data) {
   shokhData = data;
   $('shokh-gives').replaceChildren();
-  $('shokh-pocket').textContent = data.pocket === null ? 'не задан' : money.format(Number(data.pocket));
   for (const item of data.gives) {
     const row = document.createElement('div'); row.className = 'expense-item is-shokh'; row.dataset.busyKey = 'cash-give:' + item.id;
     const name = document.createElement('span'); name.className = 'expense-item-name';
@@ -490,33 +490,6 @@ async function loadShokh(day, current, signal) {
       $('expense-feedback').textContent = error.message;
       $('expense-feedback').classList.add('is-error');
     }
-  }
-}
-$('shokh-form').addEventListener('submit', event => {
-  event.preventDefault();
-  const day = $('report-date').value, value = CashierLogic.parseAmount($('shokh-amount').value);
-  if (demo || !day) return;
-  if (!value) { entryFeedback('expense', 'Укажите сумму для Шоха.', true); $('shokh-amount').focus(); return; }
-  Busy.button($('shokh-give'), giveShokh(day, value));
-});
-async function giveShokh(day, value) {
-  const current = generation;
-  entryFeedback('expense', '');
-  try {
-    const data = await RetroState.responseJson(await request('/api/cashier/shokh', undefined, {method:'POST',
-      headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, amount:String(value)})}));
-    if (current !== generation) return false;
-    $('shokh-amount').value = ''; $('shokh-amount').dispatchEvent(new Event('input', {bubbles: true}));
-    showShokh(data);
-    await refreshSummary();
-    if (current !== generation) return false;
-    if (data.give) flashKey('cash-give:' + data.give.id);
-    const text = 'Выдано Шоху ' + money.format(value) + ' сум. Баланс Шоха и отчёт бухгалтера обновлены.';
-    entryFeedback('expense', text); globalThis.RetroToast?.show(text);
-    return true;
-  } catch (error) {
-    if (current === generation) { entryFeedback('expense', error.message, true); globalThis.RetroToast?.show(error.message, 'error'); }
-    return false;
   }
 }
 /* Строка под формой расходов / поступлений: итог последнего действия. */
@@ -833,7 +806,6 @@ document.querySelector('.cashier-workspace').classList.remove('is-booting');
     if (demo) {
       for (const input of $('expense-form').querySelectorAll('input, button')) input.disabled = true;
       for (const input of $('receipt-form').querySelectorAll('input, button')) input.disabled = true;
-      for (const input of $('shokh-form').querySelectorAll('input, button')) input.disabled = true;
       for (const input of $('usd-form').querySelectorAll('input, button')) input.disabled = true;
       $('expense-feedback').textContent = 'В демонстрационном режиме расходы не сохраняются.';
       $('receipt-feedback').textContent = 'В демонстрационном режиме поступления не сохраняются.';

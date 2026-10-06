@@ -169,17 +169,6 @@
 
 /* ── Выдать Шоху из кассы ─────────────────────────────────────────────── */
 .cashier-ops .expense-item.is-shokh{background:#fbf7ed}
-.cashier-shokh{display:grid;grid-template-columns:minmax(0,1fr) 110px auto;gap:8px;align-items:center;
-  padding:10px 18px;border-top:1px solid #eddfbe;background:#fbf7ed;margin:auto 0 0}
-.cashier-shokh+.cashier-form{margin-top:0}
-.cashier-shokh-label{font-size:12px;color:#7a6a45;line-height:1.4;min-width:0}
-.cashier-shokh-label strong{font-weight:650;color:#1c302b}
-.cashier-shokh-label .rm-num{white-space:nowrap}
-.cashier-shokh input{width:100%;min-width:0;height:36px;border:1px solid #e2d3ae;border-radius:7px;padding:0 10px;
-  background:#fff;color:#203d33;font-size:12px;text-align:right;font-variant-numeric:tabular-nums}
-.cashier-shokh button{height:34px;border:0;border-radius:8px;background:var(--green);color:#fff;font-size:12px;
-  font-weight:600;padding:0 10px;cursor:pointer}
-.cashier-shokh button:disabled{opacity:.5;cursor:default}
 
 /* ── Передать бухгалтеру ──────────────────────────────────────────────── */
 .handover-action[hidden],.handover-done[hidden],.handover-diff[hidden]{display:none}
@@ -243,8 +232,6 @@
   .usd-input input{height:40px}
   .cashier-actions .date-nav-arrow{min-width:40px;min-height:40px}
   .cashier-actions .date-nav-chip{min-height:40px}
-  .cashier-shokh input{height:40px}
-  .cashier-shokh button{height:40px;padding:0 14px}
   .handover-undo{min-height:40px;padding:0 6px}
 }
 @media(max-width:650px){
@@ -268,10 +255,6 @@
   .cashier-actions .date-nav-chip{min-height:40px}
   .cashier-ops .expense-item,.cashier-ops-head,.cashier-total{padding-left:16px;padding-right:16px}
   .cashier-actions .cashier-shift{grid-column:1/-1;flex:1 1 100%;width:100%;justify-content:center;height:44px}
-  /* «Выдать Шоху · на руках у него …» — подпись над полем, иначе поле в 110 точек
-     и кнопка съедали строку и подпись рвалась по слову. */
-  .cashier-shokh{grid-template-columns:minmax(0,1fr) auto;padding:10px 16px}
-  .cashier-shokh-label{grid-column:1/-1}
 }
 @media(max-width:380px){
   /* «вт, 29 сентября» целиком: на 360 точках плашка даты делит строку с «Сегодня/Вчера». */
@@ -335,9 +318,8 @@
 /* Подсказка «= 15 000 сум» (feedback.js) встаёт после поля суммы. В сетке
    формы она занимала ячейку и выталкивала «+» на новую строку прямо во время
    набора; теперь у неё своя строка под полем суммы, а пустая не занимает места. */
-.cashier-form .rm-money-hint,.cashier-shokh .rm-money-hint{grid-column:2;grid-row:2;margin:-2px 0 0;text-align:right}
-:is(.cashier-form,.cashier-shokh) .rm-money-hint:empty{display:none}
-@media(max-width:650px){.cashier-shokh .rm-money-hint{grid-column:1;grid-row:3}}
+.cashier-form .rm-money-hint{grid-column:2;grid-row:2;margin:-2px 0 0;text-align:right}
+.cashier-form .rm-money-hint:empty{display:none}
 @media(max-width:380px){.cashier-form .rm-money-hint{grid-column:1;grid-row:3}}
 /* Взнос в сейф: кромке «в работе» и вспышке нужен отступ слева, текст остаётся на месте. */
 .usd-deposit{margin-left:-6px;padding-left:6px;border-radius:0 6px 6px 0}
