@@ -28,8 +28,10 @@
     if(!el)return;
     const v=view(person,day);
     const keep=[...el.classList].filter(cls=>cls.startsWith('rm-')||cls==='is-focus').map(cls=>' '+cls).join('');
-    el.className='pr-s is-'+(v.state==='on'?'paid':v.state==='odd'?'odd':v.editable?'empty':'future')+keep;
-    el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):'';
+    // Как в макете 2b: невыданное в сегодняшнем столбце подписано «к выдаче» — видно, куда жать.
+    const topay=v.editable&&v.state==='off'&&day===today;
+    el.className='pr-s is-'+(v.state==='on'?'paid':v.state==='odd'?'odd':topay?'topay':v.editable?'empty':'future')+keep;
+    el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):topay?'к выдаче':'';
     const label=person.name+' · выплата '+dm(day)+' за смену '+dm(L.previousDay(day))+' · '+(v.amount?'выдано '+fmt(v.amount)+' сум':'не выдано');
     if(!v.editable){
       el.title=current.closed?'Месяц закрыт — только для чтения':day<current.entry_start?'История — только для просмотра'
