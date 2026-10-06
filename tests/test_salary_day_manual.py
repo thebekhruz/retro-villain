@@ -176,7 +176,7 @@ def test_first_of_next_month_pays_last_shift_of_previous_month(stores, monkeypat
     assert rows(finance, 'accountant_accruals')[0][1] == '2026-10-31'
     matrix = finance.salary_day_month(date(2026, 11, 1), date(2026, 11, 30))
     assert matrix['people'][0]['cells']['2026-11-01'] == dict(
-        amount='150000', work_day='2026-10-31', editable=True)
+        amount='150000', work_day='2026-10-31', editable=True, rate=None)
 
 
 def test_generic_salary_mutations_cannot_break_manual_pair(stores):
@@ -247,9 +247,9 @@ def test_matrix_paid_day_alignment_missing_cells_and_submitted_reports(stores):
     assert data['entry_start'] == '2026-10-07'
     cells = data['people'][0]['cells']
     assert len(cells) == 31
-    assert cells['2026-10-06'] == dict(amount='0', work_day='2026-10-05', editable=False)
-    assert cells['2026-10-07'] == dict(amount='250000', work_day='2026-10-06', editable=True)
-    assert cells['2026-10-08'] == dict(amount='0', work_day='2026-10-07', editable=True)
+    assert cells['2026-10-06'] == dict(amount='0', work_day='2026-10-05', editable=False, rate=None)
+    assert cells['2026-10-07'] == dict(amount='250000', work_day='2026-10-06', editable=True, rate=None)
+    assert cells['2026-10-08'] == dict(amount='0', work_day='2026-10-07', editable=True, rate=None)
     assert cells['2026-10-11']['editable'] is False
     finance.set_salary_day_cell(PAID, person.id, '200000', '250000')
 
@@ -280,3 +280,16 @@ def test_route_reductions_do_not_request_iiko_and_increases_require_handover(sto
         asyncio.run(routes.salary_day_cell(request, body))
     assert failure.value.status_code == 409
     assert calls == [PAID]
+
+
+def test_cell_rate_follows_the_shift_day_not_today(stores, monkeypatch):
+    """Галочка «по ставке» за прошлый день платит ставку того дня, а не нынешнюю."""
+    finance, roster, person = stores
+    from retro.modules.accountant import roster as roster_module
+    monkeypatch.setattr(roster_module, 'today_tashkent', lambda: date(2026, 10, 7))
+    roster.update(person.id, rate='200000', reason='Ставка')
+    monkeypatch.setattr(roster_module, 'today_tashkent', lambda: date(2026, 10, 8))
+    roster.update(person.id, rate='250000', reason='Повышение')
+    cells = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))['people'][0]['cells']
+    assert cells['2026-10-08']['rate'] == '200000'
+    assert cells['2026-10-09']['rate'] == '250000'

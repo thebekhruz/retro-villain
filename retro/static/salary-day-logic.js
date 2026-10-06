@@ -1,7 +1,8 @@
-/* Ручная ведомость сменных: столбец — день выплаты, смена — на день раньше. */
+/* Ручная ведомость сменных: столбец — день выплаты, смена — на день раньше.
+   Клетка — галочка: выдано по ставке смены, другая сумма или не выдано. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.SalaryDayLogic=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   function parseAmount(value){
-    const clean=String(value??'').replace(/[\s\u00a0\u202f]/g,'').replace(',','.');
+    const clean=String(value??'').replace(/[\s  ]/g,'').replace(',','.');
     if(!clean)return 0;
     if(!/^\d+(\.\d{1,2})?$/.test(clean))return null;
     const amount=Number(clean);
@@ -13,21 +14,47 @@
     return !data.closed&&!person.archived&&day>=data.entry_start&&day<=data.today
       &&data.days.includes(day)&&person.cells?.[day]?.editable!==false;
   }
+  /* Ставка смены: сервер отдаёт её по версии реестра на день смены; если нет —
+     нынешняя ставка сотрудника. Ноль и пусто — ставки нет, галочкой не выдать. */
+  function rateOf(person,day){
+    const cell=person.cells?.[day];
+    const raw=cell&&cell.rate!==undefined?cell.rate:person.rate;
+    const rate=raw==null?null:parseAmount(raw);
+    return rate?rate:null;
+  }
+  /* off — не выдано, on — выдано ровно по ставке, odd — другая сумма. */
+  function cellState(amount,rate){
+    if(!amount)return 'off';
+    return rate&&Math.round(amount*100)===Math.round(rate*100)?'on':'odd';
+  }
+  /* Что ставит клик по клетке: выдано → снять (0); не выдано → ставка;
+     ставки нет → null (нужно ввести сумму). */
+  function toggleTarget(amount,rate){return amount?0:rate||null;}
+  /* «Выдать всем по ставке» за день: кому можно писать, у кого есть ставка
+     и кому ещё ничего не выдано. Уже отмеченные и другие суммы не трогаем. */
+  function bulkTargets(data,day){
+    return (data.people||[]).filter(person=>canEdit(data,person,day)).flatMap(person=>{
+      const amount=parseAmount(person.cells?.[day]?.amount??0), rate=rateOf(person,day);
+      return amount===0&&rate?[{person,amount:rate}]:[];
+    });
+  }
   function matrix(data){
     const perDay=Object.fromEntries(data.days.map(day=>[day,0]));
+    const marked=Object.fromEntries(data.days.map(day=>[day,0]));
     const people=(data.people||[]).map(person=>{
       let paidCents=0;
       const cells=data.days.map(day=>{
         const cell=person.cells?.[day];
         const amount=cell?(cell.amount==null?null:parseAmount(cell.amount)):0;
         if(amount===null)throw new Error('Не удалось прочитать сумму выплаты. Обновите ведомость.');
-        const cents=Math.round(amount*100);paidCents+=cents;perDay[day]+=cents;
-        return {day,amount,workDay:cell?.work_day||previousDay(day),editable:canEdit(data,person,day)};
+        const cents=Math.round(amount*100);paidCents+=cents;perDay[day]+=cents;if(cents)marked[day]++;
+        const rate=rateOf(person,day);
+        return {day,amount,rate,state:cellState(amount,rate),workDay:cell?.work_day||previousDay(day),editable:canEdit(data,person,day)};
       });
       return {...person,cells,paid:paidCents/100};
     });
-    return {people,perDay:Object.fromEntries(Object.entries(perDay).map(([day,value])=>[day,value/100])),
+    return {people,marked,perDay:Object.fromEntries(Object.entries(perDay).map(([day,value])=>[day,value/100])),
       total:people.reduce((sum,person)=>sum+Math.round(person.paid*100),0)/100};
   }
-  return {parseAmount,previousDay,shiftMonth,canEdit,matrix};
+  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,bulkTargets,matrix};
 });
