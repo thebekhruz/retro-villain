@@ -7,6 +7,15 @@
  *  систем и данных (Retro, iiko, Hikvision, «Демо», «БЕХРУЗ», Яндекс, имена
  *  людей) остаются как есть — они приходят из источников, а не из интерфейса. */
 globalThis.RetroDictionaryUz = {
+  'ПОСТУПЛЕНИЯ АВАНСОВ · IIKO': "AVANS TUSHUMLARI · IIKO",
+  'Предоплаты за день': "Kunlik oldindan to‘lovlar",
+  'Итого предоплаты за день': "Kunlik oldindan to‘lovlar jami",
+  'Здесь появятся предоплаты за выбранный день': "Tanlangan kundagi oldindan to‘lovlar shu yerda ko‘rsatiladi",
+  'Список предоплат недоступен. Обновите отчёт.': "Oldindan to‘lovlar ro‘yxati mavjud emas. Hisobotni yangilang.",
+  'За этот день предоплат нет.': "Bu kunda oldindan to‘lovlar yo‘q.",
+  'Не удалось прочитать суммы предоплат.': "Oldindan to‘lovlar summasini o‘qib bo‘lmadi.",
+  'Не указан': "Ko‘rsatilmagan",
+  'Предоплаты кассы Retro. Для части операций iiko не указывает отделение.': "Retro kassasining oldindan to‘lovlari. Ayrim operatsiyalarda iiko bo‘limni ko‘rsatmaydi.",
   'Все предоплаты': "Barcha oldindan to‘lovlar",
   'Картой / безналом': "Karta / naqdsiz",
   'Осталось у Шоха': "Shohda qolgan mablag‘",

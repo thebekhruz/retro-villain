@@ -8,7 +8,7 @@ import openpyxl
 from openpyxl.cell.cell import MergedCell
 from openpyxl.styles import Alignment, Border, Font, PatternFill
 
-from .service import PAYMENT_SOURCES
+from .service import PAYMENT_SOURCES, TZ
 from .expenses import cash_to_finance
 
 TEMPLATE = Path(__file__).parent / 'templates' / 'cashier.xlsx'
@@ -34,6 +34,95 @@ def money_cell(cell, value):
     else:
         cell.value = value
         cell.number_format = MONEY
+
+
+def prepayment_time(value):
+    try:
+        received = datetime.fromisoformat(value)
+        if received.tzinfo is not None:
+            received = received.astimezone(TZ)
+        return received.strftime('%H:%M')
+    except (TypeError, ValueError):
+        return value or '—'
+
+
+def export_prepayments(workbook, snapshot):
+    """Fill the template's advance area and keep every record on a detail tab."""
+    sheet = workbook['отчет']
+    sheet['A3'] = 'ПРЕДОПЛАТЫ ЗА ДЕНЬ'
+    entries = getattr(snapshot, 'prepayments', None)
+    if entries is None:
+        sheet['A4'] = 'Детализация предоплат недоступна'
+        issue = getattr(snapshot, 'prepayments_issue', None)
+        if issue:
+            text(sheet['A5'], issue)
+        for position in ('A4', 'A5'):
+            sheet[position].font = Font(name='Calibri', size=10, color='806125')
+            sheet[position].alignment = Alignment(wrap_text=True, vertical='center')
+        return
+    if not entries:
+        sheet['A4'] = 'Предоплат за день нет'
+        return
+
+    displayed = entries[:15] if len(entries) > 16 else entries
+    for row, item in enumerate(displayed, 4):
+        description = item.comment or 'Предоплата'
+        if len(description) > 85:
+            description = description[:82] + '…'
+        parts = [prepayment_time(item.received_at)]
+        if item.order_number:
+            parts.append(f'Заказ № {item.order_number}')
+        parts.append(description)
+        if item.payment_method:
+            parts.append(item.payment_method)
+        text(sheet.cell(row, 1), ' · '.join(parts))
+        money_cell(sheet.cell(row, 2), item.amount)
+        sheet.cell(row, 1).font = Font(name='Calibri', size=10)
+        sheet.cell(row, 1).alignment = Alignment(wrap_text=True, vertical='center')
+        sheet.row_dimensions[row].hidden = False
+        sheet.row_dimensions[row].height = max(sheet.row_dimensions[row].height or 0, 36)
+    if len(entries) > 16:
+        sheet['A19'] = f'Ещё {len(entries) - 15} — на листе «Предоплаты»'
+        sheet['A19'].alignment = Alignment(wrap_text=True, vertical='center')
+        sheet.row_dimensions[19].hidden = False
+        sheet.row_dimensions[19].height = 30
+
+    detail = workbook.create_sheet('Предоплаты')
+    detail['A1'] = 'RETRO MILLIY · ПРЕДОПЛАТЫ ЗА ДЕНЬ'
+    detail['A2'] = datetime.combine(snapshot.day, datetime.min.time())
+    detail['A2'].number_format = 'dd.mm.yyyy'
+    headers = ('Время', 'Заказ', 'Комментарий', 'Способ оплаты', 'Сумма, сум')
+    for column, label in enumerate(headers, 1):
+        detail.cell(4, column, label)
+    for row, item in enumerate(entries, 5):
+        for column, value in enumerate((prepayment_time(item.received_at),
+                                       item.order_number or '—', item.comment or '—',
+                                       item.payment_method or 'Не указан'), 1):
+            text(detail.cell(row, column), value)
+        money_cell(detail.cell(row, 5), item.amount)
+    total_row = 5 + len(entries)
+    detail.cell(total_row, 4, 'ИТОГО ПРЕДОПЛАТЫ')
+    money_cell(detail.cell(total_row, 5), sum((item.amount for item in entries), Decimal(0)))
+    detail.cell(total_row + 2, 1, 'Отдельные внесения предоплат из iiko за выбранный день.')
+    for column, width in zip('ABCDE', (12, 18, 62, 30, 24)):
+        detail.column_dimensions[column].width = width
+    for row in range(1, total_row + 1):
+        detail.row_dimensions[row].height = 36 if 5 <= row < total_row else 25
+        for column in range(1, 6):
+            cell = detail.cell(row, column)
+            cell.font = Font(name='Calibri', size=11, color='173D38')
+            cell.alignment = Alignment(wrap_text=True, vertical='center')
+            if row in (1, 4, total_row):
+                cell.fill = PatternFill('solid', fgColor='16483F')
+                cell.font = Font(name='Calibri', size=11, bold=True, color='FFFFFF')
+    detail.freeze_panes = 'A5'
+    detail.auto_filter.ref = f'A4:E{total_row - 1}'
+    detail.sheet_view.showGridLines = False
+    detail.print_title_rows = '1:4'
+    detail.print_area = f'A1:E{total_row + 2}'
+    detail.sheet_properties.pageSetUpPr.fitToPage = True
+    detail.page_setup.fitToWidth = 1
+    detail.page_setup.fitToHeight = 0
 
 
 def export_report(snapshot, expenses=(), receipts=()):
@@ -239,6 +328,7 @@ def export_report(snapshot, expenses=(), receipts=()):
     manual.sheet_properties.pageSetUpPr.fitToPage = True
     manual.page_setup.fitToWidth = 1
     manual.page_setup.fitToHeight = 0
+    export_prepayments(workbook, snapshot)
     output = BytesIO()
     workbook.save(output)
     return output.getvalue()

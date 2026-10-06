@@ -7,7 +7,7 @@ from decimal import Decimal
 
 from retro.db import as_database
 from retro.accounting_period import ACCOUNTING_START
-from .service import Snapshot, Payment, RevenueBreakdown, ShiftStatus, DataError, TZ, RETRO_REGISTER
+from .service import Snapshot, Payment, Prepayment, RevenueBreakdown, ShiftStatus, DataError, TZ, RETRO_REGISTER
 
 CALCULATION_VERSION = 'cashier-2026-09-28-v1'
 
@@ -36,6 +36,10 @@ def decode_snapshot(payload):
         # Предоплаты могли не посчитаться (возврат аванса) — тогда они None, а
         # причина хранится рядом и переживает перезапуск вместе со снимком.
         prepayment_issue=value.get('prepayment_issue'),
+        prepayments=(tuple(Prepayment(**{**entry, 'amount': Decimal(entry['amount'])})
+                           for entry in value['prepayments'])
+                     if value.get('prepayments') is not None else None),
+        prepayments_issue=value.get('prepayments_issue'),
         register_payment_sales=amount('register_payment_sales'),
         register_received_total=amount('register_received_total'), source='database',
         shift=ShiftStatus(bool(shift['open']), shift.get('opened_at'), shift.get('closed_at'))

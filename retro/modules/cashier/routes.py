@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import json
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
@@ -323,6 +324,24 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
             result = await load_iiko(state, 'load', day, refresh=refresh, request=request,
                                      ttl=CLOSED_DAY_TTL if day < today_tashkent() else None,
                                      allow_stale=allow_stale)
+            # Load the registry separately so old daily archives also receive it,
+            # and an unavailable transaction report never hides sales/handover.
+            try:
+                entries = await load_iiko(state, 'load_prepayments', day,
+                                          refresh=refresh, request=request, timeout=35,
+                                          ttl=CLOSED_DAY_TTL if day < today_tashkent() else 30)
+                result = replace(result, prepayments=entries, prepayments_issue=None)
+            except (DataError, TimeoutError) as error:
+                log_safe_failure('cashier-route', error, operation='prepayments')
+                result = replace(result, prepayments=None,
+                                 prepayments_issue='Не удалось получить список предоплат из iiko. Обновите день.')
+            # Keep an already displayed/exportable registry immutable even when
+            # the base daily archive still has the same snapshot id.
+            registry_revision = json.dumps(
+                [result.id, [entry.json() for entry in result.prepayments]
+                 if result.prepayments is not None else None, result.prepayments_issue],
+                ensure_ascii=False, sort_keys=True)
+            result = replace(result, id=hashlib.sha256(registry_revision.encode()).hexdigest()[:32])
         state.cache.put(result)
         # Передача дня бухгалтеру: «Передано в 21:40» у кассира. В демо — никогда.
         handover = None if result.demo else await asyncio.to_thread(handover_check, state, day)

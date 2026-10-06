@@ -21,13 +21,20 @@ const pass = (el, work) => Promise.resolve(typeof work === 'function' ? work() :
 const Busy = globalThis.RetroBusy || {button: pass, row: pass, section: pass, flash() {}};
 let waiting = new Set(CashierLogic.PARTS);
 // Списки: пока часть грузится впервые — строки-заглушки в форме настоящих.
-const SKELETON_LISTS = {payments: ['day', 9, 'payment'], 'expense-list': ['expenses', 1, 'item'], 'receipt-list': ['receipts', 1, 'item']};
+const SKELETON_LISTS = {payments: ['day', 9, 'payment'], prepayments: ['day', 2, 'prepayment'], 'expense-list': ['expenses', 1, 'item'], 'receipt-list': ['receipts', 1, 'item']};
 // Что гаснет, пока часть перечитывается: «К передаче» считается из всех.
-const SECTIONS = {day: ['metrics', 'payments-section', 'handover-panel'], expenses: ['expenses-section', 'handover-panel'],
+const SECTIONS = {day: ['metrics', 'payments-section', 'prepayments-section', 'handover-panel'], expenses: ['expenses-section', 'handover-panel'],
   shokh: ['expenses-section', 'handover-panel'], receipts: ['receipts-section', 'handover-panel'], usd: ['usd-card'], rate: ['usd-card']};
 function skeletonRows(count, kind) {
   const bar = width => { const node = document.createElement('span'); node.className = 'rm-skel'; node.style.width = width; return node; };
   return Array.from({length: count}, (_, i) => {
+    if (kind === 'prepayment') {
+      const row = document.createElement('tr'); row.className = 'cashier-skel-row'; row.setAttribute('aria-hidden', 'true');
+      for (const width of ['36px', '65%', '60%', '64px']) {
+        const cell = document.createElement('td'); cell.append(bar(width)); row.append(cell);
+      }
+      return row;
+    }
     const row = document.createElement('div');
     row.className = (kind === 'payment' ? 'payment-row' : 'expense-item') + ' cashier-skel-row';
     row.setAttribute('aria-hidden', 'true');
@@ -50,6 +57,12 @@ function paintWaiting() {
   else if (!snapshot) $('shift-pill').hidden = true;
   if (waiting.has('day')) $('payment-empty').hidden = true;
   else if (!snapshot) $('payment-empty').hidden = false;
+  $('prepayments-section').setAttribute('aria-busy', String(waiting.has('day')));
+  if (waiting.has('day')) {
+    $('prepayments-state').hidden = true;
+    $('prepayments-table-wrap').hidden = false;
+    $('prepayments-footer').hidden = false;
+  } else if (!snapshot) showPrepayments(null);
   $('expenses-empty').hidden = waiting.has('expenses') || waiting.has('shokh')
     || Boolean(financeData && financeData.expenses.length) || Boolean(shokhData && shokhData.gives.length);
   $('receipts-empty').hidden = waiting.has('receipts') || waiting.has('day') || Boolean(snapshot)
@@ -255,6 +268,7 @@ function clearSnapshot() {
   $('payments-bar').replaceChildren();
   $('payment-empty').hidden = false;
   $('payment-empty').querySelector('p').textContent = 'Здесь появятся оплаты за выбранный день';
+  showPrepayments(null);
   showStatus();
   showHandover();
 }
@@ -607,6 +621,26 @@ function showStatus() {
   const tail = snapshot.refreshing ? ' · обновляем iiko…' : snapshot.stale ? ' · требуют обновления' : '';
   status.textContent = `${source} ${time}${tail}`;
 }
+function showPrepayments(data) {
+  const view = CashierLogic.prepaymentsView(data);
+  $('prepayments').replaceChildren();
+  const state = $('prepayments-state');
+  const available = view.rows !== null;
+  state.hidden = available && view.rows.length > 0;
+  state.classList.toggle('is-error', Boolean(view.issue));
+  state.textContent = !data ? 'Здесь появятся предоплаты за выбранный день'
+    : view.issue || (!available ? 'Список предоплат недоступен. Обновите отчёт.' : 'За этот день предоплат нет.');
+  $('prepayments-table-wrap').hidden = !available || !view.rows.length;
+  $('prepayments-footer').hidden = !available;
+  $('prepayments-total').textContent = available ? money.format(view.total) : '—';
+  for (const item of view.rows || []) {
+    const row = document.createElement('tr');
+    for (const value of [item.time, item.description, item.paymentMethod, money.format(item.amount)]) {
+      const cell = document.createElement('td'); cell.textContent = value; row.append(cell);
+    }
+    $('prepayments').append(row);
+  }
+}
 function show(data) {
   snapshot = data;
   if ('handover' in data) handoverRecord = data.handover;
@@ -659,6 +693,7 @@ function show(data) {
   $('download').disabled = Boolean(data.stale || data.refreshing);
   $('source-title').textContent = data.demo ? 'Демонстрационные данные' :
     data.source === 'database' ? 'Сохранённый отчёт · iikoWeb' : 'Источник: iikoWeb';
+  showPrepayments(data);
   showStatus();
   showHandover();
 }

@@ -87,6 +87,22 @@
           <div class="cashier-pay-total"><span>Итого по закрытым · общий приход с предоплатами и поступлениями <b id="payments-inflow" class="rm-num">—</b></span><strong id="payment-total" class="rm-num">—</strong></div>
         </section>
 
+        <section class="rm-section cashier-prepayments" id="prepayments-section" aria-labelledby="prepayments-title" aria-busy="true">
+          <div class="cashier-section-head">
+            <div><p class="eyebrow">ПОСТУПЛЕНИЯ АВАНСОВ · IIKO</p><h2 id="prepayments-title">Предоплаты за день</h2></div>
+            <span class="cashier-section-sub">Время Ташкента · UZS</span>
+          </div>
+          <div id="prepayments-state" class="expense-empty" role="status" hidden></div>
+          <div id="prepayments-table-wrap" class="cashier-prepayments-wrap">
+            <table class="cashier-prepayments-table" aria-labelledby="prepayments-title">
+              <thead><tr><th scope="col">Время</th><th scope="col">Описание</th><th scope="col">Способ оплаты</th><th scope="col">Сумма</th></tr></thead>
+              <tbody id="prepayments"></tbody>
+            </table>
+          </div>
+          <div class="cashier-pay-total" id="prepayments-footer"><span>Итого предоплаты за день</span><strong><span id="prepayments-total" class="rm-num">—</span> <span>сум</span></strong></div>
+          <p class="cashier-prepayments-note">Предоплаты кассы Retro. Для части операций iiko не указывает отделение.</p>
+        </section>
+
         <!-- Ручной учёт: расходы и поступления рядом, а не по вкладкам —
              к концу смены заполняют и то, и другое. -->
         <div class="cashier-ops">

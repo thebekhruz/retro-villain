@@ -44,6 +44,21 @@ class Payment:
 
 
 @dataclass(frozen=True)
+class Prepayment:
+    id: str
+    received_at: str
+    amount: Decimal
+    payment_method: str | None = None
+    comment: str = ''
+    order_number: str | None = None
+
+    def json(self):
+        return dict(id=self.id, received_at=self.received_at, amount=str(self.amount),
+                    payment_method=self.payment_method, comment=self.comment,
+                    order_number=self.order_number)
+
+
+@dataclass(frozen=True)
 class RevenueBreakdown:
     retro: Decimal
     school: Decimal
@@ -127,6 +142,10 @@ class Snapshot:
     shift: ShiftStatus | None = None
     # Почему предоплаты неизвестны; None — они посчитаны.
     prepayment_issue: str | None = None
+    # Actual incoming PREPAY operations, separate from the shift-difference estimate.
+    # None means the registry was not fetched; an empty tuple is a verified empty day.
+    prepayments: tuple[Prepayment, ...] | None = None
+    prepayments_issue: str | None = None
 
     @property
     def prepayments_known(self):
@@ -149,6 +168,9 @@ class Snapshot:
                     new_prepayment=str(self.new_prepayment) if self.new_prepayment is not None else None,
                     prepayment_verified=False,
                     prepayment_issue=self.prepayment_issue,
+                    prepayments=([entry.json() for entry in self.prepayments]
+                                 if self.prepayments is not None else None),
+                    prepayments_issue=self.prepayments_issue,
                     register_payment_sales=str(self.register_payment_sales) if self.register_payment_sales is not None else None,
                     register_received_total=str(self.register_received_total) if self.register_received_total is not None else None,
                     prepayment_scope='Полная смена кассы Retro, включая банкетное отделение; авансы по отделениям не разделены.',

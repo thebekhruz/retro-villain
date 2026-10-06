@@ -136,6 +136,9 @@ def test_cancelled_http_reader_does_not_cancel_same_day_reader(tmp_path):
         calls = []
 
         class Source:
+            async def load_prepayments(self, day):
+                return ()
+
             async def load(self, day):
                 calls.append(day)
                 started.set()

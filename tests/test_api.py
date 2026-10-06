@@ -54,6 +54,9 @@ def test_new_daily_report_does_not_cancel_another_readers_report():
     class IikoStub:
         calls = []
 
+        async def load_prepayments(self, day):
+            return ()
+
         async def load(self, day):
             self.calls.append(day)
             if len(self.calls) == 1:

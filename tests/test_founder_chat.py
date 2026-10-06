@@ -276,6 +276,9 @@ def test_founder_tools_expose_full_accounting_day(tmp_path):
 
 def test_founder_tools_expose_iiko_and_local_cashier_data(tmp_path):
     class IikoStub:
+        async def load_prepayments(self, day):
+            return ()
+
         async def load(self, day):
             return replace(demo_snapshot(day), demo=False)
 

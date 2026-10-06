@@ -170,6 +170,9 @@ def test_cashier_day_payload_carries_shift_and_handover_state(c):
     snapshot = snapshot_for(shift=shift_status(DAY, [SHIFT_OPEN]))
 
     class Iiko:
+        async def load_prepayments(self, day):
+            return ()
+
         async def load(self, day):
             return snapshot
 
