@@ -13,6 +13,7 @@ import openpyxl
 from openpyxl.styles import Alignment, Font, PatternFill
 
 from retro.modules.accountant.reserves import is_monthly_salary
+from retro.modules.accountant.handover_dates import receipt_day
 
 from . import overview
 
@@ -71,8 +72,9 @@ def month_workbook(state, first: date, last: date, orders, orders_error, cashier
             if orders is not None else f'Колонки iiko пустые: {orders_error}')
     if cashier_error:
         note += f' Демо и расчёт кассира пустые за дни без ответа iiko: {cashier_error}'
+    note += ' Приход бухгалтера — за предыдущую смену. Сверка смен и дата закрытия кассы месяца — на листе «Передачи смен».'
     text(sheet['A2'], note)
-    heads = ['Дата', 'Retro · выручка', 'Oxbridge · выручка', 'Демо · Retro', 'Передал кассир',
+    heads = ['Дата', 'Retro · выручка', 'Oxbridge · выручка', 'Демо · Retro', 'Приход за прошлую смену',
              'Расчёт кассира', 'Сменные', 'Оклады', 'Закуп · Шох и напрямую', 'Прочие расходы',
              'Дивиденды', 'Остаток на конец дня', 'Чеки Retro', 'Чеки Oxbridge', 'Прочие поступления']
     counts = (13, 14)
@@ -116,6 +118,37 @@ def month_workbook(state, first: date, last: date, orders, orders_error, cashier
     for column, width in zip('ABCDEFGHIJKLMNO', (12, 16, 16, 14, 16, 16, 14, 14, 16, 14, 14, 16, 11, 11, 14)):
         sheet.column_dimensions[column].width = width
     sheet.freeze_panes = 'B5'
+
+    transfers = workbook.create_sheet('Передачи смен')
+    month_end = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    text(transfers['A1'], f'Касса смен за {first.strftime("%m.%Y")} · закрытие {receipt_day(month_end).strftime("%d.%m.%Y")}')
+    transfers['A1'].font = Font(bold=True, size=13)
+    text(transfers['A2'], 'Выручка относится к дате смены, приход бухгалтера — к следующему дню. Суммы приходов также показаны по дате получения на листе «По дням».')
+    transfer_heads = ('Дата смены', 'Дата прихода', 'Расчёт кассира', 'Приход', 'Подтверждено бухгалтером')
+    for column, head in enumerate(transfer_heads, start=1):
+        cell = transfers.cell(4, column)
+        text(cell, head)
+        cell.font = Font(bold=True, color='FFFFFF')
+        cell.fill = HEAD
+    shift_day = first
+    row_index = 5
+    while shift_day <= last:
+        received = receipt_day(shift_day)
+        saved = state.accountant_finance.handover_state(received) or {}
+        till = cashier.get(shift_day.isoformat()) or {}
+        values = (datetime.combine(shift_day, datetime.min.time()),
+                  datetime.combine(received, datetime.min.time()),
+                  Decimal(till['expected']) if till.get('expected') is not None else None,
+                  Decimal(saved['amount']) if saved.get('amount') is not None else None,
+                  saved.get('confirmed_at'))
+        for column, value in enumerate(values, start=1):
+            cell = transfers.cell(row_index, column, value)
+            cell.number_format = 'dd.mm.yyyy' if column <= 2 else MONEY if column <= 4 else 'General'
+        row_index += 1
+        shift_day += timedelta(days=1)
+    for column, width in zip('ABCDE', (16, 16, 22, 22, 32)):
+        transfers.column_dimensions[column].width = width
+    transfers.freeze_panes = 'C5'
 
     categories = workbook.create_sheet('Расходы')
     text(categories['A1'], f'Куда ушли деньги · {first.strftime("%m.%Y")}')

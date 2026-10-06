@@ -90,7 +90,12 @@ def create_schema(database: Database) -> None:
     for store in (ExpenseStore, UsdRates, RosterStore, FinanceStore, AttendanceStore,
                   ShokhStore, DividendTargetStore, FounderChatStore, DirectorReportStore,
                   FinancialRequests):
-        store(database)
+        if store is FinanceStore:
+            # Preserve source date semantics and migration metadata during copy.
+            # Data migrations run on first normal startup after import.
+            store(database, migrate_handovers=False)
+        else:
+            store(database)
 
 
 def target_counts(database: Database, tables) -> dict:

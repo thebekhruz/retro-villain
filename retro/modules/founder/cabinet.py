@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
+from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.expenses import cash_to_finance
 from retro.modules.cashier.service import DataError, today_tashkent
@@ -200,7 +201,7 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
         flows = overview.daily_flows(
             await asyncio.to_thread(state.accountant_finance.cash_flows_between, day, day))
     values = flows.get(day.isoformat(), {})
-    recorded = await asyncio.to_thread(state.accountant_finance.handover_for_day, day)
+    recorded = await asyncio.to_thread(state.accountant_finance.handover_for_day, receipt_day(day))
     handover_state = await asyncio.to_thread(
         handover_check, state, day, Decimal(cashier['expected_handover']) if cashier else None) or {}
     expected, confirmed = handover_expected(cashier, handover_state)
@@ -231,7 +232,7 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
         date=day.isoformat(), weekday=day.weekday(), today=day == today_tashkent(),
         cashier=cashier, cashier_error=cashier_error,
         orders={key: value['orders'] for key, value in day_orders.items()} if orders is not None else None,
-        handover=dict(recorded=money(recorded) if recorded is not None else None,
+        handover=dict(receipt_date=receipt_day(day).isoformat(), recorded=money(recorded) if recorded is not None else None,
                       expected=expected, confirmed=confirmed, checked=checked,
                       confirmed_at=handover_state.get('confirmed_at') if confirmed else None,
                       shortfall=handover_state.get('shortfall') if checked else None,

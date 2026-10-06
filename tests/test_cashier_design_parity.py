@@ -29,7 +29,8 @@ from retro.modules.cashier.till import (add_usd_deposit, give_shokh, migrate_leg
 from retro.modules.founder import cabinet
 
 POSTGRES_URL = os.getenv('RETRO_TEST_POSTGRES_URL', '')
-DAY = today_tashkent()
+DAY = today_tashkent() - timedelta(days=1)
+RECEIVED = DAY + timedelta(days=1)
 DEMO_CASH, PREPAY = Decimal('1000000'), Decimal('200000')
 
 
@@ -122,7 +123,7 @@ def hand_over(c, snapshot, expected, day=DAY):
                                                  'expected': str(expected)})
 
 
-def accountant_day(c, day=DAY):
+def accountant_day(c, day=RECEIVED):
     response = c.get('/api/accountant/day', params={'date': day.isoformat()})
     assert response.status_code == 200, response.text
     return response.json()
@@ -188,7 +189,7 @@ def test_handover_is_computed_on_the_server_and_becomes_the_accountant_income(c)
     # Сумма из браузера не записывается, если разошлась с серверной.
     changed = hand_over(c, snapshot, '999999')
     assert changed.status_code == 409 and 'изменилась' in changed.json()['detail']
-    assert c.app.state.accountant_finance.handover_for_day(DAY) is None
+    assert c.app.state.accountant_finance.handover_for_day(RECEIVED) is None
 
     response = hand_over(c, snapshot, '850000.00')
     assert response.status_code == 201, response.text
@@ -226,19 +227,19 @@ def test_repress_updates_the_amount_and_same_amount_keeps_the_time(c):
     updated = hand_over(c, snapshot, '830000')
     assert updated.status_code == 201
     assert updated.json()['handover']['amount'] == '830000'
-    audit = c.app.state.accountant_finance.audit_entries(entity_type='handover', entity_id=DAY.isoformat())
+    audit = c.app.state.accountant_finance.audit_entries(entity_type='handover', entity_id=RECEIVED.isoformat())
     assert [entry['action'] for entry in audit] == ['create', 'update']
     assert audit[-1]['after']['source'] == 'cashier'
 
 
 def test_cashier_cannot_overwrite_or_cancel_the_accountant_record(c):
     snapshot = till_day(c)
-    assert c.post('/api/accountant/handover', json={'date': DAY.isoformat(), 'amount': '700000',
+    assert c.post('/api/accountant/handover', json={'date': RECEIVED.isoformat(), 'amount': '700000',
                                                     'note': 'пересчитала сама'}).status_code == 201
     refused = hand_over(c, snapshot, '850000')
     assert refused.status_code == 409 and 'бухгалтер' in refused.json()['detail']
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 409
-    assert c.app.state.accountant_finance.handover_for_day(DAY) == Decimal('700000')
+    assert c.app.state.accountant_finance.handover_for_day(RECEIVED) == Decimal('700000')
     assert c.get('/api/cashier/handover', params={'date': DAY.isoformat()}).json()['handover']['source'] == 'accountant'
 
 
@@ -246,13 +247,13 @@ def test_undo_removes_the_income_until_the_accountant_spends_it(c):
     snapshot = till_day(c)
     assert hand_over(c, snapshot, '850000').status_code == 201
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 204
-    assert c.app.state.accountant_finance.handover_for_day(DAY) is None
+    assert c.app.state.accountant_finance.handover_for_day(RECEIVED) is None
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 204  # уже нет
     # Бухгалтер потратил из этой передачи — отменить её кассир не может.
     assert hand_over(c, snapshot, '850000').status_code == 201
     finance = c.app.state.accountant_finance
-    finance.set_cash_opening(DAY, '0', 'Пересчёт')
-    spent = c.post('/api/accountant/expenses', json={'date': DAY.isoformat(), 'item_code': 'admin_other',
+    finance.set_cash_opening(RECEIVED, '0', 'Пересчёт')
+    spent = c.post('/api/accountant/expenses', json={'date': RECEIVED.isoformat(), 'item_code': 'admin_other',
                                                      'note': 'Канцтовары', 'amount': '800000'})
     assert spent.status_code == 201, spent.text
     blocked = c.delete('/api/cashier/handover', params={'date': DAY.isoformat()})
@@ -261,7 +262,7 @@ def test_undo_removes_the_income_until_the_accountant_spends_it(c):
     c.post('/api/cashier/shokh', json={'date': DAY.isoformat(), 'amount': '100000'})
     lower = hand_over(c, snapshot, '750000')
     assert lower.status_code == 409 and 'отрицательным' in lower.json()['detail']
-    assert finance.handover_for_day(DAY) == Decimal('850000')
+    assert finance.handover_for_day(RECEIVED) == Decimal('850000')
 
 
 def test_accountant_confirms_received_cash_and_then_cashier_cannot_undo(c):
@@ -271,12 +272,12 @@ def test_accountant_confirms_received_cash_and_then_cashier_cannot_undo(c):
     assert hand_over(c, snapshot, '850000').status_code == 201
     state = c.get('/api/cashier/handover', params={'date': DAY.isoformat()}).json()['handover']
     assert state['confirmed_at'] is None and state['shortfall'] is None
-    confirmed = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '550000'})
+    confirmed = c.post('/api/accountant/handover/confirm', json={'date': RECEIVED.isoformat(), 'amount': '550000'})
     assert confirmed.status_code == 200, confirmed.text
     handover = confirmed.json()['handover']
     assert handover['amount'] == '550000' and handover['expected_amount'] == '850000'
     assert Decimal(handover['shortfall']) == Decimal('300000') and handover['confirmed_at']
-    assert c.app.state.accountant_finance.handover_for_day(DAY) == Decimal('550000')
+    assert c.app.state.accountant_finance.handover_for_day(RECEIVED) == Decimal('550000')
     day = accountant_day(c)
     assert day['expected_cashier'] == '550000'
     assert Decimal(day['cashier_handover']['shortfall']) == Decimal('300000')
@@ -287,16 +288,16 @@ def test_accountant_confirms_received_cash_and_then_cashier_cannot_undo(c):
     again = hand_over(c, snapshot, '850000')
     assert again.status_code == 409 and 'подтвердил' in again.json()['detail']
     # Повторное подтверждение не теряет расчёт: сверяется с тем же 850 000.
-    fixed = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '850000'})
+    fixed = c.post('/api/accountant/handover/confirm', json={'date': RECEIVED.isoformat(), 'amount': '850000'})
     assert fixed.json()['handover']['expected_amount'] == '850000'
     assert Decimal(fixed.json()['handover']['shortfall']) == 0
-    audit = c.app.state.accountant_finance.audit_entries(entity_type='handover', entity_id=DAY.isoformat())
+    audit = c.app.state.accountant_finance.audit_entries(entity_type='handover', entity_id=RECEIVED.isoformat())
     assert [entry['action'] for entry in audit][-2:] == ['confirm', 'confirm']
 
 
 def test_accountant_can_confirm_before_the_cashier_button_against_the_iiko_calculation(c):
     till_day(c)
-    confirmed = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '800000'})
+    confirmed = c.post('/api/accountant/handover/confirm', json={'date': RECEIVED.isoformat(), 'amount': '800000'})
     assert confirmed.status_code == 200, confirmed.text
     assert confirmed.json()['handover']['expected_amount'] == '850000'
     assert Decimal(confirmed.json()['handover']['shortfall']) == Decimal('50000')
@@ -305,16 +306,16 @@ def test_accountant_can_confirm_before_the_cashier_button_against_the_iiko_calcu
 def test_correcting_the_accountants_own_record_is_not_a_shortfall(c):
     """Своя ручная запись бухгалтера — не расчёт: исправление сверяется с iiko."""
     till_day(c)
-    assert c.post('/api/accountant/handover', json={'date': DAY.isoformat(), 'amount': '900000',
+    assert c.post('/api/accountant/handover', json={'date': RECEIVED.isoformat(), 'amount': '900000',
                                                     'note': 'пересчитала'}).status_code == 201
-    fixed = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '850000'})
+    fixed = c.post('/api/accountant/handover/confirm', json={'date': RECEIVED.isoformat(), 'amount': '850000'})
     assert fixed.json()['handover']['expected_amount'] == '850000'
     assert Decimal(fixed.json()['handover']['shortfall']) == 0
 
 
 # ── T-399: недостача кассы — одно число везде ───────────────────────────
 
-def day_export_lines(c, day=DAY):
+def day_export_lines(c, day=RECEIVED):
     """Excel дня бухгалтера: {подпись строки: сумма} со всех листов."""
     response = c.get('/api/accountant/day/export', params={'date': day.isoformat()})
     assert response.status_code == 200, response.text
@@ -335,7 +336,7 @@ def test_shortfall_is_one_number_on_every_screen(c):
     показывают одно и то же число."""
     snapshot = till_day(c)  # расчёт 850 000: Демо + предоплата + поступление − расход − Шох
     assert hand_over(c, snapshot, '850000').status_code == 201
-    confirmed = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '550000'})
+    confirmed = c.post('/api/accountant/handover/confirm', json={'date': RECEIVED.isoformat(), 'amount': '550000'})
     assert confirmed.status_code == 200, confirmed.text
     toast = confirmed.json()['handover']
     assert (toast['shortfall'], toast['calculation'], toast['checked']) == ('300000', '850000', True)
@@ -354,7 +355,7 @@ def test_manual_income_is_checked_against_the_cashier_calculation_at_once(c):
     """Приход, записанный бухгалтером вручную, сверяется с расчётом кассы сразу —
     без «Изменить → Подтвердить»."""
     till_day(c)
-    recorded = c.post('/api/accountant/incomes', json={'date': DAY.isoformat(), 'item_code': 'income_cashier',
+    recorded = c.post('/api/accountant/incomes', json={'date': RECEIVED.isoformat(), 'item_code': 'income_cashier',
                                                        'note': 'Касса', 'amount': '450000'})
     assert recorded.status_code == 201, recorded.text
     card = accountant_day(c)['cashier_handover']
@@ -371,7 +372,7 @@ def test_manual_income_is_not_checked_when_the_cashier_did_not_use_the_panel(c):
     кассир в панели ничего не делал, расчёт iiko не знает реальных расходов
     кассы — ручной приход не сверяется нигде (2a, учредитель, Excel)."""
     c.app.state.cache.put(snapshot_for())  # расчёт iiko есть: 1 200 000
-    recorded = c.post('/api/accountant/incomes', json={'date': DAY.isoformat(), 'item_code': 'income_cashier',
+    recorded = c.post('/api/accountant/incomes', json={'date': RECEIVED.isoformat(), 'item_code': 'income_cashier',
                                                        'note': 'Касса', 'amount': '450000'})
     assert recorded.status_code == 201, recorded.text
     card = accountant_day(c)['cashier_handover']
@@ -395,7 +396,7 @@ def test_manual_income_without_a_cashier_calculation_has_no_check(c):
     даже когда кассир в панели работал."""
     assert c.post('/api/cashier/expenses', json={'date': DAY.isoformat(), 'description': 'Хлеб',
                                                  'amount': '50000'}).status_code == 201
-    recorded = c.post('/api/accountant/incomes', json={'date': DAY.isoformat(), 'item_code': 'income_cashier',
+    recorded = c.post('/api/accountant/incomes', json={'date': RECEIVED.isoformat(), 'item_code': 'income_cashier',
                                                        'note': 'Касса', 'amount': '450000'})
     assert recorded.status_code == 201, recorded.text
     card = accountant_day(c)['cashier_handover']
@@ -410,7 +411,7 @@ def test_cashier_change_after_confirmation_asks_the_accountant_again(c):
     snapshot = till_day(c)
     assert hand_over(c, snapshot, '850000').status_code == 201
     assert c.post('/api/accountant/handover/confirm',
-                  json={'date': DAY.isoformat(), 'amount': '850000'}).status_code == 200
+                  json={'date': RECEIVED.isoformat(), 'amount': '850000'}).status_code == 200
     card = accountant_day(c)['cashier_handover']
     assert (card['expected_changed'], card['shortfall']) == (False, '0')
     # После подтверждения кассир принял ещё 100 000 — к передаче стало 950 000.
@@ -431,7 +432,7 @@ def test_cashier_change_after_confirmation_asks_the_accountant_again(c):
     assert (card['expected_changed'], card['shortfall']) == (False, '0')
     # Ещё поступление — бухгалтер подтверждает снова: расчёт на момент подтверждения — новый.
     c.post('/api/cashier/receipts', json={'date': DAY.isoformat(), 'description': 'Чай', 'amount': '40000'})
-    again = c.post('/api/accountant/handover/confirm', json={'date': DAY.isoformat(), 'amount': '890000'})
+    again = c.post('/api/accountant/handover/confirm', json={'date': RECEIVED.isoformat(), 'amount': '890000'})
     assert again.status_code == 200, again.text
     handover = again.json()['handover']
     assert (handover['expected_amount'], handover['expected_changed'], handover['shortfall']) == ('890000', False, '0')
@@ -441,30 +442,31 @@ def test_cashier_undo_is_allowed_while_the_money_is_not_spent(c):
     """Зарплату выдают утром, кассу передают вечером: операции дня сами по
     себе не запрещают кассиру отменить неподтверждённую передачу."""
     finance = c.app.state.accountant_finance
-    before = DAY - timedelta(days=1)
+    before = DAY
     finance.record_handover(before, Decimal('1000000'))
     finance.set_cash_opening(before, '1000000', 'Пересчёт')
     snapshot = till_day(c)
     assert hand_over(c, snapshot, '850000').status_code == 201
-    spent = c.post('/api/accountant/expenses', json={'date': DAY.isoformat(), 'item_code': 'admin_other',
+    spent = c.post('/api/accountant/expenses', json={'date': RECEIVED.isoformat(), 'item_code': 'admin_other',
                                                      'note': 'Канцтовары', 'amount': '100000'})
     assert spent.status_code == 201, spent.text
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 204
-    assert finance.handover_for_day(DAY) is None
+    assert finance.handover_for_day(RECEIVED) is None
 
 
 def test_handover_needs_the_fresh_snapshot_on_screen(c):
-    till_day(c)
-    demo = replace(snapshot_for(), id=uuid4().hex, demo=True)
-    stale = replace(snapshot_for(), id=uuid4().hex, stale=True)
-    old = replace(snapshot_for(), id=uuid4().hex, fetched_at=datetime.now(TZ) - timedelta(minutes=6))
+    live = today_tashkent()
+    till_day(c, live)
+    demo = replace(snapshot_for(live), id=uuid4().hex, demo=True)
+    stale = replace(snapshot_for(live), id=uuid4().hex, stale=True)
+    old = replace(snapshot_for(live), id=uuid4().hex, fetched_at=datetime.now(TZ) - timedelta(minutes=6))
     for snapshot in (demo, stale, old):
         c.app.state.cache.put(snapshot)
-    assert hand_over(c, demo, '850000').status_code == 422
-    assert hand_over(c, stale, '850000').status_code == 409
-    assert 'старше 5 минут' in hand_over(c, old, '850000').json()['detail']
+    assert hand_over(c, demo, '850000', live).status_code == 422
+    assert hand_over(c, stale, '850000', live).status_code == 409
+    assert 'старше 5 минут' in hand_over(c, old, '850000', live).json()['detail']
     assert c.post('/api/cashier/handover', json={'date': DAY.isoformat(), 'snapshot_id': 'a' * 32}).status_code == 409
-    assert c.app.state.accountant_finance.handover_for_day(DAY) is None
+    assert c.app.state.accountant_finance.handover_for_day(RECEIVED) is None
     # Прошлый день с окончательным снимком (после 06:00 следующего дня) — передавать можно.
     past = DAY - timedelta(days=3)
     final = replace(snapshot_for(past), fetched_at=datetime.now(TZ) - timedelta(days=1))
@@ -476,7 +478,7 @@ def test_negative_handover_is_not_recorded(c):
     snapshot = till_day(c, give='2000000')
     response = hand_over(c, snapshot, str(expected_for(c)))
     assert response.status_code == 422 and 'передавать нечего' in response.json()['detail']
-    assert c.app.state.accountant_finance.handover_for_day(DAY) is None
+    assert c.app.state.accountant_finance.handover_for_day(RECEIVED) is None
 
 
 def test_repeated_request_with_the_same_key_is_not_recorded_twice(c):
@@ -501,7 +503,7 @@ def test_cashier_role_hands_over_but_never_reaches_the_accountant(tmp_path):
         assert c.post('/api/cashier/handover', json=body, auth=cashier).status_code == 201
         assert c.post('/api/cashier/shokh', json={'date': DAY.isoformat(), 'amount': '1'}, auth=cashier).status_code == 201
         assert c.get('/api/accountant/day', params={'date': DAY.isoformat()}, auth=cashier).status_code == 403
-        assert c.post('/api/accountant/handover', json={'date': DAY.isoformat(), 'amount': '1', 'note': 'x'},
+        assert c.post('/api/accountant/handover', json={'date': RECEIVED.isoformat(), 'amount': '1', 'note': 'x'},
                       auth=cashier).status_code == 403
         assert c.post('/api/cashier/handover', json=body, auth=accountant).status_code == 403
         assert c.get('/api/accountant/day', params={'date': DAY.isoformat()}, auth=accountant).status_code == 200
@@ -525,7 +527,7 @@ def test_till_give_raises_shokh_balance_but_not_accountant_spending(c):
     assert given.json()['total'] == '500000'
     assert Decimal(given.json()['pocket']) == Decimal('3920000')
 
-    day = accountant_day(c)
+    day = accountant_day(c, DAY)
     shoh = day['reserves']['shoh']
     assert Decimal(shoh['balance']) == Decimal('420000') + Decimal('3000000') + Decimal('500000')
     till = [entry for entry in shoh['entries'] if entry.get('source') == 'cashier']
@@ -638,7 +640,7 @@ def test_usd_deposits_feed_the_accountant_safe(c):
     second = c.post('/api/cashier/usd-deposits', json={'date': DAY.isoformat(), 'amount': '30,5'}).json()
     assert second['total'] == '150.5' and len(second['deposits']) == 2
     assert all(row['created_at'].endswith('+05:00') and not row['legacy'] for row in second['deposits'])
-    usd = accountant_day(c)['reserves']['usd']
+    usd = accountant_day(c, DAY)['reserves']['usd']
     assert Decimal(usd['balance']) == Decimal('3480.5')
     assert {entry['source'] for entry in usd['entries']} == {'cashier'}
     # Передача сумов от долларов не меняется.

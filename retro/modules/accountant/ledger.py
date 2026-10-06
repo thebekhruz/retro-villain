@@ -187,7 +187,7 @@ class CashBook:
 
 
 class FinanceStore:
-    def __init__(self, path: Path, *, allow_negative_cash: bool = False):
+    def __init__(self, path: Path, *, allow_negative_cash: bool = False, migrate_handovers: bool = True):
         self.db = as_database(path)
         # .path остаётся для скриптов обслуживания и тестов
         self.path = self.db.path
@@ -195,12 +195,12 @@ class FinanceStore:
         # остаток отменяет операцию — это единственная защита от выдачи денег,
         # которых в кассе нет.
         self.allow_negative_cash = allow_negative_cash
-        self._initialize()
+        self._initialize(migrate_handovers=migrate_handovers)
 
     def _open(self):
         return self.db.connect()
 
-    def _initialize(self):
+    def _initialize(self, *, migrate_handovers=True):
         with closing(self._open()) as connection, connection:
             connection.execute('PRAGMA journal_mode=WAL')
             connection.executescript('''
@@ -253,6 +253,9 @@ class FinanceStore:
                 CREATE TABLE IF NOT EXISTS accountant_monthly_plans (
                     month TEXT PRIMARY KEY, amount TEXT NOT NULL, note TEXT NOT NULL,
                     created_at TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS accountant_data_migrations (
+                    name TEXT PRIMARY KEY, applied INTEGER NOT NULL
                 );
                 CREATE TABLE IF NOT EXISTS accountant_handover_days (
                     day TEXT PRIMARY KEY, amount TEXT NOT NULL, checked_at TEXT NOT NULL
@@ -317,6 +320,11 @@ class FinanceStore:
             for column in ('expected_amount', 'confirmed_at', 'confirmed_by'):
                 if column not in handover_columns:
                     connection.execute(f'ALTER TABLE accountant_handover_days ADD COLUMN {column} TEXT')
+
+        from .handover_dates import migrate_handover_dates
+        if migrate_handovers:
+            with closing(self._open()) as connection:
+                migrate_handover_dates(connection)
 
     def reserves(self, day: date):
         from .reserves import reserve_summary
@@ -406,7 +414,7 @@ class FinanceStore:
 
     def record_handover(self, day: date, amount: Decimal, *, add=False, create_only=False,
                         source='accountant', replace_sources=None):
-        """Приход от кассира за день.
+        """Приход от кассира за день получения (смена предыдущего дня).
 
         `source` — кто записал: 'cashier' (кнопка кассира), 'accountant' (ручная
         запись и исправления), 'auto' (расчёт iiko вне ручного режима). Кассир
@@ -1490,7 +1498,7 @@ class FinanceStore:
         # момента записи у них нет, поэтому created_at пустой.
         if cashier_amount is not None:
             movements.insert(0, dict(id=None, type='auto_cashier',
-                                     description=f'Касса за {day.strftime("%d.%m.%Y")}',
+                                     description=f'Касса за {(day - timedelta(days=1)).strftime("%d.%m.%Y")}',
                                      amount=str(cashier_amount), day=day.isoformat(), item_code=None,
                                      created_at=None))
         other_receipts = sum((Decimal(item['amount']) for item in movements

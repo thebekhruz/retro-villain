@@ -823,7 +823,7 @@ function renderRail() {
   $('finance-cash-total').classList.toggle('is-negative', cash.end !== null && cash.end < 0);
   const lines = $('fd-cash-lines'); lines.replaceChildren();
   lines.append(railLine('На начало дня', cash.opening === null ? missing : fmt(cash.opening), 'fd-cash-line'),
-    railLine('+ От кассира · касса ' + dm(day) + (cash.cashier === null ? ' · ожидается' : cash.confirmedAt ? ' · получено ' + cash.confirmedAt
+    railLine('+ От кассира · касса ' + dm(data.cashier_date || L.shiftIso(day, -1)) + (cash.cashier === null ? ' · ожидается' : cash.confirmedAt ? ' · получено ' + cash.confirmedAt
       : handover.source === 'cashier' ? ' · передано ' + (cash.handedAt || '') + ' · подтвердите' : cash.handedAt ? ' · получено ' + cash.handedAt : ''),
       cash.cashier !== null ? fmt(cash.cashier) : cash.expected !== null ? fmt(cash.expected) : '—', 'fd-cash-line' + (cash.cashier === null ? ' is-expected' : '')));
   if (cash.receipts) lines.append(railLine('+ Прочие поступления', fmt(cash.receipts), 'fd-cash-line'));

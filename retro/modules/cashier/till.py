@@ -13,7 +13,7 @@
   сумов не входят.
 * Передача. Сумма считается на сервере по той же формуле, что у бухгалтера
   (cash_to_finance), из того снимка iiko, что открыт у кассира, и пишется в
-  accountant_handover_days — это и есть «получено» у бухгалтера.
+  accountant_handover_days датой следующего дня — приход у бухгалтера.
 """
 
 from contextlib import closing
@@ -25,6 +25,7 @@ from retro.db import table_exists
 from retro.logging_config import log_safe_failure
 from retro.modules.accountant.audit import record_audit
 from retro.modules.accountant.ledger import LedgerError, amount_value, local_timestamp, now_stamp
+from retro.modules.accountant.handover_dates import receipt_day
 
 from .expenses import cash_to_finance
 
@@ -389,11 +390,18 @@ def cashier_active(state, day: date) -> bool:
                               (day.isoformat(),)).fetchone():
             return True
         if connection.execute("SELECT 1 FROM accountant_handover_days WHERE day = ? AND source = 'cashier'",
-                              (day.isoformat(),)).fetchone():
+                              (receipt_day(day).isoformat(),)).fetchone():
             return True
     # Передача, которую потом подтвердили, исправили или отменили: след — в журнале.
+    migrations = finance.audit_entries(entity_type='finance_migration', entity_id='handover_receipt_day_v1')
+    cutoff = migrations[-1]['id'] if migrations else 0
+    entries = [entry for entry in finance.audit_entries(
+        entity_type='handover', entity_id=receipt_day(day).isoformat()) if entry['id'] > cutoff]
+    # Audit is append-only: pre-migration records still use the shift date.
+    entries += [entry for entry in finance.audit_entries(
+        entity_type='handover', entity_id=day.isoformat()) if entry['id'] < cutoff]
     return any((entry['before'] or {}).get('source') == CASHIER or (entry['after'] or {}).get('source') == CASHIER
-               for entry in finance.audit_entries(entity_type='handover', entity_id=day.isoformat()))
+               for entry in entries)
 
 
 def handover_check(state, day: date, expected: Decimal | None = None) -> dict | None:
@@ -405,7 +413,7 @@ def handover_check(state, day: date, expected: Decimal | None = None) -> dict | 
     панели (cashier_active)."""
     if expected is None:
         expected, _ = expected_from_saved(state, day)
-    return state.accountant_finance.handover_state(day, current_expected=expected,
+    return state.accountant_finance.handover_state(receipt_day(day), current_expected=expected,
                                                    cashier_active=cashier_active(state, day))
 
 
@@ -430,5 +438,5 @@ def hand_over(state, day: date, snapshot, *, expected: Decimal | None = None) ->
         raise NothingToHandOver('Расходы больше наличных в кассе — передавать нечего. '
                                 'Проверьте расходы и выдачи Шоху.')
     finance = state.accountant_finance
-    finance.record_handover(day, amount, source=CASHIER, replace_sources=CASHIER_MAY_REPLACE)
-    return finance.handover_state(day, current_expected=amount, cashier_active=True)
+    finance.record_handover(receipt_day(day), amount, source=CASHIER, replace_sources=CASHIER_MAY_REPLACE)
+    return finance.handover_state(receipt_day(day), current_expected=amount, cashier_active=True)
