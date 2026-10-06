@@ -45,9 +45,11 @@ def test_accountant_page_owns_hikvision_preview_and_cashier_links_to_it():
     # Макет 2a: состояние Hikvision и сотрудники без него — полосой в секции
     # смены, опоздавшие — вкладкой «Опоздали» в той же таблице, а выгрузка
     # входов живёт у «Сотрудников». С ТЗ 02.10 смена — на «Зарплате · день»,
-    # в «Финансах дня» её нет.
+    # в «Финансах дня» её нет. С 07.10 «Зарплата · день» — ручная таблица
+    # с галочками (T-407), полос Hikvision и вкладки «Опоздали» там больше нет.
     assert salary_day.status_code == 200
-    assert 'id="shift-strips"' in salary_day.text and 'id="shift-tabs"' in salary_day.text
+    assert 'id="sheet-grid"' in salary_day.text and 'id="sd-bulk"' in salary_day.text
+    assert 'id="shift-strips"' not in salary_day.text
     assert 'id="shift-strips"' not in accountant.text and 'id="shoh-section"' not in accountant.text
     assert 'id="salary-section"' not in accountant.text
     assert 'Сохранить и сдать отчёт' in accountant.text
