@@ -742,11 +742,14 @@ function renderRail() {
   const nextFirst = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
   $('all-debt-total').textContent = money(shiftDebt + salaryDebt + expDebt);
   $('fd-debt-lines').replaceChildren(
-    railLine('Сменные · не выдано', fmt(shiftDebt), 'fd-debt-line'),
+    // Долга нет — так и пишем, без «не выдано … 0».
+    shiftDebt ? railLine('Сменные · не выдано', fmt(shiftDebt), 'fd-debt-line')
+      : railLine('Сменные', 'всё выдано', 'fd-debt-line is-clear'),
     prevSalaries && railLine('Оклады · за ' + monthName(prevSalaries.month + '-01'),
       prevSalaries.available ? fmt(prevSalaries.remain) : 'нет данных', 'fd-debt-line'),
     railLine('Оклады · ' + monthName(data.date), 'появится ' + longDay(nextFirst), 'fd-debt-line is-pending'),
-    railLine('Расходы · не оплачено', fmt(expDebt), 'fd-debt-line'));
+    expDebt ? railLine('Расходы · не оплачено', fmt(expDebt), 'fd-debt-line')
+      : railLine('Расходы', 'всё оплачено', 'fd-debt-line is-clear'));
   const res = data.reserves;
   $('usd-balance').textContent = res.usd.balance === null ? 'не задан' : fmt(res.usd.balance) + ' USD';
   $('dividends-balance').textContent = res.dividends.balance === null ? 'не задан' : money(res.dividends.balance);

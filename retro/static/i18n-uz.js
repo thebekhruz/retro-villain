@@ -2130,6 +2130,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Сменные · не выдано': 'Smenalilar · berilmagan',
   'Оклады · остаток месяца': "Okladlar · oy qoldig'i",
   'Расходы · не оплачено': "Xarajatlar · to'lanmagan",
+  'всё оплачено': "hammasi to'langan",
   'Доллары в сейфе · от кассира': 'Seyfdagi dollar · kassirdan',
   'Дивиденды в сейфе · неделя': 'Seyfdagi dividendlar · hafta',
   'Начальные остатки и ручной приход →': "Boshlang'ich qoldiqlar va qo'lda kirim →",
