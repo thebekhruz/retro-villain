@@ -7,6 +7,11 @@
  *  систем и данных (Retro, iiko, Hikvision, «Демо», «БЕХРУЗ», Яндекс, имена
  *  людей) остаются как есть — они приходят из источников, а не из интерфейса. */
 globalThis.RetroDictionaryUz = {
+  'Осталось у Шоха': "Shohda qolgan mablag‘",
+  'Начальный остаток не задан': "Boshlang‘ich qoldiq kiritilmagan",
+  'Нет доступных средств': "Mavjud mablag‘ yo‘q",
+  'Расходы превышают доступную сумму': "Xarajatlar mavjud mablag‘dan oshgan",
+  '· остаток = начало + выделено − расходы': "· qoldiq = boshlang‘ich qoldiq + ajratilgan − xarajatlar",
   'Сохранённый отчёт · iikoWeb': 'Saqlangan hisobot · iikoWeb',
   'Загружаем отчёт…': 'Hisobot yuklanmoqda…',
   'Обновляем отчёт. На экране предыдущие данные…': "Hisobot yangilanmoqda. Ekranda oldingi ma'lumotlar…",
@@ -2978,6 +2983,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 globalThis.RetroTemplatesUz.push(
   [/^На конец (.+)$/, "$1 oxirida"],
+  [/^Потрачено (\d+)% доступной суммы$/, "Mavjud mablag‘ning $1% sarflandi"],
   [/^Потрачено (\d+)% выделенного$/, "Ajratilganning $1% sarflandi"],
   [/^В кассе бухгалтера (.+) сум\. Выдача уменьшит кассу, баланс Шоха вырастет\.$/, "Buxgalter kassasida $1 so'm. To'lov kassani kamaytiradi, Shoh balansi oshadi."],
   [/^Операции · (.+)$/, "Amallar · $1"],

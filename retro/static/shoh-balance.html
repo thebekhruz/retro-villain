@@ -44,11 +44,11 @@
          за день, 4) месячный отчёт по кнопке. -->
     <div class="sb-page" id="sb-layout" aria-busy="true">
       <div class="sb-top">
-        <!-- Главная цифра (ТЗ 02.10, п. 5): остаток = выделено − расходы. -->
+        <!-- Главная цифра (ТЗ 02.10, п. 5): остаток = начало + выделено − расходы. -->
         <section class="fd-cash sb-hero" aria-labelledby="sb-hero-title">
           <p class="fd-kicker" id="sb-hero-title">НА РУКАХ У ШОХА</p>
           <div class="sb-hero-total"><span id="sb-balance">—</span><small>сум</small></div>
-          <p class="sb-hero-sub"><span id="sb-hero-date">—</span> · остаток = выделено − расходы</p>
+          <p class="sb-hero-sub"><span id="sb-hero-date">—</span> · остаток = начало + выделено − расходы</p>
           <dl class="sb-hero-facts">
             <div><dt>На начало дня</dt><dd id="sb-start">—</dd></div>
             <div><dt>+ Выделено</dt><dd id="sb-given">—</dd></div>
@@ -58,8 +58,10 @@
         <section class="fd-card sb-month" aria-labelledby="sb-month-title">
           <p class="fd-kicker">ИТОГ ЗА МЕСЯЦ</p>
           <h2 class="sb-h2" id="sb-month-title">—</h2>
+          <div class="sb-month-line"><span>На начало периода</span><b id="sb-month-start">—</b></div>
           <div class="sb-month-line is-give"><span><i aria-hidden="true"></i>Выделено Шоху</span><b id="sb-month-given">—</b></div>
           <div class="sb-month-line is-spent"><span><i aria-hidden="true"></i>Потрачено</span><b id="sb-month-spent">—</b></div>
+          <div class="sb-month-line"><span>Осталось у Шоха</span><b id="sb-month-balance">—</b></div>
           <div class="sb-month-bar" aria-hidden="true"><span id="sb-month-bar"></span></div>
           <p class="sb-month-share" id="sb-month-share"></p>
           <button id="sb-report" class="fd-btn fd-btn-light sb-report" type="button" aria-expanded="false" aria-controls="sb-history">Месячный отчёт</button>
