@@ -7,6 +7,21 @@
  *  систем и данных (Retro, iiko, Hikvision, «Демо», «БЕХРУЗ», Яндекс, имена
  *  людей) остаются как есть — они приходят из источников, а не из интерфейса. */
 globalThis.RetroDictionaryUz = {
+  'ОПЛАТЫ ПРОДАЖ И ПРЕДОПЛАТЫ': "SAVDO TO‘LOVLARI VA OLDINDAN TO‘LOVLAR",
+  'Предоплаты наличными': "Naqd oldindan to‘lovlar",
+  'Предоплаты картой / безналом': "Karta / naqdsiz oldindan to‘lovlar",
+  'Оплаты закрытых счетов': "Yopilgan hisoblar to‘lovlari",
+  'Новые предоплаты': "Yangi oldindan to‘lovlar",
+  'Итого с предоплатами': "Oldindan to‘lovlar bilan jami",
+  'Общий приход кассы с прочими поступлениями': "Boshqa tushumlar bilan kassa tushumi jami",
+  'За этот день продаж и предоплат нет': "Bu kunda savdolar va oldindan to‘lovlar yo‘q",
+  'Загружаем платежи…': "To‘lovlar yuklanmoqda…",
+  'За этот день платежей этим способом нет.': "Bu kunda ushbu usuldagi to‘lovlar yo‘q.",
+  'В iiko Click, Payme и безналичный перевод записаны одним типом оплаты. Ниже — платежи по чекам.': "iikoda Click, Payme va naqdsiz o‘tkazma bitta to‘lov turi sifatida yozilgan. Quyida cheklar bo‘yicha to‘lovlar ko‘rsatilgan.",
+  'Дождитесь обновления iiko, затем откройте детализацию.': "iiko yangilanishini kuting, keyin tafsilotlarni oching.",
+  'В демонстрационном режиме детализация iiko недоступна.': "Namoyish rejimida iiko tafsilotlari mavjud emas.",
+  'Не удалось получить детализацию переводов из iiko. Повторите запрос.': "iikodan o‘tkazmalar tafsilotlarini olib bo‘lmadi. So‘rovni takrorlang.",
+  'Данные iiko изменились. Обновите день.': "iiko ma’lumotlari o‘zgargan. Kunni yangilang.",
   'ПОСТУПЛЕНИЯ АВАНСОВ · IIKO': "AVANS TUSHUMLARI · IIKO",
   'Предоплаты за день': "Kunlik oldindan to‘lovlar",
   'Итого предоплаты за день': "Kunlik oldindan to‘lovlar jami",

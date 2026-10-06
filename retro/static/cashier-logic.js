@@ -97,13 +97,32 @@
     return {rows,total:rows.reduce((sum,row)=>sum+Math.round(row.amount*100),0)/100,issue:null};
   }
 
+  /* В составе выручки показываем оплаты продаж и новые предоплаты отдельно.
+     Реестр внесений здесь не суммируем повторно: он детализирует те же авансы.
+     Неизвестная сумма остаётся null, чтобы ошибка iiko не выглядела как ноль. */
+  function revenueView(snapshot){
+    const number=value=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?null:Number(value);
+    const sum=values=>values.some(value=>value===null)?null:values.reduce((total,value)=>total+Math.round(value*100),0)/100;
+    const rows=(snapshot?.payments||[]).map(item=>({...item,amount:number(item.amount),kind:'sale'}));
+    const salesTotal=Array.isArray(snapshot?.payments)?sum(rows.map(row=>row.amount)):null;
+    const issue=snapshot?.prepayment_issue||null;
+    let prepaymentTotal=issue?null:number(snapshot?.new_prepayment);
+    let cash=issue?null:number(snapshot?.cash_prepayment);
+    if(prepaymentTotal!==null&&prepaymentTotal<0)prepaymentTotal=null;
+    if(cash!==null&&(cash<0||prepaymentTotal===null||cash>prepaymentTotal))cash=null;
+    const noncash=cash===null||prepaymentTotal===null?null:Math.round((prepaymentTotal-cash)*100)/100;
+    rows.push({name:'Предоплаты наличными',amount:cash,kind:'prepayment'},
+      {name:'Предоплаты картой / безналом',amount:noncash,kind:'prepayment'});
+    return {rows,salesTotal,prepaymentTotal,total:sum([salesTotal,prepaymentTotal]),issue};
+  }
+
   /* Первая загрузка дня (T-393): экран собирается из шести независимых частей.
      Цифра — скелетом, пока не пришла хотя бы одна часть, из которых она
      считается: «К передаче» ждёт и iiko, и расходы, и поступления, и Шоха. */
   const PARTS=['day','expenses','receipts','shokh','usd','rate'];
   const SKELETON={
     'total-inflow':['day','receipts'],composition:['day','receipts'],revenue:['day'],receipts:['day'],average:['day'],
-    'card-prepay':['day'],'card-prepay-cash':['day'],'card-prepay-card':['day'],'payments-sub':['day'],'payment-total':['day'],'payments-inflow':['day','receipts'],'prepayments-total':['day'],
+    'card-prepay':['day'],'card-prepay-cash':['day'],'card-prepay-card':['day'],'payments-sub':['day'],'payment-total':['day'],'payments-sales-total':['day'],'payments-prepay-total':['day'],'payments-inflow':['day','receipts'],'prepayments-total':['day'],
     handover:['day','expenses','receipts','shokh'],'demo-cash':['day'],'cash-prepay':['day'],
     'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],'receipt-auto-value':['day'],
     'expense-total':['expenses','shokh'],'receipt-total':['receipts'],'shokh-pocket':['shokh'],
@@ -117,5 +136,5 @@
     return result;
   }
 
-  return {CASH_PAYMENT,composition,shiftLabel,handoverView,parseAmount,prepaymentsView,PARTS,skeletonMap};
+  return {CASH_PAYMENT,composition,shiftLabel,handoverView,parseAmount,prepaymentsView,revenueView,PARTS,skeletonMap};
 });

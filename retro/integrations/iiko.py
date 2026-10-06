@@ -23,6 +23,9 @@ from retro.modules.cashier.service import (
     build_revenue_breakdown, build_snapshot, cell, number, shift_status, today_tashkent,
 )
 from retro.modules.cashier.prepayments import prepayments_from_olap, report_body as prepayments_body
+from retro.modules.cashier.transfer_breakdown import (
+    GROUPS as TRANSFER_GROUPS, breakdown_from_olap, report_filters as transfer_filters,
+)
 from retro.modules.director.models import (
     SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
 )
@@ -829,6 +832,21 @@ class IikoClient:
         return await self._shift_cache.get(
             key, lambda: self._post(client, '/api/cash/shift/list_period', body),
             ttl=olap_ttl(day), timeout=90, refresh=refresh_source.get(), label='iiko_shifts')
+
+    async def load_transfer_breakdown(self, day):
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено.')
+        token = cashier_read.set(True)
+        try:
+            async with self._client() as client:
+                rows = await self._olap(client, day, list(TRANSFER_GROUPS),
+                                        ['DishDiscountSumInt'], transfer_filters())
+                return breakdown_from_olap(day, rows)
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_transfer_breakdown')
+            raise DataError('Не удалось получить детализацию переводов из iiko. Повторите запрос.') from None
+        finally:
+            cashier_read.reset(token)
 
     async def load_prepayments(self, day):
         if not self.settings.configured:

@@ -19,6 +19,7 @@ from .archive import archive_boundary
 from .expenses import AutomaticExpense, Expense
 from .export import export_report
 from .service import DataError, TZ, demo_snapshot, today_tashkent
+from .transfer_breakdown import PAYMENT_NAME
 from .till import (HandoverChanged, NothingToHandOver, add_usd_deposit, delete_shokh_give,
                    delete_usd_deposit, give_shokh, hand_over, handover_check, shokh_gives, shokh_total,
                    till_summary, usd_balance, usd_day)
@@ -220,6 +221,39 @@ def day_summary(request: Request, date: date,
     except DataError:
         raise HTTPException(409, 'Отчёт на экране устарел. Обновите его.') from None
     return till_summary(request.app.state, day, snapshot)
+
+
+@router.get('/payment-breakdown')
+async def payment_breakdown(request: Request, date: date,
+                            snapshot_id: str = Query(min_length=32, max_length=32,
+                                                     pattern='^[a-f0-9]+$')):
+    day = selected_day(date)
+    state = request.app.state
+    try:
+        snapshot = state.cache.get(snapshot_id, day)
+    except DataError:
+        raise HTTPException(409, 'Отчёт на экране устарел. Обновите его.') from None
+    if snapshot.stale or snapshot.refreshing:
+        raise HTTPException(409, 'Дождитесь обновления iiko, затем откройте детализацию.')
+    if snapshot.demo:
+        raise HTTPException(422, 'В демонстрационном режиме детализация iiko недоступна.')
+    expected = sum((payment.amount for payment in snapshot.payments
+                    if payment.name == PAYMENT_NAME), Decimal(0))
+    try:
+        result = await load_iiko(state, 'load_transfer_breakdown', day, request=request,
+                                 ttl=CLOSED_DAY_TTL if day < today_tashkent() else 30)
+        if Decimal(result['total']) != expected:
+            # Refresh can replace the displayed day while a previous detail
+            # report remains cached. Give that report one fresh read as well.
+            result = await load_iiko(state, 'load_transfer_breakdown', day, request=request,
+                                     refresh=True,
+                                     ttl=CLOSED_DAY_TTL if day < today_tashkent() else 30)
+    except (DataError, TimeoutError) as error:
+        log_safe_failure('cashier-route', error, operation='payment_breakdown')
+        raise HTTPException(503, 'Не удалось получить детализацию переводов из iiko. Повторите запрос.') from None
+    if Decimal(result['total']) != expected:
+        raise HTTPException(409, 'Данные iiko изменились. Обновите день.')
+    return result
 
 
 @router.get('/handover')

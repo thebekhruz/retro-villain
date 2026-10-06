@@ -78,13 +78,15 @@
              что именно они уходят бухгалтеру, а остальное остаётся на счетах. -->
         <section class="rm-section cashier-revenue" id="payments-section">
           <div class="cashier-section-head">
-            <div><p class="eyebrow">ЗАКРЫТЫЕ СЧЕТА · ПО ТИПАМ ОПЛАТЫ</p><h2>Выручка</h2></div>
+            <div><p class="eyebrow">ОПЛАТЫ ПРОДАЖ И ПРЕДОПЛАТЫ</p><h2>Выручка</h2></div>
             <span id="payments-sub" class="cashier-section-sub"></span>
           </div>
           <div id="payments-bar" class="composition cashier-pay-bar" aria-hidden="true"></div>
           <div id="payment-empty" class="empty-state"><span aria-hidden="true">▤</span><p>Здесь появятся оплаты за выбранный день</p></div>
           <div id="payments" class="payments"></div>
-          <div class="cashier-pay-total"><span>Итого по закрытым · общий приход с предоплатами и поступлениями <b id="payments-inflow" class="rm-num">—</b></span><strong id="payment-total" class="rm-num">—</strong></div>
+          <div class="cashier-pay-subtotals"><div><span>Оплаты закрытых счетов</span><b id="payments-sales-total" class="rm-num">—</b></div><div><span>Новые предоплаты</span><b id="payments-prepay-total" class="rm-num">—</b></div></div>
+          <div class="cashier-pay-total"><span>Итого с предоплатами</span><strong id="payment-total" class="rm-num">—</strong></div>
+          <div class="cashier-pay-inflow"><span>Общий приход кассы с прочими поступлениями</span><b id="payments-inflow" class="rm-num">—</b></div>
         </section>
 
         <section class="rm-section cashier-prepayments" id="prepayments-section" aria-labelledby="prepayments-title" aria-busy="true">

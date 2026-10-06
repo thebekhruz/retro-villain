@@ -262,7 +262,7 @@ function clearSnapshot() {
   handoverRecord = null;
   $('shift-pill').hidden = true;
   $('download').disabled = true;
-  for (const id of ['revenue','receipts','average','payment-total']) $(id).textContent = '—';
+  for (const id of ['revenue','receipts','average','payment-total','payments-sales-total','payments-prepay-total']) $(id).textContent = '—';
   $('payments-sub').textContent = '';
   $('payments').replaceChildren();
   $('payments-bar').replaceChildren();
@@ -621,6 +621,56 @@ function showStatus() {
   const tail = snapshot.refreshing ? ' · обновляем iiko…' : snapshot.stale ? ' · требуют обновления' : '';
   status.textContent = `${source} ${time}${tail}`;
 }
+function transferDisclosure(data, label, id) {
+  const button = document.createElement('button');
+  button.type = 'button'; button.className = 'cashier-pay-toggle';
+  button.textContent = label; button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-controls', id);
+  const details = document.createElement('ul');
+  details.id = id; details.className = 'cashier-pay-details'; details.hidden = true;
+  details.setAttribute('aria-live', 'polite');
+  let loaded = false, loading = false;
+  function note(text) {
+    const item = document.createElement('li'); item.className = 'cashier-pay-detail-note';
+    item.textContent = text; details.append(item);
+  }
+  button.addEventListener('click', async () => {
+    details.hidden = !details.hidden;
+    button.setAttribute('aria-expanded', String(!details.hidden));
+    if (details.hidden || loaded || loading) return;
+    const current = generation;
+    loading = true; details.replaceChildren(); note('Загружаем платежи…');
+    details.setAttribute('aria-busy', 'true');
+    try {
+      const params = new URLSearchParams({date: data.date, snapshot_id: data.snapshot_id});
+      const result = await (await request('/api/cashier/payment-breakdown?' + params, controller?.signal)).json();
+      if (current !== generation || snapshot !== data) return;
+      details.replaceChildren();
+      note(result.note);
+      const time = new Intl.DateTimeFormat('ru-RU', {hour:'2-digit', minute:'2-digit', timeZone:'Asia/Tashkent'});
+      for (const payment of result.rows) {
+        const item = document.createElement('li'); item.className = 'cashier-pay-detail';
+        const description = document.createElement('span');
+        const received = payment.received_at ? new Date(payment.received_at) : null;
+        description.textContent = [received && !Number.isNaN(received.getTime()) ? time.format(received) : '',
+          payment.order_number ? 'Чек № ' + payment.order_number : 'Платёж', payment.comment].filter(Boolean).join(' · ');
+        const amount = document.createElement('strong'); amount.textContent = money.format(Number(payment.amount)) + ' сум';
+        item.append(description, amount); details.append(item);
+      }
+      if (!result.rows.length) note('За этот день платежей этим способом нет.');
+      const total = document.createElement('li'); total.className = 'cashier-pay-detail';
+      const title = document.createElement('span'); title.textContent = 'Итого';
+      const value = document.createElement('strong'); value.textContent = money.format(Number(result.total)) + ' сум';
+      total.append(title, value); details.append(total);
+      loaded = true;
+    } catch (error) {
+      if (current === generation && snapshot === data && error.name !== 'AbortError') {
+        details.replaceChildren(); note(error.message);
+      }
+    } finally { loading = false; details.setAttribute('aria-busy', 'false'); }
+  });
+  return {button, details};
+}
 function showPrepayments(data) {
   const view = CashierLogic.prepaymentsView(data);
   $('prepayments').replaceChildren();
@@ -659,25 +709,35 @@ function show(data) {
   // читается дольше и обещает точность, которой нет.
   $('average').textContent = data.average_receipt === null ? '—' : count.format(Math.round(Number(data.average_receipt)));
   $('payments-sub').textContent = `${count.format(data.receipt_count)} чеков · средний ${data.average_receipt === null ? '—' : count.format(Math.round(Number(data.average_receipt)))}`;
-  $('payment-total').textContent = money.format(Number(data.payment_total));
-  $('payment-empty').hidden = data.receipt_count > 0 || Number(data.revenue) !== 0;
-  $('payment-empty').querySelector('p').textContent = 'За этот день продаж нет';
-  const positiveTotal = data.payments.reduce((sum,p) => sum + Math.max(0,Number(p.amount)),0);
-  data.payments.forEach((payment,i) => {
-    const color = colors[i % colors.length];
+  const revenue = CashierLogic.revenueView(data);
+  const amountText = amount => amount === null ? '—' : money.format(amount);
+  $('payments-sales-total').textContent = amountText(revenue.salesTotal);
+  $('payments-prepay-total').textContent = amountText(revenue.prepaymentTotal);
+  $('payment-total').textContent = amountText(revenue.total);
+  $('payment-empty').hidden = revenue.total !== 0;
+  $('payment-empty').querySelector('p').textContent = 'За этот день продаж и предоплат нет';
+  const positiveTotal = revenue.rows.every(p => p.amount !== null)
+    ? revenue.rows.reduce((sum,p) => sum + Math.max(0,p.amount),0) : 0;
+  revenue.rows.forEach((payment,i) => {
+    const color = payment.kind === 'prepayment' ? (payment.name === 'Предоплаты наличными' ? '#d2b77b' : '#b2c3aa') : colors[i % colors.length];
     const row = document.createElement('div'); row.className = 'payment-row'; row.style.setProperty('--color',color);
     const dot = document.createElement('span'); dot.className = 'payment-dot';
     const name = document.createElement('span'); name.className = 'payment-name';
     const label = document.createElement('span'); label.className = 'payment-label'; label.textContent = payment.name;
-    name.append(label);
+    let disclosure;
+    if (payment.kind === 'sale' && payment.name === 'Click/Payme Безналичный перевод') {
+      disclosure = transferDisclosure(data, payment.name, 'transfer-details-' + i);
+      name.append(disclosure.button);
+    } else name.append(label);
     const share = document.createElement('span'); share.className = 'payment-share';
     const ratio = positiveTotal > 0 ? Math.max(0, Number(payment.amount)) / positiveTotal * 100 : null;
     share.textContent = ratio === null ? '' : ratio.toLocaleString('ru-RU', {minimumFractionDigits:1, maximumFractionDigits:1}) + '%';
-    const value = document.createElement('strong'); value.className = 'payment-value'; value.textContent = money.format(Number(payment.amount));
+    const value = document.createElement('strong'); value.className = 'payment-value'; value.textContent = amountText(payment.amount);
     // Способы без единой транзакции остаются в списке (видно, что их
     // проверяли), но гаснут и не спорят за внимание с теми, где были деньги.
-    if (Number(payment.amount) === 0) row.classList.add('is-zero');
-    if (payment.name === CashierLogic.CASH_PAYMENT) {
+    if (payment.amount === 0) row.classList.add('is-zero');
+    if (payment.kind === 'prepayment') row.classList.add('cashier-pay-row--prepayment');
+    if (payment.kind === 'sale' && payment.name === CashierLogic.CASH_PAYMENT) {
       // В iiko наличные называются «Демо»; кассиру понятнее «Наличные».
       label.textContent = 'Наличные';
       const source = document.createElement('small'); source.className = 'payment-source'; source.textContent = '«Демо» в iiko';
@@ -686,6 +746,7 @@ function show(data) {
       row.classList.add('is-cash');
     }
     row.append(dot,name,share,value); $('payments').append(row);
+    if (disclosure) $('payments').append(disclosure.details);
     if (positiveTotal > 0 && Number(payment.amount) > 0) {
       const segment = document.createElement('span');segment.style.setProperty('--color',color);segment.style.width = (Number(payment.amount)/positiveTotal*100)+'%';$('payments-bar').append(segment);
     }
