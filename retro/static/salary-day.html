@@ -43,10 +43,19 @@
       <section class="pr-cards" aria-label="Итоги ведомости">
         <article class="pr-card"><div class="pr-card-label">Выдано по сотрудникам</div><div class="pr-card-value rm-num" id="salary-total">—</div></article>
         <article class="pr-card"><div class="pr-card-label" id="selected-title">Выдано за выбранный день</div><div class="pr-card-value rm-num" id="salary-selected">—</div><div class="pr-card-sub" id="selected-shift"></div></article>
-        <article class="pr-card"><div class="pr-card-label">Сотрудников в ведомости</div><div class="pr-card-value rm-num" id="salary-people">—</div></article>
+        <article class="pr-card"><div class="pr-card-label" id="marked-title">Отмечено</div><div class="pr-card-value rm-num" id="salary-people">—</div><div class="pr-card-sub sd-card-sub" id="marked-left"></div></article>
       </section>
       <section class="pr-sheet" aria-label="Ведомость сменных: сотрудник × день выплаты">
-        <div class="pr-sheet-head"><div class="pr-legend"><span><i class="pr-key is-paid">✓</i>в ячейке — выдано за день</span></div><span class="pr-hint">Введите фактически выданную сумму. Ставка указана для справки. Пустая ячейка или 0 отменяет выплату.</span></div>
+        <div class="pr-sheet-head sd-head">
+          <div class="sd-howto">
+            <div class="pr-legend"><span><i class="sd-key"></i>не выдано</span><span><i class="sd-key is-on">✓</i>выдано по ставке</span><span><i class="pr-key is-odd sd-key-odd">100 000</i>другая сумма</span></div>
+            <span class="pr-hint">Нажмите на клетку — выдано по ставке. Ещё раз — снять. Другая сумма — ✎, правая кнопка мыши или долгое нажатие.</span>
+          </div>
+          <div class="sd-acts">
+            <button id="sd-undo" class="sd-act" type="button" hidden><span class="sd-act-main"><span aria-hidden="true">↩&#xFE0E;</span> Отменить</span><span class="sd-act-sub" id="sd-undo-text"></span></button>
+            <button id="sd-bulk" class="sd-act is-primary" type="button"><span class="sd-act-main"><span aria-hidden="true">✓</span> Выдать всем по ставке</span><span class="sd-act-sub" id="sd-bulk-sub"></span></button>
+          </div>
+        </div>
         <div class="pr-scroll" id="sheet-scroll"><div class="pr-grid" id="sheet-grid" role="table" aria-label="Выплаты сменным сотрудникам"></div></div>
         <div id="sheet-empty" class="empty-state" hidden><p>Сменных сотрудников пока нет. Добавьте их в «Сотрудниках».</p></div>
       </section>

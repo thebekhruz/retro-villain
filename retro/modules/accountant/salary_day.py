@@ -186,8 +186,12 @@ def month_data(finance, first, last):
                 or Decimal(paid_rows[0][5]) != Decimal(earned_row[4]))
             if not paid_rows and paid_day in aggregate_days:
                 conflict = True
+            # Ставка на день смены (по версии реестра), а не нынешняя: галочка
+            # «выдано по ставке» за прошлый день платит то, что действовало тогда.
+            rate = history[-1][5] if history and not history[-1][6] else None
             person['cells'][paid_day] = dict(amount=plain(amounts[(employee_id, paid_day)]),
-                                             work_day=work_day, editable=bool(editable and not conflict))
+                                             work_day=work_day, editable=bool(editable and not conflict),
+                                             rate=str(rate) if rate is not None else None)
     return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(), days=days,
                 people=list(people.values()),
                 closed_through=closed_through or None)
