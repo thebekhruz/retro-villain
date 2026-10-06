@@ -3,17 +3,22 @@
 .salary-day-page .pr-c-grand{grid-column:span 1}
 .salary-day-page .pr-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
 .salary-day-page .sd-note{font-size:12px;line-height:1.6;color:#607368;margin:0 0 18px}
-.salary-day-page .sd-day-sub{font-size:9px;font-weight:400;white-space:nowrap}
 .salary-day-page .sd-header-cell>.pr-day{width:100%;height:100%}
-.salary-day-page .pr-day.is-selected{box-shadow:inset 0 0 0 2px #d2af59}
+.salary-day-page .pr-day.is-selected:not(.is-today){box-shadow:inset 0 0 0 2px #d2af59}
 .salary-day-page #salary-message{margin:0 0 14px}
 .salary-day-page #sheet-empty{padding:26px 18px}
 
-/* Клетки — те же .pr-s, что у сменных в «Зарплате · месяц» (макет 2b). */
-.salary-day-page .sd-cell{display:flex;min-width:0}
-.salary-day-page .sd-cell>.pr-s{flex:1;-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
-.salary-day-page button.pr-s:focus{outline:0}
-.salary-day-page button.pr-s:focus-visible{box-shadow:inset 0 0 0 2px #d2af59}
+/* Клетки — те же .pr-m, что в «Зарплате · месяц»; обёртка role=cell не участвует в сетке. */
+.salary-day-page .sd-cell{display:contents}
+.salary-day-page .sd-m{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none;touch-action:manipulation}
+.salary-day-page button.sd-m{cursor:pointer}
+.salary-day-page button.sd-m:hover:not(.is-filled):not(.is-odd){background:#fbfcf9}
+.salary-day-page button.sd-m.is-today:hover:not(.is-filled):not(.is-odd){background:#f7f0dd}
+.salary-day-page button.sd-m:focus{outline:0}
+.salary-day-page button.sd-m:focus-visible,.salary-day-page .sd-m.is-focus{box-shadow:inset 0 0 0 2px #d2af59}
+.salary-day-page .sd-m.is-tick{justify-content:center;font-size:13px;color:#4a8056}
+.salary-day-page .sd-m.is-odd{background:#fbf0d7;color:#906c2b}
+.salary-day-page .sd-m.is-locked{cursor:default}
 
 /* Другая сумма — окно в стиле «Удалить?» из «Зарплаты · месяц». */
 .sd-pop input{width:100%;min-height:40px;border:1px solid #dbe3d8;border-radius:8px;padding:0 10px;font:inherit;font-size:16px;

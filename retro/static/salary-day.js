@@ -1,4 +1,4 @@
-/* «Зарплата · день» — сетка сменных как в макете 2b: клетка = день выплаты.
+/* «Зарплата · день» — та же сетка, что «Зарплата · месяц»: клетка = день выплаты.
    Клик по клетке — ✓ выдано по ставке смены, ещё клик — снять. Другая сумма —
    правая кнопка мыши, долгое нажатие или цифра с клавиатуры. Пишется сразу. */
 (() => {
@@ -22,16 +22,15 @@
     const amount=L.parseAmount(person.cells?.[day]?.amount??0)||0, rate=L.rateOf(person,day);
     return {amount,rate,state:L.cellState(amount,rate),editable:L.canEdit(current,person,day)};
   }
-  /* Клетка в классах сетки «Зарплаты · месяц» (.pr-s): ✓ — по ставке, сумма на
-     жёлтом — другая сумма, пусто — не выдано, серое — только просмотр. */
+  /* Клетка — ячейка «Зарплаты · месяц» (.pr-m): белая, сегодняшний столбец подсвечен,
+     выдано по ставке — ✓ на зелёном, другая сумма — число на жёлтом. */
   function paintCell(person,day,el=document.getElementById(cellId(person.id,day))){
     if(!el)return;
     const v=view(person,day);
     const keep=[...el.classList].filter(cls=>cls.startsWith('rm-')||cls==='is-focus').map(cls=>' '+cls).join('');
-    // Как в макете 2b: невыданное в сегодняшнем столбце подписано «к выдаче» — видно, куда жать.
-    const topay=v.editable&&v.state==='off'&&day===today;
-    el.className='pr-s is-'+(v.state==='on'?'paid':v.state==='odd'?'odd':topay?'topay':v.editable?'empty':'future')+keep;
-    el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):topay?'к выдаче':'';
+    el.className='pr-m sd-m'+(v.state==='on'?' is-filled is-tick':v.state==='odd'?' is-odd':'')+(day===today?' is-today':'')
+      +(day>today?' is-future':'')+(v.editable?'':' is-locked')+keep;
+    el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):'';
     const label=person.name+' · выплата '+dm(day)+' за смену '+dm(L.previousDay(day))+' · '+(v.amount?'выдано '+fmt(v.amount)+' сум':'не выдано');
     if(!v.editable){
       el.title=current.closed?'Месяц закрыт — только для чтения':day<current.entry_start?'История — только для просмотра'
@@ -61,19 +60,22 @@
     const grid=$('sheet-grid'), view=L.matrix(current);grid.replaceChildren();
     grid.style.setProperty('--days',String(current.days.length));
     $('sheet-empty').hidden=!!view.people.length;$('sheet-scroll').hidden=!view.people.length;
+    // Шапка — как у «Зарплаты · месяц»: число и день недели, «сегодня», вчера светло-зелёным.
     const head=node('div','pr-row is-head');head.setAttribute('role','row');
-    for(const [cls,title] of [['pr-c pr-c-name','Сотрудник'],['pr-c pr-c-sum','Ставка / смена']]){const el=node('div',cls,title);el.setAttribute('role','columnheader');head.append(el);}
+    for(const [cls,title] of [['pr-c pr-c-name','Сотрудник'],['pr-c pr-c-sum','Ставка']]){const el=node('div',cls,title);el.setAttribute('role','columnheader');head.append(el);}
+    const yesterday=L.previousDay(today);
     current.days.forEach(day=>{
       const cell=node('div','sd-header-cell');cell.setAttribute('role','columnheader');
-      const button=node('button','pr-day'+(day===today?' is-today':'')+(day>today?' is-future':''));button.type='button';button.dataset.day=day;
+      const future=day>today, button=node(future?'div':'button','pr-day'+(day===today?' is-today':'')+(day===yesterday?' is-shift':'')+(future?' is-future':''));button.dataset.day=day;
       button.title='Выплата '+dm(day)+' · за смену '+dm(L.previousDay(day));
-      button.append(node('strong','',String(Number(day.slice(8,10)))),node('span','',new Intl.DateTimeFormat('ru-RU',{weekday:'short',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'))),node('span','sd-day-sub','за '+dm(L.previousDay(day))));
-      button.addEventListener('click',()=>selectDay(day));cell.append(button);head.append(cell);
+      button.append(node('strong','',String(Number(day.slice(8,10)))),node('span','',day===today?'сегодня':new Intl.DateTimeFormat('ru-RU',{weekday:'short',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'))));
+      if(!future){button.type='button';button.addEventListener('click',()=>selectDay(day));}
+      cell.append(button);head.append(cell);
     });
     const paidHead=node('div','pr-c pr-c-paid','Выдано');paidHead.setAttribute('role','columnheader');head.append(paidHead);grid.append(head);
     // В матрице клетки — массив для подсчёта; рисуем и пишем по исходным данным.
     view.people.forEach((summary,index)=>{
-      const person=current.people[index], row=node('div','pr-row is-shift');row.setAttribute('role','row');
+      const person=current.people[index], row=node('div','pr-row is-monthly');row.setAttribute('role','row');
       const who=node('div','pr-c pr-c-name');who.setAttribute('role','rowheader');who.append(node('span','pr-name',person.name),node('span','pr-role',person.archived?(person.role||'')+' · архив':person.role||''));
       const rate=person.rate==null||!Number(person.rate)?node('div','pr-c pr-c-sum is-norate','нет ставки'):node('div','pr-c pr-c-sum rm-num',fmt(Number(person.rate)));
       rate.setAttribute('role','cell');row.append(who,rate);
@@ -131,7 +133,7 @@
       $('month-input').value=data.month;$('month-input').max=today.slice(0,7);$('month-label').textContent=monthTitle(month);$('crumb-month').textContent='Зарплата · день';
       render();$('salary-body').hidden=false;message('');$('connection').classList.remove('rm-status-skel');$('connection').textContent='Ручная ведомость · '+monthTitle(month);controls();
       const scrollDay=today<data.entry_start&&data.days.includes(data.entry_start)?data.entry_start:selectedDay;
-      const focus=$('sheet-grid').querySelector('button.pr-day[data-day="'+scrollDay+'"]');
+      const focus=$('sheet-grid').querySelector('.pr-day[data-day="'+scrollDay+'"]');
       if(focus){
         // Выбранный день виден целиком; слева — до двух прошлых дней, сколько влезет за
         // закреплёнными колонками. Ровно по границе дня: на телефоне прокрутка прилипает к дням.
@@ -210,7 +212,7 @@
 
   /* ── Клетки: мышь, палец, клавиатура ─────────────────────────────────── */
   const grid=$('sheet-grid');
-  const cellOf=target=>target.closest?.('button.pr-s');
+  const cellOf=target=>target.closest?.('button.sd-m');
   const targetOf=el=>{const person=personOf(Number(el.dataset.person));return person?{person,day:el.dataset.day}:null;};
   grid.addEventListener('click',event=>{
     const el=cellOf(event.target);if(!el)return;
