@@ -371,7 +371,24 @@ def monthly_payments_json(finance, roster, day: date) -> dict:
     return dict(month=day.strftime('%Y-%m'),
                 paid_by_employee={str(key): str(value) for key, value in paid.items()},
                 today=[dict(row, name=names.get(row['employee_id'], 'Сотрудник удалён'))
-                       for row in rows if row['day'] == day.isoformat()])
+                       for row in rows if row['day'] == day.isoformat()],
+                previous=previous_month_salaries(finance, day))
+
+
+def previous_month_salaries(finance, day: date) -> dict:
+    """Оклады за прошлый месяц для «Долгов к оплате»: долгом месяц становится 1-го
+    числа следующего. Выдачи — с начала прошлого месяца по выбранный день: оклад
+    за сентябрь выдают и в октябре. Месяц раньше начала учёта — данных нет."""
+    last = day.replace(day=1) - timedelta(days=1)
+    first = last.replace(day=1)
+    start = finance.accounting_start(day)
+    if start is None or last < start:
+        return dict(month=first.strftime('%Y-%m'), available=False, paid_by_employee={})
+    paid = {}
+    for row in finance.monthly_payments(first, day):
+        paid[row['employee_id']] = paid.get(row['employee_id'], Decimal(0)) + Decimal(row['amount'])
+    return dict(month=first.strftime('%Y-%m'), available=True,
+                paid_by_employee={str(key): str(value) for key, value in paid.items()})
 
 
 class ExceptionInput(BaseModel):

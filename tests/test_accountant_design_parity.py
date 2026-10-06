@@ -241,6 +241,8 @@ def test_monthly_salary_part_is_linked_to_the_person_and_reaches_the_month_sheet
 
         day = day_json(c)
         assert day['monthly_payments']['paid_by_employee'] == {str(person.id): '2000000'}
+        # Август — до начала учёта: долга по окладам за него не показываем.
+        assert day['monthly_payments']['previous'] == dict(month='2026-08', available=False, paid_by_employee={})
         today, = day['monthly_payments']['today']
         assert (today['name'], today['id']) == ('Азиз', paid.json()['id'])
         assert TASHKENT_STAMP.match(today['created_at'])
@@ -1171,3 +1173,20 @@ def test_accountant_links_a_person_to_hikvision_by_hand(any_db):
     # Освободившийся номер можно отдать другому — его входы переходят к нему.
     assert patch(shahzod, hikvision_id='1024').status_code == 200
     assert staff(shahzod)['status'] == 'on_time'
+
+
+def test_previous_month_salaries_count_payments_through_the_selected_day():
+    from retro.modules.accountant.routes import previous_month_salaries
+
+    class Finance:
+        def accounting_start(self, day):
+            return date(2026, 10, 2)
+
+        def monthly_payments(self, first, last):
+            assert (first, last) == (date(2026, 10, 1), date(2026, 11, 5))
+            return [dict(employee_id=1, amount='3000000'), dict(employee_id=1, amount='1000000')]
+
+    assert previous_month_salaries(Finance(), date(2026, 11, 5)) == dict(
+        month='2026-10', available=True, paid_by_employee={'1': '4000000'})
+    # Сентябрь целиком до начала учёта (2 октября) — данных нет.
+    assert previous_month_salaries(Finance(), date(2026, 10, 6))['available'] is False

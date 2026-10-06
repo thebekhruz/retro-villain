@@ -55,6 +55,8 @@ function longDay(iso, weekday) {
   return new Intl.DateTimeFormat('ru-RU', {...(weekday ? {weekday: 'short'} : {}), day: 'numeric', month: 'long', timeZone: 'UTC'})
     .format(new Date(iso + 'T12:00:00Z'));
 }
+const monthName = iso => new Intl.DateTimeFormat('ru-RU', {month: 'long', timeZone: 'UTC'})
+  .format(new Date(iso + 'T12:00:00Z'));
 function message(text, error = false) {
   const box = $('accountant-message');
   box.textContent = text; box.hidden = !text; box.classList.toggle('is-error', error);
@@ -732,10 +734,18 @@ function renderRail() {
 
   const shiftDebt = Number(data.ledger.salary_debt) + view.board.totals.unconfirmedDebt;
   const expDebt = Number(data.ledger.manual_debt_total);
-  $('all-debt-total').textContent = money(shiftDebt + view.monthly.remain + expDebt);
+  // Оклады становятся долгом 1-го числа следующего месяца: здесь — прошлый
+  // месяц, а текущий только подписан, когда появится.
+  const prevSalaries = view.monthly.previous;
+  const salaryDebt = prevSalaries && prevSalaries.available ? prevSalaries.remain : 0;
+  const [year, month] = data.date.split('-').map(Number);
+  const nextFirst = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
+  $('all-debt-total').textContent = money(shiftDebt + salaryDebt + expDebt);
   $('fd-debt-lines').replaceChildren(
     railLine('Сменные · не выдано', fmt(shiftDebt), 'fd-debt-line'),
-    railLine('Оклады · остаток месяца', fmt(view.monthly.remain), 'fd-debt-line'),
+    prevSalaries && railLine('Оклады · за ' + monthName(prevSalaries.month + '-01'),
+      prevSalaries.available ? fmt(prevSalaries.remain) : 'нет данных', 'fd-debt-line'),
+    railLine('Оклады · ' + monthName(data.date), 'появится ' + longDay(nextFirst), 'fd-debt-line is-pending'),
     railLine('Расходы · не оплачено', fmt(expDebt), 'fd-debt-line'));
   const res = data.reserves;
   $('usd-balance').textContent = res.usd.balance === null ? 'не задан' : fmt(res.usd.balance) + ' USD';

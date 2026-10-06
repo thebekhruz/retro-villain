@@ -382,9 +382,13 @@
     const today=(mp.today||[]).map(p=>{const e=byId.get(p.employee_id);
       const salary=e?num(e.salary):0, left=salary-paidTo(p.employee_id);
       return {id:p.id,employeeId:p.employee_id,name:p.name,role:e?e.role:'',amount:num(p.amount),left};});
+    // Долг по окладам — за прошлый месяц: текущий месяц ещё не отработан.
+    const pm=mp.previous||null;
+    const previous=pm&&{month:pm.month,available:!!pm.available,
+      remain:pm.available?staff.reduce((s,e)=>s+Math.max(0,num(e.salary)-num((pm.paid_by_employee||{})[String(e.id)])),0):null};
     return {people,today,remain:people.reduce((s,p)=>s+Math.max(0,p.left),0),
       todaySum:today.reduce((s,p)=>s+p.amount,0),
-      overpaid:people.filter(p=>p.paid>p.salary)};
+      overpaid:people.filter(p=>p.paid>p.salary),previous};
   }
 
   function shohBoard(shoh,purchases,movements,transfers,cashierGives,pocket){

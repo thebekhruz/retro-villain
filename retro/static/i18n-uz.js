@@ -1691,6 +1691,13 @@ globalThis.RetroTemplatesUz.push(
   [/^Слишком длинное значение: (.+)$/, "Qiymat juda uzun: $1"],
 );
 
+/* «Долги к оплате»: оклады за прошлый месяц и подпись текущего. */
+globalThis.RetroTemplatesUz.push(
+  [/^Оклады · за ([а-я]+)$/, "Okladlar · $1 uchun"],
+  [/^Оклады · ([а-я]+)$/, "Okladlar · $1"],
+  [/^появится (\d+ [а-я]+)$/, "$1 kuni ko'rinadi"],
+);
+
 /* T-384 · подписи полей в ошибках проверки и пояснения к расчётам. */
 Object.assign(globalThis.RetroDictionaryUz, {
   "Укажите имя подтвердившего (до 160 символов).": "Tasdiqlagan kishining ismini kiriting (160 belgigacha).",

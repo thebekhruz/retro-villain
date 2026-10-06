@@ -712,6 +712,7 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-debts>strong{display:block;font-size:24px;font-weight:600;color:#a96039;font-variant-numeric:tabular-nums;margin-bottom:8px}
 .fd-debt-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid #efdccc;font-size:11px;color:#7b6257}
 .fd-debt-line b{font-variant-numeric:tabular-nums;color:#1c302b;font-weight:550;white-space:nowrap}
+.fd-debt-line.is-pending b{color:#a8968c;font-weight:400}
 .fd-reserves .fd-kicker{margin:0 0 6px}
 .fd-res-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid #edf1e9;font-size:11px;color:#607368}
 .fd-res-line b{color:#1c302b;font-weight:550;white-space:nowrap;font-variant-numeric:tabular-nums}

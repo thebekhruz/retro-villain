@@ -289,6 +289,17 @@ test('оклады: остаток месяца и переплата по вы�
   assert.deepEqual(board.overpaid.map(p => p.name), ['Фаррух']);
   assert.equal(board.today[0].left, 2000000);
   assert.equal(board.todaySum, 1000000);
+  assert.equal(board.previous, null);
+});
+
+test('оклады: долг — за прошлый месяц; без данных за месяц — суммы нет', () => {
+  const staff = [{id: 1, name: 'Азиз', role: 'менеджер', salary: '8000000'}, {id: 3, name: 'Фаррух', role: 'шеф', salary: '9000000'}];
+  const prev = logic.monthlyBoard({monthly_employees: staff, monthly_payments: {paid_by_employee: {}, today: [],
+    previous: {month: '2026-10', available: true, paid_by_employee: {'1': '5000000', '3': '9500000'}}}}).previous;
+  assert.deepEqual(prev, {month: '2026-10', available: true, remain: 3000000});
+  const none = logic.monthlyBoard({monthly_employees: staff, monthly_payments: {paid_by_employee: {}, today: [],
+    previous: {month: '2026-09', available: false, paid_by_employee: {}}}}).previous;
+  assert.deepEqual(none, {month: '2026-09', available: false, remain: null});
 });
 
 test('покупки Шоха: без фото и дороже обычного — замечания, принятые — без них', () => {
