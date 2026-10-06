@@ -12,6 +12,7 @@ from decimal import Decimal
 
 from fastapi import HTTPException
 
+from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.expenses import cash_to_finance
@@ -55,14 +56,14 @@ def dividend_summary(state, day: date) -> dict:
     result = overview.dividend_week(day, Decimal(target['amount']) if target else None, flows,
                                     free_cash=free)
     result['target_source'] = target
-    result['history'] = dividend_history(state, monday)
+    result['history'] = dividend_history(state, monday, as_of=day)
     return result
 
 
 DIVIDEND_HISTORY_WEEKS = 6
 
 
-def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS) -> list[dict]:
+def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS, *, as_of: date | None = None) -> list[dict]:
     """Прошлые недели для 7a: «собрано X из Y» и сколько выдано собственнику
     из сейфа в понедельник выдачи («Выдать собственнику из сейфа» в 2a —
     резерв уменьшается, остаток бухгалтера не меняется). Недели без цели и
@@ -74,12 +75,14 @@ def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS) -
     # собирала полную сводку всех резервов, 18 запросов вместо одного.
     paid_by_day = defaultdict(Decimal)
     for row in state.accountant_finance.reserve_entries('dividends'):
-        if row['kind'] == 'withdrawal':
+        if row['kind'] == 'withdrawal' and row['day'] >= period_start(as_of or monday).isoformat():
             paid_by_day[row['day']] += Decimal(row['amount'])
     result = []
     for index in range(1, weeks + 1):
         start = monday - timedelta(days=7 * index)
         end = start + timedelta(days=6)
+        if end < period_start(as_of or monday):
+            continue
         _, _, label = overview.week_of(start)
         target = state.dividend_targets.get(label)
         collected = sum((flows.get((start + timedelta(days=offset)).isoformat(), {}).get(
@@ -137,13 +140,17 @@ async def day_outlook(request, day: date, accounting: dict, expected):
     расходы без дивидендов). К вечеру ≈ = на утро + к передаче − зарплаты −
     закуп − прочее. Оценки округляем до 10 000."""
     state = request.app.state
-    recent, shift = await asyncio.gather(
-        asyncio.to_thread(state.accountant_finance.cash_flows_between,
-                          day - timedelta(days=7), day - timedelta(days=1)),
-        asyncio.to_thread(shift_accrued, request, day - timedelta(days=1)))
+    if day == ACCOUNTING_START:
+        recent, shift = [], Decimal(0)
+    else:
+        recent, shift = await asyncio.gather(
+            asyncio.to_thread(state.accountant_finance.cash_flows_between,
+                              accounting_range_start(day - timedelta(days=7), day), day - timedelta(days=1)),
+            asyncio.to_thread(shift_accrued, request, day - timedelta(days=1)))
     recent = overview.daily_flows(recent)
+    sample_days = max(1, min(7, (day - ACCOUNTING_START).days)) if day >= ACCOUNTING_START else 7
     average = lambda key: overview.round_to(sum(
-        (values.get(key, Decimal(0)) for values in recent.values()), Decimal(0)) / 7, overview.OUTLOOK_STEP)
+        (values.get(key, Decimal(0)) for values in recent.values()), Decimal(0)) / sample_days, overview.OUTLOOK_STEP)
     monthly = sum((Decimal(row['amount']) for row in accounting['monthly_payments']['today']), Decimal(0))
     salary, procurement, other = shift + monthly, average('procurement'), average('other')
     opening = accounting['ledger']['cash_flow'].get('opening_balance')
@@ -249,13 +256,14 @@ async def founder_week(request, day: date):
     monday, sunday, label = overview.week_of(day)
     today = today_tashkent()
     last = min(sunday, today)
+    monday = accounting_range_start(monday, last)
     state = request.app.state
     rows, (orders_rows, orders_error) = await asyncio.gather(
         asyncio.to_thread(state.accountant_finance.cash_flows_between, monday, last),
         iiko_or_error(request, 'load_daily_orders', monday, last, operation='week_orders'))
     flows = overview.daily_flows(rows)
     orders = overview.register_days(orders_rows) if orders_rows is not None else None
-    days = [monday + timedelta(days=offset) for offset in range(7)]
+    days = [monday + timedelta(days=offset) for offset in range((sunday - monday).days + 1)]
     built = await asyncio.gather(*(founder_day(request, d, orders=orders, flows=flows)
                                    for d in days if d <= last))
     by_date = {item['date']: item for item in built}
@@ -286,7 +294,7 @@ async def founder_forecast(request, day: date):
 async def founder_chef(request, day: date):
     monday, sunday, _ = overview.week_of(day)
     first, _ = month_bounds(day)
-    start = min(first, monday)
+    start = accounting_range_start(min(first, monday), day)
     rows, error = await iiko_or_error(request, 'load_chef_bills', start, day, operation='chef_bills')
     if rows is None:
         return dict(error=error)
@@ -298,7 +306,13 @@ def founder_spending(state, day: date):
     first, _ = month_bounds(day)
     flows = state.accountant_finance.cash_flows_between(first, day)
     transfers = state.accountant_finance.supplier_transfers(first, day)
-    purchases = state.shokh.purchases_between(first, day)
+    # С ТЗ 02.10 Шох ничего не вносит: потрачено — расходы по счёт-фактуре,
+    # которые записал бухгалтер. Прежний закуп с телефона — только при SHOKH_MODULE.
+    phone = state.settings.shokh_module
+    purchases = state.shokh.purchases_between(first, day) if phone else []
+    expenses = None if phone else [
+        row for row in state.accountant_finance.reserve_entries('shoh')
+        if row['kind'] == 'withdrawal' and first.isoformat() <= row['day'] <= day.isoformat()]
     # «На руках у Шоха» считает store.pocket_position — та же формула, что на
     # экране закупа; своей копии здесь быть не должно.
     position = pocket_position(state.shokh, state.accountant_finance, day)
@@ -309,7 +323,7 @@ def founder_spending(state, day: date):
     return dict(month=first.isoformat()[:7], through=day.isoformat(),
                 expenses=overview.expense_categories(flows, transfers, shokh_from_till=from_till),
                 shokh=overview.shokh_month(purchases, flows, pocket=pocket, from_till=from_till,
-                                           transfers=transfers))
+                                           transfers=transfers, expenses=expenses))
 
 
 def selected_day(value: date | None) -> date:

@@ -21,7 +21,7 @@ PNG = bytes.fromhex(
 
 
 def client(tmp_path):
-    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
+    app = create_app(Settings(shokh_module=True), expense_db_path=tmp_path / 'cashier.sqlite3',
                      accountant_db_path=tmp_path / 'accountant.sqlite3')
     return TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000))
 
@@ -162,7 +162,16 @@ def advance(c, day, amount):
         'amount': amount, 'note': 'Пересчёт подотчёта'}).status_code == 201
 
 
-def test_pocket_is_the_advance_less_what_is_recorded_but_not_yet_accepted(tmp_path):
+def shoh_expense(c, day, amount, place='Алайский базар'):
+    response = c.post('/api/accountant/shoh/expenses', json={
+        'date': day.isoformat(), 'place': place, 'amount': amount, 'note': 'Счёт-фактура №1'})
+    assert response.status_code == 201, response.text
+    return response.json()['id']
+
+
+def test_pocket_is_allocated_less_invoice_expenses_entered_by_the_accountant(tmp_path):
+    """ТЗ 02.10, п. 5: остаток Шоха = выделено − расходы по счёт-фактуре, всё
+    вносит бухгалтер. Покупка с телефона остаток не меняет."""
     with client(tmp_path) as c:
         advance(c, DAY, '900000')
         home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
@@ -170,10 +179,11 @@ def test_pocket_is_the_advance_less_what_is_recorded_but_not_yet_accepted(tmp_pa
         assert home['pocket'] == '900000'
 
         row = purchase(c).json()
-        # Записанная, но не принятая покупка уже вынута из кармана.
         assert row['accounting_balance'] == '900000'
-        assert row['pending'] == '108000.00'
-        assert row['pocket'] == '792000.00'
+        assert row['pocket'] == '900000'
+        shoh_expense(c, DAY, '108000')
+        home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
+        assert Decimal(home['pocket']) == Decimal('792000')
 
 
 def test_accepting_a_purchase_moves_it_out_of_pending_without_touching_the_till(tmp_path):
@@ -209,14 +219,17 @@ def test_a_purchase_cannot_be_accepted_twice(tmp_path):
         assert c.post('/api/accountant/shokh/purchases/4242/accept', json=body).status_code == 404
 
 
-def test_without_an_advance_the_pocket_is_unknown_rather_than_zero(tmp_path):
+def test_without_an_advance_the_pocket_starts_at_zero(tmp_path):
+    """Начальный остаток Шоха не обязателен: счёт начинается с нуля, и расход
+    больше выделенного не записать."""
     with client(tmp_path) as c:
         purchase(c)
         home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
-        # Подотчёт не заведён — придумывать остаток нельзя.
-        assert home['accounting_balance'] is None
-        assert home['pocket'] is None
-        assert home['pending'] == '108000.00'
+        assert home['accounting_balance'] == '0'
+        assert home['pocket'] == '0'
+        refused = c.post('/api/accountant/shoh/expenses', json={
+            'date': DAY.isoformat(), 'place': 'Food City', 'amount': '1000'})
+        assert refused.status_code == 422 and 'больше' in refused.json()['detail']
 
 
 def test_the_accountant_sees_shokh_purchases_for_the_day(tmp_path):
@@ -260,12 +273,13 @@ def test_both_screens_report_the_same_pocket_from_one_formula(tmp_path):
         shokh_home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
         cabinet = c.get('/api/founder/spending', params={'date': DAY.isoformat()}).json()
 
-        assert shokh_home['pocket'] == '772000.00'
+        shoh_expense(c, DAY, '128000')
+        shokh_home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
+        cabinet = c.get('/api/founder/spending', params={'date': DAY.isoformat()}).json()
+        assert Decimal(shokh_home['pocket']) == Decimal('772000')
         # Кабинет округляет до копеек той же money(), поэтому сравниваем числом.
         assert Decimal(cabinet['shokh']['pocket']) == Decimal(shokh_home['pocket'])
-        # И обе цифры сходятся с подотчётом минус непринятое.
-        assert (Decimal(shokh_home['accounting_balance']) - Decimal(shokh_home['pending'])
-                == Decimal(shokh_home['pocket']))
+        assert Decimal(shokh_home['accounting_balance']) == Decimal(shokh_home['pocket'])
 
 
 def test_pocket_formula_lives_in_one_place_only():
@@ -341,15 +355,15 @@ def test_reopened_trip_keeps_its_real_start_for_the_timer(tmp_path):
 # ── «Функционал» §3.6 и §3a ───────────────────────────────────────────────
 
 def test_day_position_follows_the_spec_formula_and_survives_acceptance(tmp_path):
-    """На руках = на начало + выдано сегодня − покупки за день; «Отчитались за
-    X%» = потрачено / (на начало + выдано). Вчерашняя непринятая покупка уже
-    не на руках с утра, а приёмка бухгалтера долю не уменьшает."""
+    """На руках = на начало + выдано сегодня − расходы за день; «Отчитались за
+    X%» = потрачено / (на начало + выдано). Расходы вносит бухгалтер по
+    счёт-фактуре (ТЗ 02.10)."""
     yesterday = DAY - timedelta(days=1)
     with client(tmp_path) as c:
         advance(c, yesterday, '900000')
-        purchase(c, date=yesterday.isoformat(), quantity='10', price='10000')  # 100 000 вчера
+        shoh_expense(c, yesterday, '100000')
         assert c.post('/api/cashier/shokh', json={'date': DAY.isoformat(), 'amount': '500000'}).status_code == 201
-        purchase(c, quantity='5', price='60000')  # 300 000 сегодня
+        shoh_expense(c, DAY, '300000')
         home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
         assert Decimal(home['day_start']) == Decimal('800000')
         assert Decimal(home['given_today']) == Decimal('500000')
@@ -357,19 +371,12 @@ def test_day_position_follows_the_spec_formula_and_survives_acceptance(tmp_path)
         assert Decimal(home['pocket']) == Decimal('1000000')
         assert home['reported_percent'] == 23  # 300 000 / 1 300 000
 
-        for row in home['purchases']:
-            assert c.post(f"/api/accountant/shokh/purchases/{row['id']}/accept",
-                          json={'date': DAY.isoformat()}).status_code == 200
-        after = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
-        assert Decimal(after['pocket']) == Decimal('1000000')
-        assert after['reported_percent'] == 23
 
-
-def test_without_an_advance_the_share_is_unknown(tmp_path):
+def test_without_an_advance_the_share_is_zero(tmp_path):
     with client(tmp_path) as c:
         purchase(c)
         home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
-    assert home['reported_percent'] is None and home['day_start'] is None
+    assert home['reported_percent'] == 0 and Decimal(home['day_start']) == 0
 
 
 def test_up_to_ten_percent_above_the_usual_price_is_normal(tmp_path):

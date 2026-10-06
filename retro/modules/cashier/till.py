@@ -21,11 +21,12 @@ from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal, InvalidOperation
 
+from retro.accounting_period import accounting_range_start
 from retro.db import table_exists
+from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
 from retro.modules.accountant.audit import record_audit
-from retro.modules.accountant.ledger import LedgerError, amount_value, local_timestamp, now_stamp
-from retro.modules.accountant.handover_dates import receipt_day
+from retro.modules.accountant.ledger import LedgerError, amount_value, ensure_open, local_timestamp, now_stamp
 
 from .expenses import cash_to_finance
 
@@ -109,6 +110,7 @@ def _give_json(row: dict) -> dict:
 
 def shokh_gives(finance, first: date, last: date | None = None) -> list[dict]:
     last = last or first
+    first = accounting_range_start(first, last)
     with closing(finance._open()) as connection:
         rows = connection.execute(
             'SELECT id, day, amount, created_at FROM cashier_shokh_gives '
@@ -127,6 +129,7 @@ def give_shokh(finance, day: date, amount) -> dict:
     with closing(finance._open()) as connection:
         connection.execute('BEGIN IMMEDIATE')
         try:
+            ensure_open(connection, day)
             give_id = connection.execute(
                 'INSERT INTO cashier_shokh_gives (day, amount, created_at) VALUES (?, ?, ?)',
                 (day.isoformat(), str(value), now_stamp())).lastrowid
@@ -143,6 +146,7 @@ def delete_shokh_give(finance, give_id: int, day: date) -> bool:
     with closing(finance._open()) as connection:
         connection.execute('BEGIN IMMEDIATE')
         try:
+            ensure_open(connection, day)
             before = finance._row_dict(connection, 'cashier_shokh_gives', give_id)
             if before is None or before['day'] != day.isoformat():
                 connection.rollback()
@@ -211,6 +215,7 @@ def add_usd_deposit(finance, day: date, amount) -> dict:
     with closing(finance._open()) as connection:
         connection.execute('BEGIN IMMEDIATE')
         try:
+            ensure_open(connection, day)
             deposit_id = connection.execute(
                 'INSERT INTO cashier_usd_deposits (day, amount, created_at, legacy) VALUES (?, ?, ?, 0)',
                 (day.isoformat(), str(value), now_stamp())).lastrowid
@@ -227,6 +232,7 @@ def delete_usd_deposit(finance, deposit_id: int, day: date) -> bool:
     with closing(finance._open()) as connection:
         connection.execute('BEGIN IMMEDIATE')
         try:
+            ensure_open(connection, day)
             before = finance._row_dict(connection, 'cashier_usd_deposits', deposit_id)
             if before is None or before['day'] != day.isoformat():
                 connection.rollback()

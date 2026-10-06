@@ -14,6 +14,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
+from retro.accounting_period import accounting_range_start, period_start
 from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 
@@ -73,39 +74,31 @@ PURCHASE_COLUMNS = ('id, trip_id, day, created_at, point, item, unit, quantity, 
 def pocket_position(shokh, finance, day: date) -> dict:
     """Сколько наличных у Шоха на руках — одно место для всех экранов.
 
-    Бухгалтерский подотчёт (`reserves.shoh.balance`) = выдано − принятые
-    накладные. Покупки, которые Шох записал, но бухгалтер ещё не принял, из
-    подотчёта не вычтены, хотя денег на руках уже нет. Поэтому:
+    С ТЗ 02.10 (п. 5) Шох сам ничего не вносит: остаток ведёт бухгалтер на
+    странице «Баланс Шохруха» — выделено − расходы по счёт-фактуре. Поэтому
+    на руках = подотчёт по бухгалтерии (`reserves.shoh.balance`); покупки,
+    записанные когда-то с телефона и не принятые, в него больше не входят —
+    иначе расход, внесённый бухгалтером по счёт-фактуре, посчитался бы дважды.
+    Счёт без начального остатка начинается с нуля (reserves._entries).
 
-        на руках = подотчёт по бухгалтерии − непринятые покупки
-
-    Считают по этой формуле и экран закупа, и кабинет учредителя. Правило про
-    деньги должно жить в одном файле, иначе копии со временем разойдутся.
+    Считают по этой формуле экран бухгалтера, кабинет учредителя и Шох.
+    Правило про деньги должно жить в одном файле, иначе копии разойдутся.
     """
     reserve = finance.reserves(day)['shoh']
     accounting = reserve['balance']
-    # Непринятым может быть и вчерашнее, поэтому смотрим всю историю до дня.
-    history = shokh.purchases_between(FIRST_DAY, day)
-    # `total` покупки — наличные в целых сумах (cash_amount), не итог накладной.
-    pending = sum((Decimal(row['total']) for row in history if row['accepted_at'] is None),
-                  Decimal(0))
-    pocket = None if accounting is None else Decimal(accounting) - pending
-    # День по §3.6 «Функционала»: на руках = на начало + выдано сегодня (кассиром
-    # и бухгалтером) − покупки за день. Начало выводим из той же суммы на руках,
-    # поэтому оно само равно вчерашнему «на руках», включая непринятое.
+    pocket = None if accounting is None else Decimal(accounting)
     given = sum((Decimal(row['amount']) for row in reserve['entries'] if row['kind'] == 'deposit'),
                 Decimal(0))
-    spent = sum((Decimal(row['total']) for row in history if row['day'] == day.isoformat()),
+    spent = sum((Decimal(row['amount']) for row in reserve['entries'] if row['kind'] == 'withdrawal'),
                 Decimal(0))
     start = None if pocket is None else pocket - given + spent
-    # «Отчитались за X%» = потрачено / (на начало + выдано). Приёмка бухгалтера
-    # долю не уменьшает: принятая покупка остаётся потраченной.
+    # «Отчитались за X%» = потрачено / (на начало + выдано).
     base = None if pocket is None else start + given
     reported = (None if base is None else 0 if base <= 0 else
                 int((spent * 100 / base).quantize(Decimal(1), rounding=ROUND_HALF_UP)))
     return dict(accounting_balance=accounting,
                 pocket=None if pocket is None else str(pocket),
-                pending=str(pending), day_start=None if start is None else str(start),
+                pending='0', day_start=None if start is None else str(start),
                 given_today=str(given), spent_day=str(spent), reported_percent=reported)
 
 
@@ -306,6 +299,7 @@ class ShokhStore:
         return [self._json(row) for row in rows]
 
     def purchases_between(self, first: date, last: date) -> list[dict]:
+        first = accounting_range_start(first, last)
         with closing(self._open()) as connection:
             rows = connection.execute(
                 'SELECT ' + PURCHASE_COLUMNS + ' '
@@ -359,6 +353,8 @@ class ShokhStore:
                 return False
             # Из подотчёта уходят наличные — целые сумы, а не итог накладной с тийинами.
             row = c.execute('SELECT day,cash_total,item,point FROM shokh_purchases WHERE id=?', (purchase_id,)).fetchone()
+            if row[0] < period_start(day).isoformat():
+                raise ShokhError('Покупка относится к архиву до 02.10.2026.')
             if day.isoformat() < row[0]:
                 raise ShokhError('Нельзя принять покупку раньше даты закупа.')
             add_reserve_entry(finance, day, 'shoh', 'withdrawal', row[1],

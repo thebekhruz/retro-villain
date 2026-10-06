@@ -18,7 +18,7 @@
   <a href="/founder" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
   <div class="side-rule"></div>
   <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
-  <nav aria-label="Модули"><a href="/founder" class="nav-active" aria-current="page"><span class="nav-icon">⌁</span> Учредитель <span class="nav-dot"></span></a><div class="rm-subnav fo-subnav"><a href="#fo-week" class="is-current">Деньги недели</a><a href="#fo-acc">Проверка бухгалтера</a><a href="#fo-exp">Расходы и закуп</a><a href="#fo-menu">Прогноз и блюда</a><a href="/founder/analytics">Аналитика iiko · брони · рассылки</a></div></nav>
+  <nav aria-label="Модули"><a href="/founder" class="nav-active" aria-current="page"><span class="nav-icon">⌁</span> Учредитель <span class="nav-dot"></span></a><div class="rm-subnav fo-subnav"><a href="#fo-week" class="is-current">Деньги недели</a><a href="#fo-acc">Проверка бухгалтера</a><a href="#fo-reports">Отчёты бухгалтера</a><a href="#fo-exp">Расходы и закуп</a><a href="#fo-menu">Прогноз и блюда</a><a href="/founder/analytics">Аналитика iiko · брони · рассылки</a></div></nav>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro · Retro Oxbridge · Бехруз<small>Ташкент · UZS</small></div></div>
 </aside>
 <main class="fo-main">
@@ -45,6 +45,7 @@
         <div class="fo-big"><strong id="fo-y-demo" class="rm-num">—</strong><small>сум</small></div>
         <div class="fo-line"><span>Бухгалтер получил от кассира</span><b class="rm-num"><span id="fo-y-recv">—</span> <span id="fo-y-mark" class="fo-mark"></span></b></div>
         <div class="fo-line"><span>У бухгалтера на утро</span><b id="fo-morning" class="rm-num fo-line-strong">—</b></div>
+        <div class="fo-line"><span>Отчёт бухгалтера за вчера</span><b id="fo-y-report" class="fo-report-mark">—</b></div>
       </article>
 
       <article class="rm-phone-card">
@@ -114,6 +115,13 @@
         </section>
       </div>
 
+      <!-- Отчёты бухгалтера (ТЗ 02.10): сданные дни и закрытые месяцы. -->
+      <a class="fo-fold" href="#fo-reports" data-fold="fo-reports" role="button" aria-expanded="false" aria-controls="fo-reports"><span>Отчёты бухгалтера</span><i aria-hidden="true">›</i></a>
+      <section id="fo-reports" class="fo-panel fo-reports">
+        <div class="fo-panel-head"><div><p class="eyebrow">ОТЧЁТЫ БУХГАЛТЕРА</p><h2 id="fo-reports-title">—</h2></div><span class="fo-hint">«Сохранить и сдать отчёт» и «Закрыть месяц» у бухгалтера</span></div>
+        <div id="fo-closures" class="fo-closures"></div>
+        <div id="fo-day-reports" class="fo-day-reports" role="table" aria-label="Сданные отчёты дня"></div>
+      </section>
       <a class="fo-fold" href="#fo-exp" data-fold="fo-exp" role="button" aria-expanded="false" aria-controls="fo-exp"><span>Расходы и закуп</span><i aria-hidden="true">›</i></a>
       <div id="fo-exp" class="fo-grid">
         <section class="fo-panel">
@@ -122,7 +130,7 @@
         </section>
         <section class="fo-panel">
           <p class="eyebrow">ЗАКУП · ШОХ · <span id="fo-shokh-month">МЕСЯЦ</span></p>
-          <div class="fo-tiles is-two"><div><span>Выдано наличными</span><b id="z-given" class="rm-num">—</b></div><div><span>Потрачено · записал Шох</span><b id="z-spent" class="rm-num">—</b></div><div><span>Перечислениями</span><b id="z-direct" class="rm-num">—</b><small id="z-direct-cash" class="fo-tile-note" hidden></small></div><div class="is-dark"><span>На руках у Шоха</span><b id="z-pocket" class="rm-num">—</b></div></div>
+          <div class="fo-tiles is-two"><div><span>Выдано наличными</span><b id="z-given" class="rm-num">—</b></div><div><span>Потрачено · по счёт-фактурам</span><b id="z-spent" class="rm-num">—</b></div><div><span>Перечислениями</span><b id="z-direct" class="rm-num">—</b><small id="z-direct-cash" class="fo-tile-note" hidden></small></div><div class="is-dark"><span>На руках у Шоха</span><b id="z-pocket" class="rm-num">—</b></div></div>
           <p id="z-flag-title" class="fo-flag-title">—</p>
           <div id="z-flags" class="fo-flags"></div>
           <p id="z-top-title" class="fo-hint">Больше всего потрачено на</p>

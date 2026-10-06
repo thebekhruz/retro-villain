@@ -85,7 +85,8 @@ def test_second_income_adds_and_duplicate_daily_creation_rejects(store):
 
 
 def test_reading_preview_does_not_persist_or_change_handover(store):
-    assert store.daily_summary(DAY, D(100))['cash_balance'] == 100
+    # Расчёт кассира, который не записан и не подтверждён, остаток не создаёт.
+    assert store.daily_summary(DAY, D(100))['cash_balance'] is None
     assert store.handover_for_day(DAY) is None
     assert store.audit_entries() == []
     store.record_handover(DAY, D(50))

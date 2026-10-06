@@ -7,6 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from uuid import UUID
 
+from retro.accounting_period import accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
@@ -74,6 +75,7 @@ async def analytics(
         refresh: bool = False,
 ):
     start, end = _validated_period(start, end, granularity)
+    start = accounting_range_start(start, end)
     selected = tuple(item.strip() for item in directions.split(',') if item.strip())
     if not selected or len(set(selected)) != len(selected) or any(item not in DIRECTIONS for item in selected):
         raise HTTPException(422, 'Выберите известные направления без повторов.')
@@ -335,6 +337,7 @@ async def export_month(request: Request, month: str | None = None):
     if first > today:
         raise HTTPException(422, 'Будущий месяц ещё не начался.')
     last = min(today, cabinet.month_bounds(first)[1])
+    first = accounting_range_start(first, last)
     rows, error = await cabinet.iiko_or_error(request, 'load_daily_orders', first, last,
                                               operation='export_month', timeout=120)
     orders = overview.register_days(rows) if rows is not None else None
@@ -344,3 +347,17 @@ async def export_month(request: Request, month: str | None = None):
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition':
                              f'attachment; filename="Retro-accountant-{first.isoformat()[:7]}.xlsx"'})
+
+
+@router.get('/accountant-reports')
+def accountant_reports(request: Request):
+    """Сданные бухгалтером отчёты дня и закрытые месяцы (ТЗ 02.10, п. 2.5)."""
+    from retro.modules.accountant.closing import reports_feed
+    return reports_feed(request.app.state.accountant_finance)
+
+
+@router.get('/accountant-reports/reconciliation')
+def accountant_reconciliation(request: Request, month: str):
+    """Сверка месяца по дням — та же, что скачивает бухгалтер."""
+    from retro.modules.accountant.routes import reconciliation_export
+    return reconciliation_export(request, month)

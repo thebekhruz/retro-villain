@@ -158,11 +158,11 @@
     return map;
   }
 
-  function shiftBoard({payday,staff,accruals,movements}){
+  function shiftBoard({payday,staff,accruals,movements,accountingStart}){
     const S=shiftIso(payday,-1);
-    const staffRows=(staff&&staff.employees)||[];
+    const staffRows=accountingStart&&S<accountingStart?[]:(staff&&staff.employees)||[];
     const byId=new Map(staffRows.map(r=>[r.employee_id,r]));
-    const all=accruals||[];
+    const all=(accruals||[]).filter(a=>!accountingStart||a.work_day>=accountingStart);
     const own=all.filter(a=>a.work_day===S);
     const pays=todaySalaryPayments(movements);
     const build=(src)=>{
@@ -464,6 +464,10 @@
     if(cash.changed)add('warn','Касса изменилась после подтверждения',
       'Было '+fmt(cash.confirmedCalc)+' · сейчас '+fmt(cash.calculation)+' сум — подтвердите снова','cash');
     if(data.expected_cashier===null)add('todo','Кассир ещё не передал кассу','Касса за '+dm(data.cashier_date||shiftIso(data.date,-1))+' не записана','cash');
+    // ТЗ 02.10: сумма от кассира входит в остаток только подтверждённой.
+    const handover=data.ledger&&data.ledger.cash_flow&&data.ledger.cash_flow.handover_status;
+    if(handover==='pending')add('warn','Сумма от кассира не подтверждена',
+      'В остаток не входит, отчёт дня не сдаётся — подтвердите в дэшборде','cash');
     return out.sort((a,b)=>LEVEL_ORDER[a.lvl]-LEVEL_ORDER[b.lvl]);
   }
 

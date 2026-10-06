@@ -41,6 +41,10 @@ class Settings:
     # поэтому на боевом контуре держать включённым нельзя — только на время
     # прогона. Выключается снятием ACCOUNTANT_CHECK_MODE.
     check_mode: bool = False
+    # Модуль «Закуп · Шох» (телефон Шоха). С ТЗ 02.10 (п. 5) расходы Шоха
+    # вносит бухгалтер по счёт-фактуре на «Балансе Шохруха», а модуля закупа
+    # нет вовсе: ни в меню, ни на входе, ни в API. Вернуть — SHOKH_MODULE=1.
+    shokh_module: bool = False
     claude_api_key: str = field(default='', repr=False)
     claude_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
@@ -98,6 +102,7 @@ class Settings:
         manual = os.getenv('ACCOUNTANT_MANUAL_HANDOVER', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
         check_mode_on = os.getenv('ACCOUNTANT_CHECK_MODE', '').strip().casefold() \
             in {'1', 'true', 'yes', 'да'}
+        shokh_module_on = os.getenv('SHOKH_MODULE', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
         categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
         booking_url = os.getenv('BOOKING_ANALYTICS_URL', '').strip().rstrip('/')
@@ -130,6 +135,7 @@ class Settings:
             trusted_proxy_network=trusted_proxy_network,
             manual_handover_only=manual,
             check_mode=check_mode_on,
+            shokh_module=shokh_module_on,
             claude_api_key=os.getenv('CLAUDE_API_KEY', ''),
             claude_model=os.getenv('CLAUDE_MODEL', 'claude-sonnet-4-6'),
             director_categories=categories,

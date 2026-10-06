@@ -61,7 +61,7 @@ def reference_position(connection, day, start_day=None, *, current_amount=None, 
 
 
 FIRST = date(2026, 8, 20)
-DAYS = [FIRST + timedelta(days=offset) for offset in range(45)]
+DAYS = [FIRST + timedelta(days=offset) for offset in range(43)]  # архив по 01.10 включительно
 
 
 def seeded(tmp_path, seed, *, anchor):

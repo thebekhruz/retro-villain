@@ -514,7 +514,10 @@
     $('z-direct-cash').hidden = !num(shokh.direct);
     setText('z-direct-cash', num(shokh.direct) ? '+ наличными напрямую ' + short(num(shokh.direct)) : '');
     setText('z-pocket', shokh.pocket === null ? '—' : short(num(shokh.pocket)));
-    setText('z-flag-title', shokh.flagged.length ? shokh.flagged.length + ' ' + plural(shokh.flagged.length, 'покупка требует', 'покупки требуют', 'покупок требуют') + ' проверки' : 'Все покупки Шоха в норме');
+    // С ТЗ 02.10 расходы Шоха вносит бухгалтер по счёт-фактуре — проверять покупки с телефона нечего.
+    const invoices = shokh.source === 'invoices';
+    setText('z-flag-title', invoices ? '' : shokh.flagged.length ? shokh.flagged.length + ' ' + plural(shokh.flagged.length, 'покупка требует', 'покупки требуют', 'покупок требуют') + ' проверки' : 'Все покупки Шоха в норме');
+    $('z-flag-title').hidden = invoices;
     const flags = $('z-flags');
     flags.replaceChildren(...shokh.flagged.slice(0, 3).map(row => {
       const item = node('div');
@@ -529,7 +532,7 @@
     }));
     // Без покупок подпись «Больше всего потрачено на» повисала без продолжения.
     $('z-top-title').hidden = !shokh.top_items.length;
-    if (!shokh.top_items.length) top.append(node('span', '', 'Шох ещё не записывал покупки'));
+    if (!shokh.top_items.length) top.append(node('span', '', invoices ? 'Расходов Шоха в этом месяце ещё нет' : 'Шох ещё не записывал покупки'));
   }
 
   function renderForecast(data) {
@@ -640,6 +643,59 @@
     if (link) link.setAttribute('aria-expanded', String(open));
   }
 
+  /* ── Отчёты бухгалтера (ТЗ 02.10): сданные дни и закрытые месяцы ─── */
+  function stamp(iso) { return iso ? iso.slice(8, 10) + '.' + iso.slice(5, 7) + ' ' + iso.slice(11, 16) : ''; }
+  function renderReports(data) {
+    const closures = data.closures || [], reports = data.reports || [];
+    const latest = closures[0];
+    setText('fo-reports-title', latest ? latest.name + ' закрыт · остаток ' + short(num(latest.closing_balance)) + ' сум'
+      : reports.length ? 'Сдано отчётов дня: ' + reports.length : 'Бухгалтер ещё не сдавал отчётов');
+    const box = $('fo-closures'); box.replaceChildren();
+    closures.forEach(item => {
+      const card = node('article', 'fo-closure');
+      const head = node('div', 'fo-closure-head');
+      head.append(node('strong', null, item.name), node('span', 'fo-closure-mark', 'Закрыто · ' + stamp(item.closed_at) + ' · ' + item.closed_by));
+      const tiles = node('div', 'fo-closure-tiles');
+      const tile = (label, value) => { const cell = node('div'); cell.append(node('span', null, label), node('b', 'rm-num', value)); return cell; };
+      tiles.append(tile('Остаток на конец', short(num(item.closing_balance))),
+        tile('Сменным не выдано', short(num(item.debts && item.debts.salary))),
+        tile('Неоплаченные расходы', short(num(item.debts && item.debts.expenses))),
+        tile('Замечаний', String((item.remarks || []).length)));
+      const link = node('a', 'fo-closure-link', 'Сверка по дням · Excel ↓');
+      link.href = '/api/founder/accountant-reports/reconciliation?month=' + item.month;
+      link.setAttribute('download', '');
+      card.append(head, tiles);
+      if ((item.remarks || []).length) {
+        const list = node('ul', 'fo-closure-remarks');
+        item.remarks.forEach(remark => list.append(node('li', null, remark.text)));
+        card.append(list);
+      }
+      card.append(link);
+      box.append(card);
+    });
+    const table = $('fo-day-reports'); table.replaceChildren();
+    if (!reports.length) { table.append(node('p', 'fo-hint', 'Сданных отчётов дня пока нет.')); }
+    else {
+      const head = node('div', 'fo-dr-row is-head');
+      ['День', 'Начало', 'От кассира', 'Расход', 'Конец', 'Сдан'].forEach(text => head.append(node('span', null, text)));
+      table.append(head);
+      reports.forEach(item => {
+        const row = node('div', 'fo-dr-row' + (item.changed ? ' is-changed' : ''));
+        const flow = item.flow || {};
+        row.append(node('span', null, dm(item.day)), node('span', 'rm-num', short(num(flow.opening))),
+          node('span', 'rm-num', short(num(flow.handover_counted))), node('span', 'rm-num', short(num(flow.outflows))),
+          node('span', 'rm-num', short(num(flow.closing))),
+          node('span', 'fo-dr-who', (item.changed ? '⚠ изменён после сдачи · ' : '') + stamp(item.submitted_at) + ' · ' + item.submitted_by));
+        table.append(row);
+      });
+    }
+    const yesterday = reports.find(item => item.day === state.yesterday);
+    const mark = $('fo-y-report');
+    mark.textContent = !yesterday ? 'не сдан' : yesterday.changed ? 'изменён после сдачи' : 'сдан ' + stamp(yesterday.submitted_at).slice(6);
+    mark.classList.toggle('is-ok', !!yesterday && !yesterday.changed);
+    mark.classList.toggle('is-warn', !yesterday || yesterday.changed);
+  }
+
   function bind() {
     $('fo-div-toggle').addEventListener('click', toggleEditor);
     $('k-div-edit').addEventListener('click', toggleEditor);
@@ -695,6 +751,7 @@
     load('dividends', '/api/founder/dividends/weekly').then(renderDividends).catch(error => setText('fo-div-status', error.message));
     load('chef', '/api/founder/chef-account?date=' + state.today).then(renderChef).catch(error => renderChef({error: error.message}));
     load('forecast', '/api/founder/forecast?date=' + state.today).then(renderForecast).catch(error => renderForecast({error: error.message}));
+    load('reports', '/api/founder/accountant-reports').then(renderReports).catch(error => setText('fo-reports-title', error.message));
     loadForLayout();
     // Когда все блоки ответили (или упали) — ни одной вечной полосы.
     setTimeout(() => Promise.allSettled(Object.values(state.pending)).then(dashSkeletons), 0);

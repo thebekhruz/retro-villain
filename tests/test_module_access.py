@@ -15,14 +15,16 @@ USERS = {role: ('secret', role) for role in ROLES} | {'boss': ('secret', 'admin'
 # Страница → панель, которой она принадлежит.
 PAGES = {'index.html': 'cashier', 'accountant.html': 'accountant', 'employees.html': 'accountant',
          'payroll.html': 'accountant', 'director.html': 'director', 'director-app.html': 'director',
-         'founder.html': 'founder', 'founder-cabinet.html': 'founder', 'shokh.html': 'shokh'}
+         'founder.html': 'founder', 'founder-cabinet.html': 'founder', 'shokh.html': 'shokh',
+         'salary-day.html': 'accountant', 'shoh-balance.html': 'accountant'}
 PATHS = {'cashier': '/', 'accountant': '/accountant', 'director': '/director',
          'founder': '/founder', 'shokh': '/shokh'}
 
 
 @pytest.fixture
 def client(tmp_path):
-    app = create_app(Settings(dashboard_panel_users=USERS, data_dir=tmp_path))
+    # Модуль закупа выключен по умолчанию (ТЗ 02.10); изоляцию роли Шоха проверяем с включённым.
+    app = create_app(Settings(dashboard_panel_users=USERS, data_dir=tmp_path, shokh_module=True))
     with TestClient(app, base_url='http://dashboard.example.com',
                     client=('203.0.113.10', 50000)) as test_client:
         yield test_client
@@ -48,7 +50,8 @@ def test_legacy_shared_login_sees_every_module(tmp_path):
     with TestClient(app, base_url='http://dashboard.example.com',
                     client=('203.0.113.10', 50000)) as test_client:
         answer = test_client.get('/api/config', auth=('boss', 'secret'))
-    assert [row['id'] for row in answer.json()['modules']] == list(ROLES)
+    # Закупа Шоха по умолчанию нет — ни в меню, ни где-либо ещё (ТЗ 02.10).
+    assert [row['id'] for row in answer.json()['modules']] == [role for role in ROLES if role != 'shokh']
 
 
 def test_config_rows_carry_no_lock_reason(client):
@@ -140,6 +143,6 @@ def test_static_table_matches_what_pages_really_load():
 
 
 def test_every_dashboard_page_loads_the_menu_script():
-    for page in ('index.html', 'accountant.html', 'employees.html', 'payroll.html',
-                 'director.html', 'founder.html', 'director-app.html', 'founder-cabinet.html'):
+    for page in ('index.html', 'accountant.html', 'employees.html', 'payroll.html', 'salary-day.html',
+                 'shoh-balance.html', 'director.html', 'founder.html', 'director-app.html', 'founder-cabinet.html'):
         assert 'nav.js' in (STATIC / page).read_text(encoding='utf-8'), page

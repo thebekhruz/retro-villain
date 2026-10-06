@@ -5,7 +5,7 @@ from decimal import Decimal
 
 import pytest
 
-from test_cashier_design_parity import make_app, c, snapshot_for, hand_over
+from test_cashier_design_parity import make_app, c, snapshot_for, hand_over, set_start_balance
 from retro.modules.accountant.handover_dates import cashier_day, receipt_day
 
 
@@ -21,7 +21,7 @@ def test_shift_cash_arrives_only_the_next_day(c, shift, received, monkeypatch):
     c.app.state.cache.put(snap)
     finance = c.app.state.accountant_finance
     finance.record_handover(shift, Decimal('100'))  # previous shift's receipt
-    finance.set_cash_opening(shift, '0', 'Пересчёт')
+    set_start_balance(finance, shift, '0')
     assert hand_over(c, snap, '1200000', shift).status_code == 201
     old = c.get('/api/accountant/day', params={'date': shift.isoformat()}).json()
     new = c.get('/api/accountant/day', params={'date': received.isoformat()}).json()
@@ -30,7 +30,10 @@ def test_shift_cash_arrives_only_the_next_day(c, shift, received, monkeypatch):
     assert new['cashier_date'] == shift.isoformat()
     assert new['expected_cashier'] == '1200000'
     assert new['ledger']['cash_flow']['opening_balance'] == '100'
-    assert new['ledger']['cash_balance'] == '1200100'
+    assert new['ledger']['cash_balance'] == '100'  # pending receipts are not spendable
+    confirmed = c.post('/api/accountant/handover/confirm', json={'date': received.isoformat(), 'amount': '1200000'})
+    assert confirmed.status_code == 200
+    assert c.get('/api/accountant/day', params={'date': received.isoformat()}).json()['ledger']['cash_balance'] == '1200100'
     assert cashier_day(received) == shift and receipt_day(shift) == received
     assert finance.cash_flows_between(shift, shift)[0]['amount'] == '100'
     received_flow = finance.cash_flows_between(received, received)
@@ -102,10 +105,13 @@ def test_month_report_includes_last_shifts_next_month_receipt(c):
     book = openpyxl.load_workbook(BytesIO(data))
     transfers = book['Передачи смен']
     assert 'закрытие 01.11.2026' in transfers['A1'].value
-    assert transfers['A35'].value.date() == date(2026, 10, 31)
-    assert transfers['B35'].value.date() == date(2026, 11, 1)
-    assert transfers['C35'].value == 21895200
-    assert transfers['D35'].value == 21896000
-    assert transfers['E35'].value
+    last_row = next(row for row in transfers.iter_rows(min_row=5, values_only=True)
+                    if row[0].date() == date(2026, 10, 31))
+    assert last_row[1].date() == date(2026, 11, 1)
+    assert last_row[2] == 21895200
+    assert last_row[3] == 21896000
+    assert last_row[4]
     # Receipt belongs to November's cash book, not October 31 closing cash.
-    assert book['По дням']['E35'].value is None
+    last_cash_row = next(row for row in book['По дням'].iter_rows(min_row=5, values_only=True)
+                         if row[0].date() == date(2026, 10, 31))
+    assert last_cash_row[4] is None

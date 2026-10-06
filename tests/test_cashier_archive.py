@@ -11,6 +11,7 @@ import pytest
 
 from retro.app import create_app
 from retro.config import Settings
+from retro.accounting_period import ACCOUNTING_START
 from retro.integrations.iiko import IikoClient, cashier_read
 from retro.modules.cashier.archive import CashierArchive, archive_boundary
 from retro.modules.cashier.days import CashierDays
@@ -200,7 +201,7 @@ def test_midnight_snapshot_is_not_treated_as_finished_history_and_worker_catches
     archive.save(real_snapshot(DAY, NOW))
     assert DAY not in list(archive.due_days(NOW))
     assert DAY in list(archive.due_days(NOW + timedelta(days=1)))  # Recent corrections.
-    assert NOW.date() in list(archive.due_days(NOW + timedelta(days=20)))  # Downtime gap.
+    assert max(NOW.date(), ACCOUNTING_START) in list(archive.due_days(NOW + timedelta(days=20)))  # Рабочий пропуск.
     assert archive_boundary(DAY).hour == 6
 
 

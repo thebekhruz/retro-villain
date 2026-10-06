@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 from retro.app import create_app
 from retro.config import Settings
+from retro.accounting_period import ACCOUNTING_START
 from retro.modules.cashier.archive import decode_snapshot
 from retro.modules.cashier.service import TZ, build_snapshot, shift_status, today_tashkent
 from retro.modules.cashier.till import (add_usd_deposit, give_shokh, migrate_legacy_usd,
@@ -243,25 +244,28 @@ def test_cashier_cannot_overwrite_or_cancel_the_accountant_record(c):
     assert c.get('/api/cashier/handover', params={'date': DAY.isoformat()}).json()['handover']['source'] == 'accountant'
 
 
-def test_undo_removes_the_income_until_the_accountant_spends_it(c):
+def test_undo_removes_the_income_until_the_accountant_confirms_it(c):
+    """Передача кассира — «ожидается»: тратить её нельзя, пока бухгалтер не
+    подтвердил сумму (ТЗ 02.10). После подтверждения кассир её не отменит."""
     snapshot = till_day(c)
     assert hand_over(c, snapshot, '850000').status_code == 201
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 204
     assert c.app.state.accountant_finance.handover_for_day(RECEIVED) is None
     assert c.delete('/api/cashier/handover', params={'date': DAY.isoformat()}).status_code == 204  # уже нет
-    # Бухгалтер потратил из этой передачи — отменить её кассир не может.
     assert hand_over(c, snapshot, '850000').status_code == 201
     finance = c.app.state.accountant_finance
-    finance.set_cash_opening(RECEIVED, '0', 'Пересчёт')
-    spent = c.post('/api/accountant/expenses', json={'date': RECEIVED.isoformat(), 'item_code': 'admin_other',
-                                                     'note': 'Канцтовары', 'amount': '800000'})
+    set_start_balance(finance, RECEIVED, '0')
+    expense = {'date': RECEIVED.isoformat(), 'item_code': 'admin_other', 'note': 'Канцтовары', 'amount': '800000'}
+    unconfirmed = c.post('/api/accountant/expenses', json=expense)
+    assert unconfirmed.status_code == 422 and 'недостаточно' in unconfirmed.json()['detail']
+    assert c.post('/api/accountant/handover/confirm', json={'date': RECEIVED.isoformat(),
+                                                            'amount': '850000'}).status_code == 200
+    spent = c.post('/api/accountant/expenses', json=expense)
     assert spent.status_code == 201, spent.text
     blocked = c.delete('/api/cashier/handover', params={'date': DAY.isoformat()})
     assert blocked.status_code == 409 and 'отменить передачу нельзя' in blocked.json()['detail']
-    # И уменьшить передачу ниже потраченного тоже нельзя: остаток ушёл бы в минус.
-    c.post('/api/cashier/shokh', json={'date': DAY.isoformat(), 'amount': '100000'})
     lower = hand_over(c, snapshot, '750000')
-    assert lower.status_code == 409 and 'отрицательным' in lower.json()['detail']
+    assert lower.status_code == 409
     assert finance.handover_for_day(RECEIVED) == Decimal('850000')
 
 
@@ -444,7 +448,7 @@ def test_cashier_undo_is_allowed_while_the_money_is_not_spent(c):
     finance = c.app.state.accountant_finance
     before = DAY
     finance.record_handover(before, Decimal('1000000'))
-    finance.set_cash_opening(before, '1000000', 'Пересчёт')
+    set_start_balance(finance, before, '1000000')
     snapshot = till_day(c)
     assert hand_over(c, snapshot, '850000').status_code == 201
     spent = c.post('/api/accountant/expenses', json={'date': RECEIVED.isoformat(), 'item_code': 'admin_other',
@@ -511,11 +515,23 @@ def test_cashier_role_hands_over_but_never_reaches_the_accountant(tmp_path):
 
 # ── Выдать Шоху из кассы: одна запись, три экрана, без двойного списания ──
 
+def set_start_balance(finance, through, amount):
+    # Рабочий остаток задаётся на 2 октября; в тесте все промежуточные дни
+    # явно закрыты нулевыми передачами, а не считаются известными автоматически.
+    first = min(through, ACCOUNTING_START)
+    day = first
+    while day <= through:
+        if finance.handover_for_day(day) is None:
+            finance.record_handover(day, Decimal('0'))
+        day += timedelta(days=1)
+    finance.set_cash_opening(first, amount, 'Пересчёт')
+
+
 def accountant_cash(c, day=DAY, *, handover='5000000'):
     finance = c.app.state.accountant_finance
     finance.record_handover(day, Decimal(handover))
-    finance.set_cash_opening(day, '0', 'Пересчёт')
-    finance.reserve_entry(day, 'shoh', 'opening', '420000', 'Остаток у Шоха')
+    set_start_balance(finance, day, '0')
+    finance.reserve_entry(min(day, ACCOUNTING_START), 'shoh', 'opening', '420000', 'Остаток у Шоха')
 
 
 def test_till_give_raises_shokh_balance_but_not_accountant_spending(c):
@@ -539,9 +555,8 @@ def test_till_give_raises_shokh_balance_but_not_accountant_spending(c):
     assert Decimal(day['ledger']['cash_flow']['other_outflows']) == Decimal('3000000')
     assert day['cashier_shokh_gives']['total'] == '500000'
     assert day['cashier_shokh_gives']['gives'][0]['amount'] == '500000'
-    # Телефон Шоха видит те же деньги.
-    home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
-    assert Decimal(home['pocket']) == Decimal('3920000')
+    # Счёт Шохруха у бухгалтера — те же деньги (одна формула, shokh.store.pocket_position).
+    assert Decimal(day['shoh_pocket']['pocket']) == Decimal('3920000')
     # Кассир: выдача уменьшает передачу вместе с расходами.
     assert till_totals(c.app.state, DAY).cash_out == Decimal('500000')
 
@@ -633,7 +648,7 @@ def test_cashier_export_lists_the_till_give_as_an_expense(c):
 
 def test_usd_deposits_feed_the_accountant_safe(c):
     finance = c.app.state.accountant_finance
-    finance.reserve_entry(DAY - timedelta(days=1), 'usd', 'opening', '3330', 'Пересчёт сейфа')
+    finance.reserve_entry(min(DAY - timedelta(days=1), ACCOUNTING_START), 'usd', 'opening', '3330', 'Пересчёт сейфа')
     first = c.post('/api/cashier/usd-deposits', json={'date': DAY.isoformat(), 'amount': '120'})
     assert first.status_code == 201, first.text
     assert first.json()['safe_balance'] == '3450'

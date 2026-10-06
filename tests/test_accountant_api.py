@@ -16,10 +16,20 @@ from retro.modules.cashier.expenses import seed_cashier_expense
 DAY = date(2026, 9, 16)
 
 
+def confirm_cash(client, day):
+    """С ТЗ 02.10 приход кассира входит в остаток только подтверждённым:
+    бухгалтер подтверждает расчёт iiko той же суммой."""
+    data = client.get('/api/accountant/day', params={'date': day.isoformat()}).json()
+    amount = data['expected_cashier'] or data['cashier_handover']['expected']
+    response = client.post('/api/accountant/handover/confirm', json={'date': day.isoformat(), 'amount': amount})
+    assert response.status_code == 200, response.text
+
+
 def test_safe_workflow_and_historical_balances_through_api(tmp_path):
     with demo_client(tmp_path) as client:
         client.app.state.cache.put(replace(demo_snapshot(DAY - timedelta(days=1)), demo=False,
                                            payments=(Payment('Демо', Decimal('1350000')),)))
+        confirm_cash(client, DAY)
         payload = dict(date=DAY.isoformat(), account='dividends', kind='opening', amount='0', note='Начало')
         assert client.post('/api/accountant/reserves', json=payload).status_code == 201
         payload.update(kind='transfer', amount='300000')
@@ -155,6 +165,7 @@ def test_mistaken_debt_is_deleted_whole_but_not_over_another_days_payment(tmp_pa
         for day in (first_day, DAY):
             client.app.state.cache.put(replace(demo_snapshot(day - timedelta(days=1)), demo=False,
                                                payments=(Payment('Демо', Decimal('1350000')),)))
+            confirm_cash(client, day)
         def post(day, paid):
             response = client.post('/api/accountant/expenses', json={
                 'date': day.isoformat(), 'item_code': 'ops_rent', 'note': 'Аренда',
@@ -228,6 +239,7 @@ def test_partial_expense_becomes_debt_and_payment_rolls_forward(tmp_path):
         for day in (first_day, next_day):
             client.app.state.cache.put(replace(demo_snapshot(day - timedelta(days=1)), demo=False,
                                                payments=(Payment('Демо', Decimal('1350000')),)))
+            confirm_cash(client, day)
         first = client.post('/api/accountant/expenses', json={
             'date': first_day.isoformat(), 'item_code': 'salary_technical',
             'note': 'Смена Малики', 'amount': '1200000', 'paid_amount': '300000'})
@@ -272,6 +284,7 @@ def test_verified_initial_cash_balance_is_carried_once(tmp_path):
         assert response.status_code == 201
         assert client.post('/api/accountant/cash-opening', json={
             'date': first_day.isoformat(), 'amount': '500000', 'note': 'Повтор'}).status_code == 409
+        confirm_cash(client, DAY)
         today = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()['ledger']
         assert today['cash_flow']['opening_balance'] == '1500000'
         assert today['cash_balance'] == '2500000'
@@ -327,6 +340,7 @@ def test_confirmed_payroll_becomes_debt_then_partial_payment_reduces_cash(tmp_pa
         received_day = (DAY + timedelta(days=1)).isoformat()
         client.app.state.cache.put(replace(demo_snapshot(DAY), demo=False,
                                            payments=(Payment('Демо', Decimal('550000')),)))
+        confirm_cash(client, DAY + timedelta(days=1))
         accrual = before['ledger']['accruals'][0]
         payment = client.post('/api/accountant/salary-payments', json={
             'accrual_id': accrual['id'], 'date': received_day, 'amount': '100000'})
@@ -353,6 +367,7 @@ def test_unlinked_employee_gets_only_one_demo_exception_and_other_expenses_are_s
 
         client.app.state.cache.put(replace(demo_snapshot(DAY - timedelta(days=1)), demo=False,
                                            payments=(Payment('Демо', Decimal('850000')),)))
+        confirm_cash(client, DAY)
         assert client.post('/api/accountant/expenses', json={
             'date': DAY.isoformat(), 'item_code': 'ops_rent',
             'note': 'Аренда', 'amount': '100000'}).status_code == 201
@@ -505,7 +520,8 @@ def test_expected_cashier_amount_is_read_only_and_requires_fresh_real_snapshot(t
         client.app.state.cache.put(snapshot)
         result = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         assert result['expected_cashier'] == '-350000'
-        assert result['ledger']['cash_balance'] == '-350000'
+        # Расчёт iiko — «ожидается»: в остаток он входит только после подтверждения.
+        assert result['ledger']['cash_balance'] is None
 
 
 def test_expense_catalog_and_cash_rollforward_use_actual_outflows(tmp_path):
@@ -518,6 +534,7 @@ def test_expense_catalog_and_cash_rollforward_use_actual_outflows(tmp_path):
         assert 'income_cash' not in items
         client.app.state.cache.put(replace(demo_snapshot(DAY - timedelta(days=1)), demo=False,
                                            payments=(Payment('Демо', Decimal('1350000')),)))
+        confirm_cash(client, DAY)
         assert client.post('/api/accountant/expenses', json={
             'date': DAY.isoformat(), 'item_code': 'salary_technical',
             'note': 'Доплата вне реестра', 'amount': '200000'}).status_code == 201
@@ -530,7 +547,8 @@ def test_expense_catalog_and_cash_rollforward_use_actual_outflows(tmp_path):
             'other_receipts': '0',
             'salary_paid': '0', 'other_outflows': '200000',
             'closing_balance': '800000', 'missing_day': None,
-            'first_day': DAY.isoformat()}
+            'first_day': DAY.isoformat(), 'received_counted': '1000000',
+            'handover_status': 'confirmed'}
         assert summary['movements'][1]['item_code'] == 'salary_technical'
         assert summary['movements'][1]['description'] == 'Тех персонал · Доплата вне реестра'
         assert summary['salary_recorded_on_day'] == '200000'
@@ -560,7 +578,9 @@ def test_employee_exports_split_late_and_everyone_without_claiming_real_hikvisio
         assert 'Сотрудники' in page.text
 
 
-def test_daily_cash_starts_from_cashier_handover_without_manual_confirmation(tmp_path):
+def test_daily_cash_counts_cashier_handover_only_after_confirmation(tmp_path):
+    """ТЗ 02.10: «Получено от кассира» — обязательное подтверждение. Пока сумма
+    не подтверждена, она видна как ожидаемая, но в остаток не входит."""
     with demo_client(tmp_path) as client:
         for employee in client.app.state.accountant_roster.list():
             if employee.hikvision_id is None:
@@ -571,8 +591,11 @@ def test_daily_cash_starts_from_cashier_handover_without_manual_confirmation(tmp
         client.app.state.cache.put(snapshot)
         before = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
         assert before['ledger']['cash_flow']['received_from_cashier'] == '650000'
-        assert before['ledger']['cash_flow']['closing_balance'] == '650000'
-        assert before['ledger']['cash_balance'] == '650000'
+        assert before['ledger']['cash_flow']['closing_balance'] is None
+        assert before['ledger']['cash_balance'] is None
+        confirm_cash(client, DAY)
+        confirmed = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        assert confirmed['ledger']['cash_balance'] == '650000'
 
         expense = client.post('/api/accountant/expenses', json={
             'date': DAY.isoformat(), 'item_code': 'admin_other',
@@ -591,7 +614,8 @@ def test_daily_cash_starts_from_cashier_handover_without_manual_confirmation(tmp
             'other_receipts': '0',
             'salary_paid': '100000', 'other_outflows': '150000',
             'closing_balance': '400000', 'missing_day': None,
-            'first_day': DAY.isoformat()}
+            'first_day': DAY.isoformat(), 'received_counted': '650000',
+            'handover_status': 'confirmed'}
         assert after['ledger']['cash_balance'] == '400000'
         assert after['ledger']['salary_recorded_on_day'] == '100000'
 

@@ -66,6 +66,11 @@ def parser() -> argparse.ArgumentParser:
     seed.add_argument('--to', dest='date_to', type=date.fromisoformat, required=True)
     seed.add_argument('--description', required=True)
     seed.add_argument('--amount', type=Decimal, required=True)
+    # Снять закрытие месяца (ТЗ 02.10): в панели такой кнопки нет нарочно.
+    # База — путь к accountant.sqlite3 или строка подключения Postgres.
+    reopen = commands.add_parser('reopen-month')
+    reopen.add_argument('--database', required=True)
+    reopen.add_argument('--month', required=True, help='ГГГГ-ММ')
     return root
 
 
@@ -79,6 +84,16 @@ def main() -> int:
             installed = install_verified_backup(args.backup, args.destination, args.replace)
             for path in installed:
                 print_check(path)
+            return 0
+        if args.command == 'reopen-month':
+            from retro.modules.accountant.closing import reopen_month
+            from retro.modules.accountant.ledger import FinanceStore, LedgerError
+            try:
+                reopened = reopen_month(FinanceStore(args.database), args.month)
+            except LedgerError as error:
+                print(f'Ошибка: {error}')
+                return 1
+            print(f'Закрытие {args.month} снято.' if reopened else f'Месяц {args.month} не был закрыт.')
             return 0
         if args.command == 'seed-cashier-expense':
             result = seed_cashier_expense(

@@ -9,9 +9,9 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/accountant.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/accountant.js" defer></script>
 </head>
-<body class="fd-page">
+<body class="fd-page" data-page="finance">
 <aside class="sidebar">
   <a href="/accountant" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
   <div class="side-rule"></div>
@@ -19,7 +19,7 @@
   <!-- У бухгалтера три экрана, поэтому они вложены в свой пункт, а не лежат
        вперемешку с модулями: так видно, где ты внутри модуля. -->
   <nav aria-label="Модули"><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер <span class="nav-dot"></span></a>
-    <div class="rm-subnav"><a href="/accountant" class="is-current">Финансы дня<span class="nav-dot"></span></a><a href="/accountant/payroll">Зарплаты · месяц</a><a href="/accountant/employees">Сотрудники</a></div></nav>
+    <div class="rm-subnav"><a href="/accountant" class="is-current" aria-current="page">Финансы дня<span class="nav-dot"></span></a><a href="/accountant/salary-day">Зарплата · день</a><a href="/accountant/payroll">Зарплата · месяц</a><a href="/accountant/shoh">Баланс Шохруха</a><a href="/accountant/employees">Сотрудники</a></div></nav>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
@@ -37,10 +37,15 @@
           <span class="fd-date-sep"></span>
           <button id="accountant-today" class="fd-date-today" type="button" aria-pressed="false">Сегодня</button>
         </div>
-        <button id="fd-export" class="fd-btn fd-btn-dark" type="button" title="Скачать отчёт за день в Excel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>Сохранить в Excel<span class="fd-xls">XLS</span></button>
-        <a id="payroll-menu" class="fd-btn fd-btn-light" href="/accountant/payroll">Ведомость месяца<span class="fd-arrow">→</span></a>
+        <button id="fd-export" class="fd-btn fd-btn-light" type="button" title="Скачать отчёт за день в Excel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>Excel<span class="fd-xls">XLS</span></button>
+        <!-- Последний день месяца: «Закрыть месяц» (ТЗ 02.10, п. 2). -->
+        <button id="fd-close-month" class="fd-btn fd-btn-light fd-btn-close" type="button" hidden>Закрыть месяц</button>
+        <!-- Главная кнопка дня: дописать набранное и сдать отчёт учредителю. -->
+        <button id="fd-submit" class="fd-btn fd-btn-dark fd-btn-submit" type="button"><span aria-hidden="true">✓</span>Сохранить и сдать отчёт</button>
       </div>
     </div>
+    <!-- Состояние дня: закрыт месяц, сдан ли отчёт, не закрыт ли прошлый месяц. -->
+    <div id="fd-status" class="fd-daystate" aria-live="polite"></div>
     <p id="accountant-message" class="fd-notice" role="status" aria-live="polite" hidden></p>
 
     <!-- Первая загрузка: скелет в форме дня вместо пустоты и «Загружаем…». -->
@@ -66,29 +71,6 @@
     <div class="fd-grid" id="finance-layout" hidden>
       <div class="fd-main">
 
-        <!-- ── Сменные: выдача за вчерашнюю смену ──────────────────────────
-             Главное действие дня — раздать деньги за вчера. Сумма вводится в
-             строке сотрудника; первая выдача сама подтверждает начисления смены. -->
-        <section class="fd-sec" id="shift-section">
-          <div class="fd-sec-head">
-            <button class="fd-sec-toggle" type="button" data-section="shift" aria-expanded="true">
-              <span class="fd-chev" aria-hidden="true">⌄</span>
-              <span class="fd-sec-titles"><span class="fd-kicker">СМЕННЫЕ · ВЫДАЧА ЗА ВЧЕРА</span><span class="fd-sec-title" id="shift-title">Смена —</span></span>
-              <span class="fd-sec-sum" id="shift-sum"></span>
-            </button>
-            <button id="pay-all" class="fd-btn-pay" type="button"><span aria-hidden="true">✓</span><span id="pay-all-label">Выдать пришедшим</span></button>
-          </div>
-          <div class="fd-sec-body">
-            <div id="shift-strips"></div>
-            <div class="fd-tabs" id="shift-tabs" role="group" aria-label="Фильтр смены"></div>
-            <div class="fd-shift">
-              <div class="fd-thead fd-shift-cols"><span></span><span>Сотрудник</span><span class="fd-th-time">Вход</span><span class="fd-th-status">Статус</span><span class="num fd-th-acc">Начислено</span><span class="num fd-th-pay">Выдано сегодня</span></div>
-              <div id="shift-rows" aria-live="polite"></div>
-              <div class="fd-tfoot fd-shift-cols"><span></span><span class="fd-tfoot-label">Итого за смену</span><span class="fd-tfoot-gap"></span><span id="shift-paid-count" class="fd-tfoot-count"></span><strong id="shift-accrued" class="num fd-tfoot-acc">—</strong><strong id="shift-paid" class="num fd-tfoot-paid">—</strong></div>
-            </div>
-          </div>
-        </section>
-
         <!-- ── Журнал: каждое списание дня отдельной строкой ──────────────── -->
         <section class="fd-sec" id="journal-section">
           <button class="fd-sec-toggle fd-sec-head" type="button" data-section="journal" aria-expanded="true">
@@ -112,89 +94,32 @@
               <span id="expense-debt" class="fd-jr-newdebt num"></span>
               <button class="fd-plus" type="submit" title="Записать" aria-label="Записать">+</button>
             </form>
-            <div class="fd-jr-foot"><span id="expense-impact">Пустое «Оплачено» = оплачено полностью. Неоплаченная часть уйдёт в долги.</span><span class="fd-jr-total">Списано за день: <strong id="journal-total">—</strong></span></div>
+            <div class="fd-jr-foot"><span id="expense-impact">Пустое «Оплачено» = оплачено полностью. Неоплаченная часть уйдёт в долги.</span><span class="fd-jr-total">Списано за день: <strong id="journal-total">—</strong></span><button type="button" class="fd-btn-give fd-save" data-save>Сохранить</button></div>
           </div>
         </section>
 
-        <!-- ── Закуп под отчёт ────────────────────────────────────────────
-             Выдача Шоху списывается из кассы сразу, приёмка покупки уменьшает
-             подотчёт и второй раз кассу не трогает. -->
-        <section class="fd-sec" id="shoh-section">
-          <button class="fd-sec-toggle fd-sec-head" type="button" data-section="shoh" aria-expanded="true">
-            <span class="fd-chev" aria-hidden="true">⌄</span>
-            <span class="fd-sec-titles"><span class="fd-kicker">ЗАКУП · ПОДОТЧЁТ</span><span class="fd-sec-title">Баланс Шох</span></span>
-            <span class="fd-sec-sum" id="shoh-sum"></span>
-          </button>
-          <div class="fd-sec-body">
-            <div class="fd-sh-cards">
-              <div class="fd-sh-card"><div class="fd-sh-label">На начало дня</div><div class="fd-sh-value" id="shoh-start">—</div></div>
-              <div class="fd-sh-card"><div class="fd-sh-label">+ Выдано сегодня</div><div class="fd-sh-value" id="shoh-given">—</div></div>
-              <div class="fd-sh-card"><div class="fd-sh-label">− Потрачено наличными</div><div class="fd-sh-value" id="shoh-spent">—</div><div class="fd-sh-sub" id="shoh-spent-sub"></div></div>
-              <div class="fd-sh-card is-hero"><div class="fd-sh-label">= На руках у Шоха</div><div class="fd-sh-hero"><span id="shoh-balance">—</span><small>сум</small></div></div>
-            </div>
-            <form class="fd-sh-give" id="shoh-give-form" novalidate>
-              <span class="fd-sh-give-title">Выдать Шоху наличными</span>
-              <span class="fd-sh-quick" id="shoh-quick"><button type="button" data-amount="1000000">1 000 000</button><button type="button" data-amount="2000000">2 000 000</button><button type="button" data-amount="3000000">3 000 000</button></span>
-              <input id="shoh-give-amount" class="fd-money" data-money-hint="off" inputmode="decimal" placeholder="Сумма" aria-label="Сумма выдачи Шоху" autocomplete="off">
-              <button type="submit" class="fd-btn-give">Выдать</button>
-            </form>
-            <div id="shoh-gives"></div>
-            <div class="fd-sh-subhead"><strong>Покупки наличными · вносит Шох с телефона</strong><span class="fd-sh-subhead-side"><span id="shoh-buys-count"></span><button type="button" id="shoh-accept-all" class="fd-link-btn" hidden>Принять все в норме</button></span></div>
-            <div class="fd-scroll">
-              <div class="fd-buys">
-                <div class="fd-thead fd-buy-cols"><span>Время</span><span>Точка</span><span>Товар</span><span class="num">Кол-во</span><span class="num">Цена</span><span class="num">Сумма</span><span>Проверка</span></div>
-                <div id="shoh-buys" aria-live="polite"></div>
-              </div>
-            </div>
-            <div class="fd-sh-subhead"><strong>Перечисления · вносит бухгалтер</strong><span class="fd-sh-subhead-note">безнал, поставщику напрямую</span></div>
-            <div id="shoh-transfers"></div>
-            <form id="transfer-form" class="fd-tr-new fd-tr-cols" novalidate>
-              <input id="transfer-supplier" maxlength="120" placeholder="Поставщик" aria-label="Поставщик" autocomplete="off">
-              <input id="transfer-item" maxlength="120" placeholder="За что" aria-label="За что" autocomplete="off">
-              <select id="transfer-point" aria-label="Точка"><option value="RETRO">RETRO</option></select>
-              <input id="transfer-amount" class="num fd-money" data-money-hint="off" inputmode="decimal" placeholder="Сумма" aria-label="Сумма перечисления" autocomplete="off">
-              <button class="fd-plus" type="submit" title="Записать" aria-label="Записать перечисление">+</button>
-            </form>
-            <div class="fd-sh-foot"><span id="transfer-msg">Перечисление не меняет баланс Шоха и остаток кассы — он увидит его в приложении.</span><span class="fd-sh-foot-total" id="shoh-foot"></span></div>
-          </div>
-        </section>
-
-        <!-- ── Оклады: часть оклада конкретному сотруднику ────────────────── -->
-        <section class="fd-sec" id="salary-section">
-          <div class="fd-sec-head">
-            <button class="fd-sec-toggle" type="button" data-section="salary" aria-expanded="true">
-              <span class="fd-chev" aria-hidden="true">⌄</span>
-              <span class="fd-sec-titles"><span class="fd-kicker">ОКЛАДЫ · ЧАСТИЧНАЯ ВЫПЛАТА</span><span class="fd-sec-title">Оклады, выданные сегодня</span></span>
-              <span class="fd-sec-sum" id="salary-sum"></span>
-            </button>
-            <a class="fd-sec-link" href="/accountant/payroll">Вся ведомость →</a>
-          </div>
-          <div class="fd-sec-body">
-            <div id="salary-today" aria-live="polite"></div>
-            <form id="salary-payment-form" class="fd-mo-form" novalidate>
-              <select id="salary-employee" name="employee_id" required aria-label="Кому выдаём оклад"><option value="">Кому выдаём оклад</option></select>
-              <input id="salary-amount" name="amount" class="fd-money" data-money-hint="off" inputmode="decimal" placeholder="Сумма, сум" aria-label="Сумма, сум" autocomplete="off">
-              <button type="submit" class="fd-btn-give" id="salary-submit">Записать выплату</button>
-            </form>
-            <p class="fd-mo-hint" id="salary-hint">Выберите сотрудника — покажем, сколько осталось по окладу.</p>
-          </div>
-        </section>
       </div>
 
       <aside class="fd-rail" aria-label="Остатки и обязательства">
+        <!-- Дэшборд бухгалтера (ТЗ 02.10, п. 3): касса сейчас, прогноз расхода,
+             счёт Шохруха и обязательное подтверждение суммы от кассира. Пока
+             сумма не подтверждена, она не входит в остаток и отчёт не сдаётся. -->
         <section class="fd-cash" id="fd-cash" aria-labelledby="finance-hero-title">
-          <p class="fd-kicker">ДЕНЬГИ НА РАСХОДЫ</p>
-          <div class="fd-cash-sub" id="finance-hero-title">Остаток на конец дня</div>
+          <p class="fd-kicker">ДЭШБОРД БУХГАЛТЕРА</p>
+          <div class="fd-cash-sub" id="finance-hero-title">Касса сегодня</div>
           <div class="fd-cash-total"><span id="finance-cash-total">—</span><small>сум</small></div>
           <div id="fd-cash-lines"></div>
-          <!-- Бухгалтер подтверждает, сколько наличных реально получил от кассира.
-               Разница с расчётом — ошибка в «Проверках» и ⚠ у учредителя. -->
+          <div id="fd-opening-breakdown" class="fd-breakdown" hidden></div>
           <form id="cash-confirm" class="fd-cash-confirm" novalidate hidden>
-            <label for="cash-confirm-amount">Получено от кассира</label>
+            <label for="cash-confirm-amount">Получено от кассира · подтвердите</label>
             <div class="fd-cash-confirm-row"><input id="cash-confirm-amount" class="fd-money" data-money-hint="off" inputmode="decimal" autocomplete="off" aria-label="Получено от кассира, сум"><button type="submit" id="cash-confirm-submit">Подтвердить</button></div>
             <p id="cash-confirm-note" class="fd-cash-confirm-note"></p>
           </form>
           <p id="cash-confirmed" class="fd-cash-confirmed" hidden></p>
+          <div class="fd-dash-tiles">
+            <div class="fd-dash-tile"><span>Прогноз расхода на сегодня</span><b id="fd-forecast">—</b><small id="fd-forecast-sub"></small></div>
+            <a class="fd-dash-tile is-link" href="/accountant/shoh"><span>Счёт Шохруха</span><b id="fd-shoh">—</b><small>на руках у Шоха →</small></a>
+          </div>
           <button type="button" class="fd-cash-set" id="fd-cash-set" hidden>Задать начальные остатки →</button>
         </section>
 
@@ -211,7 +136,6 @@
 
         <section class="fd-card fd-reserves" id="reserves-card" aria-labelledby="reserves-title">
           <p class="fd-kicker" id="reserves-title">РЕЗЕРВЫ · НЕ ВХОДЯТ В ОСТАТОК</p>
-          <div class="fd-res-line"><span>На руках у Шоха · подотчёт</span><b id="shoh-balance-rail">—</b></div>
           <div class="fd-res-line"><span>Доллары в сейфе · от кассира</span><b id="usd-balance">—</b></div>
           <div class="fd-res-line"><span>Дивиденды в сейфе</span><b id="dividends-balance">—</b></div>
           <button type="button" class="fd-res-tools" id="fd-open-tools">Начальные остатки и ручной приход →</button>
@@ -270,6 +194,19 @@
         <button class="fd-btn-give" type="submit">Сохранить остаток</button>
       </form>
     </section>
+  </div>
+</dialog>
+
+<!-- Закрытие месяца (ТЗ 02.10, п. 2): итог перед подтверждением. -->
+<dialog id="fd-month" class="fd-dialog fd-month-dialog" aria-labelledby="fd-month-title">
+  <div class="fd-dialog-head"><div><p class="fd-kicker">ЗАКРЫТИЕ МЕСЯЦА</p><h2 id="fd-month-title">—</h2></div><button type="button" class="fd-dialog-close" id="fd-month-close" aria-label="Закрыть">×</button></div>
+  <p class="fd-dialog-msg" id="fd-month-msg" role="alert" hidden></p>
+  <div class="fd-dialog-body" id="fd-month-body"></div>
+  <div class="fd-dialog-foot">
+    <a id="fd-month-excel" class="fd-btn fd-btn-light" href="#" download><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>Сверка по дням · Excel</a>
+    <span class="fd-dialog-gap"></span>
+    <button type="button" class="fd-btn fd-btn-light" id="fd-month-cancel">Отмена</button>
+    <button type="button" class="fd-btn fd-btn-dark" id="fd-month-confirm">Закрыть месяц</button>
   </div>
 </dialog>
 </body>

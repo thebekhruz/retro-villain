@@ -105,7 +105,8 @@ def live(tmp_path, request):
         parts = urlsplit(database_url)
         query = dict(parse_qsl(parts.query)); query['options'] = '-csearch_path=' + schema
         database_url = urlunsplit(parts._replace(query=urlencode(query)))
-    settings = Settings(database_url=database_url, login='test', password='test', store_id=82907, data_dir=tmp_path)
+    settings = Settings(database_url=database_url, login='test', password='test', store_id=82907, data_dir=tmp_path,
+                        shokh_module=True)
     app = create_app(settings)
     upstream = Upstream()
     app.state.iiko = IikoClient(settings, transport=httpx.MockTransport(upstream))
@@ -360,7 +361,8 @@ def test_off_catalog_purchase_is_saved_without_invoice_and_accepted_by_accountan
     finance = c.app.state.accountant_finance
     finance.reserve_entry(DAY, 'shoh', 'opening', '1000000', 'Opening')
     home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
-    assert Decimal(home['pending']) == Decimal('100000')
+    # С ТЗ 02.10 покупка с телефона остаток Шоха не меняет — его ведёт бухгалтер.
+    assert Decimal(home['pocket']) == Decimal('1000000')
     # Бухгалтер видит покупку «Нет в iiko» и может её принять.
     listed = c.get('/api/accountant/shokh/purchases', params={'date': DAY.isoformat()}).json()['purchases']
     assert {p['iiko']['status'] for p in listed} == {'manual'}
@@ -382,7 +384,7 @@ def test_uneven_total_keeps_exact_invoice_but_cash_figures_are_whole(live):
     assert row['invoice_total'] == '99999.99'
     assert row['total'] == '100000.00'
     assert next(iter(upstream.documents.values()))['sum'] == 99999.99
-    assert Decimal(response.json()['pocket']) == Decimal('3008000')
+    assert Decimal(response.json()['pocket']) == Decimal('3108000')
     home = c.get('/api/shokh/home', params={'date': DAY.isoformat()}).json()
     for field in ('pocket', 'pending', 'spent_day', 'spent_today', 'day_start'):
         assert Decimal(home[field]) == Decimal(home[field]).to_integral_value(), (field, home[field])

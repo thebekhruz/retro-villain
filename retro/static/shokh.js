@@ -70,8 +70,9 @@ function renderHome(data) {
   $('home-balance').removeAttribute('aria-busy');
   $('home-purchases').removeAttribute('aria-busy');
   state.lastPocket = data.pocket;
+  // Как в макете: «Закуп · чт, 24 сентября» — день недели коротко.
   $('home-date').textContent = 'Закуп · ' + new Intl.DateTimeFormat('ru-RU',
-    {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'})
+    {weekday: 'short', day: 'numeric', month: 'long', timeZone: 'UTC'})
     .format(new Date(data.date + 'T12:00:00Z'));
   // Подотчёт ещё не заведён — цифры нет, и придумывать её нельзя.
   const unknown = data.pocket === null;
@@ -86,7 +87,7 @@ function renderHome(data) {
   const share = data.reported_percent ?? null;
   $('home-reported').textContent = share === null
     ? 'Подотчёт не заведён'
-    : 'Отчитались за ' + share + '% выданных денег';
+    : 'Отчитались за ' + share + '% денег на руках';
   $('home-reported-bar').style.width = (share || 0) + '%';
 
   // Перечисления поставщикам за сегодня (поле transfers в ответе /home).
@@ -113,7 +114,9 @@ function renderHome(data) {
   const count = data.purchases.length;
   $('home-purchases-title').textContent = count
     ? 'Сегодня · ' + count + ' ' + purchasesWord(count) : 'Сегодня покупок нет';
-  renderPurchases($('home-purchases'), data.purchases);
+  // Покупок нет — только заголовок «Сегодня покупок нет», как в макете.
+  if (count) renderPurchases($('home-purchases'), data.purchases);
+  else $('home-purchases').replaceChildren();
 }
 
 /* Главная не загрузилась с первого раза: скелет не должен крутиться вечно. */
@@ -178,7 +181,7 @@ function renderPurchases(container, rows) {
     itemName.dataset.i18n = 'off';  // название из iiko
     title.append(itemName);
     if (!row.has_photo) title.append(node('span', 'shokh-flag', 'нет фото'));
-    if (row.price_above_usual) title.append(node('span', 'shokh-flag', 'дороже обычного'));
+    if (row.price_above_usual) title.append(node('span', 'shokh-flag', 'цена выше'));
     if (row.accepted_at) title.append(node('span', 'shokh-ok', 'принято'));
     // Как в макете: «10 кг · RETRO». Количество без хвостовых нулей
     // («3.000» → «3»), точка закупа — данные, её не переводим.
@@ -256,7 +259,7 @@ function missing(step) {
     if (!draft.storageId) return ['Выберите склад поступления', 'iiko-storage'];
   }
   if (step === 'item') {
-    if (draft.custom && !(draft.item || '').trim()) return ['Введите название нового товара', 'custom-name'];
+    if (draft.custom && !(draft.item || '').trim()) return ['Введите название нового товара', 'item-search'];
     if (!draft.custom && !draft.productId) return ['Выберите товар из списка iiko', 'item-search'];
     if (state.expectedPhoto && !state.photoFile) return ['Прикрепите прежнее фото покупки', 'photo-empty'];
   }
@@ -320,9 +323,12 @@ function renderStep() {
   $('flow-step-no').textContent = String(L().STEPS.indexOf(step) + 1);
   $('flow-step-name').textContent = STEP_NAMES[step];
   renderSegments();
+  renderPointExtras();
   setNext(ready(step));
+  // Как в макете: на проверке — «Подтвердить»; куда уходит покупка (iiko
+  // или бухгалтеру), видно в ходе сохранения над кнопкой.
   $('flow-next').textContent = step !== 'confirm' ? 'Далее'
-    : state.saveFailed ? 'Повторить сохранение' : state.draft.custom ? 'Сохранить' : 'Сохранить в iiko';
+    : state.saveFailed ? 'Повторить сохранение' : 'Подтвердить';
   if (step !== 'confirm' || !state.saveFailed) { if (!$('save-status').hidden) showStatus(null); }
 
   if (step === 'item') {
@@ -339,10 +345,44 @@ function renderStep() {
   persistDraft();
 }
 
+/* Покупки этого закупа: с главной (закуп мог продолжиться после F5) и
+   записанные с этого экрана. */
+function tripCount() {
+  const ids = new Set(((state.home && state.home.purchases) || [])
+    .filter(row => row.trip_id === state.tripId).map(row => row.id));
+  (state.tripSaved || []).forEach(row => { if (row.trip === state.tripId) ids.add(row.id); });
+  return ids.size;
+}
+function goodsWord(count) {
+  if (count % 10 === 1 && count % 100 !== 11) return 'товар';
+  if ([2, 3, 4].includes(count % 10) && ![12, 13, 14].includes(count % 100)) return 'товара';
+  return 'товаров';
+}
+
 function purchasesWord(count) {
   if (count % 10 === 1 && count % 100 !== 11) return 'покупка';
   if ([2, 3, 4].includes(count % 10) && ![12, 13, 14].includes(count % 100)) return 'покупки';
   return 'покупок';
+}
+
+/* Как в макете: пока точка не выбрана — только плитки и «Другая точка»,
+   без полей накладной и без «Назад / Далее» (нажатие на плитку и так ведёт
+   дальше). Точка выбрана — видно поставщика и склад, их можно сменить. */
+function renderPointExtras() {
+  const chosen = !!(state.draft.point || '').trim();
+  $('point-iiko').hidden = !chosen;
+  $('screen-flow').classList.toggle('is-bare', state.step === 'point' && !chosen);
+}
+
+/* Буквы на плитке точки, как в макете: «Школа MU» → MU, «ШЕФ Базаар» → ШБ,
+   «RETRO» → R. */
+function pointMark(point) {
+  const words = String(point || '').trim().split(/\s+/).filter(Boolean);
+  if (!words.length) return '';
+  const last = words[words.length - 1];
+  if (words.length > 1 && /^[A-ZА-ЯЁ0-9]{2,3}$/.test(last)) return last;
+  if (words.length > 1) return (words[0][0] + words[1][0]).toUpperCase();
+  return last[0].toUpperCase();
 }
 
 function renderPoints() {
@@ -359,12 +399,14 @@ function renderPoints() {
     pointName.dataset.i18n = 'off';  // точка — данные, не перевод
     name.append(pointName);
     name.append(node('small', '', count ? 'сегодня: ' + count + ' ' + purchasesWord(count) : 'сегодня не были'));
-    button.append(node('span', 'shokh-point-mark', point.slice(0, 2).toUpperCase()), name);
+    const mark = node('span', 'shokh-point-mark', pointMark(point));
+    mark.dataset.i18n = 'off';
+    button.append(mark, name);
     button.addEventListener('click', () => {
       state.draft.point = point;
       $('point-other').value = '';
       applyPointDefaults(point);
-      renderPoints(); renderSelectors();
+      renderPoints(); renderSelectors(); renderPointExtras();
       setNext(ready('point'));
       // Точку выбрали — сразу к товару, как в макете. Поставщик и склад —
       // с прошлой накладной этой точки; если точка новая, подсказываем,
@@ -386,22 +428,21 @@ function applyPointDefaults(point) {
   if (state.catalog.storages.some(row => row.id === known.storage_id)) state.draft.storageId = known.storage_id;
 }
 
+const fold = value => String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
+
 function renderItems() {
-  const custom = !!state.draft.custom;
-  // «+ Новый товар»: вместо списка iiko — название и единица.
-  for (const id of ['item-search', 'item-list-title', 'item-list', 'item-add-custom']) $(id).hidden = custom;
-  $('item-custom').hidden = !custom;
-  $('item-chosen').hidden = custom || !state.draft.item;
-  if (custom) { renderCustom(); return; }
+  const draft = state.draft, custom = !!draft.custom;
   const query = $('item-search').value.trim().toLowerCase();
   const box = $('item-list'); box.replaceChildren();
-  const matches = L().searchItems(state.catalog.items, query, 10, state.draft.point);
+  const matches = L().searchItems(state.catalog.items, query, 10, draft.point);
   // Без запроса — сначала то, что Шох уже покупал (как «Часто покупаете» в макете).
   $('item-list-title').textContent = query ? 'Найдено в iiko'
     : matches.some(row => Number(row.times) > 0) ? 'Часто покупаете' : 'Товары iiko';
+  const isOn = row => (row.custom ? custom && fold(row.item) === fold(draft.item) : !custom && row.id === draft.productId);
   matches.forEach(row => {
-    const button = node('button', 'shokh-item' + (state.draft.item === row.item ? ' is-active' : '') + (row.custom ? ' is-custom' : ''));
+    const button = node('button', 'shokh-item' + (isOn(row) ? ' is-active' : '') + (row.custom ? ' is-custom' : ''));
     button.type = 'button';
+    button.setAttribute('aria-pressed', String(isOn(row)));
     // Как в макете: под названием — обычная цена, если она уже есть в истории.
     // Обычная цена — ориентир в целых сумах: «обычно 33 333 / шт».
     const itemName = node('span', 'shokh-item-name', row.item);
@@ -423,15 +464,25 @@ function renderItems() {
     });
     box.append(button);
   });
-  if (!matches.length) box.append(node('p', 'shokh-note', 'Товар не найден в iiko. Нажмите «+ Новый товар» ниже.'));
-  // Товара нет в списке — «+ Новый товар» с тем, что уже набрали в поиске.
+  // «Выбрано: …» — новый товар (его нет в списке iiko) или товар iiko,
+  // которого не видно среди плиток.
+  const chosen = !!draft.item && (custom || !matches.some(isOn));
+  $('item-chosen').hidden = !chosen;
+  if (chosen) {
+    const name = node('span', '', draft.item);
+    name.dataset.i18n = 'off';
+    const text = node('span', '', 'Выбрано: ');
+    text.append(name);
+    $('item-chosen').replaceChildren(text);
+    if (custom) $('item-chosen').append(node('small', 'shokh-chosen-tag', 'нет в iiko'));
+  }
+  // «+ Новый товар «…»» — как в макете: когда набрали то, чего нет среди
+  // товаров (ни в iiko, ни среди уже купленных новых).
   const typed = $('item-search').value.trim();
   const label = $('item-add-custom');
+  label.hidden = !typed || state.catalog.items.some(row => fold(row.item) === fold(typed));
   label.replaceChildren('+ Новый товар');
   if (typed) { const name = node('span', '', ' «' + typed + '»'); name.dataset.i18n = 'off'; label.append(name); }
-  const chosen = node('span', '', state.draft.item);
-  chosen.dataset.i18n = 'off';
-  $('item-chosen').replaceChildren('Выбрано: ', chosen);
 }
 
 async function chooseItem() {
@@ -446,7 +497,6 @@ async function chooseItem() {
 
 /* Обычная цена по истории: товар iiko — по id, новый товар — по названию. */
 function usualFor(draft) {
-  const fold = value => String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
   const found = draft.custom
     ? state.catalog.items.find(row => row.custom && fold(row.item) === fold(draft.item))
     : state.catalog.items.find(row => row.id === draft.productId);
@@ -463,42 +513,28 @@ function startCustom(name, unit) {
   draft.custom = true; draft.productId = null; draft.unitId = null;
   draft.item = String(name || '').trim().slice(0, 120);
   draft.unit = customUnits().includes(unit) ? unit : (customUnits().includes(draft.unit) ? draft.unit : customUnits()[0]);
-  $('custom-name').value = draft.item;
   $('item-search').value = '';
   state.usual = usualFor(draft);
   renderItems();
   setNext(ready('item'));
-  pulse($('item-custom'), 'is-in');
-  if (!draft.item) $('custom-name').focus({preventScroll: true});
+  pulse($('item-chosen'), 'is-in');
   persistDraft();
 }
-function renderCustom() {
-  const draft = state.draft;
-  if (document.activeElement !== $('custom-name') && $('custom-name').value !== draft.item) $('custom-name').value = draft.item || '';
-  const box = $('custom-units'); box.replaceChildren();
-  customUnits().forEach(unit => {
+
+function renderUnits() {
+  const draft = state.draft, box = $('unit-switch'); box.replaceChildren();
+  // Единица товара iiko приходит из его карточки и одна — это подпись, а не
+  // переключатель, по ней нечего нажимать. У нового товара единицу выбирают
+  // здесь, как в макете: кг, шт, л…
+  if (!draft.custom) box.append(node('span', 'shokh-switch-btn is-on', draft.unit));
+  else customUnits().forEach(unit => {
     const on = draft.unit === unit;
     const button = node('button', 'shokh-switch-btn' + (on ? ' is-on' : ''), unit);
     button.type = 'button';
     button.setAttribute('aria-pressed', String(on));
-    button.addEventListener('click', () => { draft.unit = unit; renderCustom(); setNext(ready('item')); persistDraft(); });
+    button.addEventListener('click', () => { draft.unit = unit; renderUnits(); renderAmount(); });
     box.append(button);
   });
-  // Такой товар в iiko уже есть — лучше выбрать его: тогда накладная уйдёт сама.
-  const fold = value => String(value || '').trim().toLowerCase().replace(/ё/g, 'е');
-  const twin = draft.item && state.catalog.items.find(row => !row.custom && fold(row.item) === fold(draft.item));
-  $('custom-known').hidden = !twin;
-  if (twin) {
-    const name = node('b', '', twin.item); name.dataset.i18n = 'off';
-    $('custom-known').replaceChildren('В iiko уже есть ', name, ' — лучше выберите его из списка.');
-  }
-}
-
-function renderUnits() {
-  const box = $('unit-switch'); box.replaceChildren();
-  // Единица приходит из карточки товара iiko и одна — это подпись, а не
-  // переключатель, по ней нечего нажимать.
-  box.append(node('span', 'shokh-switch-btn is-on', state.draft.unit));
   // Одной строкой: в узбекском порядок слов другой («1 kg uchun»).
   $('price-mode-unit').textContent = 'за 1 ' + state.draft.unit;
   const quick = $('qty-quick'); quick.replaceChildren();
@@ -593,7 +629,7 @@ function renderConfirm() {
   $('confirm-item').textContent = draft.item;
   $('confirm-formula').textContent = quantityLabel(draft.quantity) + ' ' + draft.unit + ' × ' +
     exact.format(Number(draft.price)) + ' сум';
-  $('confirm-total').textContent = money.format(total) + ' сум';
+  $('confirm-total').textContent = money.format(total);
   const after = L().pocketAfter(state.lastPocket, draft);
   $('confirm-after').textContent = after === null ? 'Подотчёт не задан' : money.format(after) + ' сум';
   $('confirm-after').classList.toggle('is-negative', after !== null && after < 0);
@@ -621,7 +657,7 @@ function resetDraft() {
     custom: false, supplierId: state.draft.supplierId, storageId: state.draft.storageId, operationId: crypto.randomUUID()};
   state.photoFile = null; state.usual = null; state.priceFit = null; state.saveFailed = false;
   $('qty-input').value = ''; $('price-input').value = '';
-  $('item-search').value = ''; $('custom-name').value = '';
+  $('item-search').value = '';
   $('photo-empty').hidden = false; $('photo-filled').hidden = true;
   $('photo-input').value = ''; $('photo-error').hidden = true;
 }
@@ -639,6 +675,7 @@ async function beginTrip() {
   try {
     const data = await api('/trip', {method: 'POST'});
     state.tripId = data.trip_id;
+    state.tripSaved = [];
     // Время начала — с сервера: продолженный закуп не начинает отсчёт с нуля.
     state.tripStartedAt = data.started_at || new Date().toISOString();
     startTimer();
@@ -817,10 +854,14 @@ async function submitPurchase() {
     const doneName = node('span', '', result.purchase.item);
     doneName.dataset.i18n = 'off';
     $('done-item').replaceChildren(doneName, ' · ' + money.format(Number(result.purchase.total)) + ' сум');
-    $('done-pocket').textContent = result.pocket === null ? '—' : money.format(Number(result.pocket)) + ' сум';
+    $('done-pocket').textContent = result.pocket === null ? '—' : money.format(Number(result.pocket));
     $('done-before').textContent = before === null ? '' : 'было ' + money.format(Number(before));
+    // Как в макете: «2 товара в этом закупе · 04:15».
+    state.tripSaved = [...(state.tripSaved || []), {trip: state.tripId, id: result.purchase.id}];
     const minutes = L().tripElapsedMinutes(state.tripStartedAt, new Date().toISOString());
-    $('done-trip').textContent = minutes === null ? '' : 'В закупе ' + L().clock(minutes);
+    const count = tripCount();
+    $('done-trip').textContent = count + ' ' + goodsWord(count) + ' в этом закупе' +
+      (minutes === null ? '' : ' · ' + L().clock(minutes));
     renderDoneIiko(result.purchase);
     show('done');
     message('');
@@ -835,11 +876,27 @@ async function submitPurchase() {
   finally { state.submitting = false; }
 }
 
+/* Итог закупа — как в макете: «Помидоры · 10 кг» слева, сумма справа.
+   Накладная iiko не подтверждена — короткая метка; подробности на главной. */
+function renderTripList(container, rows) {
+  container.replaceChildren(...rows.map(row => {
+    const line = node('div', 'shokh-sum-row');
+    const left = node('span', 'shokh-sum-name');
+    const name = node('b', '', row.item); name.dataset.i18n = 'off';
+    left.append(name, node('span', 'shokh-sum-qty', ' · ' + quantityText.format(Number(row.quantity)) + ' ' + row.unit));
+    const status = row.iiko && row.iiko.status;
+    if (status === 'manual') left.append(node('span', 'shokh-flag', 'нет в iiko'));
+    else if (status && !['synced', 'legacy'].includes(status)) left.append(node('span', 'shokh-flag', 'ждёт iiko'));
+    line.append(left, node('strong', 'rm-num', money.format(Number(row.total))));
+    return line;
+  }));
+}
+
 function showSummary(data) {
   $('sum-time').textContent = L().clock(data.trip.minutes);
   $('sum-count').textContent = String(data.purchases.length);
   $('sum-total').textContent = money.format(Number(data.spent));
-  renderPurchases($('sum-list'), data.purchases);
+  renderTripList($('sum-list'), data.purchases);
   state.tripId = null; state.tripStartedAt = null;
   show('summary');
   refreshHome();
@@ -928,7 +985,6 @@ function restoreDraft() {
   state.shownStep = null;
   $('qty-input').value = state.draft.quantity || '';
   $('price-input').value = state.draft.priceInput || '';
-  $('custom-name').value = state.draft.custom ? state.draft.item || '' : '';
   $('point-other').value = state.draft.point && !state.catalog.points.includes(state.draft.point) ? state.draft.point : '';
   state.usual = usualFor(state.draft);
   renderSelectors(); renderPoints(); show('flow'); renderStep(); startTimer();
@@ -983,25 +1039,13 @@ $('point-other').addEventListener('input', event => {
   // Своя точка вместо плитки: плитка больше не выбрана. Точку уже знаем —
   // подставляем её поставщика и склад.
   if ((state.catalog.point_defaults || {})[state.draft.point]) { applyPointDefaults(state.draft.point); renderSelectors(); }
-  renderPoints();
+  renderPoints(); renderPointExtras();
   setNext(ready('point'));
   persistDraft();
 });
 $('item-back-point').addEventListener('click', () => { state.step = 'point'; renderPoints(); renderStep(); });
 $('item-search').addEventListener('input', renderItems);
 $('item-add-custom').addEventListener('click', () => startCustom($('item-search').value, state.draft.unit));
-$('custom-name').addEventListener('input', event => {
-  // Как набрали, с пробелами: обрезка на ходу съедала пробел между словами.
-  // Края обрезает сервер.
-  state.draft.item = event.target.value;
-  state.usual = usualFor(state.draft);
-  renderCustom(); setNext(ready('item')); persistDraft();
-});
-$('custom-cancel').addEventListener('click', () => {
-  Object.assign(state.draft, {custom: false, item: '', productId: null, unitId: null});
-  renderItems(); setNext(ready('item')); persistDraft();
-  $('item-search').focus({preventScroll: true});
-});
 /* Камера телефона даёт снимки по 3–8 МБ: большое фото ужимаем на телефоне
    (до 1600 px, JPEG), чтобы оно быстро ушло по мобильной сети и влезло в
    6 МБ сервера. Не открылось в браузере (HEIC в Chrome) — отправляем как есть. */

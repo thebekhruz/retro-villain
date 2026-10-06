@@ -3,14 +3,14 @@
 <head>
   <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="theme-color" content="#143e35">
-  <title>Зарплаты · месяц · Retro Milliy</title>
+  <title>Зарплата · месяц · Retro Milliy</title>
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
   <link rel="stylesheet" href="/static/style.css">
-  <link rel="stylesheet" href="/static/payroll.css">
+  <link rel="stylesheet" href="/static/accountant.css"><link rel="stylesheet" href="/static/payroll.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/payroll-logic.js" defer></script><script src="/static/payroll.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/payroll-logic.js" defer></script><script src="/static/payroll.js" defer></script>
 </head>
 <body class="pr-page">
 <aside class="sidebar">
@@ -18,14 +18,14 @@
   <div class="side-rule"></div>
   <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
   <nav aria-label="Модули"><a href="/accountant" class="nav-active" aria-current="page"><span class="nav-icon">◫</span> Бухгалтер</a>
-    <div class="rm-subnav"><a href="/accountant">Финансы дня</a><a href="/accountant/payroll" class="is-current" aria-current="page">Зарплаты · месяц<span class="nav-dot"></span></a><a href="/accountant/employees">Сотрудники</a></div></nav>
+    <div class="rm-subnav"><a href="/accountant">Финансы дня</a><a href="/accountant/salary-day">Зарплата · день</a><a href="/accountant/payroll" class="is-current" aria-current="page">Зарплата · месяц<span class="nav-dot"></span></a><a href="/accountant/shoh">Баланс Шохруха</a><a href="/accountant/employees">Сотрудники</a></div></nav>
   <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
 </aside>
 <main>
   <header class="topbar"><span class="breadcrumb">Финансовый отдел <span>/</span> <strong id="crumb-month">Зарплаты</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace pr-workspace payroll-workspace">
     <div class="pr-heading">
-      <div><p class="pr-kicker">ВЕДОМОСТЬ МЕСЯЦА</p><h1 id="month-title" class="pr-title">Зарплаты<span>.</span></h1></div>
+      <div><p class="pr-kicker">ОКЛАДЫ · ВЫДАЁТСЯ ЧАСТЯМИ</p><h1 id="month-title" class="pr-title">Зарплаты<span>.</span></h1></div>
       <div class="pr-actions">
         <div class="pr-month" role="group" aria-label="Месяц ведомости">
           <button id="month-prev" class="pr-month-arrow" type="button" aria-label="Предыдущий месяц">‹</button>
@@ -33,8 +33,10 @@
           <button id="month-next" class="pr-month-arrow" type="button" aria-label="Следующий месяц">›</button>
         </div>
         <button id="payroll-download" class="pr-btn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>Скачать<span class="pr-btn-type">XLSX</span></button>
+        <button class="pr-btn pr-btn-dark" type="button" data-save><span aria-hidden="true">✓</span>Сохранить</button>
       </div>
     </div>
+    <div id="payroll-status" class="fd-daystate" aria-live="polite" hidden></div>
     <p id="payroll-message" class="notice" role="status" aria-live="polite" hidden></p>
 
     <!-- Первая загрузка: скелет итогов и сетки вместо пустоты и «Загружаем…». -->
@@ -45,30 +47,36 @@
     <div id="payroll-body" hidden>
       <section class="pr-cards" aria-label="Итоги месяца">
         <article class="pr-card"><div class="pr-card-label">Фонд окладов</div><div class="pr-card-value rm-num" id="kpi-fund">—</div></article>
-        <article class="pr-card"><div class="pr-card-label">Оклады выплачены</div><div class="pr-card-value rm-num" id="kpi-mpaid">—</div></article>
-        <article class="pr-card"><div class="pr-card-label">Осталось по окладам</div><div class="pr-card-value rm-num" id="kpi-mrest">—</div><div class="pr-card-sub rm-num" id="kpi-mover" hidden></div></article>
-        <article class="pr-card"><div class="pr-card-label">Сменным выдано</div><div class="pr-card-value rm-num" id="kpi-spaid">—</div></article>
+        <article class="pr-card"><div class="pr-card-label">Выдано</div><div class="pr-card-value rm-num" id="kpi-mpaid">—</div></article>
+        <article class="pr-card pr-card--left"><div class="pr-card-label">Осталось</div><div class="pr-card-value rm-num" id="kpi-mrest">—</div><div class="pr-card-sub rm-num" id="kpi-mover" hidden></div></article>
         <button type="button" class="pr-card pr-card--issues" id="kpi-issues-card"><div class="pr-card-label">Ошибки и пропуски</div><div class="pr-card-value rm-num" id="kpi-issues">—</div></button>
       </section>
 
       <section class="pr-sheet" aria-label="Ведомость: сотрудник × день">
         <div class="pr-sheet-head">
           <div class="pr-legend">
-            <span><i class="pr-key is-paid">✓</i>выдано</span>
-            <span><i class="pr-key is-late"></i>опоздал</span>
-            <span><i class="pr-key is-missing">н/я</i>не пришёл</span>
-            <span><i class="pr-key is-odd"></i>сумма ≠ ставке</span>
-            <span><i class="pr-key is-unpaid">✕</i>смена не выдана</span>
-            <span><i class="pr-key is-nopass">!</i>выдано без входа / переплата</span>
+            <span><i class="pr-key is-paid">✓</i>в ячейке — выдано за день</span>
+            <span><i class="pr-key is-odd"></i>переплата оклада</span>
             <span><i class="pr-hik">⊘ Hik</i>Не зарегистрирован в Hikvision</span>
-            <span id="legend-blocked" hidden><i class="pr-key is-blocked">…</i>ждёт начисления</span>
           </div>
-          <span class="pr-hint">Ячейка «к выдаче» или ✕ — выдать, ✓ — отменить выдачу. Номер дня открывает его в «Финансах дня»</span>
+          <span class="pr-hint">Сумма в ячейке — выдано в этот день. Изменить или очистить — прямо в ячейке. Сменные — на странице «Зарплата · день»</span>
         </div>
         <div class="pr-scroll" id="sheet-scroll">
           <div class="pr-grid" id="sheet-grid"></div>
         </div>
-        <div id="sheet-empty" class="empty-state" hidden><span aria-hidden="true">▤</span><p>За этот месяц ни смен, ни окладов в ведомости нет.</p></div>
+        <div id="sheet-empty" class="empty-state" hidden><span aria-hidden="true">▤</span><p>Сотрудников на окладе пока нет. Добавьте их в «Сотрудниках».</p></div>
+      </section>
+
+      <!-- «Оклады, выданные сегодня» переехали сюда из «Финансов дня» (ТЗ 02.10, п. 4). -->
+      <section class="fd-sec pr-today" id="salary-section" aria-labelledby="salary-title">
+        <div class="fd-sec-head"><span class="fd-sec-titles"><span class="fd-kicker">ОКЛАДЫ · ЧАСТИЧНАЯ ВЫПЛАТА</span><span class="fd-sec-title" id="salary-title">Оклады, выданные сегодня</span></span><span class="fd-sec-sum" id="salary-sum"></span></div>
+        <div id="salary-today" aria-live="polite"></div>
+        <form id="salary-payment-form" class="fd-mo-form" novalidate>
+          <select id="salary-employee" name="employee_id" required aria-label="Кому выдаём оклад"><option value="">Кому выдаём оклад</option></select>
+          <input id="salary-amount" name="amount" class="fd-money" data-money-hint="off" inputmode="decimal" placeholder="Сумма, сум" aria-label="Сумма, сум" autocomplete="off">
+          <button type="submit" class="fd-btn-give" id="salary-submit">Записать выплату</button>
+        </form>
+        <p class="fd-mo-hint" id="salary-hint">Выберите сотрудника — покажем, сколько осталось по окладу.</p>
       </section>
 
       <section class="pr-checks" aria-labelledby="checks-title">
@@ -77,7 +85,7 @@
         <button id="checks-more" class="pr-checks-more" type="button" hidden></button>
       </section>
     </div>
-    <footer class="pr-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Зарплаты</span><span>Время Ташкента · UZS</span></footer>
+    <footer class="pr-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Зарплата · месяц</span><span>Время Ташкента · UZS</span></footer>
   </div>
 </main>
 </body>

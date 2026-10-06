@@ -9,6 +9,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.accounting_period import accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
@@ -22,7 +23,8 @@ from .handover_dates import cashier_day
 from .attendance import Entrance, export_entrances
 from .employee_export import export_employees
 from .expense_catalog import catalog_json
-from .ledger import LedgerError, amount_value, required_text
+from . import closing as month_closing
+from .ledger import LedgerError, amount_value, flow_json, required_text
 from .payroll import blocker_reason, draft_payroll
 from .roster import HikvisionIdTaken
 
@@ -42,7 +44,8 @@ def selected_day(day: date | None) -> date:
 
 
 def finance_error(error: LedgerError):
-    code = 409 if 'уже' in str(error).casefold() else 422
+    text = str(error).casefold()
+    code = 409 if 'уже' in text or 'месяц закрыт' in text else 422
     raise HTTPException(code, str(error)) from None
 
 
@@ -221,8 +224,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
                     payroll={f'{status}_count': sum(row.status == status for row in rows)
                              for status in ('late', 'missing', 'unlinked', 'unavailable',
                                             'manual_present', 'manual_absent')})
-    anchor = finance.cash_opening()
-    carry_start = date.fromisoformat(anchor['day']) if anchor and request.app.state.settings.manual_handover_only else None
+    carry_start = carry_start_for(request, day)
     summary = finance.daily_summary(
         day, cashier_amount,
         carry_history=not request.app.state.settings.manual_handover_only or
@@ -285,8 +287,53 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
                 shoh_pocket=pocket_position(request.app.state.shokh, finance, day),
                 # Цель учредителя на неделю и сколько уже отложено в сейф.
                 dividends_week=dividend_summary(request.app.state, day),
+                # «Сохранить и сдать отчёт»: сданный отчёт дня и изменён ли день после сдачи.
+                day_report=month_closing.day_report(finance, day, summary['day_flow']),
+                # Закрытый месяц: «Закрыто · дата · кем», день только для чтения.
+                closed=month_closing.closed_state(finance, day),
+                # Последний день месяца — кнопка «Закрыть месяц»; незакрытый прошлый
+                # месяц — напоминание закрыть его.
+                month_close=month_close_hint(request, day),
                 scenarios=dict(shortfall=str(shortfall) if shortfall is not None else None, groups=scenarios,
                                note='Только оценка будущей смены; уже начисленный долг не уменьшается.'))
+
+
+def carry_start_for(request, day: date) -> date | None:
+    anchor = request.app.state.accountant_finance.cash_opening(day)
+    return (date.fromisoformat(anchor['day'])
+            if anchor and request.app.state.settings.manual_handover_only else None)
+
+
+def month_close_hint(request, day: date) -> dict:
+    """Что показать про закрытие месяца на экране дня.
+
+    `close_month` — выбран последний день месяца или следующее 1-е число,
+    месяц не закрыт и уже наступило 1-е число следующего месяца: появляется «Закрыть месяц». `open_month` —
+    самый ранний прошедший месяц с данными, который так и не закрыли."""
+    finance = request.app.state.accountant_finance
+    today = today_tashkent()
+    latest = month_closing.latest_closure(finance)
+    closed_through = latest['last_day'] if latest else ''
+    closing_day = day - timedelta(days=1) if day.day == 1 else day
+    last = month_closing.month_bounds(closing_day.strftime('%Y-%m'))[1]
+    close_month = (closing_day == last and today > last and last.isoformat() > closed_through)
+    start = finance.accounting_start(day)
+    open_month = None
+    if start is not None:
+        month = max(start, date.fromisoformat(closed_through) + timedelta(days=1)
+                    if closed_through else start).replace(day=1)
+        month_last = month_closing.month_bounds(month.strftime('%Y-%m'))[1]
+        if month_last < today:
+            open_month = dict(month=month.strftime('%Y-%m'), name=month_closing.month_name(month.strftime('%Y-%m')),
+                              last_day=month_last.isoformat())
+    return dict(close_month=closing_day.strftime('%Y-%m') if close_month else None, open_month=open_month,
+                latest=latest)
+
+
+def monthly_left(request, last: date):
+    """Сколько окладов осталось выдать за месяц: фонд − выдано с 1-го по `last`."""
+    paid = Decimal(request.app.state.accountant_finance.reserves(last)['monthly']['paid'])
+    return max(Decimal(0), request.app.state.accountant_roster.monthly_total() - paid)
 
 
 def cashier_handover_json(request, day: date, current=None) -> dict:
@@ -378,10 +425,11 @@ def payroll_month(request: Request, month: str):
     if first > today_tashkent().replace(day=1):
         raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
     last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+    first = accounting_range_start(first, last)
     data = request.app.state.accountant_finance.payroll_month(first, last)
     # Проверка «Остаток ушёл в минус»: дни месяца (до сегодня) с минусом на
     # конец дня — тем же расчётом, что и остаток в «Финансах дня».
-    anchor = request.app.state.accountant_finance.cash_opening()
+    anchor = request.app.state.accountant_finance.cash_opening(last)
     carry_start = (date.fromisoformat(anchor['day'])
                    if anchor and request.app.state.settings.manual_handover_only else None)
     data['negative_cash'] = request.app.state.accountant_finance.negative_cash_days(
@@ -407,7 +455,9 @@ def payroll_month(request: Request, month: str):
                 # показывает их по имени, а не «Сотрудник удалён · №».
                 monthly_archived=[row.json() for row in roster.list_monthly(archived=True)
                                   if str(row.id) in monthly_cells],
-                monthly_total=str(roster.monthly_total()), **data)
+                monthly_total=str(roster.monthly_total()),
+                # Закрытый месяц: «Закрыто · дата · кем», ячейки только для чтения.
+                closed=month_closing.closed_state(request.app.state.accountant_finance, last), **data)
 
 
 @router.patch('/employees/{employee_id}')
@@ -1041,3 +1091,148 @@ def download_entrances(request: Request, date: date):
 def shokh_photo(request: Request, purchase_id: int):
     from retro.modules.shokh.routes import photo
     return photo(request, purchase_id)
+
+
+# ── Сдача отчёта дня и закрытие месяца (ТЗ 02.10) ──────────────────────────
+
+class DayReportInput(BaseModel):
+    date: date
+    checks: list[DayCheckInput] = []
+
+
+def report_author(request: Request) -> str:
+    return getattr(request.state, 'dashboard_user', None) or 'бухгалтер'
+
+
+@router.post('/day-report')
+def submit_day_report(request: Request, body: DayReportInput):
+    """«Сохранить и сдать отчёт»: снимок дня уходит учредителю."""
+    day = selected_day(body.date)
+    finance = request.app.state.accountant_finance
+    summary = finance.daily_summary(day, None, carry_start=carry_start_for(request, day))
+    pocket = pocket_position(request.app.state.shokh, finance, day)
+    try:
+        report = month_closing.submit_day_report(
+            finance, day, report_author(request), carry_start=carry_start_for(request, day),
+            debts=dict(salary=str(summary['salary_debt']), expenses=str(summary['manual_debt_total'])),
+            shoh_balance=pocket['pocket'], checks=[item.model_dump() for item in body.checks])
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=False, date=day.isoformat(), report=report)
+
+
+def requested_month(month: str) -> str:
+    try:
+        first, _ = month_closing.month_bounds(month)
+    except LedgerError as error:
+        raise HTTPException(422, str(error)) from None
+    if first > today_tashkent():
+        raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
+    return first.strftime('%Y-%m')
+
+
+@router.get('/month-close')
+def month_close_preview(request: Request, month: str):
+    """Итог перед закрытием: остаток кассы, долги, замечания и сверка по дням."""
+    month = requested_month(month)
+    last = month_closing.month_bounds(month)[1]
+    return month_closing.month_preview(
+        request.app.state.accountant_finance, month, today_tashkent(),
+        carry_start=carry_start_for(request, last), monthly_left=monthly_left(request, last))
+
+
+class MonthCloseInput(BaseModel):
+    month: str
+
+
+@router.post('/month-close', status_code=201)
+def close_month(request: Request, body: MonthCloseInput):
+    month = requested_month(body.month)
+    last = month_closing.month_bounds(month)[1]
+    try:
+        closed = month_closing.close_month(
+            request.app.state.accountant_finance, month, report_author(request), today_tashkent(),
+            carry_start=carry_start_for(request, last), monthly_left=monthly_left(request, last))
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=False, month=month, closed=closed)
+
+
+@router.get('/reconciliation')
+def reconciliation(request: Request, month: str):
+    """Сверка месяца по дням: начало → приход → расход → конец."""
+    month = requested_month(month)
+    first, last = month_closing.month_bounds(month)
+    last = min(last, today_tashkent())
+    first = accounting_range_start(first, last)
+    days = request.app.state.accountant_finance.reconciliation(first, last, carry_start_for(request, last))
+    return dict(month=month, name=month_closing.month_name(month), days=[flow_json(day) for day in days])
+
+
+@router.get('/reconciliation/export')
+def reconciliation_export(request: Request, month: str):
+    from .sheets_export import reconciliation_workbook
+    data = reconciliation(request, month)
+    body = reconciliation_workbook(data)
+    return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename="Retro-sverka-{data["month"]}.xlsx"'})
+
+
+# ── Баланс Шохруха (ТЗ 02.10, п. 5) ─────────────────────────────────────────
+
+@router.get('/shoh')
+def shoh_balance(request: Request, date: date | None = None, history: bool = False):
+    """Остаток Шоха = выделено − расходы; итог месяца; история — по кнопке."""
+    from .shoh_balance import shoh_view
+    day = selected_day(date or today_tashkent())
+    finance = request.app.state.accountant_finance
+    data = shoh_view(finance, day, history=history)
+    data.update(closed=month_closing.closed_state(finance, day),
+                cash_balance=finance.daily_summary(day, None, carry_start=carry_start_for(request, day))['cash_balance'])
+    data['cash_balance'] = str(data['cash_balance']) if data['cash_balance'] is not None else None
+    return data
+
+
+class ShohExpenseInput(BaseModel):
+    date: date
+    place: str
+    amount: str
+    note: str = ''
+
+
+@router.post('/shoh/expenses', status_code=201)
+def add_shoh_expense(request: Request, body: ShohExpenseInput):
+    """Расход Шоха по счёт-фактуре: баланс Шоха уменьшается, касса — нет."""
+    from .shoh_balance import add_expense
+    day = selected_day(body.date)
+    try:
+        entry_id = add_expense(request.app.state.accountant_finance, day, body.place, body.amount, body.note)
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=False, id=entry_id)
+
+
+@router.delete('/shoh/expenses/{entry_id}', status_code=204)
+def delete_shoh_expense(request: Request, entry_id: int, date: date):
+    from .shoh_balance import delete_expense
+    day = selected_day(date)
+    try:
+        delete_expense(request.app.state.accountant_finance, entry_id, day)
+    except LedgerError as error:
+        if 'не найден' in str(error):
+            raise HTTPException(404, str(error)) from None
+        finance_error(error)
+
+
+class BazaarInput(BaseModel):
+    name: str
+
+
+@router.post('/bazaars', status_code=201)
+def add_bazaar(request: Request, body: BazaarInput):
+    from .shoh_balance import add_bazaar as add
+    try:
+        bazaars = add(request.app.state.accountant_finance, body.name)
+    except LedgerError as error:
+        finance_error(error)
+    return dict(demo=False, bazaars=bazaars)

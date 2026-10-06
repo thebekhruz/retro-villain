@@ -32,6 +32,19 @@ const employee = (name, extra = {}) => ({
   rate: '200000', payable: '200000', hikvision_registered: true, ...extra,
 });
 
+test('первый рабочий день не предлагает выплатить архивную смену 1 октября', () => {
+  const staff = {employees: [employee('Сотрудник', {employee_id: 1})]};
+  const board = logic.shiftBoard({payday: '2026-10-02', accountingStart: '2026-10-02', staff,
+    accruals: [{id: 1, employee_id: 1, name: 'Сотрудник', work_day: '2026-10-01',
+      amount: '200000', paid: '0', debt: '200000'}], movements: []});
+  assert.deepEqual(board.rows, []);
+  assert.equal(board.totals.toPaySum, 0);
+  const next = logic.shiftBoard({payday: '2026-10-03', accountingStart: '2026-10-02',
+    staff, accruals: [], movements: []});
+  assert.equal(next.rows.length, 1);
+  assert.equal(next.S, '2026-10-02');
+});
+
 test('без Hikvision: метка и фильтр остаются, начисление и выдача доступны', () => {
   const staff = {employees: [employee('Без устройства', {
     employee_id: 101, status: 'unlinked', first_entry: null, hikvision_registered: false, blocker: null,
