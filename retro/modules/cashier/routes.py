@@ -8,6 +8,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
+from retro.modules.accountant.handover_dates import receipt_day
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.accountant.ledger import LedgerError
@@ -249,7 +250,7 @@ def hand_over_to_accountant(request: Request, body: HandoverInput):
 def cancel_handover(request: Request, date: date):
     day = selected_day(date)
     try:
-        request.app.state.accountant_finance.delete_handover(day, only_source='cashier')
+        request.app.state.accountant_finance.delete_handover(receipt_day(day), only_source='cashier')
     except LedgerError as error:
         message = str(error)
         if 'используется в остатках' in message:

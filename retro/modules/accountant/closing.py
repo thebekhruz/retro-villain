@@ -238,8 +238,8 @@ def month_preview(finance, month: str, today: date, *, carry_start: date | None 
     already = latest is not None and last.isoformat() <= latest[1]
     if already:
         reason = 'Месяц уже закрыт.'
-    elif today < last:
-        reason = f'Месяц закрывается в последний день — {last.strftime("%d.%m.%Y")}.'
+    elif today <= last:
+        reason = f'Месяц закрывается с 1-го числа следующего месяца — {(last + timedelta(days=1)).strftime("%d.%m.%Y")}.'
     elif final['closing'] is None:
         missing = date.fromisoformat(final['missing']).strftime('%d.%m') if final['missing'] else '—'
         reason = f'Остаток на {last.strftime("%d.%m")} не посчитан: нет передачи кассы за {missing}.'

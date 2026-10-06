@@ -19,6 +19,7 @@ from retro.modules.cashier.till import (expected_from_saved, expected_handover, 
 from retro.modules.founder.cabinet import dividend_summary
 from retro.modules.shokh.store import pocket_position
 
+from .handover_dates import cashier_day
 from .attendance import Entrance, export_entrances
 from .employee_export import export_employees
 from .expense_catalog import catalog_json
@@ -81,6 +82,7 @@ async def cashier_handover_detail(request: Request, day: date) -> tuple[Decimal 
     if recorded is not None or request.app.state.settings.manual_handover_only:
         return recorded, None
     state = request.app.state
+    day = cashier_day(day)
     snapshot = state.cache.latest_for_day(day)
     if state.settings.configured:
         try:
@@ -128,6 +130,7 @@ async def current_cashier_expected(request: Request, day: date, *, force: bool =
     не ответил — сверки нет, как и без расчёта вообще.
     Возвращает (сумма или None, время снимка или None)."""
     state = request.app.state
+    day = cashier_day(day)
     expected, fetched_at = await asyncio.to_thread(expected_from_saved, state, day)
     if expected is not None or not state.settings.configured:
         return expected, fetched_at
@@ -276,6 +279,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
                 # «От кассира · ожидается / получено HH:MM»: запись передачи и расчёт
                 # по последнему снимку iiko на сервере (подсказка, в остаток не входит).
                 cashier_handover=cashier_handover_json(request, day, current),
+                cashier_date=cashier_day(day).isoformat(),
                 # Выдачи Шоху из кассы: уже вычтены из передачи кассира. Подотчёт Шоха
                 # их считает (reserves.shoh), а деньги бухгалтера — нет.
                 cashier_shokh_gives=cashier_gives_json(finance, day),
@@ -303,15 +307,16 @@ def carry_start_for(request, day: date) -> date | None:
 def month_close_hint(request, day: date) -> dict:
     """Что показать про закрытие месяца на экране дня.
 
-    `close_month` — выбранный день последний в своём месяце, месяц не закрыт и
-    уже наступил его последний день: появляется «Закрыть месяц». `open_month` —
+    `close_month` — выбран последний день месяца или следующее 1-е число,
+    месяц не закрыт и уже наступило 1-е число следующего месяца: появляется «Закрыть месяц». `open_month` —
     самый ранний прошедший месяц с данными, который так и не закрыли."""
     finance = request.app.state.accountant_finance
     today = today_tashkent()
     latest = month_closing.latest_closure(finance)
     closed_through = latest['last_day'] if latest else ''
-    last = month_closing.month_bounds(day.strftime('%Y-%m'))[1]
-    close_month = (day == last and today >= last and last.isoformat() > closed_through)
+    closing_day = day - timedelta(days=1) if day.day == 1 else day
+    last = month_closing.month_bounds(closing_day.strftime('%Y-%m'))[1]
+    close_month = (closing_day == last and today > last and last.isoformat() > closed_through)
     start = finance.accounting_start(day)
     open_month = None
     if start is not None:
@@ -321,7 +326,7 @@ def month_close_hint(request, day: date) -> dict:
         if month_last < today:
             open_month = dict(month=month.strftime('%Y-%m'), name=month_closing.month_name(month.strftime('%Y-%m')),
                               last_day=month_last.isoformat())
-    return dict(close_month=day.strftime('%Y-%m') if close_month else None, open_month=open_month,
+    return dict(close_month=closing_day.strftime('%Y-%m') if close_month else None, open_month=open_month,
                 latest=latest)
 
 
@@ -333,8 +338,8 @@ def monthly_left(request, last: date):
 
 def cashier_handover_json(request, day: date, current=None) -> dict:
     state = request.app.state
-    expected, fetched_at = current if current is not None else expected_from_saved(state, day)
-    recorded = handover_check(state, day, expected) or {}
+    expected, fetched_at = current if current is not None else expected_from_saved(state, cashier_day(day))
+    recorded = handover_check(state, cashier_day(day), expected) or {}
     return dict(amount=recorded.get('amount'), handed_at=recorded.get('handed_at'),
                 source=recorded.get('source'),
                 # Подтверждение бухгалтера: получено (amount), расчёт на момент

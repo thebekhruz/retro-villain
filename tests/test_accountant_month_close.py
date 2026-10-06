@@ -135,14 +135,15 @@ def test_closed_month_is_read_only_and_its_end_starts_the_next_month(store):
     store.add_expense(SEP_30, 'ops_rent', 'После снятия', '1')
 
 
-def test_month_closes_only_on_its_last_day_and_shows_remarks(store):
+def test_month_closes_only_from_next_month_and_shows_remarks(store):
     september(store)
     store.record_handover(SEP_30, Decimal('400'), source='cashier', replace_sources=('cashier', 'auto', 'accountant'))
     early = closing.month_preview(store, '2026-09', SEP_29)
-    assert not early['can_close'] and 'последний день' in early['reason']
-    with pytest.raises(LedgerError, match='последний день'):
+    assert not early['can_close'] and '1-го числа' in early['reason']
+    with pytest.raises(LedgerError, match='1-го числа'):
         closing.close_month(store, '2026-09', 'Лина', SEP_29)
-    preview = closing.month_preview(store, '2026-09', SEP_30)
+    assert not closing.month_preview(store, '2026-09', SEP_30)['can_close']
+    preview = closing.month_preview(store, '2026-09', OCT_1)
     kinds = {item['kind']: item for item in preview['remarks']}
     assert kinds['pending']['days'] == ['2026-09-30']
     assert kinds['reports']['days'] == ['2026-09-29', '2026-09-30']
@@ -168,6 +169,8 @@ def test_day_report_needs_confirmed_cashier_amount_and_reaches_the_founder(tmp_p
         day = c.get('/api/accountant/day', params={'date': SEP_30.isoformat()}).json()
         assert day['day_report']['changed'] is False
         assert day['month_close']['close_month'] == '2026-09'
+        first_day = c.get('/api/accountant/day', params={'date': OCT_1.isoformat()}).json()
+        assert first_day['month_close']['close_month'] == '2026-09'
         assert c.post('/api/accountant/expenses', json={
             'date': SEP_30.isoformat(), 'item_code': 'ops_rent', 'note': 'Аренда',
             'amount': '100000'}).status_code == 201

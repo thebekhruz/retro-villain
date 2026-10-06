@@ -710,7 +710,7 @@ function renderRail() {
   const shown = cash.cashier !== null ? cash.cashier : cash.expected;
   const counted = ['confirmed', 'accountant'].includes(state);
   lines.append(opening,
-    railLine('+ От кассира · касса ' + dm(day) + (state === 'confirmed' ? ' · получено ' + (cash.confirmedAt || '')
+    railLine('+ От кассира · касса ' + dm(data.cashier_date || L.shiftIso(day, -1)) + (state === 'confirmed' ? ' · получено ' + (cash.confirmedAt || '')
       : state === 'accountant' ? ' · записано' : shown !== null ? ' · ожидается, не в остатке' : ' · ожидается'),
       counted ? fmt(flow.handover_counted) : shown !== null ? fmt(shown) : '—', 'fd-cash-line' + (counted ? '' : ' is-expected')));
   if (Number(flow.receipts)) lines.append(railLine('+ Прочие поступления', fmt(flow.receipts), 'fd-cash-line'));

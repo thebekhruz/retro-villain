@@ -317,8 +317,8 @@ def test_week_marks_a_short_handover_and_keeps_iiko_gaps_empty(tmp_path, today):
     with client(tmp_path, iiko) as c:
         finance = c.app.state.accountant_finance
         # Расчёт кассира по фейку: «Демо» 9 млн, расходов нет — ровно 9 млн.
-        finance.record_handover(MONDAY, Decimal('9000000'))
-        finance.record_handover(date(2026, 9, 23), Decimal('8700000'))
+        finance.record_handover(MONDAY + timedelta(days=1), Decimal('9000000'))
+        finance.record_handover(date(2026, 9, 24), Decimal('8700000'))
         # 23.09 кассир работал в панели (поступление 100 000 → расчёт 9,1 млн);
         # 21.09 — нет: ручной приход без его данных не сверяется.
         c.app.state.expenses.add_receipt(date(2026, 9, 23), 'Возврат долга', Decimal('100000'))
@@ -329,7 +329,7 @@ def test_week_marks_a_short_handover_and_keeps_iiko_gaps_empty(tmp_path, today):
     assert days['2026-09-21']['handover']['status'] == 'unchecked'
     # Ручная запись бухгалтера при работавшем кассире сверяется с расчётом кассы
     # сразу — та же недостача, что в «Проверках» 2a (T-399).
-    assert days['2026-09-23']['handover'] == {'recorded': '8700000.00', 'expected': '9100000.00',
+    assert days['2026-09-23']['handover'] == {'receipt_date': '2026-09-24', 'recorded': '8700000.00', 'expected': '9100000.00',
                                               'confirmed': False, 'checked': True, 'confirmed_at': None,
                                               'shortfall': '400000', 'expected_changed': False,
                                               'status': 'mismatch', 'difference': '-400000.00'}
@@ -384,7 +384,7 @@ def test_month_export_is_an_xlsx_even_without_iiko(tmp_path, today):
     assert 'iiko недоступен' in sheet['A2'].value
     assert sheet.max_row == 4 + 24  # шапка и дни с 1 по 24 сентября
     heads = [cell.value for cell in sheet[4]]
-    assert heads[:12] == ['Дата', 'Retro · выручка', 'Oxbridge · выручка', 'Демо · Retro', 'Передал кассир',
+    assert heads[:12] == ['Дата', 'Retro · выручка', 'Oxbridge · выручка', 'Демо · Retro', 'Приход за прошлую смену',
                           'Расчёт кассира', 'Сменные', 'Оклады', 'Закуп · Шох и напрямую', 'Прочие расходы',
                           'Дивиденды', 'Остаток на конец дня']
     assert sheet['E25'].value == 9000000  # получено от кассира 21.09
@@ -516,8 +516,8 @@ def test_week_check_uses_the_accountant_confirmation(tmp_path, today):
         finance = c.app.state.accountant_finance
         # Расчёт — передача кассира (его кнопка); свою ручную запись бухгалтер
         # исправляет без «недостачи».
-        finance.record_handover(date(2026, 9, 23), Decimal('9000000'), source='cashier')
-        finance.confirm_handover(date(2026, 9, 23), '8700000', None, 'buh')
+        finance.record_handover(date(2026, 9, 24), Decimal('9000000'), source='cashier')
+        finance.confirm_handover(date(2026, 9, 24), '8700000', None, 'buh')
         week = c.get('/api/founder/week').json()
     day = {item['date']: item for item in week['days']}['2026-09-23']
     assert day['handover']['confirmed'] is True
@@ -533,7 +533,7 @@ def test_founder_ai_sees_the_cabinet_numbers(tmp_path, today):
     from retro.modules.founder.tools import FounderChatTools
     chef = [dict(day='2026-09-23', order_id='x', table=2, waiters=['Алина'], amount='520000', cost='1')]
     with client(tmp_path, FakeIiko(chef=chef)) as c:
-        c.app.state.accountant_finance.record_handover(date(2026, 9, 23), Decimal('8700000'))
+        c.app.state.accountant_finance.record_handover(date(2026, 9, 24), Decimal('8700000'))
         c.app.state.expenses.add(date(2026, 9, 23), 'Такси', Decimal('100000'))  # кассир работал в панели
         tools = FounderChatTools(c.app)
         assert 'get_founder_cabinet' in {tool['name'] for tool in tools.definitions}
