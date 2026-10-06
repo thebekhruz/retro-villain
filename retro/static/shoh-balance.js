@@ -85,12 +85,16 @@
     $('sb-month-title').textContent = MONTHS[month][0].toUpperCase() + MONTHS[month].slice(1) + ' ' + data.month.slice(0, 4) + ' · по ' + dm(data.date);
     $('sb-month-given').textContent = money(data.month_given);
     $('sb-month-spent').textContent = money(data.month_spent);
-    // Доля потраченного от выделенного за месяц — видно, отчитывается ли Шох.
-    const given = Number(data.month_given), spent = Number(data.month_spent);
-    const share = given > 0 ? Math.round(spent / given * 100) : null;
-    $('sb-month-bar').style.width = share === null ? '0%' : Math.min(100, share) + '%';
-    $('sb-month-bar').classList.toggle('is-over', share !== null && share > 100);
-    $('sb-month-share').textContent = share === null ? 'В этом месяце Шоху ещё не выделяли' : 'Потрачено ' + share + '% выделенного';
+    $('sb-month-start').textContent = data.month_start == null ? '—' : money(data.month_start);
+    $('sb-month-balance').textContent = data.balance == null ? '—' : money(data.balance);
+    const spent = Number(data.month_spent);
+    const available = data.month_start == null ? null : Number(data.month_start) + Number(data.month_given);
+    const share = available > 0 ? Math.round(spent / available * 100) : null;
+    $('sb-month-bar').style.width = share === null ? '0%' : Math.max(0, Math.min(100, share)) + '%';
+    $('sb-month-bar').classList.toggle('is-over', available !== null && spent > available);
+    $('sb-month-share').textContent = available === null ? 'Начальный остаток не задан'
+      : share === null ? (spent > available ? 'Расходы превышают доступную сумму' : 'Нет доступных средств')
+      : 'Потрачено ' + share + '% доступной суммы';
     $('sb-give-hint').textContent = data.cash_balance === null
       ? 'Касса бухгалтера на этот день не посчитана.'
       : 'В кассе бухгалтера ' + money(data.cash_balance) + '. Выдача уменьшит кассу, баланс Шоха вырастет.';

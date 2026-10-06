@@ -145,5 +145,6 @@ def shoh_view(finance, day: date, *, history: bool = False) -> dict:
                 given_today=plain(given_today), spent_today=plain(spent_today),
                 spent_yesterday=plain(total('withdrawal', yesterday, yesterday)),
                 month_given=plain(month_given), month_spent=plain(month_spent),
+                month_start=plain(balance - month_given + month_spent) if balance is not None else None,
                 expenses_today=expenses_today, today=day_rows, bazaars=names,
                 history=month_rows)

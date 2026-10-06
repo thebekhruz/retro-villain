@@ -1152,7 +1152,7 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
 .sb-month-line.is-spent i{background:#ab445e}
 .sb-month-line b{font-size:18px;font-weight:600;color:#1c302b;font-variant-numeric:tabular-nums}
 .sb-month-bar{height:6px;border-radius:6px;background:#e3ece5;overflow:hidden;margin-top:2px}
-.sb-month-bar span{display:block;height:100%;width:0;border-radius:6px;background:#ab445e;transition:width .3s}
+.sb-month-bar span{display:block;height:100%;width:0;border-radius:6px;background:#27694f;transition:width .3s}
 .sb-month-bar span.is-over{background:#d0423d}
 .sb-month-share{margin:0;font-size:11px;color:#809084}
 /* Общее правило для кнопок шапки на телефоне растягивает .fd-btn — здесь нельзя. */

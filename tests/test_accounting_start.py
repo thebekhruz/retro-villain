@@ -272,3 +272,21 @@ def test_postgres_migration_and_working_opening_are_idempotent(tmp_path):
             assert FinanceStore(database).cash_opening()['amount'] == '123.45'
         finally:
             admin.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
+
+
+def test_shoh_month_includes_opening_and_carries_balance_to_next_month(tmp_path):
+    from retro.modules.accountant.ledger import FinanceStore
+    from retro.modules.accountant.shoh_balance import shoh_view
+    store = FinanceStore(tmp_path / 'opening.sqlite3')
+    with store._open() as connection:
+        connection.execute("INSERT INTO accountant_reserves(day,account,kind,amount,note,created_at) VALUES ('2026-10-02','shoh','opening','16187000','Opening','2026-10-02')")
+        connection.execute("INSERT INTO accountant_movements(day,kind,description,amount,item_code,created_at) VALUES ('2026-10-03','other_expense','Шох','20000000','proc_shoh','2026-10-03')")
+        connection.execute("INSERT INTO accountant_reserves(day,account,kind,amount,note,created_at) VALUES ('2026-10-04','shoh','withdrawal','24392000','Purchases','2026-10-04')")
+        connection.commit()
+    october = shoh_view(store, date(2026, 10, 6))
+    assert october['month_start'] == '16187000'
+    assert october['balance'] == '11795000'
+    assert round(Decimal(october['month_spent']) / (Decimal(october['month_start']) + Decimal(october['month_given'])) * 100) == 67
+    november = shoh_view(store, date(2026, 11, 1))
+    assert november['month_start'] == '11795000'
+    assert november['month_given'] == november['month_spent'] == '0'
