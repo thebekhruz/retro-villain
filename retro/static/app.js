@@ -313,13 +313,21 @@ function showHandover() {
   // продажам. Показываем «требует проверки», а не ноль и не прочерк.
   const issue = snapshot && snapshot.prepayment_issue ? snapshot.prepayment_issue : null;
   const unknown = Boolean(issue) || (snapshot && snapshot.cash_prepayment === null);
+  const totalPrepay = snapshot?.new_prepayment;
+  const cashPrepay = snapshot?.cash_prepayment;
+  const totalUnknown = Boolean(issue) || totalPrepay == null;
+  const cardUnknown = totalUnknown || cashPrepay == null || Number(totalPrepay) < Number(cashPrepay);
   const prepayText = !snapshot ? '—'
-    : unknown ? 'требует проверки' : money.format(Number(snapshot.cash_prepayment));
+    : totalUnknown ? 'требует проверки' : money.format(Number(totalPrepay));
+  $('card-prepay-cash').textContent = !snapshot ? '—'
+    : unknown || cashPrepay == null ? 'требует проверки' : money.format(Number(cashPrepay)) + ' сум';
+  $('card-prepay-card').textContent = !snapshot ? '—'
+    : cardUnknown ? 'требует проверки' : money.format(Number(totalPrepay) - Number(cashPrepay)) + ' сум';
   // Предоплаты показаны и карточкой сверху, и строкой в расчёте передачи.
   $('cash-prepay').textContent = unknown ? 'требует проверки' : text('cash_prepayment');
   $('card-prepay').textContent = prepayText;
-  $('card-prepay').classList.toggle('is-note', Boolean(unknown && snapshot));
-  $('card-prepay-unit').hidden = unknown;
+  $('card-prepay').classList.toggle('is-note', Boolean(totalUnknown && snapshot));
+  $('card-prepay-unit').hidden = totalUnknown;
   $('card-prepay-note').textContent = issue || 'iiko · оценка, не реестр авансов';
   $('prepay-issue').hidden = !issue;
   $('prepay-issue').textContent = issue ? issue + ' Выручка и чеки за день верны.' : '';

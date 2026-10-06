@@ -339,3 +339,5 @@
 .cashier-shift.is-skel>*{visibility:hidden}
 /* Маленькие × и «Отменить» — спиннер помельче, как у ячеек бухгалтера. */
 :is(.expense-remove,.usd-remove,.handover-undo){--rm-spin:13px}
+
+.cashier-prepay-breakdown{display:grid;gap:6px;margin:10px 0 12px;font-size:12px}.cashier-prepay-breakdown>div{display:flex;justify-content:space-between;gap:12px}.cashier-prepay-breakdown strong{font-variant-numeric:tabular-nums;text-align:right}

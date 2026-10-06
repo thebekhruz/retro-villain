@@ -7,6 +7,8 @@
  *  систем и данных (Retro, iiko, Hikvision, «Демо», «БЕХРУЗ», Яндекс, имена
  *  людей) остаются как есть — они приходят из источников, а не из интерфейса. */
 globalThis.RetroDictionaryUz = {
+  'Все предоплаты': "Barcha oldindan to‘lovlar",
+  'Картой / безналом': "Karta / naqdsiz",
   'Осталось у Шоха': "Shohda qolgan mablag‘",
   'Начальный остаток не задан': "Boshlang‘ich qoldiq kiritilmagan",
   'Нет доступных средств': "Mavjud mablag‘ yo‘q",
