@@ -339,6 +339,8 @@ function showHandover() {
   $('total-inflow').classList.toggle('is-note', inflowUnknown);
   $('total-inflow-unit').hidden = inflowUnknown;
   $('payments-inflow').textContent = text('total_inflow');
+  // Без отдельных поступлений эта строка повторяет «Итого с предоплатами».
+  $('payments-inflow-row').hidden = !(summaryValue('receipts') > 0);
   // Полоса в главной карточке: продажи против всего остального прихода.
   const sales = summaryValue('sales') || 0;
   const salesShare = inflow ? Math.max(0, Math.min(100, sales / inflow * 100)) : 0;
