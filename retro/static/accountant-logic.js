@@ -292,8 +292,10 @@
     });
     const monthly=mv.filter(m=>m.type==='other_expense'&&m.item_code==='salary_monthly');
     if(monthly.length){const sum=monthly.reduce((s,m)=>s+num(m.amount),0);
-      auto.push({kind:'auto',group:'monthly',cat:'Зарплата',name:'Оклады · частичные выплаты',
-        amount:sum,paid:sum,debt:0});}
+      // Раскрывается, как «Сменные»: кому и сколько выдано сегодня.
+      const people=((data.monthly_payments||{}).today||[]).map(p=>({id:'m'+p.id,name:p.name,amount:num(p.amount),readonly:true}));
+      auto.push({kind:'auto',group:'monthly',cat:'Зарплата',name:'Оклады · частичные выплаты'+(people.length?' · '+people.length+' чел.':''),
+        amount:sum,paid:sum,debt:0,children:people.length?people:undefined});}
     const kassa=(data.cashier_shokh_gives&&data.cashier_shokh_gives.gives)||[];
     if(kassa.length){const sum=kassa.reduce((s,g)=>s+num(g.amount),0);
       auto.push({kind:'auto',group:'kassa',cat:'Закуп',name:'Шоху от кассира · уже вычтено из передачи',

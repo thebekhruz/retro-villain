@@ -20,13 +20,14 @@ let today = null, requestNo = 0, catalog = [], index = {}, busy = false;
 let view = null;           // всё, что нарисовано сейчас: данные и модели
 let shiftTab = 'all', focusKey = null, allIssues = false;
 const expanded = new Set();
+const debtOpen = new Set();  // раскрытые строки «Долгов к оплате»
 
 // Особые операции журнала: не расход из кассы, а резерв или подотчёт.
 const special = {
   reserve_dividends_transfer: {account: 'dividends', kind: 'transfer', label: 'Отложить в сейф'},
-  reserve_dividends_withdrawal: {account: 'dividends', kind: 'withdrawal', label: 'Выдать собственнику из сейфа'},
-  reserve_usd_deposit: {account: 'usd', kind: 'deposit', label: 'Поступили реальные USD'},
-  reserve_usd_withdrawal: {account: 'usd', kind: 'withdrawal', label: 'Выданы реальные USD'},
+  reserve_dividends_withdrawal: {account: 'dividends', kind: 'withdrawal', label: 'Выдать дивиденды'},
+  reserve_usd_deposit: {account: 'usd', kind: 'deposit', label: 'Поступили USD'},
+  reserve_usd_withdrawal: {account: 'usd', kind: 'withdrawal', label: 'Выданы USD'},
 };
 const incomeCodes = ['income_other'];
 
@@ -483,7 +484,8 @@ function renderJournal() {
       box.append(childLine);
       childLine.append(h('span', {class: 'fd-jr-cat'}), h('span', {class: 'fd-jr-name', text: child.name}),
         h('span', {class: 'num fd-jr-amount', text: fmt(child.amount)}), h('span', {class: 'num fd-jr-paid', text: fmt(child.amount)}), h('span', {class: 'num fd-jr-debt fd-dash', text: '—'}),
-        h('span', {class: 'fd-x-cell'}, h('button', {type: 'button', class: 'fd-x', 'aria-label': 'Удалить выплату', title: 'Удалить выплату', text: '×', onclick: event => {
+        // Оклады правят в «Зарплате · месяц»: здесь только кому и сколько.
+        h('span', {class: 'fd-x-cell'}, child.readonly ? null : h('button', {type: 'button', class: 'fd-x', 'aria-label': 'Удалить выплату', title: 'Удалить выплату', text: '×', onclick: event => {
           if (!ask('Удалить выплату ' + child.name + ' · ' + money(child.amount) + '?')) return;
           run(() => remove('salary_payment', child.id, view.data.date), 'Выплата удалена.', {button: event.currentTarget, row: childLine, collapse: true});
         }})));
@@ -732,28 +734,59 @@ function renderRail() {
   renderCashConfirm(handover);
   $('fd-cash').classList.toggle('is-focus', focusKey === 'cash');
 
+  renderDebts();
+  const res = data.reserves;
+  $('usd-balance').textContent = res.usd.balance === null ? 'не задан' : fmt(res.usd.balance) + ' USD';
+  $('dividends-balance').textContent = res.dividends.balance === null ? 'не задан' : money(res.dividends.balance);
+  renderChecks(); renderDividends();
+}
+
+/* «Долги к оплате»: строка с долгом раскрывается — за какое число, за что, сколько. */
+function renderDebts() {
+  const data = view.data;
+  const shiftRows = view.board.rows.filter(r => r.debt > 0 && (r.accrued || 0) > 0);
   const shiftDebt = Number(data.ledger.salary_debt) + view.board.totals.unconfirmedDebt;
+  const expenses = (data.ledger.manual_debts || []).filter(d => Number(d.debt) > 0);
   const expDebt = Number(data.ledger.manual_debt_total);
   // Оклады становятся долгом 1-го числа следующего месяца: здесь — прошлый
   // месяц, а текущий только подписан, когда появится.
   const prevSalaries = view.monthly.previous;
   const salaryDebt = prevSalaries && prevSalaries.available ? prevSalaries.remain : 0;
+  const prevPaid = ((data.monthly_payments || {}).previous || {}).paid_by_employee || {};
+  const salaryRows = prevSalaries && prevSalaries.available ? (data.monthly_employees || []).map(e => ({
+    name: e.name, role: e.role, left: Math.max(0, Number(e.salary) - Number(prevPaid[String(e.id)] || 0))}))
+    .filter(e => e.left > 0) : [];
   const [year, month] = data.date.split('-').map(Number);
   const nextFirst = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
   $('all-debt-total').textContent = money(shiftDebt + salaryDebt + expDebt);
-  $('fd-debt-lines').replaceChildren(
+  const group = (key, label, value, cls, rows) => {
+    const has = rows && rows.length > 0, open = has && debtOpen.has(key);
+    const head = has
+      ? h('button', {type: 'button', class: cls + ' is-expandable' + (open ? ' is-open' : ''), 'aria-expanded': String(open),
+          onclick: () => { open ? debtOpen.delete(key) : debtOpen.add(key); renderDebts(); }},
+          h('span', {class: 'fd-debt-label'}, h('span', {class: 'fd-debt-chev', 'aria-hidden': 'true', text: '›'}), label), h('b', {text: value}))
+      : railLine(label, value, cls);
+    if (!open) return [head];
+    return [head, h('div', {class: 'fd-debt-rows'},
+      h('div', {class: 'fd-debt-row is-head'}, h('span', {text: 'Дата'}), h('span', {text: 'За что'}), h('span', {class: 'num', text: 'Долг'})),
+      rows.map(row => h('div', {class: 'fd-debt-row'}, h('span', {text: row.day}), h('span', {text: row.what}), h('span', {class: 'num', text: row.amount}))))];
+  };
+  const lines = [
     // Долга нет — так и пишем, без «не выдано … 0».
-    shiftDebt ? railLine('Сменные · не выдано', fmt(shiftDebt), 'fd-debt-line')
-      : railLine('Сменные', 'всё выдано', 'fd-debt-line is-clear'),
-    prevSalaries && railLine('Оклады · за ' + monthName(prevSalaries.month + '-01'),
-      prevSalaries.available ? fmt(prevSalaries.remain) : 'нет данных', 'fd-debt-line'),
+    ...(shiftDebt ? group('shift', 'Сменные · не выдано', fmt(shiftDebt), 'fd-debt-line',
+      shiftRows.map(r => ({day: dm(r.day), what: r.name + (r.role ? ' · ' + r.role : '') + ' · смена', amount: fmt(r.debt)})))
+      : [railLine('Сменные', 'всё выдано', 'fd-debt-line is-clear')]),
+    ...(prevSalaries ? group('salary', 'Оклады · за ' + monthName(prevSalaries.month + '-01'),
+      prevSalaries.available ? fmt(prevSalaries.remain) : 'нет данных', 'fd-debt-line',
+      // Долгом оклад за прошлый месяц стал 1-го числа текущего.
+      salaryRows.map(r => ({day: dm(data.date.slice(0, 8) + '01'),
+        what: r.name + (r.role ? ' · ' + r.role : '') + ' · остаток оклада', amount: fmt(r.left)}))) : []),
     railLine('Оклады · ' + monthName(data.date), 'появится ' + longDay(nextFirst), 'fd-debt-line is-pending'),
-    expDebt ? railLine('Расходы · не оплачено', fmt(expDebt), 'fd-debt-line')
-      : railLine('Расходы', 'всё оплачено', 'fd-debt-line is-clear'));
-  const res = data.reserves;
-  $('usd-balance').textContent = res.usd.balance === null ? 'не задан' : fmt(res.usd.balance) + ' USD';
-  $('dividends-balance').textContent = res.dividends.balance === null ? 'не задан' : money(res.dividends.balance);
-  renderChecks(); renderDividends();
+    ...(expDebt ? group('expenses', 'Расходы · не оплачено', fmt(expDebt), 'fd-debt-line',
+      expenses.map(d => ({day: dm(d.day), what: d.description + ' · ' + fmt(d.total) + (Number(d.paid) ? ', оплачено ' + fmt(d.paid) : ''), amount: fmt(d.debt)})))
+      : [railLine('Расходы', 'всё оплачено', 'fd-debt-line is-clear')]),
+  ];
+  $('fd-debt-lines').replaceChildren(...lines);
 }
 
 function renderChecks() {

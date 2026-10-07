@@ -715,6 +715,27 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-debt-line.is-pending b{color:#a8968c;font-weight:400}
 .fd-debt-line.is-clear b{color:#4a8056;font-weight:500}
 .fd-reserves .fd-kicker{margin:0 0 6px}
+/* Долги, резервы и дивиденды — под журналом. Долг раскрывается по строкам:
+   дата, за что, сколько. Резервы и дивиденды — парой, без дивидендов — одни во всю ширину. */
+.fd-main-pair{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:20px;align-items:start}
+.fd-sec-static .fd-sec-titles{padding-left:0}
+#journal-section .fd-sec-note{margin-left:18px}
+.fd-debt-list .fd-debt-line{font-size:12px}
+button.fd-debt-line{width:100%;border:0;border-top:1px solid #efdccc;background:none;text-align:left;font:inherit;font-size:12px;
+  color:#7b6257;cursor:pointer;align-items:center}
+button.fd-debt-line:hover{background:#fdeee3}
+.fd-debt-label{display:flex;align-items:center;gap:8px;min-width:0}
+.fd-debt-chev{display:grid;place-items:center;width:20px;height:20px;flex:none;border-radius:6px;background:#f6e4d6;color:#a96039;
+  font-size:13px;line-height:1;transition:transform .15s}
+.fd-debt-line.is-open .fd-debt-chev{transform:rotate(90deg)}
+.fd-debt-rows{margin:0 0 8px;border:1px solid #efdccc;border-radius:10px;background:#fffaf6;overflow:hidden}
+.fd-debt-row{display:grid;grid-template-columns:64px minmax(0,1fr) 120px;gap:12px;padding:8px 12px;border-top:1px solid #f3e6da;
+  font-size:12px;color:#5d4a40}
+.fd-debt-row:first-child{border-top:0}
+.fd-debt-row.is-head{font-size:10px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;color:#a8968c;padding-top:7px;padding-bottom:7px}
+.fd-debt-row>span{min-width:0;overflow-wrap:anywhere}
+.fd-debt-row .num{text-align:right;font-variant-numeric:tabular-nums;font-weight:550;color:#1c302b}
+.fd-debt-row.is-head .num{color:#a8968c;font-weight:600}
 .fd-res-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid #edf1e9;font-size:11px;color:#607368}
 .fd-res-line b{color:#1c302b;font-weight:550;white-space:nowrap;font-variant-numeric:tabular-nums}
 .fd-res-tools{display:block;width:100%;text-align:left;border:0;border-top:1px solid #edf1e9;background:none;padding:10px 0 0;font-size:11px;font-weight:600;color:#315e4c}
@@ -822,6 +843,9 @@ body.fd-busy .fd :is(.fd-btn-pay,.fd-plus,.fd-btn-give,.fd-accept){cursor:progre
   .fd-btn{flex:1 1 150px;justify-content:center;min-height:48px;white-space:normal;text-align:center;line-height:1.25}
   .fd-grid{grid-template-columns:minmax(0,1fr);gap:14px}
   .fd-main{gap:14px}
+  .fd-main-pair{gap:14px}
+  .fd-debt-row{grid-template-columns:52px minmax(0,1fr) 96px;gap:8px;padding:8px 10px}
+  button.fd-debt-line{min-height:44px}
   .fd-sec{border-radius:14px}
   .fd-sec-head{flex-wrap:wrap;padding:16px}
   button.fd-sec-toggle.fd-sec-head{padding:16px}
