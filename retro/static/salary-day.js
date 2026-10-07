@@ -94,6 +94,13 @@
     const grand=node('div','pr-c pr-c-grand rm-num');grand.id='sd-grand';grand.setAttribute('role','cell');foot.append(grand);grid.append(foot);
     selectDay(selectedDay);
     const entry=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(current.entry_start+'T12:00:00Z')).replace(/\.$/,'');
+    // Общая зарплата без сотрудников в «Финансах дня» — клетки работают, но те же деньги
+    // по людям посчитаются второй раз: говорим, за какие дни и сколько.
+    const aggregate=(current.aggregate_days||[]).filter(item=>Number(item.amount));
+    $('aggregate-note').hidden=!aggregate.length;
+    $('aggregate-note').textContent=aggregate.length?'В «Финансах дня» есть общая зарплата без сотрудников: '
+      +aggregate.map(item=>dm(item.day)+' — '+fmt(Number(item.amount))).join(', ')
+      +'. Если вводите эти дни по людям, удалите общую строку, иначе выплата посчитается дважды.':'';
     $('entry-note').textContent=current.closed?'Месяц закрыт — только для чтения':'Ручной ввод выплат с '+entry+'. В столбце указана дата выплаты за предыдущую смену. Прежние общие выплаты без сотрудника сохранены в «Финансах дня».';
   }
   /* Одна клетка — один PUT с абсолютной суммой и ожидаемой прежней (сервер

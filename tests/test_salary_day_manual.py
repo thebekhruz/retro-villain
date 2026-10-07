@@ -98,7 +98,7 @@ def test_historical_aggregate_import_remains_untouched_and_does_not_block_entry(
     assert matrix['people'][0]['cells'][WORK.isoformat()]['amount'] == '0'
 
 
-def test_existing_automatic_accrual_or_other_shift_payment_is_not_overwritten(stores):
+def test_legacy_accrual_is_taken_into_the_cell_but_other_shift_payment_is_not_overwritten(stores):
     finance, _, person = stores
     with closing(finance._open()) as connection, connection:
         accrual_id = connection.execute(
@@ -106,31 +106,60 @@ def test_existing_automatic_accrual_or_other_shift_payment_is_not_overwritten(st
             '(work_day,employee_id,employee_name,group_name,attendance_status,rate,amount) '
             'VALUES (?,?,?,?,?,?,?)',
             (WORK.isoformat(), person.id, person.name, person.group_name, 'present', '100000', '100000')).lastrowid
-    with pytest.raises(SalaryCellChanged):
-        finance.set_salary_day_cell(PAID, person.id, '250000', '0')
-    assert rows(finance, 'accountant_salary_payments') == []
     matrix = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
-    assert matrix['people'][0]['cells'][PAID.isoformat()]['editable'] is False
+    assert matrix['people'][0]['cells'][PAID.isoformat()]['editable'] is True
+    # Начисление прежней ведомости без выплаты: клетка его забирает — одна пара, без второй записи.
+    finance.set_salary_day_cell(PAID, person.id, '250000', '0')
+    accruals = rows(finance, 'accountant_accruals')
+    assert [(a[0], a[5], a[7]) for a in accruals] == [(accrual_id, salary_day.MANUAL_STATUS, '250000')]
+    assert [(p[1], p[2], p[3]) for p in rows(finance, 'accountant_salary_payments')] == [
+        (accrual_id, PAID.isoformat(), '250000')]
+    assert finance.summary(PAID)['salary_debt'] == Decimal(0)
+    finance.set_salary_day_cell(PAID, person.id, '0', '250000')
+    assert rows(finance, 'accountant_accruals') == rows(finance, 'accountant_salary_payments') == []
+    # Выплата другой смены в этот день — не трогаем: правка задвоила бы деньги.
     with closing(finance._open()) as connection, connection:
-        connection.execute('UPDATE accountant_accruals SET work_day=? WHERE id=?', ('2026-10-05', accrual_id))
+        other = connection.execute(
+            'INSERT INTO accountant_accruals '
+            '(work_day,employee_id,employee_name,group_name,attendance_status,rate,amount) '
+            'VALUES (?,?,?,?,?,?,?)',
+            ('2026-10-05', person.id, person.name, person.group_name, 'present', '100000', '100000')).lastrowid
         connection.execute('INSERT INTO accountant_salary_payments (accrual_id,paid_day,amount,created_at) '
-                           'VALUES (?,?,?,?)', (accrual_id, PAID.isoformat(), '100000', '2026-10-07'))
+                           'VALUES (?,?,?,?)', (other, PAID.isoformat(), '100000', '2026-10-07'))
     with pytest.raises(SalaryCellChanged):
         finance.set_salary_day_cell(PAID, person.id, '250000', '100000')
+    matrix = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
+    assert matrix['people'][0]['cells'][PAID.isoformat()]['editable'] is False
 
 
-def test_aggregate_salary_on_payout_day_blocks_duplicate_named_payment(stores):
+def test_aggregate_salary_on_payout_day_no_longer_locks_but_is_reported(stores):
     finance, _, person = stores
     with closing(finance._open()) as connection, connection:
         connection.execute('INSERT INTO accountant_movements '
                            '(day,kind,description,amount,item_code,reference,created_at) VALUES (?,?,?,?,?,?,?)',
                            (PAID.isoformat(), 'other_expense', 'Персонал общая сумма', '10000',
                             'salary_staff', 'aggregate-today', '2026-10-07'))
-    with pytest.raises(SalaryCellChanged, match='общая зарплата'):
-        finance.set_salary_day_cell(PAID, person.id, '250000', '0')
-    assert rows(finance, 'accountant_accruals') == rows(finance, 'accountant_salary_payments') == []
     matrix = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
-    assert matrix['people'][0]['cells'][PAID.isoformat()]['editable'] is False
+    assert matrix['people'][0]['cells'][PAID.isoformat()]['editable'] is True
+    assert matrix['aggregate_days'] == [dict(day=PAID.isoformat(), amount='10000')]
+    finance.set_salary_day_cell(PAID, person.id, '250000', '0')
+    assert len(rows(finance, 'accountant_salary_payments')) == 1
+
+
+def test_employee_added_after_the_shift_takes_the_current_rate(stores):
+    finance, roster, _ = stores
+    from retro.modules.accountant import roster as roster_module
+    roster_module_today = roster_module.today_tashkent
+    try:
+        roster_module.today_tashkent = lambda: date(2026, 10, 9)
+        late = roster.add(name='Новенький', role='официант', rate='170000', group_name='Обслуживание зала')
+    finally:
+        roster_module.today_tashkent = roster_module_today
+    data = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
+    cells = next(p for p in data['people'] if p['id'] == late.id)['cells']
+    assert cells['2026-10-04']['editable'] is True and cells['2026-10-04']['rate'] == '170000'
+    finance.set_salary_day_cell(date(2026, 10, 4), late.id, '170000', '0')
+    assert rows(finance, 'accountant_accruals')[-1][3] == 'Новенький'
 
 
 def test_named_payment_blocks_aggregate_salary_creation_and_recategorization(stores):
@@ -191,7 +220,7 @@ def test_generic_salary_mutations_cannot_break_manual_pair(stores):
     assert rows(finance, 'accountant_salary_payments')[0][3] == '250000'
 
 
-def test_legacy_confirmation_cannot_freeze_manual_cell_or_leave_confirmed_empty_day(stores):
+def test_legacy_confirmation_does_not_lock_the_manual_cell(stores):
     from retro.modules.accountant.payroll import PayrollRow
 
     finance, _, person = stores
@@ -203,12 +232,12 @@ def test_legacy_confirmation_cannot_freeze_manual_cell_or_leave_confirmed_empty_
     assert rows(finance, 'accountant_payroll_days') == []
     finance.set_salary_day_cell(PAID, person.id, '0', '100000')
     assert rows(finance, 'accountant_accruals') == []
-    assert rows(finance, 'accountant_payroll_days') == []
     finance.confirm_payroll(WORK, [row], 'Бухгалтер')
-    with pytest.raises(SalaryCellChanged, match='Смена уже подтверждена'):
-        finance.set_salary_day_cell(PAID, person.id, '100000', '0')
+    # Смена подтверждена в прежней ведомости — клетка всё равно работает и забирает начисление.
     matrix = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
-    assert matrix['people'][0]['cells'][PAID.isoformat()]['editable'] is False
+    assert matrix['people'][0]['cells'][PAID.isoformat()]['editable'] is True
+    finance.set_salary_day_cell(PAID, person.id, '90000', '0')
+    assert [(a[5], a[7]) for a in rows(finance, 'accountant_accruals')] == [(salary_day.MANUAL_STATUS, '90000')]
 
 
 def test_before_start_future_archived_and_both_month_closed_dates_are_readonly(stores, monkeypatch):

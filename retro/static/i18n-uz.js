@@ -1247,6 +1247,7 @@ globalThis.RetroTemplatesUz = [
   [/^за (\d\d\.\d\d)$/, "$1 uchun"],
   [/^(.+) · выплата (\d\d\.\d\d) за смену (\d\d\.\d\d) · (выдано (.+) сум|не выдано)( · .+)?$/, "$1 · $2 to‘lovi, $3 smenasi uchun"],
   [/^(.+) · выплата (\d\d\.\d\d)(, сум)?$/, "$1 · $2 to‘lovi$3"],
+  [/^В «Финансах дня» есть общая зарплата без сотрудников: (.+)\. Если вводите эти дни по людям, удалите общую строку, иначе выплата посчитается дважды\.$/, "«Kun moliyasi»da xodimsiz umumiy ish haqi bor: $1. Bu kunlarni xodimlar bo‘yicha kiritsangiz, umumiy qatorni o‘chiring, aks holda to‘lov ikki marta hisoblanadi."],
   [/^Сумма в (.+) раз больше ставки\. Нажмите Enter ещё раз, чтобы записать\.$/, "Summa stavkadan $1 baravar ko‘p. Yozish uchun Enter’ni yana bosing."],
   [/^Сумма в (.+) раз больше ставки\. Не записано — проверьте и введите ещё раз\.$/, "Summa stavkadan $1 baravar ko‘p. Yozilmadi — tekshiring va qayta kiriting."],
   [/^(\d+) (?:покупка требует|покупки требуют|покупок требуют) проверки$/, "$1 ta xarid tekshiruvni talab qiladi"],
