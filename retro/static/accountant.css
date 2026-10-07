@@ -560,10 +560,11 @@ button.fd-pill:hover{filter:brightness(.97)}
 
 /* журнал */
 /* Шрифт крупнее (07.10): категории и суммам хватает меньшей ширины, наименование получает остальное. */
-.fd-jr-cols{grid-template-columns:118px minmax(0,1fr) 96px 96px 88px 30px}
+.fd-jr-cols{grid-template-columns:140px minmax(0,1fr) 96px 96px 90px 30px}
 .fd-jr-row{padding:11px 18px;font-size:14px}
 .fd-jr-row.is-auto{background:#fbfcf9}
-.fd-jr-cat{color:#607368}
+/* Категория длиннее колонки переносится, а не наезжает на наименование («Административные» — 133 px). */
+.fd-jr-cat{color:#607368;min-width:0;overflow-wrap:anywhere}
 .fd-jr-row.is-auto .fd-jr-cat{color:#4d7959}
 .fd-jr-name{display:flex;align-items:center;gap:8px;min-width:0}
 .fd-jr-name>span:not(.fd-auto):not(.fd-carried){min-width:0;overflow-wrap:anywhere}
@@ -789,8 +790,9 @@ body.fd-busy .fd :is(.fd-btn-pay,.fd-plus,.fd-btn-give,.fd-accept){cursor:progre
 
 @media (max-width:1360px){
   .fd-grid{grid-template-columns:minmax(0,1fr) 280px}
-  .fd-jr-cols{column-gap:8px}
+  .fd-jr-cols{grid-template-columns:136px minmax(0,1fr) 92px 92px 88px 30px;column-gap:8px}
   .fd-jr-new input{padding:0 8px}
+  .fd-jr-new input::placeholder{font-size:13px}
   .fd-shift-cols{grid-template-columns:28px minmax(0,1fr) 64px 112px 90px 124px}
 }
 @media (max-width:1260px){
@@ -1286,4 +1288,8 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
   :is(.fd-page,.pr-page) input::placeholder{font-size:12.5px}
   /* Выдача оклада: сумма и кнопка по отдельной строке — рядом с кнопкой поле было 82 px. */
   :is(.fd,.pr-page) .fd-mo-form{grid-template-columns:minmax(0,1fr)}
+  /* Журнал: три суммы с подписями в строку не помещаются — сумма и оплачено рядом, долг ниже. */
+  .fd .fd-jr-row,.fd .fd-jr-child{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 40px;
+    grid-template-areas:"cat cat x" "name name x" "amt paid x" "debt debt x"}
+  .fd-jr-child{grid-template-areas:"name name x" "amt paid x" "debt debt x"!important}
 }
