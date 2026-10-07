@@ -79,7 +79,7 @@
   /* В составе выручки показываем оплаты продаж и новые предоплаты отдельно.
      Реестр внесений здесь не суммируем повторно: он детализирует те же авансы.
      Неизвестная сумма остаётся null, чтобы ошибка iiko не выглядела как ноль. */
-  function revenueView(snapshot,breakdown=null){
+  function revenueView(snapshot){
     const number=value=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?null:Number(value);
     const sum=values=>values.some(value=>value===null)?null:values.reduce((total,value)=>total+Math.round(value*100),0)/100;
     const rows=(snapshot?.payments||[]).map(item=>({...item,amount:number(item.amount),kind:'sale'}));
@@ -90,22 +90,8 @@
     if(prepaymentTotal!==null&&prepaymentTotal<0)prepaymentTotal=null;
     if(cash!==null&&(cash<0||prepaymentTotal===null||cash>prepaymentTotal))cash=null;
     const noncash=cash===null||prepaymentTotal===null?null:Math.round((prepaymentTotal-cash)*100)/100;
-    const methods=breakdown?.status==='ready'&&breakdown.snapshot_id===snapshot?.snapshot_id
-      &&breakdown.date===snapshot?.date&&Array.isArray(breakdown.payments)
-      &&noncash!==null&&number(breakdown.total)===noncash
-      &&sum(breakdown.payments.map(p=>number(p.amount)))===noncash;
-    if(methods){
-      for(const payment of breakdown.payments){
-        let row=rows.find(item=>item.name===payment.name);
-        if(!row){row={name:payment.name,amount:0,kind:'sale'};rows.push(row)}
-        row.sales_amount=row.amount;
-        row.prepayment_amount=number(payment.amount);
-        row.prepayments=payment.entries;
-        row.amount=sum([row.sales_amount,row.prepayment_amount]);
-      }
-    }
-    rows.push({name:'Предоплаты наличными / Инкасса QR',amount:cash,kind:'prepayment'});
-    if(!methods)rows.push({name:'Предоплаты картой / безналом',amount:noncash,kind:'prepayment'});
+    rows.push({name:'Предоплаты наличными',amount:cash,kind:'prepayment'},
+      {name:'Предоплаты картой / безналом',amount:noncash,kind:'prepayment'});
     return {rows,salesTotal,prepaymentTotal,total:sum([salesTotal,prepaymentTotal]),issue};
   }
 
