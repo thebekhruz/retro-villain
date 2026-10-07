@@ -1,6 +1,6 @@
 /* «Зарплата · день» — та же сетка, что «Зарплата · месяц»: клетка = день выплаты.
    Первый клик — ✓ выдано по ставке смены. Второй клик — поле суммы прямо в клетке
-   (опоздал, штраф — выдать меньше); пусто или 0 — выплаты нет. Опоздавшие за смену
+   (опоздал, штраф — выдать меньше). Третий клик — пустая клетка, выплаты нет. Опоздавшие за смену
    подсвечены розовым, ставка при этом не меняется. Пишется сразу. */
 (() => {
   const $=id=>document.getElementById(id), L=globalThis.SalaryDayLogic, B=globalThis.RetroBusy;
@@ -164,14 +164,21 @@
     input.value=typed||(v.amount?String(v.amount):v.rate?String(v.rate):'');
     input.setAttribute('aria-label',person.name+' · выплата '+dm(day)+', сум');
     el.replaceWith(input);
-    editing={person,day,input,sure:false,clean:v.amount};
+    editing={person,day,input,sure:false,clean:v.amount,typed:!!typed};
     input.focus({preventScroll:true});
     if(typed)input.setSelectionRange(input.value.length,input.value.length);else input.select();
     input.addEventListener('keydown',event=>{
       if(event.key==='Enter'){event.preventDefault();finishEdit(true);}
       else if(event.key==='Escape'){event.preventDefault();closeEdit(true);}
     });
-    input.addEventListener('input',()=>{if(editing)editing.sure=false;});
+    input.addEventListener('input',()=>{if(editing){editing.sure=false;editing.typed=true;}});
+    // Третий клик: пока в поле ничего не набрано, клик по нему снимает выплату — клетка пустая.
+    // Начал набирать — клик просто ставит курсор, набранное не теряется.
+    input.addEventListener('pointerdown',event=>{
+      if(!editing||editing.input!==input||editing.typed)return;
+      event.preventDefault();
+      const {person:who,day:when}=editing;closeEdit(true);write(who,when,0);
+    });
     input.addEventListener('blur',()=>finishEdit(false));
   }
   function closeEdit(refocus){

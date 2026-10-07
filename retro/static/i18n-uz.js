@@ -28,7 +28,7 @@ globalThis.RetroDictionaryUz = {
   // «Зарплата · день» — таблица с галочками
   'выдано по ставке': "stavka bo‘yicha berilgan",
   'другая сумма': "boshqa summa",
-  'Клик — выдано по ставке. Второй клик — ввести сумму, пусто — выплаты нет.': "Bosish — stavka bo‘yicha berildi. Ikkinchi bosish — summani kiriting, bo‘sh — to‘lov yo‘q.",
+  'Клик — выдано по ставке. Второй клик — ввести сумму. Третий клик — убрать.': "Bosish — stavka bo‘yicha berildi. Ikkinchi bosish — summani kiriting. Uchinchi bosish — olib tashlash.",
   'Сумма не записана: введите её цифрами.': "Summa yozilmadi: uni raqamlar bilan kiriting.",
   'Сумма больше 3 000 000 сум. Нажмите Enter ещё раз, чтобы записать.': "Summa 3 000 000 so‘mdan ko‘p. Yozish uchun Enter’ni yana bosing.",
   'Сумма больше 3 000 000 сум. Не записано — проверьте и введите ещё раз.': "Summa 3 000 000 so‘mdan ko‘p. Yozilmadi — tekshiring va qayta kiriting.",
