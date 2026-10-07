@@ -8,10 +8,10 @@ from retro.accounting_period import ACCOUNTING_START
 from .audit import record_audit
 from .ledger import now_stamp
 
-MIGRATION = 'confirmed_october_opening_2026_v1'
-CASH_OPENING = '3875000'
-SHOH_OPENING = '15639000'
-NOTE = 'Подтверждённый остаток на 01.10.2026, перенесён на начало 02.10.2026'
+MIGRATION = 'confirmed_october_opening_2026_v2'
+CASH_OPENING = '2000000'
+SHOH_OPENING = '16187000'
+NOTE = 'На начало 02.10.2026 по исходной сверке; операции 01.10 уже учтены'
 
 
 def apply_october_opening(finance):

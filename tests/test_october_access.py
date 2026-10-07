@@ -80,9 +80,9 @@ def test_opening_is_visible_without_creating_income(client):
     finance = client.app.state.accountant_finance
     finance.record_handover(START, Decimal(0))
     summary = finance.daily_summary(START, Decimal(0))
-    assert summary['cash_flow']['opening_balance'] == '3875000'
-    assert summary['cash_balance'] == Decimal('3875000')
-    assert shoh_view(finance, START)['start'] == '15639000'
+    assert summary['cash_flow']['opening_balance'] == '2000000'
+    assert summary['cash_balance'] == Decimal('2000000')
+    assert shoh_view(finance, START)['start'] == '16187000'
     with closing(finance._open()) as conn:
         assert conn.execute('SELECT COUNT(*) FROM accountant_movements').fetchone()[0] == 0
 
@@ -93,16 +93,18 @@ def test_confirmed_october_2_totals_and_carry_forward(database):
     finance.record_handover(date(2026, 9, 30), Decimal('999999'))
     finance.set_cash_opening(date(2026, 9, 30), '123456', 'old')
     apply_october_opening(finance)
-    finance.record_handover(START, Decimal('23240000'))
-    finance.add_expense(START, 'admin_it', 'Расходы за 2 октября', '24567000')
-    finance.give_procurement(START, 'Шох', 'Закуп', '548000', cashier_amount=Decimal('23240000'))
+    finance.record_handover(START, Decimal('30985000'))
+    finance.reserve_entry(START, 'shoh', 'withdrawal', '16082000', 'Пять счетов-фактур за 2 октября')
     finance.record_handover(date(2026, 10, 3), Decimal(0))
-    assert finance.daily_summary(START, Decimal('23240000'))['cash_balance'] == Decimal('2000000')
-    assert finance.daily_summary(date(2026, 10, 3), Decimal(0))['cash_flow']['opening_balance'] == '2000000'
-    assert shoh_view(finance, START)['balance'] == '16187000'
-    assert pocket_position(None, finance, START)['pocket'] == '16187000'
+    summary = finance.daily_summary(START, Decimal('30985000'))
+    assert summary['cash_flow']['opening_balance'] == '2000000'
+    assert summary['cash_balance'] == Decimal('32985000')
+    assert finance.daily_summary(date(2026, 10, 3), Decimal(0))['cash_flow']['opening_balance'] == '32985000'
+    assert shoh_view(finance, START)['start'] == '16187000'
+    assert shoh_view(finance, START)['balance'] == '105000'
+    assert pocket_position(None, finance, START)['pocket'] == '105000'
     apply_october_opening(finance)
-    assert finance.daily_summary(START, Decimal('23240000'))['cash_balance'] == Decimal('2000000')
+    assert finance.daily_summary(START, Decimal('30985000'))['cash_balance'] == Decimal('32985000')
     with closing(finance._open()) as conn:
         assert conn.execute("SELECT COUNT(*) FROM accountant_reserves WHERE account='shoh' AND kind='opening' AND day>=?", (START.isoformat(),)).fetchone()[0] == 1
         assert conn.execute('SELECT amount FROM accountant_cash_opening').fetchone()[0] == '123456'
@@ -153,7 +155,7 @@ def test_opening_migration_rolls_back_and_can_retry(database, monkeypatch):
     assert finance.cash_opening() is None
     monkeypatch.setattr(opening_migration, 'record_audit', original)
     apply_october_opening(finance)
-    assert finance.cash_opening()['amount'] == '3875000'
+    assert finance.cash_opening()['amount'] == '2000000'
 
 
 def test_two_workers_apply_opening_once(database):
@@ -161,5 +163,28 @@ def test_two_workers_apply_opening_once(database):
     finance = FinanceStore(database)
     with ThreadPoolExecutor(max_workers=2) as pool:
         list(pool.map(lambda _: apply_october_opening(finance), range(2)))
-    assert finance.cash_opening()['amount'] == '3875000'
-    assert shoh_view(finance, START)['balance'] == '15639000'
+    assert finance.cash_opening()['amount'] == '2000000'
+    assert shoh_view(finance, START)['balance'] == '16187000'
+
+
+def test_v2_corrects_already_applied_v1_without_changing_operations(database, monkeypatch):
+    from retro.modules.accountant import opening_migration as migration
+    finance = FinanceStore(database)
+    with monkeypatch.context() as old:
+        old.setattr(migration, 'MIGRATION', 'confirmed_october_opening_2026_v1')
+        old.setattr(migration, 'CASH_OPENING', '3875000')
+        old.setattr(migration, 'SHOH_OPENING', '15639000')
+        apply_october_opening(finance)
+    finance.record_handover(START, Decimal('30985000'))
+    finance.add_expense(START, 'admin_it', 'Существующая запись', '100')
+    with closing(finance._open()) as conn:
+        movements = conn.execute('SELECT * FROM accountant_movements').fetchall()
+        handovers = conn.execute('SELECT * FROM accountant_handover_days').fetchall()
+    apply_october_opening(finance)
+    apply_october_opening(finance)
+    assert finance.cash_opening()['amount'] == '2000000'
+    assert shoh_view(finance, START)['balance'] == '16187000'
+    with closing(finance._open()) as conn:
+        assert conn.execute('SELECT * FROM accountant_movements').fetchall() == movements
+        assert conn.execute('SELECT * FROM accountant_handover_days').fetchall() == handovers
+        assert conn.execute("SELECT COUNT(*) FROM accountant_data_migrations WHERE name IN ('confirmed_october_opening_2026_v1','confirmed_october_opening_2026_v2') AND applied=1").fetchone()[0] == 2
