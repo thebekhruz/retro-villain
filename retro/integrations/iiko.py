@@ -10,6 +10,7 @@ from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import quote
+from uuid import UUID
 
 import httpx
 
@@ -23,6 +24,7 @@ from retro.modules.cashier.service import (
     build_revenue_breakdown, build_snapshot, cell, number, shift_status, today_tashkent,
 )
 from retro.modules.cashier.prepayments import prepayments_from_olap, report_body as prepayments_body
+from retro.modules.cashier.prepayment_methods import breakdown_from_shifts
 from retro.modules.cashier.transfer_breakdown import (
     GROUPS as TRANSFER_GROUPS, breakdown_from_olap, report_filters as transfer_filters,
 )
@@ -863,6 +865,43 @@ class IikoClient:
         finally:
             cashier_read.reset(token)
 
+    async def load_prepayment_methods(self, day):
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено.')
+        try:
+            async with self._client() as client:
+                # Read current shift state, including when yesterday's shift is
+                # still open. A date alone must not decide availability.
+                response = await self._post(client, '/api/cash/shift/list_period',
+                                            dict(dateFrom=day.isoformat(), dateTo=day.isoformat()))
+                shifts = response.get('shifts')
+                if not isinstance(shifts, list) or any(not isinstance(s, dict) for s in shifts):
+                    raise DataError('iiko не вернул список кассовых смен.')
+                selected = [s for s in shifts if s.get('cashRegNumber') == 1
+                            and str(s.get('openDate', ''))[:10] == day.isoformat()]
+                details = []
+                seen = set()
+                for shift in selected:
+                    identifier = shift.get('id')
+                    try:
+                        UUID(identifier)
+                    except (ValueError, TypeError, AttributeError):
+                        raise DataError('iiko не указал идентификатор смены.') from None
+                    if identifier in seen:
+                        raise DataError('iiko вернул повторную кассовую смену.')
+                    seen.add(identifier)
+                    detail = await self._post(client, f'/api/cash/shift/details/{identifier}',
+                                              None, method='GET')
+                    data = detail.get('data')
+                    returned = data.get('shift') if isinstance(data, dict) else None
+                    if not isinstance(returned, dict) or returned.get('id') != identifier:
+                        raise DataError('iiko вернул другую кассовую смену.')
+                    details.append(detail)
+                return breakdown_from_shifts(day, details)
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_prepayment_methods')
+            raise DataError('Не удалось получить способы оплаты предоплат из iiko. Обновите отчёт.') from None
+
     async def _founder_pnl(self, client, start, end):
         body = {
             'dateFrom': start.isoformat(),
@@ -932,7 +971,7 @@ class IikoClient:
             log_upstream_failure('iiko', error, operation='load_sales_details')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
-    async def _send(self, client, path, body):
+    async def _send(self, client, path, body, *, method='POST'):
         """Один запрос к iiko, переживающий потерю пакетов на маршруте.
 
         Повтор безопасен по построению: здесь ходят только чтения и задания
@@ -941,7 +980,7 @@ class IikoClient:
         connect_left, read_left = IIKO_CONNECT_ATTEMPTS, IIKO_READ_ATTEMPTS
         while True:
             try:
-                return await client.post(path, json=body)
+                return await client.request(method, path, json=body)
             except IIKO_CHEAP_RETRY + IIKO_COSTLY_RETRY as error:
                 if isinstance(error, IIKO_COSTLY_RETRY):
                     read_left -= 1
@@ -952,12 +991,12 @@ class IikoClient:
                 log_upstream_failure('iiko', error, operation='retry')
                 await asyncio.sleep(IIKO_RETRY_PAUSE)
 
-    async def _post(self, client, path, body, pending=False):
+    async def _post(self, client, path, body, pending=False, *, method='POST'):
         sent_token = client.headers.get('Authorization')
-        response = await self._send(client, path, body)
+        response = await self._send(client, path, body, method=method)
         if response.status_code in (401, 403) and path != '/api/auth/login':
             await self._authorize(client, rejected_token=sent_token)
-            response = await self._send(client, path, body)
+            response = await self._send(client, path, body, method=method)
         if pending and response.status_code == 400 and 'data not found' in response.text.lower():
             return None
         if response.status_code in (401, 403):
