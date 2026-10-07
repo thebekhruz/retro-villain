@@ -73,11 +73,10 @@
 
         <!-- ── Журнал: каждое списание дня отдельной строкой ──────────────── -->
         <section class="fd-sec" id="journal-section">
-          <button class="fd-sec-toggle fd-sec-head" type="button" data-section="journal" aria-expanded="true">
-            <span class="fd-chev" aria-hidden="true">⌄</span>
+          <div class="fd-sec-head fd-sec-static">
             <span class="fd-sec-titles"><span class="fd-kicker">ЖУРНАЛ · ВСЕ СПИСАНИЯ ДНЯ</span><span class="fd-sec-title">Операции за день</span></span>
             <span class="fd-sec-sum" id="journal-sum"></span>
-          </button>
+          </div>
           <div class="fd-sec-body">
             <p class="fd-sec-note">Каждый расход — отдельной строкой. Зарплаты попадают сюда сами.</p>
             <div class="fd-scroll">
@@ -97,6 +96,37 @@
             <div class="fd-jr-foot"><span id="expense-impact">Пустое «Оплачено» = оплачено полностью. Неоплаченная часть уйдёт в долги.</span><span class="fd-jr-total">Списано за день: <strong id="journal-total">—</strong></span><button type="button" class="fd-btn-give fd-save" data-save>Сохранить</button></div>
           </div>
         </section>
+
+
+        <!-- Долги, резервы и дивиденды — под журналом во всю ширину: правая колонка
+             остаётся для кассы и проверок. Долги раскрываются по строкам. -->
+        <section class="fd-card fd-debts" id="debt-card" aria-labelledby="debt-card-title">
+          <p class="fd-kicker" id="debt-card-title">ДОЛГИ К ОПЛАТЕ</p>
+          <strong id="all-debt-total">—</strong>
+          <div id="fd-debt-lines" class="fd-debt-list"></div>
+        </section>
+        <div class="fd-main-pair">
+          <section class="fd-card fd-reserves" id="reserves-card" aria-labelledby="reserves-title">
+            <p class="fd-kicker" id="reserves-title">РЕЗЕРВЫ · НЕ ВХОДЯТ В ОСТАТОК</p>
+            <div class="fd-res-line"><span>Доллары в сейфе · от кассира</span><b id="usd-balance">—</b></div>
+            <div class="fd-res-line"><span>Дивиденды в сейфе</span><b id="dividends-balance">—</b></div>
+            <button type="button" class="fd-res-tools" id="fd-open-tools">Начальные остатки и ручной приход →</button>
+          </section>
+
+          <!-- Цель ставит учредитель в своём кабинете. Деньги откладываются
+               обычной строкой «Отложить в сейф» в журнале. -->
+          <section class="fd-card fd-dv" id="dividends-card" aria-labelledby="dividends-title" hidden>
+            <p class="fd-kicker" id="dividends-title">ДИВИДЕНДЫ · НЕДЕЛЯ <span id="dividends-week">—</span></p>
+            <div class="fd-dv-target"><span>Запрошено</span><strong id="dividends-target">—</strong></div>
+            <div class="fd-dv-changed" id="dividends-changed"></div>
+            <div class="fd-dv-bar"><span id="dividends-fill"></span><i id="dividends-pace" title="План к этому дню"></i></div>
+            <div class="fd-dv-foot"><span id="dividends-set">Отложено —</span><span id="dividends-left"></span></div>
+            <div class="fd-dv-status" id="dividends-status"></div>
+            <div class="fd-dv-today" id="dividends-today"></div>
+            <div class="fd-dv-hint" id="dividends-hint"></div>
+            <button id="dividends-fill-button" class="fd-dv-fill" type="button">Внести в «Операции за день» ↑</button>
+          </section>
+        </div>
 
       </div>
 
@@ -128,32 +158,6 @@
           <div id="finance-checks"></div>
         </section>
 
-        <section class="fd-card fd-debts" id="debt-card" aria-labelledby="debt-card-title">
-          <p class="fd-kicker" id="debt-card-title">ДОЛГИ К ОПЛАТЕ</p>
-          <strong id="all-debt-total">—</strong>
-          <div id="fd-debt-lines"></div>
-        </section>
-
-        <section class="fd-card fd-reserves" id="reserves-card" aria-labelledby="reserves-title">
-          <p class="fd-kicker" id="reserves-title">РЕЗЕРВЫ · НЕ ВХОДЯТ В ОСТАТОК</p>
-          <div class="fd-res-line"><span>Доллары в сейфе · от кассира</span><b id="usd-balance">—</b></div>
-          <div class="fd-res-line"><span>Дивиденды в сейфе</span><b id="dividends-balance">—</b></div>
-          <button type="button" class="fd-res-tools" id="fd-open-tools">Начальные остатки и ручной приход →</button>
-        </section>
-
-        <!-- Цель ставит учредитель в своём кабинете. Деньги откладываются
-             обычной строкой «Отложить в сейф» в журнале. -->
-        <section class="fd-card fd-dv" id="dividends-card" aria-labelledby="dividends-title" hidden>
-          <p class="fd-kicker" id="dividends-title">ДИВИДЕНДЫ · НЕДЕЛЯ <span id="dividends-week">—</span></p>
-          <div class="fd-dv-target"><span>Запрошено</span><strong id="dividends-target">—</strong></div>
-          <div class="fd-dv-changed" id="dividends-changed"></div>
-          <div class="fd-dv-bar"><span id="dividends-fill"></span><i id="dividends-pace" title="План к этому дню"></i></div>
-          <div class="fd-dv-foot"><span id="dividends-set">Отложено —</span><span id="dividends-left"></span></div>
-          <div class="fd-dv-status" id="dividends-status"></div>
-          <div class="fd-dv-today" id="dividends-today"></div>
-          <div class="fd-dv-hint" id="dividends-hint"></div>
-          <button id="dividends-fill-button" class="fd-dv-fill" type="button">Внести в «Операции за день» ←</button>
-        </section>
       </aside>
     </div>
     <footer class="fd-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Модуль бухгалтера</span><span>Время Ташкента · UZS</span></footer>
