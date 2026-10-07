@@ -163,7 +163,7 @@ def test_director_report_route_reuses_the_snapshot_and_refuses_an_open_period(tm
     TTL здесь безусловен, и проверяются обе половины этого утверждения."""
     from fastapi.testclient import TestClient
 
-    from retro.app import create_app
+    from legacy_app import create_app
     from retro.modules.director import routes as director_routes
 
     seen = []

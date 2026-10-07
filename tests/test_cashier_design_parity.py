@@ -20,7 +20,7 @@ import openpyxl
 import pytest
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.accounting_period import ACCOUNTING_START
 from retro.modules.cashier.archive import decode_snapshot

@@ -10,6 +10,8 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
+  const START = '2026-10-02';
+  const clamp = day => day < START ? START : day;
   const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
   function valid(iso) { return typeof iso === 'string' && ISO.test(iso); }
@@ -32,7 +34,7 @@
 
   /** Готовые периоды. Сегодняшний день не входит никуда: смена ещё идёт,
    *  и её цифры меняются, пока человек смотрит на таблицу. */
-  function presetRange(today, preset) {
+  function rawPresetRange(today, preset) {
     const end = shift(today, -1);
     if (preset === 'yesterday') return { start: end, end: end };
     if (preset === 'month') {
@@ -48,6 +50,11 @@
     const length = Number(preset);
     if (!Number.isFinite(length) || length < 1) return { start: end, end: end };
     return { start: shift(end, -(Math.trunc(length) - 1)), end: end };
+  }
+
+  function presetRange(today, preset) {
+    const range = rawPresetRange(today, preset);
+    return {start: clamp(range.start), end: range.end};
   }
 
   const SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн',
@@ -91,6 +98,7 @@
    *  человек читает как поломку панели. */
   function check(start, end, today) {
     if (!valid(start) || !valid(end)) return 'Выберите обе даты периода.';
+    if (start < START || end < START) return 'Учёт доступен со 2 октября 2026.';
     if (start > end) return 'Начало периода позже его конца.';
     if (end >= today) return 'Сегодняшний день ещё не закрыт: выберите период по вчерашний день.';
     if (daysBetween(start, end) > MAX_DAYS) return 'Период длиннее ' + MAX_DAYS + ' дней iiko не отдаёт.';
@@ -121,7 +129,7 @@
     const modes = options.modes || ['day', 'range'];
     const state = {
       mode: options.mode || modes[0],
-      day: options.day || shift(today, -1),
+      day: clamp(options.day || shift(today, -1)),
       start: '', end: '', preset: options.preset || '10',
     };
     Object.assign(state, presetRange(today, state.preset));
@@ -138,6 +146,7 @@
     const dayInput = document.createElement('input');
     dayInput.type = 'date';
     dayInput.id = options.dayInputId || 'period-day';
+    dayInput.min = START;
     dayInput.max = today;
     dayInput.value = state.day;
     const dayLabelNode = node('label', '', 'Дата');
@@ -151,6 +160,7 @@
     const endInput = document.createElement('input');
     for (const input of [startInput, endInput]) {
       input.type = 'date';
+      input.min = START;
       input.max = shift(today, -1);
     }
     startInput.id = 'period-start';
@@ -206,7 +216,8 @@
       for (const chip of presetChips.querySelectorAll('button')) {
         chip.classList.toggle('active', chip.dataset.preset === state.preset);
       }
-      const problem = range ? check(state.start, state.end, today) : '';
+      const problem = range ? check(state.start, state.end, today) :
+        (!valid(state.day) || state.day < START || state.day > today ? 'Выберите дату со 2 октября по сегодня.' : '');
       status.textContent = problem || (range
         ? label(state.start, state.end) + ' · ' + daysBetween(state.start, state.end) + ' дн.'
         : dayLabel(state.day));
@@ -234,6 +245,7 @@
     if (modes.includes('day')) {
       for (let offset = 0; offset <= 6; offset++) {
         const day = shift(today, -offset);
+        if (day < START) continue;
         const chip = node('button', 'chip', offset === 0 ? 'Сегодня' : offset === 1 ? 'Вчера'
           : shortDay(day));
         chip.type = 'button';
@@ -248,6 +260,7 @@
     }
     if (modes.includes('range')) {
       for (const preset of PRESETS) {
+        if (presetRange(today, preset.code).end < START) continue;
         const chip = node('button', 'chip', preset.name);
         chip.type = 'button';
         chip.dataset.preset = preset.code;
@@ -283,7 +296,7 @@
     return {
       element: root,
       state: current,
-      valid: () => state.mode === 'day' || !check(state.start, state.end, today),
+      valid: () => state.mode === 'day' ? valid(state.day) && state.day >= START && state.day <= today : !check(state.start, state.end, today),
       note: text => { status.textContent = text; status.classList.remove('is-error'); },
       set: next => {
         Object.assign(state, next);
@@ -295,6 +308,6 @@
   return {
     shift: shift, daysBetween: daysBetween, monthStart: monthStart, presetRange: presetRange,
     label: label, dayLabel: dayLabel, shortDay: shortDay, check: check, mount: mount, MAX_DAYS: MAX_DAYS,
-    PRESETS: PRESETS,
+    PRESETS: PRESETS, START: START,
   };
 });

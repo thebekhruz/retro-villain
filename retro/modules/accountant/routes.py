@@ -447,6 +447,7 @@ def salary_day_month(request: Request, month: str):
         finance_error(error)
     if first > today_tashkent().replace(day=1):
         raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
+    first = accounting_range_start(first, last)
     finance = request.app.state.accountant_finance
     return dict(month=month, first=first.isoformat(), last=last.isoformat(),
                 closed=month_closing.closed_state(finance, last),

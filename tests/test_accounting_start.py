@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
 from retro.accounting_period import ACCOUNTING_START as START
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.db import Database
 from retro.modules.accountant.ledger import CashBook, FinanceStore, LedgerError

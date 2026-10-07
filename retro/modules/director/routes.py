@@ -1,5 +1,6 @@
 import asyncio
 from datetime import date, datetime, timezone
+from retro.accounting_period import ACCOUNTING_START
 from decimal import Decimal
 from typing import Literal
 
@@ -68,7 +69,10 @@ def attendance(request: Request, date: date | None = None):
 def period_or_422(start: date | None, end: date | None, days: int | None = None):
     """Проверенный период либо ранний 422 — до всякого обращения к iiko."""
     try:
-        return resolve_period(today_tashkent(), start, end, days)
+        first, last = resolve_period(today_tashkent(), start, end, days)
+        if last < ACCOUNTING_START:
+            raise DataError('Учёт доступен со 02.10.2026.')
+        return max(first, ACCOUNTING_START), last
     except DataError as error:
         raise HTTPException(422, str(error)) from None
 
@@ -111,7 +115,8 @@ async def report_for_period(request: Request, start: date | None = None, end: da
 
 @router.get('/reports')
 def reports(request: Request):
-    return {'reports': request.app.state.director_store.list_metadata()}
+    return {'reports': [row for row in request.app.state.director_store.list_metadata()
+                        if row['period_start'] >= ACCOUNTING_START.isoformat()]}
 
 
 # ── Меню (справочник, не продажи) ───────────────────────────────────────────
@@ -211,13 +216,14 @@ async def create_report(request: Request, start: date | None = None, end: date |
 @router.get('/reports/{report_id}')
 def report(request: Request, report_id: str):
     result = request.app.state.director_store.get(report_id)
-    if result is None:
+    if result is None or result['period_start'] < ACCOUNTING_START.isoformat():
         raise HTTPException(404, 'Отчёт не найден.')
     return result
 
 
 @router.get('/reports/{report_id}/pdf')
 def pdf(request: Request, report_id: str):
+    report(request, report_id)  # Apply the same date boundary to PDF downloads.
     value = request.app.state.director_store.get_pdf(report_id)
     if value is None:
         raise HTTPException(404, 'Отчёт не найден.')

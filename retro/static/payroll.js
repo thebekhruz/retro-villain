@@ -545,9 +545,9 @@ async function loadMonth() {
   // Пустой, кривой или будущий месяц из календаря не открываем: остаёмся на
   // показанном (иначе заголовок сменился бы, а сетка осталась старой).
   const latest = today.slice(0, 7);
-  if (!/^\d{4}-\d{2}$/.test(month) || month > latest) {
+  if (!/^\d{4}-\d{2}$/.test(month) || month < '2026-10' || month > latest) {
     const back = shownMonth || latest;
-    message(!month ? 'Выберите месяц.' : 'Будущий месяц ещё не открыт — показываем ' + monthYear(back).toLowerCase() + '.', true);
+    message(!month ? 'Выберите месяц.' : month < '2026-10' ? 'Учёт доступен с октября 2026.' : 'Будущий месяц ещё не открыт — показываем ' + monthYear(back).toLowerCase() + '.', true);
     $('month-input').value = back;
     if (shownMonth) return;
     month = back;
@@ -562,6 +562,7 @@ async function loadMonth() {
   $('crumb-month').textContent = 'Зарплата · ' + name;
   $('month-label').textContent = monthYear(month);
   $('month-next').disabled = month >= today.slice(0, 7);
+  $('month-prev').disabled = month <= '2026-10';
   try {
     const response = await fetch('/api/accountant/payroll/month?month=' + encodeURIComponent(month), {cache: 'no-store'});
     const data = await response.json();
@@ -752,7 +753,7 @@ document.addEventListener('change', event => {
     today = (await globalThis.RetroConfig).today;
     const requested = new URLSearchParams(location.search).get('month');
     $('month-input').max = today.slice(0, 7);
-    $('month-input').value = requested && /^\d{4}-\d{2}$/.test(requested) && requested <= today.slice(0, 7) ? requested : today.slice(0, 7);
+    $('month-input').value = requested && /^\d{4}-\d{2}$/.test(requested) && requested >= '2026-10' && requested <= today.slice(0, 7) ? requested : today.slice(0, 7);
     await load();
   } catch (error) { message(error.message, true); }
 })();

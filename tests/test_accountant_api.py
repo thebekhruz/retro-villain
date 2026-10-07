@@ -6,7 +6,7 @@ from io import BytesIO
 from fastapi.testclient import TestClient
 from openpyxl import Workbook, load_workbook
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.integrations.hikvision import HikvisionEvent, HikvisionPerson
 from retro.modules.cashier.service import DataError, Payment, TZ, demo_snapshot, today_tashkent

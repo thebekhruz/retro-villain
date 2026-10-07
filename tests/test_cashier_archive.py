@@ -9,7 +9,7 @@ from uuid import uuid4
 import httpx
 import pytest
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.accounting_period import ACCOUNTING_START
 from retro.integrations.iiko import IikoClient, cashier_read

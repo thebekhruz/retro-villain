@@ -22,7 +22,7 @@
     // Клетку жмут внизу таблицы — строка сверху не видна, ошибку дублирует тост.
     if(error&&text)globalThis.RetroToast?.show(text,'error');
   }
-  function controls(){['month-prev','month-next','month-input','salary-refresh'].forEach(id=>$(id).disabled=writes>0);if(today)$('month-next').disabled=writes>0||$('month-input').value>=today.slice(0,7);}
+  function controls(){['month-prev','month-next','month-input','salary-refresh'].forEach(id=>$(id).disabled=writes>0);$('month-prev').disabled=writes>0||$('month-input').value<='2026-10';if(today)$('month-next').disabled=writes>0||$('month-input').value>=today.slice(0,7);}
   const personOf=id=>current?.people.find(p=>p.id===id);
   const cellId=(personId,day)=>'sd-c-'+personId+'-'+day;
   function view(person,day){
@@ -161,7 +161,7 @@
   }
   async function loadMonth(month){
     if(writes){if(current)$('month-input').value=current.month;message('Дождитесь сохранения выплат.',true);return false;}
-    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month>today.slice(0,7)){if(current)$('month-input').value=current.month;message('Выберите текущий или прошедший месяц.',true);return false;}
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month<'2026-10'||month>today.slice(0,7)){if(current)$('month-input').value=current.month;message('Выберите текущий или прошедший месяц.',true);return false;}
     const token=++sequence;controller?.abort();controller=new AbortController();$('salary-body').setAttribute('aria-busy','true');$('sheet-grid').inert=true;
     try{
       const response=await fetch('/api/accountant/salary-day/month?month='+encodeURIComponent(month),{signal:controller.signal,cache:'no-store'});
@@ -285,5 +285,5 @@
   // «Сохранить» дописывает сумму, набранную в клетке; галочки уже записаны.
   globalThis.RetroSave?.register(grid,async()=>editing?await finishEdit(true):true,
     {dirty:()=>!!editing&&L.parseAmount(editing.input.value)!==editing.clean});
-  (async()=>{try{today=(await globalThis.RetroConfig).today;const params=new URLSearchParams(location.search);selectedDay=params.get('date');const month=params.get('month')||selectedDay?.slice(0,7)||today.slice(0,7);$('month-input').value=month;await loadMonth(month);}catch(error){$('salary-loading').hidden=true;message(error.message,true);}})();
+  (async()=>{try{today=(await globalThis.RetroConfig).today;const params=new URLSearchParams(location.search);selectedDay=params.get('date');const requested=params.get('month')||selectedDay?.slice(0,7);const month=requested&&requested>='2026-10'&&requested<=today.slice(0,7)?requested:today.slice(0,7);$('month-input').value=month;await loadMonth(month);}catch(error){$('salary-loading').hidden=true;message(error.message,true);}})();
 })();

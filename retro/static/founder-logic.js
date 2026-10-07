@@ -15,13 +15,14 @@
     return names[new Date(dateIso+'T00:00:00Z').getUTCDay()];
   }
 
+  const clamp=day=>day<'2026-10-02'?'2026-10-02':day;
   function quickPeriod(kind,todayIso){
     const today=new Date(todayIso+'T00:00:00Z');
-    if(kind==='month')return {start:todayIso.slice(0,8)+'01',end:todayIso};
+    if(kind==='month')return {start:clamp(todayIso.slice(0,8)+'01'),end:todayIso};
     const days=Number(kind);
     const end=new Date(today);end.setUTCDate(end.getUTCDate()-1);
     const start=new Date(end);start.setUTCDate(start.getUTCDate()-days+1);
-    return {start:iso(start),end:iso(end)};
+    return {start:clamp(iso(start)),end:iso(end)};
   }
 
   function revenuePaths(series,directions,width,height){
@@ -58,6 +59,7 @@
   /** Ошибка периода до запроса — те же правила, что у сервера (422). */
   function periodError(start,end){
     if(!start||!end)return 'Укажите обе даты периода.';
+    if(start<'2026-10-02'||end<'2026-10-02')return 'Учёт доступен со 2 октября 2026.';
     if(start>end)return 'Дата начала должна быть не позже даты конца.';
     const days=(Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/864e5;
     if(days>=366)return 'Период не может быть длиннее 366 дней.';

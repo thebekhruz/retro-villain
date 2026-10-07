@@ -3,7 +3,7 @@ from datetime import date
 import httpx
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 
 

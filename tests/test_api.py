@@ -7,7 +7,7 @@ import httpx
 import openpyxl
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient, cash_prepay_from_shifts, detail_rows_from_olap
 from retro.modules.cashier.service import DataError, demo_snapshot

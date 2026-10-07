@@ -776,7 +776,7 @@ function renderDebts() {
     ...(shiftDebt ? group('shift', 'Сменные · не выдано', fmt(shiftDebt), 'fd-debt-line',
       shiftRows.map(r => ({day: dm(r.day), what: r.name + (r.role ? ' · ' + r.role : '') + ' · смена', amount: fmt(r.debt)})))
       : [railLine('Сменные', 'всё выдано', 'fd-debt-line is-clear')]),
-    ...(prevSalaries ? group('salary', 'Оклады · за ' + monthName(prevSalaries.month + '-01'),
+    ...(prevSalaries?.available ? group('salary', 'Оклады · за ' + monthName(prevSalaries.month + '-01'),
       prevSalaries.available ? fmt(prevSalaries.remain) : 'нет данных', 'fd-debt-line',
       // Долгом оклад за прошлый месяц стал 1-го числа текущего.
       salaryRows.map(r => ({day: dm(data.date.slice(0, 8) + '01'),
@@ -1148,9 +1148,10 @@ async function loadDay() {
   }
 }
 function go(day) {
-  if (!day || day > today) {
+  if (!day || day < '2026-10-02' || day > today) {
     // Будущий или пустой день: возвращаем поле к показанному дню и говорим почему.
     $('accountant-date').value = view ? view.data.date : today;
+    if (day && day < '2026-10-02') message('Учёт доступен со 2 октября 2026.', true);
     if (day > today) message('Будущие дни недоступны: выберите сегодня или прошедший день.', true);
     return;
   }
@@ -1160,6 +1161,7 @@ function go(day) {
     return;
   }
   $('accountant-date').value = day;
+  $('accountant-prev').disabled = day <= '2026-10-02';
   focusKey = null; expanded.clear(); confirmEditing = false; confirmDirty = false; breakdownOpen = false;
   const url = new URL(location.href); url.searchParams.set('date', day); history.replaceState(null, '', url);
   message('');
@@ -1206,8 +1208,9 @@ async function exportDay() {
     checkMode = !!config.check_mode;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;
-    const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested <= today;
+    const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested >= '2026-10-02' && requested <= today;
     $('accountant-date').value = valid ? requested : today;
+    $('accountant-prev').disabled = $('accountant-date').value <= '2026-10-02';
     // Адрес с будущей или кривой датой не должен расходиться с показанным днём.
     if (requested && !valid) { const url = new URL(location.href); url.searchParams.set('date', today); history.replaceState(null, '', url); }
     if (catalogRequest) {

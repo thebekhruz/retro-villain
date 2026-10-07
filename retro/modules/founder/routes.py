@@ -62,6 +62,7 @@ def _validated_period(start, end, granularity):
         raise HTTPException(422, 'Период не может быть длиннее 366 дней.')
     if granularity not in GRANULARITIES:
         raise HTTPException(422, 'Неизвестная детализация.')
+    start = accounting_range_start(start, end)
     return start, end
 
 
@@ -319,6 +320,7 @@ def spending(request: Request, date: date | None = None):
 async def dishes(request: Request, days: int = Query(7, ge=1, le=30)):
     """Блюда за последние закрытые дни — тот же отчёт iiko, что у директора."""
     start, end = completed_period(today_tashkent(), days)
+    start = accounting_range_start(start, end)
     snapshot, error = await cabinet.iiko_or_error(
         request, 'load_director_report', today_tashkent(), start=start, end=end,
         operation='dishes', timeout=150)

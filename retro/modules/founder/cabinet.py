@@ -276,7 +276,7 @@ async def founder_week(request, day: date):
 
 async def founder_forecast(request, day: date):
     """Прогноз по дням недели по средним за восемь недель — это оценка, не факт."""
-    start = day - timedelta(days=overview.FORECAST_WEEKS * 7)
+    start = max(ACCOUNTING_START, day - timedelta(days=overview.FORECAST_WEEKS * 7))
     rows, error = await iiko_or_error(request, 'load_daily_orders', start, day,
                                       operation='forecast', timeout=120)
     if rows is None:

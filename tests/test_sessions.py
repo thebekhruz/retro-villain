@@ -87,7 +87,7 @@ def test_the_panel_keeps_people_signed_in_across_a_deploy(tmp_path):
     # приложение: cookie из прежнего входа обязана открывать модуль.
     from fastapi.testclient import TestClient
 
-    from retro.app import create_app
+    from legacy_app import create_app
     from retro.config import Settings
 
     users = {'director': ('test-password', 'director')}

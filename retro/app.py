@@ -12,6 +12,8 @@ from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
 
+from retro.accounting_access import require_accounting_dates
+from retro.accounting_period import ACCOUNTING_START
 from retro.report_cache import ReportCache, load_iiko
 from retro.financial_requests import FinancialRequests
 from retro.static_assets import IMMUTABLE, Pages
@@ -195,7 +197,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await close()
 
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None,
-                  lifespan=lifespan)
+                  lifespan=lifespan, dependencies=[Depends(require_accounting_dates)])
     app.state.settings = settings
     # Список сессий лежит рядом с базами модулей, на том же томе:
     # иначе каждый деплой выбрасывает смену на экран входа.
@@ -218,6 +220,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(
         accountant_path, allow_negative_cash=settings.check_mode)
+    from retro.modules.accountant.opening_migration import apply_october_opening
+    apply_october_opening(app.state.accountant_finance)
     # Старое поле «Доллары в кассе» (одна сумма на день) → по взносу на день.
     migrate_legacy_usd_safely(app.state.usd_rates, app.state.accountant_finance)
     app.state.attendance_store = AttendanceStore(accountant_path)
@@ -439,6 +443,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # от его имени, отдельной формы «Кто подтвердил» в макете нет.
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
+                    accounting_start=ACCOUNTING_START.isoformat(),
                     role=role, user=getattr(request.state, 'dashboard_user', None),
                     # Экран запирает выдачу сам, до похода на сервер: без этого
                     # флага кнопки остались бы мёртвыми даже при снятом гейте.

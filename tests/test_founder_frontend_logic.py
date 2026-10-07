@@ -31,8 +31,8 @@ def test_request_gate_rejects_late_response():
 
 
 def test_completed_periods_end_yesterday_in_tashkent():
-    result = run_node("logic.quickPeriod('30','2026-09-19')")
-    assert result == {'start': '2026-08-20', 'end': '2026-09-18'}
+    result = run_node("logic.quickPeriod('30','2026-11-19')")
+    assert result == {'start': '2026-10-20', 'end': '2026-11-18'}
 
 
 def test_weekday_uses_calendar_date_without_local_timezone_shift():

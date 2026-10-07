@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import HikvisionConfig, Settings
 from retro.integrations.hikvision import HikvisionError, HikvisionEvent, HikvisionPerson
 from retro.integrations.hikvision_poller import HikvisionPoller

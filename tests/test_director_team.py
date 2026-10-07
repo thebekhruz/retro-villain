@@ -4,7 +4,7 @@ from datetime import date
 
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.integrations.hikvision import HikvisionPerson
 from retro.modules.accountant.roster import RosterStore

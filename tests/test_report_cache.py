@@ -5,7 +5,7 @@ from types import SimpleNamespace
 import httpx
 import pytest
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.modules.cashier.service import demo_snapshot
 from retro.report_cache import ReportCache, load_iiko

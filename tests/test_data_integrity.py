@@ -323,7 +323,7 @@ def test_raw_ai_details_cannot_expose_duplicate_additive_cost():
 
 def test_export_rejects_manual_entries_changed_after_screen(tmp_path):
     from fastapi.testclient import TestClient
-    from retro.app import create_app
+    from legacy_app import create_app
     from retro.modules.cashier.service import demo_snapshot
     app = create_app(Settings(data_dir=tmp_path), expense_db_path=tmp_path / 'cashier.sqlite3',
                      accountant_db_path=tmp_path / 'accountant.sqlite3',
@@ -340,7 +340,7 @@ def test_export_rejects_manual_entries_changed_after_screen(tmp_path):
 
 def test_financial_retries_replay_once_and_reject_changed_payload(tmp_path):
     from fastapi.testclient import TestClient
-    from retro.app import create_app
+    from legacy_app import create_app
     from uuid import uuid4
     app = create_app(Settings(data_dir=tmp_path), expense_db_path=tmp_path/'cashier.sqlite3',
                      accountant_db_path=tmp_path/'accountant.sqlite3',

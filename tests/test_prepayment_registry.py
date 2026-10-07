@@ -106,7 +106,7 @@ def test_iiko_registry_uses_received_operation_and_operational_day():
 
 def test_day_enriches_old_snapshot_and_preserves_export_revision(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
-    from retro.app import create_app
+    from legacy_app import create_app
     from retro.modules.cashier import routes
 
     app = create_app(Settings(data_dir=tmp_path))

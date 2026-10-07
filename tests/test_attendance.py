@@ -6,7 +6,7 @@ from zoneinfo import ZoneInfo
 import openpyxl
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.modules.accountant.attendance import Entrance, export_entrances, is_late
 

@@ -11,7 +11,7 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.modules.accountant import closing
 from retro.modules.accountant.ledger import FinanceStore, LedgerError

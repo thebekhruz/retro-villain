@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.integrations.iiko import chef_bills_from_olap, daily_orders_from_olap
 from retro.modules.cashier.service import (
@@ -355,13 +355,15 @@ def test_forecast_and_chef_account_report_iiko_errors_instead_of_zeros(tmp_path,
     assert week['orders_error'] == 'iiko недоступен'
 
 
-def test_forecast_uses_eight_weeks_of_history(tmp_path, today):
+def test_forecast_uses_eight_weeks_of_history(tmp_path, today, monkeypatch):
+    # Eight complete working weeks exist by December; September is no longer a source.
+    monkeypatch.setattr('retro.modules.founder.cabinet.today_tashkent', lambda: date(2026, 12, 24))
     with client(tmp_path) as c:
         data = c.get('/api/founder/forecast').json()
     assert data['estimate'] is True and data['weeks'] == 8
     assert data['weekdays'][3]['retro'] == '33000000.00'
     assert data['today']['orders'] == {'retro': 103, 'school': 50}
-    assert data['month']['fact_through'] == '2026-09-24'
+    assert data['month']['fact_through'] == '2026-12-24'
 
 
 def test_chef_account_lists_bills_with_the_limit(tmp_path, today):

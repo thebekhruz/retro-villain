@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.async_utils import gather_reads
 from retro.config import Settings
 from retro.integrations.iiko import IikoClient, director_rows_from_olap

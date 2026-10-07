@@ -6,7 +6,7 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings, parse_dashboard_panel_users
 from retro.modules.cashier.service import TZ
 from retro.modules.shokh.trips import trip_minutes

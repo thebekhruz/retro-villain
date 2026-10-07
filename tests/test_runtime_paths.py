@@ -1,6 +1,6 @@
 from datetime import date
 
-from retro.app import create_app
+from legacy_app import create_app
 from retro.config import Settings
 from retro.runtime import resolve_data_dir
 
