@@ -20,20 +20,15 @@
 .salary-day-page .sd-m.is-odd{background:#fbf0d7;color:#906c2b}
 .salary-day-page .sd-m.is-locked{cursor:default}
 
-/* Другая сумма — окно в стиле «Удалить?» из «Зарплаты · месяц». */
-.sd-pop input{width:100%;min-height:40px;border:1px solid #dbe3d8;border-radius:8px;padding:0 10px;font:inherit;font-size:16px;
-  font-weight:600;text-align:right;font-variant-numeric:tabular-nums;color:#1c302b;background:#fff}
-.sd-pop input:focus{outline:0;border-color:#d2af59}
-.sd-pop .rm-money-hint{font-size:10px;color:#7d8881;text-align:right;margin-top:-6px}
-.sd-pop-error{font-size:11px;line-height:1.4;color:#ab445e}
-.sd-pop-error[hidden]{display:none}
-.sd-pop-save{min-height:36px;border-radius:7px;padding:7px 12px;font:inherit;font-size:11px;font-weight:600;border:1px solid #143e35;
-  background:#143e35;color:#fff}
-
+/* Опоздал за смену — розовая, как «опоздал» в макете 2b; не выдано — время входа. */
+.salary-day-page .sd-m.is-late{background:#fff0f2}
+.salary-day-page .sd-m.is-late:not(.is-tick){justify-content:center;font-size:10px;color:#ab445e}
+.salary-day-page button.sd-m.is-late:hover{background:#fde7eb}
+/* Второй клик — поле суммы в клетке, как ячейка «Зарплаты · месяц». */
+.salary-day-page input.sd-m{outline:0;box-shadow:inset 0 0 0 2px #d2af59;background:#fff;color:#1c4c3e;font-size:12px}
 /* Три карточки на планшете не вмещают «3 160 000 сум» — итог месяца во всю ширину. */
 @media(max-width:1024px){
   .salary-day-page .pr-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
   .salary-day-page .pr-cards>.pr-card:first-child{grid-column:1/-1}
 }
-@media(max-width:900px){.sd-pop-save{min-height:40px}}
 @media(max-width:650px){.salary-day-page .pr-cards{grid-template-columns:1fr}.salary-day-page .pr-card-value{margin-top:8px}}

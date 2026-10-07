@@ -213,7 +213,7 @@ def test_legacy_confirmation_cannot_freeze_manual_cell_or_leave_confirmed_empty_
 
 def test_before_start_future_archived_and_both_month_closed_dates_are_readonly(stores, monkeypatch):
     finance, roster, person = stores
-    for invalid in [WORK, date(2026, 10, 11)]:
+    for invalid in [date(2026, 10, 1), date(2026, 10, 11)]:
         with pytest.raises(LedgerError):
             finance.set_salary_day_cell(invalid, person.id, '1000', '0')
     finance.set_salary_day_cell(PAID, person.id, '250000', '0')
@@ -244,10 +244,10 @@ def test_matrix_paid_day_alignment_missing_cells_and_submitted_reports(stores):
         connection.execute('INSERT INTO accountant_day_reports VALUES (?,?,?,?)',
                            (PAID.isoformat(), '2026-10-07', 'Бухгалтер', '{}'))
     data = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
-    assert data['entry_start'] == '2026-10-07'
+    assert data['entry_start'] == '2026-10-02'
     cells = data['people'][0]['cells']
     assert len(cells) == 31
-    assert cells['2026-10-06'] == dict(amount='0', work_day='2026-10-05', editable=False, rate=None)
+    assert cells['2026-10-01'] == dict(amount='0', work_day='2026-09-30', editable=False, rate=None)
     assert cells['2026-10-07'] == dict(amount='250000', work_day='2026-10-06', editable=True, rate=None)
     assert cells['2026-10-08'] == dict(amount='0', work_day='2026-10-07', editable=True, rate=None)
     assert cells['2026-10-11']['editable'] is False
@@ -293,3 +293,29 @@ def test_cell_rate_follows_the_shift_day_not_today(stores, monkeypatch):
     cells = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))['people'][0]['cells']
     assert cells['2026-10-08']['rate'] == '200000'
     assert cells['2026-10-09']['rate'] == '250000'
+
+
+def test_past_days_since_accounting_start_are_editable_like_month_sheet(stores):
+    """Прошедшие дни месяца отмечаются, как в «Зарплате · месяц»: с 02.10."""
+    finance, _, person = stores
+    result = finance.set_salary_day_cell(date(2026, 10, 3), person.id, '180000', '0')
+    assert result['work_day'] == '2026-10-02'
+    cells = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))['people'][0]['cells']
+    assert cells['2026-10-03']['amount'] == '180000' and cells['2026-10-03']['editable'] is True
+    assert cells['2026-10-05']['editable'] is True
+    assert cells['2026-10-01']['editable'] is False
+
+
+def test_late_shift_marks_the_payout_cell_with_entry_time(stores):
+    from datetime import datetime
+    from types import SimpleNamespace as Entry
+    from retro.modules.cashier.service import TZ
+    finance, _, person = stores
+    entries = {date(2026, 10, 5): {person.id: Entry(occurred_at=datetime(2026, 10, 5, 10, 25, tzinfo=TZ))},
+               date(2026, 10, 6): {person.id: Entry(occurred_at=datetime(2026, 10, 6, 9, 55, tzinfo=TZ))},
+               date(2026, 10, 10): {person.id: Entry(occurred_at=datetime(2026, 10, 10, 11, 0, tzinfo=TZ))}}
+    cells = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31),
+                                     lambda day: entries.get(day, {}))['people'][0]['cells']
+    assert cells['2026-10-06']['late'] == '10:25'      # смена 05.10 — вход после 10:00
+    assert 'late' not in cells['2026-10-07']           # смена 06.10 — вовремя
+    assert 'late' not in cells['2026-10-11']           # смена 10.10 — сегодня, ещё не смотрим

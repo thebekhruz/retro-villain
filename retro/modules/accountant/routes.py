@@ -450,7 +450,7 @@ def salary_day_month(request: Request, month: str):
     finance = request.app.state.accountant_finance
     return dict(month=month, first=first.isoformat(), last=last.isoformat(),
                 closed=month_closing.closed_state(finance, last),
-                **finance.salary_day_month(first, last))
+                **finance.salary_day_month(first, last, request.app.state.attendance.store.first_entries))
 
 
 @router.put('/salary-day/cell')

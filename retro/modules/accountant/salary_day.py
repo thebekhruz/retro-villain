@@ -4,12 +4,18 @@ from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 
-from retro.modules.cashier.service import today_tashkent
+from retro.accounting_period import ACCOUNTING_START
+from retro.modules.cashier.service import TZ, today_tashkent
+
+from .attendance import is_late
 
 from .audit import record_audit
 from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_day, now_stamp, plain
 
-ENTRY_START = date(2026, 10, 7)
+# Прошедшие дни месяца отмечаются, как в «Зарплате · месяц»: с начала рабочего учёта
+# (на 02.10 стоит начальный остаток кассы). Дни, где зарплату уже провели по-старому —
+# общей суммой или подтверждённой сменой, — остаются закрытыми: двойной выплаты нет.
+ENTRY_START = ACCOUNTING_START
 MANUAL_STATUS = 'manual_salary'
 
 
@@ -19,7 +25,7 @@ class SalaryCellChanged(LedgerError):
 
 def _assert_day(paid_day):
     if paid_day < ENTRY_START:
-        raise LedgerError('Ручной ввод зарплаты доступен с 07.10.2026; прежние выплаты только для чтения.')
+        raise LedgerError('Зарплата по сотрудникам вводится с 02.10.2026 — с начала рабочего учёта.')
     if paid_day > today_tashkent():
         raise LedgerError('Нельзя записать зарплату за будущий день.')
 
@@ -120,7 +126,9 @@ def set_cell(finance, paid_day, employee_id, amount, expected_amount, *, cashier
                 work_day=work_day.isoformat(), editable=True, changed=True)
 
 
-def month_data(finance, first, last):
+def month_data(finance, first, last, first_entries=None):
+    """Ведомость месяца. first_entries(day) — первые входы Hikvision за день
+    ({сотрудник: вход}); опоздавшим за смену клетки отдаётся время входа (late)."""
     today = today_tashkent()
     days = [(first + timedelta(days=index)).isoformat() for index in range((last-first).days+1)]
     with closing(finance._open()) as connection:
@@ -192,6 +200,16 @@ def month_data(finance, first, last):
             person['cells'][paid_day] = dict(amount=plain(amounts[(employee_id, paid_day)]),
                                              work_day=work_day, editable=bool(editable and not conflict),
                                              rate=str(rate) if rate is not None else None)
+    if first_entries is not None:
+        # Опоздание — за смену, то есть за день до выплаты; будущие смены не смотрим.
+        for paid_day in days:
+            work = date.fromisoformat(paid_day) - timedelta(days=1)
+            if work >= today:
+                continue
+            for employee_id, entry in first_entries(work).items():
+                person = people.get(employee_id)
+                if person is not None and is_late(entry.occurred_at):
+                    person['cells'][paid_day]['late'] = entry.occurred_at.astimezone(TZ).strftime('%H:%M')
     return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(), days=days,
                 people=list(people.values()),
                 closed_through=closed_through or None)
