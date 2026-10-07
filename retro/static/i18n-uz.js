@@ -26,6 +26,9 @@ globalThis.RetroDictionaryUz = {
   'Не удалось прочитать сумму выплаты. Обновите ведомость.': "To‘lov summasini o‘qib bo‘lmadi. Qaydnomani yangilang.",
   'Не удалось проверить сохранённую сумму. Обновите ведомость.': "Saqlangan summani tekshirib bo‘lmadi. Qaydnomani yangilang.",
   // «Зарплата · день» — таблица с галочками
+  'Без группы': "Guruhsiz",
+  'Выдано за день · по фильтру': "Kunlik berilgan · filtr bo‘yicha",
+  'Никого не нашли. Сбросьте поиск или выберите «Все».': "Hech kim topilmadi. Qidiruvni tozalang yoki «Hammasi»ni tanlang.",
   'выдано по ставке': "stavka bo‘yicha berilgan",
   'другая сумма': "boshqa summa",
   'Клик — выдано по ставке. Второй клик — ввести сумму. Третий клик — убрать.': "Bosish — stavka bo‘yicha berildi. Ikkinchi bosish — summani kiriting. Uchinchi bosish — olib tashlash.",
