@@ -90,19 +90,6 @@
 .cashier-pay-total b{font-weight:500;font-variant-numeric:tabular-nums}
 .cashier-pay-total strong{font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
 .cashier-revenue .payment-row.cashier-pay-row--prepayment{background:#f9f6ed}
-.cashier-payment-details>summary{cursor:pointer;list-style:none;display:grid;color:inherit;font-weight:inherit}
-.cashier-payment-details>summary::before{content:none}
-.cashier-payment-details>summary::-webkit-details-marker{display:none}
-.cashier-payment-details>summary:focus-visible{outline:2px solid var(--green);outline-offset:-2px}
-.cashier-payment-chevron{display:inline-block;transition:transform .15s;margin-right:6px}
-.cashier-payment-details[open] .cashier-payment-chevron{transform:rotate(90deg)}
-.cashier-payment-prepay-tag{font-size:10px;color:var(--green);background:var(--accent-soft);padding:3px 6px;border-radius:5px}
-.cashier-payment-entries{padding:4px 18px 12px 40px;background:#fbfcf9;font-size:12px}
-.cashier-payment-entry{display:flex;justify-content:space-between;gap:16px;padding:7px 0}
-.cashier-payment-entry strong{font-variant-numeric:tabular-nums;white-space:nowrap}
-.cashier-payment-entry.is-total{border-bottom:1px solid #e6ebdf;margin-bottom:4px;color:var(--green)}
-.cashier-prepayment-note{margin:0;padding:12px 18px;font-size:12px;line-height:1.55;color:var(--muted-2);background:#f9f6ed}
-.cashier-prepayment-retry{margin:8px 18px 12px;font-size:12px;cursor:pointer}
 .cashier-pay-subtotals{padding:10px 18px;border-top:1px solid #dfe6db;background:#fbfcf9;font-size:12px;color:var(--muted-2)}
 .cashier-pay-subtotals>div,.cashier-pay-inflow{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
 .cashier-pay-subtotals>div+div{margin-top:7px}
