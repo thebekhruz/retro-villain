@@ -6,6 +6,8 @@
 .salary-day-page .sd-header-cell>.pr-day{width:100%;height:100%}
 .salary-day-page .pr-day.is-selected:not(.is-today){box-shadow:inset 0 0 0 2px #d2af59}
 .salary-day-page #salary-message{margin:0 0 14px}
+.salary-day-page .sd-aggregate{margin:0 0 14px;background:#fdeee9;border-color:#f0cfc3;color:#7d3620}
+.salary-day-page .sd-aggregate::before{content:"!";background:#e8bcab;color:#73301b}
 .salary-day-page #sheet-empty{padding:26px 18px}
 
 /* Клетки — те же .pr-m, что в «Зарплате · месяц»; обёртка role=cell не участвует в сетке. */
