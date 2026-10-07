@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/accountant.css"><link rel="stylesheet" href="/static/payroll.css">
   <link rel="stylesheet" href="/static/salary-day.css"><link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/salary-day-logic.js" defer></script><script src="/static/salary-day.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/employees-logic.js" defer></script><script src="/static/salary-day-logic.js" defer></script><script src="/static/salary-day.js" defer></script>
 </head>
 <body class="pr-page salary-day-page" data-page="salary-day">
 <aside class="sidebar">
@@ -47,8 +47,14 @@
         <article class="pr-card"><div class="pr-card-label">Сотрудников в ведомости</div><div class="pr-card-value rm-num" id="salary-people">—</div></article>
       </section>
       <section class="pr-sheet" aria-label="Ведомость сменных: сотрудник × день выплаты">
+        <!-- Группы и поиск — как в «Сотрудниках»: те же чипы и тот же поиск по имени или должности. -->
+        <div class="sd-tools">
+          <div id="sd-tabs" class="sd-tabs" role="tablist" aria-label="Группы"></div>
+          <input id="sd-search" type="search" placeholder="Поиск по имени или должности" aria-label="Поиск по имени или должности" autocomplete="off" data-save-ignore>
+        </div>
         <div class="pr-sheet-head"><div class="pr-legend"><span><i class="pr-key is-paid">✓</i>выдано по ставке</span><span><i class="pr-key is-odd"></i>другая сумма</span><span><i class="pr-key is-late"></i>опоздал</span></div><span class="pr-hint">Клик — выдано по ставке. Второй клик — ввести сумму. Третий клик — убрать.</span></div>
         <div class="pr-scroll" id="sheet-scroll"><div class="pr-grid" id="sheet-grid" role="table" aria-label="Выплаты сменным сотрудникам"></div></div>
+        <p id="sd-nothing" class="sd-nothing" hidden>Никого не нашли. Сбросьте поиск или выберите «Все».</p>
         <div id="sheet-empty" class="empty-state" hidden><p>Сменных сотрудников пока нет. Добавьте их в «Сотрудниках».</p></div>
       </section>
     </div>

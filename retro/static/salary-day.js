@@ -9,6 +9,12 @@
   const node=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=text;return el;};
   let current=null, today=null, selectedDay=null, sequence=0, controller=null, writes=0, queue=Promise.resolve();
   let editing=null;
+  // Группы и поиск — как в «Сотрудниках»; порядок групп тот же, незнакомые — в конце.
+  const GROUP_ORDER=['Управление','Встреча гостей','Кухня','Обслуживание зала','Бар','Присмотр за детьми','Уборка','Охрана'];
+  const filter={tab:'all',q:''};
+  const groupOf=person=>person.group||'Без группы';
+  const visible=person=>(filter.tab==='all'||groupOf(person)===filter.tab)
+    &&(!globalThis.EmployeesLogic||globalThis.EmployeesLogic.matchesQuery(filter.q,person.name,person.role));
   const inflight=new Map();
   const monthTitle=month=>new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T12:00:00Z'));
   function message(text,error=false){
@@ -46,6 +52,26 @@
     paintCell(person,day,el);
     return el;
   }
+  function renderTabs(){
+    const counts=new Map();current.people.forEach(p=>counts.set(groupOf(p),(counts.get(groupOf(p))||0)+1));
+    if(filter.tab!=='all'&&!counts.has(filter.tab))filter.tab='all';
+    const names=[...GROUP_ORDER.filter(name=>counts.has(name)),...[...counts.keys()].filter(name=>!GROUP_ORDER.includes(name))];
+    const tabs=[{key:'all',label:'Все',count:current.people.length},...names.map(name=>({key:name,label:name,count:counts.get(name)}))];
+    $('sd-tabs').replaceChildren(...tabs.map(tab=>{
+      const button=node('button','sd-tab'+(filter.tab===tab.key?' is-active':''));button.type='button';button.setAttribute('role','tab');
+      button.setAttribute('aria-selected',String(filter.tab===tab.key));
+      button.append(node('span','',tab.label),node('small','',String(tab.count)));
+      button.addEventListener('click',()=>{filter.tab=tab.key;renderTabs();applyFilter();});
+      return button;
+    }));
+  }
+  /* Отфильтрованные строки прячутся; итог по дням внизу — по видимым. */
+  function applyFilter(){
+    let shown=0;
+    current.people.forEach(person=>{const row=$('sd-row-'+person.id);if(!row)return;const ok=visible(person);row.hidden=!ok;if(ok)shown++;});
+    $('sd-nothing').hidden=shown>0||!current.people.length;
+    totals();
+  }
   function totals(){
     const view=L.matrix(current);
     $('salary-total').textContent=fmt(view.total)+' сум';
@@ -54,8 +80,12 @@
     $('selected-title').textContent='Выдано '+dm(selectedDay);
     $('selected-shift').textContent='За смену '+dm(L.previousDay(selectedDay));
     view.people.forEach(person=>{const el=$('sd-person-'+person.id);if(el)el.textContent=fmt(person.paid);});
-    current.days.forEach(day=>{const el=$('sd-total-'+day);if(el)el.textContent=view.perDay[day]?fmt(view.perDay[day]):'';});
-    if($('sd-grand'))$('sd-grand').textContent=fmt(view.total)+' сум';
+    const filtered=filter.tab!=='all'||!!filter.q.trim();
+    const shown=view.people.filter((summary,index)=>visible(current.people[index]));
+    current.days.forEach((day,col)=>{const el=$('sd-total-'+day);if(!el)return;
+      const sum=shown.reduce((total,person)=>total+Math.round(person.cells[col].amount*100),0)/100;el.textContent=sum?fmt(sum):'';});
+    if($('sd-grand'))$('sd-grand').textContent=fmt(shown.reduce((total,person)=>total+Math.round(person.paid*100),0)/100)+' сум';
+    if($('sd-foot-label'))$('sd-foot-label').textContent=filtered?'Выдано за день · по фильтру':'Выдано за день';
   }
   function selectDay(day){
     selectedDay=day;
@@ -81,7 +111,7 @@
     const paidHead=node('div','pr-c pr-c-paid','Выдано');paidHead.setAttribute('role','columnheader');head.append(paidHead);grid.append(head);
     // В матрице клетки — массив для подсчёта; рисуем и пишем по исходным данным.
     view.people.forEach((summary,index)=>{
-      const person=current.people[index], row=node('div','pr-row is-monthly');row.setAttribute('role','row');
+      const person=current.people[index], row=node('div','pr-row is-monthly');row.setAttribute('role','row');row.id='sd-row-'+person.id;
       const who=node('div','pr-c pr-c-name');who.setAttribute('role','rowheader');who.append(node('span','pr-name',person.name),node('span','pr-role',person.archived?(person.role||'')+' · архив':person.role||''));
       const rate=person.rate==null||!Number(person.rate)?node('div','pr-c pr-c-sum is-norate','нет ставки'):node('div','pr-c pr-c-sum rm-num',fmt(Number(person.rate)));
       rate.setAttribute('role','cell');row.append(who,rate);
@@ -89,9 +119,10 @@
       const paid=node('div','pr-c pr-c-paid rm-num',fmt(summary.paid));paid.id='sd-person-'+person.id;paid.setAttribute('role','cell');row.append(paid);grid.append(row);
     });
     const foot=node('div','pr-row is-foot');foot.setAttribute('role','row');
-    const title=node('div','pr-c pr-c-label','Выдано за день');title.setAttribute('role','rowheader');foot.append(title,node('div','pr-c pr-c-sum pr-c-sumfoot'));
+    const title=node('div','pr-c pr-c-label','Выдано за день');title.id='sd-foot-label';title.setAttribute('role','rowheader');foot.append(title,node('div','pr-c pr-c-sum pr-c-sumfoot'));
     current.days.forEach(day=>{const el=node('div','pr-t rm-num'+(day===today?' is-today':''));el.id='sd-total-'+day;el.setAttribute('role','cell');foot.append(el);});
     const grand=node('div','pr-c pr-c-grand rm-num');grand.id='sd-grand';grand.setAttribute('role','cell');foot.append(grand);grid.append(foot);
+    renderTabs();applyFilter();
     selectDay(selectedDay);
     const entry=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(current.entry_start+'T12:00:00Z')).replace(/\.$/,'');
     // Общая зарплата без сотрудников в «Финансах дня» — клетки работают, но те же деньги
@@ -233,7 +264,7 @@
     for(;;){
       row+=dy;col+=dx;if(row<0||row>=ids.length||col<0||col>=days.length)return;
       const next=document.getElementById(cellId(ids[row],days[col]));
-      if(next&&next.tagName==='BUTTON'){next.focus();next.scrollIntoView({block:'nearest',inline:'nearest'});selectDay(days[col]);return;}
+      if(next&&next.tagName==='BUTTON'&&!next.closest('.pr-row')?.hidden){next.focus();next.scrollIntoView({block:'nearest',inline:'nearest'});selectDay(days[col]);return;}
     }
   }
   grid.addEventListener('keydown',event=>{
@@ -246,6 +277,7 @@
   });
 
   function navigate(month){if(current&&globalThis.RetroSave?.confirmLeave()===false){$('month-input').value=current.month;return;}const work=loadMonth(month);if(B&&!$('salary-body').hidden)B.section($('salary-body'),work);}
+  $('sd-search').addEventListener('input',event=>{filter.q=event.target.value;if(current)applyFilter();});
   $('month-prev').addEventListener('click',()=>navigate(L.shiftMonth($('month-input').value,-1)));
   $('month-next').addEventListener('click',()=>navigate(L.shiftMonth($('month-input').value,1)));
   $('month-input').addEventListener('change',()=>navigate($('month-input').value));
