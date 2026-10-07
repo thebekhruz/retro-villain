@@ -15,7 +15,7 @@ test('revenue includes advances once, separately from closed sales and the detai
   assert.equal(view.prepaymentTotal,1000000);
   assert.equal(view.total,3000000);
   assert.deepEqual(view.rows.slice(-2),[
-    {name:'Предоплаты наличными',amount:200000,kind:'prepayment'},
+    {name:'Предоплаты наличными / Инкасса QR',amount:200000,kind:'prepayment'},
     {name:'Предоплаты картой / безналом',amount:800000,kind:'prepayment'},
   ]);
   assert.deepEqual(source.payments[0],{name:'Демо',amount:'1500000'});
@@ -62,4 +62,35 @@ test('amounts retain currency precision when combining sales and advances', () =
   const view=logic.revenueView(day({payments:[{name:'Демо',amount:'0.1'}],new_prepayment:'0.2',cash_prepayment:'0.1'}));
   assert.equal(view.total,0.3);
   assert.equal(view.rows.at(-1).amount,0.1);
+});
+
+const identified = extra => day({snapshot_id:'snapshot',date:'2026-10-06',...extra});
+const details = extra => ({status:'ready',snapshot_id:'snapshot',date:'2026-10-06',total:'800000',
+  payments:[{name:'Click/Payme Безналичный перевод',amount:'600000',entries:[{id:'one',amount:'600000'}]},
+    {name:'Xumo',amount:'200000',entries:[{id:'two',amount:'200000'}]}],...extra});
+
+test('verified advances expand under payment methods without increasing the total twice',()=>{
+  const source=identified(), view=logic.revenueView(source,details());
+  assert.equal(view.total,3000000);
+  assert.equal(view.rows.reduce((sum,row)=>sum+row.amount,0),3000000);
+  const transfer=view.rows.find(row=>row.name==='Click/Payme Безналичный перевод');
+  assert.equal(transfer.amount,1100000);
+  assert.equal(transfer.sales_amount,500000);
+  assert.equal(transfer.prepayment_amount,600000);
+  assert.equal(transfer.prepayments[0].id,'one');
+  assert.equal(view.rows.find(row=>row.name==='Xumo').sales_amount,0);
+  assert.equal(source.payments[1].amount,'500000');
+  assert.ok(!view.rows.some(row=>row.name==='Предоплаты картой / безналом'));
+  assert.equal(view.rows[0].amount,1500000); // Cash/QR advances are not assigned to Demo.
+});
+
+test('pending, failed, stale or mismatched details retain the undivided estimates',()=>{
+  for(const changes of [{status:'pending'},{status:'unavailable'},{snapshot_id:'older'},
+    {date:'2026-10-05'},{total:'900000'},{payments:[]}]){
+    const view=logic.revenueView(identified(),details(changes));
+    assert.equal(view.total,3000000);
+    assert.equal(view.rows.at(-1).name,'Предоплаты картой / безналом');
+    assert.equal(view.rows.at(-1).amount,800000);
+    assert.ok(view.rows.every(row=>!row.prepayments));
+  }
 });

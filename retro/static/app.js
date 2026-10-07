@@ -10,6 +10,7 @@ let config, snapshot = null, financeData = null, receiptData = null, generation 
 let shokhData = null, usdData = null, usdRate = null, handoverRecord = null, handoverBusy = false;
 // Готовые числа «К передаче» и «Касса за день» с сервера (/day, /summary): экран их не пересчитывает.
 let summary = null;
+let prepaymentMethods = null, prepaymentMethodsKey = null;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 
 /* ── Отклик и ожидание (busy.js, T-393; docs/feedback-principles.md) ─────
@@ -251,6 +252,8 @@ function clearSnapshot() {
   $('download').disabled = true;
   for (const id of ['revenue','receipts','average','payment-total','payments-sales-total','payments-prepay-total']) $(id).textContent = '—';
   $('payments-sub').textContent = '';
+  $('prepayment-methods-note').hidden = true;
+  $('prepayment-methods-retry').hidden = true;
   $('payments').replaceChildren();
   $('payments-bar').replaceChildren();
   $('payment-empty').hidden = false;
@@ -580,25 +583,11 @@ function showStatus() {
   const tail = snapshot.refreshing ? ' · обновляем iiko…' : snapshot.stale ? ' · требуют обновления' : '';
   status.textContent = `${source} ${time}${tail}`;
 }
-function show(data) {
-  snapshot = data;
-  if ('handover' in data) handoverRecord = data.handover;
-  if (data.summary) summary = data.summary;
-  const shift = CashierLogic.shiftLabel(data.shift, data.date);
-  $('shift-pill').hidden = !shift;
-  if (shift) {
-    $('shift-text').textContent = shift.text;
-    $('shift-pill').classList.toggle('is-closed', !shift.open);
-  }
-  $('payments').replaceChildren();
-  $('payments-bar').replaceChildren();
-  $('revenue').textContent = money.format(Number(data.revenue));
-  $('receipts').textContent = count.format(data.receipt_count);
-  // Средний чек — целыми сумами: тийины не в обороте, а «146 428,57»
-  // читается дольше и обещает точность, которой нет.
-  $('average').textContent = data.average_receipt === null ? '—' : count.format(Math.round(Number(data.average_receipt)));
-  $('payments-sub').textContent = `${count.format(data.receipt_count)} чеков · средний ${data.average_receipt === null ? '—' : count.format(Math.round(Number(data.average_receipt)))}`;
-  const revenue = CashierLogic.revenueView(data);
+function renderPayments() {
+  if (!snapshot) return;
+  const expanded = new Set(Array.from($('payments').querySelectorAll('details[open]'), node => node.dataset.paymentName));
+  $('payments').replaceChildren(); $('payments-bar').replaceChildren();
+  const revenue = CashierLogic.revenueView(snapshot, snapshot.stale ? null : prepaymentMethods);
   const amountText = amount => amount === null ? '—' : money.format(amount);
   $('payments-sales-total').textContent = amountText(revenue.salesTotal);
   $('payments-prepay-total').textContent = amountText(revenue.prepaymentTotal);
@@ -608,7 +597,7 @@ function show(data) {
   const positiveTotal = revenue.rows.every(p => p.amount !== null)
     ? revenue.rows.reduce((sum,p) => sum + Math.max(0,p.amount),0) : 0;
   revenue.rows.forEach((payment,i) => {
-    const color = payment.kind === 'prepayment' ? (payment.name === 'Предоплаты наличными' ? '#d2b77b' : '#b2c3aa') : colors[i % colors.length];
+    const color = payment.kind === 'prepayment' ? (payment.name === 'Предоплаты наличными / Инкасса QR' ? '#d2b77b' : '#b2c3aa') : colors[i % colors.length];
     const row = document.createElement('div'); row.className = 'payment-row'; row.style.setProperty('--color',color);
     const dot = document.createElement('span'); dot.className = 'payment-dot';
     const name = document.createElement('span'); name.className = 'payment-name';
@@ -630,11 +619,91 @@ function show(data) {
       name.append(source, tag);
       row.classList.add('is-cash');
     }
-    row.append(dot,name,share,value); $('payments').append(row);
+    const hasPrepayments = payment.prepayment_amount > 0;
+    let displayRow = row;
+    if (hasPrepayments) {
+      displayRow = document.createElement('summary'); displayRow.className = row.className;
+      displayRow.style.setProperty('--color',color);
+      const arrow = document.createElement('span'); arrow.className = 'cashier-payment-chevron';
+      arrow.textContent = '›'; arrow.setAttribute('aria-hidden','true'); label.prepend(arrow);
+      const tag = document.createElement('span'); tag.className = 'cashier-payment-prepay-tag';
+      tag.textContent = 'Есть предоплаты'; name.append(tag);
+    }
+    displayRow.append(dot,name,share,value);
+    if (hasPrepayments) {
+      const details = document.createElement('details'); details.className = 'cashier-payment-details';
+      details.dataset.paymentName = payment.name;
+      details.open = expanded.has(payment.name);
+      const entries = document.createElement('div'); entries.className = 'cashier-payment-entries';
+      const addEntry = (label,amount,extra='') => {
+        const line = document.createElement('div'); line.className = 'cashier-payment-entry ' + extra;
+        const text = document.createElement('span'); text.textContent = label;
+        const value = document.createElement('strong'); value.textContent = amountText(amount) + ' сум';
+        line.append(text,value); entries.append(line);
+      };
+      addEntry('Оплаты закрытых счетов', payment.sales_amount);
+      addEntry('Внесённые предоплаты', payment.prepayment_amount, 'is-total');
+      for (const entry of payment.prepayments || []) {
+        const stamp = new Date(entry.received_at);
+        const time = stamp.toLocaleTimeString('ru-RU',{timeZone:'Asia/Tashkent',hour:'2-digit',minute:'2-digit'});
+        const date = stamp.toLocaleDateString('ru-RU',{timeZone:'Asia/Tashkent',day:'2-digit',month:'2-digit'});
+        addEntry(`Предоплата · ${date}, ${time}`, Number(entry.amount));
+      }
+      details.append(displayRow,entries); $('payments').append(details);
+    } else $('payments').append(displayRow);
     if (positiveTotal > 0 && Number(payment.amount) > 0) {
       const segment = document.createElement('span');segment.style.setProperty('--color',color);segment.style.width = (Number(payment.amount)/positiveTotal*100)+'%';$('payments-bar').append(segment);
     }
   });
+  const note = $('prepayment-methods-note');
+  const state = prepaymentMethods?.status;
+  note.hidden = Boolean(snapshot.demo);
+  note.textContent = snapshot.stale || snapshot.refreshing ? 'Дождитесь обновления дня: разбивка предоплат пока недоступна.'
+    : state === 'ready' ? [prepaymentMethods.note,prepaymentMethods.scope_note].filter(Boolean).join(' ')
+    : prepaymentMethods?.note || 'Получаем разбивку предоплат по способам оплаты…';
+  $('prepayment-methods-retry').hidden = snapshot.demo || snapshot.stale || snapshot.refreshing
+    || !['pending','unavailable'].includes(state);
+}
+async function loadPrepaymentMethods(data, current, signal, refresh=false) {
+  if (data.demo || data.stale || data.refreshing) return;
+  const key = `${current}:${data.snapshot_id}`;
+  if (prepaymentMethodsKey === key && !refresh) return;
+  prepaymentMethodsKey = key; prepaymentMethods = null; renderPayments();
+  try {
+    const response = await request(`/api/cashier/prepayment-breakdown?date=${encodeURIComponent(data.date)}&snapshot_id=${data.snapshot_id}&refresh=${refresh}`, signal, {retroBusy:false});
+    const result = await response.json();
+    if (generation !== current || snapshot?.snapshot_id !== data.snapshot_id || prepaymentMethodsKey !== key) return;
+    prepaymentMethods = result;
+  } catch (error) {
+    if (error.name === 'AbortError' || generation !== current || prepaymentMethodsKey !== key) return;
+    prepaymentMethods = {status:'unavailable',note:error.message};
+  }
+  renderPayments();
+}
+$('prepayment-methods-retry').addEventListener('click', () => {
+  if (!snapshot || !controller) return;
+  return Busy.button($('prepayment-methods-retry'), () => loadPrepaymentMethods(snapshot,generation,controller.signal,true));
+});
+
+function show(data) {
+  snapshot = data;
+  if ('handover' in data) handoverRecord = data.handover;
+  if (data.summary) summary = data.summary;
+  const shift = CashierLogic.shiftLabel(data.shift, data.date);
+  $('shift-pill').hidden = !shift;
+  if (shift) {
+    $('shift-text').textContent = shift.text;
+    $('shift-pill').classList.toggle('is-closed', !shift.open);
+  }
+  $('payments').replaceChildren();
+  $('payments-bar').replaceChildren();
+  $('revenue').textContent = money.format(Number(data.revenue));
+  $('receipts').textContent = count.format(data.receipt_count);
+  // Средний чек — целыми сумами: тийины не в обороте, а «146 428,57»
+  // читается дольше и обещает точность, которой нет.
+  $('average').textContent = data.average_receipt === null ? '—' : count.format(Math.round(Number(data.average_receipt)));
+  $('payments-sub').textContent = `${count.format(data.receipt_count)} чеков · средний ${data.average_receipt === null ? '—' : count.format(Math.round(Number(data.average_receipt)))}`;
+  renderPayments();
   $('download').disabled = Boolean(data.stale || data.refreshing);
   $('source-title').textContent = data.demo ? 'Демонстрационные данные' :
     data.source === 'database' ? 'Сохранённый отчёт · iikoWeb' : 'Источник: iikoWeb';
@@ -659,6 +728,7 @@ async function loadDay(options = {}) {
     return false;
   }
   const current = ++generation;
+  prepaymentMethods = null; prepaymentMethodsKey = null;
   controller?.abort(); controller = new AbortController();
   const signal = controller.signal;
   $('refresh').disabled = false;
@@ -691,6 +761,7 @@ async function loadDay(options = {}) {
     let data = await first;
     if (current !== generation) return false;
     show(data); arrive('day', current);
+    void loadPrepaymentMethods(data,current,signal,options.refresh === true);
     // Фоновое обновление iiko: цифры уже на экране, опрос тихий — без полосы
     // сверху; идёт ли он, видно по «↻» и строке статуса.
     for (let attempt = 0; data.refreshing && attempt < 45; attempt++) {
@@ -698,6 +769,7 @@ async function loadDay(options = {}) {
       data = await (await request(`${endpoint}&refresh=false`, signal, {retroBusy: false})).json();
       if (current !== generation) return false;
       show(data);
+      void loadPrepaymentMethods(data,current,signal);
     }
     message(data.refresh_error || (data.refreshing ? 'Обновление продолжается. Повторите проверку позже.' :
       data.stale ? 'Показаны последние сохранённые данные. Требуется обновление iiko.' : ''), Boolean(data.refresh_error || data.stale));

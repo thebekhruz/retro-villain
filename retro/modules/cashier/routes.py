@@ -263,6 +263,35 @@ def handover_state(request: Request, date: date):
                 handover=handover_check(request.app.state, day))
 
 
+@router.get('/prepayment-breakdown')
+async def prepayment_breakdown(request: Request, date: date,
+                               snapshot_id: str = Query(min_length=32, max_length=32,
+                                                        pattern='^[a-f0-9]+$'),
+                               refresh: bool = False):
+    day = selected_day(date)
+    state = request.app.state
+    try:
+        snapshot = state.cache.get(snapshot_id, day)
+    except DataError:
+        raise HTTPException(409, 'Отчёт на экране устарел. Обновите его.') from None
+    if snapshot.demo or snapshot.stale or snapshot.refreshing:
+        raise HTTPException(409, 'Дождитесь свежего отчёта iiko, затем откройте детализацию.')
+    try:
+        result = await load_iiko(state, 'load_prepayment_methods', day, request=request,
+                                 refresh=refresh, timeout=35, ttl=30)
+    except (DataError, TimeoutError) as error:
+        log_safe_failure('cashier-route', error, operation='prepayment_breakdown')
+        raise HTTPException(503, 'Не удалось получить разбивку предоплат из iiko. Обновите отчёт позже.') from None
+    if result['status'] == 'ready':
+        if not snapshot.prepayments_known or snapshot.prepayment_issue:
+            raise HTTPException(409, 'Сумма предоплат требует проверки. Разбивка пока недоступна.')
+        expected = snapshot.new_prepayment - snapshot.cash_prepayment
+        if Decimal(result['total']) != expected:
+            raise HTTPException(409, 'Разбивка предоплат не совпала с итогом дня. '
+                                     'Обновите отчёт; при повторном расхождении нужна сверка iiko.')
+    return dict(result, date=day.isoformat(), snapshot_id=snapshot.id)
+
+
 @router.post('/handover', status_code=201)
 def hand_over_to_accountant(request: Request, body: HandoverInput):
     """«Передать бухгалтеру»: сумма считается здесь, по формуле бухгалтера.

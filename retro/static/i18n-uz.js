@@ -7,6 +7,14 @@
  *  систем и данных (Retro, iiko, Hikvision, «Демо», «БЕХРУЗ», Яндекс, имена
  *  людей) остаются как есть — они приходят из источников, а не из интерфейса. */
 globalThis.RetroDictionaryUz = {
+  'Есть предоплаты': 'Oldindan to‘lovlar bor',
+  'Внесённые предоплаты': 'Kiritilgan oldindan to‘lovlar',
+  'Предоплаты наличными / Инкасса QR': 'Naqd / Inkassa QR oldindan to‘lovlari',
+  'Обновить разбивку предоплат': 'Oldindan to‘lovlar tafsilotini yangilash',
+  'Получаем разбивку предоплат по способам оплаты…': 'Oldindan to‘lovlar usullar bo‘yicha yuklanmoqda…',
+  'Дождитесь обновления дня: разбивка предоплат пока недоступна.': 'Kun ma’lumotlari yangilanishini kuting: oldindan to‘lovlar tafsiloti hozircha mavjud emas.',
+  'Смена ещё открыта. iiko пока не отдаёт предоплаты по способам оплаты. Посмотрите после закрытия смены или завтра — выберите этот день и обновите отчёт.': 'Smena hali ochiq. iiko oldindan to‘lovlarni to‘lov usullari bo‘yicha hali bermayapti. Smena yopilgandan keyin yoki ertaga shu kunni tanlab, hisobotni yangilang.',
+  'Наличные предоплаты и «Инкасса QR» показаны вместе: iiko не отдаёт их отдельную разбивку в этом отчёте. Предоплаты относятся ко всей кассе Retro, включая банкетное отделение.': 'Naqd oldindan to‘lovlar va «Inkassa QR» birga ko‘rsatilgan: iiko bu hisobotda ularni alohida ajratmaydi. Oldindan to‘lovlar Retro kassasining barcha bo‘limlariga, jumladan banketga tegishli.',
   'СМЕННЫЕ · РУЧНОЙ ВВОД': "SMENALI XODIMLAR · QO‘LDA KIRITISH",
   'Выдано по сотрудникам': "Xodimlarga berilgan",
   'Сотрудников в ведомости': "Qaydnomadagi xodimlar",
