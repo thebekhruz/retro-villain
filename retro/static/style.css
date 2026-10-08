@@ -740,15 +740,26 @@ button.rm-card:hover{background:var(--panel-2)}
 
 /* ── AI-чат (боковая колонка 7b, вкладка 6a) ─────────────────────────── */
 .rm-chat{display:flex;flex-direction:column;gap:8px;padding:14px 16px;overflow:auto}
-.rm-msg{max-width:92%;padding:10px 12px;font-size:13px;line-height:1.45;white-space:pre-wrap}
+/* Пузырь не сжимается. У ответа с таблицей overflow-x:auto, а такой элемент во
+   flex-колонке фиксированной высоты (чат учредителя на телефоне) сжимался до
+   шапки таблицы — остальной ответ не было видно. */
+.rm-chat>.rm-msg{flex-shrink:0}
+.rm-msg{max-width:92%;padding:10px 12px;font-size:13px;line-height:1.45;white-space:pre-wrap;overflow-wrap:break-word}
+/* Заголовки в ответе AI без отступа браузера: иначе над первой строкой пустота. */
+.rm-msg :is(h3,h4,h5,h6){margin:4px 0 6px;font-size:1.05em;line-height:1.35}
+.rm-msg .ai-chat-content>:first-child{margin-top:0}
+.rm-msg .ai-chat-content>:last-child{margin-bottom:0}
 .rm-msg.is-ai{align-self:flex-start;border-radius:14px 14px 14px 4px;background:#fff;border:1px solid var(--line-mid)}
 .rm-msg.is-user{align-self:flex-end;border-radius:14px 14px 4px 14px;background:var(--green);color:#fff;white-space:normal}
 .rm-prompt{align-self:flex-start;text-align:left;border:1px solid #e2c98e;border-radius:12px;
   background:var(--accent-soft);color:#7a5a22;padding:7px 10px;font-size:12px;font-weight:600}
 .rm-chat-form{display:flex;gap:8px;padding:12px 16px;border-top:1px solid var(--border)}
 .rm-chat-form input{flex:1;min-width:0;height:42px;border:1px solid #dbe3d8;border-radius:21px;
-  padding:0 14px;background:#fff;color:var(--ink);font-size:13px}
+  padding:0 14px;background:#fff;color:var(--ink);font-size:13px;text-overflow:ellipsis}
 .rm-chat-send{width:42px;height:42px;flex:none;border:0;border-radius:50%;background:var(--green);color:var(--gold);font-size:16px}
+/* Поле вопроса на сенсорном экране — не мельче 16 точек: iOS при фокусе в поле
+   с текстом мельче увеличивает всю страницу, и экран уезжает вбок. */
+@media(pointer:coarse),(max-width:900px){.rm-chat-form input{font-size:16px}}
 
 /* ── Отзывчивость общего слоя ───────────────────────────────────────────── */
 @media(max-width:1180px){

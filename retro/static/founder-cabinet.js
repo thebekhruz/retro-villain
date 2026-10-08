@@ -601,8 +601,10 @@
   function openPhoneChat(question) {
     mountChat();
     document.body.classList.add('fo-chat-open');
+    // Клавиатуру сразу не поднимаем: она закрывала переписку и сдвигала экран.
+    // Поле — по нажатию; открываем на последнем сообщении.
     if (question) chat.ask(question);
-    else $('fo-chat-input').focus({preventScroll: true});
+    else chat.load().then(() => chat.toEnd());
   }
   function closePhoneChat() {
     document.body.classList.remove('fo-chat-open');

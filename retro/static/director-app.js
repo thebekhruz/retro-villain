@@ -119,8 +119,9 @@
     document.body.dataset.dirTab = tab;
     if (tab === 'menu') loadMenu();
     if (tab === 'team') { loadTeam(); loadReport(7); }
-    if (tab === 'ai') chat.load();
     window.scrollTo({top: 0});
+    // Переписка есть — открываем на последнем сообщении, как в мессенджере.
+    if (tab === 'ai') chat.load().then(() => { if (view.tab === 'ai') chat.toEnd(); });
   }
 
   function ask(question) {
@@ -635,6 +636,12 @@
   function bind() {
     document.querySelectorAll('.dir-tabs .rm-tab').forEach(button =>
       button.addEventListener('click', () => openTab(button.dataset.tab)));
+    // Пока на телефоне набирают вопрос, нижние вкладки прячутся: иначе они
+    // висели между полем и клавиатурой, а поле съезжало к середине экрана.
+    if (globalThis.matchMedia && matchMedia('(pointer: coarse)').matches) {
+      $('chat-input').addEventListener('focus', () => document.body.classList.add('dir-typing'));
+      $('chat-input').addEventListener('blur', () => document.body.classList.remove('dir-typing'));
+    }
     $('ask-tip').addEventListener('click', () => ask('Что лучше всего сделать сегодня, чтобы увеличить продажи? Учитывай данные по всем заведениям.'));
     $('ask-err').addEventListener('click', () => ask('Разбери замечания к сегодняшнему отчёту бухгалтера'
       + (view.accountingIssues && view.accountingIssues.length ? ' (' + view.accountingIssues.map(item => item.text).join('; ') + ')' : '')
@@ -702,6 +709,12 @@
       status: $('chat-status'), prompts: $('chat-prompts'), clear: $('chat-clear'), endpoint: '/api/director/chat',
     });
     bind();
+    // Поле вопроса прилегает к нижним вкладкам: их высота зависит от выреза
+    // экрана (полоска «домой» на iPhone), поэтому меряем её, а не угадываем.
+    const tabs = document.querySelector('.dir-tabs');
+    if (tabs && 'ResizeObserver' in globalThis) {
+      new ResizeObserver(() => document.documentElement.style.setProperty('--dir-tabs-h', tabs.offsetHeight + 'px')).observe(tabs);
+    }
     skeletonList($('waiters'), 4, true);
     loadHome();
     autoRefresh();
