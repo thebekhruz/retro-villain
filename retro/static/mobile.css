@@ -420,3 +420,24 @@ html[lang=uz] .booking-sources:empty::after{content:"Manbalar birinchi bronlar b
   :is(.fd-page,.pr-page,.emp-page) main>.workspace{padding:22px 14px 26px}
 }
 /* ── /2b Ведомость (parity) ── */
+
+/* ── Поля под палец: не мельче 16 точек ──────────────────────────────────
+   iPhone при фокусе в поле с текстом мельче 16 точек увеличивает всю
+   страницу, и экран уезжает вбок (T-422 — AI-чат, T-423 — касса и
+   бухгалтер). Модули задают полям 12–15 точек более сильными селекторами,
+   поэтому здесь !important — и только на сенсорном экране: с мышью поля
+   остаются как были. */
+@media(pointer:coarse) and (max-width:1000px){
+  input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=color]):not([type=file]),
+  select,textarea{font-size:16px!important}
+  /* Длинная подсказка на 320 точках обрывается многоточием, а не на полуслове. */
+  input{text-overflow:ellipsis}
+  /* Ячейка оклада в сетке месяца: «2 000 000» шрифтом 16 точек не входило на точку. */
+  input.pr-m{padding:0 4px}
+}
+/* Выбор сотрудника в форме оклада — во всю строку и на планшете, как на
+   телефоне: в узкой колонке «Кому выдаём оклад» и имена обрезались. */
+@media(pointer:coarse) and (min-width:651px) and (max-width:1000px){
+  :is(.fd,.pr-page) .fd-mo-form{grid-template-columns:minmax(0,1fr) auto}
+  .fd-mo-form>select{grid-column:1 / -1}
+}
