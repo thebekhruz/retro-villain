@@ -134,7 +134,8 @@
 /* Как в макете: подсказки сразу под приветствием, поле ввода — внизу. */
 .fo-chat-messages{flex:0 1 auto;min-height:0}
 .fo-chat-inner>.rm-chat-form{margin-top:auto}
-.fo-chat .rm-chat-form input{font-size:12.5px}
+/* Мелкий шрифт поля — только с мышью: на планшете iOS увеличил бы страницу при фокусе. */
+@media(pointer:fine){.fo-chat .rm-chat-form input{font-size:12.5px}}
 .fo-prompts{display:flex;flex-direction:column;gap:6px;padding:0 16px 8px}
 .fo-chat-status{padding:0 16px}
 #fo-chat-status.is-error{color:var(--late)}
@@ -256,6 +257,8 @@
   .fo-chat-close{display:grid;place-items:center;width:40px;height:40px;margin-left:auto;flex:none;border:0;border-radius:50%;
     background:#fff;color:#53675c;font-size:20px}
   body.fo-chat-open .rm-chat-form{padding-bottom:calc(12px + env(safe-area-inset-bottom))}
+  /* iOS увеличивает страницу при фокусе в поле мельче 16 точек. */
+  body.fo-chat-open .rm-chat-form input{font-size:16px}
   body.fo-chat-open .fo-prompts .rm-prompt{min-height:40px}
 }
 /* Под палец: пресеты суммы дивидендов на телефоне. */

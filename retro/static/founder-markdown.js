@@ -65,11 +65,14 @@
     return blocks;
   }
 
+  /* Сумма не рвётся по строкам («12 780 / 000»): пробел между группами цифр — неразрывный. */
+  function keepNumbers(value){return String(value).replace(/(\d) (?=\d{3}(?!\d))/g,'$1\u00a0')}
+
   function appendInline(document,target,tokens){
     tokens.forEach(token=>{
-      if(token.type==='text'){target.append(document.createTextNode(token.value));return}
+      if(token.type==='text'){target.append(document.createTextNode(keepNumbers(token.value)));return}
       const node=document.createElement(token.type==='link'?'a':token.type);
-      node.textContent=token.value;
+      node.textContent=token.type==='link'?token.value:keepNumbers(token.value);
       if(token.type==='link'){node.href=token.href;node.target='_blank';node.rel='noopener noreferrer'}
       target.append(node);
     });
@@ -97,5 +100,5 @@
     return {node:rootNode,hasTable:blocks.some(block=>block.type==='table')};
   }
 
-  root.FounderMarkdown={parse,render};
+  root.FounderMarkdown={parse,render,keepNumbers};
 })(typeof window==='undefined'?globalThis:window);

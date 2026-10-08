@@ -62,10 +62,19 @@
         anchor = node;
       } else {
         messages.append(node);
-        node.scrollIntoView({block: 'end', behavior: 'smooth'});
+        // Длинный ответ показываем с начала: прокрутка к его концу уводила
+        // начало ответа за верх экрана, и читать приходилось снизу вверх.
+        const tall = role === 'assistant' && node.offsetHeight > (root.innerHeight || 0) * 0.6;
+        node.scrollIntoView({block: tall ? 'start' : 'end', behavior: 'smooth'});
       }
       syncClear();
       return node;
+    }
+
+    /** Открыли чат с перепиской — видно последнее сообщение, а не приветствие. */
+    function toEnd() {
+      const last = messages.lastElementChild;
+      if (last && last !== greeting) last.scrollIntoView({block: 'end'});
     }
 
     /** Ошибка — в ленте, рядом с вопросом, с повтором. Первая строка всегда
@@ -180,17 +189,22 @@
         pendingAsk = false;
         lockForm(false);
         syncClear();
-        if (!opts.fromButton) input.focus({preventScroll: true});
+        // Поле снова в фокусе, только если вопрос набирали в нём: иначе на
+        // телефоне после ответа выезжала клавиатура и закрывала сам ответ.
+        if (opts.typed) input.focus({preventScroll: true});
       }
     }
 
+    // Кнопка «Отправить» не забирает фокус у поля: на телефоне клавиатура не
+    // прячется на каждом вопросе, и раскладка не прыгает под пальцем.
+    if (send) send.addEventListener('mousedown', event => event.preventDefault());
     form.addEventListener('submit', event => {
       event.preventDefault();
       if (pendingAsk) return;
       const text = input.value;
       if (!text.trim()) { input.focus(); return; }
       input.value = '';
-      ask(text);
+      ask(text, {typed: true});
     });
     if (clear) {
       // Два нажатия: первое спрашивает «Точно?», второе стирает переписку на
@@ -220,10 +234,10 @@
     if (prompts) {
       prompts.addEventListener('click', event => {
         const button = event.target.closest('button');
-        if (button && !pendingAsk) ask(button.textContent, {trigger: button, fromButton: true});
+        if (button && !pendingAsk) ask(button.textContent, {trigger: button});
       });
     }
-    return {ask, load};
+    return {ask, load, toEnd};
   }
 
   root.RetroChat = {mount, typing};
