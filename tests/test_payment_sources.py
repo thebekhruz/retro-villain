@@ -78,7 +78,18 @@ def test_export_shows_unified_qr_and_sums_all_nine_payment_sources():
     assert detail['B17'].value == '=SUM(B8:B16)'
 
 
-@pytest.mark.parametrize('name', ['UzCard, Демо','Неизвестный платёж','(без оплаты)'])
-def test_unknown_nonzero_source_is_not_silently_dropped_or_guessed(name):
+def test_money_without_a_payment_type_is_rejected():
     with pytest.raises(DataError):
-        build_snapshot(date(2026,9,15),[row('2026-09-15',1,10)],[row(name,10)])
+        build_snapshot(date(2026,9,15),[row('2026-09-15',1,10)],[row('(без оплаты)',10)])
+
+
+@pytest.mark.parametrize('name', ['UzCard, Демо','Неизвестный платёж'])
+def test_new_iiko_payment_type_appears_by_itself_and_is_never_counted_as_cash(name):
+    # ТЗ 08.10: новый тип iiko появляется сам — не скрыт, не перераспределён, не наличные.
+    snapshot = build_snapshot(date(2026,9,15),[row('2026-09-15',2,110)],[row('Демо',100),row(name,10)])
+    assert [p.name for p in snapshot.payments] == NAMES + [name]
+    assert snapshot.payments[-1].amount == 10
+    assert cash_to_finance(snapshot, Decimal(0)) == Decimal(100)
+    workbook = openpyxl.load_workbook(BytesIO(export_report(snapshot)))
+    assert workbook['отчет']['D12'].value == '=SUM(D3:D11)+10'
+    assert name in [cell.value for cell in workbook['Касса']['A']]

@@ -69,6 +69,13 @@ def cashier_handler(failures):
         elif groups == ['PayTypes']:
             rows = [row(**{'0': 'Демо', '1': 20000000}),
                     row(**{'0': 'UzCard', '1': 11824000})]
+        elif groups == ['PayTypes.Group', 'PayTypes']:
+            rows = [{**row(**{'0': 'Оплата наличными', '2': 20000000}),
+                     'children': [row(**{'1': 'Демо', '2': 20000000})]},
+                    {**row(**{'0': 'Банковские карты', '2': 11824000}),
+                     'children': [row(**{'1': 'UzCard', '2': 11824000})]}]
+        elif groups == ['OrderNum', 'PayTypes.Group', 'PayTypes']:
+            rows = []
         else:
             raise AssertionError(groups)
         return httpx.Response(200, json={'result': {'rows': rows}})
@@ -97,8 +104,10 @@ def test_lost_connect_does_not_reach_the_screen():
 
     assert result.revenue == 31824000
     assert result.receipt_count == 75
-    # Потерянный запрос повторён, а не отменил четырёх соседей по gather_reads.
-    assert calls.count('/api/olap/init') == 5
+    # Потерянный запрос повторён, а не отменил соседей по gather_reads: восемь
+    # отчётов (четыре дня и четыре для касс iiko и зачёта предоплат) + один повтор.
+    assert calls.count('/api/olap/init') == 9
+    assert result.full_total == 31824000 and result.payment_groups
 
 
 def test_dead_pooled_connection_is_retried():
@@ -107,7 +116,7 @@ def test_dead_pooled_connection_is_retried():
     result = asyncio.run(client_for(handler).load(DAY))
 
     assert result.revenue == 31824000
-    assert calls.count('/api/olap/init') == 5
+    assert calls.count('/api/olap/init') == 9
 
 
 def test_exhausted_connect_budget_surfaces_to_the_user():

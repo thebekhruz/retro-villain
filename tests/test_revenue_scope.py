@@ -47,6 +47,13 @@ def test_live_report_uses_only_retro_payments_and_keeps_three_way_breakdown():
         elif groups == ['PayTypes']:
             rows = [row(**{'0': 'Демо', '1': 20000000}),
                     row(**{'0': 'UzCard', '1': 11824000})]
+        elif groups == ['PayTypes.Group', 'PayTypes']:
+            rows = [{**row(**{'0': 'Оплата наличными', '2': 20000000}),
+                     'children': [row(**{'1': 'Демо', '2': 20000000})]},
+                    {**row(**{'0': 'Банковские карты', '2': 11824000}),
+                     'children': [row(**{'1': 'UzCard', '2': 11824000})]}]
+        elif groups == ['OrderNum', 'PayTypes.Group', 'PayTypes']:
+            rows = []
         else:
             raise AssertionError(groups)
         return httpx.Response(200, json={'result': {'rows': rows}})
@@ -59,17 +66,28 @@ def test_live_report_uses_only_retro_payments_and_keeps_three_way_breakdown():
     assert result.json()['revenue_breakdown'] == {
         'retro': '32124000', 'school': '3970000',
         'bekhruz_banquet': '22190000', 'total': '58284000'}
-    assert len(requests) == 8
+    # Восемь отчётов (init + fetch): четыре прежних и четыре для касс iiko,
+    # зачёта предоплат, полных счетов и справочника типов оплат.
+    assert len(requests) == 16
     breakdown = requests[0]
     assert breakdown['storeIds'] == [123]
     assert not any(f.get('field') == 'CashRegisterName' for f in breakdown['filters'])
-    for body in requests[2:6]:
+    scoped = [body for body in requests if body['groupFields'] != ['CashRegisterName', 'RestaurantSection']]
+    operations = []
+    for body in scoped:
         filters = {f['field']: f for f in body['filters']}
         assert filters['CashRegisterName']['valueList'] == ['Kassa-FiscalBox1']
-        assert filters['RestaurantSection']['valueList'] == ['Бехруз (Свадьба)']
-        assert filters['RestaurantSection']['inclusiveList'] is False
-        assert filters['OperationType']['valueList'] == ['PAYMENT']
-
+        operations.append(tuple(filters['OperationType']['valueList']))
+        # Смена — вся касса с банкетом; остальные отчёты без банкета Бехруза.
+        if body['groupFields'] != ['PayTypes'] or 'RestaurantSection' in filters:
+            assert filters['RestaurantSection']['valueList'] == ['Бехруз (Свадьба)']
+            assert filters['RestaurantSection']['inclusiveList'] is False
+    # Оплаты дня — только PAYMENT; зачёт предоплат и полные счета — отдельными отчётами.
+    assert set(operations) == {('PAYMENT',), ('PREPAY',), ('PAYMENT', 'PREPAY')}
+    payments = [body for body in scoped if body['groupFields'] == ['PayTypes']]
+    assert {f['valueList'][0] for body in payments for f in body['filters'] if f['field'] == 'OperationType'} == {'PAYMENT'}
+    assert result.full_total == Decimal(31824000)
+    assert result.redeemed_total == 0
 
 def test_unknown_cash_register_is_not_silently_counted_as_retro():
     from retro.modules.cashier.service import build_revenue_breakdown

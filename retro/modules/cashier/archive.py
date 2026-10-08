@@ -7,9 +7,11 @@ from decimal import Decimal
 
 from retro.db import as_database
 from retro.accounting_period import ACCOUNTING_START
-from .service import Snapshot, Payment, Prepayment, RevenueBreakdown, ShiftStatus, DataError, TZ, RETRO_REGISTER
+from .service import (Snapshot, Payment, Prepayment, RevenueBreakdown, ShiftStatus, DataError, TZ, RETRO_REGISTER,
+                      PayTypeAmount, PaymentGroup, RedeemedOrder)
 
-CALCULATION_VERSION = 'cashier-2026-09-28-v1'
+# 08.10: выручка по кассам iiko и зачтённые предоплаты — старые снимки их не знают.
+CALCULATION_VERSION = 'cashier-2026-10-08-v1'
 
 
 def archive_boundary(day):
@@ -43,7 +45,15 @@ def decode_snapshot(payload):
         register_payment_sales=amount('register_payment_sales'),
         register_received_total=amount('register_received_total'), source='database',
         shift=ShiftStatus(bool(shift['open']), shift.get('opened_at'), shift.get('closed_at'))
-        if isinstance(shift, dict) else None)
+        if isinstance(shift, dict) else None,
+        payment_groups=(tuple(PaymentGroup(group['name'], tuple(
+            PayTypeAmount(item['name'], Decimal(item['paid']), Decimal(item['redeemed'])) for item in group['types']))
+            for group in value['payment_groups']) if value.get('payment_groups') is not None else None),
+        redeemed_orders=(tuple(RedeemedOrder(order['order_number'], Decimal(order['amount']), tuple(order.get('methods') or ()))
+                               for order in value['redeemed_orders'])
+                         if value.get('payment_groups') is not None else None),
+        full_total=amount('full_total') if value.get('payment_groups') is not None else None,
+        full_receipt_count=value.get('full_receipt_count') if value.get('payment_groups') is not None else None)
 
 
 class CashierArchive:

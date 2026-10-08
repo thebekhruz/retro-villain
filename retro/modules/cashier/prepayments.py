@@ -13,20 +13,29 @@ PREPAYMENT_ACCOUNT = 'Предоплата за заказы'
 
 
 def report_body(store_id, day):
-    return dict(
+    return report_body_range(store_id, day, day)
+
+
+def report_body_range(store_id, start, end, orders=None):
+    """Авансы за период. orders — только эти заказы (в TRANSACTIONS номер — строкой)."""
+    body = dict(
         storeIds=[store_id], olapType='TRANSACTIONS', categoryFields=[],
         groupFields=list(GROUPS), dataFields=['Sum.Incoming', 'Sum.Outgoing'],
         calculatedFields=[], includeVoidTransactions=False,
         includeNonBusinessPaymentTypes=False,
         filters=[
             dict(field='DateTime.OperDayFilter', filterType='date_range',
-                 dateFrom=day.isoformat(), dateTo=day.isoformat(),
+                 dateFrom=start.isoformat(), dateTo=end.isoformat(),
                  includeLeft=True, includeRight=True, inclusiveList=True),
             dict(field='TransactionType', filterType='value_list',
                  valueList=['PREPAY'], inclusiveList=True),
             dict(field='Session.CashRegister', filterType='value_list',
                  valueList=[RETRO_REGISTER], inclusiveList=True),
         ])
+    if orders:
+        body['filters'].append(dict(field='OrderNum', filterType='value_list',
+                                    valueList=[str(order) for order in orders], inclusiveList=True))
+    return body
 
 
 def prepayments_from_olap(rows):

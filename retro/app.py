@@ -24,6 +24,7 @@ from retro.integrations.bookings import BookingAnalyticsClient
 from retro.integrations.broadcasts import BookingBroadcastClient
 from retro.integrations.cbu import UsdRates
 from retro.modules.cashier.expenses import ExpenseStore
+from retro.modules.cashier.prepayment_registry import PrepaymentRegistry
 from retro.modules.cashier.archive import CashierArchive
 from retro.modules.cashier.days import CashierDays
 from retro.modules.cashier.routes import router as cashier_router
@@ -213,6 +214,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     shared = Database(settings.database_url) if settings.database_url else None
     database_path = expense_db_path or shared or settings.data_dir / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
+    app.state.prepayment_registry = PrepaymentRegistry(database_path)
     app.state.cashier_days = (CashierDays(CashierArchive(database_path, settings),
         lambda day: app.state.iiko.load(day)) if settings.configured else None)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)

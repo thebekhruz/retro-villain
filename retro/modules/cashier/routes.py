@@ -424,3 +424,140 @@ def download_report(request: Request, date: date,
     prefix = 'DEMO-' if snapshot.demo else ''
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{prefix}Retro-{day.isoformat()}.xlsx"'})
+
+
+# ── Реестр предоплат (ТЗ «Выручка, оплаты и предоплаты», 08.10.2026, п. 3.2) ─────
+
+class PrepaymentNoteInput(BaseModel):
+    guest: str = Field('', max_length=120)
+    phone: str = Field('', max_length=40)
+    event_day: date | None = None
+    method: str = Field('', max_length=60)
+    refunded: bool = False
+
+
+def demo_registry(day, period=False):
+    """Пример реестра для демонстрационного режима: ничего не пишет и не читает iiko."""
+    def row(order, received, amount, guest, phone, event, method, credited=None):
+        return dict(order_number=order, received_day=received.isoformat(),
+                    received_at=f'{received.isoformat()}T13:20:00+05:00', amount=amount, guest=guest,
+                    phone=phone, event_day=event.isoformat() if event else None, method=method, refunded=False,
+                    credited_day=credited.isoformat() if credited else None,
+                    credited_amount=amount if credited else None, credited_methods=['Демо'] if credited else [],
+                    updated_at=None, updated_by=None, status='credited' if credited else 'pending',
+                    method_shown=method or ('Демо' if credited else ''))
+    received = [row('102', day, '3000000', 'Гость (пример)', '', day + timedelta(days=3), 'Наличные')]
+    credited = [row('101', day - timedelta(days=3), '2000000', 'Банкет (пример)', '', day, '', credited=day)]
+    if period:
+        return dict(start=(day - timedelta(days=14)).isoformat(), end=(day + timedelta(days=14)).isoformat(),
+                    rows=credited + received, issue=None)
+    return dict(date=day.isoformat(), received=received, credited=credited, received_total='3000000',
+                credited_total='2000000', issue=None)
+
+
+def group_advances(entries, day=None):
+    """Авансы iiko → по заказу: [(заказ, день получения, первое время, сумма)].
+
+    Один заказ часто получает аванс частями (наличные, потом картой) — в реестре
+    это одна предоплата. Без номера заказа аванс держим отдельной строкой."""
+    orders = {}
+    for entry in entries or ():
+        key = entry.order_number or 'iiko-' + entry.id[:12]
+        received_at, amount = orders.get(key, (entry.received_at, Decimal(0)))
+        orders[key] = (min(received_at, entry.received_at), amount + entry.amount)
+    return [(order, day or date.fromisoformat(received_at[:10]), received_at, amount)
+            for order, (received_at, amount) in orders.items()]
+
+
+@router.get('/prepayments')
+async def prepayment_registry(request: Request, date: date | None = None,
+                              start: date | None = None, end: date | None = None, demo: bool = False):
+    """Реестр: «Получено сегодня», «Зачтено сегодня» или все предоплаты за период."""
+    state = request.app.state
+    registry = state.prepayment_registry
+    today = today_tashkent()
+    if demo:
+        return demo_registry(date or start or today, period=start is not None or end is not None)
+    if start is not None or end is not None:
+        if start is None or end is None or start > end:
+            raise HTTPException(422, 'Укажите период: с какой и по какую дату.')
+        if (end - start).days > 62:
+            raise HTTPException(422, 'Период реестра — не больше двух месяцев.')
+        if start > today:
+            raise HTTPException(422, 'Период начинается в будущем: предоплат за него ещё нет.')
+        # Из iiko — авансы до сегодня; реестр — и с датами событий впереди.
+        fetch_end = min(end, today)
+        issue = None
+        try:
+            entries = await load_iiko(state, 'load_prepayments_range', start, fetch_end, request=request,
+                                      timeout=60, ttl=CLOSED_DAY_TTL if fetch_end < today else 30)
+            await asyncio.to_thread(registry.record_received, group_advances(entries))
+            rows = await asyncio.to_thread(registry.rows_between, start, end)
+            waiting = tuple(row['order_number'] for row in rows
+                            if row['status'] == 'pending' and row['order_number'].isdigit())
+            if waiting:
+                found = await load_iiko(state, 'prepayment_redemptions', waiting, start, today,
+                                        request=request, timeout=60, ttl=60)
+                by_day = {}
+                for order, day_text, method, amount in found:
+                    if amount:
+                        totals = by_day.setdefault(day_text, {}).setdefault(str(order), [Decimal(0), []])
+                        totals[0] += amount
+                        if method not in totals[1]:
+                            totals[1].append(method)
+                for day_text, orders in by_day.items():
+                    await asyncio.to_thread(registry.record_credited, datetime.fromisoformat(day_text).date(),
+                                            [(order, total, methods) for order, (total, methods) in orders.items()])
+        except (DataError, TimeoutError) as error:
+            log_safe_failure('cashier-route', error, operation='prepayment_registry_period')
+            issue = 'Не всё удалось получить из iiko: показано то, что уже есть в реестре.'
+        rows = await asyncio.to_thread(registry.rows_between, start, end)
+        return dict(start=start.isoformat(), end=end.isoformat(), rows=rows, issue=issue)
+
+    day = selected_day(date)
+    issue = None
+    try:
+        snapshot = await load_iiko(state, 'load', day, request=request, allow_stale=True,
+                                   ttl=CLOSED_DAY_TTL if day < today else None)
+        entries = await load_iiko(state, 'load_prepayments', day, request=request, timeout=35,
+                                  ttl=CLOSED_DAY_TTL if day < today else 30)
+    except (DataError, TimeoutError) as error:
+        log_safe_failure('cashier-route', error, operation='prepayment_registry')
+        raise HTTPException(503, 'Не удалось получить предоплаты из iiko. Обновите день.') from None
+    received = group_advances(entries, day)
+    credited = snapshot.redeemed_orders or ()
+    await asyncio.to_thread(registry.record_received, received)
+    await asyncio.to_thread(registry.record_credited, day,
+                            [(order.order_number, order.amount, order.methods) for order in credited])
+    # Когда получен аванс по зачтённому сегодня заказу — ищем в iiko на 90 дней назад
+    # (банкет оплачивают заранее), один раз: дальше это лежит в реестре.
+    missing = await asyncio.to_thread(registry.missing_received, [order.order_number for order in credited])
+    if missing:
+        try:
+            found = await load_iiko(state, 'load_prepayments_range', day - timedelta(days=90),
+                                    day - timedelta(days=1), tuple(missing), request=request,
+                                    timeout=40, ttl=600)
+            await asyncio.to_thread(registry.record_received, group_advances(found))
+        except (DataError, TimeoutError) as error:
+            log_safe_failure('cashier-route', error, operation='prepayment_received_lookup')
+            issue = 'По части зачтённых предоплат iiko не сказал, когда они получены.'
+    received_rows = await asyncio.to_thread(registry.rows, [item[0] for item in received])
+    credited_rows = await asyncio.to_thread(registry.rows, [order.order_number for order in credited])
+    if snapshot.redeemed_orders is None:
+        issue = issue or 'iiko не отдал зачёт предоплат за этот день.'
+    return dict(date=day.isoformat(), received=received_rows, credited=credited_rows,
+                received_total=str(sum((item[3] for item in received), Decimal(0))),
+                credited_total=str(sum((order.amount for order in credited), Decimal(0))),
+                issue=issue)
+
+
+@router.put('/prepayments/{order_number}')
+def annotate_prepayment(request: Request, order_number: str, body: PrepaymentNoteInput):
+    """Кассир вписывает, кто внёс предоплату, телефон, на какую дату, способ, возврат."""
+    try:
+        return request.app.state.prepayment_registry.annotate(
+            order_number, guest=body.guest, phone=body.phone, event_day=body.event_day,
+            method=body.method, refunded=body.refunded,
+            by=getattr(request.state, 'dashboard_user', None))
+    except DataError as error:
+        raise HTTPException(422, str(error)) from None

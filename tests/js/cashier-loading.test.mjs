@@ -22,7 +22,7 @@ function harness(saved = null) {
     document:{body:{classList:{remove(){},add(){}}}},
     clearSnapshot(){ clears++; context.snapshot = null; }, clearFinance(){}, clearUsdRate(){},
     message:text=>messages.push(text), formattedDay:day=>day, shortDay:day=>day, previousDay:()=> '2026-09-27',
-    loadExpenses(){}, loadReceipts(){}, loadUsdRate(){}, loadShokh(){}, loadUsd(){},
+    loadExpenses(){}, loadReceipts(){}, loadUsdRate(){}, loadShokh(){}, loadUsd(){}, loadPrepay(){},
     request:(url, signal, options={})=>new Promise((resolve,reject)=>pending.push({url,signal,options,resolve,reject})),
     // busy.js (T-393): кто крутится, что гаснет, чего ждём скелетом.
     Busy:{button:(el, work, opts)=>{buttons.push({id:el.id, opts}); return work;}},

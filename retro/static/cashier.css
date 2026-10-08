@@ -45,15 +45,29 @@
 .rm-card--warn .cashier-card-sub{color:#7a6a45}
 .rm-card--warn .rm-card-value strong{color:#7a5a22}
 .rm-card--warn .rm-card-value small{color:#a8946a}
-/* Полоса главной карточки: продажи (золото) и остальной приход (штриховка). */
-.cashier-split-bar{position:relative;display:flex;gap:3px;height:10px;border-radius:5px;overflow:hidden;background:#ffffff14}
-.cashier-split-bar>span{height:100%;width:0;transition:width .3s}
-.cashier-split-bar .is-sales{background:#d8b977}
-.cashier-split-bar .is-other{background:repeating-linear-gradient(-45deg,#d8b97755 0 4px,#d8b97722 4px 8px)}
-.cashier-legend{position:relative;display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 12px;margin-top:10px;font-size:11px;color:#c5d3c9}
-.cashier-legend>span{display:flex;align-items:center;gap:6px}
-.cashier-legend i{width:8px;height:8px;border-radius:2px;background:#d8b977}
-.cashier-legend i.is-other{background:#d8b97766}
+/* Отметка сверки с iiko: «= iiko ✓» зелёным, разница — красным. */
+.cashier-check{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:var(--ok-bg);
+  color:var(--ok);font-size:11px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
+.cashier-check.is-off{background:var(--late-bg);color:var(--late)}
+.cashier-check[hidden]{display:none}
+.rm-card--hero .cashier-check{position:relative;background:#d8b97726;color:#e8cf95}
+.rm-card--hero .cashier-check.is-off{background:#f2b1b438;color:#ffd3d6}
+.rm-card--hero .rm-card-label{align-items:center}
+.rm-card--hero .cashier-card-sub{position:relative;color:#c5d3c9}
+/* Реальная касса: из чего она получилась, цифры чуть темнее подписи. */
+.cashier-real-sub b{font-weight:600;color:var(--ink-2)}
+/* Предоплаты: две суммы и вход в реестр; вся карточка нажимается. */
+.cashier-prepay-card{display:flex;flex-direction:column}
+.cashier-prepay-card:hover{border-color:#d8c18f}
+.cashier-prepay-breakdown{display:grid;gap:8px;margin:14px 0 12px;font-size:12px;color:#7a6a45}
+.cashier-prepay-breakdown>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;min-width:0}
+.cashier-prepay-breakdown strong{font-size:20px;font-weight:600;letter-spacing:-.4px;color:#7a5a22;
+  font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
+.cashier-card-link{margin-top:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+  color:#7a5a22;text-decoration:none}
+.cashier-card-link::after{content:"";position:absolute;inset:0;border-radius:18px}
+.cashier-card-link:focus-visible{outline:none}
+.cashier-card-link:focus-visible::after{outline:3px solid #c5a359;outline-offset:-3px}
 
 /* ── Раскладка: работа слева, итог справа ─────────────────────────────── */
 .cashier-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
@@ -66,8 +80,6 @@
 .cashier-section-head .eyebrow,.cashier-ops-head .eyebrow{margin:0 0 9px}
 .cashier-section-head h2{font-size:20px}
 .cashier-section-sub{font-size:12px;color:var(--muted-2);text-align:right}
-.cashier-pay-bar{height:10px;margin:0 18px 10px;gap:3px}
-.cashier-pay-bar:empty{display:none}
 .payments{padding:0}
 .cashier-revenue .payment-row{grid-template-columns:12px minmax(0,1fr) 70px 130px;column-gap:10px;
   padding:10px 18px;border-bottom:0;border-top:1px solid #f0f3ec;font-size:13px}
@@ -85,16 +97,117 @@
 .payment-tag{display:inline-block;padding:3px 7px;border-radius:6px;background:var(--green);
   color:#e8cf95;font-size:10px;font-weight:650;white-space:nowrap}
 .cashier-revenue #payment-empty{border-top:1px solid #f0f3ec}
-.cashier-pay-total{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:13px 18px;
-  border-top:1px solid #dfe6db;background:#fbfcf9;font-size:12px;color:var(--ink-2)}
-.cashier-pay-total b{font-weight:500;font-variant-numeric:tabular-nums}
-.cashier-pay-total strong{font-size:15px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap}
-.cashier-revenue .payment-row.cashier-pay-row--prepayment{background:#f9f6ed}
-.cashier-pay-subtotals{padding:10px 18px;border-top:1px solid #dfe6db;background:#fbfcf9;font-size:12px;color:var(--muted-2)}
-.cashier-pay-subtotals>div,.cashier-pay-inflow{display:flex;justify-content:space-between;gap:12px;align-items:baseline}
-.cashier-pay-subtotals>div+div{margin-top:7px}
-.cashier-pay-subtotals b,.cashier-pay-inflow b{font-variant-numeric:tabular-nums;font-weight:500;white-space:nowrap}
-.cashier-pay-inflow{padding:10px 18px;border-top:1px solid #edf0e8;background:#fbfcf9;font-size:11px;color:var(--muted-2)}
+/* Касса iiko — строка-кнопка со стрелкой; раскрытая показывает свои типы
+   оплат с отступом под названием. Свёрнуто всё: сверка идёт по итогам касс. */
+.pay-group+.pay-group{border-top:1px solid #e7ece3}
+.cashier-revenue .pay-group-head{width:100%;grid-template-columns:30px minmax(0,1fr) 70px 130px;padding:12px 18px;
+  border:0;border-top:1px solid #f0f3ec;background:#fff;color:inherit;text-align:left;font:inherit;font-size:14px;cursor:pointer}
+.cashier-revenue .pay-group:first-child .pay-group-head{border-top-color:#f0f3ec}
+.cashier-revenue .pay-group-head:hover{background:#fafbf7}
+.cashier-revenue .pay-group-head .payment-label{font-weight:650}
+.cashier-revenue .pay-group-head .payment-value{font-size:15px}
+.pay-group-chevron{width:28px;height:28px;font-size:16px}
+/* Раздел выручки — не <details>: общее правило «не открыт — стрелка вбок»
+   повернуло бы и стрелку раскрытой кассы. */
+.cashier-revenue .pay-group-head[aria-expanded=true] .pay-group-chevron{transform:none}
+.pay-group.is-open .pay-group-head{background:#fafbf7}
+.pay-group-body[hidden]{display:none}
+.cashier-revenue .pay-type{padding-left:58px;background:#fff}
+.cashier-revenue .pay-type.is-cash{background:var(--accent-soft)}
+.pay-type-redeemed{flex-basis:100%;color:#8c7a50}
+.pay-group-more{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 18px 8px 58px;border:0;
+  border-top:1px solid #f0f3ec;background:#fbfcf9;color:#53675c;font:inherit;font-size:12px;text-align:left;cursor:pointer}
+.pay-group-more small{color:var(--muted-3);font-size:11px}
+.pay-group-more:hover{background:#f5f7f1}
+.cashier-pay-note{margin:0;padding:10px 18px;border-top:1px solid #f0f3ec;background:#fbf7ed;color:#7a6a45;font-size:12px;line-height:1.45}
+.cashier-pay-note[hidden]{display:none}
+.cashier-pay-total{display:grid;grid-template-columns:minmax(0,1fr) 70px 130px;column-gap:10px;align-items:center;
+  padding:13px 18px;border-top:1px solid #dfe6db;background:#fbfcf9;font-size:13px;color:var(--ink-2)}
+.cashier-pay-total-name{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0;font-weight:600;color:var(--ink)}
+.cashier-pay-total strong{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
+/* ── Реестр предоплат ─────────────────────────────────────────────────────
+   Таблица на широком экране, карточки — когда раздел уже 720 точек
+   (меряем сам раздел: он сужается и от правой колонки, и от окна). */
+.cashier-prepay{container:prepay/inline-size}
+.cashier-prepay .cashier-section-head{align-items:center;flex-wrap:wrap}
+.prepay-tabs{flex-wrap:wrap;border-radius:14px}
+.prepay-tabs .ops-tab,.prepay-by .ops-tab{min-height:40px;padding:8px 14px;border-radius:11px;font-size:13px;
+  display:inline-flex;align-items:center;gap:6px}
+.prepay-count{min-width:20px;padding:1px 6px;border-radius:10px;background:#e3e9df;color:#53675c;font-size:11px;
+  font-weight:650;text-align:center;font-variant-numeric:tabular-nums}
+.ops-tab.is-active .prepay-count{background:var(--green);color:#e8cf95}
+.prepay-period{display:flex;flex-wrap:wrap;align-items:end;gap:10px 12px;padding:4px 18px 14px}
+.prepay-period[hidden]{display:none}
+.prepay-field{display:grid;gap:5px;min-width:0;font-size:11px;color:var(--muted-2)}
+.prepay-field input{width:100%;min-width:0;height:40px;border:1px solid #dbe3d8;border-radius:8px;padding:0 10px;
+  background:#fff;color:#203d33;font:inherit;font-size:13px}
+/* Общее правило даёт полю даты 44 точки и предел ширины — здесь оно в ряд с остальными. */
+.prepay-field input[type=date]{min-height:40px;max-width:none;font-weight:500}
+.prepay-period .prepay-field{width:150px}
+.prepay-by{padding:3px;border-radius:13px}
+.prepay-period .prepay-show{min-height:40px;margin:0;border-radius:10px}
+.prepay-head,.prepay-row{display:grid;grid-template-columns:minmax(0,1.2fr) 88px 70px minmax(0,1.3fr) 112px 128px 40px;
+  column-gap:10px;align-items:center;padding:10px 18px}
+.prepay-head{border-top:1px solid #f0f3ec;background:#f7f9f4;font-size:11px;color:var(--muted-2);padding-top:8px;padding-bottom:8px}
+.prepay-head span:nth-child(5){text-align:right}
+.prepay-row{border-top:1px solid #f0f3ec;font-size:13px;min-height:52px}
+.prepay-row.is-editing{background:#fbf7ed}
+.prepay-who{display:grid;gap:2px;min-width:0}
+.prepay-who strong{font-weight:600;overflow-wrap:anywhere}
+.prepay-who strong.is-empty{font-weight:500;color:#a08a5a}
+.prepay-who small{font-size:11px;color:var(--muted-2);overflow-wrap:anywhere}
+.prepay-cell{min-width:0;overflow-wrap:break-word;font-variant-numeric:tabular-nums}
+.prepay-cell-label{display:none}
+.prepay-cell.is-empty .prepay-cell-value{color:#a4afa3}
+.prepay-amount{text-align:right;font-weight:600;white-space:nowrap}
+.prepay-status.is-pending{background:var(--warn-bg);color:var(--warn)}
+.prepay-status.is-credited{background:var(--ok-bg);color:var(--ok)}
+.prepay-status.is-refund{background:var(--idle-bg);color:var(--idle)}
+.prepay-status.is-overdue{background:var(--late-bg);color:var(--late)}
+.prepay-edit{width:40px;height:36px;border:0;border-radius:8px;background:#f3f5f0;color:#53675c;font-size:15px;line-height:1;padding:0}
+.prepay-edit:hover:not(:disabled){background:#e9eee5}
+.prepay-edit[aria-expanded=true]{background:var(--green);color:#e8cf95}
+.prepay-edit:disabled{opacity:.4}
+.prepay-group-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 18px;
+  border-top:1px solid #e3e9df;background:#f4f7f1;font-size:12px;font-weight:650;color:#285140}
+.prepay-group-head strong{font-variant-numeric:tabular-nums;white-space:nowrap}
+.prepay-editor{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 150px minmax(0,1fr);gap:10px 12px;
+  align-items:end;padding:12px 18px 14px;background:#fbf7ed;border-top:1px dashed #eddfbe}
+.prepay-refund{display:flex;align-items:center;gap:8px;min-height:40px;font-size:13px;color:var(--ink-2);cursor:pointer}
+.prepay-refund input{width:18px;height:18px;accent-color:var(--green)}
+.prepay-editor-actions{grid-column:3/-1;display:flex;justify-content:flex-end;gap:8px}
+.prepay-editor-actions .button{min-height:40px;margin:0;border-radius:10px;width:auto}
+.prepay-editor .expense-feedback{grid-column:1/-1;padding:0}
+.cashier-prepay .prepay-empty{padding:12px 18px;margin:0;border-top:1px solid #f0f3ec;color:var(--muted-2);font-size:12px}
+.cashier-prepay .prepay-empty[hidden]{display:none}
+.cashier-prepay .cashier-pay-note{background:#fff0f2;color:#9b4b5a}
+@container prepay (max-width:720px){
+  .prepay-head{display:none}
+  .prepay-row{grid-template-columns:repeat(3,minmax(0,1fr)) 40px;grid-template-areas:
+    "who who sum edit" "rec evt met edit" "state state state edit";row-gap:8px;align-items:start;padding:12px 16px}
+  .prepay-who{grid-area:who}.prepay-received{grid-area:rec}.prepay-event{grid-area:evt}.prepay-method{grid-area:met}
+  .prepay-amount{grid-area:sum;font-size:15px}.prepay-state{grid-area:state}
+  .prepay-edit{grid-area:edit;align-self:start;height:40px}
+  .prepay-amount .prepay-cell-label{display:none}
+  .prepay-cell-label{display:block;font-size:10px;color:var(--muted-3);margin-bottom:2px}
+  .prepay-editor{grid-template-columns:minmax(0,1fr) minmax(0,1fr);padding:12px 16px 14px}
+  .prepay-editor-actions{grid-column:1/-1}
+  .prepay-period{padding:4px 16px 14px}
+  .prepay-group-head{padding:9px 16px}
+}
+@container prepay (max-width:420px){
+  /* Три факта в строку на телефоне рвали слова («Наличны-е»), сумма уезжала под ✎. */
+  .prepay-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 40px;grid-template-areas:
+    "who sum edit" "rec evt edit" "met state edit"}
+  .prepay-amount{justify-self:end}
+  .prepay-state{align-self:end}
+  .prepay-editor{grid-template-columns:minmax(0,1fr)}
+  .prepay-editor-actions .button{flex:1}
+  .prepay-period .prepay-field{width:calc(50% - 6px)}
+  .prepay-period .prepay-by,.prepay-period .prepay-show{width:100%}
+  .prepay-by .ops-tab{flex:1;justify-content:center}
+}
+
 /* ── Ручной учёт: расходы и поступления рядом ─────────────────────────── */
 .cashier-ops{display:grid;grid-template-columns:1fr 1fr;gap:20px;min-width:0}
 .cashier-ops .rm-section{display:flex;flex-direction:column}
@@ -243,13 +356,19 @@
   .cashier-actions .cashier-date{flex:1}
   .cashier-actions .cashier-download{width:100%}
   .cashier-section-head{flex-direction:column;gap:6px;padding:18px 16px 12px}
+  .cashier-prepay .cashier-section-head{align-items:stretch;gap:12px}
+  .prepay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
+  .prepay-tabs .ops-tab{justify-content:center;text-align:center;padding:8px 6px;line-height:1.25;flex-wrap:wrap}
   .cashier-section-sub{text-align:left}
-  .cashier-pay-bar{margin:0 16px 10px}
   .cashier-revenue .payment-row{grid-template-columns:12px minmax(0,1fr) auto;padding:10px 16px;row-gap:2px}
   .cashier-revenue .payment-row .payment-share{grid-column:2;grid-row:2;text-align:left}
   .cashier-revenue .payment-row .payment-value{grid-column:3;grid-row:1/span 2}
-  .cashier-pay-total{flex-direction:column;gap:6px;padding:13px 16px}
-  .cashier-pay-subtotals,.cashier-pay-inflow{padding-left:16px;padding-right:16px}
+  .cashier-revenue .pay-group-head{grid-template-columns:30px minmax(0,1fr) auto;padding:12px 16px}
+  .cashier-revenue .pay-type{padding-left:56px}
+  .pay-group-more{padding-left:56px;padding-right:16px}
+  .cashier-pay-total{grid-template-columns:minmax(0,1fr) auto;padding:13px 16px}
+  .cashier-pay-total .payment-share{display:none}
+  .cashier-pay-note{padding-left:16px;padding-right:16px}
   .cashier-form{grid-template-columns:minmax(0,1fr) 96px 40px;padding:10px 16px}
   /* Под палец: быстрые дни — не ниже 40 точек. */
   .cashier-actions .date-nav-chip{min-height:40px}
@@ -293,13 +412,11 @@
 /* На тёмно-зелёных панелях полоса светлая, иначе она читается как дыра. */
 .cashier-cards .rm-card--hero,.cashier-rail .handover-panel{--rm-skel-a:rgba(255,255,255,.08);--rm-skel-b:rgba(255,255,255,.2)}
 #report-date-text.is-skel{min-width:112px}
-#payments-sub.is-skel{min-width:150px}
-.cashier-split-bar.is-skel{display:flex;min-width:0;background-size:300% 100%}
-.cashier-split-bar.is-skel>span{visibility:hidden}
 /* Строки-заглушки — той же высоты, что настоящие. */
 .cashier-skel-row{pointer-events:none}
 .cashier-skel-row .payment-dot{background:var(--rm-skel-a)}
-.cashier-revenue .payment-row.cashier-skel-row{min-height:39px}
+.cashier-revenue .payment-row.cashier-skel-row{min-height:49px}
+.prepay-row.cashier-skel-row{min-height:52px}
 .cashier-revenue .cashier-skel-row .rm-skel:nth-child(n+3){justify-self:end}
 .cashier-ops .expense-item.cashier-skel-row{min-height:47px;justify-content:space-between}
 /* До первого кадра скрипта пустых состояний не показываем — только скелет. */
@@ -327,5 +444,3 @@
 .cashier-shift.is-skel>*{visibility:hidden}
 /* Маленькие × и «Отменить» — спиннер помельче, как у ячеек бухгалтера. */
 :is(.expense-remove,.usd-remove,.handover-undo){--rm-spin:13px}
-
-.cashier-prepay-breakdown{display:grid;gap:6px;margin:10px 0 12px;font-size:12px}.cashier-prepay-breakdown>div{display:flex;justify-content:space-between;gap:12px}.cashier-prepay-breakdown strong{font-variant-numeric:tabular-nums;text-align:right}
