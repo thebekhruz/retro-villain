@@ -687,7 +687,8 @@ def test_old_daily_usd_sums_become_one_deposit_without_changing_the_safe(make_ap
         connection.execute('INSERT INTO cashier_usd_balances(day, amount) VALUES (?, ?)',
                            ((DAY - timedelta(days=4)).isoformat(), '0'))
     finance = app.state.accountant_finance
-    finance.reserve_entry(DAY - timedelta(days=10), 'usd', 'opening', '1000', 'Пересчёт')
+    # Начальный остаток — в первый день учёта: с 07.10 «день минус 10» выпадал из периода, и тест зависел от даты.
+    finance.reserve_entry(min(DAY - timedelta(days=5), ACCOUNTING_START), 'usd', 'opening', '1000', 'Пересчёт')
     assert migrate_legacy_usd(app.state.usd_rates, finance) == 2
     day = DAY - timedelta(days=5)
     migrated = usd_day(finance, day)

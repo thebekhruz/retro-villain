@@ -197,8 +197,12 @@ def export_report(snapshot, expenses=(), receipts=()):
         sheet.cell(row, 4, amounts[name]).number_format = MONEY
         sheet.row_dimensions[row].height = 30 if len(name) > 28 else 22
     payment_total_row = 3 + len(PAYMENT_SOURCES)
-    total_label = sheet.cell(payment_total_row, 3, 'ИТОГО ОПЛАТЫ:')
-    total_amount = sheet.cell(payment_total_row, 4, f'=SUM(D3:D{payment_total_row - 1})')
+    # Новый тип оплаты iiko (ТЗ 08.10) в шаблон из девяти строк не встаёт: его
+    # сумма входит в итог, а по названию он есть на листе «Касса».
+    extra = sum((p.amount for p in snapshot.payments if p.name not in PAYMENT_SOURCES), Decimal(0))
+    total_label = sheet.cell(payment_total_row, 3, 'ИТОГО ОПЛАТЫ (+ новые типы):' if extra else 'ИТОГО ОПЛАТЫ:')
+    total_amount = sheet.cell(payment_total_row, 4, f'=SUM(D3:D{payment_total_row - 1})'
+                              + (f'+{extra}' if extra else ''))
     total_label._style = total_label_style
     total_amount._style = total_amount_style
     total_amount.number_format = MONEY

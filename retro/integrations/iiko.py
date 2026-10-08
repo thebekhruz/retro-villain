@@ -22,7 +22,10 @@ from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, PrepaymentUnavailable,
     build_revenue_breakdown, build_snapshot, cell, number, shift_status, today_tashkent,
 )
-from retro.modules.cashier.prepayments import prepayments_from_olap, report_body as prepayments_body
+from retro.modules.cashier.prepayments import (prepayments_from_olap, report_body as prepayments_body,
+                                               report_body_range as prepayments_range_body)
+from retro.modules.cashier.pay_groups import (build_payment_groups, flat_payment_rows, full_totals,
+                                              pay_leaves, redeemed_orders)
 from retro.modules.cashier.transfer_breakdown import (
     GROUPS as TRANSFER_GROUPS, breakdown_from_olap, report_filters as transfer_filters,
 )
@@ -255,6 +258,16 @@ def cash_prepay_from_shifts(day, sales, payments, shifts):
 
 def olap_body(store_id, day, groups, fields, extra_filters=()):
     return olap_range_body(store_id, day, day, groups, fields, extra_filters)
+
+
+async def optional_read(operation):
+    """Необязательный отчёт: сбой не отменяет день, а возвращается как значение."""
+    try:
+        return await operation
+    except Exception as error:  # noqa: BLE001 — любой сбой необязательного отчёта не роняет день
+        log_upstream_failure('iiko', error, operation='cashier_optional_read')
+        logging.getLogger(__name__).warning('cashier optional read failed: %s', error)
+        return error
 
 
 def olap_range_body(store_id, start, end, groups, fields, extra_filters=()):
@@ -582,7 +595,14 @@ class IikoClient:
                     dict(field='OperationType', filterType='value_list',
                          valueList=['PAYMENT'], inclusiveList=True),
                 ]
-                breakdown_rows, total, payments, shift_payments, shifts_data = await gather_reads(
+                # ТЗ 08.10: зачтённые при закрытии заказа предоплаты iiko проводит
+                # операцией PREPAY; полный счёт = оплаты + зачтённые предоплаты.
+                prepay_scope = scope[:2] + [dict(field='OperationType', filterType='value_list',
+                                                 valueList=['PREPAY'], inclusiveList=True)]
+                full_scope = scope[:2] + [dict(field='OperationType', filterType='value_list',
+                                               valueList=['PAYMENT', 'PREPAY'], inclusiveList=True)]
+                (breakdown_rows, total, payments, shift_payments, shifts_data,
+                 paid_groups, redeemed_rows, full_rows, dictionary_rows) = await gather_reads(
                     self._olap(client, day, ['CashRegisterName', 'RestaurantSection'],
                                ['DishDiscountSumInt']),
                     self._olap(client, day, ['OpenDate.Typed'],
@@ -593,9 +613,38 @@ class IikoClient:
                     # the narrower cashier sales card.
                     self._olap(client, day, ['PayTypes'], ['DishDiscountSumInt'], [scope[0], scope[2]]),
                     self._shifts(client, day),
+                    # Те же оплаты, но с группой типа оплаты из справочника iiko.
+                    optional_read(self._olap(client, day, ['PayTypes.Group', 'PayTypes'],
+                                             ['DishDiscountSumInt'], scope)),
+                    optional_read(self._olap(client, day, ['OrderNum', 'PayTypes.Group', 'PayTypes'],
+                                             ['DishDiscountSumInt'], prepay_scope)),
+                    optional_read(self._olap(client, day, ['OpenDate.Typed'],
+                                             ['UniqOrderId.OrdersCount', 'DishDiscountSumInt'], full_scope)),
+                    optional_read(self._pay_type_dictionary(client, day, full_scope)),
                 )
                 breakdown = build_revenue_breakdown(breakdown_rows)
                 snapshot = build_snapshot(day, total, payments, revenue_breakdown=breakdown)
+                groups = {}
+                # Без групп день всё равно валиден: выручка и передача считаются как раньше.
+                if not any(isinstance(rows, BaseException) for rows in (paid_groups, redeemed_rows, full_rows)):
+                    try:
+                        paid_leaves = pay_leaves(paid_groups, 2)
+                        # Группы — те же оплаты, что в карточке: иначе не показываем.
+                        paid_by_type = {}
+                        for row in flat_payment_rows(paid_leaves):
+                            paid_by_type[row['field0']['value']] = row['field1']['value']
+                        if paid_by_type != {p.name: p.amount for p in snapshot.payments if p.amount}:
+                            raise DataError('Оплаты по группам iiko не совпали с оплатами дня.')
+                        redeemed_leaves = pay_leaves(redeemed_rows, 3)
+                        dictionary = ([] if isinstance(dictionary_rows, BaseException)
+                                      else pay_leaves(dictionary_rows, 2))
+                        count, full_total = full_totals(day, full_rows)
+                        groups = dict(payment_groups=build_payment_groups(paid_leaves, redeemed_leaves, dictionary),
+                                      redeemed_orders=redeemed_orders(redeemed_leaves),
+                                      full_total=full_total, full_receipt_count=count)
+                    except DataError as error:
+                        log_upstream_failure('iiko', error, operation='cashier_payment_groups')
+                snapshot = replace(snapshot, **groups)
                 shifts = shifts_data.get('shifts')
                 if not isinstance(shifts, list):
                     raise DataError('iiko не вернул список кассовых смен.')
@@ -613,7 +662,6 @@ class IikoClient:
                     log_upstream_failure('iiko', error, operation='cashier_prepayment')
                     total_prepay = cash_prepay = None
                     issue = str(error)
-                from dataclasses import replace
                 return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay,
                                register_payment_sales=register_sales,
                                register_received_total=(register_sales + total_prepay
@@ -863,6 +911,53 @@ class IikoClient:
         finally:
             cashier_read.reset(token)
 
+    async def load_prepayments_range(self, start, end, orders=None):
+        """Авансы за период (реестр предоплат, ТЗ 08.10). orders — только эти заказы:
+        тогда один запрос на весь срок; без фильтра — окнами по 7 дней (8 измерений)."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено.')
+        token = cashier_read.set(True)
+        try:
+            async with self._client() as client:
+                if orders:
+                    return prepayments_from_olap(await self._fetch_olap(
+                        client, prepayments_range_body(self.settings.store_id, start, end, orders)))
+                entries, chunk = [], start
+                while chunk <= end:
+                    chunk_end = min(end, chunk + timedelta(days=6))
+                    entries.extend(prepayments_from_olap(await self._fetch_olap(
+                        client, prepayments_range_body(self.settings.store_id, chunk, chunk_end))))
+                    chunk = chunk_end + timedelta(days=1)
+                return tuple(entries)
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_prepayments_range')
+            raise DataError('Не удалось получить список предоплат из iiko. Обновите страницу.') from None
+        finally:
+            cashier_read.reset(token)
+
+    async def prepayment_redemptions(self, orders, start, end):
+        """Когда закрыты заказы с авансом: [(заказ, день, тип оплаты, сумма зачёта)]."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено.')
+        if not orders:
+            return []
+        filters = [dict(field='CashRegisterName', filterType='value_list', valueList=[RETRO_REGISTER], inclusiveList=True),
+                   dict(field='OperationType', filterType='value_list', valueList=['PREPAY'], inclusiveList=True),
+                   dict(field='OrderNum', filterType='value_list',
+                        valueList=[int(order) for order in orders if str(order).isdigit()], inclusiveList=True)]
+        token = cashier_read.set(True)
+        try:
+            async with self._client() as client:
+                rows = await self._fetch_olap(client, olap_range_body(
+                    self.settings.store_id, start, end, ['OrderNum', 'OpenDate.Typed', 'PayTypes'],
+                    ['DishDiscountSumInt'], filters))
+                return pay_leaves(rows, 3)
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='prepayment_redemptions')
+            raise DataError('Не удалось проверить зачёт предоплат в iiko.') from None
+        finally:
+            cashier_read.reset(token)
+
     async def _founder_pnl(self, client, start, end):
         body = {
             'dateFrom': start.isoformat(),
@@ -971,6 +1066,18 @@ class IikoClient:
         if not isinstance(data, dict) or data.get('error'):
             raise DataError('iiko отклонил запрос отчёта.')
         return data
+
+    async def _pay_type_dictionary(self, client, day, scope):
+        """Справочник типов оплат с группами — что было в iiko за прошлые 30 дней.
+
+        Нулевые за день типы остаются в своей группе (раскрытая группа «показать
+        все»). Только закрытые дни, поэтому держим в кэше долго и не обновляем
+        вместе с живой сменой."""
+        body = olap_range_body(self.settings.store_id, day - timedelta(days=30), day - timedelta(days=1),
+                               ['PayTypes.Group', 'PayTypes'], ['DishDiscountSumInt'], scope)
+        key = json.dumps(body, sort_keys=True, ensure_ascii=False)
+        return await self._olap_cache.get(key, lambda: self._fetch_olap(client, body), ttl=6 * 3600,
+                                          timeout=90, refresh=False, label='iiko_pay_types')
 
     async def _olap(self, client, day, groups, fields, extra_filters=()):
         return await self._olap_range(client, day, day, groups, fields, extra_filters)

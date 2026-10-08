@@ -15,6 +15,8 @@ SCHOOL_REGISTER = 'GL-Kassa-Oksbrich'
 BANQUET_SECTION = 'Бехруз (Свадьба)'
 # iiko's existing spelling differs from the reference supplied by the user.
 PAYMENT_ALIASES = {'Яндех Еда': 'Яндекс Еда'}
+# Наличные кассы в iiko называются «Демо»: их группа в «Выручке по кассам» идёт первой.
+CASH_GROUP_HINT = 'Демо'
 
 
 class DataError(Exception):
@@ -56,6 +58,48 @@ class Prepayment:
         return dict(id=self.id, received_at=self.received_at, amount=str(self.amount),
                     payment_method=self.payment_method, comment=self.comment,
                     order_number=self.order_number)
+
+
+@dataclass(frozen=True)
+class PayTypeAmount:
+    """Тип оплаты iiko внутри своей группы (кассы): оплаты продаж и зачтённые
+    в этот день предоплаты — полный счёт по типу = paid + redeemed."""
+    name: str
+    paid: Decimal = Decimal(0)
+    redeemed: Decimal = Decimal(0)
+
+    @property
+    def total(self):
+        return self.paid + self.redeemed
+
+    def json(self):
+        return dict(name=self.name, paid=str(self.paid), redeemed=str(self.redeemed), total=str(self.total))
+
+
+@dataclass(frozen=True)
+class PaymentGroup:
+    """Группа типов оплаты из справочника iiko (`PayTypes.Group`), как в отчёте
+    «Выручка по типам оплат»: «Оплата наличными», «Банковские карты»…"""
+    name: str
+    types: tuple[PayTypeAmount, ...]
+
+    @property
+    def total(self):
+        return sum((item.total for item in self.types), Decimal(0))
+
+    def json(self):
+        return dict(name=self.name, total=str(self.total), types=[item.json() for item in self.types])
+
+
+@dataclass(frozen=True)
+class RedeemedOrder:
+    """Заказ, закрытый в этот день, в счёт которого зачтена предоплата."""
+    order_number: str
+    amount: Decimal
+    methods: tuple[str, ...] = ()
+
+    def json(self):
+        return dict(order_number=self.order_number, amount=str(self.amount), methods=list(self.methods))
 
 
 @dataclass(frozen=True)
@@ -146,10 +190,29 @@ class Snapshot:
     # None means the registry was not fetched; an empty tuple is a verified empty day.
     prepayments: tuple[Prepayment, ...] | None = None
     prepayments_issue: str | None = None
+    # Выручка по кассам iiko (ТЗ 08.10): группы → типы, полные счета = оплаты +
+    # зачтённые предоплаты. None — iiko не отдал (снимок старой версии).
+    payment_groups: tuple[PaymentGroup, ...] | None = None
+    redeemed_orders: tuple[RedeemedOrder, ...] | None = None
+    # Полные счета дня по iiko: сумма и чеки по оплатам и зачтённым предоплатам.
+    full_total: Decimal | None = None
+    full_receipt_count: int | None = None
 
     @property
     def prepayments_known(self):
         return self.cash_prepayment is not None and self.new_prepayment is not None
+
+    @property
+    def redeemed_total(self):
+        if self.redeemed_orders is None:
+            return None
+        return sum((order.amount for order in self.redeemed_orders), Decimal(0))
+
+    @property
+    def groups_total(self):
+        if self.payment_groups is None:
+            return None
+        return sum((group.total for group in self.payment_groups), Decimal(0))
 
     @property
     def average_receipt(self):
@@ -183,6 +246,23 @@ class Snapshot:
                     shift=self.shift.json() if self.shift is not None else None)
         if self.revenue_breakdown is not None:
             result['revenue_breakdown'] = self.revenue_breakdown.json()
+        if self.payment_groups is not None:
+            full_total = self.full_total if self.full_total is not None else self.groups_total
+            redeemed = self.redeemed_total or Decimal(0)
+            count = self.full_receipt_count if self.full_receipt_count is not None else self.receipt_count
+            result.update(
+                payment_groups=[group.json() for group in self.payment_groups],
+                redeemed_orders=[order.json() for order in self.redeemed_orders or ()],
+                full_total=str(full_total), full_receipt_count=count,
+                full_average_receipt=(str((full_total / count).quantize(Decimal('.01'), rounding=ROUND_HALF_UP))
+                                      if count else None),
+                redeemed_total=str(redeemed),
+                # Реальная касса дня = полные счета − зачтённые предоплаты (ТЗ 08.10, п. 3.3):
+                # деньги аванса уже пришли в день его получения.
+                real_cash=str(full_total - redeemed),
+                # Сверка: сумма по группам равна итогу iiko по полным счетам.
+                groups_total=str(self.groups_total),
+                groups_match=abs(self.groups_total - full_total) <= Decimal(1))
         return result
 
 
@@ -269,12 +349,18 @@ def build_snapshot(day, total_rows, payment_rows, *, demo=False, revenue_breakdo
     for payment in payments:
         name = PAYMENT_ALIASES.get(payment.name, payment.name)
         if name not in amounts:
-            if payment.name == '(без оплаты)' and payment.amount == 0:
-                continue
-            raise DataError('В iiko появился новый тип оплаты. '
-                            'Нужно проверить справочник; сумма не будет скрыта или перераспределена.')
+            if payment.name == '(без оплаты)':
+                if payment.amount == 0:
+                    continue
+                raise DataError('iiko вернул сумму без типа оплаты. Проверьте отчёт за день.')
+            # Новый тип оплаты iiko появляется сам (ТЗ 08.10): сумма не скрыта и
+            # не перераспределена. В передачу кассира идут только наличные «Демо».
+            # Название попадает в Excel — формулой оно стать не может.
+            if name.lstrip().startswith(('=', '+', '-', '@')):
+                raise DataError('iiko вернул небезопасное название типа оплаты.')
+            amounts[name] = Decimal(0)
         amounts[name] += payment.amount
-    normalized = tuple(Payment(name, amounts[name]) for name in PAYMENT_SOURCES)
+    normalized = tuple(Payment(name, amount) for name, amount in amounts.items())
     return Snapshot(uuid4().hex, day, revenue, int(count), normalized, datetime.now(TZ),
                     demo, revenue_breakdown)
 
@@ -309,7 +395,17 @@ class SnapshotCache:
 def demo_snapshot(day):
     def row(*values):
         return {f'field{i}': {'value': value} for i, value in enumerate(values)}
-    return build_snapshot(day, [row(day.isoformat(), 126, 18450000)],
-                          [row('Наличные (Инкасса QR)', 7200000), row('UzCard', 5400000),
-                           row('Xumo', 3200000), row('Click/Payme Безналичный перевод', 1650000),
-                           row('Яндекс Еда', 1000000)], demo=True)
+    snapshot = build_snapshot(day, [row(day.isoformat(), 126, 18450000)],
+                              [row('Наличные (Инкасса QR)', 7200000), row('UzCard', 5400000),
+                               row('Xumo', 3200000), row('Click/Payme Безналичный перевод', 1650000),
+                               row('Яндекс Еда', 1000000)], demo=True)
+    from .pay_groups import build_payment_groups, redeemed_orders
+    cash, cards = 'Оплата наличными', 'Банковские карты'
+    paid = [(cash, 'Наличные (Инкасса QR)', Decimal(7200000)), (cards, 'UzCard', Decimal(5400000)),
+            (cards, 'Xumo', Decimal(3200000)), (cards, 'Click/Payme Безналичный перевод', Decimal(1650000)),
+            (cards, 'Яндекс Еда', Decimal(1000000))]
+    redeemed = [('101', cash, 'Демо', Decimal(2000000))]
+    from dataclasses import replace
+    return replace(snapshot, payment_groups=build_payment_groups(paid, redeemed, [(cash, 'Демо', 0)]),
+                   redeemed_orders=redeemed_orders(redeemed), full_total=Decimal(20450000),
+                   full_receipt_count=126)

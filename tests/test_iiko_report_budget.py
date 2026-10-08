@@ -212,7 +212,11 @@ def test_closed_cashier_day_is_not_refetched_on_every_open():
             return httpx.Response(200, json={'fetchId': 'synthetic'})
         if request.url.path.startswith('/api/cash/shift'):
             return httpx.Response(200, json={'shifts': []})
-        fetches['olap'] += 1
+        body = json.loads(request.content)
+        period = body['filters'][0]
+        # Справочник типов оплат за прошлые 30 дней (ТЗ 08.10) — только закрытые
+        # дни: держится в кэше часами и не перечитывается вместе с живой сменой.
+        fetches['dictionary' if period['dateFrom'] != period['dateTo'] else 'olap'] += 1
         return httpx.Response(200, json={'result': {'rows': []}})
 
     async def scenario():
@@ -245,3 +249,5 @@ def test_closed_cashier_day_is_not_refetched_on_every_open():
     assert forced == first * 2
     # Сегодняшний день всегда свежий: оба открытия идут в источник.
     assert today_again - today_first == today_first - forced > 0
+    # Справочник — по разу на закрытый день и на сегодня, обновление его не трогает.
+    assert fetches['dictionary'] == 2
