@@ -52,6 +52,8 @@ class Settings:
     booking_api_url: str = ''
     booking_api_token: str = field(default='', repr=False)
     booking_broadcast_token: str = field(default='', repr=False)
+    website_booking_api_url: str = ''
+    website_booking_api_token: str = field(default='', repr=False)
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
     data_dir: Path = ROOT / 'build'
     # Строка подключения Postgres. Пустая — работаем на файловом SQLite
@@ -119,6 +121,19 @@ class Settings:
             raise ValueError('Для BROADCAST_API_TOKEN требуется BOOKING_ANALYTICS_URL.')
         if broadcast_token and broadcast_token == booking_token:
             raise ValueError('BROADCAST_API_TOKEN должен отличаться от ANALYTICS_API_TOKEN.')
+        website_booking_url = os.getenv('WEBSITE_BOOKING_ANALYTICS_URL', '').strip().rstrip('/')
+        website_booking_token = os.getenv('WEBSITE_ANALYTICS_API_TOKEN', '').strip()
+        if bool(website_booking_url) != bool(website_booking_token):
+            raise ValueError('WEBSITE_BOOKING_ANALYTICS_URL и WEBSITE_ANALYTICS_API_TOKEN задаются вместе.')
+        if website_booking_url:
+            parsed = urlsplit(website_booking_url)
+            if parsed.scheme != 'https' or not parsed.hostname or parsed.username or parsed.password or \
+                    parsed.query or parsed.fragment or parsed.path not in ('', '/'):
+                raise ValueError('WEBSITE_BOOKING_ANALYTICS_URL должен быть корневым HTTPS URL без credentials/query.')
+            if website_booking_url == booking_url:
+                raise ValueError('WEBSITE_BOOKING_ANALYTICS_URL должен указывать на другой источник, чтобы не удваивать брони.')
+            if website_booking_token in (booking_token, broadcast_token):
+                raise ValueError('WEBSITE_ANALYTICS_API_TOKEN должен быть отдельным токеном источника сайта.')
         retention_value = os.getenv('DIRECTOR_REPORT_RETENTION', '24').strip()
         if not retention_value.isdigit() or not 1 <= int(retention_value) <= 1000:
             raise ValueError('DIRECTOR_REPORT_RETENTION должен быть числом от 1 до 1000.')
@@ -143,6 +158,8 @@ class Settings:
             booking_api_url=booking_url,
             booking_api_token=booking_token,
             booking_broadcast_token=broadcast_token,
+            website_booking_api_url=website_booking_url,
+            website_booking_api_token=website_booking_token,
             hikvision=hikvision,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
             database_url=database_url,

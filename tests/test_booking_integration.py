@@ -7,6 +7,7 @@ import pytest
 from retro.config import Settings
 from retro.integrations.bookings import BookingAnalyticsClient
 from retro.modules.cashier.service import DataError
+from retro.modules.founder.bookings import build_booking_analytics
 
 
 def summary(status):
@@ -110,6 +111,59 @@ def test_booking_client_accepts_empty_status_breakdown_for_empty_summary():
 
     assert result['submitted']['totals']['bookings'] == 0
     assert result['cancelled']['by_status'] == []
+
+
+def multi_source_settings():
+    return Settings(booking_api_url='https://booking.example.test', booking_api_token='telegram-secret',
+                    website_booking_api_url='https://website.example.test', website_booking_api_token='website-secret')
+
+
+def test_two_sources_sum_once_and_preserve_source_labels_and_history():
+    requests = []
+
+    def handler(request):
+        requests.append(request)
+        payload = summary(request.url.params['status'])
+        if request.url.host == 'website.example.test':
+            payload['coverage']['history_started_at'] = '2026-09-20T00:00:00.000Z'
+            payload['by_source'][0].update(value='website', label='website')
+        return httpx.Response(200, json=payload)
+
+    client = BookingAnalyticsClient(multi_source_settings(), transport=httpx.MockTransport(handler))
+    raw = asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
+    result = build_booking_analytics(raw, date(2026, 9, 19), date(2026, 9, 20), 'day')
+    assert len(requests) == 4
+    for request in requests:
+        expected = 'website-secret' if request.url.host == 'website.example.test' else 'telegram-secret'
+        assert request.headers['Authorization'] == 'Bearer ' + expected
+    assert result['totals'] == {'bookings': 4, 'guests': 10, 'unknown_guest_bookings': 2, 'cancelled': 2}
+    assert {r['name'] for r in result['sources']} == {'Telegram · direct', 'Сайт'}
+    assert [s['name'] for s in result['coverage']['sources']] == ['Telegram', 'Сайт']
+    assert result['coverage']['sources'][1]['history_started_at'] == '2026-09-20T00:00:00.000Z'
+    assert result['series'][0]['values'] == {'bookings': 4, 'guests': 10, 'cancelled': 2}
+    assert 'secret' not in str(result)
+
+
+@pytest.mark.parametrize('broken_host,label', [('website.example.test', 'Сайт'), ('booking.example.test', 'Telegram')])
+def test_one_source_failure_never_returns_a_partial_total(broken_host, label):
+    def handler(request):
+        if request.url.host == broken_host:
+            return httpx.Response(503, json={'error': 'source_unavailable'})
+        return httpx.Response(200, json=summary(request.url.params['status']))
+    client = BookingAnalyticsClient(multi_source_settings(), transport=httpx.MockTransport(handler))
+    with pytest.raises(DataError, match=label):
+        asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
+
+
+def test_inconsistent_source_history_is_detected_before_merging():
+    def handler(request):
+        payload = summary(request.url.params['status'])
+        if request.url.host == 'website.example.test' and request.url.params['status'] == 'cancelled':
+            payload['excluded_missing_date'] = 1
+        return httpx.Response(200, json=payload)
+    client = BookingAnalyticsClient(multi_source_settings(), transport=httpx.MockTransport(handler))
+    with pytest.raises(DataError, match='Сайт:.*несогласованное'):
+        asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
 
 
 def test_booking_client_keeps_one_pool_across_requests():

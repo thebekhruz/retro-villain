@@ -36,10 +36,12 @@ def _entries(connection, account, through=None, *, since=None):
         'WHERE account = ? AND day >= ? AND day <= ? ORDER BY day, id',
         (account, first, last))]
     if account == 'shoh':
+        # Образец LIKE — параметром, а не литералом: с появлением границ
+        # периода в запросе psycopg принял бы «%'» в тексте за placeholder.
         rows += [dict(id=None, day=r[0], kind='deposit', amount=r[1], note=r[2]) for r in connection.execute(
             "SELECT day, amount, description FROM accountant_movements WHERE day >= ? AND day <= ? AND ("
             "(kind='other_expense' AND item_code='proc_shoh') OR "
-            "(kind='procurement_advance' AND description LIKE 'Шох:%'))", (first, last))]
+            "(kind='procurement_advance' AND description LIKE ?))", (first, last, 'Шох:%'))]
     # Приход из кассы кассира: выдачи Шоху (`shoh`) и доллары в сейф (`usd`).
     # Деньги бухгалтера они не трогают — см. modules/cashier/till.py.
     from retro.modules.cashier.till import reserve_rows
