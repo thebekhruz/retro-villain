@@ -1,4 +1,6 @@
 import re
+from copy import deepcopy
+from dataclasses import replace
 from datetime import date, datetime, timezone
 
 import httpx
@@ -105,6 +107,32 @@ class BookingAnalyticsClient:
         self.transport = transport
 
     async def load(self, start, end):
+        if not self.settings.website_booking_api_url:
+            return await self._load_single(start, end)
+        sources = []
+        if self.settings.booking_configured:
+            sources.append(('telegram', 'Telegram', self))
+        website_settings = replace(
+            self.settings, booking_api_url=self.settings.website_booking_api_url,
+            booking_api_token=self.settings.website_booking_api_token)
+        sources.append(('website', 'Сайт', BookingAnalyticsClient(website_settings, transport=self.transport)))
+
+        async def load_source(source):
+            key, label, client = source
+            try:
+                raw = await client._load_single(start, end)
+                if raw['submitted']['coverage'] != raw['cancelled']['coverage'] or \
+                        raw['submitted']['excluded_missing_date'] != raw['cancelled']['excluded_missing_date']:
+                    raise DataError('API бронирований вернул несогласованное покрытие истории.')
+                return key, label, raw
+            except DataError as error:
+                raise DataError(f'{label}: {error}') from None
+
+        # Fail visibly if either configured source fails: partial counts must not look complete.
+        loaded = await gather_reads(*(load_source(source) for source in sources))
+        return merge_summaries(loaded)
+
+    async def _load_single(self, start, end):
         if not self.settings.booking_configured:
             raise DataError('API бронирований ещё не настроен.')
         headers = {
@@ -143,3 +171,47 @@ class BookingAnalyticsClient:
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('bookings', error, operation='load_summary')
             raise DataError('Не удалось связаться с API бронирований.') from None
+
+
+def merge_summaries(sources):
+    coverage_sources = [
+        {'id': key, 'name': label, **raw['submitted']['coverage'],
+         'excluded_missing_date': raw['submitted']['excluded_missing_date']}
+        for key, label, raw in sources]
+    coverage = {
+        'history_started_at': min(row['history_started_at'] for row in coverage_sources),
+        'historical_data_complete': all(row['historical_data_complete'] for row in coverage_sources),
+        'sources': coverage_sources,
+    }
+    result = {}
+    for status in ('submitted', 'cancelled'):
+        merged = deepcopy(sources[0][2][status])
+        merged['coverage'] = coverage
+        merged['excluded_missing_date'] = sum(row['excluded_missing_date'] for row in coverage_sources)
+        merged['totals'] = {field: sum(raw[status]['totals'][field] for _, _, raw in sources)
+                            for field in COUNT_FIELDS}
+        for field in ('by_date', 'by_status'):
+            merged[field] = _merge_rows([row for _, _, raw in sources for row in raw[status][field]])
+        merged['by_utm'] = {field: _merge_rows(
+            [row for _, _, raw in sources for row in raw[status]['by_utm'][field]]) for field in UTM_FIELDS}
+        merged['by_source'] = []
+        for key, label, raw in sources:
+            for row in raw[status]['by_source']:
+                detail = row['label']
+                if key == 'website':
+                    detail = {'website': '', 'website_telegram': 'Telegram-чат бота сайта'}.get(row['value'], detail)
+                merged['by_source'].append({**row, 'value': key + ':' + str(row['value']),
+                                            'label': label + (' · ' + detail if detail else '')})
+        result[status] = merged
+    return result
+
+
+def _merge_rows(rows):
+    grouped = {}
+    for row in rows:
+        key = row['value']
+        if key not in grouped:
+            grouped[key] = {**row, **{field: 0 for field in COUNT_FIELDS}}
+        for field in COUNT_FIELDS:
+            grouped[key][field] += row[field]
+    return [grouped[key] for key in sorted(grouped, key=lambda value: '' if value is None else str(value))]
