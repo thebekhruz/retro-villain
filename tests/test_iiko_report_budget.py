@@ -19,8 +19,8 @@ import pytest
 from retro.config import Settings
 from retro.integrations import iiko as iiko_module
 from retro.integrations.iiko import (
-    DIRECTOR_RANGE_MAX_DAYS, FOUNDER_OLAP_MAX_DAYS, IIKO_POLL_BUDGET, IikoClient,
-    OLAP_TTL_CLOSED, OLAP_TTL_OPEN, olap_ttl,
+    DIRECTOR_RANGE_MAX_DAYS, FOUNDER_OLAP_MAX_DAYS, IIKO_KEEPALIVE, IIKO_POLL_BUDGET,
+    IikoClient, OLAP_TTL_CLOSED, OLAP_TTL_OPEN, olap_ttl,
 )
 from retro.modules.cashier.service import DataError
 
@@ -36,7 +36,7 @@ def collecting_transport(windows):
             return httpx.Response(200, json={'token': 'synthetic'})
         body = json.loads(request.content)
         if request.url.path == '/api/olap/init':
-            windows.append((len(body['groupFields']),
+            windows.append((tuple(body['groupFields']),
                             body['filters'][0]['dateFrom'], body['filters'][0]['dateTo']))
             return httpx.Response(200, json={'fetchId': 'synthetic'})
         return httpx.Response(200, json={'result': {'rows': []}})
@@ -53,21 +53,40 @@ def test_director_asks_payments_by_month_and_costs_by_ten_days():
     asyncio.run(source.load_director_report(TODAY, start=start, end=END))
     asyncio.run(source.close())
 
-    # Два отчёта на окно различаются только фильтром, поэтому считаем все.
-    heavy = [window for window in windows if window[0] > 5]
-    payments = [window for window in windows if window[0] == 5]
+    # Отчёты себестоимости — по номенклатуре и заказам, оплаты — по способам.
+    heavy = [window for window in windows if 'UniqOrderId.Id' in window[0]]
+    payments = [window for window in windows if 'PayTypes' in window[0]
+                and 'UniqOrderId.Id' not in window[0]]
     # Тяжёлые отчёты остаются в десятидневном окне: на них iiko отдаёт 500.
     assert len(heavy) == 2 * len(range(0, 30, DIRECTOR_RANGE_MAX_DAYS))
     for _, first, last in heavy:
         span = (date.fromisoformat(last) - date.fromisoformat(first)).days + 1
         assert span <= DIRECTOR_RANGE_MAX_DAYS
-    # Оплаты берутся месячным окном — два отчёта на весь период, а не шесть.
-    assert len(payments) == 2
+    # Оплаты берутся месячным окном и одним отчётом: вид операции приходит
+    # измерением, а прежний второй отчёт складывается из него на нашей стороне.
+    assert len(payments) == 1
+    assert 'OperationType' in payments[0][0]
     for _, first, last in payments:
         assert date.fromisoformat(first) == start and date.fromisoformat(last) == END
         assert (END - start).days + 1 <= FOUNDER_OLAP_MAX_DAYS
-    # Итого месяц директора стоит восьми отчётов вместо двенадцати.
-    assert len(windows) == 8
+    # Итого месяц директора стоит семи отчётов вместо двенадцати.
+    assert len(windows) == 7
+
+
+def test_idle_connection_to_iiko_outlives_the_cashier_poll():
+    """Пять секунд httpx по умолчанию означали хендшейк почти на каждый запрос.
+
+    Кассир опрашивает день раз в полминуты, а цикл ожидания отчёта спит секунду
+    между чтениями: на рвущемся маршруте до iiko оба интервала должны попадать
+    в живое соединение, а не в новый SYN."""
+    source = IikoClient(Settings(login='test', password='test', store_id=1), poll_delay=0)
+    client = source._new_client()
+    try:
+        assert client._transport._pool._keepalive_expiry == IIKO_KEEPALIVE
+    finally:
+        asyncio.run(client.aclose())
+    # Полминуты кассирского опроса и секунда между чтениями отчёта.
+    assert IIKO_KEEPALIVE >= 30
 
 
 def test_closed_period_reports_outlive_the_open_one():

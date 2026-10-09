@@ -10,6 +10,7 @@ from pathlib import Path
 from .service import DataError
 from retro.accounting_period import accounting_range_start
 from retro.db import as_database, table_columns
+from retro.request_reads import once
 from retro.runtime import secure_directory, secure_file
 
 @dataclass(frozen=True)
@@ -89,6 +90,9 @@ class ExpenseStore:
                 connection.rollback()
                 raise
 
+    # Строка политики за запрос не меняется, а соединение у каждого
+    # вызова своё — поэтому ключ по нему не строим.
+    @once(key=lambda connection: None)
     def _policy(self, connection):
         row = connection.execute(
             'SELECT date_from, description, amount FROM cashier_expense_policy WHERE id=1').fetchone()
@@ -117,6 +121,7 @@ class ExpenseStore:
                     'VALUES (?,?,?,?)', (day.isoformat(), name, str(value), policy_key(day, name, value)))
             day += timedelta(days=1)
 
+    @once
     def list(self, day: date):
         with closing(self._open()) as connection:
             with connection:
@@ -187,6 +192,7 @@ class ExpenseStore:
                 connection.execute('DELETE FROM cashier_expenses WHERE id = ?', (item_id,))
                 return True
 
+    @once
     def list_receipts(self, day: date):
         with closing(self._open()) as connection:
             rows = connection.execute(

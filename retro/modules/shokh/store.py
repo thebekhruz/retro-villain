@@ -16,6 +16,7 @@ from pathlib import Path
 
 from retro.accounting_period import accounting_range_start, period_start
 from retro.db import as_database, table_columns
+from retro.request_reads import once
 from retro.runtime import secure_directory, secure_file
 
 # Телефонное фото редко больше пяти мегабайт; ограничение защищает базу от
@@ -454,6 +455,7 @@ class ShokhStore:
                 result[point] = dict(supplier_id=data['supplier_id'], storage_id=data['storage_id'])
         return result
 
+    @once
     def points(self) -> list[str]:
         with closing(self._open()) as connection:
             seen = [row[0] for row in connection.execute(

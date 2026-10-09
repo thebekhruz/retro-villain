@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 import pytest
@@ -83,3 +83,46 @@ def test_monthly_plan_and_shoh_receipts_do_not_double_count_cash(tmp_path):
     assert panels['shoh']['balance'] == '150000'
     assert store.daily_summary(DAY, Decimal('1000000'))['cash_balance'] == Decimal('400000')
     assert store.reserves(date(2026, 10, 1))['monthly']['balance'] is None
+
+
+def test_single_pass_negative_check_answers_exactly_as_the_per_day_recount():
+    """Проверка остатка резерва за один проход вместо пересчёта на каждый день.
+
+    Старая проверка перебирала все дни и для каждого складывала заново все
+    строки не позже него — квадрат от числа дней, и так на каждой записи в
+    резерв. Эталон здесь — та самая старая формулировка; ответ обязан
+    совпадать на всех наборах, включая переход через начало учёта."""
+    import random
+    from retro.accounting_period import ACCOUNTING_START
+    from retro.modules.accountant.reserves import _balance, first_negative_day
+
+    def recount(rows):
+        """Прежняя формулировка: минус хотя бы в один записанный день."""
+        for cutoff in {row['day'] for row in rows}:
+            balance = _balance([row for row in rows if row['day'] <= cutoff])
+            if balance is not None and balance < 0:
+                return True
+        return False
+
+    def entry(day, kind, amount):
+        return dict(day=day.isoformat(), kind=kind, amount=str(amount))
+
+    # Архив без начального остатка — остаток неизвестен, минуса в нём нет.
+    archive = [entry(ACCOUNTING_START - timedelta(days=3), 'withdrawal', 500)]
+    assert first_negative_day(archive) is None and not recount(archive)
+
+    # Начало учёта обнуляет счёт: архивный плюс не покрывает рабочий минус.
+    crossing = [entry(ACCOUNTING_START - timedelta(days=1), 'opening', 1000),
+                entry(ACCOUNTING_START, 'opening', 0),
+                entry(ACCOUNTING_START + timedelta(days=1), 'withdrawal', 10)]
+    assert first_negative_day(crossing) == (ACCOUNTING_START + timedelta(days=1)).isoformat()
+    assert recount(crossing)
+
+    kinds = ('opening', 'transfer', 'deposit', 'withdrawal')
+    random.seed(20261009)
+    for _ in range(300):
+        rows = []
+        for _ in range(random.randint(0, 9)):
+            day = ACCOUNTING_START + timedelta(days=random.randint(-4, 4))
+            rows.append(entry(day, random.choice(kinds), random.randint(0, 300)))
+        assert (first_negative_day(rows) is not None) == recount(rows), rows

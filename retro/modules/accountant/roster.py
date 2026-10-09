@@ -17,6 +17,7 @@ from pathlib import Path
 from openpyxl import load_workbook
 
 from retro.db import as_database, table_columns
+from retro.request_reads import once
 from retro.runtime import secure_directory, secure_file
 from retro.integrations.hikvision import HikvisionPerson
 from retro.modules.cashier.service import TZ, today_tashkent
@@ -350,6 +351,7 @@ class RosterStore:
                             existing += 1
         return {'imported': imported, 'existing': existing}
 
+    @once
     def list(self, day=None) -> list[Employee]:
         with closing(self._open()) as connection:
             if day is None:
@@ -565,6 +567,7 @@ class RosterStore:
     def monthly_total(self) -> Decimal:
         """Return only salaries explicitly stored in the monthly payroll register."""
         return sum((person.salary for person in self.list_monthly()), Decimal(0))
+    @once
     def list_monthly(self, *, archived: bool = False) -> list[MonthlyEmployee]:
         """Окладники в реестре; archived=True — удалённые (в архиве)."""
         with closing(self._open()) as connection:

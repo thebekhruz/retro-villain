@@ -112,14 +112,24 @@ def test_director_loads_yandex_headline_from_payment_report_not_excluded_group()
                     values += [row.quantity, row.revenue, row.cost]
                     rows.append({f'field{i}': {'value': value} for i, value in enumerate(values)})
             return rows
-        payment_calls.append(tuple(extra_filters))
-        if extra_filters:
-            return [node(0, '2026-09-13', [node(1, 'Kassa-FiscalBox1', [
-                node(2, 'Ресторан', [node(3, 'Доставка', [
-                    {**node(4, 'Яндех Еда'), 'field5': {'value': 28004000}}
-                ])])
-            ])])]
-        return []
+        payment_calls.append((tuple(groups), tuple(extra_filters)))
+        if 'OperationType' not in groups:
+            return []
+        # Один отчёт с видом операции вместо двух: зал берёт только оплаты,
+        # банкет Бехруза — все виды, как это делали фильтр и его отсутствие.
+        return [node(0, '2026-09-13', [node(1, 'Kassa-FiscalBox1', [
+            node(2, 'Ресторан', [node(3, 'Доставка', [
+                node(4, 'Яндех Еда', [
+                    {**node(5, 'Оплата'), 'field6': {'value': 28004000}},
+                    {**node(5, 'Предоплата'), 'field6': {'value': 500000}},
+                ]),
+            ])]),
+            node(2, 'Бехруз (Свадьба)', [node(3, 'Аренда зала (Бехруз)', [
+                node(4, 'Яндех Еда', [
+                    {**node(5, 'Предоплата'), 'field6': {'value': 1000000}},
+                ]),
+            ])]),
+        ])])]
 
     source._olap = fake_olap
     source._olap_range = fake_olap_range
@@ -129,13 +139,14 @@ def test_director_loads_yandex_headline_from_payment_report_not_excluded_group()
     assert result.period_end == date(2026, 9, 22)
     assert result.cash_total == Decimal('650000')
     assert result.json()['excluded_revenue'] == {'ДОСТАВКА ЯНДЕКС': '650000.00'}
-    assert result.yandex_revenue == Decimal('28004000')
-    assert len(payment_calls) == 2
-    assert payment_calls[0] == ({
-        'field': 'OperationType', 'filterType': 'value_list',
-        'valueList': ['PAYMENT'], 'inclusiveList': True,
-    },)
-    assert payment_calls[1] == ()
+    # Зал — только «Оплата» (зачёт аванса на 500 000 не в счёт), банкет — все
+    # виды операций: ровно то, что раньше давали два отчёта.
+    assert result.yandex_revenue == Decimal('29004000')
+    # Один отчёт оплат на окно вместо двух, и без серверного фильтра: вид
+    # операции пришёл измерением и разложен на нашей стороне.
+    payments = [call for call in payment_calls if 'OperationType' in call[0]]
+    assert len(payments) == 1 and payments[0][1] == ()
+    assert not any(filters for _, filters in payment_calls)
 
 
 def sale(payment, quantity, revenue, cost, *, order='order-1'):

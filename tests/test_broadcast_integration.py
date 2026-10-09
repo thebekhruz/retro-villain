@@ -96,3 +96,22 @@ def test_broadcast_client_rejects_empty_or_invalid_recipient_selection():
     for recipient_ids in ([], ['raw-telegram-id'], ['A' * 32, 'A' * 32]):
         with pytest.raises(DataError, match='получателя'):
             asyncio.run(client.start(JOB['id'], 'Текст', recipient_ids))
+
+
+def test_broadcast_client_keeps_one_pool_across_polls():
+    """Статус рассылки опрашивают до её конца — пул должен жить между опросами."""
+    polls = []
+
+    def handler(request):
+        polls.append(request.url.path)
+        return httpx.Response(200, json=JOB)
+
+    client = BookingBroadcastClient(settings(), transport=httpx.MockTransport(handler))
+    asyncio.run(client.status(JOB['id']))
+    first = client._http
+    asyncio.run(client.status(JOB['id']))
+
+    assert first is not None and client._http is first
+    assert len(polls) == 2
+    asyncio.run(client.close())
+    assert client._http is None

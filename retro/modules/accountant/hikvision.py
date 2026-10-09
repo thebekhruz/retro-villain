@@ -12,6 +12,7 @@ from decimal import Decimal
 from zoneinfo import ZoneInfo
 
 from retro.integrations.hikvision import HikvisionEvent
+from retro.request_reads import once
 from retro.db import as_database, table_columns
 from retro.runtime import secure_directory, secure_file
 
@@ -289,6 +290,7 @@ class AttendanceStore:
                                (source, _iso(cursor_at), _iso(merged_from), _iso(merged_through),
                                 _iso(at), _iso(at)))
 
+    @once
     def sync_state(self, source: str) -> SyncState:
         with closing(self._open()) as connection:
             row = connection.execute(

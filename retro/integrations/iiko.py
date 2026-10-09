@@ -33,7 +33,8 @@ from retro.modules.director.models import (
     SalesRow, build_snapshot as build_director_snapshot, payment_total, resolve_period,
 )
 from retro.modules.founder.models import (
-    PaymentRow, RevenueRow, build_analytics, build_sales_bridge, is_banquet_item,
+    PAID_OPERATIONS, PaymentRow, RevenueRow, build_analytics, build_sales_bridge,
+    is_banquet_item, payments_without_operation,
 )
 
 cashier_read = ContextVar('cashier_read', default=False)
@@ -67,6 +68,12 @@ IIKO_TIMEOUT = httpx.Timeout(connect=8, read=30, write=20, pool=8)
 IIKO_CONNECT_ATTEMPTS = 3
 IIKO_READ_ATTEMPTS = 2
 IIKO_RETRY_PAUSE = 0.5
+# httpx по умолчанию держит простаивающее соединение пять секунд. Кассир
+# опрашивает день раз в полминуты, а цикл ожидания отчёта спит секунду между
+# чтениями — на рвущемся маршруте (см. выше) это лишний TCP- и TLS-хендшейк
+# почти на каждый запрос. Минута простоя закрывает оба интервала; устаревшее
+# соединение остаётся ошибкой дешёвого повтора (IIKO_CHEAP_RETRY).
+IIKO_KEEPALIVE = 60
 # Опрос готовности отчёта частым не делаем: замеры 28 сентября показали, что
 # запросы к iiko — дефицитный ресурс. Опрос раз в 0,35 с вместо секунды дал на
 # директорском отчёте вдвое больше запросов (88 против 43) и вдвое худшее время;
@@ -536,17 +543,22 @@ class IikoClient:
         # кассира в очередь за расчётами учредителя незачем.
         self._shift_cache = ReportCache(concurrency=4, limit=32)
 
+    def _new_client(self):
+        """Пул до iiko: держится весь срок жизни приложения, простой — минуту."""
+        return httpx.AsyncClient(
+            base_url=IIKO_ORIGIN,
+            headers={'Accept': 'application/json', 'Accept-Language': 'ru_RU',
+                     'Content-Type': 'application/json'},
+            timeout=IIKO_TIMEOUT, follow_redirects=False, transport=self.transport,
+            limits=httpx.Limits(max_connections=8, max_keepalive_connections=8,
+                                keepalive_expiry=IIKO_KEEPALIVE))
+
     @asynccontextmanager
     async def _client(self):
         if self.settings.base_url != IIKO_ORIGIN:
             raise DataError('Разрешён только сервер Retro Milliy.')
         if self._http is None:
-            self._http = httpx.AsyncClient(
-                base_url=IIKO_ORIGIN,
-                headers={'Accept': 'application/json', 'Accept-Language': 'ru_RU',
-                         'Content-Type': 'application/json'},
-                timeout=IIKO_TIMEOUT, follow_redirects=False, transport=self.transport,
-                limits=httpx.Limits(max_connections=8, max_keepalive_connections=8))
+            self._http = self._new_client()
         await self._authorize(self._http)
         yield self._http
 
@@ -684,8 +696,6 @@ class IikoClient:
             'OpenDate.Typed', 'CashRegisterName', 'RestaurantSection', 'DishName',
             'PayTypes',
         ]
-        payment_scope = [dict(field='OperationType', filterType='value_list',
-                              valueList=['PAYMENT'], inclusiveList=True)]
         try:
             async with self._client() as client:
                 # Период берём окнами. Окна независимы по дням, поэтому идут
@@ -694,10 +704,10 @@ class IikoClient:
 
                 # Десятидневное окно нужно только двум тяжёлым отчётам: на их
                 # восьми-девяти измерениях iiko отдаёт 500 уже на трёх неделях.
-                # Выручка по способам оплаты — те же пять измерений, что и у
+                # Выручка по способам оплаты — те же шесть измерений, что и у
                 # учредителя, и месяц целиком iiko по ним считает спокойно.
                 # Раньше она резалась теми же десятью днями и на тридцати днях
-                # стоила шести отчётов вместо двух.
+                # стоила шести отчётов вместо одного.
                 async def load_costs(chunk_start, chunk_end):
                     async with chunk_limit:
                         return await gather_reads(
@@ -707,14 +717,16 @@ class IikoClient:
                                              ['OpenDate.Typed', *DIRECTOR_COST_GROUPS], DIRECTOR_FIELDS),
                         )
 
+                # Прежде это были два отчёта на окно: один с фильтром
+                # OperationType=PAYMENT (обычный зал), второй без фильтра
+                # (банкет Бехруза). Отличались они только фильтром, поэтому
+                # берём один отчёт с измерением OperationType и раскладываем
+                # его на нашей стороне — фильтр повторяется там же.
                 async def load_payments(chunk_start, chunk_end):
                     async with chunk_limit:
-                        return await gather_reads(
-                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                             ['DishDiscountSumInt'], payment_scope),
-                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                             ['DishDiscountSumInt']),
-                        )
+                        return await self._olap_range(
+                            client, chunk_start, chunk_end,
+                            [*payment_groups, 'OperationType'], ['DishDiscountSumInt'])
 
                 cost_answers, payment_answers = await gather_reads(
                     gather_reads(*(load_costs(chunk_start, chunk_end)
@@ -724,20 +736,23 @@ class IikoClient:
                                    for chunk_start, chunk_end in date_chunks(
                                        start, end, max_days=FOUNDER_OLAP_MAX_DAYS))),
                 )
-                payment_rows, cost_rows, regular_rows, banquet_rows = [], [], [], []
+                payment_rows, cost_rows, operations = [], [], []
                 for chunk_payments, chunk_costs in cost_answers:
                     payment_rows.extend(chunk_payments)
                     cost_rows.extend(chunk_costs)
-                for chunk_regular, chunk_banquet in payment_answers:
-                    regular_rows.extend(chunk_regular)
-                    banquet_rows.extend(chunk_banquet)
+                for chunk_operations in payment_answers:
+                    operations.extend(founder_rows_from_olap(
+                        chunk_operations, payments=True, include_operation=True))
                 rows = reconcile_director_costs(
                     director_rows_from_olap(None, payment_rows, payment_details=True),
                     director_rows_from_olap(None, cost_rows, split_payments=False))
-                payments = founder_rows_from_olap(
-                    regular_rows, payments=True, dish_filter='exclude_banquet')
-                payments.extend(founder_rows_from_olap(
-                    banquet_rows, payments=True, dish_filter='banquet_only'))
+                # Обычный зал — только оплаты (как делал фильтр PAYMENT),
+                # банкет Бехруза — все виды операций.
+                payments = payments_without_operation(
+                    [row for row in operations if not is_banquet_item(row.item)],
+                    kinds=PAID_OPERATIONS)
+                payments.extend(payments_without_operation(
+                    [row for row in operations if is_banquet_item(row.item)]))
                 yandex_revenue = payment_total(payments, 'Яндекс Еда')
                 return build_director_snapshot(rows, self.settings.director_categories, start, end,
                                                excluded_groups=self.settings.director_excluded_groups,
@@ -764,11 +779,13 @@ class IikoClient:
                 internal_costs = {name: Decimal(0) for name in FOUNDER_INTERNAL_COST_TYPES}
                 chunk_limit = asyncio.Semaphore(FOUNDER_OLAP_CHUNK_CONCURRENCY)
 
+                # Оплаты по способам — тот же отчёт, что и операции, только без
+                # измерения OperationType: его складывают на нашей стороне
+                # (payments_without_operation), а не спрашивают у iiko вторым
+                # чтением. Три отчёта на окно вместо четырёх.
                 async def load_chunk(chunk_start, chunk_end):
                     async with chunk_limit:
                         return await gather_reads(
-                            self._olap_range(client, chunk_start, chunk_end, payment_groups,
-                                             ['DishDiscountSumInt']),
                             self._olap_range(client, chunk_start, chunk_end, revenue_groups,
                                              ['DishDiscountSumInt', 'ProductCostBase.ProductCost']),
                             self._olap_range(
@@ -786,11 +803,12 @@ class IikoClient:
                     gather_reads(*(load_chunk(chunk_start, chunk_end)
                                    for chunk_start, chunk_end in chunks)),
                 )
-                for payment_rows, sales_rows, internal_rows, operation_rows in chunk_rows:
-                    payments.extend(founder_rows_from_olap(payment_rows, payments=True))
+                for sales_rows, internal_rows, operation_rows in chunk_rows:
+                    chunk_operations = founder_rows_from_olap(
+                        operation_rows, payments=True, include_operation=True)
+                    operations.extend(chunk_operations)
+                    payments.extend(payments_without_operation(chunk_operations))
                     revenue.extend(founder_rows_from_olap(sales_rows, include_cost=True))
-                    operations.extend(founder_rows_from_olap(
-                        operation_rows, payments=True, include_operation=True))
                     for name, amount in founder_internal_costs_from_olap(internal_rows).items():
                         internal_costs[name] += amount
                 result = build_analytics(revenue, payments, start, end, granularity, directions)

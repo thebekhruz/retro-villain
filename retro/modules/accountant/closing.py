@@ -18,6 +18,7 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from retro.accounting_period import accounting_range_start, period_start
+from retro.request_reads import call as cached_call
 
 from .audit import record_audit
 from .ledger import (CashBook, LedgerError, closure_row, ensure_open, flow_json, local_timestamp,
@@ -58,6 +59,10 @@ def _closure_json(row) -> dict:
 
 
 def closures(finance, limit: int = 24) -> list[dict]:
+    return cached_call(('closures', id(finance), limit), lambda: _closures(finance, limit))
+
+
+def _closures(finance, limit: int) -> list[dict]:
     with closing(finance._open()) as connection:
         rows = connection.execute(
             'SELECT month, last_day, closing_balance, closed_at, closed_by, snapshot '
@@ -67,6 +72,11 @@ def closures(finance, limit: int = 24) -> list[dict]:
 
 def closed_state(finance, day: date) -> dict | None:
     """Закрыт ли день: метка «Закрыто · дата · кем» для экранов."""
+    return cached_call(('closed_state', id(finance), day),
+                       lambda: _closed_state(finance, day))
+
+
+def _closed_state(finance, day: date) -> dict | None:
     with closing(finance._open()) as connection:
         latest = closure_row(connection)
         if latest is None or day.isoformat() > latest[1]:
