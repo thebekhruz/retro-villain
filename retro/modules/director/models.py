@@ -8,6 +8,11 @@ from retro.modules.cashier.service import (
 )
 from retro.modules.founder.models import classify_direction
 
+# Где настраивается соответствие «группа меню iiko = тип отчёта». Имя
+# переменной называем прямо в отказе: экран видит директор, а правит её тот,
+# кому он перешлёт сообщение.
+CATEGORIES_SETTING = 'IIKO_DIRECTOR_CATEGORIES'
+
 
 @dataclass(frozen=True)
 class SalesRow:
@@ -185,6 +190,14 @@ def payment_total(rows, payment_name):
     return total
 
 
+def unknown_categories_message(names) -> str:
+    """Отказ с полным списком групп: одна правка allowlist чинит отчёт целиком."""
+    quoted = ', '.join(f'«{name}»' for name in sorted(names))
+    if len(names) == 1:
+        return f'Для категории iiko {quoted} не настроен тип отчёта ({CATEGORIES_SETTING}).'
+    return f'Для категорий iiko не настроен тип отчёта ({CATEGORIES_SETTING}): {quoted}.'
+
+
 def build_snapshot(rows, categories, period_start, period_end, *, excluded_groups=frozenset(),
                    yandex_revenue=None):
     if period_end < period_start:
@@ -227,6 +240,12 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
     item_groups = {}
     retro_waiters = defaultdict(lambda: dict(revenue=Decimal(0), cost=Decimal(0), quantity=Decimal(0),
                                              orders=set(), days=set()))
+    # Ненастроенные группы собираем все и называем разом: отчёт всё равно не
+    # соберётся, а отказ на первой встреченной заставлял править allowlist по
+    # одной группе за выкат. Редкая группа (одна бутылка коньяка за неделю)
+    # роняет отчёт так же, как ходовая, и всплывает только в тот период, куда
+    # попала её продажа.
+    unknown_categories = set()
     for row in values:
         group = direction(row)
         if group is None:
@@ -237,7 +256,8 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
             excluded_revenue[row.category] += row.revenue
             continue
         if categories and row.category not in categories:
-            raise DataError(f'Для категории iiko «{row.category}» не настроен тип отчёта.')
+            unknown_categories.add(row.category)
+            continue
         if not isinstance(row.item, str) or not row.item.strip():
             raise DataError('iiko не указал название блюда.')
         if not row.waiter.strip():
@@ -271,6 +291,8 @@ def build_snapshot(rows, categories, period_start, period_end, *, excluded_group
                 stats['days'].add(row.day)
         for name in names:
             add(metrics[name][row.item], kind, row)
+    if unknown_categories:
+        raise DataError(unknown_categories_message(unknown_categories))
     daily_totals = tuple(DayTotal(day, daily[day]['revenue'], daily[day]['cost'],
                                   dict(daily[day]['directions']), dict(daily[day]['payments']))
                          for day in sorted(daily))

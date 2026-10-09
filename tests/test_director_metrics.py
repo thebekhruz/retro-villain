@@ -145,3 +145,42 @@ def test_banquet_is_counted_by_bekhruz_marker_in_dish_name():
     assert snapshot.cash_total == Decimal('1800000')
     assert snapshot.item_metrics['banquet']['СВАДЬБА Салат Оливье (Бехруз)'].revenue == Decimal('200000')
     assert 'Плов 1' not in snapshot.item_metrics['all']
+
+
+def test_unconfigured_groups_are_all_named_in_one_refusal():
+    """Отказ по первой встреченной группе заставлял править allowlist по одной.
+
+    Редкая группа (одна бутылка коньяка за неделю) роняет отчёт так же, как
+    ходовая, и всплывает только в тот период, куда попала её продажа. Поэтому
+    отказ обязан перечислить все ненастроенные группы сразу — одной правкой
+    `IIKO_DIRECTOR_CATEGORIES` отчёт чинится целиком."""
+    rows = [sale(category='Основное меню'),
+            sale(category='Коньяк', item='Коньяк Imperia VS', order_id='o-2'),
+            sale(category='Виски', item='Виски Jack Daniels', order_id='o-3'),
+            sale(category='Коньяк', item='Коньяк Imperia VS', order_id='o-4')]
+
+    with pytest.raises(DataError) as refusal:
+        build_snapshot(rows, CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
+
+    message = str(refusal.value)
+    assert '«Виски»' in message and '«Коньяк»' in message
+    assert 'IIKO_DIRECTOR_CATEGORIES' in message
+    # Группа названа один раз, сколько бы строк её ни было.
+    assert message.count('«Коньяк»') == 1
+    assert 'Основное меню' not in message
+
+
+def test_single_unconfigured_group_keeps_the_singular_wording():
+    with pytest.raises(DataError, match='Для категории iiko «Коньяк» не настроен тип отчёта'):
+        build_snapshot([sale(category='Коньяк')], CATEGORIES, date(2026, 9, 8), date(2026, 9, 17))
+
+
+def test_explicitly_excluded_group_is_not_called_unconfigured():
+    """Исключённая группа в allowlist не нужна — она и так не входит в отчёт."""
+    rows = [sale(category='Основное меню'),
+            sale(category='ДОСТАВКА ЯНДЕКС', order_id='o-2')]
+
+    snapshot = build_snapshot(rows, CATEGORIES, date(2026, 9, 8), date(2026, 9, 17),
+                              excluded_groups=frozenset({'ДОСТАВКА ЯНДЕКС'}))
+
+    assert snapshot.json()['excluded_revenue'] == {'ДОСТАВКА ЯНДЕКС': '200000.00'}
