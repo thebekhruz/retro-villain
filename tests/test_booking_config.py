@@ -45,3 +45,30 @@ def test_broadcast_token_requires_booking_url_and_must_be_distinct(monkeypatch):
     monkeypatch.setenv('BROADCAST_API_TOKEN', 'same-secret')
     with pytest.raises(ValueError, match='должен отличаться'):
         Settings.from_env()
+
+
+def test_website_source_uses_separate_config_and_hides_secret(monkeypatch):
+    monkeypatch.setenv('WEBSITE_BOOKING_ANALYTICS_URL', 'https://website-bot.example.test/')
+    monkeypatch.setenv('WEBSITE_ANALYTICS_API_TOKEN', 'website-secret')
+    settings = Settings.from_env()
+    assert settings.website_booking_api_url == 'https://website-bot.example.test'
+    assert settings.website_booking_api_token == 'website-secret'
+    assert 'website-secret' not in repr(settings)
+
+
+@pytest.mark.parametrize('url,token', [
+    ('https://website-bot.example.test', ''), ('', 'website-secret'),
+    ('http://website-bot.example.test', 'website-secret'),
+    ('https://user:pass@website-bot.example.test', 'website-secret'),
+    ('https://website-bot.example.test/path', 'website-secret'),
+    ('https://website-bot.example.test?key=x', 'website-secret'),
+    ('https://telegram.example.test', 'website-secret'),
+    ('https://website-bot.example.test', 'telegram-secret'),
+])
+def test_website_source_rejects_unsafe_or_duplicate_config(monkeypatch, url, token):
+    monkeypatch.setenv('BOOKING_ANALYTICS_URL', 'https://telegram.example.test')
+    monkeypatch.setenv('ANALYTICS_API_TOKEN', 'telegram-secret')
+    monkeypatch.setenv('WEBSITE_BOOKING_ANALYTICS_URL', url)
+    monkeypatch.setenv('WEBSITE_ANALYTICS_API_TOKEN', token)
+    with pytest.raises(ValueError, match='WEBSITE_'):
+        Settings.from_env()
