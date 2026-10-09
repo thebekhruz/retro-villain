@@ -9,6 +9,9 @@ from retro.modules.cashier.service import DataError
 JOB_ID = re.compile(r'[A-Za-z0-9_-]{16,80}')
 RECIPIENT_ID = re.compile(r'[A-Za-z0-9_-]{20,64}')
 STATUSES = {'queued', 'running', 'completed', 'failed', 'interrupted'}
+# Экран опрашивает статус рассылки до её конца: пяти секунд httpx по
+# умолчанию не хватает даже на один интервал опроса.
+BROADCAST_KEEPALIVE = 60
 
 
 class BroadcastConflict(DataError):
@@ -66,23 +69,39 @@ def validate_job(payload):
 
 
 class BookingBroadcastClient:
+    """Клиент API рассылок. Соединение переживает запрос.
+
+    `status()` экран опрашивает до самого конца рассылки, поэтому новый пул и
+    TLS-хендшейк на каждый опрос — чистая потеря: один клиент на приложение
+    держит соединение живым (BROADCAST_KEEPALIVE) и закрывается с приложением.
+    """
+
     def __init__(self, settings, *, transport=None):
         self.settings = settings
         self.transport = transport
+        self._http = None
 
     def _client(self):
         if not self.settings.booking_broadcast_configured:
             raise DataError('Рассылка через booking-бот ещё не настроена.')
-        return httpx.AsyncClient(
-            base_url=self.settings.booking_api_url,
-            headers={
-                'Accept': 'application/json',
-                'Authorization': 'Bearer ' + self.settings.booking_broadcast_token,
-            },
-            timeout=15,
-            follow_redirects=False,
-            transport=self.transport,
-        )
+        if self._http is None:
+            self._http = httpx.AsyncClient(
+                base_url=self.settings.booking_api_url,
+                headers={
+                    'Accept': 'application/json',
+                    'Authorization': 'Bearer ' + self.settings.booking_broadcast_token,
+                },
+                timeout=15,
+                follow_redirects=False,
+                transport=self.transport,
+                limits=httpx.Limits(keepalive_expiry=BROADCAST_KEEPALIVE),
+            )
+        return self._http
+
+    async def close(self):
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
 
     @staticmethod
     def _raise(response):
@@ -104,11 +123,11 @@ class BookingBroadcastClient:
             raise DataError('API рассылок недоступен.')
 
     async def audience(self):
+        client = self._client()
         try:
-            async with self._client() as client:
-                response = await client.get('/admin/broadcast/audience')
-                self._raise(response)
-                return validate_audience(response.json())
+            response = await client.get('/admin/broadcast/audience')
+            self._raise(response)
+            return validate_audience(response.json())
         except ValueError:
             _invalid()
         except (httpx.HTTPError, TimeoutError) as error:
@@ -121,15 +140,15 @@ class BookingBroadcastClient:
                 or any(not isinstance(value, str) or not RECIPIENT_ID.fullmatch(value)
                        for value in recipient_ids)):
             raise DataError('Выберите хотя бы одного корректного получателя.')
+        client = self._client()
         try:
-            async with self._client() as client:
-                response = await client.post(
-                    '/admin/broadcast/jobs',
-                    headers={'Idempotency-Key': operation_id},
-                    json={'text': text, 'recipient_ids': recipient_ids},
-                )
-                self._raise(response)
-                return validate_job(response.json())
+            response = await client.post(
+                '/admin/broadcast/jobs',
+                headers={'Idempotency-Key': operation_id},
+                json={'text': text, 'recipient_ids': recipient_ids},
+            )
+            self._raise(response)
+            return validate_job(response.json())
         except ValueError:
             _invalid()
         except (httpx.HTTPError, TimeoutError) as error:
@@ -139,13 +158,13 @@ class BookingBroadcastClient:
     async def status(self, operation_id):
         if not JOB_ID.fullmatch(operation_id):
             raise DataError('Некорректный идентификатор рассылки.')
+        client = self._client()
         try:
-            async with self._client() as client:
-                response = await client.get('/admin/broadcast/jobs/' + operation_id)
-                if response.status_code == 404:
-                    raise DataError('Рассылка не найдена.')
-                self._raise(response)
-                return validate_job(response.json())
+            response = await client.get('/admin/broadcast/jobs/' + operation_id)
+            if response.status_code == 404:
+                raise DataError('Рассылка не найдена.')
+            self._raise(response)
+            return validate_job(response.json())
         except ValueError:
             _invalid()
         except (httpx.HTTPError, TimeoutError) as error:

@@ -44,8 +44,33 @@ class PaymentRow:
     operation: str = ""
 
 
+# Вид операции iiko приходит в двух формах: измерение OperationType отдаёт
+# ярлык локали (ru_RU), а фильтр отчёта принимает имя перечисления. Поэтому
+# один и тот же вид встречается и как «Оплата», и как PAYMENT.
+OPERATION_KINDS = {'Оплата': 'paid', 'PAYMENT': 'paid',
+                   'Предоплата': 'prepaid', 'PREPAYMENT': 'prepaid'}
+PAID_OPERATIONS = frozenset({'paid'})
+
+
 def is_banquet_item(item):
     return isinstance(item, str) and 'бехруз' in item.casefold()
+
+
+def payments_without_operation(rows, *, kinds=None):
+    """Отчёт оплат без измерения `OperationType` — из отчёта с ним.
+
+    Пятимерный отчёт оплат iiko и есть шестимерный, просуммированный по виду
+    операции: сумма `DishDiscountSumInt` складывается, поэтому читать оба
+    незачем. `kinds` оставляет только нужные виды операций — ровно то, что
+    делал серверный фильтр `OperationType`; неизвестный вид он отбрасывал
+    так же.
+    """
+    totals = defaultdict(Decimal)
+    for row in rows:
+        if kinds is not None and OPERATION_KINDS.get(row.operation) not in kinds:
+            continue
+        totals[row.day, row.register, row.section, row.item, row.payment] += row.amount
+    return [PaymentRow(*key, amount) for key, amount in totals.items()]
 
 
 def classify_direction(register, section, item):
@@ -253,8 +278,7 @@ def build_sales_bridge(payment_rows, operation_rows, start, end, granularity, di
     Unknown operations remain visible and never masquerade as advances.
     """
     _validate_inputs(start, end, granularity, directions)
-    kinds = {'Оплата': 'paid', 'PAYMENT': 'paid',
-             'Предоплата': 'prepaid', 'PREPAYMENT': 'prepaid'}
+    kinds = OPERATION_KINDS
     expected, actual = defaultdict(Decimal), defaultdict(Decimal)
     amounts = {key: Decimal(0) for key in ('paid', 'prepaid', 'other')}
     by_payment = defaultdict(lambda: defaultdict(Decimal))

@@ -258,8 +258,11 @@ async def founder_week(request, day: date):
     last = min(sunday, today)
     monday = accounting_range_start(monday, last)
     state = request.app.state
-    rows, (orders_rows, orders_error) = await asyncio.gather(
+    # Книга остатков читается один раз на всю неделю: без этого каждый из семи
+    # дней читал её заново, а она берёт историю целиком (FinanceStore.cash_book).
+    rows, _, (orders_rows, orders_error) = await asyncio.gather(
         asyncio.to_thread(state.accountant_finance.cash_flows_between, monday, last),
+        asyncio.to_thread(state.accountant_finance.warm_cash_book, last),
         iiko_or_error(request, 'load_daily_orders', monday, last, operation='week_orders'))
     flows = overview.daily_flows(rows)
     orders = overview.register_days(orders_rows) if orders_rows is not None else None

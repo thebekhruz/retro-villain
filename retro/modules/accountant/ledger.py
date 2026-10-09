@@ -12,6 +12,7 @@ from .payroll import PayrollRow, attendance_after_payment
 from .expense_catalog import ITEMS
 from .audit import audit_entries as read_audit_entries, record_audit
 from retro.db import PostgresConnection, as_database, table_columns
+from retro.request_reads import call as cached_call, once
 from retro.modules.cashier.service import TZ
 from retro.runtime import secure_directory, secure_file
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, cash_opening_table, period_start
@@ -128,10 +129,15 @@ def counted_handover(amount, source, confirmed_at) -> str:
 
 
 def closure_row(connection):
-    """Последний закрытый месяц: (месяц, последний день, кем, когда) или None."""
-    return connection.execute(
+    """Последний закрытый месяц: (месяц, последний день, кем, когда) или None.
+
+    За один безопасный запрос читается один раз; внутри записи кэша нет, и
+    транзакция видит собственные изменения (`ensure_open`). Ключ без
+    соединения: база бухгалтера в запросе одна, а соединение у каждого
+    вызова своё."""
+    return cached_call(('closure_row',), lambda: connection.execute(
         'SELECT month, last_day, closed_by, closed_at FROM accountant_month_closures '
-        'ORDER BY last_day DESC LIMIT 1').fetchone()
+        'ORDER BY last_day DESC LIMIT 1').fetchone())
 
 
 def flow_json(flow: dict | None) -> dict | None:
@@ -474,6 +480,15 @@ class FinanceStore:
             connection.execute('CREATE INDEX IF NOT EXISTS accountant_movements_day ON accountant_movements(day)')
             connection.execute('CREATE INDEX IF NOT EXISTS accountant_supplier_transfers_day '
                                'ON accountant_supplier_transfers(day)')
+            # Резервы читает почти каждый экран бухгалтера и учредителя: счёт с
+            # датой (подотчёт, сейф, доллары) и переводы в сейф по дню.
+            connection.execute('CREATE INDEX IF NOT EXISTS accountant_reserves_account_day '
+                               'ON accountant_reserves(account, day)')
+            connection.execute('CREATE INDEX IF NOT EXISTS accountant_reserves_kind_day '
+                               'ON accountant_reserves(kind, day)')
+            # Расходы Шоха ищутся по статье и виду движения, а не по дню.
+            connection.execute('CREATE INDEX IF NOT EXISTS accountant_movements_kind_item '
+                               'ON accountant_movements(kind, item_code)')
             # Касса кассира (5a) живёт в этой же базе: выдачи Шоху из кассы и
             # доллары в сейф читают подотчёт и сейф — см. modules/cashier/till.py.
             from retro.modules.cashier.till import create_tables
@@ -502,12 +517,14 @@ class FinanceStore:
         from .reserves import reserve_summary
         return reserve_summary(self, day)
 
+    @once
     def reserve_entries(self, account: str) -> list[dict]:
         """Все записи одного резерва за всё время, одним чтением."""
         from .reserves import _entries
         with closing(self._open()) as connection:
             return _entries(connection, account)
 
+    @once
     def expense_totals_between(self, start: date, end: date):
         """Paid expenses recorded by accounting, excluding moves of our own cash.
 
@@ -544,6 +561,7 @@ class FinanceStore:
         other = movements + transfers
         return {'other': other, 'salary': salaries, 'total': other + salaries}
 
+    @once
     def cash_flows_between(self, start: date, end: date) -> list[dict]:
         """Все движения денег бухгалтера за период одной выборкой — для недели
         и месяца учредителя. Зарплатные выплаты идут со своей группой, по ней
@@ -728,6 +746,7 @@ class FinanceStore:
             record_audit(connection, 'handover', day.isoformat(), 'confirm', before, dict(zip(columns, row)))
         return self.handover_state(day, current_expected=expected)
 
+    @once
     def handover_for_day(self, day: date) -> Decimal | None:
         with closing(self._open()) as connection:
             row = connection.execute('SELECT amount FROM accountant_handover_days WHERE day = ?',
@@ -774,6 +793,7 @@ class FinanceStore:
             if before is not None:
                 record_audit(connection, 'handover', day.isoformat(), 'delete', before, None)
 
+    @once
     def audit_entries(self, *, entity_type=None, entity_id=None):
         with closing(self._open()) as connection:
             return read_audit_entries(
@@ -812,12 +832,9 @@ class FinanceStore:
                     if before['kind'] != 'transfer':
                         raise LedgerError('Эту резервную операцию нельзя удалить здесь.')
                     connection.execute('DELETE FROM accountant_reserves WHERE id = ?', (operation_id,))
-                    from .reserves import _balance, _entries
-                    rows = _entries(connection, before['account'])
-                    for cutoff in {row['day'] for row in rows}:
-                        balance = _balance([row for row in rows if row['day'] <= cutoff])
-                        if balance is not None and balance < 0:
-                            raise LedgerError('Удаление делает остаток отрицательным в последующие дни.')
+                    from .reserves import _entries, first_negative_day
+                    if first_negative_day(_entries(connection, before['account'])):
+                        raise LedgerError('Удаление делает остаток отрицательным в последующие дни.')
                 elif operation_type == 'debt':
                     # Ошибочно записанный долг удаляется целиком — вместе с оплатами
                     # того же дня. Оплату в другой день сначала удаляют в том дне:
@@ -883,6 +900,7 @@ class FinanceStore:
                 connection.rollback()
                 raise
 
+    @once
     def accounting_start(self, through: date = ACCOUNTING_START) -> date | None:
         """Рабочий учёт — со 2 октября; архив — со своей первой записи."""
         if through >= ACCOUNTING_START:
@@ -893,10 +911,36 @@ class FinanceStore:
         days = [value for value in (first, anchor[0] if anchor else None) if value]
         return date.fromisoformat(min(days)) if days else None
 
+    # Запрос зависит только от того, какая это таблица остатков, а не от дня:
+    # неделя учредителя спрашивала одно и то же семь раз.
+    @once(key=lambda day=ACCOUNTING_START: cash_opening_table(day))
     def cash_opening(self, day: date = ACCOUNTING_START):
         with closing(self._open()) as connection:
             row = connection.execute(f'SELECT day,amount,note FROM {cash_opening_table(day)} WHERE id=1').fetchone()
         return dict(day=row[0], amount=row[1], note=row[2]) if row else None
+
+    def cash_book(self, connection, through: date) -> CashBook:
+        """Книга остатков за один безопасный запрос читается один раз.
+
+        Строки книги берутся по `through` включительно, а `position`/`flow`
+        отбирают из них нужный день, поэтому книга, прочитанная по более
+        поздний день, обслуживает и более ранние. Неделя учредителя просит её
+        по последний день недели до сборки дней (`warm_cash_book`) — и семь
+        книг, каждая из которых читает всю историю, становятся одной.
+
+        Вне безопасного метода кэша нет, и книга читается заново: запись
+        должна видеть собственную незавершённую транзакцию.
+        """
+        holder = cached_call(('cash_book', id(self)), lambda: {'book': None})
+        book = holder['book']
+        if book is None or book.through < through.isoformat():
+            holder['book'] = book = CashBook(connection, through)
+        return book
+
+    def warm_cash_book(self, through: date) -> None:
+        """Прочитать книгу остатков по `through` заранее — до сборки дней."""
+        with closing(self._open()) as connection:
+            self.cash_book(connection, through)
 
     def cash_position(self, connection, day: date, start_day: date | None = None, *, current_amount=None,
                       tolerate_gaps: bool = False):
@@ -952,13 +996,10 @@ class FinanceStore:
 
     @staticmethod
     def _check_reserve_balances(connection):
-        from .reserves import _entries, _balance
+        from .reserves import _entries, first_negative_day
         for account in ('shoh', 'dividends', 'usd'):
-            rows = _entries(connection, account)
-            for cutoff in {row['day'] for row in rows}:
-                balance = _balance([row for row in rows if row['day'] <= cutoff])
-                if balance is not None and balance < 0:
-                    raise LedgerError('Операция делает остаток подотчёта или резерва отрицательным.')
+            if first_negative_day(_entries(connection, account)):
+                raise LedgerError('Операция делает остаток подотчёта или резерва отрицательным.')
 
     def _check_known_future_balances(self, connection, day: date):
         if self.allow_negative_cash:
@@ -982,18 +1023,21 @@ class FinanceStore:
         from .debts import pay_debt
         return pay_debt(self, debt_id, day, amount, cashier_amount)
 
+    @once
     def exceptions_for_day(self, day: date) -> set[int]:
         with closing(self._open()) as connection:
             rows = connection.execute('SELECT employee_id FROM accountant_exceptions WHERE day = ?',
                                       (day.isoformat(),)).fetchall()
         return {row[0] for row in rows}
 
+    @once
     def is_payroll_confirmed(self, day: date) -> bool:
         """Смена дня закрыта: начислено всем сотрудникам."""
         with closing(self._open()) as connection:
             return connection.execute('SELECT 1 FROM accountant_payroll_days WHERE day = ?',
                                       (day.isoformat(),)).fetchone() is not None
 
+    @once
     def paid_employees(self, day: date) -> set[int]:
         """Кому выдали деньги за эту смену (дата выдачи может быть другой).
 
@@ -1006,6 +1050,7 @@ class FinanceStore:
                 'JOIN accountant_salary_payments p ON p.accrual_id = a.id '
                 'WHERE a.work_day = ?', (day.isoformat(),)) if Decimal(row[1]) > 0}
 
+    @once
     def day_accruals(self, day: date) -> dict[int, dict]:
         """Начисления смены дня одним запросом: {сотрудник: {id, rate, amount}}."""
         with closing(self._open()) as connection:
@@ -1013,6 +1058,7 @@ class FinanceStore:
                 'SELECT employee_id, id, rate, amount FROM accountant_accruals WHERE work_day = ?',
                 (day.isoformat(),))}
 
+    @once
     def accrued_employees(self, day: date) -> dict[int, int]:
         """Кому смена дня уже начислена: {сотрудник: id начисления}."""
         return {employee_id: item['id'] for employee_id, item in self.day_accruals(day).items()}
@@ -1268,6 +1314,7 @@ class FinanceStore:
                 day += timedelta(days=1)
         return result
 
+    @once
     def accruals(self, day: date) -> list[dict]:
         with closing(self._open()) as connection:
             rows = connection.execute('SELECT id, work_day, employee_id, employee_name, group_name, '
@@ -1290,6 +1337,18 @@ class FinanceStore:
 
     @staticmethod
     def _cash_balance(connection, day: date) -> Decimal:
+        """Остаток бухгалтера на конец дня — три выборки за период учёта.
+
+        Сводка дня считает его дважды (на день и на предыдущий), а неделя
+        учредителя — за семь дней подряд, то есть каждый день по два раза.
+        За один безопасный запрос каждый день считается однажды; внутри
+        записи кэша нет, и проверки остатка видят свою транзакцию. Ключ без
+        соединения — по той же причине, что и у `closure_row`."""
+        return cached_call(('cash_balance', day),
+                           lambda: FinanceStore._cash_balance_now(connection, day))
+
+    @staticmethod
+    def _cash_balance_now(connection, day: date) -> Decimal:
         movements = connection.execute('SELECT kind, amount FROM accountant_movements WHERE day >= ? AND day <= ?',
                                        (period_start(day).isoformat(), day.isoformat())).fetchall()
         balance = sum((Decimal(amount) if kind in ('opening', 'cashier_transfer', 'other_receipt') else -Decimal(amount)
@@ -1558,6 +1617,7 @@ class FinanceStore:
                               reference=f'{MONTHLY_REFERENCE}{employee_id}:{uuid4().hex}',
                               cashier_amount=cashier_amount)
 
+    @once
     def monthly_payments(self, first: date, last: date) -> list[dict]:
         """Выплаты окладов с привязкой к человеку за период.
 
@@ -1627,6 +1687,7 @@ class FinanceStore:
                 connection.rollback()
                 raise
 
+    @once
     def supplier_transfers(self, first: date, last: date | None = None) -> list[dict]:
         """Перечисления за день или за период — в порядке записи."""
         last = last or first
@@ -1771,7 +1832,7 @@ class FinanceStore:
         # подтверждённым (counted_handover): «ожидается от кассира» — подсказка
         # рядом с остатком, а не деньги в нём.
         with closing(self._open()) as connection:
-            book = CashBook(connection, day)
+            book = self.cash_book(connection, day)
             flow = book.flow(day, carry_start, tolerate_gaps=self.allow_negative_cash)
             # «На начало дня» = конец вчерашнего: расшифровка — вчерашний день целиком.
             previous = (book.flow(day - timedelta(days=1), carry_start, tolerate_gaps=self.allow_negative_cash)

@@ -118,7 +118,13 @@ def test_founder_includes_prepaid_sales_and_cost_without_payment_duplication():
     assert result['payment_total'] == '250'
     assert result['reconciled'] is True
     assert result['scope_excluded_revenue'] == '940'
-    assert len(requests) == 4
+    # Три отчёта на окно: выручка с себестоимостью, внутренние операции и
+    # операции по способам оплаты. Пятимерные оплаты из них складываются сами
+    # (payments_without_operation) — четвёртого чтения iiko больше нет.
+    assert len(requests) == 3
+    assert not any(body['groupFields'] == ['OpenDate.Typed', 'CashRegisterName',
+                                           'RestaurantSection', 'DishName', 'PayTypes']
+                   for body in requests)
     assert result['sales_bridge']['totals'] == {
         "paid": "200.00", "prepaid": "50.00", "other": "0.00", "sales": "250.00"}
     assert result["sales_bridge"]["reconciled"]
@@ -182,8 +188,8 @@ def test_founder_large_range_is_split_before_requesting_iiko():
     assert result['totals']['selected'] == '220'
     assert result['payment_total'] == '220'
     assert result['olap_product_cost_totals']['selected'] == '86'
-    assert requests == ([(date(2026, 1, 1), date(2026, 1, 31))] * 4
-                        + [(date(2026, 2, 1), date(2026, 2, 1))] * 4)
+    assert requests == ([(date(2026, 1, 1), date(2026, 1, 31))] * 3
+                        + [(date(2026, 2, 1), date(2026, 2, 1))] * 3)
 
 
 
@@ -218,8 +224,9 @@ def test_founder_eight_month_range_runs_each_chunk_reports_concurrently():
         ('retro', 'school', 'banquet')))
 
     assert result['period'] == {'start': '2026-01-01', 'end': '2026-09-22'}
-    assert len(calls) == 36
-    assert max_active == 8
+    # Девять окон по три отчёта: пятимерные оплаты считаются из операций.
+    assert len(calls) == 27
+    assert max_active == 6
 
 
 @pytest.mark.parametrize('cost', [None, '40', float('nan')])
@@ -287,3 +294,72 @@ def test_founder_rejects_inconsistent_pnl():
             'PL_OTH_EXP_TOTAL': {'period': 0},
             'PL_PROFIT_NET': {'period': 50},
         })
+
+
+def test_payment_report_derived_from_operations_matches_the_separate_fetch():
+    """Пятимерный отчёт оплат — тот же шестимерный, сложенный по виду операции.
+
+    Проверяется ровно это равенство: одни и те же продажи, разложенные iiko по
+    `OperationType` и без него, должны дать одинаковые суммы по дню, кассе,
+    отделению, блюду и способу оплаты. Пока равенство держится, второе чтение
+    iiko не нужно."""
+    from retro.modules.founder.models import payments_without_operation
+
+    # Одно блюдо, один способ оплаты, две операции: часть оплачена, часть
+    # зачтена из аванса. Отчёт без OperationType видит их одной суммой.
+    with_operation = [node(0, '2026-09-21', [
+        node(1, 'Kassa-FiscalBox1', [
+            node(2, 'Ресторан', [
+                node(3, 'Плов', [node(4, 'UzCard', [node(5, 'Оплата', amount=120),
+                                                    node(5, 'Предоплата', amount=30)]),
+                                 node(4, 'Демо', [node(5, 'Оплата', amount=50)])]),
+                node(3, 'Салат (Бехруз)', [node(4, 'Демо', [node(5, 'Оплата', amount=60)])]),
+            ]),
+        ]),
+        node(1, 'GL-Kassa-Oksbrich', [
+            node(2, 'Зал', [node(3, 'Обед', [node(4, 'UzCard', [node(5, 'Оплата', amount=40)])])]),
+        ]),
+    ])]
+    without_operation = [node(0, '2026-09-21', [
+        node(1, 'Kassa-FiscalBox1', [
+            node(2, 'Ресторан', [
+                node(3, 'Плов', [node(4, 'UzCard', amount=150), node(4, 'Демо', amount=50)]),
+                node(3, 'Салат (Бехруз)', [node(4, 'Демо', amount=60)]),
+            ]),
+        ]),
+        node(1, 'GL-Kassa-Oksbrich', [
+            node(2, 'Зал', [node(3, 'Обед', [node(4, 'UzCard', amount=40)])]),
+        ]),
+    ])]
+
+    operations = founder_rows_from_olap(with_operation, payments=True, include_operation=True)
+    derived = payments_without_operation(operations)
+    fetched = founder_rows_from_olap(without_operation, payments=True)
+
+    def key(rows):
+        return sorted((row.day, row.register, row.section, row.item, row.payment, row.amount)
+                      for row in rows)
+
+    assert key(derived) == key(fetched)
+    assert all(row.operation == '' for row in derived)
+
+
+def test_derived_payment_report_keeps_only_the_requested_operations():
+    """Серверный фильтр OperationType=PAYMENT повторяется на нашей стороне:
+    зачёт аванса и незнакомый вид операции в оплаты не попадают."""
+    from retro.modules.founder.models import PAID_OPERATIONS, payments_without_operation
+
+    rows = [node(0, '2026-09-21', [
+        node(1, 'Kassa-FiscalBox1', [
+            node(2, 'Ресторан', [
+                node(3, 'Плов', [node(4, 'UzCard', [node(5, 'Оплата', amount=120),
+                                                    node(5, 'Предоплата', amount=30),
+                                                    node(5, 'Новый вид', amount=7)])]),
+            ]),
+        ]),
+    ])]
+    operations = founder_rows_from_olap(rows, payments=True, include_operation=True)
+
+    assert sum(row.amount for row in payments_without_operation(operations)) == Decimal(157)
+    paid = payments_without_operation(operations, kinds=PAID_OPERATIONS)
+    assert [row.amount for row in paid] == [Decimal(120)]

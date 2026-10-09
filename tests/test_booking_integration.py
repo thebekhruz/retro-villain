@@ -110,3 +110,32 @@ def test_booking_client_accepts_empty_status_breakdown_for_empty_summary():
 
     assert result['submitted']['totals']['bookings'] == 0
     assert result['cancelled']['by_status'] == []
+
+
+def test_booking_client_keeps_one_pool_across_requests():
+    """Свой пул на вызов означал новый TLS-хендшейк на каждое чтение сводки."""
+    calls = []
+
+    def handler(request):
+        calls.append(request.url.params['status'])
+        return httpx.Response(200, json=summary(request.url.params['status']))
+
+    settings = Settings(booking_api_url='https://booking.example.test',
+                        booking_api_token='secret')
+    client = BookingAnalyticsClient(settings, transport=httpx.MockTransport(handler))
+
+    asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
+    first = client._http
+    asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
+
+    assert first is not None and client._http is first
+    assert len(calls) == 4
+    asyncio.run(client.close())
+    assert client._http is None
+
+
+def test_booking_client_still_refuses_an_unconfigured_api():
+    client = BookingAnalyticsClient(Settings())
+    with pytest.raises(DataError, match='ещё не настроен'):
+        asyncio.run(client.load(date(2026, 9, 19), date(2026, 9, 20)))
+    assert client._http is None

@@ -1,8 +1,11 @@
 """Dated subsidiary ledgers. Moving cash to the safe is not an owner payout."""
+from collections import defaultdict
 from contextlib import closing, nullcontext
 from datetime import date, datetime
 from decimal import Decimal
+from itertools import groupby
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
+from retro.request_reads import call as cached_call
 
 from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
@@ -21,21 +24,27 @@ BEFORE_ALL = '0001-01-01'
 
 
 def _entries(connection, account, through=None, *, since=None):
+    # Границы периода уходят в SQL: выдачи Шоху лежат в общей таблице движений,
+    # и без них этот запрос читал её целиком на каждый экран. Фильтр по
+    # питону ниже остаётся — он же отсекает приход из кассы кассира.
+    if since is None:
+        since = period_start(date.fromisoformat(through)) if through else date.min
+    first = since.isoformat()
+    last = through if through is not None else date.max.isoformat()
     rows = [dict(id=r[0], day=r[1], kind=r[2], amount=r[3], note=r[4], place=r[5]) for r in connection.execute(
-        'SELECT id, day, kind, amount, note, place FROM accountant_reserves WHERE account = ? ORDER BY day, id',
-        (account,))]
+        'SELECT id, day, kind, amount, note, place FROM accountant_reserves '
+        'WHERE account = ? AND day >= ? AND day <= ? ORDER BY day, id',
+        (account, first, last))]
     if account == 'shoh':
         rows += [dict(id=None, day=r[0], kind='deposit', amount=r[1], note=r[2]) for r in connection.execute(
-            "SELECT day, amount, description FROM accountant_movements WHERE "
+            "SELECT day, amount, description FROM accountant_movements WHERE day >= ? AND day <= ? AND ("
             "(kind='other_expense' AND item_code='proc_shoh') OR "
-            "(kind='procurement_advance' AND description LIKE 'Шох:%')")]
+            "(kind='procurement_advance' AND description LIKE 'Шох:%'))", (first, last))]
     # Приход из кассы кассира: выдачи Шоху (`shoh`) и доллары в сейф (`usd`).
     # Деньги бухгалтера они не трогают — см. modules/cashier/till.py.
     from retro.modules.cashier.till import reserve_rows
     rows += reserve_rows(connection, account)
-    if since is None:
-        since = period_start(date.fromisoformat(through)) if through else date.min
-    rows = [r for r in rows if r['day'] >= since.isoformat()
+    rows = [r for r in rows if r['day'] >= first
             and (through is None or r['day'] <= through)]
     # Шох начинает с нуля в каждом периоде; архивный остаток не переносится.
     if account == 'shoh':
@@ -46,6 +55,31 @@ def _entries(connection, account, through=None, *, since=None):
                 rows.append(dict(id=None, day=start.isoformat(), kind='opening', amount='0',
                                  note='Счёт Шоха с нуля', place=None, implicit=True))
     return sorted(rows, key=lambda r: r['day'])
+
+
+def first_negative_day(rows):
+    """Первый день, в который остаток резерва уходит в минус, или None.
+
+    Раньше это считалось так: для каждого дня — полный пересчёт всех строк не
+    позже него, то есть квадрат от числа дней, и на каждой записи в резерв.
+    Один проход по дням даёт тот же ответ: остаток накапливается, а рабочий
+    период начинает счёт заново — ровно как `_balance`, который у рабочего дня
+    отбрасывает архивные строки. Пока начального остатка в периоде нет,
+    остаток неизвестен, и минуса в нём быть не может.
+    """
+    periods = defaultdict(list)
+    for row in rows:
+        periods[period_start(date.fromisoformat(row['day']))].append(row)
+    for period_rows in periods.values():
+        total, opened = Decimal(0), False
+        period_rows.sort(key=lambda row: row['day'])
+        for day, same_day in groupby(period_rows, key=lambda row: row['day']):
+            for row in same_day:
+                opened = opened or row['kind'] == 'opening'
+                total += Decimal(row['amount']) * (-1 if row['kind'] == 'withdrawal' else 1)
+            if opened and total < 0:
+                return day
+    return None
 
 
 def _balance(rows):
@@ -91,11 +125,8 @@ def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *
                 (day.isoformat(), account, kind, str(value), note, now_stamp(), place))
             after = store._row_dict(connection, 'accountant_reserves', cursor.lastrowid)
             record_audit(connection, 'reserve', cursor.lastrowid, 'create', None, after)
-            rows = _entries(connection, account, since=period_start(day))
-            for cutoff in {r['day'] for r in rows}:
-                balance = _balance([r for r in rows if r['day'] <= cutoff])
-                if balance is not None and balance < 0:
-                    raise LedgerError('Операция превышает остаток на этот или последующий день.')
+            if first_negative_day(_entries(connection, account, since=period_start(day))):
+                raise LedgerError('Операция превышает остаток на этот или последующий день.')
             if kind == 'transfer' and cashier_amount is not None:
                 store._check_known_future_balances(connection, day)
             if existing_connection is None:
@@ -134,8 +165,8 @@ def reserve_summary(store, day):
                                    currency='USD' if account == 'usd' else 'UZS',
                                    entries=[r for r in rows if r['day'] == day.isoformat()])
         month = day.isoformat()[:7]
-        plan = connection.execute('SELECT amount, note FROM accountant_monthly_plans WHERE month = ?',
-                                  (month,)).fetchone()
+        plan = cached_call(('monthly_plan', month), lambda: connection.execute(
+            'SELECT amount, note FROM accountant_monthly_plans WHERE month = ?', (month,)).fetchone())
         paid = sum((Decimal(r[0]) for r in connection.execute(
             'SELECT amount, item_code FROM accountant_movements WHERE day >= ? AND day <= ? '
             "AND kind = 'other_expense'", (accounting_range_start(day.replace(day=1), day).isoformat(),

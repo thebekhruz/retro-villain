@@ -13,6 +13,7 @@ from pathlib import Path
 
 from retro.modules.cashier.service import TZ
 from retro.db import as_database
+from retro.request_reads import once
 from retro.runtime import secure_directory, secure_file
 
 MAX_TARGET = Decimal('1000000000000')
@@ -58,6 +59,7 @@ class DividendTargetStore:
     def _open(self):
         return self.db.connect()
 
+    @once
     def get(self, week: str) -> dict | None:
         """Цель недели; если на неделю не ставили — последняя из прошлых.
 

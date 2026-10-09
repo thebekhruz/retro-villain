@@ -51,7 +51,9 @@ from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
-from retro.security import effective_scheme, client_address, validate_mutation_origin
+from retro import request_reads
+from retro.security import (MUTATING_METHODS, effective_scheme, client_address,
+                           validate_mutation_origin)
 from retro.sessions import SessionIdentity, SessionStore
 
 STATIC = Path(__file__).parent / 'static'
@@ -193,9 +195,13 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if application.state.menu_sync is not None:
                 await application.state.menu_sync.close()
             await application.state.reports.close()
-            close = getattr(application.state.iiko, 'close', None)
-            if close is not None:
-                await close()
+            # Клиенты держат свои пулы соединений всё время жизни приложения;
+            # в тестах на их месте могут стоять заглушки без close().
+            for integration in (application.state.iiko, application.state.bookings,
+                                application.state.broadcasts):
+                close = getattr(integration, 'close', None)
+                if close is not None:
+                    await close()
 
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None,
                   lifespan=lifespan, dependencies=[Depends(require_accounting_dates)])
@@ -307,7 +313,16 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             validate_mutation_origin(request)
         except ValueError as error:
             return JSONResponse({'detail': str(error)}, 403)
-        response = await app.state.financial_requests.dispatch(request, call_next)
+        # Один ответ читает одно и то же один раз: неделя учредителя собирает
+        # семь дней бухгалтера сразу, и без этого каждый день заново читал
+        # реестр окладников и движения за шесть недель. Только безопасные
+        # методы: запись из кэша не читает, устареть ему негде.
+        reads = request_reads.begin() if request.method not in MUTATING_METHODS else None
+        try:
+            response = await app.state.financial_requests.dispatch(request, call_next)
+        finally:
+            if reads is not None:
+                request_reads.end(reads)
         if not request.url.path.startswith('/static/'):
             response.headers['Cache-Control'] = 'no-store'
         elif 'v' in request.query_params and response.status_code in (200, 304):

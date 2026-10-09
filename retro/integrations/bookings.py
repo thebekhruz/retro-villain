@@ -12,6 +12,9 @@ from retro.logging_config import log_upstream_failure
 COUNT_FIELDS = ('bookings', 'guests', 'unknown_guest_bookings')
 UTM_FIELDS = ('utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term')
 RFC3339_UTC = re.compile(r'\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z')
+# Пять секунд httpx по умолчанию не переживают даже паузу между двумя
+# экранами учредителя; минута простоя оставляет соединение живым.
+BOOKING_KEEPALIVE = 60
 
 
 def _invalid():
@@ -100,46 +103,65 @@ def validate_summary(payload, start, end, expected_status):
 
 
 class BookingAnalyticsClient:
+    """Клиент API бронирований. Соединение переживает запрос.
+
+    Сводку открывают с экрана учредителя подряд по разным периодам, и каждый
+    запрос — два чтения. Свой `AsyncClient` на вызов означал новый пул и новый
+    TLS-хендшейк на каждое из них; один клиент на приложение держит
+    соединение живым (BOOKING_KEEPALIVE) и закрывается вместе с приложением.
+    """
+
     def __init__(self, settings, *, transport=None):
         self.settings = settings
         self.transport = transport
+        self._http = None
 
-    async def load(self, start, end):
+    def _client(self):
         if not self.settings.booking_configured:
             raise DataError('API бронирований ещё не настроен.')
-        headers = {
-            'Accept': 'application/json',
-            'Authorization': 'Bearer ' + self.settings.booking_api_token,
-        }
+        if self._http is None:
+            self._http = httpx.AsyncClient(
+                base_url=self.settings.booking_api_url,
+                headers={
+                    'Accept': 'application/json',
+                    'Authorization': 'Bearer ' + self.settings.booking_api_token,
+                },
+                timeout=15,
+                follow_redirects=False,
+                transport=self.transport,
+                limits=httpx.Limits(keepalive_expiry=BOOKING_KEEPALIVE),
+            )
+        return self._http
+
+    async def close(self):
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
+
+    async def load(self, start, end):
+        client = self._client()
         params = {
             'from': start.isoformat(),
             'to': end.isoformat(),
             'date_basis': 'visit',
         }
         try:
-            async with httpx.AsyncClient(
-                    base_url=self.settings.booking_api_url,
-                    headers=headers,
-                    timeout=15,
-                    follow_redirects=False,
-                    transport=self.transport,
-            ) as client:
-                result = {}
-                statuses = ('submitted', 'cancelled')
-                responses = await gather_reads(*(
-                    client.get('/analytics/summary', params={**params, 'status': status})
-                    for status in statuses))
-                for status, response in zip(statuses, responses, strict=True):
-                    if response.status_code in (401, 403):
-                        raise DataError('API бронирований отклонил доступ.')
-                    if not 200 <= response.status_code < 300:
-                        raise DataError('API бронирований недоступен.')
-                    try:
-                        payload = response.json()
-                    except ValueError:
-                        raise DataError('API бронирований вернул некорректный ответ.') from None
-                    result[status] = validate_summary(payload, start, end, status)
-                return result
+            result = {}
+            statuses = ('submitted', 'cancelled')
+            responses = await gather_reads(*(
+                client.get('/analytics/summary', params={**params, 'status': status})
+                for status in statuses))
+            for status, response in zip(statuses, responses, strict=True):
+                if response.status_code in (401, 403):
+                    raise DataError('API бронирований отклонил доступ.')
+                if not 200 <= response.status_code < 300:
+                    raise DataError('API бронирований недоступен.')
+                try:
+                    payload = response.json()
+                except ValueError:
+                    raise DataError('API бронирований вернул некорректный ответ.') from None
+                result[status] = validate_summary(payload, start, end, status)
+            return result
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('bookings', error, operation='load_summary')
             raise DataError('Не удалось связаться с API бронирований.') from None

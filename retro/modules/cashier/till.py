@@ -23,6 +23,7 @@ from decimal import Decimal, InvalidOperation
 
 from retro.accounting_period import accounting_range_start
 from retro.db import table_exists
+from retro.request_reads import call as cached_call
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
 from retro.modules.accountant.audit import record_audit
@@ -71,16 +72,26 @@ def reserve_rows(connection, account: str) -> list[dict]:
 
     Выдача Шоху из кассы — приход подотчёта `shoh`, доллары кассира — приход
     сейфа `usd`. Перенесённые дневные суммы старого поля в резерв не входят:
-    раньше бухгалтер вёл сейф отдельно, и задним числом его остатки не меняем."""
+    раньше бухгалтер вёл сейф отдельно, и задним числом его остатки не меняем.
+
+    Обе таблицы читаются целиком, а резервы просят их почти на каждом экране —
+    по двадцать раз за неделю учредителя. За один безопасный запрос чтение
+    одно: ключ только по счёту, потому что база бухгалтера в запросе одна, а
+    соединение у каждого вызова своё."""
+    if account not in ('shoh', 'usd'):
+        return []
+    return cached_call(('till.reserve_rows', account),
+                       lambda: _reserve_rows(connection, account))
+
+
+def _reserve_rows(connection, account: str) -> list[dict]:
     if account == 'shoh':
         rows = connection.execute('SELECT day, amount, created_at FROM cashier_shokh_gives')
         note = 'Шоху из кассы'
-    elif account == 'usd':
+    else:
         rows = connection.execute(
             'SELECT day, amount, created_at FROM cashier_usd_deposits WHERE legacy = 0')
         note = 'Кассир · в сейф'
-    else:
-        return []
     return [dict(id=None, day=day, kind='deposit', amount=amount, note=note,
                  source=CASHIER, created_at=local_timestamp(created_at))
             for day, amount, created_at in rows]
@@ -93,12 +104,9 @@ def _balance_through(connection, account: str, day: date) -> Decimal | None:
 
 def _stays_non_negative(connection, account: str, message: str) -> None:
     """Удаление прихода не должно увести резерв в минус ни в один записанный день."""
-    from retro.modules.accountant.reserves import _balance, _entries
-    rows = _entries(connection, account)
-    for cutoff in {row['day'] for row in rows}:
-        balance = _balance([row for row in rows if row['day'] <= cutoff])
-        if balance is not None and balance < 0:
-            raise LedgerError(message)
+    from retro.modules.accountant.reserves import _entries, first_negative_day
+    if first_negative_day(_entries(connection, account)):
+        raise LedgerError(message)
 
 
 # ── Выдачи Шоху из кассы ─────────────────────────────────────────────────
@@ -111,6 +119,11 @@ def _give_json(row: dict) -> dict:
 def shokh_gives(finance, first: date, last: date | None = None) -> list[dict]:
     last = last or first
     first = accounting_range_start(first, last)
+    return cached_call(('shokh_gives', id(finance), first, last),
+                       lambda: _shokh_gives(finance, first, last))
+
+
+def _shokh_gives(finance, first: date, last: date) -> list[dict]:
     with closing(finance._open()) as connection:
         rows = connection.execute(
             'SELECT id, day, amount, created_at FROM cashier_shokh_gives '

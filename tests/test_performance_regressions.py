@@ -1,8 +1,10 @@
 import asyncio
+from collections import Counter
 from contextlib import closing
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from threading import get_ident
+from unittest.mock import patch
 
 import httpx
 import pytest
@@ -17,9 +19,14 @@ from retro.report_cache import ReportCache, refresh_source
 from scripts.performance_probe import olap_counts, poller_event_loop_block
 
 
-def test_director_uses_four_olaps_and_reuses_raw_reports():
+def test_director_uses_three_olaps_and_reuses_raw_reports():
+    """Десятидневный отчёт директора: два отчёта себестоимости и один оплат.
+
+    Четвёртым был второй отчёт оплат, отличавшийся только фильтром
+    `OperationType=PAYMENT`; теперь вид операции приходит измерением и
+    раскладывается на нашей стороне."""
     counts = asyncio.run(olap_counts())
-    assert counts['first_load'] == {'auth': 1, 'olap_init': 4, 'olap_fetch': 4}
+    assert counts['first_load'] == {'auth': 1, 'olap_init': 3, 'olap_fetch': 3}
     assert counts['two_identical_loads'] == counts['first_load']
 
 
@@ -208,3 +215,112 @@ def test_large_responses_are_compressed(tmp_path):
         response = client.get('/static/i18n-uz.js', headers={'Accept-Encoding': 'gzip'})
     assert response.status_code == 200
     assert response.headers['content-encoding'] == 'gzip'
+
+
+def week_app(tmp_path, recorder):
+    """Стенд недели учредителя с записью всех запросов к базе."""
+    import retro.db as db_module
+    from test_founder_cabinet import FakeIiko
+
+    original = db_module.Database.connect
+
+    class Recorder:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def execute(self, sql, params=()):
+            recorder[' '.join(sql.split()), tuple(params)] += 1
+            return self._connection.execute(sql, params)
+
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+
+        def __enter__(self):
+            return self._connection.__enter__()
+
+        def __exit__(self, *info):
+            return self._connection.__exit__(*info)
+
+    def traced(self):
+        connection = original(self)
+        return Recorder(connection) if not self.is_postgres else connection
+
+    app = create_app(Settings(manual_handover_only=True),
+                     expense_db_path=tmp_path / 'cashier.sqlite3',
+                     accountant_db_path=tmp_path / 'accountant.sqlite3',
+                     founder_db_path=tmp_path / 'founder.sqlite3')
+    app.state.iiko = FakeIiko()
+    finance, roster = app.state.accountant_finance, app.state.accountant_roster
+    for offset in range(12):
+        finance.record_handover(date(2026, 10, 2) + timedelta(days=offset), Decimal('1000000'))
+    finance.set_cash_opening(date(2026, 10, 2), '5000000', 'начальный остаток')
+    for index in range(3):
+        roster.add_monthly(name=f'Окладник {index}', role='Менеджер', salary='3000000')
+    db_module.Database.connect = traced
+    return app, lambda: setattr(db_module.Database, 'connect', original)
+
+
+def test_week_reads_each_shared_table_once_not_once_per_day(tmp_path):
+    """Семь дней недели читают общие таблицы один раз, а не по разу на день.
+
+    Раньше каждый из семи вложенных вызовов дня бухгалтера заново читал
+    реестр окладников, книгу остатков и журнал переноса передач: половина
+    запросов недели была буквальным повтором предыдущего."""
+    seen = Counter()
+    app, restore = week_app(tmp_path, seen)
+    try:
+        with patch('retro.modules.founder.cabinet.today_tashkent', return_value=date(2026, 10, 13)), \
+                patch('retro.modules.founder.routes.today_tashkent', return_value=date(2026, 10, 13)), \
+                patch('retro.modules.accountant.routes.today_tashkent', return_value=date(2026, 10, 13)), \
+                TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+            client.get('/api/founder/week?date=2026-10-08')  # прогрев кэша iiko
+            seen.clear()
+            response = client.get('/api/founder/week?date=2026-10-08')
+    finally:
+        restore()
+
+    assert response.status_code == 200
+    assert len(response.json()['days']) == 7
+    def times(fragment, params=()):
+        return sum(count for (sql, values), count in seen.items()
+                   if fragment in sql and values == params)
+
+    # Действующие окладники — одно чтение на ответ. Было двадцать одно.
+    assert times('accountant_monthly_employees WHERE archived', (0,)) == 1
+    # Книга остатков читается по последний день недели один раз (warm_cash_book).
+    assert times('SELECT month, last_day, closing_balance') == 1
+    # Журнал переноса передач — один раз на ответ, а не на каждый день.
+    assert times('accountant_finance_audit',
+                 ('finance_migration', 'handover_receipt_day_v1')) == 1
+    # Движения за шесть недель для истории дивидендов — тоже один раз.
+    assert times('FROM accountant_handover_days WHERE day >= ? AND day <= ?',
+                 ('2026-10-02', '2026-10-04')) == 1
+    # Повторов в ответе осталось меньше четверти: остальное — работа по дню.
+    repeated = sum(count - 1 for count in seen.values())
+    assert repeated * 4 < sum(seen.values())
+
+
+def test_read_cache_covers_only_safe_methods(tmp_path):
+    """Запись из кэша чтений не читает: иначе проверка остатка увидела бы
+    состояние до собственной транзакции."""
+    import retro.app as app_module
+
+    methods = []
+    original = app_module.request_reads.begin
+
+    def spy():
+        methods.append('begin')
+        return original()
+
+    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
+                     accountant_db_path=tmp_path / 'accountant.sqlite3',
+                     founder_db_path=tmp_path / 'founder.sqlite3')
+    with patch.object(app_module.request_reads, 'begin', spy), \
+            TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        client.get('/api/accountant/day?date=2026-10-08')
+        assert methods == ['begin']
+        client.post('/api/accountant/no-such-endpoint', json={})
+        assert methods == ['begin']
+    # Вне запроса кэша нет вовсе.
+    from retro import request_reads
+    assert request_reads.active() is None
