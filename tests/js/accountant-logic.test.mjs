@@ -412,3 +412,89 @@ test('бейдж «Проверок»: ошибки — только красн�
   assert.deepEqual(logic.checksBadge([issue('todo')]), {text: 'чисто', tone: 'clean', errors: 0, warns: 0});
   assert.equal(logic.checksBadge([]).text, 'чисто');
 });
+
+/* ТЗ 09.10, Б-09: строки дэшборда — формула кассы. Числа C-01 (06.10):
+   2 490 000 + 11 014 000 − 0 − 0 − 200 000 = 13 304 000. Шоху от кассира
+   5 000 000 уже вычтено из передачи и второй раз не вычитается. */
+const c01 = (handover = {}) => ({date: '2026-10-06', cashier_date: '2026-10-05', expected_cashier: '11014000',
+  cashier_handover: {amount: '11014000', source: 'accountant', confirmed_at: '2026-10-06T15:07:00+05:00',
+    handed_at: '2026-10-06T15:07:00+05:00', ...handover},
+  cashier_shokh_gives: {gives: [{id: 1, amount: '5000000'}], total: '5000000'},
+  ledger: {cash_balance: '13304000', movements: [],
+    cash_flow: {opening_balance: '2490000', other_outflows: '200000', salary_paid: '0', handover_status: handover.status || 'confirmed'},
+    day_flow: {opening: '2490000', handover_counted: handover.status === 'pending' ? '0' : '11014000', receipts: '0',
+      salary: '0', monthly: '0', shoh: '0', other: '200000', other_dividends: '0', transfers: '0', closing: '13304000'}}});
+const formula = lines => lines.filter(l => !l.expected && !l.total).reduce((s, l) => s + l.sign * (l.value || 0), 0);
+
+test('дэшборд: остаток на начало + подтверждённые поступления − списания = касса (C-01)', () => {
+  const data = c01();
+  const lines = logic.cashLines(data, logic.cashCard(data), {today: '2026-10-09'});
+  assert.deepEqual(lines.map(l => [l.label, l.value]), [
+    ['Остаток на начало 06.10', 2490000], ['+ Касса за 05.10', 11014000],
+    ['− Зарплаты · сменные и оклады', 0], ['− Выдано Шоху', 0], ['− Прочие расходы', 200000],
+    ['= Остаток на конец 06.10', 13304000]]);
+  assert.equal(formula(lines), 13304000);
+  // Подпись — время нажатия «Подтвердить», а не «получено»; дата и время не разрываются.
+  assert.equal(lines[1].sub, 'Подтверждено бухгалтером 06.10 в 15:07');
+  assert.equal(lines.some(l => l.value === 5000000), false);
+  const today = logic.cashLines(data, logic.cashCard(data), {today: '2026-10-06'});
+  assert.deepEqual([today[0].label, today.at(-1).label], ['Остаток на начало дня', '= Остаток на конец дня']);
+});
+
+test('дэшборд: неподтверждённая касса видна, но в итог не входит; ручной приход — «записано»', () => {
+  const pending = c01({status: 'pending', source: 'cashier', confirmed_at: null});
+  const lines = logic.cashLines(pending, logic.cashCard(pending), {today: '2026-10-06'});
+  const kassa = lines.find(l => l.key === 'handover');
+  assert.deepEqual([kassa.value, kassa.expected, kassa.sub], [11014000, true, 'ожидается · не в остатке']);
+  assert.equal(formula(lines), 2490000 - 200000);
+  const manual = c01({status: 'accountant', confirmed_at: null, handed_at: '2026-10-07T09:12:00+05:00'});
+  assert.equal(logic.cashLines(manual, logic.cashCard(manual), {}).find(l => l.key === 'handover').sub,
+    'Записано бухгалтером 07.10 в 09:12');
+});
+
+test('дэшборд: дивиденды из кассы и в сейф — своими строками, не в «Прочих расходах»', () => {
+  const data = c01();
+  Object.assign(data.ledger.day_flow, {other: '35200000', other_dividends: '35000000', transfers: '4000000',
+    salary: '2450000', closing: '-28146000'});
+  data.ledger.cash_balance = '-28146000';
+  const lines = logic.cashLines(data, logic.cashCard(data), {});
+  const by = Object.fromEntries(lines.map(l => [l.label, l.value]));
+  assert.equal(by['− Дивиденды · из кассы'], 35000000);
+  assert.equal(by['− Дивиденды · в сейф'], 4000000);
+  assert.equal(by['− Прочие расходы'], 200000);
+  assert.equal(by['− Зарплаты · сменные и оклады'], 2450000);
+  assert.equal(formula(lines), -28146000);
+});
+
+/* ТЗ 09.10, Б-08: доп. зарплата — в группе «Зарплата»; дивиденды — категория
+   «Дивиденды» с понятным действием: из кассы, в сейф, из сейфа. */
+test('журнал: доп. зарплата — «Зарплата», дивиденды отдельно от «Административных»', () => {
+  const index = logic.catalogIndex([
+    {code: 'salary', label: 'Заработная плата', items: [{code: 'salary_extra', label: 'Доп. зарплата и временный персонал'}]},
+    {code: 'administrative', label: 'Общие', items: [{code: 'admin_other', label: 'Прочие расходы'}]},
+    {code: 'distributions', label: 'Дивиденды и переводы', items: [
+      {code: 'distribution_dividends', label: 'Дивиденды напрямую из кассы (не из сейфа)'},
+      {code: 'distribution_oxbridge', label: 'Перевод Oxbridge'}]},
+    {code: 'reserves', label: 'Резервы', items: logic.DIVIDEND_OPTIONS.slice(0, 2).map(([code, label]) => ({code, label}))}]);
+  assert.equal(index.reserve_dividends_transfer.short, 'Дивиденды');
+  assert.equal(index.reserve_dividends_withdrawal.short, 'Дивиденды');
+  assert.equal(index.distribution_oxbridge.short, 'Дивиденды / переводы');
+  const data = {date: '2026-10-09', ledger: {cash_flow: {salary_paid: '0', other_outflows: '42150000'}, movements: [
+    {id: 1, type: 'other_expense', item_code: 'salary_extra', amount: '150000',
+      description: 'Доп. зарплата и временный персонал · хостес Карамат'},
+    {id: 2, type: 'other_expense', item_code: 'distribution_dividends', amount: '35000000',
+      description: 'Дивиденды напрямую из кассы (не из сейфа) · учредителю'},
+    {id: 3, type: 'other_expense', item_code: 'distribution_dividends', amount: '3000000',
+      description: 'Дивиденды напрямую из кассы (не из сейфа)'},
+    {id: 4, type: 'reserve_transfer', amount: '4000000', description: 'Дивиденды в сейф'}]},
+    reserves: {dividends: {entries: [{id: 9, kind: 'withdrawal', amount: '1000000', note: 'учредителю'}]}}};
+  const rows = logic.journal(data, index).rows.map(r => [r.cat, r.name, r.note || '', r.amount]);
+  assert.deepEqual(rows, [
+    ['Зарплата', 'хостес Карамат', '', 150000],
+    ['Дивиденды', 'Выдано из кассы', 'учредителю', 35000000],
+    ['Дивиденды', 'Выдано из кассы', '', 3000000],
+    ['Дивиденды', 'Отложено в сейф', 'Дивиденды в сейф', 4000000],
+    ['Дивиденды', 'Выдано из сейфа', 'учредителю', 1000000]]);
+  assert.deepEqual(logic.DIVIDEND_OPTIONS.map(([, label]) => label),
+    ['Отложить дивиденды в сейф', 'Выдать дивиденды из сейфа', 'Выдать дивиденды из кассы']);
+});

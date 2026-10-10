@@ -131,9 +131,12 @@
       </div>
 
       <aside class="fd-rail" aria-label="Остатки и обязательства">
-        <!-- Дэшборд бухгалтера (ТЗ 02.10, п. 3): касса сейчас, прогноз расхода,
-             счёт Шохруха и обязательное подтверждение суммы от кассира. Пока
-             сумма не подтверждена, она не входит в остаток и отчёт не сдаётся. -->
+        <!-- Дэшборд бухгалтера (ТЗ 02.10, п. 3): касса сейчас, счёт Шохруха и
+             обязательное подтверждение суммы от кассира. Пока сумма не
+             подтверждена, она не входит в остаток и отчёт не сдаётся. Строки
+             под итогом — формула: остаток на начало + подтверждённые
+             поступления − фактические списания = остаток (ТЗ 09.10, Б-09).
+             Прогноз расхода снят (Б-10): он брал вчерашний день и не был прогнозом. -->
         <section class="fd-cash" id="fd-cash" aria-labelledby="finance-hero-title">
           <p class="fd-kicker">ДЭШБОРД БУХГАЛТЕРА</p>
           <div class="fd-cash-sub" id="finance-hero-title">Касса сегодня</div>
@@ -147,7 +150,6 @@
           </form>
           <p id="cash-confirmed" class="fd-cash-confirmed" hidden></p>
           <div class="fd-dash-tiles">
-            <div class="fd-dash-tile"><span>Прогноз расхода на сегодня</span><b id="fd-forecast">—</b><small id="fd-forecast-sub"></small></div>
             <a class="fd-dash-tile is-link" href="/accountant/shoh"><span>Счёт Шохруха</span><b id="fd-shoh">—</b><small>на руках у Шоха →</small></a>
           </div>
           <button type="button" class="fd-cash-set" id="fd-cash-set" hidden>Задать начальные остатки →</button>
