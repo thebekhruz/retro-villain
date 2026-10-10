@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143e35">
+  <title>Менеджер · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Телефонный каркас — тот же, что у закупа (3a): те же классы и вид. -->
+  <link rel="stylesheet" href="/static/shokh.css">
+  <link rel="stylesheet" href="/static/manager.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/manager-logic.js" defer></script><script src="/static/manager.js" defer></script>
+</head>
+<body class="shokh-body mgr-body">
+<div class="rm-phone">
+  <p id="mgr-message" class="shokh-message" role="status" aria-live="polite" hidden></p>
+
+  <!-- ── Главная: поиск по общей базе и свои сотрудники ───────────────── -->
+  <section id="screen-home" class="shokh-screen">
+    <header class="shokh-hero rm-phone-hero">
+      <div class="shokh-hero-top">
+        <span class="shokh-mark" aria-hidden="true">М</span>
+        <div class="shokh-hello">
+          <strong>Кабинет менеджера</strong>
+          <span id="home-sub">&nbsp;</span>
+        </div>
+      </div>
+      <div class="shokh-hero-actions">
+        <!-- Администратор заходит сюда из меню панели — ему нужна дорога назад. -->
+        <a id="mgr-back" class="logout-button shokh-logout shokh-back" href="/login" hidden>‹ Панель</a>
+        <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+        <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
+      </div>
+      <p id="home-hikvision" class="shokh-balance-sub mgr-hik-line"></p>
+    </header>
+
+    <div class="shokh-body-scroll">
+      <article class="rm-phone-card mgr-search-card">
+        <label class="shokh-field"><span>Найти в общей базе</span>
+          <input id="search" type="search" class="shokh-search" maxlength="80" autocomplete="off"
+                 placeholder="ФИО или должность">
+        </label>
+        <p id="search-note" class="shokh-note mgr-search-note" hidden></p>
+        <div id="search-results" class="shokh-purchases" hidden></div>
+      </article>
+
+      <article class="rm-phone-card" id="mine-card">
+        <strong class="shokh-card-title"><span>Мои сотрудники</span><span id="mine-count" class="shokh-spent"></span></strong>
+        <div id="mine" class="shokh-purchases" aria-busy="true">
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:58%"></span><span class="rm-skel" style="width:36%"></span></span></div>
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:44%"></span><span class="rm-skel" style="width:30%"></span></span></div>
+        </div>
+      </article>
+    </div>
+
+    <div class="shokh-cta">
+      <button id="new-employee" class="shokh-primary" type="button">
+        <span class="shokh-plus" aria-hidden="true">+</span>
+        <span><b>Новый сотрудник</b><small>Сменный или временный · сразу в Hikvision</small></span>
+      </button>
+    </div>
+  </section>
+
+  <!-- ── Новый сотрудник ─────────────────────────────────────────────── -->
+  <section id="screen-form" class="shokh-screen" hidden>
+    <header class="shokh-flow-head">
+      <button id="form-close" class="shokh-round" type="button" aria-label="Закрыть">×</button>
+      <div class="shokh-step-label"><b>Новый сотрудник</b></div>
+      <span class="mgr-head-spacer" aria-hidden="true"></span>
+    </header>
+    <div class="shokh-flow-body">
+      <form id="employee-form" class="shokh-step" novalidate>
+        <label class="shokh-field"><span>ФИО кириллицей</span>
+          <input id="f-name" name="name" type="text" maxlength="160" autocomplete="off" autocapitalize="words"
+                 spellcheck="false" placeholder="Фамилия Имя">
+        </label>
+        <p id="f-name-error" class="rm-field-msg mgr-field-error" role="alert" hidden></p>
+        <label class="shokh-field"><span>Должность</span>
+          <input id="f-role" name="role" type="text" maxlength="80" autocomplete="off" list="role-options"
+                 placeholder="Например, хостес">
+        </label>
+        <datalist id="role-options"></datalist>
+        <p id="f-role-error" class="rm-field-msg mgr-field-error" role="alert" hidden></p>
+        <label class="shokh-field"><span>Направление</span>
+          <select id="f-direction" name="direction"></select>
+        </label>
+        <div class="shokh-field mgr-type"><span id="type-label">Тип</span>
+          <div class="shokh-switch shokh-mode" role="group" aria-labelledby="type-label">
+            <button type="button" class="shokh-switch-btn is-on" data-type="shift" aria-pressed="true">Сменный</button><button type="button" class="shokh-switch-btn" data-type="temporary" aria-pressed="false">Временный</button>
+          </div>
+        </div>
+        <p class="shokh-note">Ставку назначит бухгалтер. После сохранения карточка сама уйдёт в Hikvision.</p>
+
+        <!-- Похожие в базе: решает менеджер, тёзок сами не объединяем. -->
+        <article id="similar" class="rm-phone-card mgr-similar" hidden>
+          <strong class="shokh-card-title">Похожие уже есть в базе</strong>
+          <p class="shokh-note">Это он? Откройте карточку. Если это другой человек — сохраните нового.</p>
+          <div id="similar-list" class="shokh-purchases"></div>
+          <button id="similar-new" class="shokh-dashed" type="button">Это другой человек — сохранить</button>
+        </article>
+      </form>
+    </div>
+    <div class="shokh-flow-nav">
+      <button id="form-cancel" class="shokh-secondary" type="button">Отмена</button>
+      <button id="form-save" class="shokh-primary is-flat" type="button">Сохранить</button>
+    </div>
+  </section>
+
+  <!-- ── Карточка сотрудника и статус Hikvision ───────────────────────── -->
+  <section id="screen-card" class="shokh-screen" hidden>
+    <header class="shokh-flow-head">
+      <button id="card-close" class="shokh-round" type="button" aria-label="Назад">‹</button>
+      <div class="shokh-step-label"><b>Карточка сотрудника</b></div>
+      <span class="mgr-head-spacer" aria-hidden="true"></span>
+    </header>
+    <div class="shokh-flow-body">
+      <div class="shokh-step">
+        <article class="rm-phone-card shokh-summary">
+          <div class="shokh-summary-row"><span>ФИО</span><strong id="card-name" data-i18n="off">—</strong></div>
+          <div class="shokh-summary-row"><span>Должность</span><strong id="card-role">—</strong></div>
+          <div class="shokh-summary-row"><span>Направление</span><strong id="card-direction">—</strong></div>
+          <div class="shokh-summary-row"><span>Тип</span><strong id="card-type">—</strong></div>
+          <div class="shokh-summary-row" id="card-author-row"><span>Добавил</span><strong id="card-author" data-i18n="off">—</strong></div>
+        </article>
+        <div id="card-status" class="shokh-save mgr-status" role="status" aria-live="polite">
+          <div id="step-saved" class="shokh-save-step is-ok"><i aria-hidden="true"></i><span>Карточка сохранена</span></div>
+          <div id="step-hik" class="shokh-save-step is-wait"><i aria-hidden="true"></i><span id="step-hik-title">Hikvision</span><b id="step-hik-no" data-i18n="off"></b></div>
+          <p id="card-hik-note" class="shokh-save-error" hidden></p>
+          <span class="shokh-save-bar" aria-hidden="true"><span></span></span>
+        </div>
+        <button id="card-retry" class="shokh-secondary mgr-retry" type="button" hidden>Отправить ещё раз</button>
+      </div>
+    </div>
+    <div class="shokh-flow-nav">
+      <button id="card-done" class="shokh-primary is-flat" type="button">Готово</button>
+    </div>
+  </section>
+</div>
+</body>
+</html>

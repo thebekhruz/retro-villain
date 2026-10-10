@@ -537,7 +537,9 @@ def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInpu
                     store.reconcile_links({new: employee_id})
         employee = request.app.state.accountant_roster.update(
             employee_id, name=body.name, role=body.role, rate=body.rate,
-            group_name=body.group, reason=body.reason, by=changed_by(request))
+            group_name=body.group, reason=body.reason, by=changed_by(request),
+            # ТЗ 09.10, М-04: новое имя и должность — кириллицей.
+            cyrillic=True)
         if body.manual_attendance is not None and body.manual_attendance != employee.manual_attendance:
             employee = request.app.state.accountant_roster.set_manual_attendance(
                 employee_id, body.manual_attendance, by=changed_by(request))
@@ -553,7 +555,7 @@ def create_employee(request: Request, body: EmployeeCreateInput):
     try:
         employee = request.app.state.accountant_roster.add(
             name=body.name, role=body.role, rate=body.rate, group_name=body.group,
-            by=changed_by(request))
+            by=changed_by(request), cyrillic=True)
         # «Нет в Hikvision · отмечать вручную» можно выбрать сразу при добавлении.
         if body.manual_attendance:
             employee = request.app.state.accountant_roster.set_manual_attendance(
@@ -586,7 +588,7 @@ def create_monthly_employee(request: Request, body: MonthlyEmployeeInput):
         employee = request.app.state.accountant_roster.add_monthly(
             name=body.name, role=body.role, salary=body.salary, schedule=body.schedule,
             card=body.card, cash=body.cash, advances=body.advances, remaining=body.remaining,
-            no_hikvision=body.no_hikvision, by=changed_by(request))
+            no_hikvision=body.no_hikvision, by=changed_by(request), cyrillic=True)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(demo=True, employee=employee.json())
@@ -599,7 +601,7 @@ def update_monthly_employee(request: Request, employee_id: int, body: MonthlyEmp
             employee_id, name=body.name, role=body.role, salary=body.salary,
             schedule=body.schedule, card=body.card, cash=body.cash,
             advances=body.advances, remaining=body.remaining, no_hikvision=body.no_hikvision,
-            by=changed_by(request), reason=body.reason)
+            by=changed_by(request), reason=body.reason, cyrillic=True)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     return dict(demo=True, employee=employee.json())

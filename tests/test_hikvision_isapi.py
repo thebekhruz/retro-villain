@@ -173,3 +173,88 @@ def test_event_fetch_paginates_by_num_matches():
 
     assert positions == [0, 2]
     assert [event.serial_no for event in events] == ['1', '3']
+
+
+def _device(handler):
+    """Устройство с digest-вызовом на deviceInfo и ответами handler на POST."""
+    requests = []
+
+    def terminal(request: httpx.Request):
+        if request.method == 'GET':
+            return httpx.Response(401, headers={
+                'WWW-Authenticate': 'Digest realm="terminal", nonce="abc", qop="auth"'})
+        assert request.headers['authorization'].startswith('Digest ')
+        requests.append((request.url.path, json.loads(request.content)))
+        return handler(request)
+
+    return terminal, requests
+
+
+def _run(handler, work):
+    terminal, requests = _device(handler)
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(terminal)) as http:
+            return await work(HikvisionClient(CONFIG, http=http, cnonce=lambda: '0011223344556677'))
+
+    return asyncio.run(exercise()), requests
+
+
+def test_create_person_posts_userinfo_record_with_validity_and_door():
+    """Кабинет менеджера (T-432): единственная запись в устройство."""
+    from datetime import date
+    result, requests = _run(
+        lambda request: httpx.Response(200, json={'statusCode': 1, 'statusString': 'OK', 'subStatusCode': 'ok'}),
+        lambda client: client.create_person('134', 'Карамат', valid_from=date(2026, 10, 10)))
+    assert result == 'created'
+    path, body = requests[0]
+    assert path == '/ISAPI/AccessControl/UserInfo/Record'
+    assert body == {'UserInfo': {
+        'employeeNo': '134', 'name': 'Карамат', 'userType': 'normal',
+        'Valid': {'enable': True, 'beginTime': '2026-10-10T00:00:00', 'endTime': '2037-12-31T23:59:59',
+                  'timeType': 'local'},
+        'doorRight': '1', 'RightPlan': [{'doorNo': 1, 'planTemplateNo': '1'}]}}
+
+
+@pytest.mark.parametrize('status, payload', [
+    (400, {'statusCode': 6, 'statusString': 'Invalid Content', 'subStatusCode': 'employeeNoAlreadyExist'}),
+    (200, {'statusCode': 6, 'statusString': 'Invalid Content', 'errorMsg': 'employeeNo already exist'}),
+])
+def test_existing_number_is_reported_not_raised(status, payload):
+    from datetime import date
+    result, _ = _run(lambda request: httpx.Response(status, json=payload),
+                     lambda client: client.create_person('134', 'Карамат', valid_from=date(2026, 10, 10)))
+    assert result == 'exists'
+
+
+@pytest.mark.parametrize('status, payload, code', [
+    (400, {'statusCode': 4, 'statusString': 'Invalid Operation', 'subStatusCode': 'notSupport'}, 'device_error'),
+    (500, None, 'device_error'),
+    (200, None, 'invalid_response'),
+])
+def test_refused_or_unreadable_record_is_an_error(status, payload, code):
+    from datetime import date
+
+    def handler(request):
+        if payload is None:
+            return httpx.Response(status, content=b'<html>oops</html>')
+        return httpx.Response(status, json=payload)
+
+    with pytest.raises(HikvisionError) as caught:
+        _run(handler, lambda client: client.create_person('134', 'Карамат', valid_from=date(2026, 10, 10)))
+    assert caught.value.code == code
+
+
+def test_find_person_searches_one_employee_number():
+    def handler(request):
+        return httpx.Response(200, json={'UserInfoSearch': {
+            'responseStatusStrg': 'OK', 'numOfMatches': 1,
+            'UserInfo': [{'employeeNo': '134', 'name': 'Карамат'}]}})
+
+    person, requests = _run(handler, lambda client: client.find_person('134'))
+    assert person.name == 'Карамат'
+    assert requests[0][1]['UserInfoSearchCond']['EmployeeNoList'] == [{'employeeNo': '134'}]
+
+    missing, _ = _run(lambda request: httpx.Response(200, json={'UserInfoSearch': {
+        'responseStatusStrg': 'NO MATCH', 'numOfMatches': 0}}), lambda client: client.find_person('999'))
+    assert missing is None
