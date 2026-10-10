@@ -1757,6 +1757,7 @@ globalThis.RetroTemplatesUz.push(
   [/^Удалить поступление «(.+)»$/, "«$1» tushumini o'chirish"],
   [/^Неизвестная должность в реестре: (.+)$/, "Reyestrda noma'lum lavozim: $1"],
   [/^Для переноса остатка загрузите данные кассира за (.+)$/, "Qoldiqni o'tkazish uchun $1 kassir ma'lumotlarini yuklang"],
+  [/^Нет суммы от кассира за (\d\d\.\d\d) \(касса за (\d\d\.\d\d)\)\. Впишите её в «Финансах дня» за (\d\d\.\d\d) и повторите\.$/, "$1 uchun kassirdan summa yo'q ($2 kassasi). Uni «Kunlik moliya»da $3 kuniga yozing va qayta urinib ko'ring."],
   [/^Слишком длинное значение: (.+)$/, "Qiymat juda uzun: $1"],
 );
 
