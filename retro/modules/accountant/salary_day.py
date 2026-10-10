@@ -5,8 +5,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 
 from retro.accounting_period import ACCOUNTING_START
+from retro.db import table_columns
 from retro.modules.cashier.service import TZ, today_tashkent
 
+from . import work_period
 from .audit import record_audit
 from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_day, now_stamp, plain
 
@@ -77,6 +79,13 @@ def set_cell(finance, paid_day, employee_id, amount, expected_amount, *, cashier
                 (employee_id,)).fetchone()
             if employee is None:
                 raise LedgerError('Сотрудник не найден или находится в архиве.')
+            # Временный — только в своём периоде (T-434): выплату за смену вне
+            # его не записать. Снять ошибочную старую выплату (0) можно всегда.
+            work_period.lock_employee(connection, employee_id)
+            if value > 0:
+                outside = work_period.guard(connection, employee_id, work_day, 'cell')
+                if outside:
+                    raise LedgerError(outside)
             version = connection.execute(
                 'SELECT name,group_name,rate,deleted FROM accountant_employee_versions '
                 'WHERE employee_id=? AND effective_day<=? ORDER BY effective_day DESC LIMIT 1',
@@ -165,8 +174,13 @@ def month_data(finance, first, last, attendance=None):
     today = today_tashkent()
     days = [(first + timedelta(days=index)).isoformat() for index in range((last-first).days+1)]
     with closing(finance._open()) as connection:
+        # Период временного (T-434): строка — только в месяцах, где есть его
+        # смены, клетки вне периода заперты. В базе без колонок периода нет.
+        period_sql = (',work_from,work_to' if 'work_from' in table_columns(connection, 'accountant_employees')
+                      else ',NULL,NULL')
         current = connection.execute(
-            'SELECT id,name,role,group_name,rate FROM accountant_employees ORDER BY source_row').fetchall()
+            'SELECT id,name,role,group_name,rate' + period_sql + ' FROM accountant_employees '
+            'ORDER BY source_row').fetchall()
         versions = defaultdict(list)
         for row in connection.execute(
                 'SELECT employee_id,effective_day,name,role,group_name,rate,deleted '
@@ -206,6 +220,12 @@ def month_data(finance, first, last, attendance=None):
     people = {row[0]: dict(id=row[0], name=row[1], role=row[2], group=row[3],
                            rate=str(row[4]) if row[4] is not None else None,
                            archived=False, cells={}) for row in current}
+    bounds = {row[0]: (work_period.as_day(row[5]), work_period.as_day(row[6])) for row in current
+              if row[5] or row[6]}
+    for employee_id, (start, end) in bounds.items():
+        people[employee_id].update(work_from=start.isoformat() if start else None,
+                                   work_to=end.isoformat() if end else None,
+                                   work_period=work_period.label(start, end))
     amounts, cell_payments = defaultdict(Decimal), defaultdict(list)
     for row in payments:
         employee_id, name, group, rate, paid_day, amount = row[:6]
@@ -241,6 +261,9 @@ def month_data(finance, first, last, attendance=None):
             # другой смены в этот день.
             editable = (not person['archived'] and ENTRY_START.isoformat() <= paid_day <= today.isoformat()
                         and work_day > closed_through and paid_day > closed_through)
+            # Смена вне периода временного — клетка заперта и пуста (T-434).
+            outside = (employee_id in bounds and not person['archived']
+                       and not work_period.in_period(date.fromisoformat(work_day), *bounds[employee_id]))
             earned_row = earned.get((employee_id, work_day))
             paid_rows = cell_payments[(employee_id, paid_day)]
             conflict = bool(paid_rows) if earned_row is None else (
@@ -254,8 +277,18 @@ def month_data(finance, first, last, attendance=None):
             else:
                 rate = person['rate']
             person['cells'][paid_day] = dict(amount=plain(amounts[(employee_id, paid_day)]),
-                                             work_day=work_day, editable=bool(editable and not conflict),
+                                             work_day=work_day,
+                                             editable=bool(editable and not conflict and not outside),
                                              rate=str(rate) if rate is not None else None)
+            if outside:
+                person['cells'][paid_day]['outside'] = True
+    # Временный, чей период не задевает ни одной смены месяца, — не строка
+    # этого месяца; есть выплата или доп. выплата — строка остаётся.
+    paid_people = {key[0] for key, amount in amounts.items() if amount} | {item['employee_id'] for item in extras}
+    for employee_id in bounds:
+        person = people[employee_id]
+        if employee_id not in paid_people and all(cell.get('outside') for cell in person['cells'].values()):
+            del people[employee_id]
     if attendance is not None:
         # Посещаемость — за смену, то есть за день до выплаты; сегодняшнюю и будущие
         # смены не размечаем. Все смены месяца — одним вызовом, не по клетке.

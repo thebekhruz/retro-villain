@@ -60,8 +60,9 @@
     if (!touched && !editing) day(page.selectedDay());
     hint();
   }
+  // В списке «Кому» — только те, чья смена (дата «Смена») в их периоде (T-434).
   function fillPeople(current) {
-    const list = X.choices(current.people);
+    const list = X.choices(current.people, $('extra-work').value);
     if (list.map(item => item.label).join('\n') === people.join('\n')) return;
     people = list.map(item => item.label);
     $('extra-people').replaceChildren(...list.map(item => { const option = node('option'); option.value = item.label; return option; }));
@@ -74,6 +75,7 @@
     $('extra-paid').value = next.paid; $('extra-work').value = next.work;
     $('extra-paid').max = $('extra-work').max = current.today;
     $('extra-paid').min = current.entry_start; $('extra-work').min = X.shiftDay(current.entry_start, -1);
+    fillPeople(current);
     hint();
   }
 
@@ -102,9 +104,14 @@
       if (sure) { button.textContent = 'Всё равно записать'; button.classList.add('is-danger'); }
       return;
     }
+    if (v.person && v.work && !X.inPeriod(v.person, v.work)) {
+      // Смена вне периода временного (T-434): сказать сразу, а не после «Записать».
+      box.textContent = X.outsideText(v.person, v.work); box.classList.add('is-bad');
+      return;
+    }
     if (v.person) {
       const rate = v.person.rate && Number(v.person.rate) ? ' · ставка ' + fmt(Number(v.person.rate)) : '';
-      box.textContent = [v.person.name, v.person.role, v.person.temporary ? 'временный' : ''].filter(Boolean).join(' · ') + rate
+      box.textContent = [v.person.name, v.person.role, X.typeTag(v.person)].filter(Boolean).join(' · ') + rate
         + (v.paid ? '. В клетке ' + dm(v.paid) + ' выплаты нет.' : '.');
       box.classList.add('is-info');
       return;
@@ -222,7 +229,11 @@
   function wire() {
     form().addEventListener('submit', event => { event.preventDefault(); submit(); });
     ['extra-employee', 'extra-amount', 'extra-note'].forEach(id => $(id).addEventListener('input', () => { sure = false; serverWarning = ''; hint(); }));
-    ['extra-work', 'extra-paid'].forEach(id => $(id).addEventListener('change', () => { touched = true; sure = false; serverWarning = ''; hint(); }));
+    ['extra-work', 'extra-paid'].forEach(id => $(id).addEventListener('change', () => {
+      touched = true; sure = false; serverWarning = '';
+      if (id === 'extra-work' && data()) fillPeople(data());
+      hint();
+    }));
     // Сумма с разрядами, как в остальных полях денег: 150000 → «150 000».
     $('extra-amount').addEventListener('change', () => { const value = X.parseAmount($('extra-amount').value); if (value) $('extra-amount').value = fmt(value); });
     form().addEventListener('keydown', event => { if (event.key === 'Escape' && editing) { event.preventDefault(); stopEdit(); } });

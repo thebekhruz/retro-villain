@@ -34,7 +34,7 @@
   function view(person,day){
     const amount=L.parseAmount(person.cells?.[day]?.amount??0)||0, rate=L.rateOf(person,day);
     return {amount,rate,state:L.cellState(amount,rate),editable:L.canEdit(current,person,day),attendance:L.attendanceOf(person,day),
-      extra:L.extraOf(current,person.id,day)};
+      extra:L.extraOf(current,person.id,day),outside:L.isOutside(person,day)};
   }
   const MARK_CLASS={on_time:' is-ontime',absent:' is-absent',unknown:' is-unknown',manual:' is-manual'};
   /* Клетка — ячейка «Зарплаты · месяц» (.pr-m): белая, сегодняшний столбец подсвечен,
@@ -48,11 +48,12 @@
     const keep=[...el.classList].filter(cls=>cls.startsWith('rm-')).map(cls=>' '+cls).join('');
     el.className='pr-m sd-m'+(v.state==='on'?' is-filled is-tick':v.state==='odd'?' is-odd':'')+(late?' is-late':'')
       +(mark&&!late?MARK_CLASS[shift.status]||'':'')
-      +(day===today?' is-today':'')+(day>today?' is-future':'')+(v.editable?'':' is-locked')+(v.extra?' has-extra':'')+keep;
+      // Смена вне периода временного (T-434) — заперта и серая, как будущая клетка.
+      +(day===today?' is-today':'')+(day>today||v.outside?' is-future':'')+(v.editable?'':' is-locked')+(v.extra?' has-extra':'')+keep;
     el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):mark;
     // Доп. выплата в клетку не входит — «+» в углу и подсказка, сумма — в «Выдано» и в списке под таблицей.
-    const title=[L.shiftTitle(day,shift,v.amount),v.extra?'Доп. выплата '+fmt(v.extra)+' сум — в списке под таблицей':'']
-      .filter(Boolean).join('\n');
+    const title=[v.outside?L.outsideTitle(person):'',L.shiftTitle(day,shift,v.amount),
+      v.extra?'Доп. выплата '+fmt(v.extra)+' сум — в списке под таблицей':''].filter(Boolean).join('\n');
     if(title)el.title=title;else el.removeAttribute('title');
     if(v.editable){
       el.setAttribute('aria-pressed',String(v.state!=='off'));
@@ -137,7 +138,11 @@
     // В матрице клетки — массив для подсчёта; рисуем и пишем по исходным данным.
     view.people.forEach((summary,index)=>{
       const person=current.people[index], row=node('div','pr-row is-monthly');row.setAttribute('role','row');row.id='sd-row-'+person.id;
-      const who=node('div','pr-c pr-c-name');who.setAttribute('role','rowheader');who.append(node('span','pr-name',person.name),node('span','pr-role',[person.role,person.temporary?'временный':'',person.archived?'архив':''].filter(Boolean).join(' · ')));
+      const who=node('div','pr-c pr-c-name');who.setAttribute('role','rowheader');
+      // Должность, «временный», период и «архив» — отдельными узлами: переводчик берёт их по одному,
+      // а строка переносится между ними, а не посреди «08.10–10.10».
+      const role=node('span','pr-role');[person.role,...L.typeTag(person).split(' · '),person.archived?'архив':''].filter(Boolean).forEach((part,index)=>{if(index)role.append(' · ');role.append(node('span','',part));});
+      who.append(node('span','pr-name',person.name),role);
       const rate=person.rate==null||!Number(person.rate)?node('div','pr-c pr-c-sum is-norate','нет ставки'):node('div','pr-c pr-c-sum rm-num',fmt(Number(person.rate)));
       rate.setAttribute('role','cell');row.append(who,rate);
       summary.cells.forEach(cell=>{const wrap=node('div','sd-cell');wrap.setAttribute('role','cell');wrap.append(makeCell(person,cell.day));row.append(wrap);});

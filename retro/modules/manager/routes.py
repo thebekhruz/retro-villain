@@ -13,6 +13,8 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
 from pydantic import BaseModel
 
+from retro.modules.accountant import work_period
+from retro.modules.cashier.service import today_tashkent
 from retro.static_assets import VERSIONED_PRIVATE
 
 from .directions import DIRECTIONS, ManagerAccount
@@ -135,7 +137,10 @@ def card_json(row: dict, account: ManagerAccount) -> dict:
     # «Отправить ещё раз» — пока человек или его лицо не дошли до устройства.
     due = hikvision['state'] in ('pending', 'error') or hikvision['face']['state'] in ('pending', 'error')
     return dict(id=row['id'], name=row['name'], role=row['role'], group=row['group'],
-                employment_type=row['employment_type'], photo=photo_json(row), hikvision=hikvision,
+                employment_type=row['employment_type'],
+                # Период временного (T-434): пометка «временный · 08.10–10.10».
+                work_period=work_period.label(row.get('work_from'), row.get('work_to')),
+                photo=photo_json(row), hikvision=hikvision,
                 can_photo=allowed, can_retry=allowed and bool(row['photo_updated_at']) and due)
 
 
@@ -153,12 +158,19 @@ def _photo_card(request: Request, employee_id: int, account: ManagerAccount) -> 
     return row
 
 
+def ended(row: dict) -> bool:
+    """Временный, чей период уже закончился (T-434): в списке менеджера его нет."""
+    return bool(row.get('work_to')) and row['work_to'] < today_tashkent()
+
+
 @router.get('/home')
 def home(request: Request):
     """Сменные сотрудники направлений менеджера по алфавиту. Окладники — не
-    здесь: у них нет смен и турникета в этом кабинете."""
+    здесь: у них нет смен и турникета в этом кабинете. Временный, чей период
+    закончился, — тоже не здесь."""
     account = current_account(request)
-    rows = [row for row in request.app.state.accountant_roster.manager_cards() if account.sees(row['group'])]
+    rows = [row for row in request.app.state.accountant_roster.manager_cards()
+            if account.sees(row['group']) and not ended(row)]
     rows.sort(key=lambda row: (row['name'].casefold().replace('ё', 'е'), row['id']))
     return dict(login=account.login, role=account.role, directions=list(account.directions),
                 hikvision=dict(configured=request.app.state.hikvision_writer is not None),

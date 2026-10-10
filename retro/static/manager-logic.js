@@ -45,6 +45,13 @@
     return {text: 'Ждёт отправки', tone: 'warn'};
   }
 
+  /* Временный (T-434): «временный · 08.10–10.10» — период подписывает сервер.
+     Сменному — пусто. */
+  function typeTag(card) {
+    if (!card || card.employment_type !== 'temporary') return '';
+    return card.work_period ? 'временный · ' + card.work_period : 'временный';
+  }
+
   function matches(card, query) {
     const words = plain(query).split(' ').filter(Boolean);
     const text = plain(card.name) + ' ' + plain(card.role) + ' ' + plain(card.group);
@@ -116,5 +123,5 @@
   }
 
   return {collapse, initials, roleLine, isDone, hasProblem, rowTag, matches, inPlace, filterCards, groupsOf, rolesOf, summary,
-    photoStep, hikvisionStep, faceStep};
+    photoStep, hikvisionStep, faceStep, typeTag};
 });

@@ -19,11 +19,27 @@
   /* По умолчанию — выбранный день выплаты и смена накануне (смена 08.10 → выплата 09.10). */
   function defaults(day){return {paid:day,work:shiftDay(day,-1)};}
 
+  /* Временный (T-434): «временный · 08.10–10.10»; период подписывает сервер. */
+  function typeTag(person){return person?.temporary?(person.work_period?'временный · '+person.work_period:'временный'):'';}
+  /* Смена в периоде временного: границы необязательны, даты — ISO-строки. */
+  function inPeriod(person,day){
+    return !day||((!person?.work_from||day>=person.work_from)&&(!person?.work_to||day<=person.work_to));
+  }
+  /* Отказ словами — тот же, что у сервера: «Карамат работает с 08.10 по 10.10 —
+     доп. выплату за смену 07.10 записать нельзя.» */
+  function outsideText(person,work){
+    const from=person.work_from, to=person.work_to;
+    const span=from&&to?(from===to?'только '+dm(from):'с '+dm(from)+' по '+dm(to)):from?'с '+dm(from):'по '+dm(to);
+    return person.name+' работает '+span+' — доп. выплату за смену '+dm(work)+' записать нельзя.';
+  }
+
   /* Кому можно записать: реестр, включая временных; ушедшим в архив — нельзя.
-     Подпись — имя · должность · «временный»; у полных тёзок — ещё номер. */
-  function choices(people){
-    const list=(people||[]).filter(person=>!person.archived).map(person=>({person,
-      label:[person.name,person.role,person.temporary?'временный':''].filter(Boolean).join(' · ')}));
+     Временный — только если выбранная смена в его периоде (work — день смены;
+     без него — все). Подпись — имя · должность · «временный · период»; у полных
+     тёзок — ещё номер. */
+  function choices(people,work){
+    const list=(people||[]).filter(person=>!person.archived&&inPeriod(person,work)).map(person=>({person,
+      label:[person.name,person.role,typeTag(person)].filter(Boolean).join(' · ')}));
     const seen=new Map();list.forEach(item=>seen.set(key(item.label),(seen.get(key(item.label))||0)+1));
     list.forEach(item=>{if(seen.get(key(item.label))>1)item.label+=' · №'+item.person.id;});
     return list.sort((a,b)=>a.label.localeCompare(b.label,'ru'));
@@ -62,6 +78,7 @@
     if(paid>data.today)return 'Нельзя записать выплату будущим днём.';
     if(work>paid)return 'Смена не может быть позже дня выплаты.';
     if(work<shiftDay(data.entry_start,-1))return 'Смена — не раньше 01.10.2026: с неё начинается ручная ведомость.';
+    if(!inPeriod(person,work))return outsideText(person,work);
     if(amount===null||!(amount>0))return 'Введите сумму цифрами, больше нуля.';
     if(!String(note||'').trim())return 'Укажите назначение: за что выплата.';
     return null;
@@ -80,7 +97,10 @@
   /* «выплата 09.10 · смена 08.10 · назначение» — строка списка. */
   function describe(item){return 'выплата '+dm(item.paid_day)+' · смена '+dm(item.work_day)+(item.note?' · '+item.note:'');}
   function roleLine(item){
-    return [item.role,item.temporary||item.person?.temporary?'временный':'',item.person?.archived?'архив':''].filter(Boolean).join(' · ');
+    const period=item.work_period||item.person?.work_period;
+    const tag=item.temporary||item.person?.temporary?'временный'+(period?' · '+period:''):'';
+    return [item.role,tag,item.person?.archived?'архив':''].filter(Boolean).join(' · ');
   }
-  return {parseAmount,shiftDay,defaults,choices,findPerson,warnings,check,rows,total,describe,roleLine};
+  return {parseAmount,shiftDay,defaults,choices,findPerson,warnings,check,rows,total,describe,roleLine,
+    typeTag,inPeriod,outsideText};
 });

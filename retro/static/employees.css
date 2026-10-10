@@ -122,7 +122,7 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-pill.st-late{background:#fde9ed;color:#ab445e}
 .emp-pill.st-missing,.emp-pill.st-manual_absent{background:#ebeeea;color:#737f74}
 .emp-pill.st-unlinked{background:#fbf0d7;color:#906c2b}
-.emp-pill.st-unavailable{background:#eef1ed;color:#68746b}
+.emp-pill.st-unavailable,.emp-pill.st-outside{background:#eef1ed;color:#68746b}
 .emp-pill.st-manual_present{background:#f7f3e8;color:#7a6a45}
 .emp-cell-num{font-size:14.5px;font-variant-numeric:tabular-nums;color:#1c302b}
 .emp-cell-num.is-missing{color:#a96039}
@@ -193,13 +193,20 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-drawer-line{display:flex;justify-content:space-between;align-items:baseline;gap:10px;padding:5px 0;font-size:14px;color:#728476}
 .emp-drawer-line strong{font-size:15px;color:#143e35;font-variant-numeric:tabular-nums;white-space:nowrap}
 .emp-drawer-line.is-over strong{color:#ab445e}
-.emp-drawer-note{font-size:13px;line-height:1.5;color:#728476;margin:8px 0 0}
+.emp-drawer-note{font-size:14px;line-height:1.5;color:#728476;margin:8px 0 0}
 .emp-drawer-form{display:grid;gap:12px}
-.emp-field{display:grid;gap:6px;font-size:13px;color:#64776c}
+/* Подписи полей и подсказки панели — 14 точек: бухгалтер читает их без очков. */
+.emp-field{display:grid;gap:6px;font-size:14px;color:#64776c}
+/* Тип «Сменный / Временный» (T-434) — переключатель .emp-kind внутри поля, без своего отступа. */
+.emp-field>.emp-kind{margin:0}
+/* Период «С — По» — два поля даты рядом; на узком телефоне — друг под другом. */
+.emp-period{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+/* Общее правило полей даты (style.css) держит их не шире 200 точек — здесь поле во всю колонку, как соседние. */
+.emp-period input[type=date]{max-width:none}
 .emp-field input,.emp-field select{height:42px;border:1px solid #dbe3d8;border-radius:8px;padding:0 12px;background:#fff;
   color:#203d33;font-size:14.5px;width:100%;min-width:0}
 .emp-field input[type=number],.emp-field input.emp-money{font-variant-numeric:tabular-nums}
-.emp-drawer-feedback{min-height:16px;margin:0;font-size:13px;color:#4f795c}
+.emp-drawer-feedback{min-height:16px;margin:0;font-size:14px;line-height:1.45;color:#4f795c}
 .emp-drawer-feedback.is-error{color:#aa4656}
 .emp-drawer-actions{display:flex;gap:8px}
 .emp-drawer-actions .emp-btn{flex:0 0 auto;min-height:44px;border-radius:9px}
@@ -222,7 +229,7 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-toggle.is-on .emp-toggle-box-mark{background:#143e35;border-color:#143e35}
 .emp-toggle.is-on .emp-toggle-box-mark::after{content:'';width:9px;height:5px;border:2px solid #fff;border-top:0;border-right:0;
   transform:translateY(-1px) rotate(-45deg)}
-.emp-toggle-hint{margin:0;font-size:13px;line-height:1.45;color:#7d8881}
+.emp-toggle-hint{margin:0;font-size:14px;line-height:1.45;color:#7d8881}
 /* История изменений */
 .emp-history{margin-top:18px;padding-top:14px;border-top:1px solid #edf1e9}
 .emp-history-empty{margin:0;font-size:13.5px;color:#88978a}
@@ -318,3 +325,5 @@ button.emp-stat--attention:hover{background:#f8f1e0}
   /* Служебный капс на телефоне — как у всей панели (mobile.css): 10 px на солнце не читается. */
   .emp-kicker{font-size:13.5px;letter-spacing:1.1px}
 }
+/* Два поля даты рядом не помещаются на самом узком телефоне — друг под другом. */
+@media(max-width:420px){.emp-period{grid-template-columns:minmax(0,1fr)}}

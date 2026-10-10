@@ -3416,3 +3416,73 @@ globalThis.RetroTemplatesUz.push(
   [/^Слишком много запросов кода с этого устройства\. Попробуйте через (\d+) мин\.$/, "Bu qurilmadan juda ko'p kod so'raldi. $1 daqiqadan keyin urinib ko'ring."],
 );
 /* ── /T-433 ── */
+
+/* ── T-434 Временные сотрудники: тип, период работы, отказы вне периода ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Тип сотрудника': "Xodim turi",
+  'Период работы (необязательно)': "Ish davri (majburiy emas)",
+  'Вне этих дней человека не будет в ведомости, и выплату ему не записать.':
+    "Bu kunlardan tashqarida odam qaydnomada bo'lmaydi va unga to'lov yozib bo'lmaydi.",
+  'Вне периода': "Davrdan tashqarida",
+  'Временные вне периода': "Davrdan tashqaridagi vaqtinchalik xodimlar",
+  'Вне периода работы: в этот день его нет ни в списке, ни в ведомости.':
+    "Ish davridan tashqarida: bu kunda u na ro'yxatda, na qaydnomada yo'q.",
+  'Тип: сменный → временный': "Turi: smenali → vaqtinchalik",
+  'Тип: временный → сменный': "Turi: vaqtinchalik → smenali",
+  // Ответы сервера
+  'Тип сотрудника — сменный или временный.': "Xodim turi — smenali yoki vaqtinchalik.",
+  'Период работы указывают только у временного сотрудника.': "Ish davri faqat vaqtinchalik xodimga ko'rsatiladi.",
+  'Дата периода — в виде ГГГГ-ММ-ДД.': "Davr sanasi — YYYY-OO-KK ko'rinishida.",
+});
+(() => {
+  // Период — «с 08.10 по 10.10», «только 08.10», «с 08.10», «по 10.10»; в пометке — «08.10–10.10».
+  const span = text => text
+    .replace(/^с (\d\d\.\d\d) по (\d\d\.\d\d)$/, '$1 dan $2 gacha').replace(/^только (\d\d\.\d\d)$/, 'faqat $1')
+    .replace(/^с (\d\d\.\d\d)$/, '$1 dan').replace(/^по (\d\d\.\d\d)$/, '$1 gacha');
+  const ACTIONS = [
+    [/^выплату за смену (\d\d\.\d\d) записать нельзя\.$/, "$1 smenasi uchun to'lovni yozib bo'lmaydi."],
+    [/^доп\. выплату за смену (\d\d\.\d\d) записать нельзя\.$/, "$1 smenasi uchun qo'shimcha to'lovni yozib bo'lmaydi."],
+    [/^смену (\d\d\.\d\d) отметить нельзя\.$/, "$1 smenasini belgilab bo'lmaydi."],
+    [/^исключение за смену (\d\d\.\d\d) дать нельзя\.$/, "$1 smenasi uchun istisno berib bo'lmaydi."],
+    [/^смену (\d\d\.\d\d) начислить нельзя\.( Обновите смену и подтвердите снова\.)?$/,
+      (_, day, again) => day + " smenasini hisoblab bo'lmaydi." + (again ? ' Smenani yangilang va qayta tasdiqlang.' : '')],
+  ];
+  const action = text => {
+    for (const [pattern, uz] of ACTIONS) if (pattern.test(text)) return text.replace(pattern, uz);
+    return text;
+  };
+  // Что мешает сократить период — по частям через «; ».
+  const PARTS = [
+    [/^начисления или выплаты за смены (.+)$/, "$1 smenalari uchun hisoblash yoki to'lovlar"],
+    [/^доп\. выплаты за смены (.+)$/, "$1 smenalari uchun qo'shimcha to'lovlar"],
+    [/^отметки «был \/ не был» за (.+)$/, "$1 uchun «keldi / kelmadi» belgilari"],
+    [/^исключение за (.+)$/, '$1 uchun istisno'],
+  ];
+  const part = text => {
+    const days = text.replace(/ и ещё (\d+)$/, ' va yana $1');
+    for (const [pattern, uz] of PARTS) if (pattern.test(days)) return days.replace(pattern, uz);
+    return days;
+  };
+  const tag = text => text === '—' ? '—' : span(text);
+  globalThis.RetroTemplatesUz.push(
+    // Пометка рядом с именем и подсказка запертой клетки «Зарплаты · день».
+    [/^временный · (с \d\d\.\d\d|по \d\d\.\d\d|\d\d\.\d\d–\d\d\.\d\d|\d\d\.\d\d)$/, (_, period) => 'vaqtinchalik · ' + span(period)],
+    [/^Временный · (с \d\d\.\d\d|по \d\d\.\d\d|\d\d\.\d\d–\d\d\.\d\d|\d\d\.\d\d)$/, (_, period) => 'Vaqtinchalik · ' + span(period)],
+    // Период отдельным узлом рядом с «временный» (строка ведомости).
+    [/^(с \d\d\.\d\d|по \d\d\.\d\d)$/, (_, period) => span(period)],
+    [/^Работает (\d\d\.\d\d)–(\d\d\.\d\d)$/, '$1–$2 ishlaydi'],
+    [/^Работает (с \d\d\.\d\d|по \d\d\.\d\d)$/, (_, period) => span(period) + ' ishlaydi'],
+    [/^Работает (\d\d\.\d\d)$/, 'Faqat $1 ishlaydi'],
+    // История: «Период: — → 08.10–10.10».
+    [/^Период: (.+) → (.+)$/, (_, before, after) => 'Davr: ' + tag(before) + ' → ' + tag(after)],
+    // «Карамат работает с 08.10 по 10.10 — смену 12.10 отметить нельзя.»
+    [/^(.+) работает (с \d\d\.\d\d по \d\d\.\d\d|только \d\d\.\d\d|с \d\d\.\d\d|по \d\d\.\d\d) — (.+)$/,
+      (_, name, period, rest) => name + ' ' + span(period) + ' ishlaydi — ' + action(rest)],
+    [/^Период работы: «по» \((\d\d\.\d\d)\) раньше, чем «с» \((\d\d\.\d\d)\)\.$/,
+      'Ish davri: tugash sanasi ($1) boshlanish sanasi ($2) dan oldin.'],
+    [/^Период не изменить: вне новых дат уже есть (.+)\. Сначала уберите их или выберите другие даты\.$/,
+      (_, list) => "Davrni o'zgartirib bo'lmaydi: yangi sanalardan tashqarida allaqachon "
+        + list.split('; ').map(part).join('; ') + " bor. Avval ularni olib tashlang yoki boshqa sanalarni tanlang."],
+  );
+})();
+/* ── /T-434 ── */

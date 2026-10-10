@@ -75,7 +75,9 @@ function personRow(card) {
   const name = node('span', '', card.name);
   name.dataset.i18n = 'off';
   title.append(name);
-  if (card.employment_type === 'temporary') title.append(node('span', 'shokh-flag', 'временный'));
+  // «временный · 08.10–10.10» (T-434): период — с сервера.
+  const kind = L().typeTag(card);
+  if (kind) title.append(node('span', 'shokh-flag', kind));
   body.append(title, node('span', 'shokh-note', L().roleLine(card)));
   const tag = L().rowTag(card);
   const tone = {ok: 'shokh-ok', warn: 'shokh-flag', error: 'shokh-flag is-error', idle: 'shokh-flag is-idle'}[tag.tone];

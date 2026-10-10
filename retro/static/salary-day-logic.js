@@ -94,5 +94,12 @@
     return {people,perDay:Object.fromEntries(Object.entries(perDay).map(([day,value])=>[day,value/100])),
       total:people.reduce((sum,person)=>sum+Math.round(person.paid*100),0)/100};
   }
-  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix,extraOf};
+  /* Временный (T-434): пометка «временный · 08.10–10.10» — период подписывает сервер. */
+  function typeTag(person){return person.temporary?(person.work_period?'временный · '+person.work_period:'временный'):'';}
+  /* Смена клетки вне периода временного: клетка заперта и пуста, как будущая;
+     подсказка — «Работает 08.10–10.10» («с 08.10», «по 10.10»). */
+  function isOutside(person,day){return !!person.cells?.[day]?.outside;}
+  function outsideTitle(person){return person.work_period?'Работает '+person.work_period:'';}
+  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix,extraOf,
+    typeTag,isOutside,outsideTitle};
 });

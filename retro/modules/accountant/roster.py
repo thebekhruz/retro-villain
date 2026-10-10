@@ -24,6 +24,7 @@ from retro.integrations.hikvision import HikvisionPerson
 from retro.modules.cashier.service import TZ, today_tashkent
 
 from .names import device_name_matches, person_name, role_name
+from . import work_period
 
 
 GROUPS = {
@@ -59,6 +60,23 @@ class HikvisionIdTaken(ValueError):
 
 UNASSIGNED_ROLE = 'Должность не указана'
 UNASSIGNED_GROUP = 'Не распределено'
+
+# «Не менять» для типа и периода в update(): директор и прежние экраны
+# правят карточку без них, и период временного остаётся как был.
+KEEP = object()
+TYPE_NAMES = {work_period.SHIFT: 'сменный', work_period.TEMPORARY: 'временный'}
+
+
+def period_notes(old_type: str, old_from, old_to, new_type: str, new_from, new_to) -> list[str]:
+    """Строки истории о смене типа и периода: «Тип: сменный → временный»,
+    «Период: — → 08.10–10.10»."""
+    notes = []
+    if old_type != new_type:
+        notes.append(f'Тип: {TYPE_NAMES.get(old_type, old_type)} → {TYPE_NAMES.get(new_type, new_type)}')
+    before, after = work_period.label(old_from, old_to), work_period.label(new_from, new_to)
+    if before != after:
+        notes.append(f'Период: {before or "—"} → {after or "—"}')
+    return notes
 
 
 def group_for(role: str) -> str:
@@ -134,6 +152,19 @@ class Employee:
     employment_type: str = 'shift'
     direction: str | None = None
     created_by: str | None = None
+    # Период работы временного (T-434): дни смен «с — по», границы
+    # необязательны. Вне периода человека нет ни в списках дня, ни в
+    # ведомости, и записать ему ничего нельзя. У сменных — пусто.
+    work_from: date | None = None
+    work_to: date | None = None
+
+    def works_on(self, day: date) -> bool:
+        return work_period.in_period(day, self.work_from, self.work_to)
+
+    @property
+    def period_label(self) -> str | None:
+        """«08.10–10.10», «с 08.10», «по 10.10» — для пометки «временный · …»."""
+        return work_period.label(self.work_from, self.work_to)
 
     def json(self):
         return dict(id=self.id, name=self.name, role=self.role, group=self.group_name,
@@ -144,7 +175,10 @@ class Employee:
                     manual_attendance=self.manual_attendance,
                     manual_since=self.manual_since.isoformat() if self.manual_since else None,
                     employment_type=self.employment_type, direction=self.direction,
-                    created_by=self.created_by)
+                    created_by=self.created_by,
+                    work_from=self.work_from.isoformat() if self.work_from else None,
+                    work_to=self.work_to.isoformat() if self.work_to else None,
+                    work_period=self.period_label)
 
 
 @dataclass(frozen=True)
@@ -230,7 +264,8 @@ class RosterStore:
             # employment_type/direction/created_by/created_at/request_key —
             # из первой версии кабинета, где менеджер сам заводил карточки;
             # теперь карточки заводит только бухгалтер, и эти колонки больше не
-            # пишутся, но остаются (на проде они уже могут быть).
+            # пишутся, но остаются (на проде они уже могут быть). Кроме
+            # employment_type: «сменный / временный» снова ставит бухгалтер (T-434).
             # hikvision_employee_no — номер для устройства, выданный до
             # отправки: повтор шлёт тот же номер. hikvision_id появляется,
             # только когда устройство подтвердило.
@@ -242,7 +277,10 @@ class RosterStore:
                     ('request_key', 'TEXT'), ('hikvision_employee_no', 'TEXT'),
                     ('hikvision_state', 'TEXT'), ('hikvision_error', 'TEXT'),
                     ('hikvision_synced_at', 'TEXT'), ('face_state', 'TEXT'), ('face_error', 'TEXT'),
-                    ('face_synced_at', 'TEXT')):
+                    ('face_synced_at', 'TEXT'),
+                    # Период работы временного (T-434): ISO-даты дней смен,
+                    # пусто — без границы. Тип — та же employment_type.
+                    ('work_from', 'TEXT'), ('work_to', 'TEXT')):
                 if column not in employee_columns:
                     connection.execute(f'ALTER TABLE accountant_employees ADD COLUMN {column} {declaration}')
             # Фото сотрудника — своей таблицей, чтобы списки реестра не тащили
@@ -293,6 +331,7 @@ class RosterStore:
                     PRIMARY KEY(employee_id, effective_day)
                 );
                 INSERT OR IGNORE INTO accountant_employee_versions
+                    (employee_id, effective_day, source_row, name, role, group_name, rate, hikvision_id, deleted)
                     SELECT id,'0001-01-01',source_row,name,role,group_name,rate,hikvision_id,0
                     FROM accountant_employees WHERE id NOT IN
                         (SELECT employee_id FROM accountant_employee_versions);
@@ -305,6 +344,14 @@ class RosterStore:
                 DROP TRIGGER IF EXISTS accountant_employee_update_history;
                 DROP TRIGGER IF EXISTS accountant_employee_delete_history;
             ''')
+            # Период работы — и в версиях (T-434): у удалённого временного
+            # строки в реестре нет, а прошлые дни должны помнить его период.
+            # Период — свойство человека, а не дня: при правке он переписывается
+            # во всех версиях сразу, как номер Hikvision.
+            version_columns = table_columns(connection, 'accountant_employee_versions')
+            for column in ('work_from', 'work_to'):
+                if column not in version_columns:
+                    connection.execute(f'ALTER TABLE accountant_employee_versions ADD COLUMN {column} TEXT')
 
 
     # ── История ставок ─────────────────────────────────────────────────────
@@ -320,13 +367,14 @@ class RosterStore:
         connection.execute(
             'INSERT INTO accountant_employee_versions '
             '(employee_id, effective_day, source_row, name, role, group_name, rate, '
-            ' hikvision_id, deleted) '
-            'SELECT id, ?, source_row, name, role, group_name, rate, hikvision_id, ? '
+            ' hikvision_id, deleted, work_from, work_to) '
+            'SELECT id, ?, source_row, name, role, group_name, rate, hikvision_id, ?, work_from, work_to '
             'FROM accountant_employees WHERE id = ? '
             'ON CONFLICT(employee_id, effective_day) DO UPDATE SET '
             'source_row=excluded.source_row, name=excluded.name, role=excluded.role, '
             'group_name=excluded.group_name, rate=excluded.rate, '
-            'hikvision_id=excluded.hikvision_id, deleted=excluded.deleted',
+            'hikvision_id=excluded.hikvision_id, deleted=excluded.deleted, '
+            'work_from=excluded.work_from, work_to=excluded.work_to',
             (effective, 1 if deleted else 0, employee_id))
 
     @staticmethod
@@ -420,11 +468,15 @@ class RosterStore:
 
     @once
     def list(self, day=None) -> list[Employee]:
+        """Реестр: без дня — все нынешние сотрудники; с днём — те, кто был в
+        реестре в этот день (по версиям) и работает в этот день: временный
+        вне своего периода в список дня не попадает (T-434)."""
         with closing(self._open()) as connection:
             if day is None:
                 rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id, '
                                           'manual_attendance, manual_since, employment_type, direction, '
-                                          'created_by FROM accountant_employees ORDER BY source_row').fetchall()
+                                          'created_by, work_from, work_to '
+                                          'FROM accountant_employees ORDER BY source_row').fetchall()
             else:
                 rows = connection.execute('''
                     SELECT employee_id,source_row,name,role,group_name,rate,
@@ -438,7 +490,8 @@ class RosterStore:
                         (SELECT e.manual_since FROM accountant_employees e WHERE e.id=v.employee_id),
                         (SELECT e.employment_type FROM accountant_employees e WHERE e.id=v.employee_id),
                         (SELECT e.direction FROM accountant_employees e WHERE e.id=v.employee_id),
-                        (SELECT e.created_by FROM accountant_employees e WHERE e.id=v.employee_id)
+                        (SELECT e.created_by FROM accountant_employees e WHERE e.id=v.employee_id),
+                        v.work_from, v.work_to
                     FROM accountant_employee_versions v WHERE deleted=0 AND effective_day=(
                         SELECT MAX(effective_day) FROM accountant_employee_versions h
                         WHERE h.employee_id=v.employee_id AND h.effective_day<=?)
@@ -446,10 +499,12 @@ class RosterStore:
                 ''', (day.isoformat(),)).fetchall()
         # Ручная отметка сильнее привязки: турникет такого человека не видит,
         # и его вход не должен ни засчитываться, ни считаться прогулом.
-        return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None,
-                         None if row[7] else row[6], bool(row[7]),
-                         date.fromisoformat(row[8]) if row[7] and row[8] else None,
-                         row[9] or 'shift', row[10], row[11]) for row in rows]
+        people = [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None,
+                           None if row[7] else row[6], bool(row[7]),
+                           date.fromisoformat(row[8]) if row[7] and row[8] else None,
+                           row[9] or 'shift', row[10], row[11],
+                           work_period.as_day(row[12]), work_period.as_day(row[13])) for row in rows]
+        return people if day is None else [person for person in people if person.works_on(day)]
 
     def set_manual_attendance(self, employee_id: int, manual: bool, *, by: str | None = None) -> Employee:
         """Включить или снять ручную отметку.
@@ -793,9 +848,15 @@ class RosterStore:
             raise ValueError('Сотрудник не найден.')
 
     def add(self, *, name: str, role: str, rate: str | None, group_name: str,
-            by: str | None = None, cyrillic: bool = False) -> Employee:
+            by: str | None = None, cyrillic: bool = False, employment_type: str = 'shift',
+            work_from=None, work_to=None) -> Employee:
         """cyrillic=True — ввод с экрана: имя и должность только кириллицей
-        (ТЗ 09.10, М-04). Импорт и обслуживание пишут как есть."""
+        (ТЗ 09.10, М-04). Импорт и обслуживание пишут как есть.
+
+        employment_type='temporary' — временный (T-434); у него может быть
+        период работы «с — по» (обе границы необязательны). У сменного
+        периода нет."""
+        kind, start, end = work_period.normalize(employment_type, work_from, work_to)
         name = name.strip()
         role = role.strip()
         if not name or len(name) > 160:
@@ -811,15 +872,21 @@ class RosterStore:
             source_row = connection.execute('SELECT COALESCE(MAX(source_row), 0) + 1 '
                                             'FROM accountant_employees').fetchone()[0]
             employee_id = connection.execute(
-                'INSERT INTO accountant_employees (source_row, name, role, group_name, rate) '
-                'VALUES (?, ?, ?, ?, ?)',
+                'INSERT INTO accountant_employees (source_row, name, role, group_name, rate, '
+                'employment_type, work_from, work_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
                 (source_row, name, role, group_name,
-                 str(parsed_rate) if parsed_rate is not None else None)).lastrowid
+                 str(parsed_rate) if parsed_rate is not None else None, kind,
+                 start.isoformat() if start else None, end.isoformat() if end else None)).lastrowid
             # Новый сотрудник действует с начала времён: иначе прошлые дни его
-            # не увидят, а начисления за них уже закрыты.
+            # не увидят, а начисления за них уже закрыты. У временного с
+            # периодом дни вне периода отсекает сам период.
             self._stamp_version(connection, employee_id, day='0001-01-01')
+            details = ''
+            if kind == work_period.TEMPORARY:
+                period = work_period.label(start, end)
+                details = 'Временный' + (f' · {period}' if period else '')
             self._audit(connection, employee_id, action='create', by=by, reason='Добавлен в реестр',
-                        new_rate=parsed_rate, new_group=group_name)
+                        new_rate=parsed_rate, new_group=group_name, details=details)
         return next(person for person in self.list() if person.id == employee_id)
 
     def delete(self, employee_id: int, *, by: str | None = None):
@@ -840,10 +907,31 @@ class RosterStore:
         if not deleted:
             raise ValueError('Сотрудник не найден.')
 
+    def check_period(self, employee_id: int, employment_type, work_from, work_to) -> None:
+        """Проверка смены типа и периода без записи — до остальных правок
+        карточки, чтобы отказ не оставил её сохранённой наполовину.
+        Тот же отказ update() повторит в своей транзакции."""
+        _, start, end = work_period.normalize(employment_type, work_from, work_to)
+        with closing(self._open()) as connection:
+            row = connection.execute('SELECT work_from, work_to FROM accountant_employees WHERE id = ?',
+                                     (employee_id,)).fetchone()
+            if row is None:
+                raise ValueError('Сотрудник не найден.')
+            if (start, end) == (work_period.as_day(row[0]), work_period.as_day(row[1])):
+                return
+            text = work_period.conflicts(connection, employee_id, start, end)
+        if text:
+            raise ValueError(text)
+
     def update(self, employee_id: int, *, name: str | None = None, role: str | None = None,
                rate: str | None,
                group_name: str | None = None, reason: str, by: str | None = None,
-               cyrillic: bool = False) -> Employee:
+               cyrillic: bool = False, employment_type=KEEP, work_from=KEEP,
+               work_to=KEEP) -> Employee:
+        """Правка карточки. employment_type / work_from / work_to (T-434) —
+        тип и период; не переданы (KEEP) — остаются как были. Сократить период
+        нельзя, если вне новых дат уже есть начисления, выплаты, доп. выплаты,
+        отметки или исключение: отказ называет даты."""
         if not reason.strip():
             raise ValueError('Укажите причину изменения.')
         with closing(self._open()) as connection:
@@ -865,16 +953,44 @@ class RosterStore:
         if derived_group not in set(GROUPS.values()) | {'Кухня', UNASSIGNED_GROUP}:
             raise ValueError('Неизвестная группа.')
         parsed_rate = parse_rate(rate)
+        period_given = any(value is not KEEP for value in (employment_type, work_from, work_to))
         with closing(self._open()) as connection:
             with connection:
-                old = connection.execute('SELECT name, role, rate, group_name FROM accountant_employees WHERE id = ?',
+                if period_given:
+                    # Проверка «вне новых дат ничего нет» и запись — одной
+                    # транзакцией, по одному с выплатами и отметками.
+                    if not self.db.is_postgres:
+                        connection.execute('BEGIN IMMEDIATE')
+                    work_period.lock_employee(connection, employee_id)
+                old = connection.execute('SELECT name, role, rate, group_name, employment_type, work_from, work_to '
+                                         'FROM accountant_employees WHERE id = ?',
                                          (employee_id,)).fetchone()
                 if old is None:
                     raise ValueError('Сотрудник не найден.')
-                connection.execute('UPDATE accountant_employees SET name = ?, role = ?, rate = ?, group_name = ? '
+                old_type, old_from, old_to = (old[4] or work_period.SHIFT, work_period.as_day(old[5]),
+                                              work_period.as_day(old[6]))
+                kind, start, end = old_type, old_from, old_to
+                if period_given:
+                    kind, start, end = work_period.normalize(
+                        old_type if employment_type is KEEP else employment_type,
+                        old_from if work_from is KEEP else work_from,
+                        old_to if work_to is KEEP else work_to)
+                    if (start, end) != (old_from, old_to):
+                        text = work_period.conflicts(connection, employee_id, start, end)
+                        if text:
+                            raise ValueError(text)
+                connection.execute('UPDATE accountant_employees SET name = ?, role = ?, rate = ?, group_name = ?, '
+                                   'employment_type = ?, work_from = ?, work_to = ? '
                                    'WHERE id = ?', (name, role,
                                    str(parsed_rate) if parsed_rate is not None else None,
-                                   derived_group, employee_id))
+                                   derived_group, kind, start.isoformat() if start else None,
+                                   end.isoformat() if end else None, employee_id))
+                if (start, end) != (old_from, old_to):
+                    # Период — свойство человека, а не дня: прошлые дни видят новый.
+                    connection.execute('UPDATE accountant_employee_versions SET work_from = ?, work_to = ? '
+                                       'WHERE employee_id = ?',
+                                       (start.isoformat() if start else None, end.isoformat() if end else None,
+                                        employee_id))
                 self._stamp_version(connection, employee_id)
                 if old[2] is None and parsed_rate is not None:
                     # Ставки не было — её впервые задали. Дни без ставки ждали её,
@@ -888,6 +1004,7 @@ class RosterStore:
                         (str(parsed_rate), employee_id))
                 notes = [f'{label}: {before} → {after}' for label, before, after in
                          (('Имя', old[0], name), ('Должность', old[1], role)) if before != after]
+                notes += period_notes(old_type, old_from, old_to, kind, start, end)
                 self._audit(connection, employee_id, action='update', by=by, reason=reason.strip(),
                             old_rate=old[2], new_rate=parsed_rate, old_group=old[3],
                             new_group=derived_group, details='; '.join(notes))
@@ -985,7 +1102,8 @@ class RosterStore:
         только версия (photo_updated_at): сам снимок читает photo()."""
         query = ('SELECT e.id, e.name, e.role, e.group_name, e.hikvision_id, e.manual_attendance, '
                  'e.employment_type, e.hikvision_employee_no, e.hikvision_state, e.hikvision_error, '
-                 'e.hikvision_synced_at, e.face_state, e.face_error, e.face_synced_at, p.updated_at '
+                 'e.hikvision_synced_at, e.face_state, e.face_error, e.face_synced_at, p.updated_at, '
+                 'e.work_from, e.work_to '
                  'FROM accountant_employees e LEFT JOIN accountant_employee_photos p ON p.employee_id = e.id')
         params = ()
         if employee_id is not None:
@@ -997,7 +1115,10 @@ class RosterStore:
                      manual_attendance=bool(row[5]), employment_type=row[6] or 'shift',
                      hikvision_employee_no=row[7], hikvision_state=row[8], hikvision_error=row[9],
                      hikvision_synced_at=row[10], face_state=row[11], face_error=row[12],
-                     face_synced_at=row[13], photo_updated_at=row[14]) for row in rows]
+                     face_synced_at=row[13], photo_updated_at=row[14],
+                     # Период временного (T-434): закончившегося кабинет не показывает.
+                     work_from=work_period.as_day(row[15]), work_to=work_period.as_day(row[16]))
+                for row in rows]
 
     def set_photo(self, employee_id: int, mime: str, content: bytes, *, by: str | None = None) -> str:
         """Новое фото сотрудника. Лицо на устройстве после этого снова «ждёт

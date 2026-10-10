@@ -84,3 +84,27 @@ test('T-429: посещаемость смены в клетке «Зарпла�
   assert.equal(translate('Повар тандыр'), 'Oshpaz tandir');
   assert.equal(translate('Лепёшка тандырная'), null, 'слово внутри другого слова не трогаем');
 });
+
+test('T-434: временный и период работы — по-узбекски, данные не трогаем', () => {
+  assert.equal(translate('временный · 08.10–10.10'), 'vaqtinchalik · 08.10–10.10');
+  assert.equal(translate('временный · с 08.10'), 'vaqtinchalik · 08.10 dan');
+  assert.equal(translate('временный · по 10.10'), 'vaqtinchalik · 10.10 gacha');
+  assert.equal(translate('Работает 08.10–10.10'), '08.10–10.10 ishlaydi');
+  assert.equal(translate('Работает с 08.10'), '08.10 dan ishlaydi');
+  assert.equal(translate('по 10.10'), '10.10 gacha', 'период отдельным узлом в строке ведомости');
+  assert.equal(translate('Карамат работает с 08.10 по 10.10 — смену 12.10 отметить нельзя.'),
+    "Карамат 08.10 dan 10.10 gacha ishlaydi — 12.10 smenasini belgilab bo'lmaydi.");
+  assert.equal(translate('Карамат работает по 10.10 — доп. выплату за смену 11.10 записать нельзя.'),
+    "Карамат 10.10 gacha ishlaydi — 11.10 smenasi uchun qo'shimcha to'lovni yozib bo'lmaydi.");
+  assert.equal(translate('Карамат работает только 08.10 — выплату за смену 09.10 записать нельзя.'),
+    "Карамат faqat 08.10 ishlaydi — 09.10 smenasi uchun to'lovni yozib bo'lmaydi.");
+  assert.equal(translate('Период: — → с 08.10'), 'Davr: — → 08.10 dan');
+  assert.equal(translate('Период не изменить: вне новых дат уже есть начисления или выплаты за смены 10.10; '
+    + 'отметки «был / не был» за 12.10. Сначала уберите их или выберите другие даты.'),
+  "Davrni o'zgartirib bo'lmaydi: yangi sanalardan tashqarida allaqachon 10.10 smenalari uchun hisoblash yoki to'lovlar; "
+    + "12.10 uchun «keldi / kelmadi» belgilari bor. Avval ularni olib tashlang yoki boshqa sanalarni tanlang.");
+  assert.equal(translate('Вне этих дней человека не будет в ведомости, и выплату ему не записать.'),
+    "Bu kunlardan tashqarida odam qaydnomada bo'lmaydi va unga to'lov yozib bo'lmaydi.");
+  assert.equal(translate('Период работы: «по» (08.10) раньше, чем «с» (10.10).'),
+    'Ish davri: tugash sanasi (08.10) boshlanish sanasi (10.10) dan oldin.');
+});
