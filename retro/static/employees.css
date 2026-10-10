@@ -208,6 +208,17 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-field input[type=number],.emp-field input.emp-money{font-variant-numeric:tabular-nums}
 .emp-drawer-feedback{min-height:16px;margin:0;font-size:14px;line-height:1.45;color:#4f795c}
 .emp-drawer-feedback.is-error{color:#aa4656}
+.emp-namesakes{display:grid;gap:10px;padding:14px;border:1px solid #eddfbe;border-radius:12px;background:#fbf7ed}
+.emp-namesakes-title{font-size:15px;color:#2f3a33}
+.emp-namesakes-note{margin:0;font-size:14px;line-height:1.45;color:#6d6047}
+.emp-namesakes-list{display:grid;gap:0;border-radius:10px;background:#fff;padding:0 12px}
+.emp-namesake{display:flex;align-items:center;gap:10px;padding:10px 0;border-top:1px solid #f0f3ec}
+.emp-namesake:first-child{border-top:0}
+.emp-namesake-who{display:grid;gap:2px;flex:1 1 auto;min-width:0}
+.emp-namesake-who b{font-size:15px;color:#24312a;overflow-wrap:anywhere}
+.emp-namesake-who span{font-size:14px;color:#728476;overflow-wrap:anywhere}
+.emp-namesake .emp-btn{flex:none;min-height:40px;padding:8px 14px}
+.emp-namesakes-new{width:100%;min-height:44px}
 .emp-drawer-actions{display:flex;gap:8px}
 .emp-drawer-actions .emp-btn{flex:0 0 auto;min-height:44px;border-radius:9px}
 .emp-drawer-actions .emp-btn--primary{flex:1 1 auto}

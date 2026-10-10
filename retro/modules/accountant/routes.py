@@ -8,7 +8,7 @@ from decimal import Decimal
 from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
 from retro.accounting_period import accounting_range_start
@@ -24,6 +24,7 @@ from retro.modules.shokh.store import pocket_position
 from .handover_dates import cashier_day
 from .attendance import Entrance, export_entrances
 from .employee_export import export_employees
+from .names import person_name, similar_names
 from .expense_catalog import catalog_json
 from . import closing as month_closing
 from .ledger import LedgerError, amount_value, flow_json, required_text
@@ -472,6 +473,8 @@ class EmployeeCreateInput(BaseModel):
     employment_type: str = 'shift'
     work_from: date | None = None
     work_to: date | None = None
+    # «Это другой человек»: бухгалтер видел похожих в реестре и подтвердил.
+    confirm_new: bool = False
 
 
 class MonthlyEmployeeInput(BaseModel):
@@ -485,6 +488,7 @@ class MonthlyEmployeeInput(BaseModel):
     remaining: str = '0'
     # «⊘ Hik» у окладника; None — не менять.
     no_hikvision: bool | None = None
+    confirm_new: bool = False
     reason: str = ''
 
 
@@ -742,8 +746,40 @@ def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInpu
     return dict(demo=True, employee=employee.json())
 
 
+def similar_people(request: Request, name: str) -> list[dict]:
+    """Возможные тёзки в реестре (ТЗ 09.10, М-04): сменные, временные и
+    окладники. Бухгалтер решает сам, тот же это человек или другой, — сами
+    карточки не объединяем."""
+    roster = request.app.state.accountant_roster
+    found = [dict(id=person.id, kind='shift', name=person.name, role=person.role, group=person.group_name,
+                  temporary=person.employment_type == 'temporary', work_period=person.period_label)
+             for person in roster.list() if similar_names(name, person.name)]
+    found += [dict(id=person.id, kind='monthly', name=person.name, role=person.role, group='На окладе',
+                   temporary=False, work_period=None)
+              for person in roster.list_monthly() if similar_names(name, person.name)]
+    return found
+
+
+def ask_about_namesakes(request: Request, name: str, confirm_new: bool):
+    """409 со списком похожих, пока бухгалтер не подтвердил «это другой
+    человек». Имя с латиницей сюда не доходит: отказ по кириллице даёт запись."""
+    if confirm_new:
+        return None
+    try:
+        clean = person_name(name)
+    except ValueError:
+        return None
+    matches = similar_people(request, clean)
+    if not matches:
+        return None
+    return JSONResponse(dict(detail='Похожие уже есть в реестре. Это тот же человек?', matches=matches), 409)
+
+
 @router.post('/employees', status_code=201)
 def create_employee(request: Request, body: EmployeeCreateInput):
+    asked = ask_about_namesakes(request, body.name, body.confirm_new)
+    if asked is not None:
+        return asked
     try:
         employee = request.app.state.accountant_roster.add(
             name=body.name, role=body.role, rate=body.rate, group_name=body.group,
@@ -777,6 +813,9 @@ async def sync_hikvision_people(request: Request):
 
 @router.post('/monthly-employees', status_code=201)
 def create_monthly_employee(request: Request, body: MonthlyEmployeeInput):
+    asked = ask_about_namesakes(request, body.name, body.confirm_new)
+    if asked is not None:
+        return asked
     try:
         employee = request.app.state.accountant_roster.add_monthly(
             name=body.name, role=body.role, salary=body.salary, schedule=body.schedule,

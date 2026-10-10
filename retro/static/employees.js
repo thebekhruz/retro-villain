@@ -15,7 +15,7 @@ let today, current, monthPaid = {}, requestNo = 0;
 // UI-состояние живёт отдельно от данных API: карточки-фильтры, вкладка группы, поиск и открытый drawer.
 // sel: id сменного | 'new' | 'm:<id>' сотрудника на окладе | 'm:new'.
 // role — должность внутри выбранной группы (второй ряд чипов), '' — все.
-const ui = {filter: 'all', tab: 'all', role: '', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false,
+const ui = {filter: 'all', tab: 'all', role: '', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false, namesakes: null,
   history: null};
 const SALARY_TAB = '__salary';
 
@@ -420,7 +420,7 @@ function openMonthly(id) {
 }
 function openNew(kind = 'shift', keep = {}) {
   const groups = groupOrder();
-  ui.confirm = false; ui.feedback = ''; ui.fbErr = false; ui.history = null;
+  ui.confirm = false; ui.feedback = ''; ui.fbErr = false; ui.history = null; ui.namesakes = null;
   // Переключение «За смену / Оклад» не стирает уже набранные имя и должность.
   const name = keep.name || '', role = keep.role || '';
   if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name, role, salary: '', schedule: '', noHik: false, reason: ''}; }
@@ -445,7 +445,7 @@ function closeDrawer() {
   const question = 'Есть несохранённые изменения. Закрыть без сохранения?';
   const asked = document.documentElement.lang === 'uz' && globalThis.RetroI18n ? RetroI18n.translate(question) || question : question;
   if (drawerDirty() && !confirm(asked)) return;
-  ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; ui.history = null; render();
+  ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; ui.history = null; ui.namesakes = null; render();
 }
 /* Есть ли в открытой карточке несохранённое: новое — любое набранное поле,
    правка — отличие от того, что сейчас в реестре. */
@@ -463,7 +463,11 @@ function drawerDirty() {
 // «Сохранить» в шапке страницы сохраняет открытую карточку.
 globalThis.RetroSave?.register($('employees-aside'), () => (String(ui.sel).startsWith('m:') ? saveMonthly() : saveDraft()),
   {dirty: drawerDirty});
-function setDraft(key, value) { ui.draft[key] = value; ui.feedback = ''; }
+function setDraft(key, value) {
+  ui.draft[key] = value; ui.feedback = '';
+  // Другое имя — прежний список похожих уже не про него.
+  if (key === 'name' && ui.namesakes) { ui.namesakes = null; render(); }
+}
 
 function fieldLabel(labelText, input) {
   const label = text('label', 'emp-field', null);
@@ -542,6 +546,35 @@ function drawerActions(saveLabel, onSave, disabled) {
   cancel.addEventListener('click', closeDrawer);
   actions.append(save, cancel);
   return actions;
+}
+/* Похожие уже есть в реестре (ТЗ 09.10, М-04): «Это он» открывает его
+   карточку, «Это другой человек» добавляет нового. Сами не объединяем. */
+function namesakesBlock(onConfirm) {
+  if (!ui.namesakes || !ui.namesakes.length) return null;
+  const box = text('div', 'emp-namesakes', null);
+  box.setAttribute('role', 'alert');
+  box.append(text('b', 'emp-namesakes-title', 'Похожие уже есть в реестре'),
+    text('p', 'emp-namesakes-note', 'Проверьте, не тот же ли это человек: второй карточкой задвоятся смены и выплаты.'));
+  const list = text('div', 'emp-namesakes-list', null);
+  ui.namesakes.forEach(person => {
+    const row = text('div', 'emp-namesake', null);
+    const who = text('span', 'emp-namesake-who', null);
+    const name = text('b', null, person.name);
+    name.dataset.i18n = 'off';
+    who.append(name, text('span', null, L.namesakeLine(person)));
+    const open = el('button', 'emp-btn', {type: 'button', textContent: 'Это он'});
+    open.addEventListener('click', () => {
+      ui.namesakes = null; ui.draft = null;
+      if (person.kind === 'monthly') openMonthly(person.id); else openDrawer(person.id);
+    });
+    row.append(who, open);
+    list.append(row);
+  });
+  const other = el('button', 'emp-btn emp-namesakes-new', {type: 'button', textContent: 'Это другой человек — добавить'});
+  other.dataset.busyKey = 'emp-namesake-new';
+  other.addEventListener('click', () => { const work = onConfirm(); if (B) B.button(other, work); });
+  box.append(list, other);
+  return box;
 }
 function feedbackLine() {
   const feedback = text('p', 'emp-drawer-feedback' + (ui.fbErr ? ' is-error' : ''), ui.feedback);
@@ -642,6 +675,8 @@ function drawerCard() {
     reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
     form.append(fieldLabel('Причина изменения', reasonInput));
   }
+  const sakes = isEdit ? null : namesakesBlock(() => saveDraft(true));
+  if (sakes) form.append(sakes);
   form.append(feedbackLine(), drawerActions('Сохранить', () => saveDraft(), !editable()));
   card.append(form);
 
@@ -755,6 +790,8 @@ function monthlyDrawer() {
     reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
     form.append(fieldLabel('Причина изменения', reasonInput));
   }
+  const sakes = isEdit ? null : namesakesBlock(() => saveMonthly(true));
+  if (sakes) form.append(sakes);
   form.append(feedbackLine(), drawerActions('Сохранить', () => saveMonthly()));
   card.append(form);
   if (isEdit) card.append(deleteBlock(doDeleteMonthly), historyBlock());
@@ -846,7 +883,15 @@ const fail = value => { ui.feedback = value; ui.fbErr = true; render(); return f
 // Сохранённую строку реестра подсвечиваем — видно, что именно изменилось.
 const flashRow = key => B?.flash(document.querySelector('[data-busy-key="' + CSS.escape(key) + '"]'));
 const amountError = {bad: 'Сумма — только цифры, например 180 000.', zero: 'Ставка должна быть больше нуля.'};
-async function saveDraft() {
+// 409 со списком похожих: показываем их в карточке и ждём решения бухгалтера.
+function askNamesakes(response, result) {
+  if (response.status !== 409 || !Array.isArray(result?.matches)) return false;
+  ui.namesakes = result.matches; ui.feedback = ''; ui.fbErr = false;
+  render();
+  document.querySelector('.emp-namesakes')?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  return true;
+}
+async function saveDraft(confirmNew = false) {
   const d = ui.draft, name = d.name.trim();
   if (!name) return fail('Укажите имя.');
   if (!d.role.trim()) return fail('Укажите должность.');
@@ -887,14 +932,16 @@ async function saveDraft() {
       message('Изменение сохранено с сегодняшнего дня.');
       flashRow('emp:' + id);
     } else {
-      const payload = {name, role: d.role.trim(), rate, group: d.group, manual_attendance: d.manual, ...period};
+      const payload = {name, role: d.role.trim(), rate, group: d.group, manual_attendance: d.manual, ...period,
+        confirm_new: confirmNew === true};
       // Создание — через RetroFinancialWrite: у сотрудника есть ставка, и повтор
       // после потерянного ответа иначе завёл бы второго человека.
       const response = await RetroFinancialWrite('/api/accountant/employees', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();
+      if (askNamesakes(response, result)) return false;
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить.');
-      ui.sel = null; ui.draft = null;
+      ui.sel = null; ui.draft = null; ui.namesakes = null;
       await reloadDay(); message('Новый сотрудник добавлен.');
       const newId = result?.employee?.id;
       if (newId != null) flashRow('emp:' + newId);
@@ -911,7 +958,7 @@ async function doDelete() {
     return true;
   } catch (error) { return fail(error.message); }
 }
-async function saveMonthly() {
+async function saveMonthly(confirmNew = false) {
   const d = ui.draft, name = d.name.trim(), role = d.role.trim();
   if (!name) return fail('Укажите имя.');
   if (!role) return fail('Укажите должность.');
@@ -926,14 +973,16 @@ async function saveMonthly() {
   const payload = {name, role, salary: parsed.value, schedule: d.schedule.trim(), no_hikvision: !!d.noHik,
     reason: (d.reason || '').trim(),
     card: before.card ?? '0', cash: before.cash ?? '0', advances: before.advances ?? '0', remaining: before.remaining ?? '0'};
+  if (!isEdit) payload.confirm_new = confirmNew === true;
   try {
     const options = {method: isEdit ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)};
     const response = isEdit
       ? await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(id), options)
       : await RetroFinancialWrite('/api/accountant/monthly-employees', options);
     const result = await response.json();
+    if (!isEdit && askNamesakes(response, result)) return false;
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить оклад.');
-    if (!isEdit) { ui.sel = null; ui.draft = null; }
+    if (!isEdit) { ui.sel = null; ui.draft = null; ui.namesakes = null; }
     await reloadDay();
     if (isEdit && ui.sel === 'm:' + id) {
       const fresh = salaried().find(p => p.id === id);

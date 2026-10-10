@@ -93,3 +93,10 @@ test('временный: пометка «временный · период»,
   assert.deepEqual(logic.periodPayload({type: 'shift', from: '2026-10-08', to: '2026-10-10'}),
     {employment_type: 'shift', work_from: null, work_to: null});
 });
+
+test('тёзка в реестре одной строкой: должность, группа, временный с периодом', () => {
+  assert.equal(logic.namesakeLine({role: 'хостес', group: 'Встреча гостей', temporary: true, work_period: '08.10–10.10'}),
+    'Хостес · Встреча гостей · временный · 08.10–10.10');
+  assert.equal(logic.namesakeLine({role: 'Менеджер', group: 'На окладе', temporary: false}), 'Менеджер · На окладе');
+  assert.equal(logic.namesakeLine({role: '', group: 'Кухня', temporary: true, work_period: null}), 'Кухня · временный');
+});

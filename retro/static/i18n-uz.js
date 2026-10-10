@@ -3499,3 +3499,14 @@ Object.assign(globalThis.RetroDictionaryUz, {
   );
 })();
 /* ── /T-434 ── */
+
+/* ── Тёзки при добавлении сотрудника (ТЗ 09.10, М-04) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Похожие уже есть в реестре': "Reyestrda o'xshashlari bor",
+  'Проверьте, не тот же ли это человек: второй карточкой задвоятся смены и выплаты.':
+    "Bu o'sha odam emasligini tekshiring: ikkinchi karta smenalar va to'lovlarni ikki marta hisoblaydi.",
+  'Это он': "Bu o'sha",
+  'Это другой человек — добавить': "Bu boshqa odam — qo'shish",
+  'Похожие уже есть в реестре. Это тот же человек?': "Reyestrda o'xshashlari bor. Bu o'sha odammi?",
+});
+/* ── /Тёзки ── */

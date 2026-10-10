@@ -119,6 +119,13 @@
       work_from: temporary && draft.from ? draft.from : null, work_to: temporary && draft.to ? draft.to : null};
   }
 
+  /* Похожий в реестре (ТЗ 09.10, М-04) одной строкой: должность, группа,
+     временный с периодом — чтобы бухгалтер узнала человека, не открывая карточку. */
+  function namesakeLine(person) {
+    const temporary = person.temporary ? 'временный' + (person.work_period ? ' · ' + person.work_period : '') : '';
+    return [roleLabel(person.role), person.group, temporary].filter(Boolean).join(' · ');
+  }
+
   return {parseAmount, formatAmount, latinKey, matchesQuery, groupForRole, groupRoles, matchesRole, attentionReasons,
-    typeTag, periodError, periodPayload};
+    typeTag, periodError, periodPayload, namesakeLine};
 });

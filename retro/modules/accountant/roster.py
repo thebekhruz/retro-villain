@@ -1135,7 +1135,10 @@ class RosterStore:
                                         (employee_id,)).fetchone()
             replaced = before is not None
             # Версия только растёт: два снимка в одну миллисекунду не делят
-            # ни адрес ?v=, ни отметку «лицо отправлено».
+            # ни адрес ?v=, ни отметку «лицо отправлено». Сравниваем с той же
+            # точностью, с какой пишем (миллисекунды), иначе 12:00:00.123900
+            # «позже» записанного 12:00:00.123 и получил бы ту же версию.
+            now = now.replace(microsecond=now.microsecond // 1000 * 1000)
             if replaced and now <= datetime.fromisoformat(before[0]):
                 now = datetime.fromisoformat(before[0]) + timedelta(milliseconds=1)
             stamp = now.isoformat(timespec='milliseconds')
