@@ -168,7 +168,7 @@ def cell_attendance(row) -> dict:
 
 
 def month_data(finance, first, last, attendance=None, *, basis='payment'):
-    """Столбцы по сменам для ввода; прежний вид по выплатам для совместимости.
+    """Столбцы по дате выдачи; вид по сменам доступен через basis='shift'.
 
     Меняется только представление: сохранённые work_day/paid_day не переносятся.
     attendance(смены) возвращает {день: {сотрудник: строка «Сотрудников»}}.
@@ -299,6 +299,10 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
             if by_shift:
                 person['cells'][column_day].update(paid_day=paid_day,
                     paid_days=sorted(paid_dates[(employee_id, column_day)]))
+            else:
+                # Старые/отложенные выдачи могут относиться к другой смене.
+                # Дата столбца — фактическая выдача, в подсказке нужны реальные смены.
+                person['cells'][column_day]['work_days'] = sorted({row[6] for row in paid_rows})
     # Временный, чей период не задевает ни одной смены месяца, — не строка
     # этого месяца; есть выплата или доп. выплата — строка остаётся.
     paid_people = {key[0] for key, amount in amounts.items() if amount and key[1] in days} | {item['employee_id'] for item in extras}

@@ -1,4 +1,4 @@
-/* Ручная ведомость сменных: столбец — смена, выплата — на следующий день.
+/* Ручная ведомость сменных: столбец — выплата, смена — предыдущий день.
    Клетка — галочка: выдано по ставке смены, другая сумма или не выдано. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.SalaryDayLogic=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   function parseAmount(value){
@@ -35,6 +35,13 @@
   function cellState(amount,rate){
     if(!amount)return 'off';
     return rate&&Math.round(amount*100)===Math.round(rate*100)?'on':'odd';
+  }
+  // Галочка должна совпадать и со ставкой смены, и с видимой ставкой в строке.
+  // Иначе показываем фактическую сумму: старые 260 000 нельзя скрывать за ✓ рядом с 310 000.
+  function displayState(person,day){
+    const amount=parseAmount(person.cells?.[day]?.amount??0)||0;
+    const state=cellState(amount,rateOf(person,day));
+    return state==='on'?cellState(amount,parseAmount(person.rate)):state;
   }
   /* Что ставит клик по клетке: выдано → снять (0); не выдано → ставка;
      ставки нет → null (нужно ввести сумму). */
@@ -109,6 +116,6 @@
      подсказка — «Работает 08.10–10.10» («с 08.10», «по 10.10»). */
   function isOutside(person,day){return !!person.cells?.[day]?.outside;}
   function outsideTitle(person){return person.work_period?'Работает '+person.work_period:'';}
-  return {parseAmount,previousDay,nextDay,tashkentDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix,extraOf,
+  return {parseAmount,previousDay,nextDay,tashkentDay,shiftMonth,canEdit,rateOf,cellState,displayState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix,extraOf,
     typeTag,isOutside,outsideTitle};
 });

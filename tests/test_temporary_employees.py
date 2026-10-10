@@ -417,7 +417,7 @@ def test_salary_day_month_and_excel_follow_the_period(api):
                                                         amount='150000', expected_amount='0'))
     month = api.get('/api/accountant/salary-day/month', params={'month': '2026-10'}).json()
     row = next(p for p in month['people'] if p['id'] == karamat['id'])
-    assert row['cells']['2026-10-12'] == dict(amount='0', work_day='2026-10-11', editable=False, rate='150000',
+    assert row['cells']['2026-10-12'] == dict(amount='0', work_day='2026-10-11', work_days=[], editable=False, rate='150000',
                                               outside=True)
     # Посещаемость клетке вне периода не ставится: её нет в списке дня смены.
     assert 'attendance' not in row['cells']['2026-10-08']

@@ -49,11 +49,27 @@ test('checkbox cell: rate of the shift day, three states, toggle target',()=>{
   assert.equal(logic.toggleTarget(150000,300000),0,'any paid cell is cleared by a click');
   assert.equal(logic.toggleTarget(0,null),null,'no rate: amount must be typed');
 });
+test('historical rate never hides a different payout behind a tick next to the current rate',()=>{
+  const person={rate:'310000',cells:{'2026-10-06':{amount:'260000',rate:'260000'}}};
+  assert.equal(logic.rateOf(person,'2026-10-06'),260000,'writes retain the historical shift rate');
+  assert.equal(logic.displayState(person,'2026-10-06'),'odd','show the actual 260000');
+  person.cells['2026-10-06'].amount='310000';
+  assert.equal(logic.displayState(person,'2026-10-06'),'odd','manual amount differs from the shift rate');
+  person.cells['2026-10-06'].rate='310000';
+  assert.equal(logic.displayState(person,'2026-10-06'),'on');
+  person.cells['2026-10-06'].amount='0';
+  assert.equal(logic.displayState(person,'2026-10-06'),'off');
+});
+test('payout-day totals include late extras on the actual date of issue',()=>{
+  const data=month({basis:'payment',extras:[{employee_id:1,work_day:'2026-09-30',paid_day:'2026-10-07',amount:'12000'}]});
+  assert.equal(logic.matrix(data).perDay['2026-10-07'],62000);
+  assert.equal(logic.matrix(data).total,187000);
+});
 const source=readFileSync(new URL('../../retro/static/salary-day.js',import.meta.url),'utf8');
 const code=source.slice(source.indexOf('function commit('),source.indexOf('async function loadMonth('));
 function harness(){
   const requests=[],messages=[],painted=[];
-  const context=vm.createContext({L:logic,current:month({basis:'shift',today:'2026-10-08'}),inflight:new Map(),writes:0,queue:Promise.resolve(),
+  const context=vm.createContext({L:logic,current:month({basis:'payment',today:'2026-10-08'}),inflight:new Map(),writes:0,queue:Promise.resolve(),
     controls(){},totals(){},paintCell:(person,day)=>painted.push([person.id,day,person.cells[day].amount]),
     message:(...args)=>messages.push(args),
     fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve})),
@@ -65,16 +81,16 @@ function harness(){
 test('tick uses one absolute PUT with the expected value; the cell repaints at once',async()=>{
   const h=harness(),work=h.commit(350000);await Promise.resolve();
   assert.equal(h.requests.length,1);
-  assert.equal(h.requests[0].url,'/api/accountant/salary-day/shift-cell');
+  assert.equal(h.requests[0].url,'/api/accountant/salary-day/cell');
   assert.equal(h.requests[0].options.method,'PUT');
-  assert.deepEqual(JSON.parse(h.requests[0].options.body),{work_day:'2026-10-07',employee_id:1,amount:'350000',expected_amount:'50000'});
+  assert.deepEqual(JSON.parse(h.requests[0].options.body),{date:'2026-10-07',employee_id:1,amount:'350000',expected_amount:'50000'});
   assert.deepEqual(h.painted[0],[1,'2026-10-07','350000'],'optimistic paint before the server answers');
   assert.equal(h.context.writes,1);
   assert.equal(h.commit(0),work,'a second click during the write shares it — no double payout');
-  h.requests[0].resolve({ok:true,json:async()=>({amount:'350000',work_day:'2026-10-07',date:'2026-10-08',editable:true})});
+  h.requests[0].resolve({ok:true,json:async()=>({amount:'350000',work_day:'2026-10-06',date:'2026-10-07',editable:true})});
   assert.equal(await work,true);
   assert.equal(h.person.cells['2026-10-07'].amount,'350000');
-  assert.equal(h.person.cells['2026-10-07'].work_day,'2026-10-07');
+  assert.equal(h.person.cells['2026-10-07'].work_day,'2026-10-06');
   assert.equal(h.context.writes,0);
 });
 test('rejected write restores the saved cell and shows the reason',async()=>{
@@ -124,10 +140,10 @@ test('выдача и её снятие не трогают посещаемос
   const h=harness(),shift={status:'on_time',time:'09:31',source:'on_time'},tick=()=>new Promise(resolve=>setTimeout(resolve,0));
   h.person.cells['2026-10-07'].attendance=shift;
   let work=h.commit(350000);await tick();
-  h.requests[0].resolve({ok:true,json:async()=>({amount:'350000',work_day:'2026-10-07',date:'2026-10-08',editable:true})});await work;
+  h.requests[0].resolve({ok:true,json:async()=>({amount:'350000',work_day:'2026-10-06',date:'2026-10-07',editable:true})});await work;
   assert.deepEqual(h.person.cells['2026-10-07'].attendance,shift);
   work=h.commit(0);await tick();
-  h.requests[1].resolve({ok:true,json:async()=>({amount:'0',work_day:'2026-10-07',date:'2026-10-08',editable:true})});await work;
+  h.requests[1].resolve({ok:true,json:async()=>({amount:'0',work_day:'2026-10-06',date:'2026-10-07',editable:true})});await work;
   assert.equal(h.person.cells['2026-10-07'].amount,'0');
   assert.equal(logic.shiftMark(logic.attendanceOf(h.person,'2026-10-07')),'09:31');
 });
@@ -157,7 +173,7 @@ test('временный: клетки вне периода заперты и �
 
 /* T-428: открытая с вечера ведомость не оставляет вчерашнюю дату «сегодня». */
 const calendarCode=source.slice(source.indexOf('async function loadMonth('),source.indexOf('/* Записать клетку;'));
-function calendarHarness({today='2026-10-09',selected=logic.previousDay(today),sheetMonth=selected.slice(0,7)}={}){
+function calendarHarness({today='2026-10-09',selected=today,sheetMonth=selected.slice(0,7)}={}){
   const requests=[],messages=[],elements=new Map();
   const element=id=>{
     if(!elements.has(id))elements.set(id,{value:'',style:{},classList:{remove(){}},setAttribute(){},querySelector(){return null;}});
@@ -174,8 +190,8 @@ function calendarHarness({today='2026-10-09',selected=logic.previousDay(today),s
   });
   vm.runInContext('globalThis.RetroSave={pending:()=>dirty};const extra={busy:()=>extraBusy};'+calendarCode,context);
   const reply=(index,data,ok=true)=>requests[index].resolve({ok,json:async()=>data});
-  const sheet=(day,which=day.slice(0,7))=>month({basis:'shift',month:which,today:day,entry_start:'2026-10-02',
-    days:which==='2026-11'?['2026-11-01','2026-11-02']:['2026-10-08','2026-10-09','2026-10-10','2026-10-31']});
+  const sheet=(day,which=day.slice(0,7))=>month({basis:'payment',month:which,today:day,entry_start:'2026-10-02',
+    days:which==='2026-10'?['2026-10-08','2026-10-09','2026-10-10','2026-10-31']:[which+'-01',which+'-02']});
   return {context,clock,requests,messages,elements,reply,sheet,refresh:force=>context.refreshDate(force)};
 }
 const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
@@ -187,34 +203,35 @@ test('Tashkent midnight, month and year boundaries are independent of device tim
   assert.equal(logic.previousDay('2027-01-01'),'2026-12-31');
 });
 
-test('overnight refresh selects the latest completed shift, reloads permissions, and does not write money',async()=>{
+test("overnight refresh selects today's payout, reloads permissions, and does not write money",async()=>{
   const h=calendarHarness(),work=h.refresh();
   assert.equal(h.requests[0].url,'/api/config');
   h.reply(0,{today:'2026-10-10'});await flush();
-  assert.equal(h.requests[1].url,'/api/accountant/salary-day/month?month=2026-10&basis=shift');
+  assert.equal(h.requests[1].url,'/api/accountant/salary-day/month?month=2026-10&basis=payment');
   assert.equal(h.elements.get('sheet-grid').inert,true);
   h.reply(1,h.sheet('2026-10-10'));assert.equal(await work,true);
   assert.equal(h.context.today,'2026-10-10');
-  assert.equal(h.context.selectedDay,'2026-10-09');
-  assert.equal(logic.nextDay(h.context.selectedDay),'2026-10-10');
+  assert.equal(h.context.selectedDay,'2026-10-10');
+  assert.equal(logic.previousDay(h.context.selectedDay),'2026-10-09');
   assert.equal(logic.canEdit(h.context.current,h.context.current.people[0],'2026-10-09'),true);
   assert.ok(h.requests.every(request=>!request.options.method&&request.options.cache==='no-store'));
   assert.equal(await h.refresh(),false,'no polling of the server while the date is unchanged');
   assert.equal(h.requests.length,2);
 });
 
-test('month follows the last completed shift, including October 31 paid November 1',async()=>{
+test('month follows the payout day across month and year boundaries',async()=>{
   for(const [today,selected,nextDay,target,expected] of [
-    ['2026-10-31','2026-10-30','2026-11-01','2026-10','2026-10-31'],
-    ['2026-11-01','2026-10-31','2026-11-02','2026-11','2026-11-01'],
+    ['2026-10-31','2026-10-31','2026-11-01','2026-11','2026-11-01'],
+    ['2026-11-01','2026-11-01','2026-11-02','2026-11','2026-11-02'],
+    ['2026-12-31','2026-12-31','2027-01-01','2027-01','2027-01-01'],
     ['2026-10-31','2026-10-08','2026-11-01','2026-10','2026-10-08']]){
     const h=calendarHarness({today,selected});h.clock.now=new Date(nextDay+'T00:00:01Z');
     const work=h.refresh();h.reply(0,{today:nextDay});await flush();
-    assert.equal(h.requests[1].url,'/api/accountant/salary-day/month?month='+target+'&basis=shift');
+    assert.equal(h.requests[1].url,'/api/accountant/salary-day/month?month='+target+'&basis=payment');
     h.reply(1,h.sheet(nextDay,target));assert.equal(await work,true);
     assert.equal(h.context.current.month,target);
     assert.equal(h.context.selectedDay,expected);
-    assert.equal(h.elements.get('month-input').max,'2026-11');
+    assert.equal(h.elements.get('month-input').max,nextDay.slice(0,7));
   }
 });
 
@@ -223,11 +240,11 @@ test('pending payout, amount editor and extra payout draft defer rollover withou
     const h=calendarHarness();Object.assign(h.context,state);
     assert.equal(await h.refresh(true),false);
     assert.equal(h.requests.length,0);
-    assert.equal(h.context.selectedDay,'2026-10-08');
+    assert.equal(h.context.selectedDay,'2026-10-09');
     Object.assign(h.context,{writes:0,editing:null,extraBusy:false,dirty:[],loading:false});
     const work=h.refresh();h.reply(0,{today:'2026-10-10'});await flush();
     h.reply(1,h.sheet('2026-10-10'));assert.equal(await work,true);
-    assert.equal(h.context.selectedDay,'2026-10-09');
+    assert.equal(h.context.selectedDay,'2026-10-10');
   }
 });
 
@@ -240,7 +257,7 @@ test('draft started during the date request or month reload is preserved until t
     assert.equal(await work,false);
     assert.equal(h.context.current,before);
     assert.equal(h.context.today,'2026-10-09');
-    assert.equal(h.context.selectedDay,'2026-10-08');
+    assert.equal(h.context.selectedDay,'2026-10-09');
     assert.equal(h.context.loading,false);
   }
 });
@@ -252,7 +269,7 @@ test('failed month reload keeps dates unchanged and retries; simultaneous focus 
   h.reply(1,{detail:'Нет связи'},false);
   assert.deepEqual(await Promise.all([first,second]),[false,false]);
   assert.equal(h.context.today,'2026-10-09');
-  assert.equal(h.context.selectedDay,'2026-10-08');
+  assert.equal(h.context.selectedDay,'2026-10-09');
   assert.equal(h.elements.get('sheet-grid').inert,false);
   const retry=h.refresh();h.reply(2,{today:'2026-10-10'});await flush();
   h.reply(3,h.sheet('2026-10-10'));assert.equal(await retry,true);

@@ -182,6 +182,41 @@ def shift_sheet(c, month='2026-10'):
     return response.json()
 
 
+@pytest.mark.parametrize('paid,work', [
+    (oct_(6), oct_(5)), (oct_(10), oct_(9)),
+    (date(2026, 11, 1), oct_(31)), (date(2027, 1, 1), date(2026, 12, 31))])
+def test_payment_column_writes_same_day_expense_and_exports_previous_shift(c, paid, work):
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    person = seed(c)['ikhtiyor']
+    c.clock['today'] = paid
+    cash_days(c, oct_(11), paid)
+    payout = cell(c, paid, person, 260000)
+    assert payout.status_code == 200, payout.text
+    assert payout.json()['work_day'] == work.isoformat()
+    assert payout.json()['date'] == paid.isoformat()
+    before = {name: table(c, name) for name in ('accountant_accruals', 'accountant_salary_payments')}
+    data = c.get('/api/accountant/salary-day/month', params={
+        'month': paid.strftime('%Y-%m'), 'basis': 'payment'}).json()
+    stored = next(p for p in data['people'] if p['id'] == person.id)['cells'][paid.isoformat()]
+    assert stored['amount'] == '260000'
+    assert stored['work_days'] == [work.isoformat()]
+    assert stored['editable'] is True
+    assert day_json(c, paid)['ledger']['salary_paid_on_day'] == '260000'
+    assert day_json(c, work)['ledger']['salary_paid_on_day'] == '0'
+    response = c.get('/api/accountant/salary-day/export', params={
+        'month': paid.strftime('%Y-%m'), 'basis': 'payment'})
+    assert response.status_code == 200, response.text
+    sheet = load_workbook(BytesIO(response.content))['Ведомость']
+    headers = [v.value for v in sheet[4]]
+    col = headers.index(f'Выплата {paid:%d.%m}\nза смену {work:%d.%m}')
+    row = next(row for row in sheet.iter_rows(min_row=5) if row[1].value == person.name)
+    assert row[col].value == 260000
+    assert work.strftime('%d.%m.%Y') in row[col].comment.text
+    assert {name: table(c, name) for name in before} == before
+
+
 @pytest.mark.parametrize('work,paid', [
     (oct_(5), oct_(6)), (oct_(8), oct_(9)), (oct_(9), oct_(10)),
     (oct_(31), date(2026, 11, 1)), (date(2026, 12, 31), date(2027, 1, 1))])
@@ -409,7 +444,7 @@ def test_partial_and_extra_payouts_agree_in_sheet_journal_and_dashboard(c):
     # клетка заперта: смена 08.10 за ней не та, правка задвоила бы деньги.
     cells = {person['name']: person['cells'] for person in sheet(c)['people']}
     assert cells['Каримов Жахонгир']['2026-10-09'] == dict(
-        amount='160000', work_day='2026-10-08', editable=False, rate='360000',
+        amount='160000', work_day='2026-10-08', work_days=['2026-10-07'], editable=False, rate='360000',
         attendance=dict(status='late', time='10:58', source='late'))
     assert cells['Каримов Жахонгир']['2026-10-08']['editable'] is False
     # Вид по сменам объединяет части по фактической смене и сохраняет обе даты выдачи.

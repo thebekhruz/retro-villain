@@ -314,7 +314,7 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     assert 'Вся ведомость, 4 сотрудника.' in rows[1][0] and '05.10.2026 – 10.10.2026' in rows[1][0]
     head = rows[3]
     assert head[:4] == ['№', 'Сотрудник', 'Должность', 'Ставка']
-    assert head[4] == 'Выплата 05.10\nсмена 04.10' and head[8] == 'Выплата 09.10\nсмена 08.10'
+    assert head[4] == 'Выплата 05.10\nза смену 04.10' and head[8] == 'Выплата 09.10\nза смену 08.10'
     assert head[-2:] == ['Доп. выплаты', 'Итого'] and len(head) == 4 + 6 + 2
     body = {row[1]: row for row in rows[4:8]}
     assert body['Баходиров Ихтиер'][2] == 'Менеджер' and body['Баходиров Ихтиер'][3] == 360000

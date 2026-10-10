@@ -205,7 +205,7 @@ def test_first_of_next_month_pays_last_shift_of_previous_month(stores, monkeypat
     assert rows(finance, 'accountant_accruals')[0][1] == '2026-10-31'
     matrix = finance.salary_day_month(date(2026, 11, 1), date(2026, 11, 30))
     assert matrix['people'][0]['cells']['2026-11-01'] == dict(
-        amount='150000', work_day='2026-10-31', editable=True, rate=None)
+        amount='150000', work_day='2026-10-31', work_days=['2026-10-31'], editable=True, rate=None)
 
 
 def test_generic_salary_mutations_cannot_break_manual_pair(stores):
@@ -276,9 +276,9 @@ def test_matrix_paid_day_alignment_missing_cells_and_submitted_reports(stores):
     assert data['entry_start'] == '2026-10-05'
     cells = data['people'][0]['cells']
     assert len(cells) == 31
-    assert cells['2026-10-01'] == dict(amount='0', work_day='2026-09-30', editable=False, rate=None)
-    assert cells['2026-10-07'] == dict(amount='250000', work_day='2026-10-06', editable=True, rate=None)
-    assert cells['2026-10-08'] == dict(amount='0', work_day='2026-10-07', editable=True, rate=None)
+    assert cells['2026-10-01'] == dict(amount='0', work_day='2026-09-30', work_days=[], editable=False, rate=None)
+    assert cells['2026-10-07'] == dict(amount='250000', work_day='2026-10-06', work_days=['2026-10-06'], editable=True, rate=None)
+    assert cells['2026-10-08'] == dict(amount='0', work_day='2026-10-07', work_days=[], editable=True, rate=None)
     assert cells['2026-10-11']['editable'] is False
     finance.set_salary_day_cell(PAID, person.id, '200000', '250000')
 

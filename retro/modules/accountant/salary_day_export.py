@@ -1,10 +1,10 @@
 """«Зарплата · день» в Excel для печати (ТЗ 09.10, Б-07).
 
-Тот же ответ, что видит экран (`/salary-day/month?basis=shift`): столбец —
-день смены, обычная выплата — на следующий день. Фактические даты сохранённых
-выплат остаются в примечаниях. Доп. выплаты входят в итог смены и сотрудника,
+Тот же ответ, что видит экран (`/salary-day/month?basis=payment`): столбец —
+день выдачи денег, обычная смена — предыдущий день. Фактические даты сохранённых
+смен остаются в примечаниях. Доп. выплаты входят в итог дня выдачи и сотрудника,
 а сами расписаны вторым листом — с датой смены, датой выплаты и назначением.
-Прежний вид по датам выплат сохранён для совместимости API.
+Вид по сменам сохранён для совместимости API.
 
 Вся ведомость или выборка — группа и поиск, как на экране; режим написан в
 шапке обоих листов. Печать: альбомный лист по ширине страницы, шапка таблицы
@@ -135,7 +135,7 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
     sheet.title = 'Ведомость'
     by_shift = data.get('basis') == 'shift'
     headings = ([f'Смена {_dm(day)}\nвыплата {_dm((date.fromisoformat(day)+timedelta(days=1)).isoformat())}'
-                 for day in days] if by_shift else [f'Выплата {_dm(day)}\nсмена {_dm(_previous(day))}' for day in days])
+                 for day in days] if by_shift else [f'Выплата {_dm(day)}\nза смену {_dm(_previous(day))}' for day in days])
     labels = (['№', 'Сотрудник', 'Должность', 'Ставка']
               + headings
               + ['Доп. выплаты', 'Итого'])
@@ -175,12 +175,12 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
             role = (role + ' · архив').strip(' ·')
         _row(sheet, row, [number, person['name'], role, _money(person.get('rate'))]
              + [value or None for value in cells] + [extra or None, _sum(cells) + extra], money_from=4)
-        if by_shift:
-            for index, day in enumerate(days):
-                paid_days = (person['cells'].get(day) or {}).get('paid_days') or []
-                if paid_days:
-                    sheet.cell(row, 5 + index).comment = Comment(
-                        'Фактическая выплата: ' + ', '.join(_dmy(paid) for paid in paid_days), 'Retro Milliy')
+        for index, day in enumerate(days):
+            dates = (person['cells'].get(day) or {}).get('paid_days' if by_shift else 'work_days') or []
+            if dates:
+                sheet.cell(row, 5 + index).comment = Comment(
+                    ('Фактическая выплата: ' if by_shift else 'За смены: ')
+                    + ', '.join(_dmy(value) for value in dates), 'Retro Milliy')
         # Доп. выплата в этот день — ячейка подсвечена, сумма — в столбце «Доп. выплаты».
         for index, value in enumerate(own_extra):
             if value:

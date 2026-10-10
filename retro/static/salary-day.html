@@ -39,15 +39,15 @@
     </div>
     <p id="salary-message" class="notice" role="status" aria-live="polite" hidden></p>
     <p id="aggregate-note" class="notice sd-aggregate" role="note" hidden></p>
-    <p class="sd-note" id="entry-note">В столбце — дата смены. Обычная выплата и расход в «Финансах дня» — на следующий день. Смены с 5 октября 2026 г., выплаты за них — с 6 октября.</p>
+    <p class="sd-note" id="entry-note">В столбце — дата выдачи денег. Под ней — дата предыдущей смены. Расход в «Финансах дня» — в день выдачи. Смены с 5 октября 2026 г.</p>
     <div id="salary-loading" class="pr-skeleton" aria-hidden="true"><div class="pr-sheet"><div class="rm-skel-row"><span class="rm-skel" style="width:25%"></span><span class="rm-skel" style="width:60%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:25%"></span><span class="rm-skel" style="width:60%"></span></div><div class="rm-skel-row"><span class="rm-skel" style="width:25%"></span><span class="rm-skel" style="width:60%"></span></div></div></div>
     <div id="salary-body" hidden>
       <section class="pr-cards" aria-label="Итоги ведомости">
         <article class="pr-card"><div class="pr-card-label">Выдано по сотрудникам</div><div class="pr-card-value rm-num" id="salary-total">—</div></article>
-        <article class="pr-card"><div class="pr-card-label" id="selected-title">Выдано за смену</div><div class="pr-card-value rm-num" id="salary-selected">—</div><div class="pr-card-sub" id="selected-shift"></div></article>
+        <article class="pr-card"><div class="pr-card-label" id="selected-title">Выдано за день</div><div class="pr-card-value rm-num" id="salary-selected">—</div><div class="pr-card-sub" id="selected-shift"></div></article>
         <article class="pr-card"><div class="pr-card-label">Сотрудников в ведомости</div><div class="pr-card-value rm-num" id="salary-people">—</div></article>
       </section>
-      <section class="pr-sheet" aria-label="Ведомость сменных: сотрудник × день смены">
+      <section class="pr-sheet" aria-label="Ведомость выплат: сотрудник × день выдачи">
         <!-- Группы и поиск — как в «Сотрудниках»: те же чипы и тот же поиск по имени или должности.
              Под выбранной группой — её должности (в «Кухне» — повара по цехам). -->
         <div class="sd-tools">
