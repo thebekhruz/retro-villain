@@ -1,0 +1,69 @@
+/* Кабинет менеджера (ТЗ 09.10) — телефон. Каркас, кнопки, строки и шаги
+   статуса — из закупа (shokh.css), те же классы. Здесь только своё:
+   прогресс фото, фильтры списка, крупное фото сотрудника. */
+
+/* Заголовок шага по центру: справа место под кнопку, как слева «‹». */
+.mgr-head-spacer{width:40px;height:40px;flex:none}
+.mgr-photo-actions{display:grid;grid-template-columns:1fr;gap:8px}
+
+/* Прогресс в шапке: у скольких людей раздела уже есть фото. */
+.mgr-progress{position:relative;display:grid;gap:8px;margin-top:16px}
+.mgr-progress-text{font-size:14px;color:#e8efe9}
+.mgr-progress-bar{display:block;height:6px;border-radius:999px;background:#ffffff26;overflow:hidden}
+.mgr-progress-bar i{display:block;height:100%;width:0;border-radius:inherit;background:var(--gold);transition:width .3s}
+
+/* Список: пояснение, поиск, фильтры, люди — одной карточкой. */
+.mgr-list-card{display:grid;gap:12px}
+.mgr-lead{margin:0;font-size:13px;line-height:1.45;color:var(--muted-2)}
+.mgr-filters{display:flex;flex-wrap:wrap;gap:6px}
+.mgr-filter{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border:1.5px solid #dfe5dc;
+  border-radius:999px;background:#fff;color:var(--ink-2);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.mgr-filter b{font-weight:700;color:var(--muted-2)}
+.mgr-filter.is-on{border-color:var(--green);background:var(--green);color:#fff}
+.mgr-filter.is-on b{color:var(--gold)}
+.mgr-filter[hidden],.mgr-filters[hidden]{display:none}
+/* Раздел и должность — второй и третий ряд: тише статусов, выбранный — светло-зелёный. */
+.mgr-filters-sub{flex-wrap:nowrap;margin:0 -16px;padding:10px 16px 2px;border-top:1px solid var(--line-soft);
+  overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-padding:0 16px}
+.mgr-filters-sub::-webkit-scrollbar{display:none}
+/* Одна строка, листается пальцем вбок: список не уезжает вниз из-за чипов. */
+.mgr-filters-sub .mgr-filter{flex:none;min-height:34px;border-width:1px;font-size:14px}
+.mgr-filters-sub .mgr-filter.is-on{border-color:#cfe0cf;background:#e3ebdf;color:#285140}
+.mgr-filters-sub .mgr-filter.is-on b{color:#285140}
+.mgr-list-note{margin:0}
+
+/* Строка сотрудника — кнопка во всю ширину: открывает карточку. */
+.mgr-row{width:100%;border:0;border-top:1px solid #eef1ea;background:none;color:inherit;font:inherit;
+  text-align:left;cursor:pointer}
+.mgr-row:first-child{border-top:0}
+.mgr-row .shokh-purchase-title{overflow-wrap:anywhere}
+.mgr-row .shokh-note{display:block}
+.mgr-row>.mgr-tag{flex:none;align-self:center}
+.mgr-thumb{padding:0;overflow:hidden}
+.mgr-thumb img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
+.shokh-flag.is-error{background:var(--late-bg);color:var(--late)}
+.shokh-flag.is-idle{background:var(--idle-bg);color:var(--idle)}
+
+/* Карточка: крупное фото по центру, нажатие открывает камеру. */
+.mgr-person{display:grid;justify-items:center;gap:6px;padding:8px 0 4px;text-align:center}
+.mgr-avatar{position:relative;display:grid;place-items:center;width:152px;height:152px;padding:0;
+  border:3px solid #fff;border-radius:50%;background:var(--green);color:var(--gold);
+  font-family:Georgia,serif;font-size:44px;box-shadow:0 8px 24px #143e3526;cursor:pointer}
+.mgr-avatar img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
+.mgr-avatar b{font-weight:400}
+.mgr-avatar-cam{position:absolute;right:4px;bottom:4px;display:grid;place-items:center;width:40px;height:40px;
+  border:3px solid #fff;border-radius:50%;background:var(--gold);color:var(--green)}
+.mgr-avatar:disabled{cursor:default}
+.mgr-avatar:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
+.mgr-person-name{margin-top:8px;font-size:22px;font-weight:650;letter-spacing:-.4px;color:var(--ink);overflow-wrap:anywhere}
+.mgr-person-role{font-size:14px;color:var(--muted-2)}
+.mgr-hint{margin:0;font-size:13px;line-height:1.45;color:var(--muted-2)}
+
+/* Статус: фото → человек в Hikvision → лицо на устройстве. Тот же блок,
+   что ход сохранения накладной, но на своём месте, а не поверх экрана. */
+.mgr-status{box-shadow:none}
+.mgr-status .shokh-save-bar{display:none}
+.mgr-status.is-waiting .shokh-save-bar{display:block}
+.mgr-status .shokh-save-step[hidden]{display:none}
+.mgr-retry{width:100%}
+.mgr-shoot{display:inline-flex;align-items:center;justify-content:center;gap:10px}

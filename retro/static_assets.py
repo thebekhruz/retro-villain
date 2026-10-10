@@ -15,6 +15,9 @@ from fastapi.responses import HTMLResponse
 
 ASSET = re.compile(r'\b(src|href)="/static/([A-Za-z0-9._/-]+)"')
 IMMUTABLE = 'private, max-age=31536000, immutable'
+# Ответ API по адресу с версией (?v=), например фото сотрудника: адрес
+# меняется вместе с содержимым. Ставит его сам роут; без ?v= — no-store.
+VERSIONED_PRIVATE = 'private, max-age=31536000'
 
 
 class Pages:

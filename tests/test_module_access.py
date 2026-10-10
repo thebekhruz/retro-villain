@@ -10,15 +10,15 @@ from retro.app import STATIC_PANELS, create_app, static_panels
 from retro.config import Settings
 
 STATIC = Path(__file__).resolve().parent.parent / 'retro' / 'static'
-ROLES = ('cashier', 'accountant', 'director', 'founder', 'shokh')
+ROLES = ('cashier', 'accountant', 'director', 'founder', 'shokh', 'manager')
 USERS = {role: ('secret', role) for role in ROLES} | {'boss': ('secret', 'admin')}
 # Страница → панель, которой она принадлежит.
 PAGES = {'index.html': 'cashier', 'accountant.html': 'accountant', 'employees.html': 'accountant',
          'payroll.html': 'accountant', 'director.html': 'director', 'director-app.html': 'director',
          'founder.html': 'founder', 'founder-cabinet.html': 'founder', 'shokh.html': 'shokh',
-         'salary-day.html': 'accountant', 'shoh-balance.html': 'accountant'}
+         'salary-day.html': 'accountant', 'shoh-balance.html': 'accountant', 'manager.html': 'manager'}
 PATHS = {'cashier': '/', 'accountant': '/accountant', 'director': '/director',
-         'founder': '/founder', 'shokh': '/shokh'}
+         'founder': '/founder', 'shokh': '/shokh', 'manager': '/manager'}
 
 
 @pytest.fixture
@@ -146,3 +146,35 @@ def test_every_dashboard_page_loads_the_menu_script():
     for page in ('index.html', 'accountant.html', 'employees.html', 'payroll.html', 'salary-day.html',
                  'shoh-balance.html', 'director.html', 'founder.html', 'director-app.html', 'founder-cabinet.html'):
         assert 'nav.js' in (STATIC / page).read_text(encoding='utf-8'), page
+
+
+def test_manager_sees_only_the_cabinet_and_no_money(client):
+    """ТЗ 09.10, М-01: менеджер работает только в своём кабинете — финансы,
+    зарплаты и ставки ему закрыты, и в меню их нет."""
+    assert module_ids(client, 'manager') == ['manager']
+    assert client.get('/manager', auth=('manager', 'secret')).status_code == 200
+    assert client.get('/api/manager/home', auth=('manager', 'secret')).status_code == 200
+    for path in ('/accountant', '/accountant/employees', '/accountant/salary-day', '/api/accountant/day',
+                 '/api/accountant/staff', '/api/accountant/salary-day/month?month=2026-10',
+                 '/api/accountant/payroll/month?month=2026-10', '/', '/api/cashier/day',
+                 '/director', '/api/director/team', '/founder', '/api/founder/cabinet'):
+        assert client.get(path, auth=('manager', 'secret')).status_code == 403, path
+    answer = client.post('/api/accountant/employees', auth=('manager', 'secret'),
+                         json={'name': 'Карамат', 'role': 'Хостес', 'rate': '150000', 'group': 'Встреча гостей'})
+    assert answer.status_code == 403
+    answer = client.patch('/api/accountant/employees/1', auth=('manager', 'secret'),
+                          json={'rate': '999999', 'reason': 'x'})
+    assert answer.status_code == 403
+
+
+def test_other_panels_do_not_open_the_manager_cabinet(client):
+    for role in ('cashier', 'accountant', 'director', 'founder', 'shokh'):
+        assert client.get('/api/manager/home', auth=(role, 'secret')).status_code == 403, role
+        assert client.get('/manager', auth=(role, 'secret')).status_code == 403, role
+    assert client.get('/api/manager/home', auth=('boss', 'secret')).status_code == 200
+
+
+def test_manager_login_lands_in_the_cabinet(client):
+    answer = client.post('/api/session', json={'username': 'manager', 'password': 'secret'})
+    assert answer.status_code == 200
+    assert answer.json() == {'role': 'manager', 'path': '/manager'}

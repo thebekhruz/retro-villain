@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 from dotenv import load_dotenv
 
 from retro.runtime import resolve_data_dir
+from retro.modules.manager.directions import parse_manager_directions
 
 ROOT = Path(__file__).resolve().parent.parent
 IIKO_ORIGIN = 'https://retro3158.iikoweb.ru'
@@ -33,6 +34,9 @@ class Settings:
     dashboard_user: str = field(default='', repr=False)
     dashboard_password: str = field(default='', repr=False)
     dashboard_panel_users: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
+    # Направления менеджеров (ТЗ 09.10, М-01): логин → «Кухня», «Зал», «Уборка».
+    # Менеджер без строки здесь видит все направления.
+    manager_directions: dict[str, tuple[str, ...]] = field(default_factory=dict)
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
     trusted_proxy_network: IPv4Network | IPv6Network | None = None
     manual_handover_only: bool = False
@@ -97,6 +101,8 @@ class Settings:
         if bool(user) != bool(password):
             raise ValueError('Для защиты укажите и DASHBOARD_USER, и DASHBOARD_PASSWORD.')
         panel_users = parse_dashboard_panel_users(os.getenv('DASHBOARD_PANEL_USERS', ''))
+        manager_directions = parse_manager_directions(
+            os.getenv('DASHBOARD_MANAGER_DIRECTIONS', ''), panel_users)
         network_value = os.getenv('DASHBOARD_ALLOWED_NETWORK', '').strip()
         allowed_network = ip_network(network_value, strict=False) if network_value else None
         proxy_value = os.getenv('TRUSTED_PROXY_NETWORK', '').strip()
@@ -146,6 +152,7 @@ class Settings:
             dashboard_user=user,
             dashboard_password=password,
             dashboard_panel_users=panel_users,
+            manager_directions=manager_directions,
             dashboard_allowed_network=allowed_network,
             trusted_proxy_network=trusted_proxy_network,
             manual_handover_only=manual,
@@ -259,9 +266,10 @@ def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
     if not value.strip():
         return {}
     required_roles = {'cashier', 'accountant', 'director', 'founder'}
-    # `shokh` — необязательная роль: закуп подключают отдельно, и уже
-    # настроенные развёртывания не должны падать из-за её отсутствия.
-    allowed_roles = required_roles | {'admin', 'shokh'}
+    # `shokh` и `manager` — необязательные роли: закуп и кабинет менеджера
+    # подключают отдельно, и уже настроенные развёртывания не должны падать
+    # из-за их отсутствия. Менеджеров может быть несколько.
+    allowed_roles = required_roles | {'admin', 'shokh', 'manager'}
     result = {}
     roles = set()
     for raw_entry in value.split(';'):
