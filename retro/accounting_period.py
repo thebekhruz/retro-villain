@@ -1,17 +1,23 @@
 """Граница рабочего учёта Retro; более ранние даты остаются архивом.
 
 Дата относится к хозяйственному дню в Ташкенте, а не ко времени создания
-записи: расход за 5 октября можно внести позднее. Архивные отчёты целиком
+записи: расход за 6 октября можно внести позднее. Архивные отчёты целиком
 до границы сохраняют прежний расчёт; период, включающий рабочий учёт,
 начинается не раньше ACCOUNTING_START.
 """
-from datetime import date
+from datetime import date, timedelta
 
-ACCOUNTING_START = date(2026, 10, 5)
+ACCOUNTING_START = date(2026, 10, 6)
+# Первая выдача 6 октября относится к предыдущей смене.
+SALARY_SHIFT_START = ACCOUNTING_START - timedelta(days=1)
 
 
 def period_start(through: date) -> date:
     return ACCOUNTING_START if through >= ACCOUNTING_START else date.min
+
+
+def salary_period_start(through: date) -> date:
+    return SALARY_SHIFT_START if through >= ACCOUNTING_START else date.min
 
 
 def accounting_range_start(first: date, last: date) -> date:

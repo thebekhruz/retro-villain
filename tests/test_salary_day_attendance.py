@@ -58,7 +58,7 @@ def stand(any_db, monkeypatch):
     finance = c.app.state.accountant_finance
     for offset in range(8):
         finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 5), '5000000', 'Стенд')
+    finance.set_cash_opening(date(2026, 10, 6), '5000000', 'Стенд')
     return c, people
 
 

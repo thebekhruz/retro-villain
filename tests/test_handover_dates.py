@@ -6,6 +6,8 @@ from decimal import Decimal
 import pytest
 
 from test_cashier_design_parity import make_app, c, snapshot_for, hand_over, set_start_balance
+from retro.accounting_period import ACCOUNTING_START
+from retro.modules.accountant.opening_migration import apply_october_opening
 from retro.modules.accountant.handover_dates import cashier_day, receipt_day
 
 
@@ -22,6 +24,9 @@ def test_shift_cash_arrives_only_the_next_day(c, shift, received, monkeypatch):
     finance = c.app.state.accountant_finance
     finance.record_handover(shift, Decimal('100'))  # previous shift's receipt
     set_start_balance(finance, shift, '0')
+    opening = '0' if received == ACCOUNTING_START else '100'
+    if received == ACCOUNTING_START:
+        apply_october_opening(finance)
     assert hand_over(c, snap, '1200000', shift).status_code == 201
     old = c.get('/api/accountant/day', params={'date': shift.isoformat()}).json()
     new = c.get('/api/accountant/day', params={'date': received.isoformat()}).json()
@@ -29,11 +34,11 @@ def test_shift_cash_arrives_only_the_next_day(c, shift, received, monkeypatch):
     assert old['ledger']['cash_balance'] == '100'
     assert new['cashier_date'] == shift.isoformat()
     assert new['expected_cashier'] == '1200000'
-    assert new['ledger']['cash_flow']['opening_balance'] == '100'
-    assert new['ledger']['cash_balance'] == '100'  # pending receipts are not spendable
+    assert new['ledger']['cash_flow']['opening_balance'] == opening
+    assert new['ledger']['cash_balance'] == opening  # pending receipts are not spendable
     confirmed = c.post('/api/accountant/handover/confirm', json={'date': received.isoformat(), 'amount': '1200000'})
     assert confirmed.status_code == 200
-    assert c.get('/api/accountant/day', params={'date': received.isoformat()}).json()['ledger']['cash_balance'] == '1200100'
+    assert c.get('/api/accountant/day', params={'date': received.isoformat()}).json()['ledger']['cash_balance'] == str(Decimal(opening) + Decimal('1200000'))
     assert cashier_day(received) == shift and receipt_day(shift) == received
     assert finance.cash_flows_between(shift, shift)[0]['amount'] == '100'
     received_flow = finance.cash_flows_between(received, received)

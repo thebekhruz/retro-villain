@@ -16,7 +16,7 @@ from retro.db import PostgresConnection, as_database, table_columns
 from retro.request_reads import call as cached_call, once
 from retro.modules.cashier.service import TZ
 from retro.runtime import secure_directory, secure_file
-from retro.accounting_period import ACCOUNTING_START, accounting_range_start, cash_opening_table, period_start
+from retro.accounting_period import ACCOUNTING_START, accounting_range_start, cash_opening_table, period_start, salary_period_start
 
 
 # Базары по умолчанию для расходов Шоха (ТЗ 02.10, п. 5); остальные добавляет бухгалтер.
@@ -482,7 +482,7 @@ class FinanceStore:
                     created_at TEXT NOT NULL
                 );
             ''')
-            # Уже подтверждённый остаток ровно на 5 октября можно использовать.
+            # Уже подтверждённый остаток ровно на начало учёта можно использовать.
             # Сентябрьский остаток остаётся в архивной таблице без изменений.
             connection.execute('INSERT INTO accountant_working_cash_opening '
                                'SELECT * FROM accountant_cash_opening WHERE day=? '
@@ -923,7 +923,7 @@ class FinanceStore:
 
     @once
     def accounting_start(self, through: date = ACCOUNTING_START) -> date | None:
-        """Рабочий учёт — с 5 октября; архив — со своей первой записи."""
+        """Рабочий учёт — с 6 октября; архив — со своей первой записи."""
         if through >= ACCOUNTING_START:
             return ACCOUNTING_START
         with closing(self._open()) as connection:
@@ -1381,7 +1381,7 @@ class FinanceStore:
         with closing(self._open()) as connection:
             rows = connection.execute('SELECT id, work_day, employee_id, employee_name, group_name, '
                                       'attendance_status, rate, amount FROM accountant_accruals '
-                                      'WHERE work_day >= ? AND work_day <= ? ORDER BY work_day, id', (period_start(day).isoformat(), day.isoformat())).fetchall()
+                                      'WHERE work_day >= ? AND work_day <= ? ORDER BY work_day, id', (salary_period_start(day).isoformat(), day.isoformat())).fetchall()
             payments = defaultdict(Decimal)
             for accrual_id, amount in connection.execute(
                     'SELECT p.accrual_id, p.amount FROM accountant_salary_payments p '
@@ -1465,10 +1465,14 @@ class FinanceStore:
         FinanceStore._guard_manual_salary_expense(connection, day, item_code)
         earned = sum((Decimal(r[0]) for r in connection.execute(
             'SELECT amount FROM accountant_accruals WHERE work_day>=? AND work_day<=?',
-            (period_start(day).isoformat(), day.isoformat()))), Decimal(0))
+            (salary_period_start(day).isoformat(), day.isoformat()))), Decimal(0))
+        # Debt follows the accrual: a first shift already paid before the cash
+        # boundary must not become unpaid again when the financial period moves.
         paid = sum((Decimal(r[0]) for r in connection.execute(
-            'SELECT amount FROM accountant_salary_payments WHERE paid_day>=? AND paid_day<=?',
-            (period_start(day).isoformat(), day.isoformat()))), Decimal(0))
+            'SELECT p.amount FROM accountant_salary_payments p '
+            'JOIN accountant_accruals a ON a.id=p.accrual_id '
+            'WHERE a.work_day>=? AND a.work_day<=? AND p.paid_day<=?',
+            (salary_period_start(day).isoformat(), day.isoformat(), day.isoformat()))), Decimal(0))
         if earned > paid:
             raise LedgerError('Выберите начисление сотрудника в форме выплаты зарплаты; общий расход не погашает долг.')
 
@@ -1788,8 +1792,8 @@ class FinanceStore:
                 if accrual is None:
                     raise LedgerError('Начисление не найдено.')
                 self._guard_manual_salary_payment(connection, accrual_id)
-                if accrual[0] < period_start(paid_day).isoformat():
-                    raise LedgerError(f'Начисление относится к архиву до {ACCOUNTING_START:%d.%m.%Y}.')
+                if accrual[0] < salary_period_start(paid_day).isoformat():
+                    raise LedgerError(f'Начисление относится к архиву до {salary_period_start(paid_day):%d.%m.%Y}.')
                 if paid_day.isoformat() < accrual[0]:
                     raise LedgerError('Выплата не может быть раньше рабочего дня.')
                 already_paid = sum((Decimal(row[0]) for row in connection.execute(

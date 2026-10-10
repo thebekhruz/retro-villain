@@ -77,7 +77,7 @@
     if(!person)return 'Выберите сотрудника из списка.';
     if(!/^\d{4}-\d{2}-\d{2}$/.test(paid||''))return 'Укажите дату выплаты.';
     if(!/^\d{4}-\d{2}-\d{2}$/.test(work||''))return 'Укажите дату смены.';
-    if(paid<data.entry_start)return 'Доп. выплаты вводятся с 05.10.2026 — с начала рабочего учёта.';
+    if(paid<data.entry_start)return 'Доп. выплаты вводятся с 06.10.2026 — с начала рабочего учёта.';
     if(paid>data.today)return 'Нельзя записать выплату будущим днём.';
     if(work>paid)return 'Смена не может быть позже дня выплаты.';
     if(work<(data.shift_start||data.entry_start))return 'Смена — не раньше 05.10.2026: с неё начинается ручная ведомость.';

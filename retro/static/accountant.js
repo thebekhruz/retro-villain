@@ -1152,10 +1152,10 @@ async function loadDay() {
   }
 }
 function go(day) {
-  if (!day || day < '2026-10-05' || day > today) {
+  if (!day || day < '2026-10-06' || day > today) {
     // Будущий или пустой день: возвращаем поле к показанному дню и говорим почему.
     $('accountant-date').value = view ? view.data.date : today;
-    if (day && day < '2026-10-05') message('Учёт доступен с 5 октября 2026.', true);
+    if (day && day < '2026-10-06') message('Учёт доступен с 6 октября 2026.', true);
     if (day > today) message('Будущие дни недоступны: выберите сегодня или прошедший день.', true);
     return;
   }
@@ -1165,7 +1165,7 @@ function go(day) {
     return;
   }
   $('accountant-date').value = day;
-  $('accountant-prev').disabled = day <= '2026-10-05';
+  $('accountant-prev').disabled = day <= '2026-10-06';
   focusKey = null; expanded.clear(); confirmEditing = false; confirmDirty = false; breakdownOpen = false;
   const url = new URL(location.href); url.searchParams.set('date', day); history.replaceState(null, '', url);
   message('');
@@ -1212,9 +1212,9 @@ async function exportDay() {
     checkMode = !!config.check_mode;
     const requested = new URLSearchParams(location.search).get('date');
     $('accountant-date').max = today;
-    const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested >= '2026-10-05' && requested <= today;
+    const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested >= '2026-10-06' && requested <= today;
     $('accountant-date').value = valid ? requested : today;
-    $('accountant-prev').disabled = $('accountant-date').value <= '2026-10-05';
+    $('accountant-prev').disabled = $('accountant-date').value <= '2026-10-06';
     // Адрес с будущей или кривой датой не должен расходиться с показанным днём.
     if (requested && !valid) { const url = new URL(location.href); url.searchParams.set('date', today); history.replaceState(null, '', url); }
     if (catalogRequest) {

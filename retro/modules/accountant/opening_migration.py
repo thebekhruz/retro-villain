@@ -1,4 +1,4 @@
-"""Start October 5 with the zero balances confirmed by Timur on October 10.
+"""Start October 6 with the zero balances confirmed by Timur on October 10.
 
 The cutover date is immutable: a future accounting boundary must not silently
 reuse this migration or its amounts. Existing operations remain unchanged.
@@ -9,9 +9,9 @@ from retro.accounting_period import ACCOUNTING_START
 from .audit import record_audit
 from .ledger import now_stamp
 
-CUTOVER = date(2026, 10, 5)
-MIGRATION = 'confirmed_october_5_zero_opening_2026_v1'
-NOTE = 'Нулевой остаток на 05.10.2026 по указанию Timur от 10.10.2026'
+CUTOVER = date(2026, 10, 6)
+MIGRATION = 'confirmed_october_6_zero_opening_2026_v1'
+NOTE = 'Нулевой остаток на 06.10.2026 по указанию Timur от 10.10.2026'
 
 
 def apply_october_opening(finance):
@@ -37,7 +37,7 @@ def apply_october_opening(finance):
             record_audit(connection, 'cash_opening', day, 'confirmed_opening_migration', before,
                          dict(day=day, amount='0', note=NOTE))
             # Archive the old working cash anchor in the audit above. Reserve
-            # openings before Oct 5 stay in their original rows for audit.
+            # openings before Oct 6 stay in their original rows for audit.
             rows = connection.execute("SELECT id FROM accountant_reserves "
                                       "WHERE account IN ('dividends','usd','shoh') "
                                       "AND kind='opening' AND day>=?", (day,)).fetchall()

@@ -26,7 +26,7 @@ def test_presets_end_yesterday_and_never_include_the_open_day():
 
 def test_month_presets_cover_whole_calendar_months():
     assert run_node("period.presetRange('2026-11-24','month')") == {'start': '2026-11-01', 'end': '2026-11-23'}
-    assert run_node("period.presetRange('2026-11-24','prev-month')") == {'start': '2026-10-05', 'end': '2026-10-31'}
+    assert run_node("period.presetRange('2026-11-24','prev-month')") == {'start': '2026-10-06', 'end': '2026-10-31'}
 
 
 def test_period_label_drops_the_month_and_year_it_repeats():
@@ -40,7 +40,7 @@ def test_the_panel_refuses_the_same_ranges_as_the_server():
     assert run_node("period.check('2026-11-14','2026-11-23','2026-11-24')") == ''
     assert 'не закрыт' in run_node("period.check('2026-11-14','2026-11-24','2026-11-24')")
     assert 'позже' in run_node("period.check('2026-11-20','2026-11-14','2026-11-24')")
-    assert '62' in run_node("period.check('2026-10-05','2027-01-01','2027-01-02')")
+    assert '62' in run_node("period.check('2026-10-06','2027-01-01','2027-01-02')")
     assert run_node("period.daysBetween('2026-11-14','2026-11-23')") == 10
 
 

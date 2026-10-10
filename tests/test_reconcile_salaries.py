@@ -61,7 +61,7 @@ def seed(target, monkeypatch):
     for offset in range(8):
         finance.record_handover(date(2026, 10, 2 + offset), Decimal('5000000'))
     finance.set_cash_opening(oct_(2), '20000000', 'Архивный остаток')
-    finance.set_cash_opening(oct_(5), '20000000', 'Пересчёт на начало нового периода')
+    finance.set_cash_opening(oct_(6), '20000000', 'Пересчёт на начало нового периода')
     for index, (who, day, hour, minute) in enumerate([('a', 2, 9, 30), ('a', 5, 9, 40), ('a', 6, 9, 35),
                                                      ('b', 6, 10, 58), ('a', 7, 9, 38), ('a', 8, 9, 31),
                                                      ('b', 8, 10, 58)]):

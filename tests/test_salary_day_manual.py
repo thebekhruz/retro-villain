@@ -27,7 +27,7 @@ def stores(tmp_path, monkeypatch):
                         group_name='Обслуживание зала')
     for offset in range(9):
         finance.record_handover(date(2026, 10, 5)+timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 5), '1000000', 'Начало')
+    finance.set_cash_opening(date(2026, 10, 6), '1000000', 'Начало')
     return finance, roster, person
 
 
@@ -273,7 +273,7 @@ def test_matrix_paid_day_alignment_missing_cells_and_submitted_reports(stores):
         connection.execute('INSERT INTO accountant_day_reports VALUES (?,?,?,?)',
                            (PAID.isoformat(), '2026-10-07', 'Бухгалтер', '{}'))
     data = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
-    assert data['entry_start'] == '2026-10-05'
+    assert data['entry_start'] == '2026-10-06'
     cells = data['people'][0]['cells']
     assert len(cells) == 31
     assert cells['2026-10-01'] == dict(amount='0', work_day='2026-09-30', work_days=[], editable=False, rate=None)

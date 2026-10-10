@@ -15,7 +15,7 @@
     return names[new Date(dateIso+'T00:00:00Z').getUTCDay()];
   }
 
-  const clamp=day=>day<'2026-10-05'?'2026-10-05':day;
+  const clamp=day=>day<'2026-10-06'?'2026-10-06':day;
   function quickPeriod(kind,todayIso){
     const today=new Date(todayIso+'T00:00:00Z');
     if(kind==='month')return {start:clamp(todayIso.slice(0,8)+'01'),end:todayIso};
@@ -59,7 +59,7 @@
   /** Ошибка периода до запроса — те же правила, что у сервера (422). */
   function periodError(start,end){
     if(!start||!end)return 'Укажите обе даты периода.';
-    if(start<'2026-10-05'||end<'2026-10-05')return 'Учёт доступен с 5 октября 2026.';
+    if(start<'2026-10-06'||end<'2026-10-06')return 'Учёт доступен с 6 октября 2026.';
     if(start>end)return 'Дата начала должна быть не позже даты конца.';
     const days=(Date.parse(end+'T00:00:00Z')-Date.parse(start+'T00:00:00Z'))/864e5;
     if(days>=366)return 'Период не может быть длиннее 366 дней.';

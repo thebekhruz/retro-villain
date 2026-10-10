@@ -4,7 +4,7 @@ from datetime import date, timedelta
 
 from fastapi import HTTPException, Request
 from pydantic import TypeAdapter, ValidationError
-from retro.accounting_period import ACCOUNTING_START
+from retro.accounting_period import ACCOUNTING_START, SALARY_SHIFT_START
 
 DATE_FIELDS = {'date', 'day', 'start', 'end', 'first', 'last', 'paid_day',
                'handover_date', 'received_date', 'cashier_date', 'work_day'}
@@ -12,7 +12,7 @@ DATE_ADAPTER = TypeAdapter(date)
 MESSAGE = f'Учёт доступен с {ACCOUNTING_START:%d.%m.%Y}. Более ранние даты недоступны.'
 
 
-def check_dates(values):
+def check_dates(values, *, salary=False):
     for key, value in values:
         if key == 'month' and isinstance(value, str):
             try:
@@ -27,7 +27,9 @@ def check_dates(values):
             except ValidationError:
                 continue
             # A first-day receipt may refer to the preceding cashier shift.
-            if key == 'cashier_date':
+            if key == 'work_day' and salary:
+                minimum = SALARY_SHIFT_START
+            elif key == 'cashier_date':
                 minimum = ACCOUNTING_START - timedelta(days=1)
             else:
                 minimum = ACCOUNTING_START
@@ -38,7 +40,8 @@ def check_dates(values):
 async def require_accounting_dates(request: Request):
     if not request.url.path.startswith('/api/'):
         return
-    check_dates(request.query_params.multi_items())
+    salary = request.url.path.startswith('/api/accountant/salary-day/')
+    check_dates(request.query_params.multi_items(), salary=salary)
     check_dates(request.path_params.items())
     if request.url.path.startswith('/api/shokh/'):
         for field, getter in (('trip_id', request.app.state.shokh.trip),
@@ -58,7 +61,7 @@ async def require_accounting_dates(request: Request):
         except ValueError:
             return
         if isinstance(body, dict):
-            check_dates(body.items())
+            check_dates(body.items(), salary=salary)
     if request.method in {'POST', 'PUT', 'PATCH'} and any(kind in request.headers.get('content-type', '') for kind in ('multipart/form-data', 'application/x-www-form-urlencoded')):
         form = await request.form()
         check_dates(form.multi_items())

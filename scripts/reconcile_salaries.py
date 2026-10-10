@@ -38,7 +38,7 @@ from urllib.parse import urlsplit
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 # Только чистые определения: ни одно из этих импортов не открывает базу.
-from retro.accounting_period import ACCOUNTING_START  # noqa: E402
+from retro.accounting_period import SALARY_SHIFT_START  # noqa: E402
 from retro.db import is_postgres_url, to_postgres  # noqa: E402
 from retro.modules.accountant.attendance import LATE_AFTER  # noqa: E402
 from retro.modules.accountant.expense_catalog import ITEMS  # noqa: E402
@@ -522,7 +522,7 @@ def parser() -> argparse.ArgumentParser:
     root = argparse.ArgumentParser(description='Сверка сменных зарплат — только чтение.')
     root.add_argument('--data-dir', type=Path, help='каталог с accountant.sqlite3 (или сам файл)')
     root.add_argument('--database-url', help='строка Postgres; по умолчанию — DATABASE_URL')
-    root.add_argument('--since', type=date.fromisoformat, default=ACCOUNTING_START)
+    root.add_argument('--since', type=date.fromisoformat, default=SALARY_SHIFT_START)
     root.add_argument('--until', type=date.fromisoformat, default=None,
                       help='по какой день; по умолчанию — сегодня по Ташкенту')
     root.add_argument('--out', type=Path, required=True, help='каталог для .md и .json')

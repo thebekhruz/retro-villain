@@ -209,9 +209,9 @@ def test_month_close_through_the_api_locks_the_day_and_shows_the_label(tmp_path,
 
 
 def test_archival_month_is_not_required_for_working_accounting(tmp_path, monkeypatch):
-    with client(tmp_path, monkeypatch, today=date(2026, 10, 5)) as c:
+    with client(tmp_path, monkeypatch, today=date(2026, 10, 6)) as c:
         c.app.state.accountant_finance.record_handover(SEP_30, Decimal('1000'))
-        day = c.get('/api/accountant/day', params={'date': '2026-10-05'}).json()
+        day = c.get('/api/accountant/day', params={'date': '2026-10-06'}).json()
         assert day['month_close']['open_month'] is None
         archive = c.get('/api/accountant/day', params={'date': '2026-10-01'}).json()
         assert archive['month_close']['open_month'] == {'month': '2026-09', 'name': 'Сентябрь 2026',

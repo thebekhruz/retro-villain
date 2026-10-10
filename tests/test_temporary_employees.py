@@ -74,7 +74,7 @@ def stores(database):
     attendance = AttendanceStore(database)
     for offset in range(11):
         finance.record_handover(d(5) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(d(5), '5000000', 'Начало')
+    finance.set_cash_opening(d(6), '5000000', 'Начало')
     people = dict(
         ihtiyor=roster.add(name='Баходиров Ихтиер', role='Менеджер', rate='360000', group_name='Управление'),
         karamat=roster.add(name='Карамат', role='Хостес', rate='150000', group_name='Встреча гостей',
@@ -310,7 +310,7 @@ def api(any_db):  # noqa: F811 — фикстура
     finance = c.app.state.accountant_finance
     for offset in range(11):
         finance.record_handover(d(5) + timedelta(days=offset), Decimal('500000'))
-    finance.set_cash_opening(d(5), '5000000', 'Начало')
+    finance.set_cash_opening(d(6), '5000000', 'Начало')
     roster = c.app.state.accountant_roster
     c.ihtiyor = roster.add(name='Баходиров Ихтиер', role='Менеджер', rate='360000', group_name='Управление')
     return c

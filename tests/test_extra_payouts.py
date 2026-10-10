@@ -85,7 +85,7 @@ def stores(database):
     finance = FinanceStore(database)
     for offset in range(9):
         finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 5), '2000000', 'Начало')
+    finance.set_cash_opening(date(2026, 10, 6), '2000000', 'Начало')
     return finance, roster, staff(roster, finance)
 
 
@@ -194,10 +194,10 @@ def test_days_cash_and_closed_month_are_checked_like_the_cell(database):
     people = staff(roster, finance)
     for offset in range(9):
         finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 5), '100000', 'Начало')
+    finance.set_cash_opening(date(2026, 10, 6), '100000', 'Начало')
     karamat = people['karamat']
     for values, text in [(dict(paid_day=TODAY + timedelta(days=1)), 'будущим днём'),
-                         (dict(paid_day=date(2026, 10, 1), work_day=date(2026, 9, 30)), '05.10.2026'),
+                         (dict(paid_day=date(2026, 10, 1), work_day=date(2026, 9, 30)), '06.10.2026'),
                          (dict(work_day=TODAY), 'позже дня выплаты'),
                          (dict(work_day=date(2026, 9, 30)), '05.10.2026'),
                          (dict(), 'недостаточно')]:
@@ -311,11 +311,11 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     sheet = book['Ведомость']
     rows = sheet_values(sheet)
     assert rows[0][0] == 'RETRO MILLIY · Зарплата · день · октябрь 2026'
-    assert 'Вся ведомость, 4 сотрудника.' in rows[1][0] and '05.10.2026 – 10.10.2026' in rows[1][0]
+    assert 'Вся ведомость, 4 сотрудника.' in rows[1][0] and '06.10.2026 – 10.10.2026' in rows[1][0]
     head = rows[3]
     assert head[:4] == ['№', 'Сотрудник', 'Должность', 'Ставка']
-    assert head[4] == 'Выплата 05.10\nза смену 04.10' and head[8] == 'Выплата 09.10\nза смену 08.10'
-    assert head[-2:] == ['Доп. выплаты', 'Итого'] and len(head) == 4 + 6 + 2
+    assert head[4] == 'Выплата 06.10\nза смену 05.10' and head[7] == 'Выплата 09.10\nза смену 08.10'
+    assert head[-2:] == ['Доп. выплаты', 'Итого'] and len(head) == 4 + 5 + 2
     body = {row[1]: row for row in rows[4:8]}
     assert body['Баходиров Ихтиер'][2] == 'Менеджер' and body['Баходиров Ихтиер'][3] == 360000
     assert body['Карамат'][2] == 'Хостес · временный'
@@ -328,9 +328,9 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
         assert Decimal(str(line[-2] or 0)) == extra
     total, extras_row = rows[8], rows[9]
     assert total[1] == 'Итого за день' and extras_row[1] == 'в т.ч. доп. выплаты'
-    assert total[8] == 360000 + 300000 + 150000 and extras_row[8] == 150000
+    assert total[7] == 360000 + 300000 + 150000 and extras_row[7] == 150000
     assert total[-1] == 360000 * 2 + 300000 + 150000
-    assert isinstance(total[-1], (int, float)) and sheet.cell(9, 9).number_format == '#,##0'
+    assert isinstance(total[-1], (int, float)) and sheet.cell(9, 8).number_format == '#,##0'
     # Печать: альбом, по ширине страницы, шапка на каждой странице, имена закреплены.
     assert sheet.page_setup.orientation == 'landscape'
     assert sheet.page_setup.fitToWidth == 1 and sheet.page_setup.fitToHeight == 0

@@ -11,7 +11,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
-from retro.accounting_period import accounting_range_start
+from retro.accounting_period import accounting_range_start, salary_period_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
@@ -507,7 +507,7 @@ def salary_day_month(request: Request, month: str, basis: Literal['payment', 'sh
         finance_error(error)
     if first > today_tashkent().replace(day=1):
         raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
-    first = accounting_range_start(first, last)
+    first = max(first, salary_period_start(last)) if basis == 'shift' else accounting_range_start(first, last)
     finance = request.app.state.accountant_finance
     # Посещаемость смены в клетке — тем же расчётом, что «Сотрудники» за день смены:
     # реестр на этот день, входы Hikvision и ручные отметки, без отметки выплаты.

@@ -24,7 +24,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
-from retro.accounting_period import ACCOUNTING_START
+from retro.accounting_period import ACCOUNTING_START, SALARY_SHIFT_START
 from retro.db import table_columns
 from retro.modules.cashier.service import today_tashkent
 
@@ -35,9 +35,9 @@ from .ledger import LedgerError, amount_value, ensure_open, lock_day, now_stamp,
 
 # Ссылка расхода на доп. выплату: `extra:<сотрудник>:<ключ>`.
 EXTRA_REFERENCE = 'extra:'
-# Смена и фактическая доп. выплата — не раньше начала рабочего учёта.
+# Выдачи с начала учёта; первая смена — предыдущий день.
 ENTRY_START = ACCOUNTING_START
-FIRST_SHIFT = ENTRY_START
+FIRST_SHIFT = SALARY_SHIFT_START
 TEMPORARY = 'temporary'
 
 COLUMNS = ('id', 'employee_id', 'name', 'role', 'group', 'temporary', 'work_day', 'paid_day', 'amount',
@@ -84,7 +84,7 @@ def check_days(work_day: date, paid_day: date) -> None:
     if work_day > paid_day:
         raise LedgerError('Смена не может быть позже дня выплаты.')
     if work_day < FIRST_SHIFT:
-        raise LedgerError(f'Смена — не раньше {ACCOUNTING_START:%d.%m.%Y}: с неё начинается ручная ведомость.')
+        raise LedgerError(f'Смена — не раньше {FIRST_SHIFT:%d.%m.%Y}: с неё начинается ручная ведомость.')
 
 
 def _item(row) -> dict:

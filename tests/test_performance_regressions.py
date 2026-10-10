@@ -280,7 +280,7 @@ def test_week_reads_each_shared_table_once_not_once_per_day(tmp_path):
         restore()
 
     assert response.status_code == 200
-    assert len(response.json()['days']) == 7
+    assert len(response.json()['days']) == 6  # First accounting week starts on Tuesday.
     def times(fragment, params=()):
         return sum(count for (sql, values), count in seen.items()
                    if fragment in sql and values == params)
@@ -294,7 +294,7 @@ def test_week_reads_each_shared_table_once_not_once_per_day(tmp_path):
                  ('finance_migration', 'handover_receipt_day_v1')) == 1
     # На первой неделе учёта архивная история дивидендов не запрашивается.
     assert times('FROM accountant_handover_days WHERE day >= ? AND day <= ?',
-                 ('2026-10-05', '2026-10-04')) == 0
+                 ('2026-10-06', '2026-10-05')) == 0
     # Повторов в ответе осталось меньше четверти: остальное — работа по дню.
     repeated = sum(count - 1 for count in seen.values())
     assert repeated * 4 < sum(seen.values())

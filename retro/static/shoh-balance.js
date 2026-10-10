@@ -186,10 +186,10 @@
     }
   }
   function go(day) {
-    if (!day || day < '2026-10-05' || day > today) { $('sb-date').value = view ? view.date : today; return; }
+    if (!day || day < '2026-10-06' || day > today) { $('sb-date').value = view ? view.date : today; return; }
     if (view && day !== view.date && !(globalThis.RetroSave?.confirmLeave() ?? true)) { $('sb-date').value = view.date; return; }
     $('sb-date').value = day;
-    $('sb-prev').disabled = day <= '2026-10-05';
+    $('sb-prev').disabled = day <= '2026-10-06';
     $('sb-exp-date').dataset.auto = '1';
     const url = new URL(location.href); url.searchParams.set('date', day); history.replaceState(null, '', url);
     message('');
@@ -279,10 +279,10 @@
       const config = await globalThis.RetroConfig;
       today = config.today;
       const requested = new URLSearchParams(location.search).get('date');
-      const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested >= '2026-10-05' && requested <= today;
+      const valid = requested && /^\d{4}-\d{2}-\d{2}$/.test(requested) && requested >= '2026-10-06' && requested <= today;
       $('sb-date').max = today;
       $('sb-date').value = valid ? requested : today;
-      $('sb-prev').disabled = $('sb-date').value <= '2026-10-05';
+      $('sb-prev').disabled = $('sb-date').value <= '2026-10-06';
       await load();
     } catch (error) { message(error.message, true); }
   })();
