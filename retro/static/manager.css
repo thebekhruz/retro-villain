@@ -20,7 +20,15 @@
 .mgr-filter b{font-weight:700;color:var(--muted-2)}
 .mgr-filter.is-on{border-color:var(--green);background:var(--green);color:#fff}
 .mgr-filter.is-on b{color:var(--gold)}
-.mgr-filter[hidden]{display:none}
+.mgr-filter[hidden],.mgr-filters[hidden]{display:none}
+/* Раздел и должность — второй и третий ряд: тише статусов, выбранный — светло-зелёный. */
+.mgr-filters-sub{flex-wrap:nowrap;margin:0 -16px;padding:10px 16px 2px;border-top:1px solid var(--line-soft);
+  overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-padding:0 16px}
+.mgr-filters-sub::-webkit-scrollbar{display:none}
+/* Одна строка, листается пальцем вбок: список не уезжает вниз из-за чипов. */
+.mgr-filters-sub .mgr-filter{flex:none;min-height:34px;border-width:1px;font-size:14px}
+.mgr-filters-sub .mgr-filter.is-on{border-color:#cfe0cf;background:#e3ebdf;color:#285140}
+.mgr-filters-sub .mgr-filter.is-on b{color:#285140}
 .mgr-list-note{margin:0}
 
 /* Строка сотрудника — кнопка во всю ширину: открывает карточку. */

@@ -51,9 +51,34 @@
     return words.every(word => text.includes(word));
   }
 
-  function filterCards(cards, filter, query) {
-    return (cards || []).filter(card => matches(card, query)
-      && (filter === 'nophoto' ? !card.photo : filter === 'problem' ? hasProblem(card) : true));
+  /* Фильтры списка: статус (все / без фото / ошибки), раздел (группа реестра)
+     и должность внутри раздела. Пустое значение — без ограничения. */
+  const roleKey = role => plain(role);
+  function inPlace(card, filter = {}) {
+    return (!filter.group || card.group === filter.group) && (!filter.role || roleKey(card.role) === filter.role);
+  }
+  function filterCards(cards, filter = {}, query = '') {
+    const status = filter.status || 'all';
+    return (cards || []).filter(card => inPlace(card, filter) && matches(card, query)
+      && (status === 'nophoto' ? !card.photo : status === 'problem' ? hasProblem(card) : true));
+  }
+
+  /* Разделы и должности для чипов — только те, что есть в списке, со счётом. */
+  function groupsOf(cards) {
+    const counts = new Map();
+    (cards || []).forEach(card => { if (card.group) counts.set(card.group, (counts.get(card.group) || 0) + 1); });
+    return [...counts].map(([key, count]) => ({key, label: key, count}))
+      .sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+  }
+  function rolesOf(cards, group) {
+    const roles = new Map();
+    (cards || []).filter(card => card.group === group && collapse(card.role)).forEach(card => {
+      const key = roleKey(card.role);
+      const item = roles.get(key) || {key, label: collapse(card.role)[0].toUpperCase() + collapse(card.role).slice(1), count: 0};
+      item.count += 1;
+      roles.set(key, item);
+    });
+    return [...roles.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'));
   }
 
   function summary(cards) {
@@ -90,6 +115,6 @@
     return {step: 'wait', title: 'Фото ждёт отправки на устройство', note: face.message || null};
   }
 
-  return {collapse, initials, roleLine, isDone, hasProblem, rowTag, matches, filterCards, summary,
+  return {collapse, initials, roleLine, isDone, hasProblem, rowTag, matches, inPlace, filterCards, groupsOf, rolesOf, summary,
     photoStep, hikvisionStep, faceStep};
 });

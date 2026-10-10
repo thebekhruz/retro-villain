@@ -10,7 +10,7 @@ const NETWORK = 'Нет связи с панелью. Проверьте инт�
 const passthrough = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
 const Busy = globalThis.RetroBusy || {button: passthrough, silent: fn => fn()};
 
-const state = {home: null, filter: 'all', card: null, preview: null, uploading: false, sending: false};
+const state = {home: null, filter: 'all', group: '', role: '', card: null, preview: null, uploading: false, sending: false};
 
 function node(tag, cls, text) {
   const element = document.createElement(tag);
@@ -84,23 +84,58 @@ function personRow(card) {
   return row;
 }
 
+function chip(label, count, on, pick) {
+  const button = node('button', 'mgr-filter' + (on ? ' is-on' : ''));
+  button.type = 'button';
+  button.setAttribute('aria-pressed', String(on));
+  button.append(label + ' ', node('b', '', String(count)));
+  button.addEventListener('click', () => { pick(); renderList(); });
+  return button;
+}
+
+/* Чипы разделов и должностей: строятся из списка, со счётом людей. */
+function renderPlaces(cards) {
+  const groups = L().groupsOf(cards);
+  if (state.group && !groups.some(item => item.key === state.group)) { state.group = ''; state.role = ''; }
+  $('groups').hidden = groups.length < 2;
+  $('groups').replaceChildren(chip('Все разделы', cards.length, !state.group, () => { state.group = ''; state.role = ''; }),
+    ...groups.map(item => chip(item.label, item.count, state.group === item.key, () => { state.group = item.key; state.role = ''; })));
+  const roles = state.group ? L().rolesOf(cards, state.group) : [];
+  if (state.role && !roles.some(item => item.key === state.role)) state.role = '';
+  $('roles').hidden = roles.length < 2;
+  $('roles').replaceChildren(...(roles.length < 2 ? [] : [
+    chip('Все должности', roles.reduce((sum, item) => sum + item.count, 0), !state.role, () => { state.role = ''; }),
+    ...roles.map(item => chip(item.label, item.count, state.role === item.key, () => { state.role = item.key; }))]));
+  // Выбранный чип в длинной строке — в поле зрения.
+  // Только по горизонтали — страницу вверх-вниз не двигаем.
+  for (const id of ['groups', 'roles']) {
+    const row = $(id), on = row.querySelector('.is-on');
+    if (on && (on.offsetLeft < row.scrollLeft || on.offsetLeft + on.offsetWidth > row.scrollLeft + row.clientWidth)) {
+      row.scrollLeft = Math.max(0, on.offsetLeft - 16);
+    }
+  }
+}
+
 function renderList() {
   const cards = state.home?.employees || [];
-  const counts = L().summary(cards);
+  const everyone = L().summary(cards);
+  renderPlaces(cards);
+  // Счётчики «Без фото / Ошибки» — внутри выбранного раздела и должности.
+  const counts = L().summary(cards.filter(card => L().inPlace(card, state)));
   $('count-all').textContent = String(counts.total);
   $('count-nophoto').textContent = String(counts.noPhoto);
   $('count-problem').textContent = String(counts.problems);
   $('count-problem').parentElement.hidden = !counts.problems && state.filter !== 'problem';
-  $('progress-text').textContent = counts.total
-    ? `Фото есть у ${counts.withPhoto} из ${counts.total}` : 'В ваших разделах пока нет сотрудников';
-  $('progress-bar').style.width = counts.total ? Math.round(counts.withPhoto * 100 / counts.total) + '%' : '0';
-  document.querySelectorAll('.mgr-filter').forEach(button => {
+  $('progress-text').textContent = everyone.total
+    ? `Фото есть у ${everyone.withPhoto} из ${everyone.total}` : 'В ваших разделах пока нет сотрудников';
+  $('progress-bar').style.width = everyone.total ? Math.round(everyone.withPhoto * 100 / everyone.total) + '%' : '0';
+  document.querySelectorAll('.mgr-filter[data-filter]').forEach(button => {
     const on = button.dataset.filter === state.filter;
     button.classList.toggle('is-on', on);
     button.setAttribute('aria-pressed', String(on));
   });
   const query = $('search').value;
-  const shown = L().filterCards(cards, state.filter, query);
+  const shown = L().filterCards(cards, {status: state.filter, group: state.group, role: state.role}, query);
   const list = $('list');
   list.removeAttribute('aria-busy');
   list.replaceChildren(...shown.map(personRow));
@@ -267,7 +302,7 @@ async function photoTaken() {
 
 /* ── События ───────────────────────────────────────────────────────────── */
 $('search').addEventListener('input', renderList);
-document.querySelectorAll('.mgr-filter').forEach(button => {
+document.querySelectorAll('.mgr-filter[data-filter]').forEach(button => {
   button.addEventListener('click', () => { state.filter = button.dataset.filter; renderList(); });
 });
 $('card-close').addEventListener('click', () => { show('home'); renderList(); });

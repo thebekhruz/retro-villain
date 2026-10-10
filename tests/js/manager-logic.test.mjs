@@ -24,12 +24,27 @@ test('поиск и фильтры списка: по имени, должнос
     card({id: 3, name: 'Рахимов Бобур', role: 'Повар миллий', group: 'Кухня', photo,
       hikvision: {state: 'sent', face: {state: 'error'}}}),
   ];
-  assert.deepEqual(logic.filterCards(cards, 'all', 'ихтиер').map(c => c.id), [2], 'ё и е — одно и то же');
-  assert.deepEqual(logic.filterCards(cards, 'all', 'повар').map(c => c.id), [3]);
-  assert.deepEqual(logic.filterCards(cards, 'all', 'кухня милл').map(c => c.id), [3]);
-  assert.deepEqual(logic.filterCards(cards, 'nophoto', '').map(c => c.id), [1]);
-  assert.deepEqual(logic.filterCards(cards, 'problem', '').map(c => c.id), [3]);
+  assert.deepEqual(logic.filterCards(cards, {}, 'ихтиер').map(c => c.id), [2], 'ё и е — одно и то же');
+  assert.deepEqual(logic.filterCards(cards, {}, 'повар').map(c => c.id), [3]);
+  assert.deepEqual(logic.filterCards(cards, {}, 'кухня милл').map(c => c.id), [3]);
+  assert.deepEqual(logic.filterCards(cards, {status: 'nophoto'}).map(c => c.id), [1]);
+  assert.deepEqual(logic.filterCards(cards, {status: 'problem'}).map(c => c.id), [3]);
   assert.deepEqual(logic.summary(cards), {total: 3, withPhoto: 2, noPhoto: 1, problems: 1});
+});
+
+test('фильтры по разделу и должности: чипы только из списка, со счётом', () => {
+  const cards = [
+    card({id: 1, name: 'Рахимов Бобур', role: 'Повар миллий', group: 'Кухня'}),
+    card({id: 2, name: 'Юсупов Фаррух', role: 'повар миллий', group: 'Кухня', photo}),
+    card({id: 3, name: 'Кая Эмре', role: 'Повар турк', group: 'Кухня'}),
+    card({id: 4, name: 'Абдуллаев Тимур', role: 'бармен', group: 'Бар'}),
+  ];
+  assert.deepEqual(logic.groupsOf(cards), [{key: 'Бар', label: 'Бар', count: 1}, {key: 'Кухня', label: 'Кухня', count: 3}]);
+  assert.deepEqual(logic.rolesOf(cards, 'Кухня').map(r => [r.label, r.count]), [['Повар миллий', 2], ['Повар турк', 1]]);
+  assert.deepEqual(logic.filterCards(cards, {group: 'Кухня'}).map(c => c.id), [1, 2, 3]);
+  assert.deepEqual(logic.filterCards(cards, {group: 'Кухня', role: 'повар миллий'}).map(c => c.id), [1, 2]);
+  assert.deepEqual(logic.filterCards(cards, {group: 'Кухня', role: 'повар миллий', status: 'nophoto'}).map(c => c.id), [1]);
+  assert.deepEqual(logic.filterCards(cards, {group: 'Бар'}, 'тимур').map(c => c.id), [4]);
 });
 
 test('шаги карточки: фото, человек и лицо на устройстве', () => {

@@ -3327,6 +3327,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Найти по имени или должности': "Ism yoki lavozim bo'yicha qidirish",
   'Найти сотрудника': 'Xodimni qidirish',
   'Без фото': 'Suratsiz',
+  'Все разделы': "Barcha bo'limlar",
+  'Раздел': "Bo'lim",
   'Сотрудник': 'Xodim',
   'Назад к списку': "Ro'yxatga qaytish",
   'Сфотографировать': 'Suratga olish',
