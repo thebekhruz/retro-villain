@@ -1127,9 +1127,12 @@ class RosterStore:
             raise ValueError('Нужна фотография JPEG или PNG до 2 МБ.')
         now = datetime.now(TZ)
         with closing(self._open()) as connection, connection:
-            exists = connection.execute('SELECT 1 FROM accountant_employees WHERE id = ?',
-                                        (employee_id,)).fetchone()
-            if exists is None:
+            # Запись блокирует строку до чтения старой версии и замены фото:
+            # параллельные загрузки также получают разные версии (SQLite/PG).
+            exists = connection.execute(
+                "UPDATE accountant_employees SET face_state = 'pending', face_error = NULL "
+                'WHERE id = ?', (employee_id,)).rowcount
+            if not exists:
                 raise ValueError('Сотрудник не найден.')
             before = connection.execute('SELECT updated_at FROM accountant_employee_photos WHERE employee_id = ?',
                                         (employee_id,)).fetchone()
@@ -1147,8 +1150,6 @@ class RosterStore:
                 'VALUES (?, ?, ?, ?, ?) ON CONFLICT(employee_id) DO UPDATE SET mime = excluded.mime, '
                 'data = excluded.data, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
                 (employee_id, mime, base64.b64encode(content).decode('ascii'), stamp, by))
-            connection.execute("UPDATE accountant_employees SET face_state = 'pending', face_error = NULL "
-                               'WHERE id = ?', (employee_id,))
             self._audit(connection, employee_id, action='update', by=by,
                         reason='Фото заменено' if replaced else 'Добавлено фото')
         return stamp

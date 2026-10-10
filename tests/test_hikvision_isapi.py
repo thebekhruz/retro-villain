@@ -77,7 +77,7 @@ def test_transport_probes_then_posts_replayable_json_with_digest():
         ('GET', '/ISAPI/System/deviceInfo'),
         ('POST', '/ISAPI/AccessControl/UserInfo/Search'),
     ]
-    assert json.loads(requests[1].content)['UserInfoSearchCond']['maxResults'] == 60
+    assert json.loads(requests[1].content)['UserInfoSearchCond']['maxResults'] == 30
 
 
 def test_transport_refreshes_stale_nonce_once():
@@ -296,16 +296,32 @@ def digest_matches(request: httpx.Request) -> bool:
     return values['uri'] == target and values['response'] == expected
 
 
-def _face_run(handler, work):
+def _face_run(handler, work, *, existing=False, search_handler=None):
     requests = []
+    stored = existing
 
     def terminal(request: httpx.Request):
+        nonlocal stored
         if request.method == 'GET':
             return httpx.Response(401, headers={
                 'WWW-Authenticate': 'Digest realm="terminal", nonce="abc", qop="auth"'})
         assert digest_matches(request)
         requests.append(request)
-        return handler(request)
+        if request.url.path.endswith('/FDSearch'):
+            query = json.loads(request.content)
+            assert query == {'faceLibType': 'blackFD', 'FDID': '1', 'FPID': '134',
+                             'searchResultPosition': 0, 'maxResults': 1}
+            if search_handler:
+                return search_handler(request)
+            return httpx.Response(200, json={**OK, 'numOfMatches': int(stored),
+                                             'MatchList': [{'FPID': '134'}] if stored else []})
+        response = handler(request)
+        try:
+            if response.status_code == 200 and response.json().get('statusCode') == 1:
+                stored = True
+        except ValueError:
+            pass
+        return response
 
     async def exercise():
         async with httpx.AsyncClient(transport=httpx.MockTransport(terminal)) as http:
@@ -321,7 +337,8 @@ def test_upload_face_posts_face_data_record_multipart_with_fpid():
     result, requests = _face_run(lambda request: httpx.Response(200, json=OK),
                                  lambda client: client.upload_face('134', JPEG))
     assert result == 'created'
-    request, = requests
+    before, request, after = requests
+    assert before.url.path == after.url.path == '/ISAPI/Intelligent/FDLib/FDSearch'
     assert (request.method, request.url.path, request.url.query) == (
         'POST', '/ISAPI/Intelligent/FDLib/FaceDataRecord', b'format=json')
     assert request.headers['content-type'].startswith('multipart/form-data; boundary=')
@@ -364,11 +381,13 @@ def test_existing_face_is_replaced_through_fd_setup(payload):
     result, requests = _face_run(handler, lambda client: client.upload_face('134', JPEG))
     assert result == 'replaced'
     assert [(request.method, request.url.path) for request in requests] == [
+        ('POST', '/ISAPI/Intelligent/FDLib/FDSearch'),
         ('POST', '/ISAPI/Intelligent/FDLib/FaceDataRecord'),
-        ('PUT', '/ISAPI/Intelligent/FDLib/FDSetUp')]
+        ('PUT', '/ISAPI/Intelligent/FDLib/FDSetUp'),
+        ('POST', '/ISAPI/Intelligent/FDLib/FDSearch')]
     # Тот же снимок и тот же FPID, digest подписан методом PUT (digest_matches).
-    assert face_parts(requests[1].content, requests[1].headers['content-type']) == \
-        face_parts(requests[0].content, requests[0].headers['content-type'])
+    assert face_parts(requests[2].content, requests[2].headers['content-type']) == \
+        face_parts(requests[1].content, requests[1].headers['content-type'])
 
 
 def test_face_digest_refresh_resends_the_same_multipart_body():
@@ -378,6 +397,9 @@ def test_face_digest_refresh_resends_the_same_multipart_body():
         if request.method == 'GET':
             return httpx.Response(401, headers={
                 'WWW-Authenticate': 'Digest realm="terminal", nonce="old", qop="auth"'})
+        if request.url.path.endswith('/FDSearch'):
+            return httpx.Response(200, json={**OK, 'numOfMatches': int(bool(bodies)),
+                                             'MatchList': [{'FPID': '134'}] if bodies else []})
         bodies.append((request.headers['authorization'], request.content))
         if len(bodies) == 1:
             return httpx.Response(401, headers={
@@ -422,3 +444,31 @@ def test_refused_face_replacement_is_an_error():
     with pytest.raises(HikvisionError) as caught:
         _face_run(handler, lambda client: client.upload_face('134', JPEG))
     assert caught.value.code == 'device_error'
+
+
+def test_known_face_is_updated_directly_without_deleting_or_recreating_person():
+    result, requests = _face_run(lambda request: httpx.Response(200, json=OK),
+                                 lambda client: client.upload_face('134', JPEG), existing=True)
+    assert result == 'replaced'
+    assert [(request.method, request.url.path.rsplit('/', 1)[-1]) for request in requests] == [
+        ('POST', 'FDSearch'), ('PUT', 'FDSetUp'), ('POST', 'FDSearch')]
+
+
+@pytest.mark.parametrize('matches', [[], [{'FPID': '999'}]])
+def test_acknowledgement_without_the_target_face_is_not_success(matches):
+    with pytest.raises(HikvisionError, match='not_confirmed'):
+        _face_run(lambda request: httpx.Response(200, json=OK),
+                  lambda client: client.upload_face('134', JPEG),
+                  search_handler=lambda request: httpx.Response(200, json={
+                      **OK, 'numOfMatches': len(matches), 'MatchList': matches}))
+
+
+@pytest.mark.parametrize('payload', [
+    OK, {**OK, 'numOfMatches': 1}, {**OK, 'numOfMatches': 1, 'MatchList': [{}]},
+    {**OK, 'numOfMatches': 1, 'MatchList': 'invalid'},
+])
+def test_invalid_face_search_never_confirms_a_photo(payload):
+    with pytest.raises(HikvisionError, match='invalid_response'):
+        _face_run(lambda request: pytest.fail('must not write after invalid search'),
+                  lambda client: client.upload_face('134', JPEG),
+                  search_handler=lambda request: httpx.Response(200, json=payload))

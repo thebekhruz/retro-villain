@@ -48,14 +48,15 @@ MANUAL_MESSAGE = 'Отмечает бухгалтер вручную — на у
 # внутренняя ошибка) — общий FACE_FAILED.
 FACE_MESSAGES = {
     'not_configured': 'Hikvision не подключён — фото сохранено и ждёт отправки.',
-    'network': 'Hikvision недоступен — фото не ушло на устройство. Отправьте ещё раз.',
-    'timeout': 'Hikvision не ответил вовремя — фото не ушло на устройство. Отправьте ещё раз.',
+    'network': 'Hikvision недоступен — фото сохранено в карточке, отправка не подтверждена. Отправьте ещё раз.',
+    'timeout': 'Hikvision не ответил вовремя — фото сохранено в карточке, отправка не подтверждена. Отправьте ещё раз.',
+    'not_confirmed': 'Hikvision не подтвердил фото сотрудника — снимок сохранён в карточке. Отправьте ещё раз.',
     'unauthorized': 'Hikvision не принял учётную запись панели — фото не ушло на устройство. '
                     'Нужна проверка доступа к устройству.',
     'face_rejected': 'Устройство не приняло фото: лицо должно быть крупно и хорошо видно. '
                      'Загрузите другое фото и отправьте ещё раз.',
 }
-FACE_FAILED = 'Фото не ушло на устройство — отправьте ещё раз.'
+FACE_FAILED = 'Отправка фото на устройство не подтверждена — снимок сохранён в карточке. Отправьте ещё раз.'
 FACE_PENDING = 'Фото ждёт отправки в Hikvision.'
 
 NOT_FOUND = 'Сотрудника нет в реестре — возможно, бухгалтер его удалил.'
@@ -183,19 +184,25 @@ def employee(request: Request, employee_id: int):
 
 
 @router.put('/employees/{employee_id}/photo')
-def upload_photo(request: Request, employee_id: int, body: PhotoInput):
-    """Новое фото. На устройство оно уходит кнопкой «Отправить» («Отправить
-    ещё раз»): до тех пор лицо — «ждёт отправки»."""
+async def upload_photo(request: Request, employee_id: int, body: PhotoInput, send: bool = False):
+    """Сохранить фото; send=true также отправляет его на терминал в этом запросе.
+    Сбой устройства оставляет снимок в карточке и возможность повторить отправку.
+    Без send сохраняется прежний API для локального сохранения."""
     account = current_account(request)
-    _photo_card(request, employee_id, account)
+    await asyncio.to_thread(_photo_card, request, employee_id, account)
     try:
-        mime, content = decode_photo(body.image)
-        request.app.state.accountant_roster.set_photo(employee_id, mime, content, by=account.login)
+        mime, content = await asyncio.to_thread(decode_photo, body.image)
+        await asyncio.to_thread(request.app.state.accountant_roster.set_photo,
+                                employee_id, mime, content, by=account.login)
     except PhotoError as error:
         raise HTTPException(422, str(error)) from None
     except ValueError:
         raise HTTPException(404, NOT_FOUND) from None
-    return dict(employee=card_json(_card_or_404(request, employee_id), account))
+    if send:
+        await push_to_hikvision(request.app.state, employee_id, by=account.login,
+                                request_id=getattr(request.state, 'request_id', '-'))
+    row = await asyncio.to_thread(_card_or_404, request, employee_id)
+    return dict(employee=card_json(row, account))
 
 
 @router.get('/employees/{employee_id}/photo')

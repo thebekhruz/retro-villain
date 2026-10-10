@@ -290,7 +290,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             app.state.attendance_store)
     else:
         app.state.hikvision_poller = None
-    # Запись в Hikvision — только из кабинета менеджера (добавить человека).
+    # Запись в Hikvision — только из кабинета менеджера (человек и его фото).
     # Свой клиент, а не опросчика: у каждого своя digest-сессия, и отправка не
     # ждёт очереди опроса. Без HIKVISION_URL — None: карточка ждёт отправки.
     if hikvision_writer is not None:

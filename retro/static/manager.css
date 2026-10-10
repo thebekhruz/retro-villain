@@ -4,6 +4,7 @@
 
 /* Заголовок шага по центру: справа место под кнопку, как слева «‹». */
 .mgr-head-spacer{width:40px;height:40px;flex:none}
+.mgr-photo-actions{display:grid;grid-template-columns:1fr;gap:8px}
 
 /* Прогресс в шапке: у скольких людей раздела уже есть фото. */
 .mgr-progress{position:relative;display:grid;gap:8px;margin-top:16px}

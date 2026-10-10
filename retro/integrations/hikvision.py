@@ -25,7 +25,8 @@ from retro.config import HikvisionConfig
 TZ = ZoneInfo('Asia/Tashkent')
 MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_PAGES = 200
-PEOPLE_PAGE_SIZE = 60
+# DS-K1T341CM V3.3.40 объявляет maxResults <= 30; больший запрос отклоняется.
+PEOPLE_PAGE_SIZE = 30
 EVENT_PAGE_SIZE = 50
 # Срок действия карточки на устройстве для новых людей. Конец — как у
 # заводских карточек Hikvision: «бессрочно» в пределах формата устройства.
@@ -34,6 +35,7 @@ VALID_UNTIL = '2037-12-31T23:59:59'
 # FPID — тот же номер, что у человека (employeeNo).
 FACE_RECORD = '/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json'
 FACE_SETUP = '/ISAPI/Intelligent/FDLib/FDSetUp?format=json'
+FACE_SEARCH = '/ISAPI/Intelligent/FDLib/FDSearch?format=json'
 FACE_LIBRARY = {'faceLibType': 'blackFD', 'FDID': '1'}
 
 
@@ -375,21 +377,45 @@ class HikvisionClient:
             raise HikvisionError('invalid_response')
         raise HikvisionError('device_error')
 
+    async def has_face(self, employee_no: str) -> bool:
+        """Проверка лица по FPID. Фото по faceURL не скачиваем; возвращённый
+        устройством modelData не сохраняем и не передаём в интерфейс."""
+        response = await self._exchange(FACE_SEARCH, {
+            **FACE_LIBRARY, 'FPID': employee_no, 'searchResultPosition': 0, 'maxResults': 1,
+        })
+        payload = _status_payload(response.content)
+        if not _accepted(response, payload):
+            raise HikvisionError('invalid_response' if response.status_code == 200
+                                and payload is None else 'device_error')
+        matches = payload.get('MatchList', [])
+        count = _integer(payload.get('numOfMatches'), None)
+        if not isinstance(matches, list) or count is None or count != len(matches):
+            raise HikvisionError('invalid_response')
+        if any(not isinstance(item, dict) or 'FPID' not in item for item in matches):
+            raise HikvisionError('invalid_response')
+        return any(str(item['FPID']) == employee_no for item in matches)
+
     async def upload_face(self, employee_no: str, image: bytes, *, mime: str = 'image/jpeg') -> str:
         """Лицо человека под номером employee_no. 'created' — устройство
         приняло новое лицо; 'replaced' — лицо у номера уже было, и его
-        заменили (FDSetUp). Человек на устройстве должен уже быть."""
+        заменили (FDSetUp). Человек на устройстве должен уже быть. Успех требует
+        положительного ответа на запись и последующего поиска именно этого FPID.
+        После обрыва записи наличие старого лица не считается успехом."""
+        replacing = await self.has_face(employee_no)
         content, content_type = face_multipart(employee_no, image, mime)
-        response = await self._send('POST', FACE_RECORD, content, content_type)
+        response = await self._send('PUT' if replacing else 'POST',
+                                    FACE_SETUP if replacing else FACE_RECORD, content, content_type)
         status = _status_payload(response.content)
-        if _accepted(response, status):
-            return 'created'
-        if status is not None and _face_exists(status):
+        # Лицо могло появиться между поиском и записью (другая панель, повтор).
+        if not replacing and status is not None and _face_exists(status):
+            replacing = True
             response = await self._send('PUT', FACE_SETUP, content, content_type)
             status = _status_payload(response.content)
-            if _accepted(response, status):
-                return 'replaced'
-        raise _face_failure(response, status)
+        if not _accepted(response, status):
+            raise _face_failure(response, status)
+        if not await self.has_face(employee_no):
+            raise HikvisionError('not_confirmed')
+        return 'replaced' if replacing else 'created'
 
     async def fetch_people(self) -> tuple[HikvisionPerson, ...]:
         people: list[HikvisionPerson] = []

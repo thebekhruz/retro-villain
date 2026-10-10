@@ -10,7 +10,8 @@ const NETWORK = 'Нет связи с панелью. Проверьте инт�
 const passthrough = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
 const Busy = globalThis.RetroBusy || {button: passthrough, silent: fn => fn()};
 
-const state = {home: null, filter: 'all', group: '', role: '', card: null, preview: null, uploading: false, sending: false};
+const state = {home: null, filter: 'all', group: '', role: '', card: null, preview: null, preparing: false, uploading: false, sending: false};
+const photoBusy = () => state.preparing || state.uploading || state.sending;
 
 function node(tag, cls, text) {
   const element = document.createElement(tag);
@@ -187,24 +188,31 @@ function renderCard() {
   $('card-name').textContent = card.name;
   $('card-role').textContent = L().roleLine(card);
   paintStep('step-photo', L().photoStep(card, state.uploading));
+  if (state.preparing) paintStep('step-photo', {step: 'active', title: 'Подготавливаем фото…'});
+  else if (state.uploading && card.hikvision.state !== 'manual') {
+    paintStep('step-photo', {step: 'active', title: 'Сохраняем фото и отправляем в Hikvision…'});
+  }
   const person = L().hikvisionStep(card, state.sending);
   paintStep('step-hik', person);
   $('step-hik-no').textContent = person.step === 'ok' && person.number ? 'ID ' + person.number : '';
-  const face = person.step === 'ok' ? L().faceStep(card, state.sending) : null;
+  const face = state.uploading ? null : person.step === 'ok' ? L().faceStep(card, state.sending) : null;
   paintStep('step-face', face);
   const note = person.note || face?.note || '';
   $('card-hik-note').textContent = note;
   $('card-hik-note').hidden = !note;
-  const busy = state.uploading || state.sending;
+  const busy = photoBusy();
   $('card-status').classList.toggle('is-waiting', busy);
   $('card-status').classList.toggle('is-error', person.step === 'error' || face?.step === 'error');
   $('card-retry').hidden = busy || !card.can_retry;
   $('card-shoot-label').textContent = card.photo || state.preview ? 'Переснять фото' : 'Сфотографировать';
   $('card-shoot').disabled = busy || card.can_photo === false;
+  $('card-gallery').disabled = busy || card.can_photo === false;
   $('card-avatar').disabled = busy || card.can_photo === false;
+  $('card-close').disabled = busy;
 }
 
 function openCard(card) {
+  if (photoBusy()) return;
   state.card = card;
   state.preview = null;
   state.uploading = false;
@@ -241,10 +249,12 @@ async function shrinkPhoto(file, side = 640) {
   canvas.width = Math.round(width * scale);
   canvas.height = Math.round(height * scale);
   canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  source.close?.();
   return canvas.toDataURL('image/jpeg', 0.86);
 }
 
 async function sendToHikvision() {
+  if (!state.card || photoBusy()) return false;
   const card = state.card;
   state.sending = true;
   renderCard();
@@ -266,40 +276,48 @@ async function sendToHikvision() {
 
 /* Снятое фото сразу видно в круге; сохраняем его в карточке и отправляем на
    терминал. Не дошло — фото на экране остаётся, можно повторить. */
-async function uploadPhoto(photo) {
-  const card = state.card;
+async function uploadPhoto(card, photo) {
   state.preview = photo;
   state.uploading = true;
   renderCard();
   try {
-    const {data} = await api(`/employees/${card.id}/photo`, {method: 'PUT', body: JSON.stringify({image: photo})});
+    const {data} = await api(`/employees/${card.id}/photo?send=true`, {method: 'PUT', body: JSON.stringify({image: photo})});
     replaceCard(data.employee);
+    return true;
   } catch (error) {
-    state.preview = null;
-    message(error.network ? 'Нет связи — фото не сохранилось. Сфотографируйте ещё раз.' : error.message, true);
+    // Ответ мог потеряться после сохранения: обновляем карточку, не обещая,
+    // что запись не произошла, и не отправляем запрос для другого сотрудника.
+    try { replaceCard((await api(`/employees/${card.id}`)).data.employee); } catch {}
+    message(error.network ? 'Связь прервалась — результат отправки неизвестен. Откройте карточку снова и проверьте статус фото.' : error.message, true);
     return false;
   } finally {
     state.uploading = false;
+    state.preview = null;
     if (state.card && state.card.id === card.id) renderCard();
+    renderList();
   }
-  state.preview = null;
-  renderList();
-  if (state.card.can_retry) await sendToHikvision();
-  return true;
 }
 
-async function photoTaken() {
-  const file = $('photo-input').files[0];
-  $('photo-input').value = '';
-  if (!file || !state.card) return;
-  let photo;
+async function photoTaken(event) {
+  const input = event.currentTarget;
+  const file = input.files[0];
+  input.value = '';
+  if (!file || !state.card || photoBusy() || state.card.can_photo === false) return;
+  // Привязка к человеку ДО первого await, включая декодирование снимка.
+  const card = state.card;
+  state.preparing = true;
+  renderCard();
   try {
-    photo = await shrinkPhoto(file);
+    const photo = await shrinkPhoto(file);
+    state.preparing = false;
+    await Busy.button($(input.id === 'gallery-input' ? 'card-gallery' : 'card-shoot'),
+      uploadPhoto(card, photo), {done: false});
   } catch {
-    message('Не удалось открыть фото. Сфотографируйте ещё раз.', true);
-    return;
+    message('Не удалось открыть фото. Выберите другой снимок или сфотографируйте ещё раз.', true);
+  } finally {
+    state.preparing = false;
+    if (state.card?.id === card.id) renderCard();
   }
-  await Busy.button($('card-shoot'), uploadPhoto(photo), {done: false});
 }
 
 /* ── События ───────────────────────────────────────────────────────────── */
@@ -307,10 +325,12 @@ $('search').addEventListener('input', renderList);
 document.querySelectorAll('.mgr-filter[data-filter]').forEach(button => {
   button.addEventListener('click', () => { state.filter = button.dataset.filter; renderList(); });
 });
-$('card-close').addEventListener('click', () => { show('home'); renderList(); });
+$('card-close').addEventListener('click', () => { if (!photoBusy()) { show('home'); renderList(); } });
 $('card-shoot').addEventListener('click', () => $('photo-input').click());
 $('card-avatar').addEventListener('click', () => $('photo-input').click());
+$('card-gallery').addEventListener('click', () => $('gallery-input').click());
 $('photo-input').addEventListener('change', photoTaken);
+$('gallery-input').addEventListener('change', photoTaken);
 $('card-retry').addEventListener('click', () => Busy.button($('card-retry'), sendToHikvision(), {done: false}));
 
 loadHome();

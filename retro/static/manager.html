@@ -43,7 +43,7 @@
 
     <div class="shokh-body-scroll">
       <article class="rm-phone-card mgr-list-card">
-        <p class="mgr-lead">Выберите сотрудника и сфотографируйте его — по фото терминал узнает человека на входе. Новых сотрудников заводит бухгалтер.</p>
+        <p class="mgr-lead">Выберите сотрудника и добавьте фото с камеры или из галереи — оно отправится на терминал Hikvision. Новых сотрудников заводит бухгалтер.</p>
         <input id="search" type="search" class="shokh-search" maxlength="80" autocomplete="off"
                placeholder="Найти по имени или должности" aria-label="Найти сотрудника">
         <div class="mgr-filters" role="group" aria-label="Показать">
@@ -97,13 +97,15 @@
         <button id="card-retry" class="shokh-secondary mgr-retry" type="button" hidden>Отправить ещё раз</button>
       </div>
     </div>
-    <div class="shokh-flow-nav">
+    <div class="shokh-flow-nav mgr-photo-actions">
       <button id="card-shoot" class="shokh-primary is-flat mgr-shoot" type="button">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
         <span id="card-shoot-label">Сфотографировать</span>
       </button>
+      <button id="card-gallery" class="shokh-secondary" type="button">Выбрать из галереи</button>
     </div>
     <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+    <input id="gallery-input" type="file" accept="image/*" hidden>
   </section>
 </div>
 </body>

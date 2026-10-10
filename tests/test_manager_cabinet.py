@@ -13,6 +13,7 @@ import asyncio
 import base64
 import json
 import sqlite3
+from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
@@ -45,6 +46,7 @@ DIRECTIONS = {'kitchen': ('Кухня',)}
 PNG = b'\x89PNG\r\n\x1a\n' + bytes(range(64))
 FACE_RECORD = ('POST', '/ISAPI/Intelligent/FDLib/FaceDataRecord')
 FACE_SETUP = ('PUT', '/ISAPI/Intelligent/FDLib/FDSetUp')
+FACE_SEARCH = ('POST', '/ISAPI/Intelligent/FDLib/FDSearch')
 PERSON_RECORD = ('POST', '/ISAPI/AccessControl/UserInfo/Record')
 
 
@@ -63,6 +65,7 @@ class Terminal:
         self.fail = None
         self.face_fail = None
         self.lose_record = False
+        self.lose_face = False
 
     def count(self, call) -> int:
         return self.requests.count(call)
@@ -103,6 +106,11 @@ class Terminal:
         return httpx.Response(404, json={'statusCode': 4, 'statusString': 'Invalid Operation'})
 
     def face(self, request: httpx.Request, path: str) -> httpx.Response:
+        if path.endswith('/FDSearch'):
+            query = json.loads(request.content)
+            assert (query['faceLibType'], query['FDID'], query['maxResults']) == ('blackFD', '1', 1)
+            matches = [{'FPID': query['FPID']}] if query['FPID'] in self.faces else []
+            return httpx.Response(200, json={**OK, 'numOfMatches': len(matches), 'MatchList': matches})
         parts = face_parts(request.content, request.headers['content-type'])
         record = json.loads(parts['FaceDataRecord'][2])
         assert (record['faceLibType'], record['FDID']) == ('blackFD', '1')
@@ -116,7 +124,11 @@ class Terminal:
             return httpx.Response(400, json={'statusCode': 6, 'subStatusCode': 'employeeNoNotExist'})
         if request.method == 'POST' and number in self.faces:
             return httpx.Response(400, json={'statusCode': 6, 'subStatusCode': 'deviceUserAlreadyExistFace'})
-        self.faces[number] = parts['img'][2]
+        if self.face_fail != 'ignore':
+            self.faces[number] = parts['img'][2]
+        if self.lose_face:
+            self.lose_face = False
+            raise httpx.ReadTimeout('lost', request=request)
         return httpx.Response(200, json=OK)
 
 
@@ -186,8 +198,9 @@ def data_url(content=JPEG, mime='image/jpeg') -> str:
     return f'data:{mime};base64,' + base64.b64encode(content).decode()
 
 
-def upload(client, employee_id, image=None, user='karina'):
-    return client.put(f'/api/manager/employees/{employee_id}/photo', json={'image': image or data_url()},
+def upload(client, employee_id, image=None, user='karina', *, send=False):
+    return client.put(f'/api/manager/employees/{employee_id}/photo', params={'send': str(send).lower()},
+                      json={'image': image or data_url()},
                       auth=(user, 'secret'))
 
 
@@ -412,6 +425,65 @@ def test_photo_of_exactly_2_mb_is_accepted(cabinet):
 
 # ── Отправка в Hikvision: человек и лицо ──────────────────────────────────
 
+def test_save_and_send_in_one_request_then_replace_same_person(cabinet, terminal):
+    employee_id = staff(cabinet)
+    other_id = staff(cabinet, 'Камола')
+    answer = upload(cabinet, employee_id, send=True)
+    assert answer.status_code == 200
+    sent = answer.json()['employee']
+    number = sent['hikvision']['employee_no']
+    assert sent['hikvision']['face']['state'] == 'sent'
+    assert terminal.faces == {number: JPEG}
+    replacement = upload(cabinet, employee_id, data_url(PNG, 'image/png'), send=True).json()['employee']
+    assert replacement['hikvision']['employee_no'] == number
+    assert replacement['hikvision']['face']['state'] == 'sent'
+    assert replacement['photo']['url'] != sent['photo']['url']
+    assert terminal.faces == {number: PNG}
+    assert terminal.count(PERSON_RECORD) == terminal.count(FACE_RECORD) == terminal.count(FACE_SETUP) == 1
+    assert card(cabinet, other_id)['photo'] is None
+
+
+@pytest.mark.parametrize('failure', ['down', 'reject', 'ignore', 'lost'])
+def test_combined_upload_failure_preserves_photo_and_allows_safe_retry(cabinet, terminal, failure):
+    employee_id = staff(cabinet)
+    terminal.face_fail = failure
+    terminal.lose_face = failure == 'lost'
+    failed = upload(cabinet, employee_id, send=True).json()['employee']
+    number = failed['hikvision']['employee_no']
+    assert failed['photo'] is not None
+    assert roster(cabinet).photo(employee_id)[0] == JPEG
+    assert failed['hikvision']['state'] == 'sent'
+    assert failed['hikvision']['face']['state'] == 'error'
+    assert failed['can_retry'] is True
+    if failure == 'ignore':
+        assert roster(cabinet).manager_card(employee_id)['face_error'] == 'not_confirmed'
+    if failure == 'lost':
+        assert terminal.faces == {number: JPEG}
+        assert 'не подтверждена' in failed['hikvision']['face']['message']
+    terminal.face_fail = None
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['face']['state'] == 'sent'
+    assert terminal.faces == {number: JPEG}
+    assert terminal.count(PERSON_RECORD) == 1
+
+
+def test_combined_upload_checks_direction_before_saving_or_sending(cabinet, terminal):
+    employee_id = staff(cabinet)
+    assert upload(cabinet, employee_id, user='kitchen', send=True).status_code == 403
+    assert roster(cabinet).photo(employee_id) is None
+    assert terminal.requests == []
+
+
+def test_combined_upload_manual_attendance_saves_only_locally(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_manual_attendance(employee_id, True)
+    saved = upload(cabinet, employee_id, send=True).json()['employee']
+    assert saved['photo'] is not None
+    assert saved['hikvision']['state'] == 'manual'
+    assert saved['can_retry'] is False
+    assert terminal.requests == []
+
+
 def test_photo_sends_the_person_and_then_the_face_with_fpid(cabinet, terminal):
     employee_id = staff(cabinet)
     upload(cabinet, employee_id)
@@ -424,7 +496,8 @@ def test_photo_sends_the_person_and_then_the_face_with_fpid(cabinet, terminal):
     assert terminal.face_records == [('POST', number, ('image/jpeg', 'face.jpg', JPEG))]
     assert terminal.faces == {number: JPEG}
     # Сначала человек (поиск номера, запись, проверка), потом лицо.
-    assert terminal.requests[-2:] == [('POST', '/ISAPI/AccessControl/UserInfo/Search'), FACE_RECORD]
+    assert terminal.requests[-4:] == [
+        ('POST', '/ISAPI/AccessControl/UserInfo/Search'), FACE_SEARCH, FACE_RECORD, FACE_SEARCH]
 
     person, = roster(cabinet).list()
     assert person.hikvision_id == number
@@ -447,7 +520,7 @@ def test_linked_employee_gets_only_the_face(cabinet, terminal):
     assert before['can_retry'] is True
     sent = push(cabinet, employee_id).json()['employee']
     assert sent['hikvision']['face']['state'] == 'sent'
-    assert terminal.requests == [FACE_RECORD]
+    assert terminal.requests == [FACE_SEARCH, FACE_RECORD, FACE_SEARCH]
     assert terminal.faces == {'204': JPEG}
 
 
@@ -459,7 +532,7 @@ def test_existing_face_on_the_device_is_replaced_through_fd_setup(cabinet, termi
     upload(cabinet, employee_id)
     sent = push(cabinet, employee_id).json()['employee']
     assert sent['hikvision']['face']['state'] == 'sent'
-    assert terminal.requests == [FACE_RECORD, FACE_SETUP]
+    assert terminal.requests == [FACE_SEARCH, FACE_SETUP, FACE_SEARCH]
     assert terminal.faces == {'204': JPEG}
 
 
@@ -475,7 +548,7 @@ def test_face_failure_keeps_the_person_and_retry_sends_only_the_face(cabinet, te
     terminal.face_fail = 'down'
     failed = push(cabinet, employee_id).json()['employee']
     assert failed['hikvision']['face'] == {
-        'state': 'error', 'message': 'Hikvision недоступен — фото не ушло на устройство. Отправьте ещё раз.'}
+        'state': 'error', 'message': 'Hikvision недоступен — фото сохранено в карточке, отправка не подтверждена. Отправьте ещё раз.'}
 
     terminal.face_fail = None
     sent = push(cabinet, employee_id).json()['employee']
@@ -497,7 +570,7 @@ def test_new_photo_puts_the_face_back_to_pending_and_resend_replaces_it(cabinet,
     sent = push(cabinet, employee_id).json()['employee']
     assert sent['hikvision']['face']['state'] == 'sent'
     assert terminal.faces == {number: PNG}
-    assert terminal.requests[-2:] == [FACE_RECORD, FACE_SETUP]
+    assert terminal.requests[-3:] == [FACE_SEARCH, FACE_SETUP, FACE_SEARCH]
     assert terminal.face_records[-1][2] == ('image/png', 'face.png', PNG)
     assert terminal.count(PERSON_RECORD) == 1
 
@@ -717,6 +790,28 @@ def test_photo_lives_with_the_card_and_face_mark_follows_the_photo_version(tmp_p
         roster_store.set_photo(employee_id, 'image/gif', b'GIF89a')
     roster_store.delete(employee_id)
     assert roster_store.photo(employee_id) is None
+
+
+def test_concurrent_photos_within_one_millisecond_have_distinct_versions(cabinet, monkeypatch):
+    employee_id = staff(cabinet)
+    store = roster(cabinet)
+
+    class FrozenDatetime(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return cls(2026, 10, 10, 12, 0, 0, 123789, tzinfo=TZ)
+
+    monkeypatch.setattr('retro.modules.accountant.roster.datetime', FrozenDatetime)
+    first = store.set_photo(employee_id, 'image/jpeg', JPEG)
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        futures = [pool.submit(store.set_photo, employee_id, 'image/jpeg', JPEG + bytes([i]))
+                   for i in range(2)]
+        versions = [first] + [future.result() for future in futures]
+    assert len(set(versions)) == 3
+    current = store.photo(employee_id)[2]
+    assert current == max(versions)
+    for version in versions:
+        assert store.record_face(employee_id, 'sent', None, version=version) is (version == current)
 
 
 def test_old_roster_gains_the_new_columns_without_losing_rows(tmp_path):
