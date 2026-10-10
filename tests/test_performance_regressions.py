@@ -252,8 +252,8 @@ def week_app(tmp_path, recorder):
     app.state.iiko = FakeIiko()
     finance, roster = app.state.accountant_finance, app.state.accountant_roster
     for offset in range(12):
-        finance.record_handover(date(2026, 10, 2) + timedelta(days=offset), Decimal('1000000'))
-    finance.set_cash_opening(date(2026, 10, 2), '5000000', 'начальный остаток')
+        finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal('1000000'))
+    finance.set_cash_opening(date(2026, 10, 5), '5000000', 'начальный остаток')
     for index in range(3):
         roster.add_monthly(name=f'Окладник {index}', role='Менеджер', salary='3000000')
     db_module.Database.connect = traced
@@ -292,9 +292,9 @@ def test_week_reads_each_shared_table_once_not_once_per_day(tmp_path):
     # Журнал переноса передач — один раз на ответ, а не на каждый день.
     assert times('accountant_finance_audit',
                  ('finance_migration', 'handover_receipt_day_v1')) == 1
-    # Движения за шесть недель для истории дивидендов — тоже один раз.
+    # На первой неделе учёта архивная история дивидендов не запрашивается.
     assert times('FROM accountant_handover_days WHERE day >= ? AND day <= ?',
-                 ('2026-10-02', '2026-10-04')) == 1
+                 ('2026-10-05', '2026-10-04')) == 0
     # Повторов в ответе осталось меньше четверти: остальное — работа по дню.
     repeated = sum(count - 1 for count in seen.values())
     assert repeated * 4 < sum(seen.values())

@@ -73,8 +73,8 @@ def stores(database):
     finance = FinanceStore(database)
     attendance = AttendanceStore(database)
     for offset in range(11):
-        finance.record_handover(d(2) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(d(2), '5000000', 'Начало')
+        finance.record_handover(d(5) + timedelta(days=offset), Decimal(0))
+    finance.set_cash_opening(d(5), '5000000', 'Начало')
     people = dict(
         ihtiyor=roster.add(name='Баходиров Ихтиер', role='Менеджер', rate='360000', group_name='Управление'),
         karamat=roster.add(name='Карамат', role='Хостес', rate='150000', group_name='Встреча гостей',
@@ -251,7 +251,7 @@ def test_money_and_marks_outside_the_period_are_refused_in_words(stores):
     assert finance.mark_manual_attendance(karamat, d(9), True, 'buh') is True
     # Временный без периода — как сменный: любой день.
     guest = people['guest'].id
-    assert finance.set_salary_day_cell(d(2), guest, '150000', '0')['changed'] is True
+    assert finance.set_salary_day_cell(d(6), guest, '150000', '0')['changed'] is True
     assert finance.set_salary_day_cell(d(12), guest, '150000', '0')['changed'] is True
 
 
@@ -309,8 +309,8 @@ def api(any_db):  # noqa: F811 — фикстура
     c = any_db
     finance = c.app.state.accountant_finance
     for offset in range(11):
-        finance.record_handover(d(2) + timedelta(days=offset), Decimal('500000'))
-    finance.set_cash_opening(d(2), '5000000', 'Начало')
+        finance.record_handover(d(5) + timedelta(days=offset), Decimal('500000'))
+    finance.set_cash_opening(d(5), '5000000', 'Начало')
     roster = c.app.state.accountant_roster
     c.ihtiyor = roster.add(name='Баходиров Ихтиер', role='Менеджер', rate='360000', group_name='Управление')
     return c

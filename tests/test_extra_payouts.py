@@ -84,8 +84,8 @@ def stores(database):
     roster = RosterStore(database)
     finance = FinanceStore(database)
     for offset in range(9):
-        finance.record_handover(date(2026, 10, 2) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 2), '2000000', 'Начало')
+        finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal(0))
+    finance.set_cash_opening(date(2026, 10, 5), '2000000', 'Начало')
     return finance, roster, staff(roster, finance)
 
 
@@ -106,7 +106,7 @@ def test_karamat_payout_is_one_expense_on_the_payout_day_and_reaches_every_total
     assert (item['work_day'], item['paid_day'], item['amount'], item['created_by']) == (
         '2026-10-08', '2026-10-09', '150000', 'buh')
     # Ведомость: запись периода, человек помечен временным; клетка своей суммы не меняет.
-    data = finance.salary_day_month(date(2026, 10, 2), date(2026, 10, 31))
+    data = finance.salary_day_month(date(2026, 10, 5), date(2026, 10, 31))
     assert [(x['employee_id'], x['amount'], x['editable']) for x in data['extras']] == [
         (people['karamat'].id, '150000', True)]
     karamat = next(p for p in data['people'] if p['id'] == people['karamat'].id)
@@ -136,7 +136,7 @@ def test_cell_payment_the_same_day_asks_for_confirmation_and_nothing_is_written(
     assert (count(finance, 'accountant_movements'), count(finance, 'accountant_finance_audit')) == before
     add(finance, people['ihtiyor'], '50000', 'Премия за банкет', confirm=True)
     # Ведомость: 360 000 в клетке + 50 000 доп. — 410 000 за 09.10.
-    data = finance.salary_day_month(date(2026, 10, 2), date(2026, 10, 31))
+    data = finance.salary_day_month(date(2026, 10, 5), date(2026, 10, 31))
     ihtiyor = next(p for p in data['people'] if p['id'] == people['ihtiyor'].id)
     assert ihtiyor['cells'][PAID.isoformat()]['amount'] == '360000'
     assert sum(Decimal(x['amount']) for x in data['extras'] if x['employee_id'] == ihtiyor['id']) == 50000
@@ -174,7 +174,7 @@ def test_edit_and_delete_keep_audit_and_history_survives_archive(stores):
     assert movement['description'] == 'Доп. выплата · Карамат · смена 07.10 · Две подмены'
     # Временная ушла: запись и строка в ведомости остаются по имени.
     roster.delete(people['karamat'].id)
-    data = finance.salary_day_month(date(2026, 10, 2), date(2026, 10, 31))
+    data = finance.salary_day_month(date(2026, 10, 5), date(2026, 10, 31))
     gone = next(p for p in data['people'] if p['id'] == people['karamat'].id)
     assert (gone['name'], gone['archived'], gone['temporary']) == ('Карамат', True, True)
     assert data['extras'][0]['editable'] is True
@@ -193,13 +193,13 @@ def test_days_cash_and_closed_month_are_checked_like_the_cell(database):
     finance = FinanceStore(database)
     people = staff(roster, finance)
     for offset in range(9):
-        finance.record_handover(date(2026, 10, 2) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 2), '100000', 'Начало')
+        finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal(0))
+    finance.set_cash_opening(date(2026, 10, 5), '100000', 'Начало')
     karamat = people['karamat']
     for values, text in [(dict(paid_day=TODAY + timedelta(days=1)), 'будущим днём'),
-                         (dict(paid_day=date(2026, 10, 1), work_day=date(2026, 9, 30)), '02.10.2026'),
+                         (dict(paid_day=date(2026, 10, 1), work_day=date(2026, 9, 30)), '05.10.2026'),
                          (dict(work_day=TODAY), 'позже дня выплаты'),
-                         (dict(work_day=date(2026, 9, 30)), '01.10.2026'),
+                         (dict(work_day=date(2026, 9, 30)), '05.10.2026'),
                          (dict(), 'недостаточно')]:
         with pytest.raises(LedgerError, match=text):
             add(finance, karamat, **values)
@@ -246,9 +246,9 @@ def client(tmp_path):
     app = create_app(Settings(data_dir=tmp_path, manual_handover_only=True))
     with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as test_client:
         finance = test_client.app.state.accountant_finance
-        # Начальный остаток 02.10 приложение ставит само (opening_migration).
+        # Нулевой начальный остаток 05.10 приложение ставит само (opening_migration).
         for offset in range(9):
-            finance.record_handover(date(2026, 10, 2) + timedelta(days=offset), Decimal('500000'))
+            finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal('500000'))
         test_client.people = staff(test_client.app.state.accountant_roster, finance)
         yield test_client
 
@@ -311,11 +311,11 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     sheet = book['Ведомость']
     rows = sheet_values(sheet)
     assert rows[0][0] == 'RETRO MILLIY · Зарплата · день · октябрь 2026'
-    assert 'Вся ведомость, 4 сотрудника.' in rows[1][0] and '02.10.2026 – 10.10.2026' in rows[1][0]
+    assert 'Вся ведомость, 4 сотрудника.' in rows[1][0] and '05.10.2026 – 10.10.2026' in rows[1][0]
     head = rows[3]
     assert head[:4] == ['№', 'Сотрудник', 'Должность', 'Ставка']
-    assert head[4] == 'Выплата 02.10\nсмена 01.10' and head[11] == 'Выплата 09.10\nсмена 08.10'
-    assert head[-2:] == ['Доп. выплаты', 'Итого'] and len(head) == 4 + 9 + 2
+    assert head[4] == 'Выплата 05.10\nсмена 04.10' and head[8] == 'Выплата 09.10\nсмена 08.10'
+    assert head[-2:] == ['Доп. выплаты', 'Итого'] and len(head) == 4 + 6 + 2
     body = {row[1]: row for row in rows[4:8]}
     assert body['Баходиров Ихтиер'][2] == 'Менеджер' and body['Баходиров Ихтиер'][3] == 360000
     assert body['Карамат'][2] == 'Хостес · временный'
@@ -328,9 +328,9 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
         assert Decimal(str(line[-2] or 0)) == extra
     total, extras_row = rows[8], rows[9]
     assert total[1] == 'Итого за день' and extras_row[1] == 'в т.ч. доп. выплаты'
-    assert total[11] == 360000 + 300000 + 150000 and extras_row[11] == 150000
+    assert total[8] == 360000 + 300000 + 150000 and extras_row[8] == 150000
     assert total[-1] == 360000 * 2 + 300000 + 150000
-    assert isinstance(total[-1], (int, float)) and sheet.cell(9, 12).number_format == '#,##0'
+    assert isinstance(total[-1], (int, float)) and sheet.cell(9, 9).number_format == '#,##0'
     # Печать: альбом, по ширине страницы, шапка на каждой странице, имена закреплены.
     assert sheet.page_setup.orientation == 'landscape'
     assert sheet.page_setup.fitToWidth == 1 and sheet.page_setup.fitToHeight == 0

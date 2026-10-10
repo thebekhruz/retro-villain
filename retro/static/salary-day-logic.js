@@ -19,8 +19,9 @@
   function shiftMonth(month,step){const date=new Date(month+'-01T12:00:00Z');date.setUTCMonth(date.getUTCMonth()+step);return date.toISOString().slice(0,7);}
   function canEdit(data,person,day){
     const paid=data.basis==='shift'?nextDay(day):day;
+    const work=data.basis==='shift'?day:previousDay(day);
     return !data.closed&&!person.archived&&paid>=data.entry_start&&paid<=data.today
-      &&data.days.includes(day)&&person.cells?.[day]?.editable!==false;
+      &&work>=(data.shift_start||data.entry_start)&&data.days.includes(day)&&person.cells?.[day]?.editable!==false;
   }
   /* Ставка смены: сервер отдаёт её по версии реестра на день смены; если нет —
      нынешняя ставка сотрудника. Ноль и пусто — ставки нет, галочкой не выдать. */

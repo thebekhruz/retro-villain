@@ -91,8 +91,8 @@ def cash_days(c, first, last, amount='5000000'):
 def seed(c, *, cash_through=oct_(10), opening='20000000', handover='5000000'):
     """Контрольные примеры ТЗ: Ихтиер пришёл 07.10 в 09:38 и 08.10 в 09:31,
     Жахонгир 08.10 в 10:58 (опоздал), Сельвины не было, Карамат — временная."""
-    cash_days(c, oct_(2), cash_through, handover)
-    c.app.state.accountant_finance.set_cash_opening(oct_(2), opening, 'Пересчёт кассы')
+    cash_days(c, oct_(5), cash_through, handover)
+    c.app.state.accountant_finance.set_cash_opening(oct_(5), opening, 'Пересчёт кассы')
     roster = c.app.state.accountant_roster
     people = dict(
         ikhtiyor=roster.add(name='Баходиров Ихтиер', role='Менеджер', rate='360000', group_name='Управление'),
@@ -183,7 +183,7 @@ def shift_sheet(c, month='2026-10'):
 
 
 @pytest.mark.parametrize('work,paid', [
-    (oct_(1), oct_(2)), (oct_(8), oct_(9)), (oct_(9), oct_(10)),
+    (oct_(5), oct_(6)), (oct_(8), oct_(9)), (oct_(9), oct_(10)),
     (oct_(31), date(2026, 11, 1)), (date(2026, 12, 31), date(2027, 1, 1))])
 def test_selected_shift_creates_expense_next_day_for_any_date(c, work, paid):
     person = seed(c)['ikhtiyor']
@@ -218,7 +218,7 @@ def test_shift_view_attendance_and_rejection_of_unfinished_shift(c):
     person = seed(c)['ikhtiyor']
     data = shift_sheet(c)
     cells = next(p for p in data['people'] if p['id'] == person.id)['cells']
-    assert data['days'][0] == data['shift_start'] == '2026-10-01'
+    assert data['days'][0] == data['shift_start'] == '2026-10-05'
     assert cells['2026-10-08']['attendance']['time'] == '09:31'
     assert cells['2026-10-09']['editable'] is True
     assert cells['2026-10-10']['editable'] is False

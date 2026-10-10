@@ -507,8 +507,7 @@ def salary_day_month(request: Request, month: str, basis: Literal['payment', 'sh
         finance_error(error)
     if first > today_tashkent().replace(day=1):
         raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
-    first = (accounting_range_start(first+timedelta(days=1), last+timedelta(days=1))-timedelta(days=1)
-             if basis == 'shift' else accounting_range_start(first, last))
+    first = accounting_range_start(first, last)
     finance = request.app.state.accountant_finance
     # Посещаемость смены в клетке — тем же расчётом, что «Сотрудники» за день смены:
     # реестр на этот день, входы Hikvision и ручные отметки, без отметки выплаты.

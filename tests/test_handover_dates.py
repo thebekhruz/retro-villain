@@ -10,7 +10,7 @@ from retro.modules.accountant.handover_dates import cashier_day, receipt_day
 
 
 @pytest.mark.parametrize('shift,received', [
-    ('2026-10-04', '2026-10-05'), ('2026-10-31', '2026-11-01'), ('2026-09-30', '2026-10-01'),
+    ('2026-10-05', '2026-10-06'), ('2026-10-31', '2026-11-01'), ('2026-09-30', '2026-10-01'),
     ('2025-12-31', '2026-01-01'), ('2024-02-29', '2024-03-01'),
 ])
 def test_shift_cash_arrives_only_the_next_day(c, shift, received, monkeypatch):

@@ -970,7 +970,7 @@ async function loadDay(options = {}) {
   $('yesterday').classList.toggle('is-active', isYesterday);
   $('yesterday').setAttribute('aria-pressed', String(isYesterday));
   $('day-next').disabled = day >= config.today;
-  $('day-prev').disabled = day <= '2026-10-02';
+  $('day-prev').disabled = day <= '2026-10-05';
   loadPart('expenses', current, loadExpenses(day, current, signal));
   loadPart('receipts', current, loadReceipts(day, current, signal));
   loadPart('rate', current, loadUsdRate(day, current, signal));
@@ -1132,7 +1132,7 @@ function stepDay(offset) {
   const current = $('report-date').value;
   if (!current) return;
   const next = offsetDay(current, -offset);
-  if (next < '2026-10-02' || (offset > 0 && config && next > config.today)) return;
+  if (next < '2026-10-05' || (offset > 0 && config && next > config.today)) return;
   $('report-date').value = next;
   load();
 }

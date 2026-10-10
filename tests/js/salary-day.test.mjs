@@ -4,10 +4,10 @@ import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
 import logic from '../../retro/static/salary-day-logic.js';
 
-const month=extra=>({month:'2026-10',today:'2026-10-07',entry_start:'2026-10-07',closed:false,
+const month=extra=>({month:'2026-10',today:'2026-10-07',entry_start:'2026-10-05',shift_start:'2026-10-05',closed:false,
   days:['2026-10-06','2026-10-07','2026-10-08'],people:[{id:1,name:'Сотрудник',rate:'350000',cells:{'2026-10-06':{amount:'125000',editable:false},'2026-10-07':{amount:'50000'}}}],...extra});
 
-test('manual entry opens on October 7; historic and future payouts stay read-only',()=>{
+test('manual entry respects closed cells and future payouts',()=>{
   const data=month(),person=data.people[0];
   assert.equal(logic.canEdit(data,person,'2026-10-06'),false);
   assert.equal(logic.canEdit(data,person,'2026-10-07'),true);

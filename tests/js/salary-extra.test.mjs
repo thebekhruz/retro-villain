@@ -6,7 +6,7 @@ import accountant from '../../retro/static/accountant-logic.js';
 
 /* Ведомость октября с примерами ТЗ 09.10: Ихтиер (клетка 09.10 по ставке),
    Сельвина (без клетки), Карамат (временная, только доп. выплата). */
-const month = extras => ({month: '2026-10', today: '2026-10-09', entry_start: '2026-10-02', closed: false,
+const month = extras => ({month: '2026-10', today: '2026-10-09', entry_start: '2026-10-05', shift_start: '2026-10-05', closed: false,
   days: ['2026-10-08', '2026-10-09', '2026-10-10'],
   people: [
     {id: 1, name: 'Баходиров Ихтиер', role: 'Менеджер', group: 'Управление', rate: '360000',
@@ -65,10 +65,10 @@ test('проверка ввода — как на сервере: даты, су
   assert.equal(extra.check(ok, data), null);
   assert.match(extra.check({...ok, person: null}, data), /Выберите сотрудника/);
   assert.match(extra.check({...ok, paid: '2026-10-10'}, data), /будущим днём/);
-  assert.match(extra.check({...ok, paid: '2026-10-01', work: '2026-09-30'}, data), /02\.10\.2026/);
+  assert.match(extra.check({...ok, paid: '2026-10-01', work: '2026-09-30'}, data), /05\.10\.2026/);
   assert.match(extra.check({...ok, work: '2026-10-09', paid: '2026-10-08'}, data), /позже дня выплаты/);
-  assert.match(extra.check({...ok, work: '2026-09-30'}, data), /01\.10\.2026/);
-  assert.equal(extra.check({...ok, work: '2026-10-01', paid: '2026-10-02'}, data), null);
+  assert.match(extra.check({...ok, work: '2026-09-30'}, data), /05\.10\.2026/);
+  assert.equal(extra.check({...ok, work: '2026-10-05', paid: '2026-10-06'}, data), null);
   assert.match(extra.check({...ok, amount: null}, data), /сумму/);
   assert.match(extra.check({...ok, amount: 0}, data), /сумму/);
   assert.match(extra.check({...ok, note: '  '}, data), /назначение/);

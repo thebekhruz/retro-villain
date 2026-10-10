@@ -10,7 +10,7 @@
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
-  const START = '2026-10-02';
+  const START = '2026-10-05';
   const clamp = day => day < START ? START : day;
   const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -98,7 +98,7 @@
    *  человек читает как поломку панели. */
   function check(start, end, today) {
     if (!valid(start) || !valid(end)) return 'Выберите обе даты периода.';
-    if (start < START || end < START) return 'Учёт доступен со 2 октября 2026.';
+    if (start < START || end < START) return 'Учёт доступен с 5 октября 2026.';
     if (start > end) return 'Начало периода позже его конца.';
     if (end >= today) return 'Сегодняшний день ещё не закрыт: выберите период по вчерашний день.';
     if (daysBetween(start, end) > MAX_DAYS) return 'Период длиннее ' + MAX_DAYS + ' дней iiko не отдаёт.';
@@ -217,7 +217,7 @@
         chip.classList.toggle('active', chip.dataset.preset === state.preset);
       }
       const problem = range ? check(state.start, state.end, today) :
-        (!valid(state.day) || state.day < START || state.day > today ? 'Выберите дату со 2 октября по сегодня.' : '');
+        (!valid(state.day) || state.day < START || state.day > today ? 'Выберите дату с 5 октября по сегодня.' : '');
       status.textContent = problem || (range
         ? label(state.start, state.end) + ' · ' + daysBetween(state.start, state.end) + ' дн.'
         : dayLabel(state.day));

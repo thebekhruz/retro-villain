@@ -99,7 +99,7 @@ def _balance(rows):
 def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *, existing_connection=None,
                       place=None):
     if kind == 'opening' and day > ACCOUNTING_START:
-        raise LedgerError('Начальный остаток нужно указать на 02.10.2026 — первый день учёта.')
+        raise LedgerError(f'Начальный остаток нужно указать на {ACCOUNTING_START:%d.%m.%Y} — первый день учёта.')
     allowed = {'dividends': {'opening', 'transfer', 'withdrawal'},
                'usd': {'opening', 'deposit', 'withdrawal'}, 'shoh': {'opening', 'withdrawal'}}
     if account not in allowed or kind not in allowed[account]:

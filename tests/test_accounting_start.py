@@ -1,4 +1,4 @@
-"""Реальный переход 01 → 02 → 03 октября, включая старую заполненную БД."""
+"""Реальный переход 04 → 05 → 06 октября, включая старую заполненную БД."""
 from contextlib import closing
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -27,8 +27,8 @@ from retro.modules.founder.export import month_workbook
 from retro.modules.founder import overview
 from retro.modules.shokh.store import ShokhStore, ShokhError, pocket_position
 
-OLD = date(2026, 10, 1)
-NEXT = date(2026, 10, 3)
+OLD = START - timedelta(days=1)
+NEXT = START + timedelta(days=1)
 
 
 def initialized(tmp_path, *, check_mode=False, database=None):
@@ -37,27 +37,27 @@ def initialized(tmp_path, *, check_mode=False, database=None):
     store.set_cash_opening(OLD, '8000', 'Архивный остаток')
     store.add_expense(OLD, 'admin_it', 'Архивный расход', '1000')
     store.record_handover(START, Decimal('1000'))
-    store.set_cash_opening(START, '200', 'Пересчёт на 2 октября')
+    store.set_cash_opening(START, '200', 'Пересчёт на 5 октября')
     return store
 
 
-def test_cash_starts_on_october_2_and_backdated_expense_updates_later_days(tmp_path):
+def test_cash_starts_on_october_5_and_backdated_expense_updates_later_days(tmp_path):
     store = initialized(tmp_path)
     store.record_handover(NEXT, Decimal('500'))
-    store.add_expense(START, 'admin_it', 'Внесено позднее за 2 октября', '100')
+    store.add_expense(START, 'admin_it', 'Внесено позднее за 5 октября', '100')
     first = store.daily_summary(START, Decimal('1000'))
     following = store.daily_summary(NEXT, Decimal('500'))
     assert first['cash_flow']['opening_balance'] == '200'
     assert first['cash_balance'] == Decimal('1100')
     assert following['cash_flow']['opening_balance'] == '1100'
     assert following['cash_balance'] == Decimal('1600')
-    assert following['cash_flow']['first_day'] == '2026-10-02'
+    assert following['cash_flow']['first_day'] == '2026-10-05'
     assert store.daily_summary(OLD, Decimal('9000'))['cash_balance'] == Decimal('16000')
     assert store.cash_opening(OLD)['amount'] == '8000'
     assert FinanceStore(store.path).cash_opening()['amount'] == '200'
     with pytest.raises(LedgerError, match='уже'):
         store.set_cash_opening(START, '200', 'Повтор')
-    with pytest.raises(LedgerError, match='02.10.2026'):
+    with pytest.raises(LedgerError, match='05.10.2026'):
         store.set_cash_opening(NEXT, '200', 'Неверная дата')
 
 
@@ -80,19 +80,19 @@ def test_unconfirmed_opening_and_missing_days_are_not_silently_zero(tmp_path, ch
         store.add_expense(later, 'admin_it', 'Расход с пропуском', '1')
 
 
-def test_existing_october_2_opening_is_adopted_without_changing_old_table(tmp_path):
+def test_existing_october_5_opening_is_adopted_without_changing_old_table(tmp_path):
     path = tmp_path / 'finance.sqlite3'
     store = FinanceStore(path)
     with closing(store._open()) as c, c:
         c.execute('INSERT INTO accountant_cash_opening VALUES (1,?,?,?,?)',
-                  (START.isoformat(), '123.45', 'Уже подтверждено', '2026-10-02T10:00:00'))
+                  (START.isoformat(), '123.45', 'Уже подтверждено', '2026-10-05T10:00:00'))
     store = FinanceStore(path)
     assert store.cash_opening()['amount'] == '123.45'
     with closing(store._open()) as c:
         assert c.execute('SELECT amount FROM accountant_cash_opening').fetchone() == ('123.45',)
 
 
-def test_period_totals_and_monthly_payroll_exclude_october_1(tmp_path):
+def test_period_totals_and_monthly_payroll_exclude_before_cutover(tmp_path):
     store = initialized(tmp_path)
     store.add_expense(START, 'admin_it', 'Новый расход', '100')
     store.add_supplier_transfer(OLD, 'Поставщик', 'Товар', 'RETRO', '700')
@@ -148,7 +148,7 @@ def test_reserves_debts_and_shokh_do_not_carry_archival_money(tmp_path):
     assert store.reserves(OLD)['shoh']['balance'] == '10000'
 
 
-def test_api_allows_expenses_for_october_2_after_an_old_opening(tmp_path, monkeypatch):
+def test_api_allows_expenses_for_october_5_after_an_old_opening(tmp_path, monkeypatch):
     monkeypatch.setattr('retro.modules.accountant.routes.today_tashkent', lambda: date(2026, 10, 5))
     settings = Settings(manual_handover_only=True, data_dir=tmp_path)
     app = create_app(settings, expense_db_path=tmp_path / 'cashier.sqlite3',
@@ -161,7 +161,7 @@ def test_api_allows_expenses_for_october_2_after_an_old_opening(tmp_path, monkey
         assert client.post('/api/accountant/cash-opening', json={
             'date': START.isoformat(), 'amount': '200', 'note': 'Пересчёт'}).status_code == 201
         response = client.post('/api/accountant/expenses', json={
-            'date': START.isoformat(), 'item_code': 'admin_it', 'note': 'Расход за 2 октября',
+            'date': START.isoformat(), 'item_code': 'admin_it', 'note': 'Расход за 5 октября',
             'amount': '100'})
         assert response.status_code == 201, response.text
         ledger = client.get('/api/accountant/day', params={'date': START.isoformat()}).json()['ledger']
@@ -173,7 +173,7 @@ def test_api_allows_expenses_for_october_2_after_an_old_opening(tmp_path, monkey
         assert month.json()['first'] == START.isoformat()
 
 
-def test_export_starts_on_october_2(tmp_path):
+def test_export_starts_on_october_5(tmp_path):
     finance = initialized(tmp_path)
     state = SimpleNamespace(accountant_finance=finance, settings=Settings(manual_handover_only=True),
                             shokh=ShokhStore(finance.path))
@@ -201,16 +201,16 @@ def test_cash_book_can_read_both_periods_in_one_pass(tmp_path):
         assert book.position(START)[1] == Decimal('1200')
 
 
-def test_founder_month_fact_and_first_week_plan_start_on_october_2():
+def test_founder_month_fact_and_first_week_plan_start_on_october_5():
     history = {day.isoformat(): {'retro': {'revenue': Decimal(amount)}}
                for day, amount in ((OLD, '9999'), (START, '100'), (NEXT, '200'))}
     forecast = {weekday: {'revenue': '0'} for weekday in range(7)}
     assert overview.month_forecast(history, forecast, NEXT)['fact'] == '300.00'
     plan = overview.dividend_week(START, Decimal('300'), {})
     assert plan['start'] == START.isoformat()
-    assert len(plan['days']) == 3
-    assert plan['pace'] == '100.00' and plan['due'] == '0.00'
-    assert plan['days_left'] == 3
+    assert len(plan['days']) == 7
+    assert plan['pace'] == '42.86' and plan['due'] == '0.00'
+    assert plan['days_left'] == 7
 
 
 def test_archival_month_closure_cannot_become_the_october_opening(tmp_path):
@@ -226,7 +226,7 @@ def test_archival_month_closure_cannot_become_the_october_opening(tmp_path):
     assert unknown['cash_balance'] is None
     assert unknown['opening_breakdown']['previous'] is None
     store.set_cash_opening(START, '200', 'Новый период')
-    for n in range(1, 30):
+    for n in range(1, 27):
         store.record_handover(START + timedelta(days=n), Decimal('0'))
     preview = month_closing.month_preview(store, '2026-10', date(2026, 11, 1))
     assert preview['first'] == START.isoformat()
@@ -234,7 +234,7 @@ def test_archival_month_closure_cannot_become_the_october_opening(tmp_path):
     assert preview['closing_balance'] == '1200'
     assert preview['debts']['expenses'] == '0'
     assert preview['includes_earlier'] is False
-    assert len(preview['days']) == 30
+    assert len(preview['days']) == 27
     month_closing.close_month(store, '2026-10', 'Бухгалтер', date(2026, 11, 1))
     store.record_handover(date(2026, 11, 1), Decimal('50'))
     november = store.daily_summary(date(2026, 11, 1), None)
@@ -263,7 +263,7 @@ def test_postgres_migration_and_working_opening_are_idempotent(tmp_path):
             with pytest.raises(LedgerError, match='уже'):
                 reopened.set_cash_opening(START, '999', 'Повтор')
             assert reopened.cash_opening()['amount'] == '200'
-            # Путь обновления уже заполненной прежней версии с якорем на 2 октября.
+            # Путь обновления уже заполненной прежней версии с якорем на 5 октября.
             with closing(database.connect()) as c, c:
                 c.execute('DELETE FROM accountant_working_cash_opening')
                 c.execute('UPDATE accountant_cash_opening SET day=?, amount=? WHERE id=1',
@@ -279,11 +279,11 @@ def test_shoh_month_includes_opening_and_carries_balance_to_next_month(tmp_path)
     from retro.modules.accountant.shoh_balance import shoh_view
     store = FinanceStore(tmp_path / 'opening.sqlite3')
     with store._open() as connection:
-        connection.execute("INSERT INTO accountant_reserves(day,account,kind,amount,note,created_at) VALUES ('2026-10-02','shoh','opening','16187000','Opening','2026-10-02')")
-        connection.execute("INSERT INTO accountant_movements(day,kind,description,amount,item_code,created_at) VALUES ('2026-10-03','other_expense','Шох','20000000','proc_shoh','2026-10-03')")
-        connection.execute("INSERT INTO accountant_reserves(day,account,kind,amount,note,created_at) VALUES ('2026-10-04','shoh','withdrawal','24392000','Purchases','2026-10-04')")
+        connection.execute("INSERT INTO accountant_reserves(day,account,kind,amount,note,created_at) VALUES ('2026-10-05','shoh','opening','16187000','Opening','2026-10-05')")
+        connection.execute("INSERT INTO accountant_movements(day,kind,description,amount,item_code,created_at) VALUES ('2026-10-06','other_expense','Шох','20000000','proc_shoh','2026-10-06')")
+        connection.execute("INSERT INTO accountant_reserves(day,account,kind,amount,note,created_at) VALUES ('2026-10-07','shoh','withdrawal','24392000','Purchases','2026-10-07')")
         connection.commit()
-    october = shoh_view(store, date(2026, 10, 6))
+    october = shoh_view(store, date(2026, 10, 8))
     assert october['month_start'] == '16187000'
     assert october['balance'] == '11795000'
     assert round(Decimal(october['month_spent']) / (Decimal(october['month_start']) + Decimal(october['month_given'])) * 100) == 67

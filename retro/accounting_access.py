@@ -7,9 +7,9 @@ from pydantic import TypeAdapter, ValidationError
 from retro.accounting_period import ACCOUNTING_START
 
 DATE_FIELDS = {'date', 'day', 'start', 'end', 'first', 'last', 'paid_day',
-               'handover_date', 'received_date', 'cashier_date'}
+               'handover_date', 'received_date', 'cashier_date', 'work_day'}
 DATE_ADAPTER = TypeAdapter(date)
-MESSAGE = 'Учёт доступен со 02.10.2026. Более ранние даты недоступны.'
+MESSAGE = f'Учёт доступен с {ACCOUNTING_START:%d.%m.%Y}. Более ранние даты недоступны.'
 
 
 def check_dates(values):
@@ -26,7 +26,7 @@ def check_dates(values):
                 selected = DATE_ADAPTER.validate_python(value)
             except ValidationError:
                 continue
-            # A receipt on Oct 2 may refer to the cashier's Oct 1 shift.
+            # A first-day receipt may refer to the preceding cashier shift.
             if key == 'cashier_date':
                 minimum = ACCOUNTING_START - timedelta(days=1)
             else:

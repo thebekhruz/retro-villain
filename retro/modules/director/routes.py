@@ -71,7 +71,7 @@ def period_or_422(start: date | None, end: date | None, days: int | None = None)
     try:
         first, last = resolve_period(today_tashkent(), start, end, days)
         if last < ACCOUNTING_START:
-            raise DataError('Учёт доступен со 02.10.2026.')
+            raise DataError(f'Учёт доступен со {ACCOUNTING_START:%d.%m.%Y}.')
         return max(first, ACCOUNTING_START), last
     except DataError as error:
         raise HTTPException(422, str(error)) from None

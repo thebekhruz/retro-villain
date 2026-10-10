@@ -74,7 +74,7 @@
     const next = X.defaults(selected, current.basis);
     $('extra-paid').value = next.paid; $('extra-work').value = next.work;
     $('extra-paid').max = $('extra-work').max = current.today;
-    $('extra-paid').min = current.entry_start; $('extra-work').min = X.shiftDay(current.entry_start, -1);
+    $('extra-paid').min = current.entry_start; $('extra-work').min = (current.shift_start || current.entry_start);
     fillPeople(current);
     hint();
   }

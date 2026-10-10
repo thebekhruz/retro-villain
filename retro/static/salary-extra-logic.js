@@ -72,15 +72,15 @@
   }
 
   /* Ошибка ввода или null. Даты — как у сервера: выплата с начала учёта и не
-     в будущем, смена не позже выплаты и не раньше 01.10.2026. */
+     в будущем, смена не позже выплаты и не раньше 05.10.2026. */
   function check({person,work,paid,amount,note},data){
     if(!person)return 'Выберите сотрудника из списка.';
     if(!/^\d{4}-\d{2}-\d{2}$/.test(paid||''))return 'Укажите дату выплаты.';
     if(!/^\d{4}-\d{2}-\d{2}$/.test(work||''))return 'Укажите дату смены.';
-    if(paid<data.entry_start)return 'Доп. выплаты вводятся с 02.10.2026 — с начала рабочего учёта.';
+    if(paid<data.entry_start)return 'Доп. выплаты вводятся с 05.10.2026 — с начала рабочего учёта.';
     if(paid>data.today)return 'Нельзя записать выплату будущим днём.';
     if(work>paid)return 'Смена не может быть позже дня выплаты.';
-    if(work<shiftDay(data.entry_start,-1))return 'Смена — не раньше 01.10.2026: с неё начинается ручная ведомость.';
+    if(work<(data.shift_start||data.entry_start))return 'Смена — не раньше 05.10.2026: с неё начинается ручная ведомость.';
     if(!inPeriod(person,work))return outsideText(person,work);
     if(amount===null||!(amount>0))return 'Введите сумму цифрами, больше нуля.';
     if(!String(note||'').trim())return 'Укажите назначение: за что выплата.';

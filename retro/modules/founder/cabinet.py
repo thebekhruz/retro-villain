@@ -68,6 +68,8 @@ def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS, *
     из сейфа в понедельник выдачи («Выдать собственнику из сейфа» в 2a —
     резерв уменьшается, остаток бухгалтера не меняется). Недели без цели и
     без отложенного не показываем: истории там нет."""
+    if monday - timedelta(days=1) < period_start(as_of or monday):
+        return []
     first = monday - timedelta(days=7 * weeks)
     flows = overview.daily_flows(state.accountant_finance.cash_flows_between(
         first, monday - timedelta(days=1)))

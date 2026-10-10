@@ -20,7 +20,7 @@
 """
 
 from contextlib import closing
-from datetime import date, timedelta
+from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
@@ -35,10 +35,9 @@ from .ledger import LedgerError, amount_value, ensure_open, lock_day, now_stamp,
 
 # Ссылка расхода на доп. выплату: `extra:<сотрудник>:<ключ>`.
 EXTRA_REFERENCE = 'extra:'
-# Как у клетки «Зарплата · день»: выплаты — с начала рабочего учёта, самая
-# ранняя смена — та, что выдают в первый его день.
+# Смена и фактическая доп. выплата — не раньше начала рабочего учёта.
 ENTRY_START = ACCOUNTING_START
-FIRST_SHIFT = ENTRY_START - timedelta(days=1)
+FIRST_SHIFT = ENTRY_START
 TEMPORARY = 'temporary'
 
 COLUMNS = ('id', 'employee_id', 'name', 'role', 'group', 'temporary', 'work_day', 'paid_day', 'amount',
@@ -79,13 +78,13 @@ def create_tables(connection) -> None:
 
 def check_days(work_day: date, paid_day: date) -> None:
     if paid_day < ENTRY_START:
-        raise LedgerError('Доп. выплаты вводятся с 02.10.2026 — с начала рабочего учёта.')
+        raise LedgerError(f'Доп. выплаты вводятся с {ACCOUNTING_START:%d.%m.%Y} — с начала рабочего учёта.')
     if paid_day > today_tashkent():
         raise LedgerError('Нельзя записать выплату будущим днём.')
     if work_day > paid_day:
         raise LedgerError('Смена не может быть позже дня выплаты.')
     if work_day < FIRST_SHIFT:
-        raise LedgerError('Смена — не раньше 01.10.2026: с неё начинается ручная ведомость.')
+        raise LedgerError(f'Смена — не раньше {ACCOUNTING_START:%d.%m.%Y}: с неё начинается ручная ведомость.')
 
 
 def _item(row) -> dict:

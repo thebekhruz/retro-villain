@@ -26,8 +26,8 @@ def stores(tmp_path, monkeypatch):
     person = roster.add(name='Сотрудник без Hikvision и ставки', role='официант', rate=None,
                         group_name='Обслуживание зала')
     for offset in range(9):
-        finance.record_handover(date(2026, 10, 2)+timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 2), '1000000', 'Начало')
+        finance.record_handover(date(2026, 10, 5)+timedelta(days=offset), Decimal(0))
+    finance.set_cash_opening(date(2026, 10, 5), '1000000', 'Начало')
     return finance, roster, person
 
 
@@ -157,8 +157,8 @@ def test_employee_added_after_the_shift_takes_the_current_rate(stores):
         roster_module.today_tashkent = roster_module_today
     data = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
     cells = next(p for p in data['people'] if p['id'] == late.id)['cells']
-    assert cells['2026-10-04']['editable'] is True and cells['2026-10-04']['rate'] == '170000'
-    finance.set_salary_day_cell(date(2026, 10, 4), late.id, '170000', '0')
+    assert cells['2026-10-06']['editable'] is True and cells['2026-10-06']['rate'] == '170000'
+    finance.set_salary_day_cell(date(2026, 10, 6), late.id, '170000', '0')
     assert rows(finance, 'accountant_accruals')[-1][3] == 'Новенький'
 
 
@@ -273,7 +273,7 @@ def test_matrix_paid_day_alignment_missing_cells_and_submitted_reports(stores):
         connection.execute('INSERT INTO accountant_day_reports VALUES (?,?,?,?)',
                            (PAID.isoformat(), '2026-10-07', 'Бухгалтер', '{}'))
     data = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))
-    assert data['entry_start'] == '2026-10-02'
+    assert data['entry_start'] == '2026-10-05'
     cells = data['people'][0]['cells']
     assert len(cells) == 31
     assert cells['2026-10-01'] == dict(amount='0', work_day='2026-09-30', editable=False, rate=None)
@@ -325,13 +325,13 @@ def test_cell_rate_follows_the_shift_day_not_today(stores, monkeypatch):
 
 
 def test_past_days_since_accounting_start_are_editable_like_month_sheet(stores):
-    """Прошедшие дни месяца отмечаются, как в «Зарплате · месяц»: с 02.10."""
+    """Прошедшие дни месяца отмечаются, как в «Зарплате · месяц»: смена с 05.10, выплата с 06.10."""
     finance, _, person = stores
-    result = finance.set_salary_day_cell(date(2026, 10, 3), person.id, '180000', '0')
-    assert result['work_day'] == '2026-10-02'
+    result = finance.set_salary_day_cell(date(2026, 10, 6), person.id, '180000', '0')
+    assert result['work_day'] == '2026-10-05'
     cells = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31))['people'][0]['cells']
-    assert cells['2026-10-03']['amount'] == '180000' and cells['2026-10-03']['editable'] is True
-    assert cells['2026-10-05']['editable'] is True
+    assert cells['2026-10-06']['amount'] == '180000' and cells['2026-10-06']['editable'] is True
+    assert cells['2026-10-05']['editable'] is False
     assert cells['2026-10-01']['editable'] is False
 
 

@@ -13,7 +13,7 @@ from .audit import record_audit
 from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_day, now_stamp, plain
 
 # Прошедшие дни месяца отмечаются, как в «Зарплате · месяц»: с начала рабочего учёта
-# (на 02.10 стоит начальный остаток кассы). Дни, где зарплату уже провели по-старому —
+# (на 05.10 стоит начальный остаток кассы). Дни, где зарплату уже провели по-старому —
 # общей суммой или подтверждённой сменой, — остаются закрытыми: двойной выплаты нет.
 ENTRY_START = ACCOUNTING_START
 MANUAL_STATUS = 'manual_salary'
@@ -30,8 +30,8 @@ class SalaryCellChanged(LedgerError):
 
 
 def _assert_day(paid_day):
-    if paid_day < ENTRY_START:
-        raise LedgerError('Зарплата по сотрудникам вводится с 02.10.2026 — с начала рабочего учёта.')
+    if paid_day - timedelta(days=1) < ENTRY_START:
+        raise LedgerError(f'Смены для зарплаты доступны с {ACCOUNTING_START:%d.%m.%Y}; выплата — следующим днём.')
     if paid_day > today_tashkent():
         raise LedgerError('Нельзя записать зарплату за будущий день.')
 
@@ -273,6 +273,7 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
             # то, что задвоило бы деньги: выплату этой смены в другой день или выплату
             # другой смены в этот день.
             editable = (not person['archived'] and ENTRY_START.isoformat() <= paid_day <= today.isoformat()
+                        and work_day >= ENTRY_START.isoformat()
                         and work_day > closed_through and paid_day > closed_through)
             # Смена вне периода временного — клетка заперта и пуста (T-434).
             outside = (employee_id in bounds and not person['archived']
@@ -316,7 +317,7 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
                 if person is not None and work in shifts:
                     person['cells'][shifts[work]]['attendance'] = cell_attendance(row)
     return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(),
-                shift_start=(ENTRY_START-timedelta(days=1)).isoformat(), basis=basis, days=days,
+                shift_start=ENTRY_START.isoformat(), basis=basis, days=days,
                 people=list(people.values()), extras=extras,
                 aggregate_days=[dict(day=day, amount=plain(total)) for day, total in sorted(aggregate.items())],
                 closed_through=closed_through or None)

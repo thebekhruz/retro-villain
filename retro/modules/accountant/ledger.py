@@ -199,7 +199,8 @@ class CashBook:
         anchor = connection.execute('SELECT day,amount FROM accountant_cash_opening WHERE id=1').fetchone()
         self.anchor = anchor
         self.working_anchor = connection.execute(
-            'SELECT day,amount FROM accountant_working_cash_opening WHERE id=1').fetchone()
+            'SELECT day,amount FROM accountant_working_cash_opening WHERE id=1 AND day=?',
+            (ACCOUNTING_START.isoformat(),)).fetchone()
         # Точки отсчёта: (день, остаток на начало этого дня, откуда).
         self.anchors = [(anchor[0], anchor[1], 'opening')] if anchor and anchor[0] < ACCOUNTING_START.isoformat() else []
         if self.working_anchor:
@@ -481,7 +482,7 @@ class FinanceStore:
                     created_at TEXT NOT NULL
                 );
             ''')
-            # Уже подтверждённый остаток ровно на 2 октября можно использовать.
+            # Уже подтверждённый остаток ровно на 5 октября можно использовать.
             # Сентябрьский остаток остаётся в архивной таблице без изменений.
             connection.execute('INSERT INTO accountant_working_cash_opening '
                                'SELECT * FROM accountant_cash_opening WHERE day=? '
@@ -895,7 +896,7 @@ class FinanceStore:
 
     def set_cash_opening(self, day: date, amount, note):
         if day >= ACCOUNTING_START and day != ACCOUNTING_START:
-            raise LedgerError('Начальный остаток нужно указать на 02.10.2026 — первый день учёта.')
+            raise LedgerError(f'Начальный остаток нужно указать на {ACCOUNTING_START:%d.%m.%Y} — первый день учёта.')
         table = cash_opening_table(day)
         value = amount_value(amount, allow_zero=True)
         note = required_text(note, 'основание начального остатка')
@@ -922,7 +923,7 @@ class FinanceStore:
 
     @once
     def accounting_start(self, through: date = ACCOUNTING_START) -> date | None:
-        """Рабочий учёт — со 2 октября; архив — со своей первой записи."""
+        """Рабочий учёт — с 5 октября; архив — со своей первой записи."""
         if through >= ACCOUNTING_START:
             return ACCOUNTING_START
         with closing(self._open()) as connection:
@@ -977,7 +978,7 @@ class FinanceStore:
     def available_cash(self, connection, day: date, cashier_amount: Decimal | None):
         if day >= ACCOUNTING_START and not connection.execute(
                 'SELECT 1 FROM accountant_working_cash_opening WHERE id=1').fetchone():
-            raise LedgerError('Укажите подтверждённый начальный остаток на 02.10.2026.')
+            raise LedgerError(f'Укажите подтверждённый начальный остаток на {ACCOUNTING_START:%d.%m.%Y}.')
         has_handovers = connection.execute('SELECT 1 FROM accountant_handover_days LIMIT 1').fetchone()
         if cashier_amount is None and not has_handovers and day < ACCOUNTING_START:
             return self._cash_balance(connection, day)
@@ -1788,7 +1789,7 @@ class FinanceStore:
                     raise LedgerError('Начисление не найдено.')
                 self._guard_manual_salary_payment(connection, accrual_id)
                 if accrual[0] < period_start(paid_day).isoformat():
-                    raise LedgerError('Начисление относится к архиву до 02.10.2026.')
+                    raise LedgerError(f'Начисление относится к архиву до {ACCOUNTING_START:%d.%m.%Y}.')
                 if paid_day.isoformat() < accrual[0]:
                     raise LedgerError('Выплата не может быть раньше рабочего дня.')
                 already_paid = sum((Decimal(row[0]) for row in connection.execute(

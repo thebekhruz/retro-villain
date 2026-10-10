@@ -68,7 +68,7 @@ def confirmed(store, day, amount):
 
 
 def october_to_c01(store):
-    """Учёт с 02.10 (2 000 000), касса за 04.10 — 490 000: конец 05.10 = 2 490 000.
+    """Учёт с 05.10 (ноль), касса за 04.10 — 490 000: конец 05.10 = 490 000.
     06.10 — снимок C-01: касса за 05.10 = 11 014 000 подтверждена, сантехнические
     работы 200 000, кассир выдал Шоху 5 000 000 прямо из кассы."""
     for day in (2, 3, 4, 5):
@@ -88,13 +88,13 @@ def flow(store, day):
 def test_c01_cash_is_opening_plus_confirmed_receipts_minus_outflows(store):
     october_to_c01(store)
     day = flow(store, 6)
-    assert (day['opening'], day['handover_counted'], day['handover_status']) == ('2490000', '11014000', 'confirmed')
+    assert (day['opening'], day['handover_counted'], day['handover_status']) == ('490000', '11014000', 'confirmed')
     assert (day['salary'], day['monthly'], day['shoh'], day['other'], day['transfers']) == ('0', '0', '0', '200000', '0')
-    # 2 490 000 + 11 014 000 − 0 − 0 − 200 000 = 13 304 000. Выдача Шоху из кассы
+    # 490 000 + 11 014 000 − 0 − 0 − 200 000 = 11 304 000. Выдача Шоху из кассы
     # кассира уже вычтена из передачи: в расходах бухгалтера её нет.
-    assert day['outflows'] == '200000' and day['closing'] == '13304000'
+    assert day['outflows'] == '200000' and day['closing'] == '11304000'
     assert [give['amount'] for give in shokh_gives(store, D(6))] == ['5000000']
-    assert store.daily_summary(D(6), None)['cash_balance'] == Decimal('13304000')
+    assert store.daily_summary(D(6), None)['cash_balance'] == Decimal('11304000')
 
 
 # ── Б-08: доп. зарплата временному персоналу ───────────────────────────────
@@ -122,7 +122,7 @@ def test_extra_salary_goes_to_salaries_once_and_not_to_other_or_monthly_plan(sto
     store.add_expense(D(7), EXTRA_SALARY_ITEM, 'хостес Карамат · временная', '150000')
     day = flow(store, 7)
     assert (day['salary'], day['monthly'], day['other'], day['outflows']) == ('150000', '0', '0', '150000')
-    assert day['closing'] == str(Decimal('13304000') + Decimal('1000000') - Decimal('150000'))
+    assert day['closing'] == str(Decimal('11304000') + Decimal('1000000') - Decimal('150000'))
     # План окладов месяца она не уменьшает.
     assert store.reserves(D(7))['monthly']['paid'] == '0'
 
@@ -166,14 +166,14 @@ def test_cash_dividends_are_named_apart_but_reports_keep_their_sums(store):
     confirmed(store, 7, '70000000')
     store.add_expense(D(7), 'distribution_dividends', 'учредителю', '35000000')
     store.add_expense(D(7), 'admin_other', 'наклейки', '950000')
-    store.reserve_entry(D(2), 'dividends', 'opening', '0', 'Сейф пуст')
+    assert store.reserves(D(5))['dividends']['balance'] == '0'
     store.reserve_entry(D(7), 'dividends', 'transfer', '4000000', 'Дивиденды в сейф',
                         cashier_amount=Decimal('70000000'))
     day = flow(store, 7)
     # «Прочие» по-прежнему включают дивиденды из кассы — так сверяются сданные
     # раньше отчёты; экран показывает их своей строкой из `other_dividends`.
     assert (day['other'], day['other_dividends'], day['transfers']) == ('35950000', '35000000', '4000000')
-    assert day['closing'] == str(Decimal('13304000') + Decimal('70000000') - Decimal('39950000'))
+    assert day['closing'] == str(Decimal('11304000') + Decimal('70000000') - Decimal('39950000'))
     report = month_closing.day_report(store, D(6), flow_json(store.day_flow(D(6))))
     assert report['changed'] is False and 'other_dividends' not in month_closing.REPORT_KEYS
 
@@ -228,9 +228,9 @@ def test_closed_month_and_debt_payments_are_not_moved(store):
     old = store.add_expense(sep_29, 'admin_other', 'временные сотрудники', '200')
     store.record_handover(sep_30, Decimal('300'))
     month_closing.close_month(store, '2026-09', 'Лина', D(1))
-    confirmed(store, 2, '5000')
+    confirmed(store, 5, '5000')
     apply_october_opening(store)
-    store.record_debt(D(2), 'admin_other', 'временные сотрудники за неделю', '3000', '1000')
+    store.record_debt(D(5), 'admin_other', 'временные сотрудники за неделю', '3000', '1000')
     rows = {row['id']: row for row in candidates(store.db)}
     assert rows[old]['blocked'] == 'месяц закрыт'
     paid = next(row for row in rows.values() if row['id'] != old)

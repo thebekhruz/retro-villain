@@ -60,7 +60,8 @@ def seed(target, monkeypatch):
         d=roster.add(name='Карамат', role='Хостес · временная', rate='150000', group_name='Встреча гостей'))
     for offset in range(8):
         finance.record_handover(date(2026, 10, 2 + offset), Decimal('5000000'))
-    finance.set_cash_opening(oct_(2), '20000000', 'Пересчёт кассы')
+    finance.set_cash_opening(oct_(2), '20000000', 'Архивный остаток')
+    finance.set_cash_opening(oct_(5), '20000000', 'Пересчёт на начало нового периода')
     for index, (who, day, hour, minute) in enumerate([('a', 2, 9, 30), ('a', 5, 9, 40), ('a', 6, 9, 35),
                                                      ('b', 6, 10, 58), ('a', 7, 9, 38), ('a', 8, 9, 31),
                                                      ('b', 8, 10, 58)]):
@@ -68,7 +69,9 @@ def seed(target, monkeypatch):
                                          datetime(2026, 10, day, hour, minute, tzinfo=TZ)), people[who].id)
     attendance.set_manual_mark(people['c'].id, oct_(7), False, 'Бухгалтер')
     # 2–5 октября: выдача 03.10 за смену 02.10 по человеку и общая строка 04.10.
-    finance.set_salary_day_cell(oct_(3), people['a'].id, '360000', '0')
+    finance.confirm_payroll(oct_(2), [PayrollRow(people['a'].id, people['a'].name, 'Менеджер',
+        'Управление', 'on_time', None, Decimal('360000'), Decimal('360000'), False)], 'Бухгалтер')
+    finance.pay_salary(finance.accrued_employees(oct_(2))[people['a'].id], oct_(3), '360000')
     finance.add_expense(oct_(4), 'salary_staff', 'Зарплата персонал', '1850000')
     # Смена 05.10: Ихтиер пришёл — выдачи 06.10 нет ни по людям, ни общей строкой.
     # Выплата 07.10: сначала общая строка, потом выдачи по людям — двойной учёт.
@@ -123,7 +126,7 @@ def check_findings(payload):
     # История 2–5 октября на месте и задним числом не правилась.
     history = payload['history_2_5']
     assert (history['payments'], history['general_salary_rows'], history['changed']) == (1, 1, [])
-    assert payload['totals'] == dict(payments='1590000', general='2350000')
+    assert payload['totals'] == dict(payments='1230000', general='500000')
 
 
 def snapshot(directory: Path) -> dict:

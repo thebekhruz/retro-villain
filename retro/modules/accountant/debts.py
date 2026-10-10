@@ -3,7 +3,7 @@
 from contextlib import closing
 from decimal import Decimal
 
-from retro.accounting_period import period_start
+from retro.accounting_period import ACCOUNTING_START, period_start
 
 from .expense_catalog import EXTRA_ITEM, ITEMS
 from .ledger import EXTRA_ONLY, LedgerError, amount_value, ensure_open, now_stamp, required_text
@@ -98,7 +98,7 @@ def pay_debt(store, debt_id, day, amount, cashier_amount):
                 raise LedgerError('Долг не найден.')
             created_day, item_code, description, total = debt
             if created_day < period_start(day).isoformat():
-                raise LedgerError('Долг относится к архиву до 02.10.2026.')
+                raise LedgerError(f'Долг относится к архиву до {ACCOUNTING_START:%d.%m.%Y}.')
             if day.isoformat() < created_day:
                 raise LedgerError('Оплата не может быть раньше записи долга.')
             left = Decimal(total) - _payments(connection, debt_id, '9999-12-31')
