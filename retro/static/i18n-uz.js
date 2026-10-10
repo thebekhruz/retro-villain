@@ -3217,3 +3217,38 @@ globalThis.RetroTemplatesUz.push(
   [/^Должность «(.+)» — из направления «(.+)», а не «(.+)»\.$/, "«$1» lavozimi «$2» yo'nalishiga tegishli, «$3»ga emas."],
 );
 /* ── /T-432 ── */
+
+/* ── T-433 Вход по номеру телефона и SMS-коду ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Номер телефона': "Telefon raqami",
+  'Получить код': "Kodni olish",
+  'Код из SMS': "SMS'dagi kod",
+  'Отправить код ещё раз': "Kodni qayta yuborish",
+  'Другой номер': "Boshqa raqam",
+  'Войти по номеру телефона': "Telefon raqami orqali kirish",
+  'Войти по логину и паролю': "Login va parol orqali kirish",
+  'Введите номер телефона — пришлём код в SMS.': "Telefon raqamingizni kiriting — kodni SMS orqali yuboramiz.",
+  'Нет связи с сервером. Проверьте интернет и повторите.': "Server bilan aloqa yo'q. Internetni tekshiring va qayta urinib ko'ring.",
+  'Не удалось отправить код. Повторите.': "Kodni yuborib bo'lmadi. Qayta urinib ko'ring.",
+  'Не удалось войти. Повторите.': "Kirib bo'lmadi. Qayta urinib ko'ring.",
+  'Введите номер полностью: +998 и 9 цифр.': "Raqamni to'liq kiriting: +998 va 9 ta raqam.",
+  'Введите 6 цифр из SMS.': "SMS'dagi 6 ta raqamni kiriting.",
+  // Ответы сервера
+  'Вход по SMS пока не подключён. Войдите по логину и паролю.': "SMS orqali kirish hali ulanmagan. Login va parol orqali kiring.",
+  'Этот номер не подключён к панели. Обратитесь к администратору.': "Bu raqam panelga ulanmagan. Administratorga murojaat qiling.",
+  'SMS не отправлено, попробуйте позже.': "SMS yuborilmadi, keyinroq urinib ko'ring.",
+  'Сначала запросите код.': "Avval kodni so'rang.",
+  'Код истёк — запросите новый.': "Kodning muddati tugadi — yangisini so'rang.",
+  'Попытки закончились — запросите новый код.': "Urinishlar tugadi — yangi kod so'rang.",
+  'Неверный код. Попытки закончились — запросите новый код.': "Kod noto'g'ri. Urinishlar tugadi — yangi kod so'rang.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Неверный код\. Осталось попыток: (\d+)\.$/, "Kod noto'g'ri. Qolgan urinishlar: $1."],
+  [/^Отправить ещё раз через (\d+:\d\d)$/, "$1 dan keyin qayta yuborish"],
+  [/^Код отправлен на (\+998[\d\s]+)\.$/, "Kod $1 raqamiga yuborildi."],
+  [/^Код уже отправлен на (\+998[\d\s]+)\.$/, "Kod $1 raqamiga allaqachon yuborilgan."],
+  [/^Новый код можно запросить через (\d+) с\.$/, "Yangi kodni $1 soniyadan keyin so'rash mumkin."],
+  [/^Слишком много SMS на этот номер\. Попробуйте через (\d+) мин\.$/, "Bu raqamga juda ko'p SMS yuborildi. $1 daqiqadan keyin urinib ko'ring."],
+  [/^Слишком много запросов кода с этого устройства\. Попробуйте через (\d+) мин\.$/, "Bu qurilmadan juda ko'p kod so'raldi. $1 daqiqadan keyin urinib ko'ring."],
+);
+/* ── /T-433 ── */
