@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/accountant.css"><link rel="stylesheet" href="/static/payroll.css">
   <link rel="stylesheet" href="/static/salary-day.css"><link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/employees-logic.js" defer></script><script src="/static/salary-day-logic.js" defer></script><script src="/static/salary-day.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/employees-logic.js" defer></script><script src="/static/salary-day-logic.js" defer></script><script src="/static/salary-extra-logic.js" defer></script><script src="/static/salary-extra.js" defer></script><script src="/static/salary-day.js" defer></script>
 </head>
 <body class="pr-page salary-day-page" data-page="salary-day">
 <aside class="sidebar">
@@ -33,6 +33,7 @@
           <button id="month-next" class="pr-month-arrow" type="button" aria-label="Следующий месяц">›</button>
         </div>
         <button id="salary-refresh" class="pr-btn" type="button">Обновить</button>
+        <button id="salary-download" class="pr-btn" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"></path></svg>Скачать<span class="pr-btn-type">Excel</span></button>
         <button class="pr-btn pr-btn-dark" type="button" data-save><span aria-hidden="true">✓</span>Сохранить</button>
       </div>
     </div>
@@ -56,6 +57,22 @@
         <div class="pr-scroll" id="sheet-scroll"><div class="pr-grid" id="sheet-grid" role="table" aria-label="Выплаты сменным сотрудникам"></div></div>
         <p id="sd-nothing" class="sd-nothing" hidden>Никого не нашли. Сбросьте поиск или выберите «Все».</p>
         <div id="sheet-empty" class="empty-state" hidden><p>Сменных сотрудников пока нет. Добавьте их в «Сотрудниках».</p></div>
+      </section>
+      <!-- Доп. выплаты (ТЗ 09.10, Б-05): список месяца и строка ввода в конце — как
+           «Оклады, выданные сегодня» в «Зарплате · месяц». В клетку не входят, в итоги — да. -->
+      <section class="fd-sec pr-today sd-extra" id="extra-section" aria-labelledby="extra-title">
+        <div class="fd-sec-head"><span class="fd-sec-titles"><span class="fd-kicker">СМЕННЫЕ И ВРЕМЕННЫЕ · РАЗОВАЯ ВЫПЛАТА</span><span class="fd-sec-title" id="extra-title">Доп. выплаты</span></span><span class="fd-sec-sum" id="extra-sum"></span></div>
+        <div id="extra-list" aria-live="polite"></div>
+        <form id="extra-form" class="fd-mo-form sd-extra-form" novalidate>
+          <input id="extra-employee" class="sd-extra-who" list="extra-people" placeholder="Кому · имя или должность" aria-label="Кому выдаём доп. выплату" autocomplete="off">
+          <datalist id="extra-people"></datalist>
+          <label class="sd-extra-date" for="extra-work"><span>Смена</span><input id="extra-work" type="date" required></label>
+          <label class="sd-extra-date" for="extra-paid"><span>Выплата</span><input id="extra-paid" type="date" required></label>
+          <input id="extra-amount" class="fd-money sd-extra-sum" data-money-hint="off" inputmode="decimal" placeholder="Сумма, сум" aria-label="Сумма, сум" autocomplete="off">
+          <input id="extra-note" class="sd-extra-note" maxlength="160" placeholder="Назначение: за что" aria-label="Назначение выплаты" autocomplete="off">
+          <button type="submit" class="fd-btn-give" id="extra-submit">Записать выплату</button>
+        </form>
+        <p class="fd-mo-hint" id="extra-hint">Разовая выплата сверх клетки: уйдёт расходом в день выплаты и войдёт в итоги ведомости.</p>
       </section>
     </div>
     <footer class="pr-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Зарплата · день</span><span>Время Ташкента · UZS</span></footer>

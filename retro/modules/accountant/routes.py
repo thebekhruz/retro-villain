@@ -268,6 +268,8 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
                              manual_absent_count=sum(row.status == 'manual_absent' for row in rows),
                              **state),
                 monthly_payments=monthly_payments_json(finance, request.app.state.accountant_roster, day),
+                # Доп. выплаты дня (Б-05): строка «Доп. выплаты · N чел.» журнала раскрывается по ним.
+                extra_payouts=finance.extra_payouts(day, day),
                 # Перечисления поставщикам — безнал: в ledger (наличные) их нет.
                 supplier_transfers=transfers,
                 supplier_transfers_total=str(sum((Decimal(row['amount']) for row in transfers), Decimal(0))),
@@ -473,6 +475,97 @@ async def salary_day_cell(request: Request, body: SalaryDayCellInput):
         raise HTTPException(409, str(error)) from None
     except LedgerError as error:
         finance_error(error)
+
+
+class ExtraPayoutInput(BaseModel):
+    employee_id: int = Field(gt=0)
+    work_day: date
+    paid_day: date
+    amount: str
+    note: str
+    # Повтор похож на ту же выдачу (выплата в клетке, такая же доп. выплата):
+    # экран показал предупреждение, бухгалтер подтвердил.
+    confirm: bool = False
+
+
+class ExtraPayoutUpdate(BaseModel):
+    work_day: date
+    amount: str
+    note: str
+    expected_amount: str | None = None
+
+
+def extra_payout_error(error: LedgerError):
+    from .extra_payouts import ExtraPayoutConfirm
+    if isinstance(error, ExtraPayoutConfirm):
+        # Не отказ, а вопрос: экран показывает причину и просит подтвердить.
+        raise HTTPException(409, dict(message=str(error), confirm=True)) from None
+    if 'не найдена' in str(error):
+        raise HTTPException(404, str(error)) from None
+    finance_error(error)
+
+
+@router.post('/salary-day/extra', status_code=201)
+async def add_extra_payout(request: Request, body: ExtraPayoutInput):
+    """Доп. выплата из «Зарплата · день» (Б-05): расход в день выплаты."""
+    from .extra_payouts import check_days
+    try:
+        check_days(body.work_day, body.paid_day)
+        amount_value(body.amount)
+    except LedgerError as error:
+        finance_error(error)
+    cashier_amount = await required_handover(request, body.paid_day)
+    try:
+        return await asyncio.to_thread(
+            request.app.state.accountant_finance.add_extra_payout, employee_id=body.employee_id,
+            work_day=body.work_day, paid_day=body.paid_day, amount=body.amount, note=body.note,
+            confirm=body.confirm, by=changed_by(request), cashier_amount=cashier_amount)
+    except LedgerError as error:
+        extra_payout_error(error)
+
+
+@router.put('/salary-day/extra/{payout_id}')
+async def update_extra_payout(request: Request, payout_id: int, body: ExtraPayoutUpdate):
+    finance = request.app.state.accountant_finance
+    current = await asyncio.to_thread(finance.extra_payout, payout_id)
+    if current is None:
+        raise HTTPException(404, 'Доп. выплата не найдена.')
+    try:
+        amount = amount_value(body.amount)
+    except LedgerError as error:
+        finance_error(error)
+    # Касса нужна, только если денег выдаётся больше: уменьшение их возвращает.
+    cashier_amount = (await required_handover(request, date.fromisoformat(current['paid_day']))
+                      if amount > Decimal(current['amount']) else None)
+    try:
+        return await asyncio.to_thread(
+            finance.update_extra_payout, payout_id, amount=body.amount, work_day=body.work_day,
+            note=body.note, expected_amount=body.expected_amount, by=changed_by(request),
+            cashier_amount=cashier_amount)
+    except LedgerError as error:
+        extra_payout_error(error)
+
+
+@router.delete('/salary-day/extra/{payout_id}', status_code=204)
+def delete_extra_payout(request: Request, payout_id: int):
+    try:
+        request.app.state.accountant_finance.delete_extra_payout(payout_id, by=changed_by(request))
+    except LedgerError as error:
+        extra_payout_error(error)
+
+
+@router.get('/salary-day/export')
+def download_salary_day(request: Request, month: str, group: str | None = None, q: str | None = None):
+    """«Зарплата · день» в Excel для печати (Б-07): вся ведомость или выборка
+    (группа, поиск) — режим написан в шапке файла."""
+    from .salary_day_export import salary_day_workbook
+    data = salary_day_month(request, month)
+    group = (group or '').strip() or None
+    query = (q or '').strip() or None
+    body = salary_day_workbook(data, group=group, query=query)
+    name = f'Retro-salary-day-{month}' + ('-selection' if group or query else '') + '.xlsx'
+    return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+                    headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
 
 @router.get('/payroll/month')

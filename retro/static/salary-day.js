@@ -15,6 +15,7 @@
   const groupOf=person=>person.group||'Без группы';
   const visible=person=>(filter.tab==='all'||groupOf(person)===filter.tab)
     &&(!globalThis.EmployeesLogic||globalThis.EmployeesLogic.matchesQuery(filter.q,person.name,person.role));
+  const isFiltered=()=>filter.tab!=='all'||!!filter.q.trim();
   const inflight=new Map();
   const monthTitle=month=>new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T12:00:00Z'));
   function message(text,error=false){
@@ -22,12 +23,15 @@
     // Клетку жмут внизу таблицы — строка сверху не видна, ошибку дублирует тост.
     if(error&&text)globalThis.RetroToast?.show(text,'error');
   }
-  function controls(){['month-prev','month-next','month-input','salary-refresh'].forEach(id=>$(id).disabled=writes>0);$('month-prev').disabled=writes>0||$('month-input').value<='2026-10';if(today)$('month-next').disabled=writes>0||$('month-input').value>=today.slice(0,7);}
+  // Успех — тостом: строка над таблицей остаётся для ошибок и предупреждений.
+  const done=text=>{message('');globalThis.RetroToast?.show(text,'ok');};
+  function controls(){['month-prev','month-next','month-input','salary-refresh','salary-download'].forEach(id=>$(id).disabled=writes>0);$('month-prev').disabled=writes>0||$('month-input').value<='2026-10';if(today)$('month-next').disabled=writes>0||$('month-input').value>=today.slice(0,7);}
   const personOf=id=>current?.people.find(p=>p.id===id);
   const cellId=(personId,day)=>'sd-c-'+personId+'-'+day;
   function view(person,day){
     const amount=L.parseAmount(person.cells?.[day]?.amount??0)||0, rate=L.rateOf(person,day);
-    return {amount,rate,state:L.cellState(amount,rate),editable:L.canEdit(current,person,day),late:person.cells?.[day]?.late||null};
+    return {amount,rate,state:L.cellState(amount,rate),editable:L.canEdit(current,person,day),late:person.cells?.[day]?.late||null,
+      extra:L.extraOf(current,person.id,day)};
   }
   /* Клетка — ячейка «Зарплаты · месяц» (.pr-m): белая, сегодняшний столбец подсвечен,
      ✓ по ставке — на зелёном, другая сумма — число на жёлтом, опоздал — розовая
@@ -37,12 +41,15 @@
     const v=view(person,day), late=v.late&&v.state!=='odd';
     const keep=[...el.classList].filter(cls=>cls.startsWith('rm-')).map(cls=>' '+cls).join('');
     el.className='pr-m sd-m'+(v.state==='on'?' is-filled is-tick':v.state==='odd'?' is-odd':'')+(late?' is-late':'')
-      +(day===today?' is-today':'')+(day>today?' is-future':'')+(v.editable?'':' is-locked')+keep;
+      +(day===today?' is-today':'')+(day>today?' is-future':'')+(v.editable?'':' is-locked')+(v.extra?' has-extra':'')+keep;
     el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):late?v.late:'';
+    // Доп. выплата в клетку не входит — «+» в углу и подсказка, сумма — в «Выдано» и в списке под таблицей.
+    el.title=v.extra?'Доп. выплата '+fmt(v.extra)+' сум — в списке под таблицей':'';
     if(v.editable){
       el.setAttribute('aria-pressed',String(v.state!=='off'));
       el.setAttribute('aria-label',person.name+' · выплата '+dm(day)+' за смену '+dm(L.previousDay(day))
-        +(v.late?' · опоздал, вход '+v.late:'')+' · '+(v.amount?'выдано '+fmt(v.amount)+' сум':'не выдано'));
+        +(v.late?' · опоздал, вход '+v.late:'')+' · '+(v.amount?'выдано '+fmt(v.amount)+' сум':'не выдано')
+        +(v.extra?' · доп. выплата '+fmt(v.extra)+' сум':''));
     }
   }
   function makeCell(person,day){
@@ -71,6 +78,7 @@
     current.people.forEach(person=>{const row=$('sd-row-'+person.id);if(!row)return;const ok=visible(person);row.hidden=!ok;if(ok)shown++;});
     $('sd-nothing').hidden=shown>0||!current.people.length;
     totals();
+    extra?.render();
   }
   function totals(){
     const view=L.matrix(current);
@@ -80,15 +88,16 @@
     $('selected-title').textContent='Выдано '+dm(selectedDay);
     $('selected-shift').textContent='За смену '+dm(L.previousDay(selectedDay));
     view.people.forEach(person=>{const el=$('sd-person-'+person.id);if(el)el.textContent=fmt(person.paid);});
-    const filtered=filter.tab!=='all'||!!filter.q.trim();
+    const filtered=isFiltered();
     const shown=view.people.filter((summary,index)=>visible(current.people[index]));
+    // Итог дня выплаты — клетки и доп. выплаты этого дня.
     current.days.forEach((day,col)=>{const el=$('sd-total-'+day);if(!el)return;
-      const sum=shown.reduce((total,person)=>total+Math.round(person.cells[col].amount*100),0)/100;el.textContent=sum?fmt(sum):'';});
+      const sum=shown.reduce((total,person)=>total+Math.round((person.cells[col].amount+person.cells[col].extra)*100),0)/100;el.textContent=sum?fmt(sum):'';});
     if($('sd-grand'))$('sd-grand').textContent=fmt(shown.reduce((total,person)=>total+Math.round(person.paid*100),0)/100)+' сум';
     if($('sd-foot-label'))$('sd-foot-label').textContent=filtered?'Выдано за день · по фильтру':'Выдано за день';
   }
   function selectDay(day){
-    selectedDay=day;
+    selectedDay=day;extra?.day(day);
     $('sheet-grid').querySelectorAll('.pr-day').forEach(el=>{el.classList.toggle('is-selected',el.dataset.day===day);el.setAttribute('aria-pressed',String(el.dataset.day===day));});
     totals();
   }
@@ -112,7 +121,7 @@
     // В матрице клетки — массив для подсчёта; рисуем и пишем по исходным данным.
     view.people.forEach((summary,index)=>{
       const person=current.people[index], row=node('div','pr-row is-monthly');row.setAttribute('role','row');row.id='sd-row-'+person.id;
-      const who=node('div','pr-c pr-c-name');who.setAttribute('role','rowheader');who.append(node('span','pr-name',person.name),node('span','pr-role',person.archived?(person.role||'')+' · архив':person.role||''));
+      const who=node('div','pr-c pr-c-name');who.setAttribute('role','rowheader');who.append(node('span','pr-name',person.name),node('span','pr-role',[person.role,person.temporary?'временный':'',person.archived?'архив':''].filter(Boolean).join(' · ')));
       const rate=person.rate==null||!Number(person.rate)?node('div','pr-c pr-c-sum is-norate','нет ставки'):node('div','pr-c pr-c-sum rm-num',fmt(Number(person.rate)));
       rate.setAttribute('role','cell');row.append(who,rate);
       summary.cells.forEach(cell=>{const wrap=node('div','sd-cell');wrap.setAttribute('role','cell');wrap.append(makeCell(person,cell.day));row.append(wrap);});
@@ -276,6 +285,26 @@
     else if((event.key==='Delete'||event.key==='Backspace')&&view(t.person,t.day).amount){event.preventDefault();write(t.person,t.day,0);}
   });
 
+  /* «Скачать Excel» (Б-07): вся ведомость или то, что сейчас выбрано группой и поиском. */
+  async function download(){
+    if(!current)return false;
+    const params=new URLSearchParams({month:current.month});
+    if(filter.tab!=='all')params.set('group',filter.tab);
+    if(filter.q.trim())params.set('q',filter.q.trim());
+    try{
+      const response=await fetch('/api/accountant/salary-day/export?'+params,{cache:'no-store'});
+      if(!response.ok)throw new Error('Не удалось скачать ведомость.');
+      const url=URL.createObjectURL(await response.blob()), link=document.createElement('a');
+      link.href=url;link.download='Retro-salary-day-'+current.month+(isFiltered()?'-selection':'')+'.xlsx';
+      document.body.append(link);link.click();link.remove();setTimeout(()=>URL.revokeObjectURL(url),30000);
+      done(isFiltered()?'Скачана выборка ведомости.':'Ведомость скачана.');
+      return true;
+    }catch(error){message(error.message,true);return false;}
+  }
+  $('salary-download').addEventListener('click',()=>{const work=download();if(B)B.button($('salary-download'),work).catch(()=>{});});
+  // Доп. выплаты под ведомостью (Б-05): после записи месяц перечитывается целиком.
+  const extra=globalThis.SalaryExtra?.mount({data:()=>current,visible,filtered:isFiltered,selectedDay:()=>selectedDay,
+    reload:()=>loadMonth(current.month),message:(text,error)=>error?message(text,true):done(text)});
   function navigate(month){if(current&&globalThis.RetroSave?.confirmLeave()===false){$('month-input').value=current.month;return;}const work=loadMonth(month);if(B&&!$('salary-body').hidden)B.section($('salary-body'),work);}
   $('sd-search').addEventListener('input',event=>{filter.q=event.target.value;if(current)applyFilter();});
   $('month-prev').addEventListener('click',()=>navigate(L.shiftMonth($('month-input').value,-1)));

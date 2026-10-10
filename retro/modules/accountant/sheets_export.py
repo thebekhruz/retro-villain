@@ -219,6 +219,8 @@ def _journal_sheet(sheet, payday: date, data: dict):
         label = KIND.get(item['type'], item['type'])
         if item['type'] == 'other_expense' and item.get('item_code') == MONTHLY_ITEM:
             label = 'Оклад'
+        elif item['type'] == 'other_expense' and item.get('item_code') == 'salary_extra':
+            label = 'Доп. выплата'
         incoming = item['type'] in INFLOW
         _row(sheet, row, [label, item['description'], _time(item.get('created_at')),
                           amount if incoming else None, None if incoming else amount], money_from=4)

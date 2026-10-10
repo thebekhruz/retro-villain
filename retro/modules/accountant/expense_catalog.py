@@ -65,6 +65,11 @@ GROUPS = (
 
 ITEMS = {code: (group_code, label) for group_code, _, items in GROUPS for code, label in items}
 
+# Доп. выплата сменному из «Зарплата · день» (ТЗ 09.10, Б-05). Статья служебная:
+# в списке журнала её нет — без сотрудника и даты смены такую выплату не записать.
+EXTRA_ITEM = 'salary_extra'
+ITEMS[EXTRA_ITEM] = ('salary', 'Доп. выплаты')
+
 
 def catalog_json():
     return {'groups': [

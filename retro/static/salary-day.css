@@ -50,3 +50,69 @@
 @media(max-width:900px){.salary-day-page .sd-tab{min-height:40px;align-items:center}#sd-search{height:44px}}
 @media(max-width:760px){.sd-tools{flex-direction:column-reverse;align-items:stretch}#sd-search{width:100%;font-size:15px}}
 @media(max-width:650px){.salary-day-page .pr-cards{grid-template-columns:1fr}.salary-day-page .pr-card-value{margin-top:8px}}
+
+/* ── Доп. выплаты под ведомостью (ТЗ 09.10, Б-05) ───────────────────────────
+   Блок — «Оклады, выданные сегодня» из «Зарплаты · месяц» (.pr-today, .fd-mo-row,
+   .fd-mo-form): те же строки и та же строка ввода, только полей больше. */
+/* Доп. выплата в клетку не входит: «+» в углу клетки, сумма — в «Выдано». */
+.salary-day-page .sd-m.has-extra{position:relative}
+.salary-day-page .sd-m.has-extra::after{content:"+";position:absolute;top:3px;right:5px;font-size:14px;font-weight:700;
+  line-height:1;color:#906c2b}
+.salary-day-page .sd-extra .fd-sec-sum{display:block}
+.salary-day-page .sd-extra .fd-mo-row{grid-template-columns:minmax(0,1fr) 130px minmax(0,1.3fr) 30px}
+.salary-day-page .sd-extra .fd-mo-row>.num{text-align:right}
+.salary-day-page .sd-extra .fd-mo-left{font-size:14px;overflow-wrap:anywhere}
+.salary-day-page .sd-extra-amount{border:0;background:none;padding:4px 0;font:inherit;font-size:14.5px;font-weight:600;
+  color:#1c302b;cursor:pointer;text-underline-offset:3px;justify-self:end}
+.salary-day-page .sd-extra-amount:hover{text-decoration:underline dotted;filter:none}
+.salary-day-page .sd-extra .fd-mo-hint .fd-link-btn{padding:0;font-size:14px;text-decoration:underline;cursor:pointer}
+/* Окно бухгалтера: подписи не мельче 14 точек. */
+.salary-day-page .sd-extra :is(.fd-mo-hint,.fd-who-role,.fd-mo-empty){font-size:14px}
+/* Строка ввода: две строки полей — кто и даты, затем сумма, назначение и кнопка. */
+.salary-day-page .sd-extra-form{grid-template-columns:150px minmax(0,1fr) 200px 200px;
+  grid-template-areas:"who who work paid" "sum note note btn"}
+.sd-extra-form>.sd-extra-who{grid-area:who}
+.sd-extra-form>.sd-extra-date:first-of-type{grid-area:work}
+.sd-extra-form>.sd-extra-date:last-of-type{grid-area:paid}
+.sd-extra-form>.sd-extra-sum{grid-area:sum}
+.sd-extra-form>.sd-extra-note{grid-area:note;text-align:left}
+.sd-extra-form>.fd-btn-give{grid-area:btn}
+.salary-day-page .sd-extra-form input.sd-extra-who{text-align:left}
+/* Дата с подписью внутри рамки поля: «Смена 08.10.2026». */
+.sd-extra-date{display:flex;align-items:center;gap:8px;min-width:0;height:38px;border:1px solid #dbe3d8;border-radius:7px;
+  background:#fff;padding:0 4px 0 10px}
+.sd-extra-date>span{flex:none;font-size:14px;color:#809084}
+.salary-day-page .sd-extra-form .sd-extra-date>input{flex:1;min-width:0;height:100%;border:0;padding:0;background:none;
+  text-align:left;box-shadow:none}
+.sd-extra-date:focus-within{border-color:#8fae98;box-shadow:0 0 0 3px #23574a1f}
+.salary-day-page .sd-extra-form>input:focus{border-color:#8fae98;box-shadow:0 0 0 3px #23574a1f}
+.salary-day-page .sd-extra-form :disabled{opacity:.55}
+@media(min-width:1500px){
+  .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1.3fr) 190px 200px 140px minmax(0,1fr) auto;
+    grid-template-areas:"who work paid sum note btn"}
+}
+@media(max-width:1024px){
+  .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1fr) minmax(0,1fr);
+    grid-template-areas:"who who" "work paid" "sum note" "btn btn"}
+  .sd-extra-form>.fd-btn-give{justify-self:end}
+}
+/* Планшет и телефон — строки как у окладов на телефоне (accountant.css), но пояснение
+   длинное: имя и сумма в первой строке, «выплата · смена · назначение» — под ними. */
+@media(max-width:900px){
+  .salary-day-page .sd-extra .fd-mo-row{grid-template-columns:minmax(0,1fr) auto 40px;
+    grid-template-areas:"who amt x" "left left x";row-gap:4px}
+  .salary-day-page .sd-extra .fd-mo-row>.fd-mo-who{grid-area:who}
+  .salary-day-page .sd-extra .fd-mo-row>.num{grid-area:amt;align-self:start}
+  .salary-day-page .sd-extra .fd-mo-row>.fd-mo-left{grid-area:left}
+  .salary-day-page .sd-extra .fd-mo-row>.fd-x{grid-area:x;align-self:center}
+}
+@media(max-width:650px){
+  .salary-day-page .sd-extra-form{grid-template-areas:"who who" "work paid" "sum sum" "note note" "btn btn"}
+  .sd-extra-form>.fd-btn-give{justify-self:stretch}
+  .sd-extra-date{height:44px}
+  .salary-day-page .sd-extra-amount{min-height:40px}
+}
+@media(max-width:480px){
+  .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1fr);
+    grid-template-areas:"who" "work" "paid" "sum" "note" "btn"}
+}

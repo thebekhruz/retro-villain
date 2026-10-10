@@ -5,8 +5,8 @@ from decimal import Decimal
 
 from retro.accounting_period import period_start
 
-from .expense_catalog import ITEMS
-from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
+from .expense_catalog import EXTRA_ITEM, ITEMS
+from .ledger import EXTRA_ONLY, LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
 
 
@@ -40,6 +40,8 @@ def debt_summary(store, day):
 def record_debt(store, day, item_code, note, total, paid, cashier_amount):
     if item_code not in ITEMS or ITEMS[item_code][0] == 'income':
         raise LedgerError('Выберите наименование затрат из справочника.')
+    if item_code == EXTRA_ITEM:
+        raise LedgerError(EXTRA_ONLY)
     note = required_text(note, 'наименование расхода')
     total_value = amount_value(total)
     paid_value = amount_value(paid, allow_zero=True)

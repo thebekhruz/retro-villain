@@ -175,6 +175,10 @@ def month_data(finance, first, last, first_entries=None):
                 ((first-timedelta(days=1)).isoformat(), (last-timedelta(days=1)).isoformat())):
             all_payments[row[0]].append(row)
         closure = closure_row(connection)
+        # Доп. выплаты (Б-05): в итоге дня выплаты и сотрудника, в клетке — нет.
+        from .extra_payouts import between, temporary_ids
+        extras = between(connection, first, last)
+        temporary = temporary_ids(connection)
         # Общая зарплата без сотрудников в «Финансах дня»: клетки не запираем, но
         # экран предупреждает — ввод тех же денег по людям посчитает выплату дважды.
         aggregate = defaultdict(Decimal)
@@ -197,6 +201,21 @@ def month_data(finance, first, last, first_entries=None):
                                       group=group, rate=rate, archived=True, cells={})
         amounts[(employee_id, paid_day)] += Decimal(amount)
         cell_payments[(employee_id, paid_day)].append(row)
+    for item in extras:
+        # Доп. выплату получил тот, кого уже нет в реестре: строка — по имени из записи.
+        if item['employee_id'] not in people:
+            historic = versions.get(item['employee_id'], [])
+            people[item['employee_id']] = dict(
+                id=item['employee_id'], name=item['name'], role=item['role'], group=item['group'],
+                rate=str(historic[-1][5]) if historic and historic[-1][5] is not None else None,
+                archived=True, cells={})
+        # Временный ли — по реестру; ушедшего — по записи на день выплаты.
+        if item['temporary'] and people[item['employee_id']]['archived']:
+            temporary.add(item['employee_id'])
+        item['editable'] = (ENTRY_START.isoformat() <= item['paid_day'] <= today.isoformat()
+                            and item['paid_day'] > closed_through and item['work_day'] > closed_through)
+    for employee_id in temporary & people.keys():
+        people[employee_id]['temporary'] = True
     earned = {(row[1], row[2]): row for row in accruals}
     for employee_id, person in people.items():
         for paid_day in days:
@@ -233,6 +252,6 @@ def month_data(finance, first, last, first_entries=None):
                 if person is not None and is_late(entry.occurred_at):
                     person['cells'][paid_day]['late'] = entry.occurred_at.astimezone(TZ).strftime('%H:%M')
     return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(), days=days,
-                people=list(people.values()),
+                people=list(people.values()), extras=extras,
                 aggregate_days=[dict(day=day, amount=plain(total)) for day, total in sorted(aggregate.items())],
                 closed_through=closed_through or None)
