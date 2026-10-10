@@ -300,6 +300,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     else:
         app.state.hikvision_writer = None
     app.state.manager_push_locks = {}
+    from retro.modules.manager.device_photos import DevicePhotos
+    app.state.manager_device_photos = DevicePhotos()
     director_path = director_db_path or shared or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
     # Меню — справочник, а не отчёт: лежит у нас и обновляется раз в неделю.

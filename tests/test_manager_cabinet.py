@@ -71,6 +71,13 @@ class Terminal:
         return self.requests.count(call)
 
     def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.method == 'GET' and request.url.path.startswith('/LOCALS/pic/'):
+            assert request.headers['authorization'].startswith('Digest ')
+            self.requests.append((request.method, request.url.path))
+            if self.fail == 'down':
+                raise httpx.ConnectError('down', request=request)
+            number = request.url.path.rsplit('/', 1)[-1].removesuffix('.jpg')
+            return httpx.Response(200, content=self.faces[number], headers={'Content-Type': 'image/jpeg'})
         if request.method == 'GET':
             return httpx.Response(401, headers={
                 'WWW-Authenticate': 'Digest realm="terminal", nonce="abc", qop="auth"'})
@@ -93,7 +100,10 @@ class Terminal:
             status = 'NO MATCH' if not people else ('MORE' if start + size < len(people) else 'OK')
             return httpx.Response(200, json={'UserInfoSearch': {
                 'responseStatusStrg': status, 'numOfMatches': len(page), 'totalMatches': len(people),
-                'UserInfo': [{'employeeNo': number, 'name': name} for number, name in page]}})
+                'UserInfo': [{'employeeNo': number, 'name': name,
+                              'numOfFace': int(number in self.faces),
+                              'faceURL': f'http://192.168.1.20/LOCALS/pic/{number}.jpg' if number in self.faces else ''}
+                             for number, name in page]}})
         if path == '/ISAPI/AccessControl/UserInfo/Record':
             info = body['UserInfo']
             if info['employeeNo'] in self.people:
@@ -303,7 +313,7 @@ def test_home_lists_shift_staff_of_own_directions_alphabetically_without_money(c
     assert [item['name'] for item in kitchen['employees']] == ['Юсупов Фаррух']
 
     every = home(cabinet)
-    assert set(every) == {'login', 'role', 'directions', 'hikvision', 'employees'}
+    assert set(every) == {'login', 'role', 'directions', 'hikvision', 'employees', 'photo_message'}
     assert (every['login'], every['role']) == ('karina', 'manager')
     assert every['directions'] == ['Кухня', 'Зал', 'Уборка']
     assert every['hikvision'] == {'configured': True}
@@ -313,7 +323,7 @@ def test_home_lists_shift_staff_of_own_directions_alphabetically_without_money(c
         'Абдуллаев Тимур', 'Алиев Жасур', 'Ёқубов Самандар', 'Каримов Жахонгир', 'Юлдашев Дильшод', 'Юсупов Фаррух']
     first = every['employees'][0]
     assert set(first) == {'id', 'name', 'role', 'group', 'employment_type', 'work_period', 'photo', 'hikvision',
-                          'can_photo', 'can_retry'}
+                          'can_photo', 'can_retry', 'photo_unknown'}
     assert (first['role'], first['group'], first['employment_type'], first['work_period'], first['photo']) == (
         'бармен', 'Бар', 'shift', None, None)
     assert first['hikvision'] == {'state': 'none', 'employee_no': None, 'message': None,
@@ -365,6 +375,82 @@ def test_photo_and_send_rights_follow_directions(cabinet):
 
 
 # ── Фото ───────────────────────────────────────────────────────────────────
+
+def test_existing_device_photo_is_visible_without_a_local_upload(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_hikvision_id(employee_id, '204')
+    terminal.people['204'] = 'Карамат'
+    terminal.faces['204'] = JPEG
+    shown = home(cabinet)['employees'][0]
+    assert shown['photo']['source'] == 'hikvision'
+    assert shown['hikvision']['face']['state'] == 'sent'
+    assert shown['can_retry'] is False
+    assert shown['photo_unknown'] is False
+    assert '192.168' not in json.dumps(shown)
+    picture = cabinet.get(shown['photo']['url'], auth=('karina', 'secret'))
+    assert (picture.status_code, picture.content, picture.headers['content-type']) == (200, JPEG, 'image/jpeg')
+    assert card(cabinet, employee_id)['photo']['source'] == 'hikvision'
+    assert roster(cabinet).photo(employee_id) is None, 'read-only device photo is not a local upload'
+    assert terminal.count(PERSON_RECORD) == terminal.count(FACE_RECORD) == terminal.count(FACE_SETUP) == 0
+    assert terminal.count(('POST', '/ISAPI/AccessControl/UserInfo/Search')) == 1, 'metadata reused across cards'
+
+
+def test_pending_local_replacement_wins_over_existing_device_photo(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_hikvision_id(employee_id, '204')
+    terminal.people['204'] = 'Карамат'
+    terminal.faces['204'] = JPEG
+    assert home(cabinet)['employees'][0]['photo']['source'] == 'hikvision'
+    upload(cabinet, employee_id, data_url(PNG, 'image/png'))
+    shown = home(cabinet)['employees'][0]
+    assert shown['photo'].get('source') != 'hikvision'
+    assert shown['hikvision']['face']['state'] == 'pending'
+    assert shown['can_retry'] is True
+    assert cabinet.get(shown['photo']['url'], auth=('karina', 'secret')).content == PNG
+    assert terminal.faces['204'] == JPEG
+
+
+def test_unavailable_device_does_not_claim_photo_absent(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_hikvision_id(employee_id, '204')
+    terminal.fail = 'down'
+    result = home(cabinet)
+    shown = result['employees'][0]
+    assert result['photo_message']
+    assert shown['photo'] is None and shown['photo_unknown'] is True
+    assert cabinet.get(f'/api/manager/employees/{employee_id}/photo', auth=('karina', 'secret')).status_code == 503
+
+
+def test_device_without_face_reports_real_absence_and_never_writes(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_hikvision_id(employee_id, '204')
+    terminal.people['204'] = 'Карамат'
+    shown = home(cabinet)['employees'][0]
+    assert shown['photo'] is None and shown['photo_unknown'] is False
+    assert cabinet.get(f'/api/manager/employees/{employee_id}/photo', auth=('karina', 'secret')).status_code == 404
+    assert terminal.count(FACE_RECORD) == terminal.count(FACE_SETUP) == 0
+
+
+def test_device_photo_follows_link_change_and_failed_refresh_keeps_known_photo(cabinet, terminal):
+    employee_id = staff(cabinet)
+    store = roster(cabinet)
+    store.set_hikvision_id(employee_id, '204')
+    terminal.people.update({'204': 'Карамат', '205': 'Другой'})
+    terminal.faces['204'] = JPEG
+    time = [100]
+    cabinet.app.state.manager_device_photos._clock = lambda: time[0]
+    assert home(cabinet)['employees'][0]['photo']['source'] == 'hikvision'
+    terminal.fail = 'down'
+    time[0] += 61
+    stale = home(cabinet)
+    assert stale['photo_message']
+    assert stale['employees'][0]['photo']['source'] == 'hikvision'
+    terminal.fail = None
+    store.set_hikvision_id(employee_id, '205')
+    time[0] += 11
+    changed = home(cabinet)['employees'][0]
+    assert changed['photo'] is None and changed['photo_unknown'] is False
+
 
 def test_photo_upload_jpeg_and_png_and_serve_the_bytes(cabinet, terminal):
     employee_id = staff(cabinet)

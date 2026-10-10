@@ -78,3 +78,16 @@ test('T-434: временный — с периодом рядом с помет
   assert.equal(logic.typeTag(card({employment_type: 'temporary', work_period: null})), 'временный');
   assert.equal(logic.typeTag(card({employment_type: 'shift'})), '');
 });
+
+test('device photos count as ready; an unreachable terminal is not proof of no photo', () => {
+  const remote = card({id: 1, photo: {...photo, source: 'hikvision'},
+    hikvision: {state: 'sent', face: {state: 'sent'}}});
+  const unknown = card({id: 2, photo_unknown: true});
+  const missing = card({id: 3});
+  assert.equal(logic.rowTag(remote).text, 'Готово');
+  assert.equal(logic.photoStep(remote).title, 'Фото из Hikvision');
+  assert.equal(logic.rowTag(unknown).text, 'Фото не проверено');
+  assert.equal(logic.photoStep(unknown).title, 'Фото в Hikvision не проверено');
+  assert.deepEqual(logic.filterCards([remote, unknown, missing], {status: 'nophoto'}).map(c=>c.id), [3]);
+  assert.deepEqual(logic.summary([remote, unknown, missing]), {total:3, withPhoto:1, noPhoto:1, problems:1});
+});

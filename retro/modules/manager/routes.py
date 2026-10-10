@@ -14,6 +14,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel
 
 from retro.modules.accountant import work_period
+from retro.integrations.hikvision import HikvisionError
 from retro.modules.cashier.service import today_tashkent
 from retro.static_assets import VERSIONED_PRIVATE
 
@@ -110,6 +111,8 @@ def face_json(row: dict) -> dict:
     """Лицо на устройстве: none — фото нет (или человек на ручной отметке:
     на устройство он не уходит); pending — лицо ещё не отправлено или фото
     новое; sent; error — с причиной."""
+    if row.get('device_photo') and not row['photo_updated_at']:
+        return dict(state='sent', message=None)
     if not row['photo_updated_at'] or row['manual_attendance']:
         return dict(state='none', message=None)
     state = row['face_state'] if row['face_state'] in ('sent', 'error') else 'pending'
@@ -127,6 +130,10 @@ def photo_json(row: dict) -> dict | None:
     # Адрес меняется с каждым снимком (?v=), поэтому браузер держит его в кеше.
     version = row['photo_updated_at']
     if not version:
+        remote = row.get('device_photo')
+        if remote:
+            return dict(url=f'/api/manager/employees/{row["id"]}/photo?v=hik-{quote(remote["checked_at"], safe="")}',
+                        updated_at=remote['checked_at'], source='hikvision')
         return None
     return dict(url=f'/api/manager/employees/{row["id"]}/photo?v={quote(version, safe="")}',
                 updated_at=version)
@@ -142,6 +149,7 @@ def card_json(row: dict, account: ManagerAccount) -> dict:
                 # Период временного (T-434): пометка «временный · 08.10–10.10».
                 work_period=work_period.label(row.get('work_from'), row.get('work_to')),
                 photo=photo_json(row), hikvision=hikvision,
+                photo_unknown=bool(row.get('photo_unknown')),
                 can_photo=allowed, can_retry=allowed and bool(row['photo_updated_at']) and due)
 
 
@@ -165,22 +173,28 @@ def ended(row: dict) -> bool:
 
 
 @router.get('/home')
-def home(request: Request):
+async def home(request: Request):
     """Сменные сотрудники направлений менеджера по алфавиту. Окладники — не
     здесь: у них нет смен и турникета в этом кабинете. Временный, чей период
     закончился, — тоже не здесь."""
     account = current_account(request)
-    rows = [row for row in request.app.state.accountant_roster.manager_cards()
+    cards = await asyncio.to_thread(request.app.state.accountant_roster.manager_cards)
+    rows = [row for row in cards
             if account.sees(row['group']) and not ended(row)]
+    rows, photo_message = await request.app.state.manager_device_photos.enrich(
+        rows, request.app.state.hikvision_writer)
     rows.sort(key=lambda row: (row['name'].casefold().replace('ё', 'е'), row['id']))
     return dict(login=account.login, role=account.role, directions=list(account.directions),
                 hikvision=dict(configured=request.app.state.hikvision_writer is not None),
+                photo_message=photo_message,
                 employees=[card_json(row, account) for row in rows])
 
 
 @router.get('/employees/{employee_id}')
-def employee(request: Request, employee_id: int):
-    return dict(employee=card_json(_card_or_404(request, employee_id), current_account(request)))
+async def employee(request: Request, employee_id: int):
+    row = await asyncio.to_thread(_card_or_404, request, employee_id)
+    rows, _ = await request.app.state.manager_device_photos.enrich([row], request.app.state.hikvision_writer)
+    return dict(employee=card_json(rows[0], current_account(request)))
 
 
 @router.put('/employees/{employee_id}/photo')
@@ -206,10 +220,32 @@ async def upload_photo(request: Request, employee_id: int, body: PhotoInput, sen
 
 
 @router.get('/employees/{employee_id}/photo')
-def photo(request: Request, employee_id: int):
-    found = request.app.state.accountant_roster.photo(employee_id)
+async def photo(request: Request, employee_id: int):
+    found = await asyncio.to_thread(request.app.state.accountant_roster.photo, employee_id)
     if found is None:
-        raise HTTPException(404, 'У сотрудника нет фото.')
+        row = await asyncio.to_thread(_card_or_404, request, employee_id)
+        client = request.app.state.hikvision_writer
+        rows, _ = await request.app.state.manager_device_photos.enrich([row], client)
+        remote = rows[0].get('device_photo')
+        if rows[0].get('photo_unknown') or (remote and client is None):
+            raise HTTPException(503, 'Не удалось загрузить фото из Hikvision. Повторите позже.')
+        if remote is None:
+            raise HTTPException(404, 'У сотрудника нет фото.')
+        try:
+            async with request.app.state.manager_device_photos.downloads:
+                url = remote['url']
+                if not url:
+                    face = await client.find_face(row['hikvision_id'])
+                    url = face.get('faceURL') if face else None
+                if not url:
+                    raise HikvisionError('invalid_response')
+                content, mime = await client.read_face_photo(url)
+        except HikvisionError:
+            raise HTTPException(503, 'Не удалось загрузить фото из Hikvision. Повторите позже.') from None
+        # Новое локальное фото, загруженное за время чтения устройства, приоритетнее.
+        found = await asyncio.to_thread(request.app.state.accountant_roster.photo, employee_id)
+        if found is None:
+            return Response(content, media_type=mime, headers={'Cache-Control': 'no-store'})
     content, mime, _ = found
     # Адрес с ?v= меняется вместе со снимком: по нему кешируем надолго, но
     # только в браузере сотрудника (private). Без ?v= панель ставит no-store.

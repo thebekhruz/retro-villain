@@ -31,6 +31,7 @@
     return h.state === 'sent' && (h.face || {}).state === 'sent';
   }
   function hasProblem(card) {
+    if (card.photo_unknown) return true;
     const h = card.hikvision || {};
     return !!card.photo && (h.state === 'error' || h.state === 'pending'
       || ((h.face || {}).state === 'error') || ((h.face || {}).state === 'pending'));
@@ -39,6 +40,7 @@
   /* Метка в строке списка: что ещё нужно сделать с человеком. */
   function rowTag(card) {
     const h = card.hikvision || {};
+    if (card.photo_unknown) return {text: 'Фото не проверено', tone: 'warn'};
     if (!card.photo) return {text: 'Нет фото', tone: 'warn'};
     if (h.state === 'error' || (h.face || {}).state === 'error') return {text: 'Ошибка', tone: 'error'};
     if (isDone(card)) return {text: h.state === 'manual' ? 'Фото есть' : 'Готово', tone: h.state === 'manual' ? 'idle' : 'ok'};
@@ -67,7 +69,7 @@
   function filterCards(cards, filter = {}, query = '') {
     const status = filter.status || 'all';
     return (cards || []).filter(card => inPlace(card, filter) && matches(card, query)
-      && (status === 'nophoto' ? !card.photo : status === 'problem' ? hasProblem(card) : true));
+      && (status === 'nophoto' ? !card.photo && !card.photo_unknown : status === 'problem' ? hasProblem(card) : true));
   }
 
   /* Разделы и должности для чипов — только те, что есть в списке, со счётом. */
@@ -91,12 +93,14 @@
   function summary(cards) {
     const list = cards || [];
     return {total: list.length, withPhoto: list.filter(card => card.photo).length,
-      noPhoto: list.filter(card => !card.photo).length, problems: list.filter(hasProblem).length};
+      noPhoto: list.filter(card => !card.photo && !card.photo_unknown).length, problems: list.filter(hasProblem).length};
   }
 
   /* Шаги в карточке: фото → человек на устройстве → лицо на устройстве. */
   function photoStep(card, uploading) {
     if (uploading) return {step: 'active', title: 'Загружаем фото…'};
+    if (card.photo_unknown) return {step: 'wait', title: 'Фото в Hikvision не проверено'};
+    if (card.photo?.source === 'hikvision') return {step: 'ok', title: 'Фото из Hikvision'};
     return card.photo ? {step: 'ok', title: 'Фото сохранено'} : {step: 'wait', title: 'Фото ещё нет'};
   }
 

@@ -63,6 +63,7 @@ function thumb(card) {
   if (card.photo) {
     const image = node('img');
     image.src = card.photo.url; image.alt = ''; image.loading = 'lazy';
+    image.onerror = () => { box.replaceChildren(L().initials(card.name)); box.classList.add('is-empty'); };
     box.append(image);
   }
   return box;
@@ -146,7 +147,8 @@ function renderList() {
   let text = '';
   if (!cards.length) text = 'Сотрудников ваших разделов пока нет. Их заводит бухгалтер в «Сотрудниках».';
   else if (!shown.length && L().collapse(query)) text = `Никого не нашли по «${L().collapse(query)}». Если человека нет в списке — попросите бухгалтера завести карточку.`;
-  else if (!shown.length && state.filter === 'nophoto') text = 'У всех есть фото.';
+  else if (!shown.length && state.filter === 'nophoto') text = cards.some(card => card.photo_unknown)
+    ? 'Отсутствие фото не подтверждено — проверьте связь с Hikvision.' : 'У всех есть фото.';
   else if (!shown.length) text = 'Ошибок нет.';
   note.textContent = text;
   note.hidden = !text;
@@ -154,6 +156,8 @@ function renderList() {
 
 function renderHome(data) {
   state.home = data;
+  $('device-photo-note').textContent = data.photo_message || '';
+  $('device-photo-note').hidden = !data.photo_message;
   $('home-sub').textContent = [data.directions.join(' · '), data.login].filter(Boolean).join(' · ');
   renderList();
 }
@@ -182,6 +186,12 @@ function renderCard() {
   const card = state.card;
   const src = state.preview || card.photo?.url || '';
   $('card-photo').hidden = !src;
+  $('card-photo').onerror = () => {
+    $('card-photo').hidden = true;
+    $('card-initials').textContent = L().initials(card.name);
+    $('card-hik-note').textContent = 'Не удалось загрузить фото. Обновите страницу.';
+    $('card-hik-note').hidden = false;
+  };
   if (src) $('card-photo').src = src; else $('card-photo').removeAttribute('src');
   $('card-initials').textContent = src ? '' : L().initials(card.name);
   $('card-avatar').classList.toggle('has-photo', !!src);

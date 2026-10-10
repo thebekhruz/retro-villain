@@ -12,9 +12,10 @@ import hashlib
 import json
 import re
 import secrets
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime
 from typing import Callable, Generic, TypeVar
+from urllib.parse import unquote, urlsplit
 from zoneinfo import ZoneInfo
 
 import httpx
@@ -111,6 +112,8 @@ def build_digest_header(challenge: DigestChallenge, *, username: str, password: 
 class HikvisionPerson:
     employee_no: str
     name: str | None
+    face_count: int | None = field(default=None, compare=False)
+    face_url: str | None = field(default=None, compare=False, repr=False)
 
 
 @dataclass(frozen=True)
@@ -162,7 +165,11 @@ def parse_people_page(raw: str) -> IsapiPage[HikvisionPerson]:
             continue
         raw_name = item.get('name')
         name = raw_name.strip() if isinstance(raw_name, str) and raw_name.strip() else None
-        people.append(HikvisionPerson(employee_no, name))
+        face_count = _integer(item.get('numOfFace'), None)
+        face_url = item.get('faceURL')
+        people.append(HikvisionPerson(employee_no, name,
+                                      face_count if face_count is not None and face_count >= 0 else None,
+                                      face_url if isinstance(face_url, str) and face_url else None))
     matches = _integer(search.get('numOfMatches'), len(raw_items))
     return IsapiPage(tuple(people), str(search.get('responseStatusStrg', '')).upper() == 'MORE',
                      matches)
@@ -377,7 +384,7 @@ class HikvisionClient:
             raise HikvisionError('invalid_response')
         raise HikvisionError('device_error')
 
-    async def has_face(self, employee_no: str) -> bool:
+    async def find_face(self, employee_no: str) -> dict | None:
         """Проверка лица по FPID. Фото по faceURL не скачиваем; возвращённый
         устройством modelData не сохраняем и не передаём в интерфейс."""
         response = await self._exchange(FACE_SEARCH, {
@@ -393,7 +400,33 @@ class HikvisionClient:
             raise HikvisionError('invalid_response')
         if any(not isinstance(item, dict) or 'FPID' not in item for item in matches):
             raise HikvisionError('invalid_response')
-        return any(str(item['FPID']) == employee_no for item in matches)
+        return next((item for item in matches if str(item['FPID']) == employee_no), None)
+
+    async def has_face(self, employee_no: str) -> bool:
+        return await self.find_face(employee_no) is not None
+
+    async def read_face_photo(self, face_url: str) -> tuple[bytes, str]:
+        """Фото по ссылке из UserInfo. Устройство отдаёт свой внутренний IP:
+        берём только путь /LOCALS/pic/ и читаем с настроенного HIKVISION_URL.
+        Ни чужой хост, ни redirect не получают Digest-учётные данные."""
+        try:
+            url = urlsplit(face_url)
+            path = unquote(url.path)
+        except ValueError:
+            raise HikvisionError('invalid_response') from None
+        if (not path.startswith('/LOCALS/pic/') or '\\' in path
+                or any(part in ('.', '..') for part in path.split('/'))
+                or url.scheme not in ('', 'http', 'https')):
+            raise HikvisionError('invalid_response')
+        target = url.path + ('?' + url.query if url.query else '')
+        response = await self._send('GET', target, b'', 'application/octet-stream')
+        if response.status_code != 200:
+            raise HikvisionError('device_error')
+        if response.content.startswith(b'\xff\xd8\xff'):
+            return response.content, 'image/jpeg'
+        if response.content.startswith(b'\x89PNG\r\n\x1a\n'):
+            return response.content, 'image/png'
+        raise HikvisionError('invalid_response')
 
     async def upload_face(self, employee_no: str, image: bytes, *, mime: str = 'image/jpeg') -> str:
         """Лицо человека под номером employee_no. 'created' — устройство

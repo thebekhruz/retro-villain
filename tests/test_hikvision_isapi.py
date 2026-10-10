@@ -472,3 +472,66 @@ def test_invalid_face_search_never_confirms_a_photo(payload):
         _face_run(lambda request: pytest.fail('must not write after invalid search'),
                   lambda client: client.upload_face('134', JPEG),
                   search_handler=lambda request: httpx.Response(200, json=payload))
+
+
+def test_people_keep_face_presence_and_private_url_without_leaking_it_in_repr():
+    person, = parse_people_page(json.dumps({'UserInfoSearch': {'UserInfo': [{
+        'employeeNo': '134', 'name': 'Карамат', 'numOfFace': 1,
+        'faceURL': 'http://192.168.1.20/LOCALS/pic/face.jpg'}]}})).items
+    assert person.face_count == 1
+    assert person.face_url.endswith('/face.jpg')
+    assert '192.168' not in repr(person)
+
+
+@pytest.mark.parametrize('url', [
+    'http://192.168.1.20/LOCALS/pic/face.jpg',
+    '/LOCALS/pic/face.jpg',
+    'http://untrusted.example/LOCALS/pic/face.jpg',
+])
+def test_remote_photo_always_uses_configured_terminal_and_digest_get(url):
+    requests = []
+
+    def terminal(request):
+        requests.append(request)
+        assert request.url.host == '203.0.113.10'
+        if request.url.path == '/ISAPI/System/deviceInfo':
+            return httpx.Response(401, headers={
+                'WWW-Authenticate': 'Digest realm="terminal", nonce="abc", qop="auth"'})
+        assert request.method == 'GET' and request.url.path == '/LOCALS/pic/face.jpg'
+        assert digest_matches(request)
+        return httpx.Response(200, content=JPEG)
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(terminal)) as http:
+            return await HikvisionClient(CONFIG, http=http).read_face_photo(url)
+
+    assert asyncio.run(exercise()) == (JPEG, 'image/jpeg')
+    assert len(requests) == 2
+
+
+@pytest.mark.parametrize('url', [
+    'file:///etc/passwd', '/ISAPI/System/configurationFile',
+    '/LOCALS/pic/../../ISAPI/System/configurationFile', '/LOCALS/pic/%2e%2e/config',
+])
+def test_photo_reader_rejects_paths_outside_local_pictures(url):
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(
+                lambda request: pytest.fail('invalid path must not reach the network'))) as http:
+            await HikvisionClient(CONFIG, http=http).read_face_photo(url)
+    with pytest.raises(HikvisionError, match='invalid_response'):
+        asyncio.run(exercise())
+
+
+@pytest.mark.parametrize('status, content', [(302, b''), (404, b''), (200, b'<html>login</html>')])
+def test_photo_reader_does_not_follow_redirects_or_accept_error_documents(status, content):
+    def terminal(request):
+        if request.url.path == '/ISAPI/System/deviceInfo':
+            return httpx.Response(401, headers={
+                'WWW-Authenticate': 'Digest realm="terminal", nonce="abc", qop="auth"'})
+        return httpx.Response(status, content=content, headers={'Location': 'http://untrusted.example/'})
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(terminal)) as http:
+            await HikvisionClient(CONFIG, http=http).read_face_photo('/LOCALS/pic/face.jpg')
+    with pytest.raises(HikvisionError):
+        asyncio.run(exercise())
