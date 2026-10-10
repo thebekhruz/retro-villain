@@ -16,8 +16,8 @@
   }
   const key=text=>String(text??'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim();
 
-  /* По умолчанию — выбранный день выплаты и смена накануне (смена 08.10 → выплата 09.10). */
-  function defaults(day){return {paid:day,work:shiftDay(day,-1)};}
+  /* В виде по сменам выбран день смены, выплата — следующим днём. */
+  function defaults(day,basis='payment'){return basis==='shift'?{paid:shiftDay(day,1),work:day}:{paid:day,work:shiftDay(day,-1)};}
 
   /* Временный (T-434): «временный · 08.10–10.10»; период подписывает сервер. */
   function typeTag(person){return person?.temporary?(person.work_period?'временный · '+person.work_period:'временный'):'';}
@@ -57,10 +57,13 @@
      выплата в клетке за этот день выплаты или за эту смену, такая же доп. выплата. */
   function warnings(data,person,work,paid,amount,except){
     const texts=[];
-    const cells=[...new Set([paid,shiftDay(work,1)])].map(day=>[day,parseAmount(person?.cells?.[day]?.amount)||0])
+    const cells=(data.basis==='shift'
+      ? Object.entries(person?.cells||{}).filter(([day,cell])=>day===work||cell.paid_days?.includes(paid))
+          .map(([day,cell])=>[day,parseAmount(cell.amount)||0])
+      : [...new Set([paid,shiftDay(work,1)])].map(day=>[day,parseAmount(person?.cells?.[day]?.amount)||0]))
       .filter(([,value])=>value>0);
     if(person&&cells.length)texts.push('У сотрудника «'+person.name+'» уже отмечена выплата в клетке: '
-      +cells.map(([day,value])=>dm(day)+' — '+fmt(value)+' сум (смена '+dm(shiftDay(day,-1))+')').join(', ')
+      +cells.map(([day,value])=>dm(day)+' — '+fmt(value)+' сум (смена '+dm(data.basis==='shift'?day:shiftDay(day,-1))+')').join(', ')
       +'. Доп. выплата — отдельные деньги сверх клетки; если это та же выдача, второй раз её не записывайте.');
     const same=(data.extras||[]).some(item=>person&&item.employee_id===person.id&&item.id!==except
       &&item.work_day===work&&item.paid_day===paid&&parseAmount(item.amount)===amount);

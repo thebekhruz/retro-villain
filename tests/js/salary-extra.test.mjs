@@ -150,3 +150,13 @@ test('временный с периодом: в «Кому» — только �
   accountant.catalogIndex([]));
   assert.equal(rows.find(row => row.group === 'extra').children[0].name, 'Карамат · временный · 08.10–10.10 · смена 08.10 · Подмена');
 });
+
+test('shift grid defaults to selected shift and warns using actual shift/payment dates', () => {
+  assert.deepEqual(extra.defaults('2026-10-09', 'shift'), {work:'2026-10-09',paid:'2026-10-10'});
+  assert.deepEqual(extra.defaults('2026-10-31', 'shift'), {work:'2026-10-31',paid:'2026-11-01'});
+  const data = {...month(), basis:'shift'};
+  const person = {...data.people[0], cells: {'2026-10-08': {amount:'360000',paid_days:['2026-10-09']}}};
+  assert.match(extra.warnings(data, person, '2026-10-08', '2026-10-10', 50000)[0], /08\.10 — 360\s000 сум \(смена 08\.10\)/);
+  assert.equal(extra.warnings(data, person, '2026-10-07', '2026-10-09', 50000).length, 1);
+  assert.deepEqual(extra.warnings(data, person, '2026-10-09', '2026-10-10', 50000), []);
+});

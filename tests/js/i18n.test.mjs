@@ -108,3 +108,13 @@ test('T-434: временный и период работы — по-узбек
   assert.equal(translate('Период работы: «по» (08.10) раньше, чем «с» (10.10).'),
     'Ish davri: tugash sanasi (08.10) boshlanish sanasi (10.10) dan oldin.');
 });
+
+test('T-428: shift and payout dates remain distinct in Uzbek labels', () => {
+  assert.equal(translate('За смену 09.10'), '09.10 smenasi uchun');
+  assert.equal(translate('Обычная выплата 10.10'), 'Odatiy to‘lov 10.10');
+  assert.equal(translate('выплата 10.10'), 'to‘lov 10.10');
+  assert.equal(translate('Смена 09.10 · выплата 10.10'), 'Smena 09.10 · to‘lov 10.10');
+  assert.equal(translate('Али · Смена 09.10 · выплата 10.10 · выдано 150000 сум'),
+    'Али · Smena 09.10 · to‘lov 10.10 · 150000 so‘m berildi');
+  assert.equal(translate('Доп. выплаты за смены · октябрь'), 'Smenalar uchun qo‘shimcha to‘lovlar · oktabr');
+});

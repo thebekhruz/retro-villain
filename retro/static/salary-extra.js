@@ -33,7 +33,7 @@
     const current = data(); if (!current || !$('extra-section')) return;
     const rows = X.rows(current, page.visible), filtered = page.filtered();
     const month = current.month || current.days[0].slice(0, 7);
-    $('extra-title').textContent = 'Доп. выплаты за ' + MONTHS[Number(month.slice(5, 7)) - 1];
+    $('extra-title').textContent = (current.basis === 'shift' ? 'Доп. выплаты за смены · ' : 'Доп. выплаты за ') + MONTHS[Number(month.slice(5, 7)) - 1];
     $('extra-sum').textContent = rows.length ? (filtered ? 'по фильтру · ' : '') + rows.length + ' · ' + money(X.total(rows)) : '';
     const box = $('extra-list'); box.replaceChildren();
     rows.forEach(item => {
@@ -67,11 +67,11 @@
     people = list.map(item => item.label);
     $('extra-people').replaceChildren(...list.map(item => { const option = node('option'); option.value = item.label; return option; }));
   }
-  /* Выбрали другой день в ведомости — форма, которую ещё не трогали, берёт его датой выплаты. */
+  /* Форма, которую ещё не трогали, берёт выбранную смену и выплату на следующий день. */
   function day(selected) {
     if (touched || editing || !selected) return;
-    const current = data(), value = selected > current.today ? current.today : selected;
-    const next = X.defaults(value);
+    const current = data();
+    const next = X.defaults(selected, current.basis);
     $('extra-paid').value = next.paid; $('extra-work').value = next.work;
     $('extra-paid').max = $('extra-work').max = current.today;
     $('extra-paid').min = current.entry_start; $('extra-work').min = X.shiftDay(current.entry_start, -1);
@@ -112,7 +112,7 @@
     if (v.person) {
       const rate = v.person.rate && Number(v.person.rate) ? ' · ставка ' + fmt(Number(v.person.rate)) : '';
       box.textContent = [v.person.name, v.person.role, X.typeTag(v.person)].filter(Boolean).join(' · ') + rate
-        + (v.paid ? '. В клетке ' + dm(v.paid) + ' выплаты нет.' : '.');
+        + (v.paid ? '. В клетке ' + dm(current.basis === 'shift' ? v.work : v.paid) + ' выплаты нет.' : '.');
       box.classList.add('is-info');
       return;
     }

@@ -1,10 +1,10 @@
 """«Зарплата · день» в Excel для печати (ТЗ 09.10, Б-07).
 
-Тот же ответ, что видит экран (`/salary-day/month`): строка — сотрудник с
-должностью и ставкой, столбец — день выплаты с подписью смены («Выплата 09.10 ·
-смена 08.10»), итоги по сотруднику и по дню. Доп. выплаты входят в итог дня
-выплаты и сотрудника, как на экране, а сами расписаны вторым листом — с датой
-смены, датой выплаты и назначением.
+Тот же ответ, что видит экран (`/salary-day/month?basis=shift`): столбец —
+день смены, обычная выплата — на следующий день. Фактические даты сохранённых
+выплат остаются в примечаниях. Доп. выплаты входят в итог смены и сотрудника,
+а сами расписаны вторым листом — с датой смены, датой выплаты и назначением.
+Прежний вид по датам выплат сохранён для совместимости API.
 
 Вся ведомость или выборка — группа и поиск, как на экране; режим написан в
 шапке обоих листов. Печать: альбомный лист по ширине страницы, шапка таблицы
@@ -17,6 +17,7 @@ from decimal import Decimal
 from io import BytesIO
 
 from openpyxl import Workbook
+from openpyxl.comments import Comment
 from openpyxl.styles import Alignment, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -113,16 +114,18 @@ def salary_day_workbook(data: dict, *, group: str | None = None, query: str | No
     """`data` — ответ `/salary-day/month`; `group`, `role`, `query` — выборка экрана."""
     today = data['today']
     # Будущие дни месяца пусты — на бумаге они только сужают столбцы.
+    by_shift = data.get('basis') == 'shift'
     days = [day for day in data['days'] if day <= today]
     people = select_people(data.get('people') or [], group, query, role)
     chosen = {person['id'] for person in people}
-    extras = [item for item in data.get('extras') or [] if item['employee_id'] in chosen and item['paid_day'] in days]
+    key = 'work_day' if by_shift else 'paid_day'
+    extras = [item for item in data.get('extras') or [] if item['employee_id'] in chosen and item[key] in days]
     month = date.fromisoformat(data['month'] + '-01')
     period = (f'{_dmy(days[0])} – {_dmy(days[-1])}' if days else '—')
     mode = _mode(group, query, len(people), len(data.get('people') or []), role)
     workbook = Workbook()
     _sheet(workbook.active, data, days, people, extras, month, period, mode)
-    _extras_sheet(workbook.create_sheet('Доп. выплаты'), extras, month, period, mode)
+    _extras_sheet(workbook.create_sheet('Доп. выплаты'), extras, month, period, mode, by_shift=by_shift)
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()
@@ -130,13 +133,18 @@ def salary_day_workbook(data: dict, *, group: str | None = None, query: str | No
 
 def _sheet(sheet, data, days, people, extras, month, period, mode):
     sheet.title = 'Ведомость'
+    by_shift = data.get('basis') == 'shift'
+    headings = ([f'Смена {_dm(day)}\nвыплата {_dm((date.fromisoformat(day)+timedelta(days=1)).isoformat())}'
+                 for day in days] if by_shift else [f'Выплата {_dm(day)}\nсмена {_dm(_previous(day))}' for day in days])
     labels = (['№', 'Сотрудник', 'Должность', 'Ставка']
-              + [f'Выплата {_dm(day)}\nсмена {_dm(_previous(day))}' for day in days]
+              + headings
               + ['Доп. выплаты', 'Итого'])
     width = len(labels)
     _title(sheet, f'RETRO MILLIY · Зарплата · день · {MONTHS[month.month - 1]} {month.year}', width)
-    _note(sheet, 2, f'Период выплат {period}. {mode}. В столбце — деньги, выданные в этот день за смену '
-          'предыдущего дня. Доп. выплаты входят в итоги и расписаны на листе «Доп. выплаты».', width)
+    explanation = (f'Период смен {period}. {mode}. В столбце — дата смены; обычная выплата и расход — на следующий день. '
+                   'Фактические даты выплат — в примечаниях к клеткам.' if by_shift else
+                   f'Период выплат {period}. {mode}. В столбце — деньги, выданные в этот день за смену предыдущего дня.')
+    _note(sheet, 2, explanation + ' Доп. выплаты входят в итоги и расписаны на листе «Доп. выплаты».', width)
     sheet.row_dimensions[2].height = 30
     _widths(sheet, [5, 30, 18, 12] + [11] * len(days) + [13, 14])
     _head(sheet, HEAD_ROW, labels)
@@ -146,7 +154,7 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
             vertical='center', horizontal='left' if column in (2, 3) else 'center', wrap_text=True)
     extra_by = {}
     for item in extras:
-        key = (item['employee_id'], item['paid_day'])
+        key = (item['employee_id'], item['work_day'] if by_shift else item['paid_day'])
         extra_by[key] = extra_by.get(key, Decimal(0)) + Decimal(item['amount'])
     row = HEAD_ROW + 1
     per_day = [Decimal(0)] * len(days)
@@ -167,6 +175,12 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
             role = (role + ' · архив').strip(' ·')
         _row(sheet, row, [number, person['name'], role, _money(person.get('rate'))]
              + [value or None for value in cells] + [extra or None, _sum(cells) + extra], money_from=4)
+        if by_shift:
+            for index, day in enumerate(days):
+                paid_days = (person['cells'].get(day) or {}).get('paid_days') or []
+                if paid_days:
+                    sheet.cell(row, 5 + index).comment = Comment(
+                        'Фактическая выплата: ' + ', '.join(_dmy(paid) for paid in paid_days), 'Retro Milliy')
         # Доп. выплата в этот день — ячейка подсвечена, сумма — в столбце «Доп. выплаты».
         for index, value in enumerate(own_extra):
             if value:
@@ -179,7 +193,7 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
         _note(sheet, row, 'Никого не нашли: выборка пустая.', width)
         row += 1
     total = _sum(per_day)
-    _row(sheet, row, [None, 'Итого за день', None, None] + [value or None for value in per_day]
+    _row(sheet, row, [None, 'Итого за смену' if by_shift else 'Итого за день', None, None] + [value or None for value in per_day]
          + [_sum(extra_per_day) or None, total], bold=True, money_from=4)
     row += 1
     _row(sheet, row, [None, 'в т.ч. доп. выплаты', None, None] + [value or None for value in extra_per_day]
@@ -197,12 +211,12 @@ def _temporary(item) -> str:
     return 'да' + (f" · {item['work_period']}" if item.get('work_period') else '')
 
 
-def _extras_sheet(sheet, extras, month, period, mode):
+def _extras_sheet(sheet, extras, month, period, mode, *, by_shift=False):
     labels = ['№', 'Дата выплаты', 'Дата смены', 'Сотрудник', 'Должность', 'Временный', 'Сумма',
               'Назначение', 'Записал', 'Когда']
     width = len(labels)
     _title(sheet, f'Доп. выплаты · {MONTHS[month.month - 1]} {month.year}', width)
-    _note(sheet, 2, f'Период выплат {period}. {mode}. Расход — в «Финансах дня» за дату выплаты.', width)
+    _note(sheet, 2, f'Период {"смен" if by_shift else "выплат"} {period}. {mode}. Расход — в «Финансах дня» за дату выплаты.', width)
     sheet.row_dimensions[2].height = 30
     _widths(sheet, [5, 13, 12, 28, 18, 16, 14, 40, 16, 16])
     _head(sheet, HEAD_ROW, labels)
@@ -222,4 +236,3 @@ def _extras_sheet(sheet, extras, month, period, mode):
                       None, None, None], bold=True, money_from=7)
     sheet.freeze_panes = sheet.cell(HEAD_ROW + 1, 1).coordinate
     _print(sheet, width, row)
-

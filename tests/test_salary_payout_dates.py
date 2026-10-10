@@ -55,7 +55,7 @@ def postgres_url():
 def c(request, tmp_path, monkeypatch):
     """Панель бухгалтера с ручной передачей кассы. «Сегодня» двигает тест: c.clock."""
     clock = {'today': oct_(10)}
-    for module in ('routes', 'salary_day'):
+    for module in ('routes', 'salary_day', 'extra_payouts'):
         monkeypatch.setattr(f'retro.modules.accountant.{module}.today_tashkent', lambda: clock['today'])
     # Реестр заведён 1 октября: версии сотрудников действуют на все смены месяца.
     monkeypatch.setattr('retro.modules.accountant.roster.today_tashkent', lambda: oct_(1))
@@ -168,6 +168,101 @@ def shift_lines(c, day):
 
 def flow(c, day):
     return day_json(c, day)['ledger']['day_flow']
+
+
+def shift_cell(c, work, person, amount, expected='0'):
+    return c.put('/api/accountant/salary-day/shift-cell', json={
+        'work_day': work.isoformat(), 'employee_id': person.id,
+        'amount': str(amount), 'expected_amount': str(expected)})
+
+
+def shift_sheet(c, month='2026-10'):
+    response = c.get('/api/accountant/salary-day/month', params={'month': month, 'basis': 'shift'})
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+@pytest.mark.parametrize('work,paid', [
+    (oct_(1), oct_(2)), (oct_(8), oct_(9)), (oct_(9), oct_(10)),
+    (oct_(31), date(2026, 11, 1)), (date(2026, 12, 31), date(2027, 1, 1))])
+def test_selected_shift_creates_expense_next_day_for_any_date(c, work, paid):
+    person = seed(c)['ikhtiyor']
+    c.clock['today'] = paid
+    cash_days(c, oct_(11), paid)
+    before = flow(c, work)
+    payout = shift_cell(c, work, person, 360000)
+    assert payout.status_code == 200, payout.text
+    assert payout.json()['work_day'] == work.isoformat()
+    assert payout.json()['date'] == paid.isoformat()
+    assert day_json(c, paid)['ledger']['salary_paid_on_day'] == '360000'
+    assert day_json(c, work)['ledger']['salary_paid_on_day'] == '0'
+    assert flow(c, work) == before
+    data = shift_sheet(c, work.strftime('%Y-%m'))
+    stored = next(p for p in data['people'] if p['id'] == person.id)['cells'][work.isoformat()]
+    assert stored['amount'] == '360000'
+    assert stored['work_day'] == work.isoformat()
+    assert stored['paid_day'] == paid.isoformat()
+    assert stored['paid_days'] == [paid.isoformat()]
+    assert stored['editable'] is True
+    # Повтор потерянного запроса не создаёт вторую выплату.
+    assert shift_cell(c, work, person, 360000).json()['changed'] is False
+    assert len(table(c, 'accountant_salary_payments')) == 1
+    assert shift_cell(c, work, person, 120000, expected=360000).status_code == 200
+    assert day_json(c, paid)['ledger']['salary_paid_on_day'] == '120000'
+    assert shift_cell(c, work, person, 0, expected=120000).status_code == 200
+    assert day_json(c, paid)['ledger']['salary_paid_on_day'] == '0'
+    assert table(c, 'accountant_salary_payments') == []
+
+
+def test_shift_view_attendance_and_rejection_of_unfinished_shift(c):
+    person = seed(c)['ikhtiyor']
+    data = shift_sheet(c)
+    cells = next(p for p in data['people'] if p['id'] == person.id)['cells']
+    assert data['days'][0] == data['shift_start'] == '2026-10-01'
+    assert cells['2026-10-08']['attendance']['time'] == '09:31'
+    assert cells['2026-10-09']['editable'] is True
+    assert cells['2026-10-10']['editable'] is False
+    for work in (oct_(10), oct_(11)):
+        assert shift_cell(c, work, person, 360000).status_code == 422
+    assert table(c, 'accountant_salary_payments') == []
+
+
+def test_shift_view_and_export_keep_actual_dates_of_existing_payments_and_extras(c):
+    from io import BytesIO
+    from openpyxl import load_workbook
+
+    person = seed(c)['ikhtiyor']
+    # Сохранённая выплата 09.10 за смену 08.10 не переносится на 10.10.
+    assert cell(c, oct_(9), person, 360000).status_code == 200
+    c.clock['today'] = date(2026, 11, 1)
+    cash_days(c, oct_(11), c.clock['today'])
+    extra = c.post('/api/accountant/salary-day/extra', json={
+        'employee_id': person.id, 'work_day': '2026-10-08', 'paid_day': '2026-11-01',
+        'amount': '50000', 'note': 'Доплата за смену', 'confirm': True})
+    assert extra.status_code == 201, extra.text
+    data = shift_sheet(c)
+    cells = next(p for p in data['people'] if p['id'] == person.id)['cells']
+    assert cells['2026-10-08']['amount'] == '360000'
+    assert cells['2026-10-08']['paid_days'] == ['2026-10-09']
+    assert cells['2026-10-09']['amount'] == '0'
+    assert len(data['extras']) == 1
+    assert data['extras'][0]['paid_day'] == '2026-11-01'
+    assert shift_sheet(c, '2026-11')['extras'] == []
+    assert day_json(c, oct_(9))['ledger']['salary_paid_on_day'] == '360000'
+    assert day_json(c, oct_(10))['ledger']['salary_paid_on_day'] == '0'
+    response = c.get('/api/accountant/salary-day/export', params={'month': '2026-10', 'basis': 'shift'})
+    assert response.status_code == 200, response.text
+    book = load_workbook(BytesIO(response.content))
+    sheet = book['Ведомость']
+    headers = [cell.value for cell in sheet[4]]
+    assert 'Смена 31.10\nвыплата 01.11' in headers
+    col = headers.index('Смена 08.10\nвыплата 09.10') + 1
+    row = next(row for row in sheet.iter_rows(min_row=5) if row[1].value == person.name)
+    assert row[col-1].value == 360000
+    assert '09.10.2026' in row[col-1].comment.text
+    assert row[-2].value == 50000
+    assert row[-1].value == 410000
+    assert book['Доп. выплаты']['B5'].value == '01.11.2026'
 
 
 # ── Б-01: смена, выплата, ввод ─────────────────────────────────────────────
@@ -317,6 +412,13 @@ def test_partial_and_extra_payouts_agree_in_sheet_journal_and_dashboard(c):
         amount='160000', work_day='2026-10-08', editable=False, rate='360000',
         attendance=dict(status='late', time='10:58', source='late'))
     assert cells['Каримов Жахонгир']['2026-10-08']['editable'] is False
+    # Вид по сменам объединяет части по фактической смене и сохраняет обе даты выдачи.
+    shifted = {person['name']: person['cells'] for person in shift_sheet(c)['people']}
+    old = shifted['Каримов Жахонгир']['2026-10-07']
+    assert old['amount'] == '360000'
+    assert old['paid_days'] == ['2026-10-08', '2026-10-09']
+    assert old['editable'] is False
+    assert shifted['Каримов Жахонгир']['2026-10-08']['amount'] == '0'
 
 
 # ── Б-02: выходной бухгалтера ──────────────────────────────────────────────
@@ -426,3 +528,23 @@ def test_late_entry_after_midnight_belongs_to_the_new_shift(tmp_path):
     store = AttendanceStore(tmp_path / 'accountant.sqlite3')
     store.ingest(HikvisionEvent('retro-main-entry', 's-1', '7', datetime(2026, 10, 8, 19, 20, tzinfo=timezone.utc)), 1)
     assert set(store.first_entries(oct_(9))) == {1} and store.first_entries(oct_(8)) == {}
+
+
+def test_shift_entry_respects_temporary_employee_work_dates(c):
+    seed(c, cash_through=oct_(12))
+    c.clock['today'] = oct_(12)
+    person = c.app.state.accountant_roster.add(
+        name='Временный сотрудник', role='Хостес', rate='150000', group_name='Встреча гостей',
+        employment_type='temporary', work_from=oct_(8), work_to=oct_(9))
+    cells = next(p for p in shift_sheet(c)['people'] if p['id'] == person.id)['cells']
+    assert cells['2026-10-07']['outside'] is True
+    assert cells['2026-10-08']['editable'] is True
+    assert cells['2026-10-09']['editable'] is True
+    assert cells['2026-10-10']['outside'] is True
+    # Последняя рабочая смена 09.10 оплачивается 10.10, уже после конца периода.
+    paid = shift_cell(c, oct_(9), person, 150000)
+    assert paid.status_code == 200, paid.text
+    assert paid.json()['date'] == '2026-10-10'
+    assert shift_cell(c, oct_(7), person, 150000).status_code == 422
+    assert shift_cell(c, oct_(10), person, 150000).status_code == 422
+    assert day_json(c, oct_(10))['ledger']['salary_paid_on_day'] == '150000'

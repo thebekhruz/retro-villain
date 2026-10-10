@@ -100,11 +100,11 @@ def read(connection, payout_id: int) -> dict | None:
     return _item(row) if row else None
 
 
-def between(connection, first: date, last: date) -> list[dict]:
-    """Доп. выплаты по дню выплаты за период — в порядке записи. У временного —
-    его нынешний период (work_period) для пометки «временный · 08.10–10.10»."""
+def between(connection, first: date, last: date, *, by_shift=False) -> list[dict]:
+    """Ведомость по сменам или финансовый отчёт по фактической дате выплаты."""
+    column = 'x.work_day' if by_shift else 'm.day'
     items = [_item(row) for row in connection.execute(
-        SELECT + 'WHERE m.day >= ? AND m.day <= ? ORDER BY m.day, x.id',
+        SELECT + f'WHERE {column} >= ? AND {column} <= ? ORDER BY m.day, x.id',
         (first.isoformat(), last.isoformat()))]
     known = work_period.periods(connection, {item['employee_id'] for item in items if item['temporary']})
     for item in items:

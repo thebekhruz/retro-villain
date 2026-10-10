@@ -1259,9 +1259,9 @@ class FinanceStore:
         from .salary_day import set_cell
         return set_cell(self, paid_day, employee_id, amount, expected_amount, cashier_amount=cashier_amount)
 
-    def salary_day_month(self, first, last, attendance=None):
+    def salary_day_month(self, first, last, attendance=None, *, basis='payment'):
         from .salary_day import month_data
-        return month_data(self, first, last, attendance)
+        return month_data(self, first, last, attendance, basis=basis)
 
     def add_extra_payout(self, **values):
         from .extra_payouts import add

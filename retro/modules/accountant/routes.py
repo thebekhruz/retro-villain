@@ -5,6 +5,7 @@ from contextlib import closing
 from datetime import date, datetime, timedelta
 from dataclasses import replace
 from decimal import Decimal
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -495,21 +496,22 @@ class SalaryDayCellInput(BaseModel):
 
 
 @router.get('/salary-day/month')
-def salary_day_month(request: Request, month: str):
+def salary_day_month(request: Request, month: str, basis: Literal['payment', 'shift'] = 'payment'):
     try:
         first, last = month_closing.month_bounds(month)
     except LedgerError as error:
         finance_error(error)
     if first > today_tashkent().replace(day=1):
         raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
-    first = accounting_range_start(first, last)
+    first = (accounting_range_start(first+timedelta(days=1), last+timedelta(days=1))-timedelta(days=1)
+             if basis == 'shift' else accounting_range_start(first, last))
     finance = request.app.state.accountant_finance
     # Посещаемость смены в клетке — тем же расчётом, что «Сотрудники» за день смены:
     # реестр на этот день, входы Hikvision и ручные отметки, без отметки выплаты.
     roster, attendance = request.app.state.accountant_roster, request.app.state.attendance
     return dict(month=month, first=first.isoformat(), last=last.isoformat(),
                 closed=month_closing.closed_state(finance, last),
-                **finance.salary_day_month(first, last, lambda days: attendance.rows_by_day(days, roster.list)))
+                **finance.salary_day_month(first, last, lambda days: attendance.rows_by_day(days, roster.list), basis=basis))
 
 
 @router.put('/salary-day/cell')
@@ -535,6 +537,23 @@ async def salary_day_cell(request: Request, body: SalaryDayCellInput):
         raise HTTPException(409, str(error)) from None
     except LedgerError as error:
         finance_error(error)
+
+
+class SalaryShiftCellInput(BaseModel):
+    work_day: date
+    employee_id: int = Field(gt=0)
+    amount: str
+    expected_amount: str
+
+
+@router.put('/salary-day/shift-cell')
+async def salary_shift_cell(request: Request, body: SalaryShiftCellInput):
+    """Выбран день СМЕНЫ: расход приходится на следующий календарный день."""
+    if body.work_day >= today_tashkent():
+        raise HTTPException(422, 'Выберите завершённую смену: выплата записывается следующим днём.')
+    paid_day = body.work_day + timedelta(days=1)
+    return await salary_day_cell(request, SalaryDayCellInput(
+        date=paid_day, employee_id=body.employee_id, amount=body.amount, expected_amount=body.expected_amount))
 
 
 class ExtraPayoutInput(BaseModel):
@@ -618,11 +637,11 @@ def delete_extra_payout(request: Request, payout_id: int):
 
 @router.get('/salary-day/export')
 def download_salary_day(request: Request, month: str, group: str | None = None, q: str | None = None,
-                        role: str | None = None):
+                        role: str | None = None, basis: Literal['payment', 'shift'] = 'payment'):
     """«Зарплата · день» в Excel для печати (Б-07): вся ведомость или выборка
     (группа, должность, поиск) — режим написан в шапке файла."""
     from .salary_day_export import salary_day_workbook
-    data = salary_day_month(request, month)
+    data = salary_day_month(request, month, basis)
     group = (group or '').strip() or None
     query = (q or '').strip() or None
     role = (role or '').strip() or None

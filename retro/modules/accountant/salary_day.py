@@ -167,10 +167,17 @@ def cell_attendance(row) -> dict:
                 source=row.status)
 
 
-def month_data(finance, first, last, attendance=None):
-    """Ведомость месяца. attendance(смены) — посещаемость прошедших смен
-    ({день: {сотрудник: строка «Сотрудников»}}); клетке выплаты отдаётся
-    посещаемость её смены — дня до выплаты (attendance)."""
+def month_data(finance, first, last, attendance=None, *, basis='payment'):
+    """Столбцы по сменам для ввода; прежний вид по выплатам для совместимости.
+
+    Меняется только представление: сохранённые work_day/paid_day не переносятся.
+    attendance(смены) возвращает {день: {сотрудник: строка «Сотрудников»}}.
+    """
+    if basis not in ('payment', 'shift'):
+        raise LedgerError('Неизвестный вид зарплатной ведомости.')
+    by_shift = basis == 'shift'
+    shift_first, shift_last = (first, last) if by_shift else (first-timedelta(days=1), last-timedelta(days=1))
+    paid_first, paid_last = (first+timedelta(days=1), last+timedelta(days=1)) if by_shift else (first, last)
     today = today_tashkent()
     days = [(first + timedelta(days=index)).isoformat() for index in range((last-first).days+1)]
     with closing(finance._open()) as connection:
@@ -187,26 +194,29 @@ def month_data(finance, first, last, attendance=None):
                 'FROM accountant_employee_versions WHERE effective_day<=? ORDER BY effective_day',
                 (last.isoformat(),)):
             versions[row[0]].append(row)
+        payment_range = ('((a.work_day>=? AND a.work_day<=?) OR (p.paid_day>=? AND p.paid_day<=?))'
+                         if by_shift else '(p.paid_day>=? AND p.paid_day<=?)')
+        payment_bounds = ((first.isoformat(), last.isoformat(), paid_first.isoformat(), paid_last.isoformat())
+                          if by_shift else (first.isoformat(), last.isoformat()))
         payments = connection.execute(
             'SELECT a.employee_id,a.employee_name,a.group_name,a.rate,p.paid_day,p.amount, '
             'a.work_day,a.attendance_status,a.id,p.id,a.amount '
             'FROM accountant_salary_payments p JOIN accountant_accruals a ON a.id=p.accrual_id '
-            'WHERE p.paid_day>=? AND p.paid_day<=? ORDER BY p.id',
-            (first.isoformat(), last.isoformat())).fetchall()
+            f'WHERE {payment_range} ORDER BY p.id', payment_bounds).fetchall()
         accruals = connection.execute(
             'SELECT id,employee_id,work_day,attendance_status,amount FROM accountant_accruals '
             'WHERE work_day>=? AND work_day<=?',
-            ((first-timedelta(days=1)).isoformat(), (last-timedelta(days=1)).isoformat())).fetchall()
+            (shift_first.isoformat(), shift_last.isoformat())).fetchall()
         all_payments = defaultdict(list)
         for row in connection.execute(
                 'SELECT p.accrual_id,p.paid_day,p.amount FROM accountant_salary_payments p '
                 'JOIN accountant_accruals a ON a.id=p.accrual_id WHERE a.work_day>=? AND a.work_day<=?',
-                ((first-timedelta(days=1)).isoformat(), (last-timedelta(days=1)).isoformat())):
+                (shift_first.isoformat(), shift_last.isoformat())):
             all_payments[row[0]].append(row)
         closure = closure_row(connection)
         # Доп. выплаты (Б-05): в итоге дня выплаты и сотрудника, в клетке — нет.
         from .extra_payouts import between, temporary_ids
-        extras = between(connection, first, last)
+        extras = between(connection, first, last, by_shift=by_shift)
         temporary = temporary_ids(connection)
         # Общая зарплата без сотрудников в «Финансах дня»: клетки не запираем, но
         # экран предупреждает — ввод тех же денег по людям посчитает выплату дважды.
@@ -214,7 +224,7 @@ def month_data(finance, first, last, attendance=None):
         for day_text, amount_text in connection.execute(
                 "SELECT day, amount FROM accountant_movements WHERE day>=? AND day<=? AND kind='other_expense' "
                 "AND item_code IN ('salary_cashier','salary_staff','salary_technical','salary_carryover')",
-                (first.isoformat(), last.isoformat())):
+                (paid_first.isoformat(), paid_last.isoformat())):
             aggregate[day_text] += Decimal(amount_text)
     closed_through = closure[1] if closure else ''
     people = {row[0]: dict(id=row[0], name=row[1], role=row[2], group=row[3],
@@ -226,7 +236,7 @@ def month_data(finance, first, last, attendance=None):
         people[employee_id].update(work_from=start.isoformat() if start else None,
                                    work_to=end.isoformat() if end else None,
                                    work_period=work_period.label(start, end))
-    amounts, cell_payments = defaultdict(Decimal), defaultdict(list)
+    amounts, cell_payments, paid_dates = defaultdict(Decimal), defaultdict(list), defaultdict(set)
     for row in payments:
         employee_id, name, group, rate, paid_day, amount = row[:6]
         if employee_id not in people:
@@ -234,7 +244,9 @@ def month_data(finance, first, last, attendance=None):
             people[employee_id] = dict(id=employee_id, name=name,
                                       role=historic[-1][3] if historic else group,
                                       group=group, rate=rate, archived=True, cells={})
-        amounts[(employee_id, paid_day)] += Decimal(amount)
+        column_day = row[6] if by_shift else paid_day
+        amounts[(employee_id, column_day)] += Decimal(amount)
+        paid_dates[(employee_id, column_day)].add(paid_day)
         cell_payments[(employee_id, paid_day)].append(row)
     for item in extras:
         # Доп. выплату получил тот, кого уже нет в реестре: строка — по имени из записи.
@@ -253,8 +265,9 @@ def month_data(finance, first, last, attendance=None):
         people[employee_id]['temporary'] = True
     earned = {(row[1], row[2]): row for row in accruals}
     for employee_id, person in people.items():
-        for paid_day in days:
-            work_day = (date.fromisoformat(paid_day)-timedelta(days=1)).isoformat()
+        for column_day in days:
+            work_day = column_day if by_shift else (date.fromisoformat(column_day)-timedelta(days=1)).isoformat()
+            paid_day = (date.fromisoformat(work_day)+timedelta(days=1)).isoformat()
             history = [row for row in versions[employee_id] if row[1] <= work_day]
             # Все прошедшие дни с начала учёта, как в «Зарплате · месяц». Запираем только
             # то, что задвоило бы деньги: выплату этой смены в другой день или выплату
@@ -276,15 +289,18 @@ def month_data(finance, first, last, attendance=None):
                 rate = history[-1][5]
             else:
                 rate = person['rate']
-            person['cells'][paid_day] = dict(amount=plain(amounts[(employee_id, paid_day)]),
+            person['cells'][column_day] = dict(amount=plain(amounts[(employee_id, column_day)]),
                                              work_day=work_day,
                                              editable=bool(editable and not conflict and not outside),
                                              rate=str(rate) if rate is not None else None)
             if outside:
-                person['cells'][paid_day]['outside'] = True
+                person['cells'][column_day]['outside'] = True
+            if by_shift:
+                person['cells'][column_day].update(paid_day=paid_day,
+                    paid_days=sorted(paid_dates[(employee_id, column_day)]))
     # Временный, чей период не задевает ни одной смены месяца, — не строка
     # этого месяца; есть выплата или доп. выплата — строка остаётся.
-    paid_people = {key[0] for key, amount in amounts.items() if amount} | {item['employee_id'] for item in extras}
+    paid_people = {key[0] for key, amount in amounts.items() if amount and key[1] in days} | {item['employee_id'] for item in extras}
     for employee_id in bounds:
         person = people[employee_id]
         if employee_id not in paid_people and all(cell.get('outside') for cell in person['cells'].values()):
@@ -292,13 +308,15 @@ def month_data(finance, first, last, attendance=None):
     if attendance is not None:
         # Посещаемость — за смену, то есть за день до выплаты; сегодняшнюю и будущие
         # смены не размечаем. Все смены месяца — одним вызовом, не по клетке.
-        shifts = {date.fromisoformat(paid_day) - timedelta(days=1): paid_day for paid_day in days}
+        shifts = {date.fromisoformat(day) if by_shift else date.fromisoformat(day)-timedelta(days=1): day
+                  for day in days}
         for work, rows in attendance([work for work in shifts if work < today]).items():
             for employee_id, row in rows.items():
                 person = people.get(employee_id)
                 if person is not None and work in shifts:
                     person['cells'][shifts[work]]['attendance'] = cell_attendance(row)
-    return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(), days=days,
+    return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(),
+                shift_start=(ENTRY_START-timedelta(days=1)).isoformat(), basis=basis, days=days,
                 people=list(people.values()), extras=extras,
                 aggregate_days=[dict(day=day, amount=plain(total)) for day, total in sorted(aggregate.items())],
                 closed_through=closed_through or None)

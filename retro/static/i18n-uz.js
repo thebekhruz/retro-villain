@@ -28,6 +28,10 @@ globalThis.RetroDictionaryUz = {
   // «Зарплата · день» — таблица с галочками
   'Без группы': "Guruhsiz",
   'Выдано за день · по фильтру': "Kunlik berilgan · filtr bo‘yicha",
+  'Выдано за смену': "Smena uchun berilgan",
+  'Выдано за смену · по фильтру': "Smena uchun berilgan · filtr bo‘yicha",
+  'Ведомость сменных: сотрудник × день смены': "Smenali xodimlar qaydnomasi: xodim × smena kuni",
+  'Выберите завершённую смену: выплата записывается следующим днём.': "Tugagan smenani tanlang: to‘lov keyingi kunga yoziladi.",
   'Никого не нашли. Сбросьте поиск или выберите «Все».': "Hech kim topilmadi. Qidiruvni tozalang yoki «Hammasi»ni tanlang.",
   'выдано по ставке': "stavka bo‘yicha berilgan",
   'другая сумма': "boshqa summa",
@@ -1311,6 +1315,14 @@ globalThis.RetroTemplatesUz = [
   [/^Ручная ведомость · (.+)$/, "Qo‘lda to‘ldiriladigan qaydnoma · $1"],
   [/^Выдано (\d\d\.\d\d)$/, "$1 kuni berilgan"],
   [/^За смену (\d\d\.\d\d)$/, "$1 smenasi uchun"],
+  [/^Обычная выплата (\d\d\.\d\d)$/, "Odatiy to‘lov $1"],
+  [/^выплата (\d\d\.\d\d)$/, "to‘lov $1"],
+  [/^Смена (\d\d\.\d\d) · выплата ([\d., ]+)$/, "Smena $1 · to‘lov $2"],
+  [/^(.+) · Смена (\d\d\.\d\d) · выплата ([\d., ]+) · (выдано (.+) сум|не выдано)( · .+)?$/,
+    (_, name, work, paid, state, amount) => `${name} · Smena ${work} · to‘lov ${paid} · `
+      + (amount ? `${amount} so‘m berildi` : 'berilmagan')],
+  [/^В столбце — дата смены\. Обычная выплата и расход в «Финансах дня» — на следующий день\. Ручной ввод выплат с (.+)\.$/,
+    "Ustunda — smena sanasi. Odatiy to‘lov va «Kun moliyasi»dagi xarajat keyingi kunga yoziladi. To‘lovlar $1 sanasidan qo‘lda kiritiladi."],
   [/^за (\d\d\.\d\d)$/, "$1 uchun"],
   [/^(.+) · выплата (\d\d\.\d\d) за смену (\d\d\.\d\d) · (выдано (.+) сум|не выдано)( · .+)?$/, "$1 · $2 to‘lovi, $3 smenasi uchun"],
   [/^(.+) · выплата (\d\d\.\d\d)(, сум)?$/, "$1 · $2 to‘lovi$3"],
@@ -3203,6 +3215,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Доп. выплату записывают в «Зарплата · день»: с сотрудником и датой смены.': "Qo'shimcha to'lov «Ish haqi · kun» bo'limida yoziladi: xodim va smena sanasi bilan.",
 });
 globalThis.RetroTemplatesUz.push(
+  [/^Доп\. выплаты за смены · (.+)$/, "Smenalar uchun qo‘shimcha to‘lovlar · $1"],
   [/^Доп\. выплаты за (.+)$/, "Qo'shimcha to'lovlar · $1"],
   [/^Доп\. выплаты · (\d+) чел\.$/, "Qo'shimcha to'lovlar · $1 kishi"],
   [/^по фильтру · (\d+) · (.+) сум$/, "filtr bo'yicha · $1 · $2 so'm"],
