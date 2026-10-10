@@ -11,6 +11,7 @@
   const node=(tag,cls,text)=>{const el=document.createElement(tag);if(cls)el.className=cls;if(text!=null)el.textContent=text;return el;};
   let current=null, today=null, selectedDay=null, sequence=0, controller=null, writes=0, queue=Promise.resolve();
   let editing=null;
+  let loading=false, calendarDay=null, dateCheck=null;
   // Группы и поиск — как в «Сотрудниках»; порядок групп тот же, незнакомые — в конце.
   // В выбранной группе — её должности (в «Кухне» — повара по цехам), общая логика EmployeesLogic.
   const GROUP_ORDER=['Управление','Встреча гостей','Кухня','Обслуживание зала','Бар','Присмотр за детьми','Уборка','Охрана'];
@@ -189,15 +190,18 @@
     globalThis.RetroSave?.track(work);
     return work;
   }
-  async function loadMonth(month){
+  async function loadMonth(month,{asOf=today,followToday=false,preserveDraft=false}={}){
     if(writes){if(current)$('month-input').value=current.month;message('Дождитесь сохранения выплат.',true);return false;}
-    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month<'2026-10'||month>today.slice(0,7)){if(current)$('month-input').value=current.month;message('Выберите текущий или прошедший месяц.',true);return false;}
+    if(!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)||month<'2026-10'||month>asOf.slice(0,7)){if(current)$('month-input').value=current.month;message('Выберите текущий или прошедший месяц.',true);return false;}
+    const requestedOn=L.tashkentDay(new Date());loading=true;
     const token=++sequence;controller?.abort();controller=new AbortController();$('salary-body').setAttribute('aria-busy','true');$('sheet-grid').inert=true;
     try{
       const response=await fetch('/api/accountant/salary-day/month?month='+encodeURIComponent(month),{signal:controller.signal,cache:'no-store'});
       const data=await response.json();if(!response.ok)throw new Error(data.detail||'Не удалось загрузить ведомость.');
       if(token!==sequence)return false;
-      current=data;today=data.today;selectedDay=data.days.includes(selectedDay)?selectedDay:data.days.includes(today)?today:data.days.at(-1);
+      if(preserveDraft&&(editing||writes||extra?.busy()||globalThis.RetroSave?.pending().length))return false;
+      current=data;today=data.today;calendarDay=requestedOn;
+      selectedDay=followToday&&data.days.includes(today)?today:data.days.includes(selectedDay)?selectedDay:data.days.includes(today)?today:data.days.at(-1);
       $('month-input').value=data.month;$('month-input').max=today.slice(0,7);$('month-label').textContent=monthTitle(month);$('crumb-month').textContent='Зарплата · день';
       render();$('salary-body').hidden=false;message('');$('connection').classList.remove('rm-status-skel');$('connection').textContent='Ручная ведомость · '+monthTitle(month);controls();
       const scrollDay=today<data.entry_start&&data.days.includes(data.entry_start)?data.entry_start:selectedDay;
@@ -213,7 +217,33 @@
       }
       return true;
     }catch(error){if(token===sequence&&error.name!=='AbortError'){if(current)$('month-input').value=current.month;message(error.message,true);}return false;}
-    finally{if(token===sequence){$('salary-loading').hidden=true;$('salary-body').setAttribute('aria-busy','false');$('sheet-grid').inert=false;}}
+    finally{if(token===sequence){loading=false;$('salary-loading').hidden=true;$('salary-body').setAttribute('aria-busy','false');$('sheet-grid').inert=false;}}
+  }
+
+  /* Оставленная на ночь ведомость открывает новую выплату за вчерашнюю смену.
+     Дату подтверждает сервер; часы устройства только подсказывают, когда проверить.
+     Начатую сумму/доп. выплату и запись в пути не трогаем. Исторический день не переключаем. */
+  function dateRefreshBlocked(){
+    return !current||document.hidden||loading||writes>0||!!editing||extra?.busy()
+      ||!!globalThis.RetroSave?.pending().length;
+  }
+  async function refreshDate(force=false){
+    if(dateCheck)return dateCheck;
+    if(dateRefreshBlocked()||(!force&&calendarDay===L.tashkentDay(new Date())))return false;
+    dateCheck=(async()=>{
+      try{
+        const response=await fetch('/api/config',{cache:'no-store'});
+        if(!response.ok)throw new Error('Не удалось определить настройки сервера.');
+        const config=await response.json();
+        // За время запроса бухгалтер мог начать ввод или переключить месяц.
+        if(dateRefreshBlocked())return false;
+        if(config.today===today){calendarDay=L.tashkentDay(new Date());return false;}
+        const followToday=selectedDay===today&&current.month===today.slice(0,7);
+        return await loadMonth(followToday?config.today.slice(0,7):current.month,{asOf:config.today,followToday,preserveDraft:true});
+      }catch(error){message(error.message,true);return false;}
+      finally{dateCheck=null;}
+    })();
+    return dateCheck;
   }
 
   /* Записать клетку; медленную запись видно спиннером на самой клетке. */
@@ -336,5 +366,8 @@
   // «Сохранить» дописывает сумму, набранную в клетке; галочки уже записаны.
   globalThis.RetroSave?.register(grid,async()=>editing?await finishEdit(true):true,
     {dirty:()=>!!editing&&L.parseAmount(editing.input.value)!==editing.clean});
+  window.addEventListener('focus',()=>refreshDate(true));
+  document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDate(true);});
+  setInterval(()=>refreshDate(),30000);
   (async()=>{try{today=(await globalThis.RetroConfig).today;const params=new URLSearchParams(location.search);selectedDay=params.get('date');const requested=params.get('month')||selectedDay?.slice(0,7);const month=requested&&requested>='2026-10'&&requested<=today.slice(0,7)?requested:today.slice(0,7);$('month-input').value=month;await loadMonth(month);}catch(error){$('salary-loading').hidden=true;message(error.message,true);}})();
 })();

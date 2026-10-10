@@ -154,3 +154,116 @@ test('временный: клетки вне периода заперты и �
   assert.equal(view.total, 150000);
   assert.deepEqual(view.people[0].cells.map(c => c.editable), [false, true, true, false]);
 });
+
+/* T-428: открытая с вечера ведомость не оставляет вчерашнюю дату «сегодня». */
+const calendarCode=source.slice(source.indexOf('async function loadMonth('),source.indexOf('/* Записать клетку;'));
+function calendarHarness({today='2026-10-09',selected=today,sheetMonth=today.slice(0,7)}={}){
+  const requests=[],messages=[],elements=new Map();
+  const element=id=>{
+    if(!elements.has(id))elements.set(id,{value:'',style:{},classList:{remove(){}},setAttribute(){},querySelector(){return null;}});
+    return elements.get(id);
+  };
+  const clock={now:new Date('2026-10-09T19:00:01Z')};
+  class ClockDate extends Date{constructor(...args){super(...(args.length?args:[clock.now]));}}
+  const context=vm.createContext({L:logic,Date:ClockDate,AbortController,encodeURIComponent,
+    current:month({month:sheetMonth,today}),today,selectedDay:selected,calendarDay:today,
+    loading:false,writes:0,editing:null,dateCheck:null,sequence:0,controller:null,
+    document:{hidden:false},dirty:[],extraBusy:false,
+    $:element,monthTitle:value=>value,message:(...args)=>messages.push(args),controls(){},render(){},
+    fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve})),
+  });
+  vm.runInContext('globalThis.RetroSave={pending:()=>dirty};const extra={busy:()=>extraBusy};'+calendarCode,context);
+  const reply=(index,data,ok=true)=>requests[index].resolve({ok,json:async()=>data});
+  const sheet=(day,which=day.slice(0,7))=>month({month:which,today:day,entry_start:'2026-10-02',
+    days:which==='2026-11'?['2026-11-01','2026-11-02']:['2026-10-08','2026-10-09','2026-10-10','2026-10-31']});
+  return {context,clock,requests,messages,elements,reply,sheet,refresh:force=>context.refreshDate(force)};
+}
+const flush=()=>new Promise(resolve=>setTimeout(resolve,0));
+
+test('Tashkent midnight, month and year boundaries are independent of device timezone',()=>{
+  assert.equal(logic.tashkentDay(new Date('2026-10-09T18:59:59Z')),'2026-10-09');
+  assert.equal(logic.tashkentDay(new Date('2026-10-09T19:00:00Z')),'2026-10-10');
+  assert.equal(logic.tashkentDay(new Date('2026-10-31T19:00:00Z')),'2026-11-01');
+  assert.equal(logic.previousDay('2027-01-01'),'2026-12-31');
+});
+
+test('overnight refresh selects the new payout day, reloads permissions, and does not write money',async()=>{
+  const h=calendarHarness(),work=h.refresh();
+  assert.equal(h.requests[0].url,'/api/config');
+  h.reply(0,{today:'2026-10-10'});await flush();
+  assert.equal(h.requests[1].url,'/api/accountant/salary-day/month?month=2026-10');
+  assert.equal(h.elements.get('sheet-grid').inert,true);
+  h.reply(1,h.sheet('2026-10-10'));assert.equal(await work,true);
+  assert.equal(h.context.today,'2026-10-10');
+  assert.equal(h.context.selectedDay,'2026-10-10');
+  assert.equal(logic.previousDay(h.context.selectedDay),'2026-10-09');
+  assert.equal(logic.canEdit(h.context.current,h.context.current.people[0],'2026-10-10'),true);
+  assert.ok(h.requests.every(request=>!request.options.method&&request.options.cache==='no-store'));
+  assert.equal(await h.refresh(),false,'no polling of the server while the date is unchanged');
+  assert.equal(h.requests.length,2);
+});
+
+test('first payout of a new month opens the new month; past day selection stays put',async()=>{
+  for(const selected of ['2026-10-31','2026-10-08']){
+    const h=calendarHarness({today:'2026-10-31',selected});h.clock.now=new Date('2026-10-31T19:00:01Z');
+    const work=h.refresh();h.reply(0,{today:'2026-11-01'});await flush();
+    const target=selected==='2026-10-31'?'2026-11':'2026-10';
+    assert.equal(h.requests[1].url,'/api/accountant/salary-day/month?month='+target);
+    h.reply(1,h.sheet('2026-11-01',target));assert.equal(await work,true);
+    assert.equal(h.context.current.month,target);
+    assert.equal(h.context.selectedDay,target==='2026-11'?'2026-11-01':selected);
+    assert.equal(h.elements.get('month-input').max,'2026-11');
+  }
+});
+
+test('pending payout, amount editor and extra payout draft defer rollover without discarding data',async()=>{
+  for(const state of [{writes:1},{editing:{input:'123000'}},{extraBusy:true},{dirty:['extra-form']},{loading:true}]){
+    const h=calendarHarness();Object.assign(h.context,state);
+    assert.equal(await h.refresh(true),false);
+    assert.equal(h.requests.length,0);
+    assert.equal(h.context.selectedDay,'2026-10-09');
+    Object.assign(h.context,{writes:0,editing:null,extraBusy:false,dirty:[],loading:false});
+    const work=h.refresh();h.reply(0,{today:'2026-10-10'});await flush();
+    h.reply(1,h.sheet('2026-10-10'));assert.equal(await work,true);
+    assert.equal(h.context.selectedDay,'2026-10-10');
+  }
+});
+
+test('draft started during the date request or month reload is preserved until the next refresh',async()=>{
+  for(const stage of ['config','month']){
+    const h=calendarHarness(),before=h.context.current,work=h.refresh();
+    if(stage==='config')h.context.editing={input:'123000'};
+    h.reply(0,{today:'2026-10-10'});await flush();
+    if(stage==='month'){h.context.dirty=['extra-form'];h.reply(1,h.sheet('2026-10-10'));}
+    assert.equal(await work,false);
+    assert.equal(h.context.current,before);
+    assert.equal(h.context.today,'2026-10-09');
+    assert.equal(h.context.selectedDay,'2026-10-09');
+    assert.equal(h.context.loading,false);
+  }
+});
+
+test('failed month reload keeps dates unchanged and retries; simultaneous focus events share a check',async()=>{
+  const h=calendarHarness(),first=h.refresh(),second=h.refresh(true);
+  assert.equal(h.requests.length,1);
+  h.reply(0,{today:'2026-10-10'});await flush();
+  h.reply(1,{detail:'Нет связи'},false);
+  assert.deepEqual(await Promise.all([first,second]),[false,false]);
+  assert.equal(h.context.today,'2026-10-09');
+  assert.equal(h.context.selectedDay,'2026-10-09');
+  assert.equal(h.elements.get('sheet-grid').inert,false);
+  const retry=h.refresh();h.reply(2,{today:'2026-10-10'});await flush();
+  h.reply(3,h.sheet('2026-10-10'));assert.equal(await retry,true);
+});
+
+test('server date wins over device clock; visibility/focus can check it again',async()=>{
+  const h=calendarHarness(),work=h.refresh();
+  h.reply(0,{today:'2026-10-09'});assert.equal(await work,false);
+  assert.equal(h.context.today,'2026-10-09');
+  assert.equal(await h.refresh(),false);
+  assert.equal(h.requests.length,1);
+  h.context.document.hidden=true;assert.equal(await h.refresh(true),false);
+  h.context.document.hidden=false;
+  const focus=h.refresh(true);h.reply(1,{today:'2026-10-10'});await flush();
+  h.reply(2,h.sheet('2026-10-10'));assert.equal(await focus,true);
+});

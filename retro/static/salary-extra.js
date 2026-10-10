@@ -245,6 +245,6 @@
 
   /* page: data() — ответ ведомости, visible(person) и filtered() — фильтр
      ведомости, selectedDay(), reload() — перечитать месяц, message(text, error). */
-  function mount(api) { page = api; wire(); return {render, day}; }
+  function mount(api) { page = api; wire(); return {render, day, busy: () => saving || !!editing || !!popover}; }
   globalThis.SalaryExtra = {mount};
 })();
