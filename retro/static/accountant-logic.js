@@ -296,6 +296,13 @@
       const people=((data.monthly_payments||{}).today||[]).map(p=>({id:'m'+p.id,name:p.name,amount:num(p.amount),readonly:true}));
       auto.push({kind:'auto',group:'monthly',cat:'Зарплата',name:'Оклады · частичные выплаты'+(people.length?' · '+people.length+' чел.':''),
         amount:sum,paid:sum,debt:0,children:people.length?people:undefined});}
+    // Доп. выплаты из «Зарплата · день» (Б-05) — так же: одна строка, раскрывается по людям.
+    const extras=mv.filter(m=>m.type==='other_expense'&&m.item_code==='salary_extra');
+    if(extras.length){const sum=extras.reduce((s,m)=>s+num(m.amount),0);
+      const people=(data.extra_payouts||[]).map(p=>({id:'x'+p.id,amount:num(p.amount),readonly:true,
+        name:[p.name,p.temporary?'временный':'','смена '+dm(p.work_day),p.note].filter(Boolean).join(' · ')}));
+      auto.push({kind:'auto',group:'extra',cat:'Зарплата',name:'Доп. выплаты'+(people.length?' · '+people.length+' чел.':''),
+        amount:sum,paid:sum,debt:0,children:people.length?people:undefined});}
     const kassa=(data.cashier_shokh_gives&&data.cashier_shokh_gives.gives)||[];
     if(kassa.length){const sum=kassa.reduce((s,g)=>s+num(g.amount),0);
       auto.push({kind:'auto',group:'kassa',cat:'Закуп',name:'Шоху от кассира · уже вычтено из передачи',
@@ -306,7 +313,7 @@
         amount:sum,paid:sum,debt:0});}
     mv.forEach(m=>{
       if(hidden.has(m.id))return;
-      if(m.type==='other_expense'&&m.item_code!=='salary_monthly'){
+      if(m.type==='other_expense'&&m.item_code!=='salary_monthly'&&m.item_code!=='salary_extra'){
         const info=index[m.item_code]||{};
         rows.push({kind:'expense',cat:info.short||'Расход',name:stripItem(m.description,info.label),
           title:m.description,amount:num(m.amount),paid:num(m.amount),debt:0,
@@ -349,7 +356,9 @@
     // Расход «Закуп · Шох» из журнала — тоже выдача в подотчёт (сервер кладёт
     // его в баланс Шоха), поэтому он в строке «Шоху», а не в «прочих».
     const shoh=sumOf(m=>m.type==='procurement_advance'||(m.type==='other_expense'&&m.item_code==='proc_shoh'));
-    const other=num(cf.other_outflows)-monthly-shoh;
+    // Доп. выплаты сменным — к сменным, а не к прочим (как day_flow на сервере).
+    const extra=sumOf(m=>m.type==='other_expense'&&m.item_code==='salary_extra');
+    const other=num(cf.other_outflows)-monthly-shoh-extra;
     return {end:l.cash_balance===null?null:num(l.cash_balance),
       opening:cf.opening_balance===null||cf.opening_balance===undefined?null:num(cf.opening_balance),
       cashier:data.expected_cashier===null?null:num(data.expected_cashier),
@@ -371,7 +380,7 @@
       // Кассир изменил день после подтверждения: расчёт тогда и сейчас.
       changed:!!(data.cashier_handover&&data.cashier_handover.expected_changed),
       confirmedCalc:data.cashier_handover&&data.cashier_handover.expected_amount!=null?num(data.cashier_handover.expected_amount):null,
-      receipts:num(cf.other_receipts),shift:num(cf.salary_paid),monthly,shoh,other};
+      receipts:num(cf.other_receipts),shift:num(cf.salary_paid)+extra,monthly,shoh,other};
   }
 
   function monthlyBoard(data){

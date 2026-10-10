@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .payroll import PayrollRow, attendance_after_payment
-from .expense_catalog import ITEMS
+from .expense_catalog import EXTRA_ITEM, ITEMS
 from .audit import audit_entries as read_audit_entries, record_audit
 from retro.db import PostgresConnection, as_database, table_columns
 from retro.request_reads import call as cached_call, once
@@ -24,6 +24,8 @@ DEFAULT_BAZAARS = ('Алайский базар', 'Food City', 'Базар Ше�
 # Ссылка выплаты оклада на сотрудника реестра окладов: `monthly:<id>:<ключ>`.
 MONTHLY_REFERENCE = 'monthly:'
 MONTHLY_ITEM = 'salary_monthly'
+# Доп. выплату пишут только с сотрудником и сменой — общим расходом её не завести.
+EXTRA_ONLY = 'Доп. выплату записывают в «Зарплата · день»: с сотрудником и датой смены.'
 
 
 class LedgerError(ValueError):
@@ -309,9 +311,11 @@ class CashBook:
         shoh = moved(lambda kind, code: kind == 'procurement_advance'
                      or (kind == 'other_expense' and code == 'proc_shoh'))
         monthly = moved(lambda kind, code: kind == 'other_expense' and is_monthly_salary(code))
-        other = moved(lambda kind, code: kind == 'other_expense' and code != 'proc_shoh'
+        # Доп. выплаты сменным — в «Сменным» (строка «Зарплаты» дэшборда), а не в прочих.
+        extra = moved(lambda kind, code: kind == 'other_expense' and code == EXTRA_ITEM)
+        other = moved(lambda kind, code: kind == 'other_expense' and code not in ('proc_shoh', EXTRA_ITEM)
                       and not is_monthly_salary(code))
-        salary = sum((Decimal(amount) for cutoff, amount in self.salaries if cutoff == today), Decimal(0))
+        salary = sum((Decimal(amount) for cutoff, amount in self.salaries if cutoff == today), Decimal(0)) + extra
         transfers = sum((Decimal(amount) for cutoff, amount in self.transfers if cutoff == today), Decimal(0))
         anchor = self.anchor_for(today)
         return dict(day=today, opening=opening,
@@ -493,6 +497,10 @@ class FinanceStore:
             # доллары в сейф читают подотчёт и сейф — см. modules/cashier/till.py.
             from retro.modules.cashier.till import create_tables
             create_tables(connection)
+            # Доп. выплаты «Зарплата · день» (ТЗ 09.10, Б-05): кому и за какую
+            # смену; сами деньги — расход в accountant_movements.
+            from .extra_payouts import create_tables as create_extra_tables
+            create_extra_tables(connection)
             # Кто записал приход: 'cashier' — кнопка кассира, 'accountant' — ручная
             # запись бухгалтера, 'auto' — расчёт iiko. Старые строки — ручные.
             if 'source' not in table_columns(connection, 'accountant_handover_days'):
@@ -857,6 +865,8 @@ class FinanceStore:
                     connection.execute('DELETE FROM accountant_movements WHERE id = ?',
                                        (before['movement_id'],))
                 elif operation_type == 'movement':
+                    from .extra_payouts import guard_movement
+                    guard_movement(connection, operation_id)
                     linked = connection.execute(
                         'SELECT id FROM accountant_debt_payments WHERE movement_id = ?',
                         (operation_id,)).fetchone()
@@ -1226,6 +1236,30 @@ class FinanceStore:
         from .salary_day import month_data
         return month_data(self, first, last, attendance)
 
+    def add_extra_payout(self, **values):
+        from .extra_payouts import add
+        return add(self, **values)
+
+    def update_extra_payout(self, payout_id, **values):
+        from .extra_payouts import update
+        return update(self, payout_id, **values)
+
+    def delete_extra_payout(self, payout_id, *, by=None):
+        from .extra_payouts import delete
+        return delete(self, payout_id, by=by)
+
+    def extra_payout(self, payout_id):
+        from .extra_payouts import read
+        with closing(self._open()) as connection:
+            return read(connection, payout_id)
+
+    @once
+    def extra_payouts(self, first: date, last: date) -> list[dict]:
+        """Доп. выплаты по дню выплаты за период (журнал дня, ведомость)."""
+        from .extra_payouts import between
+        with closing(self._open()) as connection:
+            return between(connection, first, last)
+
     def payroll_month(self, first: date, last: date) -> dict:
         """Shift accruals and their payments for a whole month, in one pass.
 
@@ -1454,6 +1488,8 @@ class FinanceStore:
                     *, cashier_amount: Decimal | None = None):
         if item_code not in ITEMS or ITEMS[item_code][0] == 'income':
             raise LedgerError('Выберите наименование затрат из справочника.')
+        if item_code == EXTRA_ITEM:
+            raise LedgerError(EXTRA_ONLY)
         note = note.strip() if isinstance(note, str) else ''
         if len(note) > 160:
             raise LedgerError('Пояснение должно быть не длиннее 160 символов.')
@@ -1489,6 +1525,10 @@ class FinanceStore:
                 kind, old_amount, old_code, stored_day, _ = row
                 if stored_day != day.isoformat():
                     raise LedgerError('Нельзя изменить дату операции.')
+                from .extra_payouts import guard_movement
+                guard_movement(connection, movement_id)
+                if item_code == EXTRA_ITEM:
+                    raise LedgerError(EXTRA_ONLY)
                 before = self._row_dict(connection, 'accountant_movements', movement_id)
                 if monthly:
                     # Выплата оклада привязана к человеку ссылкой. Другая статья

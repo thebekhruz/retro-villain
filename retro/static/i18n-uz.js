@@ -3155,3 +3155,62 @@ globalThis.RetroTemplatesUz.push(
       + (amount ? ' · ' + amount + " so'm berildi" : '')],
 );
 /* ── /T-429 ── */
+/* ── T-430 «Зарплата · день»: доп. выплаты и «Скачать Excel» ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'СМЕННЫЕ И ВРЕМЕННЫЕ · РАЗОВАЯ ВЫПЛАТА': "SMENALI VA VAQTINCHALIK XODIMLAR · BIR MARTALIK TO'LOV",
+  'Доп. выплаты': "Qo'shimcha to'lovlar",
+  'Кому · имя или должность': "Kimga · ism yoki lavozim",
+  'Кому выдаём доп. выплату': "Qo'shimcha to'lov kimga beriladi",
+  'Выплата': "To'lov",
+  'Назначение: за что': "Maqsadi: nima uchun",
+  'Назначение выплаты': "To'lov maqsadi",
+  'Разовая выплата сверх клетки: уйдёт расходом в день выплаты и войдёт в итоги ведомости.': "Katakdan tashqari bir martalik to'lov: to'lov kunida xarajat bo'lib yoziladi va qaydnoma jamiga kiradi.",
+  'Сохранить изменения': "O'zgarishlarni saqlash",
+  'Отменить правку': "Tahrirni bekor qilish",
+  'Удалить доп. выплату': "Qo'shimcha to'lovni o'chirish",
+  'По фильтру доп. выплат нет.': "Filtr bo'yicha qo'shimcha to'lovlar yo'q.",
+  'В этом месяце доп. выплат нет.': "Bu oyda qo'shimcha to'lovlar yo'q.",
+  'временный': "vaqtinchalik",
+  'смена': "smena",
+  'Скачана выборка ведомости.': "Qaydnomadan tanlanganlar yuklab olindi.",
+  'Выберите сотрудника из списка.': "Ro'yxatdan xodimni tanlang.",
+  'Укажите дату выплаты.': "To'lov sanasini kiriting.",
+  'Укажите дату смены.': "Smena sanasini kiriting.",
+  'Доп. выплаты вводятся с 02.10.2026 — с начала рабочего учёта.': "Qo'shimcha to'lovlar 02.10.2026 dan — ish hisobi boshlanganidan kiritiladi.",
+  'Нельзя записать выплату будущим днём.': "To'lovni kelgusi kun bilan yozib bo'lmaydi.",
+  'Смена не может быть позже дня выплаты.': "Smena to'lov kunidan keyin bo'lishi mumkin emas.",
+  'Смена — не раньше 01.10.2026: с неё начинается ручная ведомость.': "Smena — 01.10.2026 dan oldin emas: qo'lda yuritiladigan qaydnoma shundan boshlanadi.",
+  'Введите сумму цифрами, больше нуля.': "Summani raqamlar bilan, noldan katta kiriting.",
+  'Укажите назначение: за что выплата.': "Maqsadini kiriting: to'lov nima uchun.",
+  'Укажите назначение выплаты (до 160 символов).': "To'lov maqsadini kiriting (160 belgigacha).",
+  'Сотрудник не найден или находится в архиве.': "Xodim topilmadi yoki arxivda.",
+  'Сумма уже изменилась. Обновите страницу и повторите.': "Summa allaqachon o'zgargan. Sahifani yangilang va qaytaring.",
+  'Доп. выплата не найдена.': "Qo'shimcha to'lov topilmadi.",
+  'Это доп. выплата сотруднику: измените или удалите её в «Зарплата · день».': "Bu xodimga qo'shimcha to'lov: uni «Ish haqi · kun» bo'limida o'zgartiring yoki o'chiring.",
+  'Доп. выплату записывают в «Зарплата · день»: с сотрудником и датой смены.': "Qo'shimcha to'lov «Ish haqi · kun» bo'limida yoziladi: xodim va smena sanasi bilan.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Доп\. выплаты за (.+)$/, "Qo'shimcha to'lovlar · $1"],
+  [/^Доп\. выплаты · (\d+) чел\.$/, "Qo'shimcha to'lovlar · $1 kishi"],
+  [/^по фильтру · (\d+) · (.+) сум$/, "filtr bo'yicha · $1 · $2 so'm"],
+  [/^выплата (\d\d\.\d\d) · смена (\d\d\.\d\d)( · .*)?$/, "to'lov $1 · smena $2$3"],
+  [/^(.+) · ставка (.+)\. В клетке (\d\d\.\d\d) выплаты нет\.$/, "$1 · stavka $2. $3 katagida to'lov yo'q."],
+  [/^(.+)\. В клетке (\d\d\.\d\d) выплаты нет\.$/, "$1. $2 katagida to'lov yo'q."],
+  [/^У сотрудника «(.+)» уже отмечена выплата в клетке: (.+)\. Доп\. выплата — отдельные деньги сверх клетки; если это та же выдача, второй раз её не записывайте\.$/,
+    // Внутри списка клеток — «09.10 — 360 000 сум (смена 08.10)»: сумма и смена тоже по-узбекски.
+    (_, name, cells) => `«${name}» xodimining katagida to'lov allaqachon belgilangan: `
+      + cells.replace(/ сум \(смена /g, " so'm (smena ") + ". Qo'shimcha to'lov — katakdan tashqari alohida pul; "
+      + "agar bu o'sha to'lov bo'lsa, uni ikkinchi marta yozmang."],
+  [/^Такая доп\. выплата уже записана: (.+) сум, выплата (\d\d\.\d\d) за смену (\d\d\.\d\d)\.$/,
+    "Bunday qo'shimcha to'lov allaqachon yozilgan: $1 so'm, $3 smenasi uchun $2 to'lov."],
+  [/^Правка: (.+) · выплата (\d\d\.\d\d)\. Сотрудника и день выплаты не изменить — удалите запись и запишите заново\.$/,
+    "Tahrir: $1 · to'lov $2. Xodim va to'lov kunini o'zgartirib bo'lmaydi — yozuvni o'chiring va qaytadan yozing."],
+  [/^Записано: (.+), (.+) сум\. Выплата попала в «Операции за день» за (\d\d\.\d\d) и уменьшила кассу\.$/,
+    "Yozildi: $1, $2 so'm. To'lov $3 «Kun amallari»ga tushdi va kassani kamaytirdi."],
+  [/^Изменено: (.+), (.+) сум\.$/, "O'zgartirildi: $1, $2 so'm."],
+  [/^Доп\. выплата удалена\. Деньги вернулись в кассу (\d\d\.\d\d)\.$/, "Qo'shimcha to'lov o'chirildi. Pul $1 kassasiga qaytdi."],
+  [/^Удалить доп\. выплату (.+) · (.+) сум за (\d\d\.\d\d)\?$/, "$1 · $2 so'mlik $3 qo'shimcha to'lovini o'chirasizmi?"],
+  [/^Изменить доп\. выплату (.+) · (.+) сум$/, "$1 · $2 so'mlik qo'shimcha to'lovni o'zgartirish"],
+  [/^Доп\. выплата (.+) сум — в списке под таблицей$/, "Qo'shimcha to'lov $1 so'm — jadval ostidagi ro'yxatda"],
+);
+/* ── /T-430 ── */

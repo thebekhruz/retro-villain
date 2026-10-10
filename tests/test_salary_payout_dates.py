@@ -314,7 +314,8 @@ def test_partial_and_extra_payouts_agree_in_sheet_journal_and_dashboard(c):
     # клетка заперта: смена 08.10 за ней не та, правка задвоила бы деньги.
     cells = {person['name']: person['cells'] for person in sheet(c)['people']}
     assert cells['Каримов Жахонгир']['2026-10-09'] == dict(
-        amount='160000', work_day='2026-10-08', editable=False, rate='360000', late='10:58')
+        amount='160000', work_day='2026-10-08', editable=False, rate='360000',
+        attendance=dict(status='late', time='10:58', source='late'))
     assert cells['Каримов Жахонгир']['2026-10-08']['editable'] is False
 
 

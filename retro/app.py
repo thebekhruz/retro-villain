@@ -94,6 +94,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'salary-day.html': {'accountant'}, 'shoh-balance.html': {'accountant'},
         'salary-day.js': {'accountant'}, 'salary-day-logic.js': {'accountant'},
         'salary-day.css': {'accountant'},
+        # ТЗ 09.10, Б-05: доп. выплаты под ведомостью «Зарплата · день»
+        'salary-extra.js': {'accountant'}, 'salary-extra-logic.js': {'accountant'},
         'shoh-balance.js': {'accountant'}, 'save.js': {'accountant'},
         # Расчёты бухгалтерии читают экраны директора и учредителя
         'accountant-logic.js': {'accountant', 'director', 'founder'},
