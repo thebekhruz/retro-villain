@@ -3123,3 +3123,34 @@ globalThis.RetroTemplatesUz.push(
   [/^Выдачи и расходы · (.+)$/, "To'lovlar va xarajatlar · $1"],
 );
 /* ── /T-405 ── */
+
+/* ── T-429 «Зарплата · день»: посещаемость смены в клетке, должности в группе ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Все должности': 'Barcha lavozimlar',
+  'Должности': 'Lavozimlar',
+  // Должности кухни в реестре пишут с заглавной — так их видит и чип группы.
+  'Повар': 'Oshpaz',
+  'Кондитер': 'Qandolatchi',
+  'Повар миллий': 'Milliy oshpaz',
+  'Повар горячего цеха': 'Issiq sex oshpazi',
+  'Повар холодного цеха': 'Sovuq sex oshpazi',
+  'тандыр': 'tandir',
+  'турк': 'turk',
+  'мангал': 'mangal',
+});
+globalThis.RetroTemplatesUz.push(
+  // Невыданная клетка: «нет» — не пришёл, «был» — отмечен вручную. Шаблоном, а не
+  // словом словаря: короткое слово не должно переводиться внутри других строк.
+  [/^нет$/, "yo'q"],
+  [/^был$/, 'keldi'],
+  // Подсказка клетки: «Смена 08.10: пришёл 09:31, вовремя · выдано 360 000 сум».
+  [/^Смена (\d\d\.\d\d): (пришёл (\d\d:\d\d), (вовремя|опоздал)|не пришёл|не был, отмечено вручную|был, отмечено вручную|нет привязки к Hikvision|нет данных Hikvision)(?: · выдано (.+) сум)?$/,
+    (all, day, state, time, when, amount) => day + ' smenasi: ' + (time
+      ? time + ' da keldi, ' + (when === 'вовремя' ? "o'z vaqtida" : 'kechikdi')
+      : {'не пришёл': 'kelmadi', 'не был, отмечено вручную': "kelmagan, qo'lda belgilangan",
+        'был, отмечено вручную': "kelgan, qo'lda belgilangan",
+        'нет привязки к Hikvision': "Hikvision'ga bog'lanmagan",
+        'нет данных Hikvision': "Hikvision ma'lumotlari yo'q"}[state])
+      + (amount ? ' · ' + amount + " so'm berildi" : '')],
+);
+/* ── /T-429 ── */

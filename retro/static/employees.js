@@ -14,7 +14,8 @@ const NO_SOURCE = new Set(['unlinked', 'unavailable']);
 let today, current, monthPaid = {}, requestNo = 0;
 // UI-состояние живёт отдельно от данных API: карточки-фильтры, вкладка группы, поиск и открытый drawer.
 // sel: id сменного | 'new' | 'm:<id>' сотрудника на окладе | 'm:new'.
-const ui = {filter: 'all', tab: 'all', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false,
+// role — должность внутри выбранной группы (второй ряд чипов), '' — все.
+const ui = {filter: 'all', tab: 'all', role: '', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false,
   history: null};
 const SALARY_TAB = '__salary';
 
@@ -198,7 +199,20 @@ function renderTabs(all) {
     const button = el('button', 'emp-tab' + (ui.tab === tab.key ? ' is-active' : ''), {type: 'button', role: 'tab'});
     button.setAttribute('aria-selected', String(ui.tab === tab.key));
     button.append(text('span', null, tab.label), text('small', null, String(tab.count)));
-    button.addEventListener('click', () => { ui.tab = tab.key; render(); });
+    button.addEventListener('click', () => { ui.tab = tab.key; ui.role = ''; render(); });
+    return button;
+  }));
+  // Должности выбранной группы — тем же видом чипов; в группе одна должность — ряда нет.
+  const roles = ui.tab === 'all' || ui.tab === SALARY_TAB ? [] : L.groupRoles(all, ui.tab);
+  if (!roles.some(role => role.key === ui.role)) ui.role = '';
+  const roleBox = $('employees-roles');
+  roleBox.hidden = !roles.length;
+  roleBox.replaceChildren(...(roles.length ? [{key: '', label: 'Все должности', count: all.filter(p => p.group === ui.tab).length},
+    ...roles] : []).map(role => {
+    const button = el('button', 'emp-tab' + (ui.role === role.key ? ' is-active' : ''), {type: 'button', role: 'tab'});
+    button.setAttribute('aria-selected', String(ui.role === role.key));
+    button.append(text('span', null, role.label), text('small', null, String(role.count)));
+    button.addEventListener('click', () => { ui.role = role.key; render(); });
     return button;
   }));
 }
@@ -206,6 +220,7 @@ function renderTabs(all) {
 const queryMatches = (name, role) => L.matchesQuery(ui.q, name, role);
 function matches(row) {
   if (ui.tab !== 'all' && row.group !== ui.tab) return false;
+  if (!L.matchesRole(ui.role, row.role)) return false;
   if (!queryMatches(row.name, row.role)) return false;
   if (ui.filter === 'present') return PRESENT.has(row.status);
   if (ui.filter === 'late') return row.status === 'late';
@@ -284,7 +299,7 @@ function renderRegistry(all) {
     empty.append(text('p', null, 'Никого не нашли под текущими фильтрами.'));
     const reset = text('button', 'text-link', 'Сбросить фильтры');
     reset.type = 'button';
-    reset.addEventListener('click', () => { ui.filter = 'all'; ui.tab = 'all'; ui.q = ''; $('employees-search').value = ''; render(); });
+    reset.addEventListener('click', () => { ui.filter = 'all'; ui.tab = 'all'; ui.role = ''; ui.q = ''; $('employees-search').value = ''; render(); });
     empty.append(reset);
     container.append(empty);
     return;

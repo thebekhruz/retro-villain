@@ -1222,9 +1222,9 @@ class FinanceStore:
         from .salary_day import set_cell
         return set_cell(self, paid_day, employee_id, amount, expected_amount, cashier_amount=cashier_amount)
 
-    def salary_day_month(self, first, last, first_entries=None):
+    def salary_day_month(self, first, last, attendance=None):
         from .salary_day import month_data
-        return month_data(self, first, last, first_entries)
+        return month_data(self, first, last, attendance)
 
     def payroll_month(self, first: date, last: date) -> dict:
         """Shift accruals and their payments for a whole month, in one pass.

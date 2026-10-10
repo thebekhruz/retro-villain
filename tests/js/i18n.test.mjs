@@ -66,3 +66,15 @@ test('T-402: непосчитанные предоплаты объясняют�
   assert.equal(translate('iiko не вернул кассовую смену за этот день — предоплаты не посчитать.'),
     "iiko bu kun uchun kassa smenasini qaytarmadi — oldindan to'lovlarni hisoblab bo'lmaydi.");
 });
+
+test('T-429: посещаемость смены в клетке «Зарплаты · день» и должности группы', () => {
+  assert.equal(translate('Смена 08.10: пришёл 09:31, вовремя'), "08.10 smenasi: 09:31 da keldi, o'z vaqtida");
+  assert.equal(translate('Смена 08.10: пришёл 10:58, опоздал'), '08.10 smenasi: 10:58 da keldi, kechikdi');
+  assert.equal(translate('Смена 07.10: не пришёл · выдано 360 000 сум'), "07.10 smenasi: kelmadi · 360 000 so'm berildi");
+  assert.equal(translate('Смена 07.10: нет привязки к Hikvision'), "07.10 smenasi: Hikvision'ga bog'lanmagan");
+  assert.equal(translate('нет'), "yo'q");
+  assert.equal(translate('был'), 'keldi');
+  assert.equal(translate('Все должности'), 'Barcha lavozimlar');
+  assert.equal(translate('Повар тандыр'), 'Oshpaz tandir');
+  assert.equal(translate('Лепёшка тандырная'), null, 'слово внутри другого слова не трогаем');
+});
