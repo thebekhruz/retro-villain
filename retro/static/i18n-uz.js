@@ -3368,8 +3368,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Отправляем фото на устройство…': 'Surat qurilmaga yuborilmoqda…',
   'Фото не на устройстве': "Surat qurilmada yo'q",
   'Фото ждёт отправки на устройство': 'Surat qurilmaga yuborilishini kutmoqda',
-  'Лицо прямо, без очков и кепки, на светлом фоне. Снимайте при хорошем свете — так терминал узнает человека с первого раза.':
-    "Yuz to'g'ri, ko'zoynak va kepkasiz, och fonda. Yaxshi yorug'likda suratga oling — shunda terminal odamni birinchi urinishda taniydi.",
+  'Лицо прямо, без очков и кепки, на светлом фоне. Держите лицо по центру: фото обрезается до квадрата 1:1 без растягивания.':
+    "Yuz to'g'ri, ko'zoynak va kepkasiz, och fonda. Yuzni markazda tuting: surat cho‘zilmasdan 1:1 kvadrat shaklida kesiladi.",
   'Нет фото': "Surat yo'q",
   'Ошибка': 'Xato',
   'Фото есть': 'Surat bor',

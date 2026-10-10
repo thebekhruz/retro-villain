@@ -238,8 +238,9 @@ function replaceCard(card) {
   if (index >= 0) list[index] = card;
 }
 
-/* Фото с камеры телефона: ужимаем до ~640 px JPEG — терминалу нужно небольшое
-   фото лица, а по сотовой связи большое грузилось бы долго. */
+/* Фото с камеры или из галереи: центральный квадрат 1:1, не больше 640×640.
+   Сначала учитываем поворот снимка, затем обрезаем края: пропорции лица
+   остаются прежними и в карточке, и в квадратном превью Hikvision. */
 async function shrinkPhoto(file, side = 640) {
   let source;
   try { source = await createImageBitmap(file, {imageOrientation: 'from-image'}); } catch { source = null; }
@@ -254,13 +255,17 @@ async function shrinkPhoto(file, side = 640) {
   }
   const width = source.width, height = source.height;
   if (!width || !height) throw new Error('photo');
-  const scale = Math.min(1, side / Math.max(width, height));
+  const cropSide = Math.min(width, height);
   const canvas = document.createElement('canvas');
-  canvas.width = Math.round(width * scale);
-  canvas.height = Math.round(height * scale);
-  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
-  source.close?.();
-  return canvas.toDataURL('image/jpeg', 0.86);
+  canvas.width = canvas.height = Math.min(side, cropSide);
+  try {
+    canvas.getContext('2d').drawImage(source,
+      (width - cropSide) / 2, (height - cropSide) / 2, cropSide, cropSide,
+      0, 0, canvas.width, canvas.height);
+    return canvas.toDataURL('image/jpeg', 0.86);
+  } finally {
+    source.close?.();
+  }
 }
 
 async function sendToHikvision() {
