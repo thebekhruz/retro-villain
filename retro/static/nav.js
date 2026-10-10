@@ -9,7 +9,7 @@
 (() => {
   const nav = document.querySelector('.sidebar nav');
 
-  const ICONS = {cashier: '▤', accountant: '◫', director: '◉', founder: '⌁', shokh: '◇'};
+  const ICONS = {cashier: '▤', accountant: '◫', director: '◉', founder: '⌁', shokh: '◇', manager: '◎'};
 
   globalThis.RetroConfig = fetch('/api/config', {headers: {accept: 'application/json'}})
     .then(response => {

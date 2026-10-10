@@ -1,0 +1,47 @@
+/* Кабинет менеджера (ТЗ 09.10, М-01) — телефон. Каркас, кнопки, поля и
+   строки — из закупа (shokh.css), те же классы. Здесь только то, чего у
+   закупа нет: строка-кнопка сотрудника, похожие, тип и статус Hikvision. */
+
+/* Заголовок шага по центру: справа место под кнопку, как слева «×». */
+.mgr-head-spacer{width:40px;height:40px;flex:none}
+.mgr-hik-line{position:relative;margin:16px 0 0}
+.mgr-hik-line:empty{display:none}
+
+/* Поиск: подпись, поле и найденные — одной карточкой. */
+.mgr-search-card{display:grid;gap:10px}
+.mgr-search-card .shokh-field{gap:8px}
+.mgr-search-note{margin:0}
+
+/* Строка сотрудника — кнопка во всю ширину: открывает карточку. */
+.mgr-row{width:100%;border:0;border-top:1px solid #eef1ea;background:none;color:inherit;font:inherit;
+  text-align:left;cursor:pointer}
+.mgr-row:first-child{border-top:0}
+.mgr-row .shokh-purchase-title{overflow-wrap:anywhere}
+.mgr-row .shokh-note{display:block}
+.mgr-row>.mgr-tag{flex:none;align-self:center}
+.shokh-flag.is-error{background:var(--late-bg);color:var(--late)}
+.shokh-flag.is-idle{background:var(--idle-bg);color:var(--idle)}
+
+/* Ошибка поля — сразу под ним, без шага сетки. */
+.mgr-field-error{margin:-8px 0 0}
+.mgr-field-error[hidden]{display:none}
+.shokh-field input[aria-invalid=true]{border-color:var(--rm-err);background:var(--rm-err-tint)}
+
+/* Тип — переключатель на всю строку, как «за 1 кг | за всё». */
+.mgr-type .shokh-switch{width:100%}
+.mgr-type .shokh-switch-btn{flex:1;min-height:44px;font-size:14px}
+
+/* Похожие — золотая плашка «требует внимания». */
+.mgr-similar{display:grid;gap:10px;background:var(--accent-soft);border:1px solid var(--accent-line)}
+.mgr-similar .shokh-card-title{margin:0}
+.mgr-similar .shokh-purchases{background:#fff;border-radius:14px;padding:0 12px}
+
+/* Строка «Добавил» спрятана у карточек бухгалтера — линия под «Тип» не нужна. */
+.shokh-summary-row:has(+ .shokh-summary-row[hidden]){border-bottom:0}
+
+/* Статус Hikvision в карточке — тот же блок, что ход сохранения накладной,
+   но на своём месте, а не поверх экрана. */
+.mgr-status{box-shadow:none}
+.mgr-status .shokh-save-bar{display:none}
+.mgr-status.is-waiting .shokh-save-bar{display:block}
+.mgr-retry{width:100%}

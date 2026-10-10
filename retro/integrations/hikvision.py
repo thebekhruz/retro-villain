@@ -1,4 +1,9 @@
-"""Read-only Hikvision ISAPI client for people and entrance events."""
+"""Hikvision ISAPI client for people and entrance events.
+
+Reads people and passes. The only write is adding one person from the
+manager cabinet (create_person): it is explicit, never runs from the
+poller, and success means the device confirmed the person.
+"""
 
 from __future__ import annotations
 
@@ -7,7 +12,7 @@ import json
 import re
 import secrets
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import date, datetime
 from typing import Callable, Generic, TypeVar
 from zoneinfo import ZoneInfo
 
@@ -21,6 +26,9 @@ MAX_RESPONSE_BYTES = 1024 * 1024
 MAX_PAGES = 200
 PEOPLE_PAGE_SIZE = 60
 EVENT_PAGE_SIZE = 50
+# Срок действия карточки на устройстве для новых людей. Конец — как у
+# заводских карточек Hikvision: «бессрочно» в пределах формата устройства.
+VALID_UNTIL = '2037-12-31T23:59:59'
 
 
 class HikvisionError(Exception):
@@ -152,6 +160,23 @@ def parse_people_page(raw: str) -> IsapiPage[HikvisionPerson]:
                      matches)
 
 
+def _status_payload(raw: bytes) -> dict | None:
+    """Ответ устройства на запись: {"statusCode": 1, "statusString": "OK", …}."""
+    try:
+        decoded = json.loads(raw)
+    except (json.JSONDecodeError, TypeError, ValueError, UnicodeDecodeError):
+        return None
+    if isinstance(decoded, dict) and isinstance(decoded.get('ResponseStatus'), dict):
+        decoded = decoded['ResponseStatus']
+    return decoded if isinstance(decoded, dict) else None
+
+
+def _already_exists(status: dict) -> bool:
+    """«employeeNoAlreadyExist» / «employeeNo already exist» — номер занят."""
+    text = ' '.join(str(status.get(key, '')) for key in ('subStatusCode', 'errorMsg', 'statusString'))
+    return 'alreadyexist' in text.replace(' ', '').casefold()
+
+
 def _event_time(value) -> datetime | None:
     if not isinstance(value, str):
         return None
@@ -238,7 +263,7 @@ class HikvisionClient:
         except httpx.HTTPError:
             raise HikvisionError('network') from None
 
-    async def _post_json(self, target: str, body: dict) -> str:
+    async def _exchange(self, target: str, body: dict) -> httpx.Response:
         await self._ensure_challenge()
         content = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()
         response = await self._attempt(target, content)
@@ -248,14 +273,49 @@ class HikvisionClient:
             response = await self._attempt(target, content)
         if response.status_code == 401:
             raise HikvisionError('unauthorized')
-        if response.status_code != 200:
-            raise HikvisionError('device_error')
         if len(response.content) > MAX_RESPONSE_BYTES:
             raise HikvisionError('invalid_response')
+        return response
+
+    async def _post_json(self, target: str, body: dict) -> str:
+        response = await self._exchange(target, body)
+        if response.status_code != 200:
+            raise HikvisionError('device_error')
         try:
             return response.content.decode('utf-8')
         except UnicodeDecodeError:
             raise HikvisionError('invalid_response') from None
+
+    async def find_person(self, employee_no: str) -> HikvisionPerson | None:
+        """Один человек по номеру на устройстве; None — такого номера нет."""
+        raw = await self._post_json('/ISAPI/AccessControl/UserInfo/Search?format=json', {
+            'UserInfoSearchCond': {
+                'searchID': 'retro-one', 'searchResultPosition': 0, 'maxResults': 1,
+                'EmployeeNoList': [{'employeeNo': employee_no}],
+            }})
+        page = parse_people_page(raw)
+        return next((person for person in page.items if person.employee_no == employee_no), None)
+
+    async def create_person(self, employee_no: str, name: str, *, valid_from: date) -> str:
+        """Добавить человека на устройство. 'created' — устройство подтвердило
+        запись; 'exists' — номер уже есть (повтор после обрыва связи). Что
+        именно лежит под номером, вызывающий проверяет поиском."""
+        response = await self._exchange('/ISAPI/AccessControl/UserInfo/Record?format=json', {
+            'UserInfo': {
+                'employeeNo': employee_no, 'name': name, 'userType': 'normal',
+                'Valid': {'enable': True, 'beginTime': f'{valid_from.isoformat()}T00:00:00',
+                          'endTime': VALID_UNTIL, 'timeType': 'local'},
+                'doorRight': '1', 'RightPlan': [{'doorNo': 1, 'planTemplateNo': '1'}],
+            }})
+        status = _status_payload(response.content)
+        if response.status_code == 200 and status is not None and \
+                _integer(status.get('statusCode'), None) == 1:
+            return 'created'
+        if status is not None and _already_exists(status):
+            return 'exists'
+        if response.status_code == 200 and status is None:
+            raise HikvisionError('invalid_response')
+        raise HikvisionError('device_error')
 
     async def fetch_people(self) -> tuple[HikvisionPerson, ...]:
         people: list[HikvisionPerson] = []

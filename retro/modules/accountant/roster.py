@@ -16,11 +16,13 @@ from pathlib import Path
 
 from openpyxl import load_workbook
 
-from retro.db import as_database, table_columns
+from retro.db import as_database, table_columns, table_exists
 from retro.request_reads import once
 from retro.runtime import secure_directory, secure_file
 from retro.integrations.hikvision import HikvisionPerson
 from retro.modules.cashier.service import TZ, today_tashkent
+
+from .names import device_name_matches, person_name, role_name
 
 
 GROUPS = {
@@ -35,6 +37,16 @@ GROUPS = {
 }
 
 HIKVISION_ID = re.compile(r'[0-9A-Za-z_-]+')
+EMPLOYMENT_TYPES = ('shift', 'temporary')
+REQUEST_KEY = re.compile(r'[0-9A-Za-z-]{8,64}')
+# Номер для Hikvision выдаём сами: следующий после самого большого известного.
+# Длинные числа (номера карт и т. п.) в счёт не берём.
+EMPLOYEE_NO_DIGITS = 9
+
+
+def unique_violation(error: Exception) -> bool:
+    """Нарушение уникальности — одинаково для SQLite и Postgres."""
+    return 'unique' in str(error).lower() or 'integrity' in type(error).__name__.lower()
 
 
 class HikvisionIdTaken(ValueError):
@@ -108,6 +120,11 @@ class Employee:
     # когда его ещё не было. None — флаг стоял раньше, чем появилась дата:
     # такие сотрудники «был» по умолчанию во все дни, как и прежде.
     manual_since: date | None = None
+    # Кабинет менеджера (ТЗ 09.10, М-01): сменный или временный, направление
+    # менеджера и кто завёл карточку. У старых карточек — «сменный» и пусто.
+    employment_type: str = 'shift'
+    direction: str | None = None
+    created_by: str | None = None
 
     def json(self):
         return dict(id=self.id, name=self.name, role=self.role, group=self.group_name,
@@ -116,7 +133,9 @@ class Employee:
                     # Номер на устройстве — для поля «ID в Hikvision» в «Сотрудниках».
                     hikvision_id=self.hikvision_id,
                     manual_attendance=self.manual_attendance,
-                    manual_since=self.manual_since.isoformat() if self.manual_since else None)
+                    manual_since=self.manual_since.isoformat() if self.manual_since else None,
+                    employment_type=self.employment_type, direction=self.direction,
+                    created_by=self.created_by)
 
 
 @dataclass(frozen=True)
@@ -196,6 +215,26 @@ class RosterStore:
                 # У уже отмеченных вручную дата остаётся пустой — «всегда»:
                 # вчерашняя смена у них по-прежнему выдаётся как «был».
                 connection.execute('ALTER TABLE accountant_employees ADD COLUMN manual_since TEXT')
+            # Кабинет менеджера (ТЗ 09.10, М-01…М-03). Колонки только
+            # добавляются: старые карточки становятся «сменными» без менеджера,
+            # их выплаты, посещаемость и привязки остаются как были.
+            # request_key — ключ запроса «Сохранить»: повтор после обрыва связи
+            # находит ту же карточку. hikvision_employee_no — номер для
+            # устройства, выданный до отправки: повтор шлёт тот же номер.
+            # hikvision_id появляется, только когда устройство подтвердило.
+            for column, declaration in (
+                    ('employment_type', "TEXT NOT NULL DEFAULT 'shift'"),
+                    ('direction', 'TEXT'), ('created_by', 'TEXT'), ('created_at', 'TEXT'),
+                    ('request_key', 'TEXT'), ('hikvision_employee_no', 'TEXT'),
+                    ('hikvision_state', 'TEXT'), ('hikvision_error', 'TEXT'),
+                    ('hikvision_synced_at', 'TEXT')):
+                if column not in employee_columns:
+                    connection.execute(f'ALTER TABLE accountant_employees ADD COLUMN {column} {declaration}')
+            connection.execute('CREATE UNIQUE INDEX IF NOT EXISTS accountant_employee_request_key '
+                               'ON accountant_employees(request_key) WHERE request_key IS NOT NULL')
+            connection.execute('CREATE UNIQUE INDEX IF NOT EXISTS accountant_employee_hikvision_no '
+                               'ON accountant_employees(hikvision_employee_no) '
+                               'WHERE hikvision_employee_no IS NOT NULL')
             columns = table_columns(connection, 'accountant_monthly_employees')
             if 'external_key' not in columns:
                 connection.execute('ALTER TABLE accountant_monthly_employees ADD COLUMN external_key TEXT')
@@ -356,8 +395,8 @@ class RosterStore:
         with closing(self._open()) as connection:
             if day is None:
                 rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id, '
-                                          'manual_attendance, manual_since '
-                                          'FROM accountant_employees ORDER BY source_row').fetchall()
+                                          'manual_attendance, manual_since, employment_type, direction, '
+                                          'created_by FROM accountant_employees ORDER BY source_row').fetchall()
             else:
                 rows = connection.execute('''
                     SELECT employee_id,source_row,name,role,group_name,rate,
@@ -368,7 +407,10 @@ class RosterStore:
                              ORDER BY h.effective_day DESC LIMIT 1)),
                         COALESCE((SELECT e.manual_attendance FROM accountant_employees e
                                   WHERE e.id=v.employee_id), 0),
-                        (SELECT e.manual_since FROM accountant_employees e WHERE e.id=v.employee_id)
+                        (SELECT e.manual_since FROM accountant_employees e WHERE e.id=v.employee_id),
+                        (SELECT e.employment_type FROM accountant_employees e WHERE e.id=v.employee_id),
+                        (SELECT e.direction FROM accountant_employees e WHERE e.id=v.employee_id),
+                        (SELECT e.created_by FROM accountant_employees e WHERE e.id=v.employee_id)
                     FROM accountant_employee_versions v WHERE deleted=0 AND effective_day=(
                         SELECT MAX(effective_day) FROM accountant_employee_versions h
                         WHERE h.employee_id=v.employee_id AND h.effective_day<=?)
@@ -378,7 +420,8 @@ class RosterStore:
         # и его вход не должен ни засчитываться, ни считаться прогулом.
         return [Employee(*row[:5], Decimal(row[5]) if row[5] is not None else None,
                          None if row[7] else row[6], bool(row[7]),
-                         date.fromisoformat(row[8]) if row[7] and row[8] else None) for row in rows]
+                         date.fromisoformat(row[8]) if row[7] and row[8] else None,
+                         row[9] or 'shift', row[10], row[11]) for row in rows]
 
     def set_manual_attendance(self, employee_id: int, manual: bool, *, by: str | None = None) -> Employee:
         """Включить или снять ручную отметку.
@@ -429,8 +472,11 @@ class RosterStore:
             if old == new:
                 return old, new
             if new is not None:
-                owner = connection.execute('SELECT id, name FROM accountant_employees WHERE hikvision_id = ? AND id <> ?',
-                                           (new, employee_id)).fetchone()
+                # Номер, выданный менеджером под отправку, тоже занят: под ним на
+                # устройстве другой человек (ТЗ 09.10, М-03).
+                owner = connection.execute('SELECT id, name FROM accountant_employees WHERE id <> ? AND '
+                                           '(hikvision_id = ? OR hikvision_employee_no = ?)',
+                                           (employee_id, new, new)).fetchone()
                 if owner is not None:
                     raise HikvisionIdTaken(new, owner[1])
             try:
@@ -454,9 +500,14 @@ class RosterStore:
         unique_people = {person.employee_no: person for person in people if person.employee_no}
         employees = self.list()
         already_ids = {employee.hikvision_id for employee in employees if employee.hikvision_id}
+        # Карточки менеджера ждут свой номер: по имени их не привязываем, а их
+        # номер ни к кому другому не прикрепляем (ТЗ 09.10, М-03).
+        reserved = self._reserved_numbers()
+        already_ids |= set(reserved)
         unlinked_by_name: dict[str, list[Employee]] = {}
         for employee in employees:
-            if employee.hikvision_id is None and not employee.manual_attendance:
+            if employee.hikvision_id is None and not employee.manual_attendance \
+                    and employee.id not in {row[0] for row in reserved.values()}:
                 key = normalized_hikvision_name(employee.name)
                 if key:
                     unlinked_by_name.setdefault(key, []).append(employee)
@@ -472,6 +523,16 @@ class RosterStore:
                       ambiguous=0, unmatched=0)
         with closing(self._open()) as connection, connection:
             for person in unique_people.values():
+                if person.employee_no in reserved:
+                    # Номер выдан менеджером, а ответ устройства мы потеряли:
+                    # человек там есть — значит, отправка дошла.
+                    employee_id, name = reserved[person.employee_no]
+                    if device_name_matches(person.name, name) and \
+                            self._confirm_number(connection, employee_id, person.employee_no):
+                        result['linked'] += 1
+                    else:
+                        result['ambiguous'] += 1
+                    continue
                 if person.employee_no in already_ids:
                     result['already_linked'] += 1
                     continue
@@ -516,9 +577,12 @@ class RosterStore:
                       already_linked=0, ambiguous=0)
         with closing(self._open()) as connection, connection:
             rows = connection.execute(
-                'SELECT id,name,hikvision_id FROM accountant_employees ORDER BY source_row').fetchall()
+                'SELECT id,name,COALESCE(hikvision_id,hikvision_employee_no) FROM accountant_employees '
+                'ORDER BY source_row').fetchall()
             by_name: dict[str, list[tuple[int, str | None]]] = {}
             linked_ids = set()
+            # Номер, выданный менеджером, считается занятым: иначе импорт завёл
+            # бы под ним вторую карточку («Должность не указана»).
             for employee_id, name, hikvision_id in rows:
                 key = normalized_hikvision_name(name)
                 if key:
@@ -596,13 +660,22 @@ class RosterStore:
         }.items()}
         return name, role, schedule, money
 
+    @staticmethod
+    def _changed_cyrillic(before, name: str, role: str) -> tuple[str, str]:
+        """Кириллица — только у изменённых имени и должности (ТЗ 09.10, М-04)."""
+        return (person_name(name) if name != before[0] else name,
+                role_name(role) if role != before[1] else role)
+
     def add_monthly(self, *, name: str, role: str, salary: str, schedule: str = '',
                     card: str = '0', cash: str = '0', advances: str = '0',
                     remaining: str = '0', external_key: str | None = None,
-                    no_hikvision: bool | None = None, by: str | None = None) -> MonthlyEmployee:
+                    no_hikvision: bool | None = None, by: str | None = None,
+                    cyrillic: bool = False) -> MonthlyEmployee:
         name, role, schedule, money = self._monthly_values(
             name=name, role=role, salary=salary, schedule=schedule, card=card, cash=cash,
             advances=advances, remaining=remaining)
+        if cyrillic:
+            name, role = person_name(name), role_name(role)
         key = external_key.strip() if isinstance(external_key, str) and external_key.strip() else None
         with closing(self._open()) as connection, connection:
             try:
@@ -623,7 +696,7 @@ class RosterStore:
     def update_monthly(self, employee_id: int, *, name: str, role: str, salary: str,
                        schedule: str = '', card: str = '0', cash: str = '0',
                        advances: str = '0', remaining: str = '0', no_hikvision: bool | None = None,
-                       by: str | None = None, reason: str = '') -> MonthlyEmployee:
+                       by: str | None = None, reason: str = '', cyrillic: bool = False) -> MonthlyEmployee:
         name, role, schedule, money = self._monthly_values(
             name=name, role=role, salary=salary, schedule=schedule, card=card, cash=cash,
             advances=advances, remaining=remaining)
@@ -631,6 +704,8 @@ class RosterStore:
             before = connection.execute(
                 'SELECT name, role, salary, no_hikvision FROM accountant_monthly_employees WHERE id=? AND archived=0',
                 (employee_id,)).fetchone()
+            if before is not None and cyrillic:
+                name, role = self._changed_cyrillic(before, name, role)
             flag = bool(before[3]) if before and no_hikvision is None else bool(no_hikvision)
             changed = connection.execute(
                 'UPDATE accountant_monthly_employees SET name=?,role=?,salary=?,schedule=?,card=?,cash=?, '
@@ -652,13 +727,15 @@ class RosterStore:
 
     def update_monthly_basics(self, employee_id: int, *, name: str, role: str,
                               salary: str, by: str | None = None,
-                              reason: str = 'Изменено директором') -> MonthlyEmployee:
+                              reason: str = 'Изменено директором', cyrillic: bool = False) -> MonthlyEmployee:
         """Имя, должность и оклад без касания выплат, которые ведёт бухгалтер."""
         name, role, _, money = self._monthly_values(name=name, role=role, salary=salary)
         with closing(self._open()) as connection, connection:
             before = connection.execute(
                 'SELECT name, role, salary FROM accountant_monthly_employees WHERE id=? AND archived=0',
                 (employee_id,)).fetchone()
+            if before is not None and cyrillic:
+                name, role = self._changed_cyrillic(before, name, role)
             changed = connection.execute(
                 'UPDATE accountant_monthly_employees SET name=?,role=?,salary=? WHERE id=? AND archived=0',
                 (name, role, str(money['salary']), employee_id)).rowcount
@@ -687,13 +764,17 @@ class RosterStore:
             raise ValueError('Сотрудник не найден.')
 
     def add(self, *, name: str, role: str, rate: str | None, group_name: str,
-            by: str | None = None) -> Employee:
+            by: str | None = None, cyrillic: bool = False) -> Employee:
+        """cyrillic=True — ввод с экрана: имя и должность только кириллицей
+        (ТЗ 09.10, М-04). Импорт и обслуживание пишут как есть."""
         name = name.strip()
         role = role.strip()
         if not name or len(name) > 160:
             raise ValueError('Укажите корректное имя сотрудника.')
         if not role or len(role) > 80:
             raise ValueError('Укажите корректную должность.')
+        if cyrillic:
+            name, role = person_name(name), role_name(role)
         if group_name not in set(GROUPS.values()) | {'Кухня', UNASSIGNED_GROUP}:
             raise ValueError('Неизвестная группа.')
         parsed_rate = parse_rate(rate)
@@ -731,7 +812,8 @@ class RosterStore:
 
     def update(self, employee_id: int, *, name: str | None = None, role: str | None = None,
                rate: str | None,
-               group_name: str | None = None, reason: str, by: str | None = None) -> Employee:
+               group_name: str | None = None, reason: str, by: str | None = None,
+               cyrillic: bool = False) -> Employee:
         if not reason.strip():
             raise ValueError('Укажите причину изменения.')
         with closing(self._open()) as connection:
@@ -745,6 +827,10 @@ class RosterStore:
             raise ValueError('Укажите корректное имя сотрудника.')
         if not role or len(role) > 80:
             raise ValueError('Укажите корректную должность.')
+        # Кириллицу проверяем только у нового ввода: старое имя из выгрузки
+        # или Hikvision остаётся как было, пока его не переименуют.
+        if cyrillic:
+            name, role = self._changed_cyrillic(existing, name, role)
         derived_group = group_name or group_for(role)
         if derived_group not in set(GROUPS.values()) | {'Кухня', UNASSIGNED_GROUP}:
             raise ValueError('Неизвестная группа.')
@@ -776,3 +862,188 @@ class RosterStore:
                             old_rate=old[2], new_rate=parsed_rate, old_group=old[3],
                             new_group=derived_group, details='; '.join(notes))
         return next(person for person in self.list() if person.id == employee_id)
+
+    # ── Кабинет менеджера (ТЗ 09.10, М-01…М-04) ────────────────────────────
+    # Менеджер заводит сменного или временного сотрудника с телефона, система
+    # сама отправляет его в Hikvision. Карточка — обычная строка реестра:
+    # бухгалтер видит её в «Сотрудниках» и «Зарплате · день» и ставит ставку.
+    # Номер для устройства выдаётся и записывается ДО отправки, поэтому
+    # повтор после обрыва связи шлёт тот же номер, а не заводит второго
+    # человека. hikvision_id (привязка, по которой идут проходы) появляется
+    # только после подтверждения устройства.
+
+    def _reserved_numbers(self) -> dict[str, tuple[int, str]]:
+        """Номера, выданные под отправку, но ещё не подтверждённые устройством."""
+        with closing(self._open()) as connection:
+            rows = connection.execute(
+                'SELECT hikvision_employee_no, id, name FROM accountant_employees '
+                'WHERE hikvision_employee_no IS NOT NULL AND hikvision_id IS NULL').fetchall()
+        return {row[0]: (row[1], row[2]) for row in rows}
+
+    @staticmethod
+    def _known_numbers(connection) -> set[str]:
+        known = set()
+        for (value,) in connection.execute(
+                'SELECT hikvision_id FROM accountant_employees WHERE hikvision_id IS NOT NULL '
+                'UNION SELECT hikvision_employee_no FROM accountant_employees '
+                'WHERE hikvision_employee_no IS NOT NULL '
+                'UNION SELECT hikvision_id FROM accountant_employee_versions WHERE hikvision_id IS NOT NULL'):
+            known.add(value)
+        # Проходы людей, которых нет в реестре, тоже держат свой номер.
+        if table_exists(connection, 'hikvision_events'):
+            known.update(row[0] for row in connection.execute(
+                'SELECT DISTINCT employee_no FROM hikvision_events'))
+        return known
+
+    def _next_employee_no(self, connection, also: set[str] = frozenset()) -> str:
+        numbers = [int(value) for value in self._known_numbers(connection) | set(also)
+                   if value and value.isdigit() and len(value) <= EMPLOYEE_NO_DIGITS]
+        return str(max(numbers, default=0) + 1)
+
+    def by_request_key(self, request_key: str) -> int | None:
+        with closing(self._open()) as connection:
+            row = connection.execute('SELECT id FROM accountant_employees WHERE request_key = ?',
+                                     (request_key,)).fetchone()
+        return row[0] if row else None
+
+    def manager_create(self, *, name: str, role: str, group_name: str, direction: str,
+                       employment_type: str, created_by: str | None,
+                       request_key: str) -> tuple[int, bool]:
+        """Карточка от менеджера. Возвращает (id, создана ли сейчас).
+
+        Повтор с тем же ключом запроса (двойной тап, обрыв связи) отдаёт уже
+        созданную карточку — второй строки в реестре не будет."""
+        name, role = person_name(name), role_name(role)
+        if employment_type not in EMPLOYMENT_TYPES:
+            raise ValueError('Выберите тип: сменный или временный.')
+        if group_name not in set(GROUPS.values()) | {'Кухня'}:
+            raise ValueError('Неизвестная группа.')
+        key = (request_key or '').strip()
+        if not REQUEST_KEY.fullmatch(key):
+            raise ValueError('Обновите страницу и сохраните ещё раз.')
+        existing = self.by_request_key(key)
+        if existing is not None:
+            return existing, False
+        for _ in range(5):
+            try:
+                with closing(self._open()) as connection, connection:
+                    if not self.db.is_postgres:
+                        # Номер и строка реестра выдаются по одному.
+                        connection.execute('BEGIN IMMEDIATE')
+                    source_row = connection.execute('SELECT COALESCE(MAX(source_row), 0) + 1 '
+                                                    'FROM accountant_employees').fetchone()[0]
+                    employee_no = self._next_employee_no(connection)
+                    employee_id = connection.execute(
+                        'INSERT INTO accountant_employees (source_row, name, role, group_name, rate, '
+                        'employment_type, direction, created_by, created_at, request_key, '
+                        'hikvision_employee_no, hikvision_state) '
+                        'VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)',
+                        (source_row, name, role, group_name, employment_type, direction, created_by,
+                         datetime.now(TZ).isoformat(timespec='seconds'), key, employee_no,
+                         'pending')).lastrowid
+                    # Как у бухгалтера: карточка действует с начала времён, чтобы
+                    # вчерашнюю смену временного можно было выдать сегодня.
+                    self._stamp_version(connection, employee_id, day='0001-01-01')
+                    self._audit(connection, employee_id, action='create', by=created_by,
+                                reason='Добавлен менеджером', new_group=group_name,
+                                details=' · '.join((
+                                    'Временный' if employment_type == 'temporary' else 'Сменный',
+                                    direction, f'номер для Hikvision {employee_no}')))
+                return employee_id, True
+            except Exception as error:
+                if not unique_violation(error):
+                    raise
+                existing = self.by_request_key(key)
+                if existing is not None:
+                    return existing, False
+                # Номер или строку реестра в ту же секунду занял другой — берём следующие.
+        raise ValueError('Не удалось выдать номер для Hikvision. Сохраните ещё раз.')
+
+    def manager_card(self, employee_id: int) -> dict | None:
+        rows = self.manager_cards(employee_id=employee_id)
+        return rows[0] if rows else None
+
+    def manager_cards(self, *, employee_id: int | None = None) -> list[dict]:
+        """Поля карточки для кабинета менеджера — без ставок и выплат."""
+        query = ('SELECT id, name, role, group_name, hikvision_id, manual_attendance, employment_type, '
+                 'direction, created_by, created_at, hikvision_employee_no, hikvision_state, '
+                 'hikvision_error, hikvision_synced_at FROM accountant_employees')
+        params = ()
+        if employee_id is not None:
+            query += ' WHERE id = ?'
+            params = (employee_id,)
+        with closing(self._open()) as connection:
+            rows = connection.execute(query + ' ORDER BY source_row', params).fetchall()
+        return [dict(id=row[0], name=row[1], role=row[2], group=row[3], hikvision_id=row[4],
+                     manual_attendance=bool(row[5]), employment_type=row[6] or 'shift',
+                     direction=row[7], created_by=row[8], created_at=row[9],
+                     hikvision_employee_no=row[10], hikvision_state=row[11],
+                     hikvision_error=row[12], hikvision_synced_at=row[13]) for row in rows]
+
+    def reassign_employee_no(self, employee_id: int, taken: set[str], *, by: str | None = None) -> str:
+        """Номер на устройстве занят чужим человеком — выдать новый, выше
+        занятых. Только пока отправка не подтверждена."""
+        for _ in range(5):
+            try:
+                with closing(self._open()) as connection, connection:
+                    row = connection.execute(
+                        'SELECT hikvision_employee_no, hikvision_id FROM accountant_employees WHERE id = ?',
+                        (employee_id,)).fetchone()
+                    if row is None:
+                        raise ValueError('Сотрудник не найден.')
+                    if row[1] is not None:
+                        return row[1]
+                    number = self._next_employee_no(connection, set(taken) | {row[0] or ''})
+                    connection.execute('UPDATE accountant_employees SET hikvision_employee_no = ? '
+                                       'WHERE id = ? AND hikvision_id IS NULL', (number, employee_id))
+                    self._audit(connection, employee_id, action='hikvision', by=by,
+                                reason='Номер на устройстве занят другим человеком',
+                                details=f'Номер для Hikvision: {row[0] or "—"} → {number}')
+                return number
+            except Exception as error:
+                if not unique_violation(error):
+                    raise
+        raise ValueError('Не удалось выдать номер для Hikvision.')
+
+    def record_hikvision_attempt(self, employee_id: int, state: str, error: str | None) -> None:
+        """Итог отправки, не ставший успехом: «ожидает» или «ошибка» с причиной."""
+        with closing(self._open()) as connection, connection:
+            connection.execute(
+                'UPDATE accountant_employees SET hikvision_state = ?, hikvision_error = ?, '
+                'hikvision_synced_at = ? WHERE id = ? AND hikvision_id IS NULL',
+                (state, error, datetime.now(TZ).isoformat(timespec='seconds'), employee_id))
+
+    def confirm_hikvision_number(self, employee_id: int, employee_no: str, *, by: str | None = None) -> bool:
+        """Устройство подтвердило человека под номером: это и есть привязка.
+        False — номер тем временем привязали к другому сотруднику."""
+        with closing(self._open()) as connection, connection:
+            return self._confirm_number(connection, employee_id, employee_no, by=by)
+
+    def _confirm_number(self, connection, employee_id: int, employee_no: str, *, by: str | None = None) -> bool:
+        row = connection.execute('SELECT hikvision_id, rate, group_name FROM accountant_employees WHERE id = ?',
+                                 (employee_id,)).fetchone()
+        if row is None:
+            return False
+        stamp = datetime.now(TZ).isoformat(timespec='seconds')
+        if row[0] == employee_no:
+            connection.execute("UPDATE accountant_employees SET hikvision_state = 'sent', hikvision_error = NULL "
+                               'WHERE id = ?', (employee_id,))
+            return True
+        owner = connection.execute('SELECT name FROM accountant_employees WHERE hikvision_id = ? AND id <> ?',
+                                   (employee_no, employee_id)).fetchone()
+        if row[0] is not None or owner is not None:
+            connection.execute("UPDATE accountant_employees SET hikvision_state = 'error', "
+                               "hikvision_error = 'number_linked', hikvision_synced_at = ? WHERE id = ?",
+                               (stamp, employee_id))
+            return False
+        connection.execute(
+            "UPDATE accountant_employees SET hikvision_id = ?, hikvision_employee_no = ?, "
+            "hikvision_state = 'sent', hikvision_error = NULL, hikvision_synced_at = ? WHERE id = ?",
+            (employee_no, employee_no, stamp, employee_id))
+        connection.execute('UPDATE accountant_employee_versions SET hikvision_id = ? WHERE employee_id = ?',
+                           (employee_no, employee_id))
+        self._stamp_version(connection, employee_id)
+        self._audit(connection, employee_id, action='hikvision', by=by, reason='Добавлен в Hikvision',
+                    old_rate=row[1], new_rate=row[1], old_group=row[2], new_group=row[2],
+                    details=f'ID в Hikvision: — → {employee_no}')
+        return True

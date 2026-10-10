@@ -66,15 +66,14 @@ def database(request, tmp_path):
 
 
 def staff(roster, finance):
-    """Люди из ТЗ. Признак «временный» ведёт кабинет менеджера (T-432) —
-    здесь поле добавлено руками, как его добавит миграция."""
+    """Люди из ТЗ. Признак «временный» ведёт кабинет менеджера (T-432):
+    поле employment_type добавляет миграция реестра."""
     people = dict(
         ihtiyor=roster.add(name='Баходиров Ихтиер', role='Менеджер', rate='360000', group_name='Управление'),
         jahongir=roster.add(name='Каримов Жахонгир', role='Менеджер', rate='360000', group_name='Управление'),
         selvina=roster.add(name='Абдулганиева Сельвина', role='Хостес', rate='360000', group_name='Встреча гостей'),
         karamat=roster.add(name='Карамат', role='Хостес', rate='150000', group_name='Встреча гостей'))
     with closing(finance._open()) as connection, connection:
-        connection.execute('ALTER TABLE accountant_employees ADD COLUMN employment_type TEXT')
         connection.execute("UPDATE accountant_employees SET employment_type = 'temporary' WHERE id = ?",
                            (people['karamat'].id,))
     return people

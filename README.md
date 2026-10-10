@@ -191,7 +191,8 @@ PYTHONPATH=. python scripts/migrate_to_postgres.py --target "$DATABASE_URL" \
 
 | Переменная | Зачем |
 |---|---|
-| `DASHBOARD_PANEL_USERS` | вход по ролям: кассир, бухгалтер, директор, учредитель и необязательный администратор |
+| `DASHBOARD_PANEL_USERS` | вход по ролям: кассир, бухгалтер, директор, учредитель, необязательные администратор и менеджеры |
+| `DASHBOARD_MANAGER_DIRECTIONS` | направления менеджеров: `логин=Кухня,Уборка;логин2=Зал` (без строки — все) |
 | `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | общий вход, если роли не нужны |
 | `DATABASE_URL` | Postgres для рабочих данных; на Railway появляется сам |
 | `RETRO_DATA_DIR` | каталог на подключённом диске, если вместо Postgres выбран диск |
@@ -199,7 +200,7 @@ PYTHONPATH=. python scripts/migrate_to_postgres.py --target "$DATABASE_URL" \
 | `IIKO_LOGIN`, `IIKO_PASSWORD` | доступ к выгрузкам |
 | `IIKO_DIRECTOR_CATEGORIES` | группы блюд для отчёта директора |
 | `CLAUDE_API_KEY` | разбор отчёта директора |
-| `HIKVISION_URL`, `HIKVISION_USER`, `HIKVISION_PASSWORD` | read-only ISAPI одного входного устройства |
+| `HIKVISION_URL`, `HIKVISION_USER`, `HIKVISION_PASSWORD` | ISAPI одного входного устройства: проходы и добавление людей из кабинета менеджера |
 
 Панель закрыта по умолчанию: пока не задан ни один пароль, всё, что пришло
 не с петли, получает 403. Пароли задавайте только в переменных окружения
@@ -244,14 +245,19 @@ PYTHONPATH=. python scripts/migrate_to_postgres.py --target "$DATABASE_URL" \
 
 Интеграция читает одно входное устройство напрямую через ISAPI с Digest
 Auth. HikCentral и вебхуки не нужны. Сервер опрашивает терминал в фоне,
-сохраняет только первый вход сотрудника за день и не загружает фото. Выходы и write-вызовы
-в устройство не используются.
+сохраняет только первый вход сотрудника за день и не загружает фото. Выходы не
+используются. Единственная запись в устройство — добавление человека из кабинета
+менеджера (`/manager`, `POST /ISAPI/AccessControl/UserInfo/Record`): учётной записи
+устройства нужно право добавлять пользователей. Номер `employeeNo` панель выдаёт сама
+(следующий после самого большого известного) и записывает до отправки; повтор ищет
+этот номер на устройстве и второго человека не заводит. Успех — только когда
+устройство показало человека под этим номером.
 
 Добавьте в `build/.env`:
 
 ```env
 HIKVISION_URL=https://public-device.example:8443
-HIKVISION_USER=read-only-user
+HIKVISION_USER=retro-panel
 HIKVISION_PASSWORD=replace-me
 HIKVISION_SOURCE=retro-main-entry
 HIKVISION_POLL_SECONDS=30
@@ -260,8 +266,9 @@ HIKVISION_VERIFY_TLS=true
 ```
 
 `HIKVISION_URL`, `HIKVISION_USER` и `HIKVISION_PASSWORD` обязательны вместе. URL — только
-корень HTTP(S), без логина, пароля и пути. Используйте HTTPS, отдельного read-only
-пользователя и allowlist внешнего IP сервера на роутере. Не открывайте порт ISAPI
+корень HTTP(S), без логина, пароля и пути. Используйте HTTPS, отдельного пользователя
+устройства (чтение событий и добавление людей, без прав администратора) и allowlist
+внешнего IP сервера на роутере. Не открывайте порт ISAPI
 всему интернету. `HIKVISION_VERIFY_TLS=false` допустим только временно для заранее
 известного самоподписанного сертификата.
 
@@ -617,7 +624,12 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 - `DASHBOARD_USER`, `DASHBOARD_PASSWORD` — Basic Auth для всего dashboard.
 - `DASHBOARD_PANEL_USERS` — ролевые записи в формате `user:password:role;...`.
   Обязательные роли: `cashier`, `accountant`, `director`, `founder`; необязательная
-  роль `admin` получает доступ ко всем страницам и API. Логины должны быть
+  роль `admin` получает доступ ко всем страницам и API. Необязательная роль `manager`
+  (можно несколько) открывает только мобильный кабинет `/manager`: поиск по общей
+  базе, регистрацию сменного или временного сотрудника и отправку в Hikvision —
+  без ставок, выплат и финансов.
+- `DASHBOARD_MANAGER_DIRECTIONS` — направления менеджеров: `логин=Кухня,Уборка;логин2=Зал`.
+  Направления: `Кухня`, `Зал`, `Уборка`. Менеджер без строки работает во всех. Логины должны быть
   уникальными; роль `founder` можно назначить нескольким учредителям.
 - `DASHBOARD_ALLOWED_NETWORK` — необязательная CIDR-подсеть клиентов.
 - `TRUSTED_PROXY_NETWORK` — только CIDR самого reverse proxy. За его пределами
