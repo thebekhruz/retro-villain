@@ -66,3 +66,9 @@ test('T-402: непосчитанные предоплаты объясняют�
   assert.equal(translate('iiko не вернул кассовую смену за этот день — предоплаты не посчитать.'),
     "iiko bu kun uchun kassa smenasini qaytarmadi — oldindan to'lovlarni hisoblab bo'lmaydi.");
 });
+
+test('T-428: отказ без кассы дня называет даты и по-узбекски', () => {
+  assert.equal(
+    translate('Нет суммы от кассира за 09.10 (касса за 08.10). Впишите её в «Финансах дня» за 09.10 и повторите.'),
+    "09.10 uchun kassirdan summa yo'q (08.10 kassasi). Uni «Kunlik moliya»da 09.10 kuniga yozing va qayta urinib ko'ring.");
+});

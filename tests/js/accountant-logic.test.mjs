@@ -412,3 +412,22 @@ test('бейдж «Проверок»: ошибки — только красн�
   assert.deepEqual(logic.checksBadge([issue('todo')]), {text: 'чисто', tone: 'clean', errors: 0, warns: 0});
   assert.equal(logic.checksBadge([]).text, 'чисто');
 });
+
+/* T-428: день выплаты — тот, когда деньги ушли из кассы. Выдача 09.10 за смену
+   08.10 и доплата за смену 07.10 в тот же день — две «Авто»-строки 09.10, по
+   дню смены, и вместе ровно расход дня; в журнал 08.10 они не попадают. */
+test('журнал: выплаты дня группируются по смене, сумма — расход дня выплаты', () => {
+  const data = {date: '2026-10-09', reserves: {}, ledger: {
+    cash_flow: {salary_paid: '880000', other_outflows: '0'},
+    movements: [
+      {id: 7, type: 'salary_payment', description: 'ЗП персонал · Баходиров Ихтиер · за 2026-10-08', amount: '360000'},
+      {id: 8, type: 'salary_payment', description: 'ЗП персонал · Каримов Жахонгир · за 2026-10-08', amount: '360000'},
+      {id: 5, type: 'salary_payment', description: 'ЗП персонал · Каримов Жахонгир · за 2026-10-07', amount: '160000'}],
+    debts_created_today: [], manual_debts: []}};
+  const {rows, total} = logic.journal(data, logic.catalogIndex([]));
+  const auto = rows.filter(r => r.kind === 'auto');
+  assert.deepEqual(auto.map(r => [r.name, r.amount]),
+    [['Сменные за 08.10 · 2 чел.', 720000], ['Сменные за 07.10 · 1 чел.', 160000]]);
+  assert.equal(auto.reduce((sum, r) => sum + r.amount, 0), total);
+  assert.equal(total, 880000);
+});
