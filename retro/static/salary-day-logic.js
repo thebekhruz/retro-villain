@@ -9,6 +9,12 @@
     return Number.isFinite(amount)&&Number.isSafeInteger(Math.round(amount*100))?amount:null;
   }
   function previousDay(day){const date=new Date(day+'T12:00:00Z');date.setUTCDate(date.getUTCDate()-1);return date.toISOString().slice(0,10);}
+  // Часовой пояс устройства не меняет рабочий день ресторана.
+  const calendar=new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Tashkent',year:'numeric',month:'2-digit',day:'2-digit'});
+  function tashkentDay(now){
+    const parts=Object.fromEntries(calendar.formatToParts(now).map(part=>[part.type,part.value]));
+    return parts.year+'-'+parts.month+'-'+parts.day;
+  }
   function shiftMonth(month,step){const date=new Date(month+'-01T12:00:00Z');date.setUTCMonth(date.getUTCMonth()+step);return date.toISOString().slice(0,7);}
   function canEdit(data,person,day){
     return !data.closed&&!person.archived&&day>=data.entry_start&&day<=data.today
@@ -94,5 +100,5 @@
     return {people,perDay:Object.fromEntries(Object.entries(perDay).map(([day,value])=>[day,value/100])),
       total:people.reduce((sum,person)=>sum+Math.round(person.paid*100),0)/100};
   }
-  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix,extraOf};
+  return {parseAmount,previousDay,tashkentDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix,extraOf};
 });
