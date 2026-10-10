@@ -10,15 +10,16 @@
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
 
   <link rel="stylesheet" href="/static/login.css">
-  <script src="/static/busy.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/login.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/login-logic.js" defer></script><script src="/static/login.js" defer></script>
 </head>
 <body>
-  <main class="login-card">
+  <!-- data-phone-login: сервер ставит «on», когда вход по номеру настроен. -->
+  <main class="login-card" data-phone-login="off">
   <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
     <div class="brand" aria-label="Retro Milliy"><span>R<span>✦</span></span></div>
     <p class="eyebrow">РАБОЧЕЕ ПРОСТРАНСТВО</p>
     <h1>Вход в Retro Milliy</h1>
-    <p class="subtitle">Введите логин и пароль своей панели.</p>
+    <p id="subtitle" class="subtitle">Введите логин и пароль своей панели.</p>
     <form id="login-form">
       <label for="username">Логин</label>
       <input id="username" name="username" autocomplete="username" required autofocus>
@@ -26,7 +27,23 @@
       <input id="password" name="password" type="password" autocomplete="current-password" required>
       <button id="submit" type="submit">Войти</button>
     </form>
+    <!-- Вход по номеру телефона и SMS-коду (ТЗ 09.10, М-05) -->
+    <form id="phone-form" hidden novalidate>
+      <label for="phone">Номер телефона</label>
+      <input id="phone" name="phone" type="tel" inputmode="tel" autocomplete="tel" maxlength="17" value="+998 ">
+      <button id="phone-submit" type="submit">Получить код</button>
+    </form>
+    <form id="code-form" hidden novalidate>
+      <label for="code">Код из SMS</label>
+      <input id="code" name="code" type="text" inputmode="numeric" autocomplete="one-time-code" pattern="[0-9]*" maxlength="6">
+      <button id="code-submit" type="submit">Войти</button>
+    </form>
     <p id="error" class="error" role="alert" aria-live="polite"></p>
+    <div id="code-links" class="login-links" hidden>
+      <button id="resend" class="login-link" type="button" disabled>Отправить код ещё раз</button>
+      <button id="other-phone" class="login-link" type="button">Другой номер</button>
+    </div>
+    <button id="mode-switch" class="login-link" type="button" hidden>Войти по номеру телефона</button>
   </main>
 </body>
 </html>

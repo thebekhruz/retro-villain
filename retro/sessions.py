@@ -7,6 +7,9 @@
 
 В файле хранится не сам ключ из cookie, а его отпечаток: если файл утечёт,
 войти по нему не получится, как и по украденной базе паролей.
+
+Сессия, открытая по номеру телефона (ТЗ 09.10, М-05), помнит номер: по нему
+приложение проверяет, что номер всё ещё привязан к той же учётной записи.
 """
 
 import hashlib
@@ -26,6 +29,8 @@ LIFETIME = timedelta(days=30)
 class SessionIdentity:
     username: str
     role: str
+    # Номер, по которому открыта сессия; None — вход по логину и паролю.
+    phone: str | None = None
 
 
 def fingerprint(token: str) -> str:
@@ -40,11 +45,15 @@ class SessionStore:
         self._lock = Lock()
         self._load()
 
-    def create(self, username: str, role: str) -> str:
+    @property
+    def lifetime(self) -> timedelta:
+        return self._lifetime
+
+    def create(self, username: str, role: str, *, phone: str | None = None) -> str:
         token = secrets.token_urlsafe(32)
         with self._lock:
             self._identities[fingerprint(token)] = (
-                SessionIdentity(username, role), datetime.now(timezone.utc))
+                SessionIdentity(username, role, phone), datetime.now(timezone.utc))
             self._save()
         return token
 
@@ -88,7 +97,7 @@ class SessionStore:
         for mark, row in rows:
             try:
                 started = datetime.fromisoformat(row['started'])
-                identity = SessionIdentity(row['username'], row['role'])
+                identity = SessionIdentity(row['username'], row['role'], row.get('phone'))
             except (TypeError, KeyError, ValueError):
                 continue
             if not self._expired(started):
@@ -98,7 +107,8 @@ class SessionStore:
         if self._path is None:
             return
         saved = {mark: dict(username=identity.username, role=identity.role,
-                            started=started.isoformat())
+                            started=started.isoformat(),
+                            **({'phone': identity.phone} if identity.phone else {}))
                  for mark, (identity, started) in self._identities.items()}
         self._path.parent.mkdir(parents=True, exist_ok=True)
         # Пишем через временный файл: оборванная запись не должна оставить

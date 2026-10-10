@@ -9,9 +9,25 @@ from dotenv import load_dotenv
 
 from retro.runtime import resolve_data_dir
 from retro.modules.manager.directions import parse_manager_directions
+from retro.phone_numbers import parse_phone_users
 
 ROOT = Path(__file__).resolve().parent.parent
 IIKO_ORIGIN = 'https://retro3158.iikoweb.ru'
+SMS_PROVIDERS = ('eskiz', 'console')
+# Текст SMS с кодом входа. У Eskiz каждый текст проходит модерацию шаблона:
+# отправится только тот, что одобрен в кабинете Eskiz, слово в слово.
+SMS_TEMPLATE = 'Retro Milliy: код для входа в панель {code}. Никому его не сообщайте.'
+
+
+@dataclass(frozen=True)
+class SmsConfig:
+    """SMS для входа по номеру (ТЗ 09.10, М-05): Eskiz на бою, консоль на стенде."""
+    provider: str
+    email: str = field(default='', repr=False)
+    password: str = field(default='', repr=False)
+    sender: str = '4546'
+    template: str = SMS_TEMPLATE
+    timeout_seconds: int = 10
 
 
 @dataclass(frozen=True)
@@ -37,6 +53,11 @@ class Settings:
     # Направления менеджеров (ТЗ 09.10, М-01): логин → «Кухня», «Зал», «Уборка».
     # Менеджер без строки здесь видит все направления.
     manager_directions: dict[str, tuple[str, ...]] = field(default_factory=dict)
+    # Вход по номеру телефона (ТЗ 09.10, М-05): «+998901234567» → логин из
+    # DASHBOARD_PANEL_USERS. Номер находит уже заведённую учётную запись,
+    # новых по номеру не бывает.
+    phone_users: dict[str, str] = field(default_factory=dict, repr=False)
+    sms: SmsConfig | None = field(default=None, repr=False)
     dashboard_allowed_network: IPv4Network | IPv6Network | None = None
     trusted_proxy_network: IPv4Network | IPv6Network | None = None
     manual_handover_only: bool = False
@@ -86,6 +107,10 @@ class Settings:
     def hikvision_configured(self):
         return self.hikvision is not None
 
+    @property
+    def phone_login_configured(self):
+        return bool(self.phone_users and self.sms is not None)
+
     @classmethod
     def from_env(cls):
         load_dotenv(ROOT / 'build' / '.env', override=False)
@@ -103,6 +128,8 @@ class Settings:
         panel_users = parse_dashboard_panel_users(os.getenv('DASHBOARD_PANEL_USERS', ''))
         manager_directions = parse_manager_directions(
             os.getenv('DASHBOARD_MANAGER_DIRECTIONS', ''), panel_users)
+        phone_users = parse_phone_users(os.getenv('DASHBOARD_PHONE_USERS', ''), panel_users)
+        sms = parse_sms_config(os.environ)
         network_value = os.getenv('DASHBOARD_ALLOWED_NETWORK', '').strip()
         allowed_network = ip_network(network_value, strict=False) if network_value else None
         proxy_value = os.getenv('TRUSTED_PROXY_NETWORK', '').strip()
@@ -153,6 +180,8 @@ class Settings:
             dashboard_password=password,
             dashboard_panel_users=panel_users,
             manager_directions=manager_directions,
+            phone_users=phone_users,
+            sms=sms,
             dashboard_allowed_network=allowed_network,
             trusted_proxy_network=trusted_proxy_network,
             manual_handover_only=manual,
@@ -206,6 +235,36 @@ def parse_hikvision_config(environ) -> HikvisionConfig | None:
         base_url=url, username=username, password=password, source=source,
         poll_seconds=poll, timeout_seconds=timeout,
         verify_tls=verify_raw in {'true', '1', 'yes'})
+
+
+def parse_sms_config(environ) -> SmsConfig | None:
+    """SMS_PROVIDER: пусто — входа по номеру нет; eskiz — боевой; console — стенд.
+
+    Консоль пишет код в лог сервера, поэтому на хостинге она запрещена: там лог
+    читают не только те, кому положен вход."""
+    provider = environ.get('SMS_PROVIDER', '').strip().casefold()
+    if not provider:
+        return None
+    if provider not in SMS_PROVIDERS:
+        raise ValueError('SMS_PROVIDER должен быть eskiz или console.')
+    template = environ.get('SMS_TEMPLATE', '').strip() or SMS_TEMPLATE
+    if (template.count('{code}') != 1 or template.replace('{code}', '').count('{')
+            or template.replace('{code}', '').count('}') or len(template) > 300):
+        raise ValueError('SMS_TEMPLATE должен содержать {code} ровно один раз и быть не длиннее 300 знаков.')
+    timeout = _bounded_int(environ.get('SMS_TIMEOUT_SECONDS', '10'), 'SMS_TIMEOUT_SECONDS', 1, 60)
+    if provider == 'console':
+        if hosting_without_disk(environ):
+            raise ValueError('SMS_PROVIDER=console — только для стенда: на хостинге коды попали бы в лог.')
+        return SmsConfig(provider='console', template=template, timeout_seconds=timeout)
+    email = environ.get('ESKIZ_EMAIL', '').strip()
+    password = environ.get('ESKIZ_PASSWORD', '')
+    if not email or not password:
+        raise ValueError('Для SMS_PROVIDER=eskiz задайте ESKIZ_EMAIL и ESKIZ_PASSWORD.')
+    sender = environ.get('ESKIZ_FROM', '').strip() or '4546'
+    if not re.fullmatch(r'[A-Za-z0-9_ -]{1,11}', sender):
+        raise ValueError('ESKIZ_FROM — имя отправителя Eskiz: до 11 латинских букв и цифр.')
+    return SmsConfig(provider='eskiz', email=email, password=password, sender=sender,
+                     template=template, timeout_seconds=timeout)
 
 
 def _bounded_int(value: str, name: str, minimum: int, maximum: int) -> int:

@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
@@ -50,8 +50,11 @@ from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
+from retro.integrations.sms import sms_sender
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
+from retro.phone_login import PhoneLogin, PhoneLoginError, PhoneLoginStore, phone_session_valid
+from retro.phone_numbers import display_phone
 from retro import request_reads
 from retro.security import (MUTATING_METHODS, effective_scheme, client_address,
                            validate_mutation_origin)
@@ -61,7 +64,9 @@ STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js',
                 '/static/i18n.js', '/static/i18n-uz.js', '/static/busy.js', '/static/favicon.svg',
-                '/static/favicon-32.png', '/static/apple-touch-icon.png'}
+                '/static/favicon-32.png', '/static/apple-touch-icon.png',
+                # Вход по номеру телефона и SMS-коду (ТЗ 09.10, М-05)
+                '/api/session/phone/code', '/api/session/phone/verify', '/static/login-logic.js'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
@@ -72,6 +77,15 @@ SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы �
 class LoginInput(BaseModel):
     username: str
     password: str
+
+
+class PhoneInput(BaseModel):
+    phone: str
+
+
+class PhoneCodeInput(BaseModel):
+    phone: str
+    code: str
 
 
 # Статика модулей: файл → панели, которым он нужен. Раньше /static/ отдавался
@@ -155,7 +169,12 @@ def panel_for_path(path: str) -> str | None:
 def dashboard_identity(
         request: Request, settings: Settings, sessions: SessionStore,
 ) -> SessionIdentity | None:
-    session_identity = sessions.identity(request.cookies.get(SESSION_COOKIE))
+    token = request.cookies.get(SESSION_COOKIE)
+    session_identity = sessions.identity(token)
+    if session_identity and session_identity.phone and not phone_session_valid(session_identity, settings):
+        # Номер сняли с учётной записи (или саму запись): сессия по нему закрыта.
+        sessions.delete(token)
+        session_identity = None
     if session_identity:
         return session_identity
     header = request.headers.get('Authorization', '')
@@ -182,7 +201,7 @@ def dashboard_identity(
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
                broadcast_transport=None, hikvision_client=None, hikvision_poller=None,
-               hikvision_writer=None):
+               hikvision_writer=None, sms_client=None):
     configure_logging()
     settings = settings or Settings.from_env()
 
@@ -210,6 +229,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if application.state.menu_sync is not None:
                 await application.state.menu_sync.close()
             await application.state.reports.close()
+            await application.state.phone_login.close()
             # Клиенты держат свои пулы соединений всё время жизни приложения;
             # в тестах на их месте могут стоять заглушки без close().
             for integration in (application.state.iiko, application.state.bookings,
@@ -297,6 +317,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # Сервис передаёт период (start/end): без **kw «Сформировать отчёт» падал с 500.
         loader=lambda today, **kw: load_iiko(app.state, 'load_director_report', today, timeout=150, **kw))
 
+    # Вход по номеру (ТЗ 09.10, М-05): коды и лимиты — в общей базе, чтобы
+    # пережить выкат; SMS — Eskiz на бою, консоль на стенде.
+    app.state.phone_login = PhoneLogin(
+        PhoneLoginStore(shared or settings.data_dir / 'phone-login.sqlite3'), settings,
+        sms_client if sms_client is not None else sms_sender(settings.sms))
+
     app.state.financial_requests = FinancialRequests(
         shared or Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3')
         .with_name('financial-requests.sqlite3'))
@@ -378,7 +404,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         role = getattr(request.state, 'dashboard_role', None)
         if role:
             return RedirectResponse(ROLE_PATHS[role], status_code=303)
-        return app.state.pages.response('login.html')
+        if not app.state.phone_login.enabled:
+            return app.state.pages.response('login.html')
+        # Вход по номеру настроен — экран показывает его сразу, без запроса.
+        return HTMLResponse(app.state.pages.html('login.html').replace(
+            'data-phone-login="off"', 'data-phone-login="on"', 1))
 
     @app.post('/api/session')
     def login(request: Request, body: LoginInput):
@@ -402,6 +432,36 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response.set_cookie(
             SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
             samesite='strict', secure=effective_scheme(request) == 'https', path='/')
+        return response
+
+    def phone_failure(error: PhoneLoginError):
+        headers = {'Retry-After': str(error.extra['retry_after'])} if 'retry_after' in error.extra else None
+        return JSONResponse(error.payload(), error.status, headers=headers)
+
+    @app.post('/api/session/phone/code')
+    async def phone_code(request: Request, body: PhoneInput):
+        # Адрес — тот же, что видит защита панели (за прокси — из доверенной сети).
+        address = str(client_address(request, settings))
+        try:
+            sent = await app.state.phone_login.request_code(body.phone, address)
+        except PhoneLoginError as error:
+            return phone_failure(error)
+        return dict(phone=display_phone(sent.phone), sent=sent.sent,
+                    resend_in=sent.resend_in, expires_in=sent.expires_in)
+
+    @app.post('/api/session/phone/verify')
+    def phone_verify(request: Request, body: PhoneCodeInput):
+        try:
+            account = app.state.phone_login.verify(body.phone, body.code)
+        except PhoneLoginError as error:
+            return phone_failure(error)
+        # Сохранённая сессия на телефоне: кабинет открывается без кода, пока
+        # она жива (30 дней) или пока человек не нажал «Выйти».
+        token = app.state.sessions.create(account.login, account.role, phone=account.phone)
+        response = JSONResponse({'role': account.role, 'path': ROLE_PATHS[account.role]})
+        response.set_cookie(
+            SESSION_COOKIE, token, max_age=int(app.state.sessions.lifetime.total_seconds()),
+            httponly=True, samesite='strict', secure=effective_scheme(request) == 'https', path='/')
         return response
 
     def finish_logout(request: Request, response: Response):
