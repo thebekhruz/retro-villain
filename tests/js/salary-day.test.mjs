@@ -95,3 +95,39 @@ test('untick writes zero with the same guard; same value or read-only day sends 
   assert.equal(await h.context.commit(h.person,'2026-10-06',350000),false);
   assert.equal(h.requests.length,1);
 });
+
+/* T-429 (ТЗ 09.10, Б-04): до выдачи клетка показывает посещаемость смены, как «Сотрудники». */
+const nbsp=text=>text.replace(/ /g,' ');
+test('посещаемость смены в клетке: время, «нет», «?», «был» и подсказка словами',()=>{
+  const ihtiyor={status:'on_time',time:'09:31',source:'on_time'};
+  const person={id:1,rate:'360000',cells:{'2026-10-09':{amount:'0',attendance:ihtiyor},'2026-10-10':{amount:'0'}}};
+  assert.deepEqual(logic.attendanceOf(person,'2026-10-09'),ihtiyor);
+  assert.equal(logic.attendanceOf(person,'2026-10-10'),null,'сегодняшняя смена не размечена');
+  assert.equal(logic.attendanceOf(person,'2026-10-11'),null);
+  assert.equal(logic.shiftMark(ihtiyor),'09:31');
+  assert.equal(logic.shiftMark({status:'late',time:'10:58',source:'late'}),'10:58');
+  assert.equal(logic.shiftMark({status:'absent',time:null,source:'missing'}),'нет');
+  assert.equal(logic.shiftMark({status:'unknown',time:null,source:'unlinked'}),'?');
+  assert.equal(logic.shiftMark({status:'manual',time:null,source:'manual_present'}),'был','время входа не придумываем');
+  assert.equal(logic.shiftMark(null),'');
+  assert.equal(logic.shiftTitle('2026-10-09',ihtiyor,0),'Смена 08.10: пришёл 09:31, вовремя');
+  assert.equal(logic.shiftTitle('2026-10-09',{status:'late',time:'10:58',source:'late'},0),'Смена 08.10: пришёл 10:58, опоздал');
+  assert.equal(nbsp(logic.shiftTitle('2026-10-08',{status:'absent',time:null,source:'missing'},360000)),
+    'Смена 07.10: не пришёл · выдано 360 000 сум','после выдачи смена остаётся в подсказке');
+  assert.equal(logic.shiftText({status:'absent',source:'manual_absent'}),'не был, отмечено вручную');
+  assert.equal(logic.shiftText({status:'manual',source:'manual_present'}),'был, отмечено вручную');
+  assert.equal(logic.shiftText({status:'unknown',source:'unlinked'}),'нет привязки к Hikvision');
+  assert.equal(logic.shiftText({status:'unknown',source:'unavailable'}),'нет данных Hikvision');
+  assert.equal(logic.shiftTitle('2026-10-09',null,360000),'','без сведений о смене подсказки нет');
+});
+test('выдача и её снятие не трогают посещаемость из ответа сервера — снял галочку, вернулось время',async()=>{
+  const h=harness(),shift={status:'on_time',time:'09:31',source:'on_time'},tick=()=>new Promise(resolve=>setTimeout(resolve,0));
+  h.person.cells['2026-10-07'].attendance=shift;
+  let work=h.commit(350000);await tick();
+  h.requests[0].resolve({ok:true,json:async()=>({amount:'350000',work_day:'2026-10-06',editable:true})});await work;
+  assert.deepEqual(h.person.cells['2026-10-07'].attendance,shift);
+  work=h.commit(0);await tick();
+  h.requests[1].resolve({ok:true,json:async()=>({amount:'0',work_day:'2026-10-06',editable:true})});await work;
+  assert.equal(h.person.cells['2026-10-07'].amount,'0');
+  assert.equal(logic.shiftMark(logic.attendanceOf(h.person,'2026-10-07')),'09:31');
+});

@@ -72,3 +72,15 @@ test('T-428: отказ без кассы дня называет даты и п
     translate('Нет суммы от кассира за 09.10 (касса за 08.10). Впишите её в «Финансах дня» за 09.10 и повторите.'),
     "09.10 uchun kassirdan summa yo'q (08.10 kassasi). Uni «Kunlik moliya»da 09.10 kuniga yozing va qayta urinib ko'ring.");
 });
+
+test('T-429: посещаемость смены в клетке «Зарплаты · день» и должности группы', () => {
+  assert.equal(translate('Смена 08.10: пришёл 09:31, вовремя'), "08.10 smenasi: 09:31 da keldi, o'z vaqtida");
+  assert.equal(translate('Смена 08.10: пришёл 10:58, опоздал'), '08.10 smenasi: 10:58 da keldi, kechikdi');
+  assert.equal(translate('Смена 07.10: не пришёл · выдано 360 000 сум'), "07.10 smenasi: kelmadi · 360 000 so'm berildi");
+  assert.equal(translate('Смена 07.10: нет привязки к Hikvision'), "07.10 smenasi: Hikvision'ga bog'lanmagan");
+  assert.equal(translate('нет'), "yo'q");
+  assert.equal(translate('был'), 'keldi');
+  assert.equal(translate('Все должности'), 'Barcha lavozimlar');
+  assert.equal(translate('Повар тандыр'), 'Oshpaz tandir');
+  assert.equal(translate('Лепёшка тандырная'), null, 'слово внутри другого слова не трогаем');
+});

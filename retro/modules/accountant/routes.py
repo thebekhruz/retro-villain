@@ -457,9 +457,12 @@ def salary_day_month(request: Request, month: str):
         raise HTTPException(422, 'Выберите текущий или прошедший месяц.')
     first = accounting_range_start(first, last)
     finance = request.app.state.accountant_finance
+    # Посещаемость смены в клетке — тем же расчётом, что «Сотрудники» за день смены:
+    # реестр на этот день, входы Hikvision и ручные отметки, без отметки выплаты.
+    roster, attendance = request.app.state.accountant_roster, request.app.state.attendance
     return dict(month=month, first=first.isoformat(), last=last.isoformat(),
                 closed=month_closing.closed_state(finance, last),
-                **finance.salary_day_month(first, last, request.app.state.attendance.store.first_entries))
+                **finance.salary_day_month(first, last, lambda days: attendance.rows_by_day(days, roster.list)))
 
 
 @router.put('/salary-day/cell')

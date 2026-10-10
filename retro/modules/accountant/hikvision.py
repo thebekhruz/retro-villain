@@ -228,6 +228,29 @@ class AttendanceStore:
                 'WHERE work_day = ?', (day.isoformat(),)).fetchall()
         return {row[0]: FirstEntry(row[0], row[1], datetime.fromisoformat(row[2])) for row in rows}
 
+    def first_entries_between(self, first: date, last: date) -> dict[date, dict[int, FirstEntry]]:
+        """Первые входы за несколько дней одним запросом: {день: {сотрудник: вход}}."""
+        with closing(self._open()) as connection:
+            rows = connection.execute(
+                'SELECT work_day,employee_id,employee_no,occurred_at FROM hikvision_first_entries '
+                'WHERE work_day >= ? AND work_day <= ?', (first.isoformat(), last.isoformat())).fetchall()
+        result: dict[date, dict[int, FirstEntry]] = {}
+        for work_day, employee_id, employee_no, occurred_at in rows:
+            result.setdefault(date.fromisoformat(work_day), {})[employee_id] = FirstEntry(
+                employee_id, employee_no, datetime.fromisoformat(occurred_at))
+        return result
+
+    def manual_marks_between(self, first: date, last: date) -> dict[date, dict[int, bool]]:
+        """Явные отметки «был / не был» за несколько дней: {день: {сотрудник: был ли}}."""
+        with closing(self._open()) as connection:
+            rows = connection.execute(
+                'SELECT work_day, employee_id, present FROM hikvision_manual_absences '
+                'WHERE work_day >= ? AND work_day <= ?', (first.isoformat(), last.isoformat())).fetchall()
+        result: dict[date, dict[int, bool]] = {}
+        for work_day, employee_id, present in rows:
+            result.setdefault(date.fromisoformat(work_day), {})[employee_id] = bool(present)
+        return result
+
     def manual_marks(self, day: date) -> dict[int, bool]:
         """Явные отметки за день: {сотрудник: был ли}."""
         with closing(self._open()) as connection:
@@ -350,25 +373,52 @@ class AttendanceService:
         marks = self.store.manual_marks(day)
         state = self.store.sync_state(self.source)
         complete = self._day_complete(day, now, state)
-        rows = []
-        for employee in employees:
-            entry = entries.get(employee.id)
-            mark = marks.get(employee.id)
-            if employee.manual_attendance:
-                rows.append(self._manual_row(employee, day, mark, entry))
-            elif entry is not None:
-                rows.append(AttendanceRow(employee.id, _entry_status(entry), entry.occurred_at))
-            elif employee.hikvision_id is None:
-                rows.append(AttendanceRow(employee.id, 'unlinked', None))
-            elif mark is not None and not complete:
-                # День вне выгрузки: отметка бухгалтера — единственный источник.
-                rows.append(AttendanceRow(employee.id, 'manual_present' if mark else 'manual_absent', None))
-            else:
-                rows.append(AttendanceRow(employee.id, 'missing' if complete else 'unavailable', None))
+        rows = [self._row(employee, day, entries.get(employee.id), marks.get(employee.id), complete)
+                for employee in employees]
         paid = self.paid_employees(day) if self.paid_employees else set()
         rows = [replace(row, status=attendance_after_payment(row.status, Decimal(1)))
                 if row.employee_id in paid else row for row in rows]
         return AttendanceSnapshot(tuple(rows), complete, self._health(state, now, complete), marks)
+
+    def rows_by_day(self, days, employees_for: Callable[[date], list[Employee]], *,
+                    now: datetime | None = None) -> dict[date, dict[int, AttendanceRow]]:
+        """Посещаемость нескольких смен — для «Зарплаты · день».
+
+        Статус тот же, что на странице «Сотрудники» за этот день (один расчёт
+        _row), но без отметки выплаты: выдача денег посещаемость не меняет,
+        и клетка после снятия выплаты показывает исходный статус. Входы и
+        отметки читаются за весь период одним запросом, реестр — на день
+        смены (employees_for(day)), как его видят «Сотрудники».
+        """
+        days = sorted(set(days))
+        if not days:
+            return {}
+        now = (now or datetime.now(TZ)).astimezone(TZ)
+        entries = self.store.first_entries_between(days[0], days[-1])
+        marks = self.store.manual_marks_between(days[0], days[-1])
+        state = self.store.sync_state(self.source)
+        result = {}
+        for day in days:
+            complete = self._day_complete(day, now, state)
+            day_entries, day_marks = entries.get(day, {}), marks.get(day, {})
+            result[day] = {employee.id: self._row(employee, day, day_entries.get(employee.id),
+                                                  day_marks.get(employee.id), complete)
+                           for employee in employees_for(day)}
+        return result
+
+    def _row(self, employee: Employee, day: date, entry, mark: bool | None,
+             complete: bool) -> AttendanceRow:
+        """Статус сотрудника за день — до отметки выплаты."""
+        if employee.manual_attendance:
+            return self._manual_row(employee, day, mark, entry)
+        if entry is not None:
+            return AttendanceRow(employee.id, _entry_status(entry), entry.occurred_at)
+        if employee.hikvision_id is None:
+            return AttendanceRow(employee.id, 'unlinked', None)
+        if mark is not None and not complete:
+            # День вне выгрузки: отметка бухгалтера — единственный источник.
+            return AttendanceRow(employee.id, 'manual_present' if mark else 'manual_absent', None)
+        return AttendanceRow(employee.id, 'missing' if complete else 'unavailable', None)
 
     @staticmethod
     def _manual_row(employee: Employee, day: date, mark: bool | None, entry) -> AttendanceRow:

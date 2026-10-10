@@ -337,14 +337,15 @@ def test_past_days_since_accounting_start_are_editable_like_month_sheet(stores):
 
 def test_late_shift_marks_the_payout_cell_with_entry_time(stores):
     from datetime import datetime
-    from types import SimpleNamespace as Entry
+    from retro.modules.accountant.payroll import AttendanceRow
     from retro.modules.cashier.service import TZ
     finance, _, person = stores
-    entries = {date(2026, 10, 5): {person.id: Entry(occurred_at=datetime(2026, 10, 5, 10, 25, tzinfo=TZ))},
-               date(2026, 10, 6): {person.id: Entry(occurred_at=datetime(2026, 10, 6, 9, 55, tzinfo=TZ))},
-               date(2026, 10, 10): {person.id: Entry(occurred_at=datetime(2026, 10, 10, 11, 0, tzinfo=TZ))}}
+    entries = {date(2026, 10, 5): {person.id: AttendanceRow(person.id, 'late', datetime(2026, 10, 5, 10, 25, tzinfo=TZ))},
+               date(2026, 10, 6): {person.id: AttendanceRow(person.id, 'on_time', datetime(2026, 10, 6, 9, 55, tzinfo=TZ))},
+               date(2026, 10, 10): {person.id: AttendanceRow(person.id, 'late', datetime(2026, 10, 10, 11, 0, tzinfo=TZ))}}
     cells = finance.salary_day_month(date(2026, 10, 1), date(2026, 10, 31),
-                                     lambda day: entries.get(day, {}))['people'][0]['cells']
-    assert cells['2026-10-06']['late'] == '10:25'      # смена 05.10 — вход после 10:00
-    assert 'late' not in cells['2026-10-07']           # смена 06.10 — вовремя
-    assert 'late' not in cells['2026-10-11']           # смена 10.10 — сегодня, ещё не смотрим
+                                     lambda days: {day: entries[day] for day in days if day in entries}
+                                     )['people'][0]['cells']
+    assert cells['2026-10-06']['attendance'] == dict(status='late', time='10:25', source='late')  # смена 05.10
+    assert cells['2026-10-07']['attendance']['status'] == 'on_time'   # смена 06.10 — вовремя
+    assert 'attendance' not in cells['2026-10-11']                   # смена 10.10 — сегодня, ещё не смотрим

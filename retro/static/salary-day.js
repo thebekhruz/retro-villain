@@ -1,7 +1,9 @@
 /* «Зарплата · день» — та же сетка, что «Зарплата · месяц»: клетка = день выплаты.
    Первый клик — ✓ выдано по ставке смены. Второй клик — поле суммы прямо в клетке
    (опоздал, штраф — выдать меньше). Третий клик — пустая клетка, выплаты нет. Опоздавшие за смену
-   подсвечены розовым, ставка при этом не меняется. Пишется сразу. */
+   подсвечены розовым, ставка при этом не меняется. Пишется сразу.
+   До выдачи в клетке — посещаемость смены, как в «Сотрудниках»: время входа, «нет», «?»
+   или «был»; выдано — галочка, а смена остаётся в подсказке. */
 (() => {
   const $=id=>document.getElementById(id), L=globalThis.SalaryDayLogic, B=globalThis.RetroBusy;
   const formatter=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
@@ -10,11 +12,12 @@
   let current=null, today=null, selectedDay=null, sequence=0, controller=null, writes=0, queue=Promise.resolve();
   let editing=null;
   // Группы и поиск — как в «Сотрудниках»; порядок групп тот же, незнакомые — в конце.
+  // В выбранной группе — её должности (в «Кухне» — повара по цехам), общая логика EmployeesLogic.
   const GROUP_ORDER=['Управление','Встреча гостей','Кухня','Обслуживание зала','Бар','Присмотр за детьми','Уборка','Охрана'];
-  const filter={tab:'all',q:''};
+  const filter={tab:'all',role:'',q:''}, E=globalThis.EmployeesLogic;
   const groupOf=person=>person.group||'Без группы';
   const visible=person=>(filter.tab==='all'||groupOf(person)===filter.tab)
-    &&(!globalThis.EmployeesLogic||globalThis.EmployeesLogic.matchesQuery(filter.q,person.name,person.role));
+    &&(!E||(E.matchesRole(filter.role,person.role)&&E.matchesQuery(filter.q,person.name,person.role)));
   const inflight=new Map();
   const monthTitle=month=>new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T12:00:00Z'));
   function message(text,error=false){
@@ -27,22 +30,28 @@
   const cellId=(personId,day)=>'sd-c-'+personId+'-'+day;
   function view(person,day){
     const amount=L.parseAmount(person.cells?.[day]?.amount??0)||0, rate=L.rateOf(person,day);
-    return {amount,rate,state:L.cellState(amount,rate),editable:L.canEdit(current,person,day),late:person.cells?.[day]?.late||null};
+    return {amount,rate,state:L.cellState(amount,rate),editable:L.canEdit(current,person,day),attendance:L.attendanceOf(person,day)};
   }
+  const MARK_CLASS={on_time:' is-ontime',absent:' is-absent',unknown:' is-unknown',manual:' is-manual'};
   /* Клетка — ячейка «Зарплаты · месяц» (.pr-m): белая, сегодняшний столбец подсвечен,
-     ✓ по ставке — на зелёном, другая сумма — число на жёлтом, опоздал — розовая
-     (не выдано — со временем входа). */
+     ✓ по ставке — на зелёном, другая сумма — число на жёлтом, опоздал — розовая.
+     Не выдано — посещаемость смены: вовремя — время зелёным, опоздал — время на розовом,
+     «нет» — не пришёл, «?» — нет данных, «был» — отмечен вручную. Подсказка — словами. */
   function paintCell(person,day,el=document.getElementById(cellId(person.id,day))){
     if(!el)return;
-    const v=view(person,day), late=v.late&&v.state!=='odd';
+    const v=view(person,day), shift=v.attendance, late=shift?.status==='late'&&v.state!=='odd';
+    const mark=v.state==='off'?L.shiftMark(shift):'';
     const keep=[...el.classList].filter(cls=>cls.startsWith('rm-')).map(cls=>' '+cls).join('');
     el.className='pr-m sd-m'+(v.state==='on'?' is-filled is-tick':v.state==='odd'?' is-odd':'')+(late?' is-late':'')
+      +(mark&&!late?MARK_CLASS[shift.status]||'':'')
       +(day===today?' is-today':'')+(day>today?' is-future':'')+(v.editable?'':' is-locked')+keep;
-    el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):late?v.late:'';
+    el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):mark;
+    const title=L.shiftTitle(day,shift,v.amount);
+    if(title)el.title=title;else el.removeAttribute('title');
     if(v.editable){
       el.setAttribute('aria-pressed',String(v.state!=='off'));
       el.setAttribute('aria-label',person.name+' · выплата '+dm(day)+' за смену '+dm(L.previousDay(day))
-        +(v.late?' · опоздал, вход '+v.late:'')+' · '+(v.amount?'выдано '+fmt(v.amount)+' сум':'не выдано'));
+        +' · '+(v.amount?'выдано '+fmt(v.amount)+' сум':'не выдано')+(shift?' · '+L.shiftText(shift):''));
     }
   }
   function makeCell(person,day){
@@ -52,18 +61,25 @@
     paintCell(person,day,el);
     return el;
   }
+  function chip(label,count,active,pick){
+    const button=node('button','sd-tab'+(active?' is-active':''));button.type='button';button.setAttribute('role','tab');
+    button.setAttribute('aria-selected',String(active));
+    button.append(node('span','',label),node('small','',String(count)));
+    button.addEventListener('click',()=>{pick();renderTabs();applyFilter();});
+    return button;
+  }
   function renderTabs(){
     const counts=new Map();current.people.forEach(p=>counts.set(groupOf(p),(counts.get(groupOf(p))||0)+1));
     if(filter.tab!=='all'&&!counts.has(filter.tab))filter.tab='all';
     const names=[...GROUP_ORDER.filter(name=>counts.has(name)),...[...counts.keys()].filter(name=>!GROUP_ORDER.includes(name))];
     const tabs=[{key:'all',label:'Все',count:current.people.length},...names.map(name=>({key:name,label:name,count:counts.get(name)}))];
-    $('sd-tabs').replaceChildren(...tabs.map(tab=>{
-      const button=node('button','sd-tab'+(filter.tab===tab.key?' is-active':''));button.type='button';button.setAttribute('role','tab');
-      button.setAttribute('aria-selected',String(filter.tab===tab.key));
-      button.append(node('span','',tab.label),node('small','',String(tab.count)));
-      button.addEventListener('click',()=>{filter.tab=tab.key;renderTabs();applyFilter();});
-      return button;
-    }));
+    $('sd-tabs').replaceChildren(...tabs.map(tab=>chip(tab.label,tab.count,filter.tab===tab.key,()=>{filter.tab=tab.key;filter.role='';})));
+    // Должности выбранной группы — вторым рядом тех же чипов (две и больше должности).
+    const roles=E&&filter.tab!=='all'?E.groupRoles(current.people.map(p=>({group:groupOf(p),role:p.role})),filter.tab):[];
+    if(!roles.some(role=>role.key===filter.role))filter.role='';
+    $('sd-roles').hidden=!roles.length;
+    $('sd-roles').replaceChildren(...(roles.length?[chip('Все должности',counts.get(filter.tab),!filter.role,()=>{filter.role='';}),
+      ...roles.map(role=>chip(role.label,role.count,filter.role===role.key,()=>{filter.role=role.key;}))]:[]));
   }
   /* Отфильтрованные строки прячутся; итог по дням внизу — по видимым. */
   function applyFilter(){
@@ -80,7 +96,7 @@
     $('selected-title').textContent='Выдано '+dm(selectedDay);
     $('selected-shift').textContent='За смену '+dm(L.previousDay(selectedDay));
     view.people.forEach(person=>{const el=$('sd-person-'+person.id);if(el)el.textContent=fmt(person.paid);});
-    const filtered=filter.tab!=='all'||!!filter.q.trim();
+    const filtered=filter.tab!=='all'||!!filter.role||!!filter.q.trim();
     const shown=view.people.filter((summary,index)=>visible(current.people[index]));
     current.days.forEach((day,col)=>{const el=$('sd-total-'+day);if(!el)return;
       const sum=shown.reduce((total,person)=>total+Math.round(person.cells[col].amount*100),0)/100;el.textContent=sum?fmt(sum):'';});

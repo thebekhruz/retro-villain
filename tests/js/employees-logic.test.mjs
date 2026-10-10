@@ -53,3 +53,22 @@ test('«Не начисляется»: все причины сразу', () => 
   assert.deepEqual(logic.attentionReasons({rate: null, status: 'manual_present'}), ['Нет ставки']);
   assert.deepEqual(logic.attentionReasons({rate: '1', status: 'on_time'}), []);
 });
+
+/* T-429 (ТЗ 09.10, Б-06): под выбранной группой — её должности из реестра. */
+test('должности внутри группы: из реестра, без дублей по регистру и пробелам', () => {
+  const rows = [
+    {group: 'Кухня', role: 'Повар миллий'}, {group: 'Кухня', role: 'повар  миллий'}, {group: 'Кухня', role: 'Повар тандыр'},
+    {group: 'Кухня', role: 'кондитер'}, {group: 'Кухня', role: ''}, {group: 'Бар', role: 'бармен'}, {group: 'Бар', role: 'Бармен'}];
+  assert.deepEqual(logic.groupRoles(rows, 'Кухня'), [
+    {key: 'кондитер', label: 'Кондитер', count: 1},
+    {key: 'повар миллий', label: 'Повар миллий', count: 2},
+    {key: 'повар тандыр', label: 'Повар тандыр', count: 1}]);
+  assert.deepEqual(logic.groupRoles(rows, 'Бар'), [], 'одна должность в группе — выбирать не из чего');
+  assert.deepEqual(logic.groupRoles(rows, 'Охрана'), []);
+  assert.deepEqual(logic.groupRoles(null, 'Кухня'), []);
+  assert.ok(logic.matchesRole('', 'Кондитер'), 'пустой фильтр — все должности');
+  assert.ok(logic.matchesRole('повар миллий', ' ПОВАР  Миллий '));
+  assert.ok(logic.matchesRole('повар елка', 'Повар ёлка'));
+  assert.ok(!logic.matchesRole('повар миллий', 'Повар тандыр'));
+  assert.ok(!logic.matchesRole('повар миллий', null));
+});

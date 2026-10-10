@@ -30,6 +30,38 @@
   /* Что ставит клик по клетке: выдано → снять (0); не выдано → ставка;
      ставки нет → null (нужно ввести сумму). */
   function toggleTarget(amount,rate){return amount?0:rate||null;}
+  /* Посещаемость смены (ТЗ 09.10, Б-04): сервер кладёт её в клетку выплаты —
+     status on_time / late / absent / unknown / manual, time — первый вход,
+     source — статус «Сотрудников». Её не трогает ни выдача, ни снятие выдачи:
+     снял галочку — в клетке снова то, что прислал сервер. */
+  function attendanceOf(person,day){const value=person.cells?.[day]?.attendance;return value&&value.status?value:null;}
+  /* Невыданная клетка: время входа, «нет» — не пришёл, «?» — нет данных или
+     привязки, «был» — отмечен вручную. Пусто — о смене сказать нечего. */
+  const MARKS={absent:'нет',unknown:'?',manual:'был'};
+  function shiftMark(attendance){
+    if(!attendance)return '';
+    if(attendance.status==='on_time'||attendance.status==='late')return attendance.time||'';
+    return MARKS[attendance.status]||'';
+  }
+  /* Смена словами — подсказка и подпись для чтения с экрана: статус не только цветом. */
+  function shiftText(attendance){
+    if(!attendance)return '';
+    const time=attendance.time;
+    if(attendance.status==='on_time')return time?'пришёл '+time+', вовремя':'пришёл вовремя';
+    if(attendance.status==='late')return time?'пришёл '+time+', опоздал':'опоздал';
+    if(attendance.status==='absent')return attendance.source==='manual_absent'?'не был, отмечено вручную':'не пришёл';
+    if(attendance.status==='manual')return 'был, отмечено вручную';
+    if(attendance.status==='unknown')return attendance.source==='unlinked'?'нет привязки к Hikvision':'нет данных Hikvision';
+    return '';
+  }
+  const money=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2});
+  const dm=day=>day.slice(8,10)+'.'+day.slice(5,7);
+  /* «Смена 08.10: пришёл 09:31, вовремя» — и после выдачи: «… · выдано 360 000 сум». */
+  function shiftTitle(day,attendance,amount){
+    const text=shiftText(attendance);
+    if(!text)return '';
+    return 'Смена '+dm(previousDay(day))+': '+text+(amount?' · выдано '+money.format(amount)+' сум':'');
+  }
   function matrix(data){
     const perDay=Object.fromEntries(data.days.map(day=>[day,0]));
     const people=(data.people||[]).map(person=>{
@@ -47,5 +79,5 @@
     return {people,perDay:Object.fromEntries(Object.entries(perDay).map(([day,value])=>[day,value/100])),
       total:people.reduce((sum,person)=>sum+Math.round(person.paid*100),0)/100};
   }
-  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,matrix};
+  return {parseAmount,previousDay,shiftMonth,canEdit,rateOf,cellState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix};
 });

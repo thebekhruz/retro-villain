@@ -7,8 +7,6 @@ from decimal import Decimal
 from retro.accounting_period import ACCOUNTING_START
 from retro.modules.cashier.service import TZ, today_tashkent
 
-from .attendance import is_late
-
 from .audit import record_audit
 from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_day, now_stamp, plain
 
@@ -17,6 +15,12 @@ from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_da
 # общей суммой или подтверждённой сменой, — остаются закрытыми: двойной выплаты нет.
 ENTRY_START = ACCOUNTING_START
 MANUAL_STATUS = 'manual_salary'
+# Посещаемость смены в клетке выплаты (ТЗ 09.10, Б-04) — статус страницы
+# «Сотрудники», сведённый к пяти состояниям клетки. «Не пришёл» — только по
+# завершённой выгрузке Hikvision или ручной отметке; без привязки или данных —
+# «нет данных», человек не считается отсутствующим.
+CELL_ATTENDANCE = {'on_time': 'on_time', 'late': 'late', 'missing': 'absent', 'manual_absent': 'absent',
+                   'manual_present': 'manual', 'unlinked': 'unknown', 'unavailable': 'unknown'}
 
 
 class SalaryCellChanged(LedgerError):
@@ -144,9 +148,20 @@ def set_cell(finance, paid_day, employee_id, amount, expected_amount, *, cashier
                 work_day=work_day.isoformat(), editable=True, changed=True)
 
 
-def month_data(finance, first, last, first_entries=None):
-    """Ведомость месяца. first_entries(day) — первые входы Hikvision за день
-    ({сотрудник: вход}); опоздавшим за смену клетки отдаётся время входа (late)."""
+def cell_attendance(row) -> dict:
+    """Посещаемость смены для клетки: status — on_time / late / absent / unknown /
+    manual, time — первый вход «ЧЧ:ММ» (только у пришедших по турникету), source —
+    статус «Сотрудников», по нему подсказка различает «нет привязки» и «нет данных»."""
+    status = CELL_ATTENDANCE.get(row.status, 'unknown')
+    entry = row.occurred_at if status in ('on_time', 'late') else None
+    return dict(status=status, time=entry.astimezone(TZ).strftime('%H:%M') if entry else None,
+                source=row.status)
+
+
+def month_data(finance, first, last, attendance=None):
+    """Ведомость месяца. attendance(смены) — посещаемость прошедших смен
+    ({день: {сотрудник: строка «Сотрудников»}}); клетке выплаты отдаётся
+    посещаемость её смены — дня до выплаты (attendance)."""
     today = today_tashkent()
     days = [(first + timedelta(days=index)).isoformat() for index in range((last-first).days+1)]
     with closing(finance._open()) as connection:
@@ -222,16 +237,15 @@ def month_data(finance, first, last, first_entries=None):
             person['cells'][paid_day] = dict(amount=plain(amounts[(employee_id, paid_day)]),
                                              work_day=work_day, editable=bool(editable and not conflict),
                                              rate=str(rate) if rate is not None else None)
-    if first_entries is not None:
-        # Опоздание — за смену, то есть за день до выплаты; будущие смены не смотрим.
-        for paid_day in days:
-            work = date.fromisoformat(paid_day) - timedelta(days=1)
-            if work >= today:
-                continue
-            for employee_id, entry in first_entries(work).items():
+    if attendance is not None:
+        # Посещаемость — за смену, то есть за день до выплаты; сегодняшнюю и будущие
+        # смены не размечаем. Все смены месяца — одним вызовом, не по клетке.
+        shifts = {date.fromisoformat(paid_day) - timedelta(days=1): paid_day for paid_day in days}
+        for work, rows in attendance([work for work in shifts if work < today]).items():
+            for employee_id, row in rows.items():
                 person = people.get(employee_id)
-                if person is not None and is_late(entry.occurred_at):
-                    person['cells'][paid_day]['late'] = entry.occurred_at.astimezone(TZ).strftime('%H:%M')
+                if person is not None and work in shifts:
+                    person['cells'][shifts[work]]['attendance'] = cell_attendance(row)
     return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(), days=days,
                 people=list(people.values()),
                 aggregate_days=[dict(day=day, amount=plain(total)) for day, total in sorted(aggregate.items())],

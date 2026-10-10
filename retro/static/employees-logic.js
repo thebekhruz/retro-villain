@@ -63,6 +63,31 @@
     return GROUPS[normalized] || null;
   }
 
+  /* Должности внутри группы — второй ряд чипов под группами (ТЗ 09.10, Б-06):
+     в «Кухне» — повар миллий, тандыр, турк, холодный цех… Набор не придуман,
+     это должности из реестра как их записали; одна должность — с точностью до
+     регистра, пробелов и «ё». В группе меньше двух должностей — ряда нет:
+     выбирать не из чего. Общая логика «Сотрудников» и «Зарплаты · день». */
+  const roleKey = role => plain(role);
+  function roleLabel(role) {
+    const text = String(role || '').replace(/\s+/g, ' ').trim();
+    return text ? text[0].toUpperCase() + text.slice(1) : '';
+  }
+  function groupRoles(rows, group) {
+    const roles = new Map();
+    (rows || []).forEach(row => {
+      const key = roleKey(row.role);
+      if (row.group !== group || !key) return;
+      const item = roles.get(key) || {key, label: roleLabel(row.role), count: 0};
+      item.count += 1;
+      roles.set(key, item);
+    });
+    const list = [...roles.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+    return list.length > 1 ? list : [];
+  }
+  // Пустой фильтр — все должности.
+  const matchesRole = (filter, role) => !filter || roleKey(role) === filter;
+
   /* Почему сменному не начисляется — всё сразу, а не первое попавшееся:
      «Нет ставки · нет привязки Hikvision». */
   function attentionReasons(row) {
@@ -73,5 +98,5 @@
     return reasons;
   }
 
-  return {parseAmount, formatAmount, latinKey, matchesQuery, groupForRole, attentionReasons};
+  return {parseAmount, formatAmount, latinKey, matchesQuery, groupForRole, groupRoles, matchesRole, attentionReasons};
 });

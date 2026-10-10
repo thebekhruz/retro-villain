@@ -84,6 +84,9 @@ button.emp-stat--attention:hover{background:#f8f1e0}
   background:transparent;color:#718075;min-height:0}
 .emp-page .emp-tab.is-active{background:#edf2e9;color:#143e35;font-weight:600}
 .emp-page .emp-tab small{font-size:12px;opacity:.7}
+/* Второй ряд — должности выбранной группы, под тонкой линией: видно, что это внутри группы. */
+.emp-tabs.emp-roles{margin:-6px 14px 0;padding:6px 0 14px;border-top:1px solid #eef1ea}
+.emp-tabs[hidden]{display:none}
 .emp-registry-columns,.emp-row{display:grid;grid-template-columns:minmax(0,2.2fr) 100px 130px minmax(0,1fr) minmax(0,1fr);gap:12px}
 .emp-registry-columns,.emp-salary-columns{padding:10px 18px;background:#f5f7f1;border-top:1px solid #e7ece3;color:#71827d;
   font-size:12px;font-weight:600;letter-spacing:.05em;text-transform:uppercase}
@@ -305,6 +308,7 @@ button.emp-stat--attention:hover{background:#f8f1e0}
   .emp-registry-tools{flex:1 1 100%;flex-wrap:wrap}
   .emp-registry-tools input{flex:1 1 180px;width:auto;font-size:15px}
   .emp-tabs{padding:0 12px 12px}
+  .emp-tabs.emp-roles{margin:-4px 12px 0;padding:6px 0 12px}
   .emp-group-head{padding:14px 16px 8px}
   .emp-registry-foot{padding:14px 16px}
   .emp-aside{grid-template-columns:minmax(0,1fr)}
