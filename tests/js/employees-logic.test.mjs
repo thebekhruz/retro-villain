@@ -72,3 +72,24 @@ test('должности внутри группы: из реестра, без 
   assert.ok(!logic.matchesRole('повар миллий', 'Повар тандыр'));
   assert.ok(!logic.matchesRole('повар миллий', null));
 });
+
+/* T-434: временный сотрудник — пометка с периодом, проверка дат и то, что
+   уходит на сервер. Пример ТЗ: хостес Карамат с 08.10 по 10.10. */
+test('временный: пометка «временный · период», проверка «по» не раньше «с», поля для сервера', () => {
+  assert.equal(logic.typeTag({employment_type: 'temporary', work_period: '08.10–10.10'}), 'временный · 08.10–10.10');
+  assert.equal(logic.typeTag({employment_type: 'temporary', work_period: 'с 08.10'}), 'временный · с 08.10');
+  assert.equal(logic.typeTag({employment_type: 'temporary', work_period: null}), 'временный');
+  assert.equal(logic.typeTag({employment_type: 'shift', work_period: null}), '');
+  assert.equal(logic.typeTag({}), '', 'старые строки без типа — сменные');
+  assert.equal(logic.periodError('2026-10-10', '2026-10-08'), 'Период работы: «по» (08.10) раньше, чем «с» (10.10).');
+  assert.equal(logic.periodError('2026-10-08', '2026-10-08'), '', 'один день — можно');
+  assert.equal(logic.periodError('2026-10-08', ''), '', 'только начало — можно');
+  assert.equal(logic.periodError('', '2026-10-10'), '', 'только конец — можно');
+  assert.deepEqual(logic.periodPayload({type: 'temporary', from: '2026-10-08', to: '2026-10-10'}),
+    {employment_type: 'temporary', work_from: '2026-10-08', work_to: '2026-10-10'});
+  assert.deepEqual(logic.periodPayload({type: 'temporary', from: '', to: ''}),
+    {employment_type: 'temporary', work_from: null, work_to: null}, 'период необязателен');
+  // Вернули в сменные — даты, оставшиеся в полях, не уходят.
+  assert.deepEqual(logic.periodPayload({type: 'shift', from: '2026-10-08', to: '2026-10-10'}),
+    {employment_type: 'shift', work_from: null, work_to: null});
+});

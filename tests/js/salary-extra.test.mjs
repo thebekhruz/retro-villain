@@ -113,3 +113,40 @@ test('журнал «Финансов дня»: доп. выплаты — од�
   const card = accountant.cashCard({expected_cashier: '0', ...data});
   assert.deepEqual([card.shift, card.other], [250000, 40000]);
 });
+
+/* T-434: Карамат работает с 08.10 по 10.10. В «Кому» её нет, если смена вне
+   периода; набранное руками имя получает отказ словами, как у сервера. */
+test('временный с периодом: в «Кому» — только за смены периода, отказ словами', () => {
+  const data = month([]);
+  const karamat = data.people.find(p => p.id === 9);
+  Object.assign(karamat, {work_from: '2026-10-08', work_to: '2026-10-10', work_period: '08.10–10.10'});
+  const labels = work => extra.choices(data.people, work).map(item => item.label);
+  assert.ok(labels('2026-10-08').includes('Карамат · Хостес · временный · 08.10–10.10'));
+  assert.ok(labels('2026-10-10').includes('Карамат · Хостес · временный · 08.10–10.10'));
+  assert.ok(!labels('2026-10-07').some(label => label.startsWith('Карамат')));
+  assert.ok(!labels('2026-10-11').some(label => label.startsWith('Карамат')));
+  assert.equal(labels('2026-10-07').length, 2, 'сменные — в любой день');
+  assert.equal(labels(undefined).length, 3, 'без даты смены — все');
+  assert.equal(extra.inPeriod(karamat, '2026-10-09'), true);
+  assert.equal(extra.inPeriod({work_from: '2026-10-08'}, '2026-12-01'), true, 'без конца — открыто вперёд');
+  assert.equal(extra.inPeriod({work_to: '2026-10-10'}, '2026-10-11'), false);
+  const base = {person: karamat, paid: '2026-10-09', amount: 150000, note: 'Подмена'};
+  assert.equal(extra.check({...base, work: '2026-10-07'}, data),
+    'Карамат работает с 08.10 по 10.10 — доп. выплату за смену 07.10 записать нельзя.');
+  assert.equal(extra.check({...base, work: '2026-10-08'}, data), null);
+  assert.equal(extra.outsideText({name: 'Карамат', work_from: '2026-10-08'}, '2026-10-07'),
+    'Карамат работает с 08.10 — доп. выплату за смену 07.10 записать нельзя.');
+  assert.equal(extra.outsideText({name: 'Карамат', work_to: '2026-10-10'}, '2026-10-11'),
+    'Карамат работает по 10.10 — доп. выплату за смену 11.10 записать нельзя.');
+  assert.equal(extra.outsideText({name: 'Карамат', work_from: '2026-10-08', work_to: '2026-10-08'}, '2026-10-09'),
+    'Карамат работает только 08.10 — доп. выплату за смену 09.10 записать нельзя.');
+  // Список под ведомостью и журнал «Финансов дня» — с периодом.
+  assert.equal(extra.roleLine({role: 'Хостес', temporary: true, work_period: '08.10–10.10'}), 'Хостес · временный · 08.10–10.10');
+  assert.equal(extra.roleLine({role: 'Хостес', temporary: true, person: karamat}), 'Хостес · временный · 08.10–10.10');
+  const {rows} = accountant.journal({date: '2026-10-09', reserves: {}, extra_payouts: [
+    {id: 5, name: 'Карамат', temporary: true, work_period: '08.10–10.10', work_day: '2026-10-08', amount: '150000', note: 'Подмена'}],
+  ledger: {cash_balance: '0', cash_flow: {}, movements: [
+    {id: 1, type: 'other_expense', item_code: 'salary_extra_payout', description: 'Доп. выплата · Карамат', amount: '150000'}]}},
+  accountant.catalogIndex([]));
+  assert.equal(rows.find(row => row.group === 'extra').children[0].name, 'Карамат · временный · 08.10–10.10 · смена 08.10 · Подмена');
+});

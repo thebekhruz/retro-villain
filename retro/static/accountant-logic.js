@@ -306,8 +306,9 @@
     // Доп. выплаты из «Зарплата · день» (Б-05) — так же: одна строка, раскрывается по людям.
     const extras=mv.filter(m=>m.type==='other_expense'&&m.item_code==='salary_extra_payout');
     if(extras.length){const sum=extras.reduce((s,m)=>s+num(m.amount),0);
+      // Временный — с периодом (T-434): «Карамат · временный · 08.10–10.10 · смена 08.10 · …».
       const people=(data.extra_payouts||[]).map(p=>({id:'x'+p.id,amount:num(p.amount),readonly:true,
-        name:[p.name,p.temporary?'временный':'','смена '+dm(p.work_day),p.note].filter(Boolean).join(' · ')}));
+        name:[p.name,p.temporary?'временный':'',p.temporary?p.work_period:'','смена '+dm(p.work_day),p.note].filter(Boolean).join(' · ')}));
       auto.push({kind:'auto',group:'extra',cat:'Зарплата',name:'Доп. выплаты'+(people.length?' · '+people.length+' чел.':''),
         amount:sum,paid:sum,debt:0,children:people.length?people:undefined});}
     const kassa=(data.cashier_shokh_gives&&data.cashier_shokh_gives.gives)||[];

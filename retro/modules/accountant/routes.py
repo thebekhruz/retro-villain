@@ -1,6 +1,7 @@
 """Accountant-owned attendance and daily cash endpoints."""
 
 import asyncio
+from contextlib import closing
 from datetime import date, datetime, timedelta
 from dataclasses import replace
 from decimal import Decimal
@@ -26,7 +27,8 @@ from .expense_catalog import catalog_json
 from . import closing as month_closing
 from .ledger import LedgerError, amount_value, flow_json, required_text
 from .payroll import blocker_reason, draft_payroll
-from .roster import HikvisionIdTaken
+from .roster import KEEP, HikvisionIdTaken
+from . import work_period
 
 router = APIRouter(prefix='/api/accountant', tags=['accountant'])
 
@@ -198,9 +200,42 @@ def shift_rows_json(rows, accrued: dict[int, int], closed: bool, roster=()) -> l
         if employee is not None:
             item.update(manual_attendance=employee.manual_attendance,
                         hikvision_registered=employee.hikvision_id is not None,
-                        hikvision_id=employee.hikvision_id)
+                        hikvision_id=employee.hikvision_id, **employment_json(employee))
         result.append(item)
     return result
+
+
+def employment_json(employee) -> dict:
+    """Тип и период работы (T-434): «временный · 08.10–10.10» в «Сотрудниках»."""
+    return dict(employment_type=employee.employment_type,
+                work_from=employee.work_from.isoformat() if employee.work_from else None,
+                work_to=employee.work_to.isoformat() if employee.work_to else None,
+                work_period=employee.period_label)
+
+
+def outside_period_json(request, day: date, roster) -> list[dict]:
+    """Временные, чей период не задевает этот день: в списке дня, счётчиках и
+    начислениях их нет, но карточку можно открыть — продлить период или
+    удалить. Только нынешний реестр."""
+    present = {employee.id for employee in roster}
+    return [dict(employee_id=employee.id, name=employee.name, role=employee.role, group=employee.group_name,
+                 rate=str(employee.rate) if employee.rate is not None else None, status='outside',
+                 first_entry=None, payable=None, exception=False, demo=False, accrued=False, accrual_id=None,
+                 blocker=None, manual_attendance=employee.manual_attendance,
+                 hikvision_registered=employee.hikvision_id is not None, hikvision_id=employee.hikvision_id,
+                 **employment_json(employee))
+            for employee in request.app.state.accountant_roster.list()
+            if employee.id not in present and not employee.works_on(day)]
+
+
+def refuse_outside_period(request, employee_id: int, day: date, action: str) -> None:
+    """Смена вне периода временного — отказ словами («Карамат работает с 08.10
+    по 10.10 — …»), а не «не найден» и не вопрос о кассе. Тот же текст даёт
+    проверка в транзакции записи; здесь — раньше остальных проверок."""
+    with closing(request.app.state.accountant_finance._open()) as connection:
+        text = work_period.guard(connection, employee_id, day, action)
+    if text:
+        raise HTTPException(422, text)
 
 
 def payroll_state(rows, accrued: dict[int, int], confirmed: bool) -> dict:
@@ -225,6 +260,7 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
     if staff_only:
         return dict(demo=False, date=day.isoformat(), source='Hikvision ISAPI',
                     attendance=attendance.health, employees=shift_rows_json(rows, accrued, confirmed, roster),
+                    outside_period=outside_period_json(request, day, roster),
                     **state,
                     roster_count=len(roster), missing_rates=sum(employee.rate is None for employee in roster),
                     monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
@@ -418,6 +454,11 @@ class EmployeeUpdateInput(BaseModel):
     # Номер сотрудника на устройстве Hikvision; пусто/null — снять привязку.
     # Поле не прислали — привязку не трогаем.
     hikvision_id: str | None = None
+    # Тип и период работы (T-434). Поле не прислали — не трогаем; null у
+    # даты — без этой границы.
+    employment_type: str | None = None
+    work_from: date | None = None
+    work_to: date | None = None
 
 
 class EmployeeCreateInput(BaseModel):
@@ -426,6 +467,10 @@ class EmployeeCreateInput(BaseModel):
     rate: str | None = None
     group: str
     manual_attendance: bool = False
+    # Временный (T-434): должность и, если известен, период «с — по».
+    employment_type: str = 'shift'
+    work_from: date | None = None
+    work_to: date | None = None
 
 
 class MonthlyEmployeeInput(BaseModel):
@@ -477,6 +522,10 @@ async def salary_day_cell(request: Request, body: SalaryDayCellInput):
         expected = amount_value(body.expected_amount, allow_zero=True)
     except LedgerError as error:
         finance_error(error)
+    if amount > expected:
+        # Смена вне периода временного — отказ словами раньше вопроса о кассе
+        # (T-434). В транзакции записи set_cell проверит то же для любой суммы.
+        refuse_outside_period(request, body.employee_id, day - timedelta(days=1), 'cell')
     cashier_amount = await required_handover(request, day) if amount > expected else None
     try:
         return await asyncio.to_thread(request.app.state.accountant_finance.set_salary_day_cell,
@@ -525,6 +574,7 @@ async def add_extra_payout(request: Request, body: ExtraPayoutInput):
         amount_value(body.amount)
     except LedgerError as error:
         finance_error(error)
+    refuse_outside_period(request, body.employee_id, body.work_day, 'extra')
     cashier_amount = await required_handover(request, body.paid_day)
     try:
         return await asyncio.to_thread(
@@ -545,6 +595,7 @@ async def update_extra_payout(request: Request, payout_id: int, body: ExtraPayou
         amount = amount_value(body.amount)
     except LedgerError as error:
         finance_error(error)
+    refuse_outside_period(request, current['employee_id'], body.work_day, 'extra')
     # Касса нужна, только если денег выдаётся больше: уменьшение их возвращает.
     cashier_amount = (await required_handover(request, date.fromisoformat(current['paid_day']))
                       if amount > Decimal(current['amount']) else None)
@@ -629,7 +680,23 @@ def payroll_month(request: Request, month: str):
 @router.patch('/employees/{employee_id}')
 def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInput):
     roster = request.app.state.accountant_roster
+    sent = body.model_fields_set
+    period = {}
+    if sent & {'employment_type', 'work_from', 'work_to'}:
+        # Снова сменный — период снимается, даже если даты не прислали.
+        clear = 'employment_type' in sent and body.employment_type == work_period.SHIFT
+        period = dict(employment_type=body.employment_type if 'employment_type' in sent else KEEP,
+                      work_from=body.work_from if 'work_from' in sent else None if clear else KEEP,
+                      work_to=body.work_to if 'work_to' in sent else None if clear else KEEP)
     try:
+        if period:
+            # Период проверяем первым: отказ (вне новых дат уже есть выплаты)
+            # не должен оставить карточку сохранённой наполовину.
+            current = next((item for item in roster.list() if item.id == employee_id), None)
+            if current is None:
+                raise ValueError('Сотрудник не найден.')
+            roster.check_period(employee_id, *(
+                getattr(current, key) if value is KEEP else value for key, value in period.items()))
         if 'hikvision_id' in body.model_fields_set:
             # Сначала привязка: занятый номер (409) не должен оставить
             # наполовину сохранённую карточку.
@@ -645,7 +712,7 @@ def update_employee(request: Request, employee_id: int, body: EmployeeUpdateInpu
             employee_id, name=body.name, role=body.role, rate=body.rate,
             group_name=body.group, reason=body.reason, by=changed_by(request),
             # ТЗ 09.10, М-04: новое имя и должность — кириллицей.
-            cyrillic=True)
+            cyrillic=True, **period)
         if body.manual_attendance is not None and body.manual_attendance != employee.manual_attendance:
             employee = request.app.state.accountant_roster.set_manual_attendance(
                 employee_id, body.manual_attendance, by=changed_by(request))
@@ -661,7 +728,8 @@ def create_employee(request: Request, body: EmployeeCreateInput):
     try:
         employee = request.app.state.accountant_roster.add(
             name=body.name, role=body.role, rate=body.rate, group_name=body.group,
-            by=changed_by(request), cyrillic=True)
+            by=changed_by(request), cyrillic=True, employment_type=body.employment_type,
+            work_from=body.work_from, work_to=body.work_to)
         # «Нет в Hikvision · отмечать вручную» можно выбрать сразу при добавлении.
         if body.manual_attendance:
             employee = request.app.state.accountant_roster.set_manual_attendance(
@@ -746,6 +814,7 @@ def add_exception(request: Request, body: ExceptionInput):
     roster = request.app.state.accountant_roster.list(day)
     employee = next((item for item in roster if item.id == body.employee_id), None)
     if employee is None:
+        refuse_outside_period(request, body.employee_id, day, 'exception')
         raise HTTPException(404, 'Сотрудник не найден.')
     if employee.rate is None:
         raise HTTPException(422, 'Сначала укажите дневную ставку.')
@@ -932,6 +1001,7 @@ def mark_manual_attendance(request: Request, body: ManualAttendanceInput):
     employee = next((item for item in request.app.state.accountant_roster.list(day)
                      if item.id == body.employee_id), None)
     if employee is None:
+        refuse_outside_period(request, body.employee_id, day, 'mark')
         raise HTTPException(404, 'Сотрудник не найден.')
     if not request.app.state.attendance.manual_markable(day, employee):
         raise HTTPException(422, 'Сотрудник отмечается через Hikvision.')

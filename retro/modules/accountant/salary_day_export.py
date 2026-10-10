@@ -160,7 +160,9 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
         extra = _sum(own_extra)
         role = person.get('role') or ''
         if person.get('temporary'):
-            role = (role + ' · временный').strip(' ·')
+            # Период временного (T-434) — рядом с пометкой, как на экране.
+            tag = 'временный' + (f" · {person['work_period']}" if person.get('work_period') else '')
+            role = (role + ' · ' + tag).strip(' ·')
         if person.get('archived'):
             role = (role + ' · архив').strip(' ·')
         _row(sheet, row, [number, person['name'], role, _money(person.get('rate'))]
@@ -169,6 +171,9 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
         for index, value in enumerate(own_extra):
             if value:
                 sheet.cell(row, 5 + index).fill = PatternFill('solid', fgColor='FBF0D7')
+            elif (person['cells'].get(days[index]) or {}).get('outside'):
+                # Смена вне периода временного — пустая серая, как запертая клетка экрана.
+                sheet.cell(row, 5 + index).fill = PatternFill('solid', fgColor='F2F4EF')
         row += 1
     if not people:
         _note(sheet, row, 'Никого не нашли: выборка пустая.', width)
@@ -185,6 +190,13 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
     _print(sheet, width, row)
 
 
+def _temporary(item) -> str:
+    """«да» — временный; с периодом (T-434) — «да · 08.10–10.10»."""
+    if not item.get('temporary'):
+        return ''
+    return 'да' + (f" · {item['work_period']}" if item.get('work_period') else '')
+
+
 def _extras_sheet(sheet, extras, month, period, mode):
     labels = ['№', 'Дата выплаты', 'Дата смены', 'Сотрудник', 'Должность', 'Временный', 'Сумма',
               'Назначение', 'Записал', 'Когда']
@@ -192,13 +204,13 @@ def _extras_sheet(sheet, extras, month, period, mode):
     _title(sheet, f'Доп. выплаты · {MONTHS[month.month - 1]} {month.year}', width)
     _note(sheet, 2, f'Период выплат {period}. {mode}. Расход — в «Финансах дня» за дату выплаты.', width)
     sheet.row_dimensions[2].height = 30
-    _widths(sheet, [5, 13, 12, 28, 18, 11, 14, 40, 16, 16])
+    _widths(sheet, [5, 13, 12, 28, 18, 16, 14, 40, 16, 16])
     _head(sheet, HEAD_ROW, labels)
     row = HEAD_ROW + 1
     for number, item in enumerate(extras, 1):
         stamp = item.get('created_at') or ''
         _row(sheet, row, [number, _dmy(item['paid_day']), _dmy(item['work_day']), item['name'], item['role'],
-                          'да' if item.get('temporary') else '', _money(item['amount']), item['note'],
+                          _temporary(item), _money(item['amount']), item['note'],
                           item.get('created_by') or '', f'{_dmy(stamp[:10])} {stamp[11:16]}' if stamp else ''],
              money_from=7)
         sheet.cell(row, 8).alignment = Alignment(wrap_text=True, vertical='center')

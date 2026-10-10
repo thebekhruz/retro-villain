@@ -98,5 +98,27 @@
     return reasons;
   }
 
-  return {parseAmount, formatAmount, latinKey, matchesQuery, groupForRole, groupRoles, matchesRole, attentionReasons};
+  /* Временный сотрудник (T-434): пометка «временный · 08.10–10.10» («с 08.10»,
+     «по 10.10»). Период подписывает сервер (work_period) — одна подпись на
+     всех экранах и в Excel. Сменному — пусто. */
+  function typeTag(row) {
+    if (!row || row.employment_type !== 'temporary') return '';
+    return row.work_period ? 'временный · ' + row.work_period : 'временный';
+  }
+  const dm = day => day.slice(8, 10) + '.' + day.slice(5, 7);
+  /* Период «с — по» из полей даты: обе границы необязательны, «по» не раньше
+     «с». Текст — тот же, что у сервера. */
+  function periodError(from, to) {
+    return from && to && to < from ? 'Период работы: «по» (' + dm(to) + ') раньше, чем «с» (' + dm(from) + ').' : '';
+  }
+  /* Что отправить серверу: у сменного период всегда пустой — переключили
+     временного обратно в сменные, и даты, оставшиеся в полях, не уйдут. */
+  function periodPayload(draft) {
+    const temporary = draft.type === 'temporary';
+    return {employment_type: temporary ? 'temporary' : 'shift',
+      work_from: temporary && draft.from ? draft.from : null, work_to: temporary && draft.to ? draft.to : null};
+  }
+
+  return {parseAmount, formatAmount, latinKey, matchesQuery, groupForRole, groupRoles, matchesRole, attentionReasons,
+    typeTag, periodError, periodPayload};
 });

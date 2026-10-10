@@ -9,6 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .payroll import PayrollRow, attendance_after_payment
+from . import work_period
 from .expense_catalog import CASH_DIVIDENDS_ITEM, EXTRA_ITEM, EXTRA_SALARY_CODES, ITEMS
 from .audit import audit_entries as read_audit_entries, record_audit
 from retro.db import PostgresConnection, as_database, table_columns
@@ -1102,6 +1103,10 @@ class FinanceStore:
             try:
                 lock_day(connection, day)
                 ensure_open(connection, day)
+                work_period.lock_employee(connection, employee_id)
+                outside = work_period.guard(connection, employee_id, day, 'exception')
+                if outside:
+                    raise LedgerError(outside)
                 if self._employee_closed(connection, employee_id, day):
                     raise LedgerError('Начисление этому сотруднику за день уже подтверждено.')
                 if connection.execute('SELECT 1 FROM accountant_exceptions WHERE employee_id = ?',
@@ -1175,6 +1180,15 @@ class FinanceStore:
                     if any(fresh.get(row.employee_id) != marks.get(row.employee_id) for row in ready):
                         raise LedgerError('Отметки «был / не был» за этот день уже изменились. '
                                           'Обновите смену и подтвердите снова.')
+                # Временный вне периода в смену не входит (T-434): строки
+                # посчитаны до транзакции, а период могли тем временем сократить.
+                for employee_id in sorted({row.employee_id for row in ready}):
+                    work_period.lock_employee(connection, employee_id)
+                for employee_id, (name, start, end) in work_period.periods(
+                        connection, {row.employee_id for row in ready}).items():
+                    if not work_period.in_period(day, start, end):
+                        raise LedgerError(work_period.outside_text(name, start, end, day, 'accrual')
+                                          + ' Обновите смену и подтвердите снова.')
                 for row in ready:
                     amount_value(row.payable, allow_zero=True)
                     amount_value(row.rate, allow_zero=True)
@@ -1220,6 +1234,10 @@ class FinanceStore:
             try:
                 lock_day(connection, day)
                 ensure_open(connection, day)
+                work_period.lock_employee(connection, employee_id)
+                outside = work_period.guard(connection, employee_id, day, 'mark')
+                if outside:
+                    raise LedgerError(outside)
                 if self._employee_closed(connection, employee_id, day):
                     raise LedgerError('Начисление этому сотруднику за день уже подтверждено — '
                                       'отметку не изменить.')

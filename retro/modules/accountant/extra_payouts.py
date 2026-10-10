@@ -28,6 +28,7 @@ from retro.accounting_period import ACCOUNTING_START
 from retro.db import table_columns
 from retro.modules.cashier.service import today_tashkent
 
+from . import work_period
 from .audit import record_audit
 from .expense_catalog import EXTRA_ITEM
 from .ledger import LedgerError, amount_value, ensure_open, lock_day, now_stamp, plain, required_text
@@ -100,15 +101,21 @@ def read(connection, payout_id: int) -> dict | None:
 
 
 def between(connection, first: date, last: date) -> list[dict]:
-    """Доп. выплаты по дню выплаты за период — в порядке записи."""
-    return [_item(row) for row in connection.execute(
+    """Доп. выплаты по дню выплаты за период — в порядке записи. У временного —
+    его нынешний период (work_period) для пометки «временный · 08.10–10.10»."""
+    items = [_item(row) for row in connection.execute(
         SELECT + 'WHERE m.day >= ? AND m.day <= ? ORDER BY m.day, x.id',
         (first.isoformat(), last.isoformat()))]
+    known = work_period.periods(connection, {item['employee_id'] for item in items if item['temporary']})
+    for item in items:
+        found = known.get(item['employee_id'])
+        item['work_period'] = work_period.label(found[1], found[2]) if item['temporary'] and found else None
+    return items
 
 
 def temporary_ids(connection) -> set[int]:
-    """Кто в реестре сейчас временный. Признак ведёт кабинет менеджера
-    (employment_type); в базе без этого поля временных просто нет."""
+    """Кто в реестре сейчас временный. Признак (employment_type) ставит
+    бухгалтер в «Сотрудниках» (T-434); в базе без этого поля временных просто нет."""
     if 'employment_type' not in table_columns(connection, 'accountant_employees'):
         return set()
     return {row[0] for row in connection.execute(
@@ -186,6 +193,11 @@ def add(finance, *, employee_id: int, work_day: date, paid_day: date, amount, no
                 lock_day(connection, day)
                 ensure_open(connection, day)
             person = _employee(connection, employee_id)
+            # Временный — только за смены своего периода (T-434).
+            work_period.lock_employee(connection, employee_id)
+            outside = work_period.guard(connection, employee_id, work_day, 'extra')
+            if outside:
+                raise LedgerError(outside)
             texts = _warnings(connection, employee_id, person['name'], work_day, paid_day, value)
             if texts and not confirm:
                 raise ExtraPayoutConfirm(' '.join(texts))
@@ -233,6 +245,10 @@ def update(finance, payout_id: int, *, amount, work_day: date, note: str, expect
             for day in sorted({old_work, work_day, paid_day}):
                 lock_day(connection, day)
                 ensure_open(connection, day)
+            work_period.lock_employee(connection, before['employee_id'])
+            outside = work_period.guard(connection, before['employee_id'], work_day, 'extra')
+            if outside:
+                raise LedgerError(outside)
             current = Decimal(before['amount'])
             if expected_amount is not None and amount_value(expected_amount, allow_zero=True) != current:
                 raise ExtraPayoutChanged('Сумма уже изменилась. Обновите страницу и повторите.')

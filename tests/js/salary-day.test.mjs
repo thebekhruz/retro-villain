@@ -131,3 +131,26 @@ test('выдача и её снятие не трогают посещаемос
   assert.equal(h.person.cells['2026-10-07'].amount,'0');
   assert.equal(logic.shiftMark(logic.attendanceOf(h.person,'2026-10-07')),'09:31');
 });
+
+/* T-434: временная хостес Карамат с 08.10 по 10.10. Клетка выплаты — смена
+   накануне: открыты 09.10, 10.10 и 11.10 (выплата за последнюю смену назавтра). */
+test('временный: клетки вне периода заперты и пусты, итоги прежние, подсказка с периодом', () => {
+  const cell = (day, extra) => ({amount: '0', work_day: logic.previousDay(day), ...extra});
+  const karamat = {id: 9, name: 'Карамат', role: 'Хостес', rate: '150000', temporary: true, work_period: '08.10–10.10',
+    cells: {'2026-10-08': cell('2026-10-08', {editable: false, outside: true}),
+      '2026-10-09': cell('2026-10-09', {amount: '150000'}), '2026-10-11': cell('2026-10-11'),
+      '2026-10-12': cell('2026-10-12', {editable: false, outside: true})}};
+  const data = {month: '2026-10', today: '2026-10-12', entry_start: '2026-10-02', closed: false,
+    days: ['2026-10-08', '2026-10-09', '2026-10-11', '2026-10-12'], people: [karamat], extras: []};
+  assert.deepEqual(data.days.map(day => logic.canEdit(data, karamat, day)), [false, true, true, false]);
+  assert.deepEqual(data.days.map(day => logic.isOutside(karamat, day)), [true, false, false, true]);
+  assert.equal(logic.outsideTitle(karamat), 'Работает 08.10–10.10');
+  assert.equal(logic.outsideTitle({...karamat, work_period: 'с 08.10'}), 'Работает с 08.10');
+  assert.equal(logic.outsideTitle({...karamat, work_period: null}), '');
+  assert.equal(logic.typeTag(karamat), 'временный · 08.10–10.10');
+  assert.equal(logic.typeTag({...karamat, work_period: null}), 'временный');
+  assert.equal(logic.typeTag({name: 'Сменный'}), '');
+  const view = logic.matrix(data);
+  assert.equal(view.total, 150000);
+  assert.deepEqual(view.people[0].cells.map(c => c.editable), [false, true, true, false]);
+});
