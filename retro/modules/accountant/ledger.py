@@ -9,7 +9,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from .payroll import PayrollRow, attendance_after_payment
-from .expense_catalog import EXTRA_ITEM, ITEMS
+from .expense_catalog import CASH_DIVIDENDS_ITEM, EXTRA_ITEM, EXTRA_SALARY_CODES, ITEMS
 from .audit import audit_entries as read_audit_entries, record_audit
 from retro.db import PostgresConnection, as_database, table_columns
 from retro.request_reads import call as cached_call, once
@@ -288,7 +288,13 @@ class CashBook:
         Одна раскладка для расшифровки «На начало дня», сверки месяца по
         дням, сданного отчёта дня и закрытия месяца. Сумма строк сходится с
         `position`: конец = начало + приход в остатке + прочие поступления −
-        все расходы."""
+        все расходы.
+
+        `salary` — выплаты сменным по начислениям и строки журнала «Доп.
+        зарплата и временный персонал» (ТЗ 09.10, Б-08): это зарплата, а не
+        прочий расход. `other_dividends` — часть `other`, дивиденды прямо из
+        кассы: экран показывает их своей строкой, а в `other` они остаются,
+        чтобы сданные раньше отчёты дня сверялись с теми же суммами."""
         from .reserves import is_monthly_salary  # reserves импортирует ledger
         opening, closing, missing, first = self.position(day, start_day, tolerate_gaps=tolerate_gaps)
         today = day.isoformat()
@@ -311,11 +317,12 @@ class CashBook:
         shoh = moved(lambda kind, code: kind == 'procurement_advance'
                      or (kind == 'other_expense' and code == 'proc_shoh'))
         monthly = moved(lambda kind, code: kind == 'other_expense' and is_monthly_salary(code))
-        # Доп. выплаты сменным — в «Сменным» (строка «Зарплаты» дэшборда), а не в прочих.
-        extra = moved(lambda kind, code: kind == 'other_expense' and code == EXTRA_ITEM)
-        other = moved(lambda kind, code: kind == 'other_expense' and code not in ('proc_shoh', EXTRA_ITEM)
-                      and not is_monthly_salary(code))
-        salary = sum((Decimal(amount) for cutoff, amount in self.salaries if cutoff == today), Decimal(0)) + extra
+        # Доп. зарплата из журнала и доп. выплаты из «Зарплата · день» — в «Сменным»
+        # (строка «Зарплаты» дэшборда), а не в прочих.
+        extra = moved(lambda kind, code: kind == 'other_expense' and code in EXTRA_SALARY_CODES)
+        other = moved(lambda kind, code: kind == 'other_expense' and code != 'proc_shoh'
+                      and code not in EXTRA_SALARY_CODES and not is_monthly_salary(code))
+        salary = extra + sum((Decimal(amount) for cutoff, amount in self.salaries if cutoff == today), Decimal(0))
         transfers = sum((Decimal(amount) for cutoff, amount in self.transfers if cutoff == today), Decimal(0))
         anchor = self.anchor_for(today)
         return dict(day=today, opening=opening,
@@ -324,6 +331,8 @@ class CashBook:
                     handover_status=status,
                     receipts=moved(lambda kind, code: kind == 'other_receipt'),
                     salary=salary, monthly=monthly, shoh=shoh, other=other, transfers=transfers,
+                    other_dividends=moved(lambda kind, code: kind == 'other_expense'
+                                          and code == CASH_DIVIDENDS_ITEM),
                     outflows=salary + monthly + shoh + other + transfers,
                     closing=closing, missing=missing, first_day=first,
                     # День начинается с точки отсчёта: начальный остаток или

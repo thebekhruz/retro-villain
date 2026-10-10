@@ -4,6 +4,15 @@ Source: РЕТРО_Лина апрель 2026.xls, sheet «Категории»,
 Income and discount columns are intentionally excluded from cash expenses.
 """
 
+# Доп. зарплата и выплаты временному персоналу (ТЗ 09.10, Б-08): люди без
+# начисления в ведомости — разовая хостес, подмена на смену. Это зарплата: в
+# сводках она идёт строкой зарплат (CashBook.flow → salary), а не в «прочих».
+# Окладом она не считается (reserves.is_monthly_salary) и долг смены не гасит.
+EXTRA_SALARY_ITEM = 'salary_extra'
+# Дивиденды собственнику прямо из кассы. Отложенные в сейф — резерв `dividends`
+# (reserves.py), выданные из сейфа деньги кассы не трогают.
+CASH_DIVIDENDS_ITEM = 'distribution_dividends'
+
 GROUPS = (
     ('income', 'Приходы', (
         ('income_opening', 'Остаток на начало дня'),
@@ -14,6 +23,7 @@ GROUPS = (
         ('salary_cashier', 'Кассир'),
         ('salary_staff', 'ЗП персонал'),
         ('salary_technical', 'Тех персонал'),
+        (EXTRA_SALARY_ITEM, 'Доп. зарплата и временный персонал'),
         ('salary_carryover', 'ЗП за прошлый месяц'),
         ('salary_monthly', 'Месячная заработная плата'),
     )),
@@ -55,7 +65,7 @@ GROUPS = (
         ('proc_cleaners', 'Моющие средства'),
     )),
     ('distributions', 'Дивиденды и переводы', (
-        ('distribution_dividends', 'Дивиденды напрямую из кассы (не из сейфа)'),
+        (CASH_DIVIDENDS_ITEM, 'Дивиденды напрямую из кассы (не из сейфа)'),
         ('distribution_oxbridge', 'Перевод Oxbridge'),
         ('distribution_shakiraka', 'Шакирака (чеки, обеды)'),
         ('distribution_bloggers', 'Блогеры (чеки, обеды)'),
@@ -67,8 +77,12 @@ ITEMS = {code: (group_code, label) for group_code, _, items in GROUPS for code, 
 
 # Доп. выплата сменному из «Зарплата · день» (ТЗ 09.10, Б-05). Статья служебная:
 # в списке журнала её нет — без сотрудника и даты смены такую выплату не записать.
-EXTRA_ITEM = 'salary_extra'
+# Код отдельный от статьи журнала «Доп. зарплата и временный персонал»
+# (EXTRA_SALARY_ITEM): ту бухгалтер пишет сам, без сотрудника, и правит в журнале.
+EXTRA_ITEM = 'salary_extra_payout'
 ITEMS[EXTRA_ITEM] = ('salary', 'Доп. выплаты')
+# Обе статьи — зарплата сменным: в сводках строкой зарплат, не в «прочих».
+EXTRA_SALARY_CODES = frozenset({EXTRA_SALARY_ITEM, EXTRA_ITEM})
 
 
 def catalog_json():

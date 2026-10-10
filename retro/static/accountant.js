@@ -23,9 +23,11 @@ const expanded = new Set();
 const debtOpen = new Set();  // раскрытые строки «Долгов к оплате»
 
 // Особые операции журнала: не расход из кассы, а резерв или подотчёт.
+// Подписи дивидендов — одни с журналом (AccountantLogic.DIVIDEND_OPTIONS).
+const dividendLabel = Object.fromEntries(L.DIVIDEND_OPTIONS);
 const special = {
-  reserve_dividends_transfer: {account: 'dividends', kind: 'transfer', label: 'Отложить в сейф'},
-  reserve_dividends_withdrawal: {account: 'dividends', kind: 'withdrawal', label: 'Выдать дивиденды'},
+  reserve_dividends_transfer: {account: 'dividends', kind: 'transfer', label: dividendLabel.reserve_dividends_transfer},
+  reserve_dividends_withdrawal: {account: 'dividends', kind: 'withdrawal', label: dividendLabel.reserve_dividends_withdrawal},
   reserve_usd_deposit: {account: 'usd', kind: 'deposit', label: 'Поступили USD'},
   reserve_usd_withdrawal: {account: 'usd', kind: 'withdrawal', label: 'Выданы USD'},
 };
@@ -520,17 +522,19 @@ function fillCatalog() {
   const keep = select.value;
   select.replaceChildren(new Option('Категория', ''));
   catalog.forEach(group => {
-    const items = group.items.filter(item => !['income_opening', 'income_cashier', 'salary_monthly'].includes(item.code));
+    const items = group.items.filter(item => !['income_opening', 'income_cashier', 'salary_monthly'].includes(item.code)
+      && !dividendLabel[item.code]);
     if (!items.length) return;
     const og = document.createElement('optgroup');
     og.label = tr(L.GROUP_SHORT[group.code] || group.label);
-    // Дивиденды в сейф — строка категории «Дивиденды / переводы» (Функционал §3.7).
-    if (group.code === 'distributions') og.append(new Option(special.reserve_dividends_transfer.label, 'reserve_dividends_transfer'));
+    // Все три операции с дивидендами — первыми в «Дивиденды / переводы» и
+    // названы по тому, откуда уходят деньги (ТЗ 09.10, Б-08; Функционал §3.7).
+    if (group.code === 'distributions') L.DIVIDEND_OPTIONS.forEach(([code, label]) => og.append(new Option(label, code)));
     items.forEach(item => og.append(new Option(item.label, item.code)));
     select.append(og);
   });
   const og = document.createElement('optgroup'); og.label = tr('Резервы и сейф');
-  Object.entries(special).filter(([code]) => code !== 'reserve_dividends_transfer').forEach(([code, item]) => og.append(new Option(item.label, code)));
+  Object.entries(special).filter(([code]) => !dividendLabel[code]).forEach(([code, item]) => og.append(new Option(item.label, code)));
   select.append(og);
   if (keep) select.value = keep;
 }
@@ -583,7 +587,6 @@ globalThis.RetroSave?.register($('other-expense-form'), () => submitExpense(),
 function railLine(label, value, cls) {
   return h('div', {class: cls}, h('span', {text: label}), h('b', {text: value}));
 }
-const flowOf = () => view.data.ledger.day_flow || {};
 const handoverStatus = () => (view.data.ledger.cash_flow || {}).handover_status || 'none';
 // Приход дня в остатке: подтверждён бухгалтером или записан им самим.
 const handoverCounted = () => ['confirmed', 'accountant'].includes(handoverStatus());
@@ -613,10 +616,11 @@ function renderCashConfirm(handover) {
   const manual = state === 'accountant' && !cash.confirmedAt;
   done.hidden = !(cash.confirmedAt || manual) || !form.hidden;
   done.classList.toggle('is-short', cash.shortfall > 0);
+  // Когда подтвердили — в строке «Касса за …» дэшборда; здесь только итог и «Изменить».
   done.replaceChildren(h('span', {text: cash.shortfall > 0
       ? '⚠ Получено на ' + money(cash.shortfall) + ' меньше расчёта (' + money(cash.calculation) + ')'
       : manual ? (cash.unchecked ? 'Приход записан бухгалтером · кассир в панели не работал — сверки нет' : 'Приход записан бухгалтером')
-      : '✓ Сумма от кассира подтверждена · ' + cash.confirmedAt}),
+      : '✓ Сумма от кассира подтверждена'}),
     ...(view.data.closed ? [] : [' ', h('button', {type: 'button', class: 'fd-link-btn', text: 'Изменить', onclick: () => { confirmEditing = true; confirmDirty = false; renderCashConfirm(handover); $('cash-confirm-amount').focus(); }})]));
 }
 const confirmValid = raw => !!raw && /^[\d\s  .,]+$/.test(raw);
@@ -655,8 +659,8 @@ function confirmCash() {
 on('cash-confirm', 'submit', event => { event.preventDefault(); confirmCash(); });
 globalThis.RetroSave?.register($('cash-confirm'), () => confirmCash(), {dirty: () => confirmDirty});
 
-/* «На начало дня» = конец вчерашнего (ТЗ 02.10, п. 1). По щелчку — из какого
-   дня цифра пришла и из чего сложилась. */
+/* «Остаток на начало дня» = конец вчерашнего (ТЗ 02.10, п. 1; подпись — ТЗ
+   09.10, Б-09). По щелчку — из какого дня цифра пришла и из чего сложилась. */
 let breakdownOpen = false;
 const MONTH_NAMES = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
 const monthTitle = month => MONTH_NAMES[Number(month.slice(5, 7)) - 1] + ' ' + month.slice(0, 4);
@@ -674,7 +678,7 @@ function renderBreakdown() {
     box.append(h('p', {class: 'fd-bd-title', text: closed
       ? 'Остаток на конец закрытого месяца (' + monthTitle(anchor.kind.slice(8)) + ') — перенесён на 1-е число'
       : 'Начальный остаток бухгалтера на ' + longDay(view.data.date)}),
-      railLine('= На начало дня', fmt(anchor.amount), 'fd-bd-line is-total'));
+      railLine('= Остаток на начало дня', fmt(anchor.amount), 'fd-bd-line is-total'));
     return;
   }
   if (!prev || prev.opening === null) {
@@ -682,18 +686,22 @@ function renderBreakdown() {
     return;
   }
   const line = (label, value, sign, extra) => railLine(label + (extra ? ' · ' + extra : ''), (sign || '') + fmt(value), 'fd-bd-line');
-  box.append(h('p', {class: 'fd-bd-title', text: 'Из дня ' + longDay(prev.day, true) + ' — конец вчерашнего дня:'}),
-    line('Начало ' + dm(prev.day), prev.opening),
-    line('+ От кассира', prev.handover_counted, '', HANDOVER_TEXT[prev.handover_status]));
+  // Исторический день: «конец предыдущего дня → начало 06.10», не «сегодня».
+  const current = view.data.date === today;
+  box.append(h('p', {class: 'fd-bd-title', text: 'Из дня ' + longDay(prev.day, true) + (current ? ' — конец вчерашнего дня:' : ' — конец предыдущего дня:')}),
+    line('Остаток на начало ' + dm(prev.day), prev.opening),
+    line('+ Касса за ' + dm(L.shiftIso(prev.day, -1)), prev.handover_counted, '', HANDOVER_TEXT[prev.handover_status]));
   if (prev.handover_status === 'pending') box.append(h('p', {class: 'fd-bd-warn'},
     'Передача кассира за ' + dm(prev.day) + ' — ' + money(prev.handover) + ' — не подтверждена и в остаток не вошла. ',
     h('button', {type: 'button', class: 'fd-link-btn', text: 'Открыть ' + dm(prev.day) + ' →', onclick: () => go(prev.day)})));
   if (Number(prev.receipts)) box.append(line('+ Прочие поступления', prev.receipts));
+  const dividends = Number(prev.other_dividends || 0);
   [['− Сменным', prev.salary], ['− Оклады', prev.monthly], ['− Шоху на закуп', prev.shoh],
-    ['− Прочие расходы', prev.other], ['− В сейф', prev.transfers]].forEach(([label, value]) => {
+    ['− Дивиденды · из кассы', dividends], ['− Дивиденды · в сейф', prev.transfers],
+    ['− Прочие расходы', Number(prev.other || 0) - dividends]].forEach(([label, value]) => {
     if (Number(value)) box.append(line(label, value));
   });
-  box.append(railLine('= Конец ' + dm(prev.day) + ' → начало сегодня', fmt(prev.closing), 'fd-bd-line is-total'),
+  box.append(railLine('= Конец ' + dm(prev.day) + ' → начало ' + (current ? 'сегодня' : dm(view.data.date)), fmt(prev.closing), 'fd-bd-line is-total'),
     h('a', {class: 'fd-bd-link', href: '/api/accountant/reconciliation/export?month=' + prev.day.slice(0, 7), download: '',
       text: 'Сверка за месяц по дням · Excel ↓'}));
 }
@@ -701,33 +709,29 @@ function renderBreakdown() {
 function renderRail() {
   if (!$('fd-cash')) return;
   const {cash, data} = view;
-  const handover = data.cashier_handover || {}, flow = flowOf(), cf = data.ledger.cash_flow || {};
-  const day = data.date, missing = 'нет данных', state = handoverStatus();
+  const handover = data.cashier_handover || {};
+  const day = data.date;
   $('finance-hero-title').textContent = day === today ? 'Касса сегодня' : 'Касса на конец ' + longDay(day);
   $('finance-cash-total').textContent = cash.end === null ? '—' : fmt(cash.end);
   $('finance-cash-total').classList.toggle('is-negative', cash.end !== null && cash.end < 0);
+  /* Строки под итогом (ТЗ 09.10, Б-09): остаток на начало + подтверждённые
+     поступления − фактические списания = касса. Строку кассы кассира
+     подписываем днём кассы, а под ней — когда бухгалтер её подтвердил: это
+     время нажатия кнопки, а не доказанное время передачи денег. */
   const lines = $('fd-cash-lines'); lines.replaceChildren();
-  const opening = h('button', {type: 'button', class: 'fd-cash-line fd-cash-open' + (breakdownOpen ? ' is-open' : ''), 'aria-expanded': String(breakdownOpen),
-    title: 'Откуда эта цифра', onclick: () => { breakdownOpen = !breakdownOpen; renderRail(); }},
-    h('span', {}, h('i', {class: 'fd-chev-sm', 'aria-hidden': 'true', text: '›'}), ' На начало дня'),
-    h('b', {text: cash.opening === null ? missing : fmt(cash.opening)}));
-  const shown = cash.cashier !== null ? cash.cashier : cash.expected;
-  const counted = ['confirmed', 'accountant'].includes(state);
-  lines.append(opening,
-    railLine('+ От кассира · касса ' + dm(data.cashier_date || L.shiftIso(day, -1)) + (state === 'confirmed' ? ' · получено ' + (cash.confirmedAt || '')
-      : state === 'accountant' ? ' · записано' : shown !== null ? ' · ожидается, не в остатке' : ' · ожидается'),
-      counted ? fmt(flow.handover_counted) : shown !== null ? fmt(shown) : '—', 'fd-cash-line' + (counted ? '' : ' is-expected')));
-  if (Number(flow.receipts)) lines.append(railLine('+ Прочие поступления', fmt(flow.receipts), 'fd-cash-line'));
-  lines.append(railLine('− Зарплаты · сменные и оклады', fmt(Number(flow.salary || 0) + Number(flow.monthly || 0)), 'fd-cash-line'),
-    railLine('− Выдано Шоху', fmt(flow.shoh), 'fd-cash-line'),
-    railLine('− Прочие расходы' + (Number(flow.transfers) ? ' и сейф' : ''), fmt(Number(flow.other || 0) + Number(flow.transfers || 0)), 'fd-cash-line'));
+  L.cashLines(data, cash, {today}).forEach(line => {
+    const value = line.value !== null ? fmt(line.value) : line.key === 'opening' ? 'нет данных' : '—';
+    if (line.key === 'opening') {
+      lines.append(h('button', {type: 'button', class: 'fd-cash-line fd-cash-open' + (breakdownOpen ? ' is-open' : ''), 'aria-expanded': String(breakdownOpen),
+        title: 'Откуда эта цифра', onclick: () => { breakdownOpen = !breakdownOpen; renderRail(); }},
+        h('span', {}, h('i', {class: 'fd-chev-sm', 'aria-hidden': 'true', text: '›'}), ' ' + line.label), h('b', {text: value})));
+      return;
+    }
+    lines.append(h('div', {class: 'fd-cash-line' + (line.expected ? ' is-expected' : '') + (line.total ? ' is-total' : '') + (line.sub ? ' has-note' : ''),
+      title: line.total ? 'Остаток на начало + подтверждённые поступления − фактические списания' : null},
+      h('span', {text: line.label}), h('b', {text: value}), line.sub ? h('span', {class: 'fd-cash-note', text: line.sub}) : null));
+  });
   renderBreakdown();
-  // Прогноз расхода на сегодня — по вчерашнему дню (ТЗ 02.10, п. 3).
-  const prev = (data.ledger.opening_breakdown || {}).previous;
-  const forecast = prev ? Number(prev.outflows || 0) : null;
-  $('fd-forecast').textContent = forecast === null ? '—' : '≈ ' + money(forecast);
-  $('fd-forecast-sub').textContent = forecast === null ? 'вчерашних данных нет'
-    : 'как вчера, ' + dm(prev.day) + ' · уже ушло ' + fmt(flow.outflows);
   const pocket = data.shoh_pocket && data.shoh_pocket.pocket !== null && data.shoh_pocket.pocket !== undefined ? Number(data.shoh_pocket.pocket) : null;
   $('fd-shoh').textContent = pocket === null ? '—' : money(pocket);
   $('fd-cash-set').hidden = cash.opening !== null || !!data.closed;

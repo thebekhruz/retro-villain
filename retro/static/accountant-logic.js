@@ -254,11 +254,18 @@
      оплатой и остатком, а не тремя движениями. */
   const GROUP_SHORT={income:'Приходы',salary:'Зарплата',administrative:'Административные',
     operations:'Операционные',marketing:'Маркетинг',utilities:'Коммунальные / охрана',
-    procurement:'Закуп',distributions:'Дивиденды / переводы',reserves:'Резервы'};
+    procurement:'Закуп',distributions:'Дивиденды / переводы',reserves:'Резервы',dividends:'Дивиденды'};
+  /* Дивиденды (ТЗ 09.10, Б-08) — три разные операции, и в списке категорий
+     они названы по тому, откуда уходят деньги: из кассы в сейф, из сейфа
+     учредителю (касса не меняется) и учредителю прямо из кассы. В журнале у
+     всех трёх категория «Дивиденды», а не «Административные» или «Резервы». */
+  const DIVIDEND_OPTIONS=[['reserve_dividends_transfer','Отложить дивиденды в сейф'],
+    ['reserve_dividends_withdrawal','Выдать дивиденды из сейфа'],['distribution_dividends','Выдать дивиденды из кассы']];
+  const DIVIDEND_CODES=new Set(DIVIDEND_OPTIONS.map(([code])=>code));
   function catalogIndex(groups){
     const index={};
     (groups||[]).forEach(g=>g.items.forEach(i=>{index[i.code]={group:g.code,label:i.label,
-      short:i.code==='reserve_dividends_transfer'?GROUP_SHORT.distributions:(GROUP_SHORT[g.code]||g.label)};}));
+      short:DIVIDEND_CODES.has(i.code)?GROUP_SHORT.dividends:(GROUP_SHORT[g.code]||g.label)};}));
     return index;
   }
   function stripItem(description,label){
@@ -297,7 +304,7 @@
       auto.push({kind:'auto',group:'monthly',cat:'Зарплата',name:'Оклады · частичные выплаты'+(people.length?' · '+people.length+' чел.':''),
         amount:sum,paid:sum,debt:0,children:people.length?people:undefined});}
     // Доп. выплаты из «Зарплата · день» (Б-05) — так же: одна строка, раскрывается по людям.
-    const extras=mv.filter(m=>m.type==='other_expense'&&m.item_code==='salary_extra');
+    const extras=mv.filter(m=>m.type==='other_expense'&&m.item_code==='salary_extra_payout');
     if(extras.length){const sum=extras.reduce((s,m)=>s+num(m.amount),0);
       const people=(data.extra_payouts||[]).map(p=>({id:'x'+p.id,amount:num(p.amount),readonly:true,
         name:[p.name,p.temporary?'временный':'','смена '+dm(p.work_day),p.note].filter(Boolean).join(' · ')}));
@@ -313,7 +320,13 @@
         amount:sum,paid:sum,debt:0});}
     mv.forEach(m=>{
       if(hidden.has(m.id))return;
-      if(m.type==='other_expense'&&m.item_code!=='salary_monthly'&&m.item_code!=='salary_extra'){
+      if(m.type==='other_expense'&&m.item_code==='distribution_dividends'){
+        // Дивиденды из кассы: «Выдано из кассы», рядом — что ввёл человек.
+        const info=index[m.item_code]||{}, note=stripItem(m.description,info.label);
+        rows.push({kind:'expense',cat:GROUP_SHORT.dividends,name:'Выдано из кассы',note:note===info.label?'':note,
+          title:m.description,amount:num(m.amount),paid:num(m.amount),debt:0,
+          ops:[{operation:'movement',id:m.id}]});
+      } else if(m.type==='other_expense'&&m.item_code!=='salary_monthly'&&m.item_code!=='salary_extra_payout'){
         const info=index[m.item_code]||{};
         rows.push({kind:'expense',cat:info.short||'Расход',name:stripItem(m.description,info.label),
           title:m.description,amount:num(m.amount),paid:num(m.amount),debt:0,
@@ -324,7 +337,8 @@
           title:m.description,amount:num(m.amount),paid:null,debt:0,
           ops:m.id===null?[]:[{operation:'movement',id:m.id}]});
       } else if(m.type==='reserve_transfer'){
-        rows.push({kind:'expense',cat:GROUP_SHORT.distributions,name:m.description||'Отложено в сейф',
+        // Из кассы в сейф: деньги ушли из остатка, учредителю ещё не выданы.
+        rows.push({kind:'expense',cat:GROUP_SHORT.dividends,name:'Отложено в сейф',note:m.description||'',
           title:'Отложено в сейф',amount:num(m.amount),paid:num(m.amount),debt:0,
           ops:m.id===null?[]:[{operation:'reserve_transfer',id:m.id}]});
       }
@@ -333,7 +347,7 @@
     const res=data.reserves||{};
     [['usd','USD'],['dividends','сум']].forEach(([account,unit])=>{
       ((res[account]&&res[account].entries)||[]).filter(e=>e.id!==null&&(e.kind==='deposit'||e.kind==='withdrawal'))
-        .forEach(e=>rows.push({kind:'reserve',cat:'Резервы',
+        .forEach(e=>rows.push({kind:'reserve',cat:account==='usd'?'Резервы':GROUP_SHORT.dividends,
           name:account==='usd'?(e.kind==='deposit'?'Поступили USD':'Выданы USD'):'Выдано из сейфа',note:e.note||'',
           amount:num(e.amount),unit,paid:null,debt:0,ops:[]}));
     });
@@ -356,8 +370,8 @@
     // Расход «Закуп · Шох» из журнала — тоже выдача в подотчёт (сервер кладёт
     // его в баланс Шоха), поэтому он в строке «Шоху», а не в «прочих».
     const shoh=sumOf(m=>m.type==='procurement_advance'||(m.type==='other_expense'&&m.item_code==='proc_shoh'));
-    // Доп. выплаты сменным — к сменным, а не к прочим (как day_flow на сервере).
-    const extra=sumOf(m=>m.type==='other_expense'&&m.item_code==='salary_extra');
+    // Доп. зарплата и доп. выплаты сменным — к сменным, а не к прочим (как day_flow на сервере).
+    const extra=sumOf(m=>m.type==='other_expense'&&(m.item_code==='salary_extra'||m.item_code==='salary_extra_payout'));
     const other=num(cf.other_outflows)-monthly-shoh-extra;
     return {end:l.cash_balance===null?null:num(l.cash_balance),
       opening:cf.opening_balance===null||cf.opening_balance===undefined?null:num(cf.opening_balance),
@@ -371,6 +385,11 @@
       // кассы — то же число в тосте, карточке, «Проверках», у учредителя и в Excel.
       // Ручная запись прихода сверяется так же (checked), без «Изменить».
       confirmedAt:data.cashier_handover&&data.cashier_handover.confirmed_at?String(data.cashier_handover.confirmed_at).slice(11,16):null,
+      // Когда бухгалтер нажал «Подтвердить» или записал приход сам (время
+      // Ташкента): это время записи, а не доказанное время передачи денег.
+      confirmedStamp:data.cashier_handover&&data.cashier_handover.confirmed_at?String(data.cashier_handover.confirmed_at):null,
+      recordedStamp:data.cashier_handover&&data.cashier_handover.source==='accountant'&&data.cashier_handover.handed_at
+        ?String(data.cashier_handover.handed_at):null,
       checked:!!(data.cashier_handover&&data.cashier_handover.checked),
       // Ручной приход при кассире, который в панели не работал, не сверяется.
       unchecked:!!(data.cashier_handover&&data.cashier_handover.source==='accountant'
@@ -381,6 +400,38 @@
       changed:!!(data.cashier_handover&&data.cashier_handover.expected_changed),
       confirmedCalc:data.cashier_handover&&data.cashier_handover.expected_amount!=null?num(data.cashier_handover.expected_amount):null,
       receipts:num(cf.other_receipts),shift:num(cf.salary_paid)+extra,monthly,shoh,other};
+  }
+
+  /* Строки дэшборда под итогом кассы (ТЗ 09.10, Б-09). Итог сходится со
+     строками: остаток на начало + подтверждённые поступления − фактические
+     списания. Касса, которую ещё не подтвердили, видна (expected), но в
+     итог не входит. Выдачи Шоху из кассы кассира уже вычтены из передачи —
+     их здесь нет, второй раз они не вычитаются. Дивиденды прямо из кассы
+     и отложенные в сейф — своими строками, не внутри «Прочих расходов». */
+  function cashLines(data,cash,opts){
+    const o=opts||{}, l=data.ledger||{}, flow=l.day_flow||{}, cf=l.cash_flow||{};
+    const state=cf.handover_status||'none', counted=state==='confirmed'||state==='accountant';
+    // «06.10 в 15:07» не разрывается: на узкой колонке переносится целиком.
+    const when=iso=>iso?' '+dm(iso.slice(0,10))+'\u00a0в\u00a0'+iso.slice(11,16):'';
+    const shown=cash.cashier!==null?cash.cashier:cash.expected;
+    // Исторический день подписан своей датой: «Остаток на начало 06.10».
+    const of=data.date===o.today?'дня':dm(data.date);
+    const lines=[{key:'opening',label:'Остаток на начало '+of,value:cash.opening,sign:1}];
+    lines.push({key:'handover',label:'+ Касса за '+dm(data.cashier_date||shiftIso(data.date,-1)),
+      value:counted?num(flow.handover_counted):shown,sign:1,expected:!counted,
+      sub:state==='confirmed'?'Подтверждено бухгалтером'+when(cash.confirmedStamp)
+        :state==='accountant'?'Записано бухгалтером'+when(cash.recordedStamp)
+        :shown!==null?'ожидается · не в остатке':'ожидается'});
+    if(num(flow.receipts))lines.push({key:'receipts',label:'+ Прочие поступления',value:num(flow.receipts),sign:1});
+    const dividends=num(flow.other_dividends);
+    lines.push({key:'salary',label:'− Зарплаты · сменные и оклады',value:num(flow.salary)+num(flow.monthly),sign:-1},
+      {key:'shoh',label:'− Выдано Шоху',value:num(flow.shoh),sign:-1});
+    if(dividends)lines.push({key:'dividends',label:'− Дивиденды · из кассы',value:dividends,sign:-1});
+    if(num(flow.transfers))lines.push({key:'safe',label:'− Дивиденды · в сейф',value:num(flow.transfers),sign:-1});
+    lines.push({key:'other',label:'− Прочие расходы',value:num(flow.other)-dividends,sign:-1});
+    // Итог формулы — та же касса, что крупной цифрой сверху.
+    lines.push({key:'closing',label:'= Остаток на конец '+of,value:cash.end,sign:0,total:true});
+    return lines;
   }
 
   function monthlyBoard(data){
@@ -499,5 +550,6 @@
 
   return {shohPosition,shiftRows,shiftTabs,matchesTab,dayChecks,payLock,
     shiftIso,plural,entryClock,lateMinutes,todaySalaryPayments,shiftBoard,boardTabs,boardMatch,
-    shiftBlocker,catalogIndex,journal,cashCard,monthlyBoard,shohBoard,financeIssues,checksBadge,GROUP_SHORT};
+    shiftBlocker,catalogIndex,journal,cashCard,cashLines,monthlyBoard,shohBoard,financeIssues,checksBadge,
+    GROUP_SHORT,DIVIDEND_OPTIONS};
 });

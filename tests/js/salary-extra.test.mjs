@@ -97,8 +97,8 @@ test('журнал «Финансов дня»: доп. выплаты — од�
     {id: 6, name: 'Абдулганиева Сельвина', work_day: '2026-10-08', amount: '100000', note: 'Доплата'}],
   ledger: {cash_balance: '750000', cash_flow: {opening_balance: '1000000', other_receipts: '0', salary_paid: '0', other_outflows: '290000'},
     movements: [
-      {id: 1, type: 'other_expense', item_code: 'salary_extra', description: 'Доп. выплата · Карамат · смена 08.10 · Подмена хостес', amount: '150000'},
-      {id: 2, type: 'other_expense', item_code: 'salary_extra', description: 'Доп. выплата · Абдулганиева Сельвина · смена 08.10 · Доплата', amount: '100000'},
+      {id: 1, type: 'other_expense', item_code: 'salary_extra_payout', description: 'Доп. выплата · Карамат · смена 08.10 · Подмена хостес', amount: '150000'},
+      {id: 2, type: 'other_expense', item_code: 'salary_extra_payout', description: 'Доп. выплата · Абдулганиева Сельвина · смена 08.10 · Доплата', amount: '100000'},
       {id: 3, type: 'other_expense', item_code: 'admin_other', description: 'Прочие расходы · Канцтовары', amount: '40000'}]}};
   const {rows, total} = accountant.journal(data, accountant.catalogIndex([]));
   assert.equal(total, 290000);

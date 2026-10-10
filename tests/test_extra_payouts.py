@@ -114,7 +114,7 @@ def test_karamat_payout_is_one_expense_on_the_payout_day_and_reaches_every_total
     assert karamat['temporary'] is True and karamat['cells'][PAID.isoformat()]['amount'] == '0'
     # Журнал и касса 09.10: один расход статьи «Доп. выплаты»; 08.10 не тронут.
     summary = finance.daily_summary(PAID, None)
-    extra_rows = [m for m in summary['movements'] if m.get('item_code') == 'salary_extra']
+    extra_rows = [m for m in summary['movements'] if m.get('item_code') == 'salary_extra_payout']
     assert [(m['type'], m['amount']) for m in extra_rows] == [('other_expense', '150000')]
     assert summary['cash_balance'] == Decimal('1850000')
     flow = finance.day_flow(PAID)
@@ -171,7 +171,7 @@ def test_edit_and_delete_keep_audit_and_history_survives_archive(stores):
         '200000', '2026-10-07', 'Две подмены', 'buh2')
     assert edited['paid_day'] == PAID.isoformat()
     assert finance.day_flow(PAID)['salary'] == Decimal('200000')
-    movement = next(m for m in finance.daily_summary(PAID, None)['movements'] if m.get('item_code') == 'salary_extra')
+    movement = next(m for m in finance.daily_summary(PAID, None)['movements'] if m.get('item_code') == 'salary_extra_payout')
     assert movement['description'] == 'Доп. выплата · Карамат · смена 07.10 · Две подмены'
     # Временная ушла: запись и строка в ведомости остаются по имени.
     roster.delete(people['karamat'].id)
@@ -232,9 +232,9 @@ def test_journal_and_debts_cannot_create_or_rewrite_an_extra_payout(stores):
         with pytest.raises(LedgerError, match='Зарплата · день'):
             action()
     other = finance.add_expense(PAID, 'admin_other', 'Канцтовары', '1000')
-    for action in (lambda: finance.add_expense(PAID, 'salary_extra', 'Без сотрудника', '1000'),
-                   lambda: finance.record_debt(PAID, 'salary_extra', 'Без сотрудника', '1000', '0'),
-                   lambda: finance.update_movement(other, PAID, 'salary_extra', 'Канцтовары', '1000')):
+    for action in (lambda: finance.add_expense(PAID, 'salary_extra_payout', 'Без сотрудника', '1000'),
+                   lambda: finance.record_debt(PAID, 'salary_extra_payout', 'Без сотрудника', '1000', '0'),
+                   lambda: finance.update_movement(other, PAID, 'salary_extra_payout', 'Канцтовары', '1000')):
         with pytest.raises(LedgerError, match='с сотрудником и датой смены'):
             action()
     assert finance.extra_payouts(PAID, PAID)[0]['amount'] == '150000'

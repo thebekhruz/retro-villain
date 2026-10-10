@@ -7,17 +7,19 @@ from itertools import groupby
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.request_reads import call as cached_call
 
+from .expense_catalog import EXTRA_SALARY_ITEM
 from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
 
-# Доп. выплаты сменным (salary_extra) — тоже не оклад: фонд окладов они не тратят.
-SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover', 'salary_extra'}
+# Доп. выплаты сменным (salary_extra_payout) — тоже не оклад: фонд окладов они не тратят.
+SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover', 'salary_extra_payout'}
 
 
 def is_monthly_salary(item_code):
+    # Доп. зарплата временным — не оклад: план выплат месяца она не уменьшает.
     return item_code == 'salary_monthly' or (
         isinstance(item_code, str) and item_code.startswith('salary_')
-        and item_code not in SHIFT_SALARY_CODES)
+        and item_code not in SHIFT_SALARY_CODES and item_code != EXTRA_SALARY_ITEM)
 
 
 # День «до начала учёта» для подразумеваемого нулевого остатка Шоха.

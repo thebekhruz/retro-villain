@@ -14,6 +14,7 @@ from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
 from .employee_export import STATUS
+from .expense_catalog import CASH_DIVIDENDS_ITEM, EXTRA_ITEM, EXTRA_SALARY_CODES, EXTRA_SALARY_ITEM
 
 GREEN = '143E35'
 INK = '1C302B'
@@ -219,8 +220,12 @@ def _journal_sheet(sheet, payday: date, data: dict):
         label = KIND.get(item['type'], item['type'])
         if item['type'] == 'other_expense' and item.get('item_code') == MONTHLY_ITEM:
             label = 'Оклад'
-        elif item['type'] == 'other_expense' and item.get('item_code') == 'salary_extra':
+        elif item['type'] == 'other_expense' and item.get('item_code') == EXTRA_ITEM:
             label = 'Доп. выплата'
+        elif item['type'] == 'other_expense' and item.get('item_code') == EXTRA_SALARY_ITEM:
+            label = 'Зарплата'
+        elif item['type'] == 'other_expense' and item.get('item_code') == CASH_DIVIDENDS_ITEM:
+            label = 'Дивиденды'
         incoming = item['type'] in INFLOW
         _row(sheet, row, [label, item['description'], _time(item.get('created_at')),
                           amount if incoming else None, None if incoming else amount], money_from=4)
@@ -282,16 +287,20 @@ def _total_sheet(sheet, payday: date, data: dict):
         return sum((Decimal(item['amount']) for item in movements if check(item)), Decimal(0))
 
     # Как карточка «Деньги на расходы»: оклады и выдачи Шоху отдельно от прочих.
+    # Доп. зарплата временным и доп. выплаты из «Зарплата · день» — зарплата
+    # (ТЗ 09.10, Б-05, Б-08), а не прочий расход.
     monthly = spent(lambda item: item['type'] == 'other_expense' and item.get('item_code') == MONTHLY_ITEM)
+    extra = spent(lambda item: item['type'] == 'other_expense' and item.get('item_code') in EXTRA_SALARY_CODES)
     shoh = spent(lambda item: item['type'] == 'procurement_advance' or (
         item['type'] == 'other_expense' and item.get('item_code') == 'proc_shoh'))
-    other = (_money(flow.get('other_outflows')) or Decimal(0)) - monthly - shoh
+    other = (_money(flow.get('other_outflows')) or Decimal(0)) - monthly - shoh - extra
     _title(sheet, f'Деньги на расходы · {payday.strftime("%d.%m.%Y")}', 2)
     _widths(sheet, [46, 20])
     lines = [('На начало дня', _money(flow.get('opening_balance'))),
              ('+ От кассира', _money(flow.get('received_from_cashier'))),
              ('+ Прочие поступления', _money(flow.get('other_receipts'))),
-             ('− Зарплаты сменным', _money(flow.get('salary_paid'))),
+             ('− Зарплаты сменным', _sum([_money(flow.get('salary_paid')), extra])
+              if flow.get('salary_paid') is not None or extra else None),
              ('− Оклады частями', monthly),
              ('− Выдано Шоху на закуп', shoh),
              ('− Прочие расходы и сейф', other),
