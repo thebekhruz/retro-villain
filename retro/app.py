@@ -16,7 +16,7 @@ from retro.accounting_access import require_accounting_dates
 from retro.accounting_period import ACCOUNTING_START
 from retro.report_cache import ReportCache, load_iiko
 from retro.financial_requests import FinancialRequests
-from retro.static_assets import IMMUTABLE, Pages
+from retro.static_assets import IMMUTABLE, VERSIONED_PRIVATE, Pages
 from retro.config import Settings
 from retro.db import Database
 from retro.integrations.iiko import IikoClient
@@ -375,7 +375,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if reads is not None:
                 request_reads.end(reads)
         if not request.url.path.startswith('/static/'):
-            response.headers['Cache-Control'] = 'no-store'
+            # Фото сотрудника по адресу с ?v= не меняется: его роут сам просит
+            # долгий приватный кеш. Всё остальное API — no-store, как было.
+            if not ('v' in request.query_params
+                    and response.headers.get('Cache-Control') == VERSIONED_PRIVATE):
+                response.headers['Cache-Control'] = 'no-store'
         elif 'v' in request.query_params and response.status_code in (200, 304):
             # Адрес с хэшем содержимого (см. static_assets): файл по нему не меняется.
             response.headers['Cache-Control'] = IMMUTABLE

@@ -1,16 +1,16 @@
-/* Кабинет менеджера (ТЗ 09.10, М-01…М-04): найти человека в общей базе,
-   завести сменного или временного сотрудника и увидеть, что он добавлен в
-   Hikvision. Логика без DOM — в manager-logic.js. */
+/* Кабинет менеджера: сотрудники своих разделов (кухня, зал, уборка). Заводит
+   их бухгалтер; менеджер выбирает человека из списка и фотографирует — фото
+   сохраняется в карточке и уходит на терминал Hikvision. Логика без DOM —
+   в manager-logic.js. */
 const $ = id => document.getElementById(id);
 const L = () => globalThis.ManagerLogic;
-const DRAFT_KEY = 'retro-manager-draft';
-const NETWORK = 'Нет связи с панелью. Проверьте интернет и повторите — второй карточки не будет.';
+const NETWORK = 'Нет связи с панелью. Проверьте интернет и повторите.';
 
 /* Отклик и ожидание (busy.js): нажатие отвечает сразу, повторное не проходит. */
 const passthrough = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
 const Busy = globalThis.RetroBusy || {button: passthrough, silent: fn => fn()};
 
-let state = {home: null, card: null, cardFrom: 'home', sending: false, draft: null};
+const state = {home: null, filter: 'all', card: null, preview: null, uploading: false, sending: false};
 
 function node(tag, cls, text) {
   const element = document.createElement(tag);
@@ -28,7 +28,7 @@ function message(text, error = false) {
 }
 
 function show(screen) {
-  for (const name of ['home', 'form', 'card']) $('screen-' + name).hidden = name !== screen;
+  for (const name of ['home', 'card']) $('screen-' + name).hidden = name !== screen;
   window.scrollTo(0, 0);
 }
 
@@ -54,46 +54,70 @@ async function api(path, options = {}) {
   return {status: response.status, data: payload};
 }
 
-/* ── Главная ───────────────────────────────────────────────────────────── */
-function personRow(card, onOpen) {
+/* ── Список ────────────────────────────────────────────────────────────── */
+function thumb(card) {
+  const box = node('span', card.photo ? 'shokh-thumb mgr-thumb' : 'shokh-thumb is-empty', card.photo ? undefined : L().initials(card.name));
+  box.setAttribute('aria-hidden', 'true');
+  box.dataset.i18n = 'off';
+  if (card.photo) {
+    const image = node('img');
+    image.src = card.photo.url; image.alt = ''; image.loading = 'lazy';
+    box.append(image);
+  }
+  return box;
+}
+
+function personRow(card) {
   const row = node('button', 'shokh-purchase mgr-row');
   row.type = 'button';
-  const thumb = node('span', 'shokh-thumb is-empty', L().initials(card.name));
-  thumb.setAttribute('aria-hidden', 'true');
-  thumb.dataset.i18n = 'off';
   const body = node('span', 'shokh-purchase-body');
   const title = node('span', 'shokh-purchase-title');
   const name = node('span', '', card.name);
   name.dataset.i18n = 'off';
   title.append(name);
   if (card.employment_type === 'temporary') title.append(node('span', 'shokh-flag', 'временный'));
-  if (card.kind === 'monthly') title.append(node('span', 'shokh-flag is-idle', 'на окладе'));
-  const sub = node('span', 'shokh-note', [card.role, card.direction].filter(Boolean).join(' · '));
-  body.append(title, sub);
-  row.append(thumb, body);
-  const tag = L().hikvisionTag(card);
-  if (tag) {
-    const tone = {ok: 'shokh-ok', warn: 'shokh-flag', error: 'shokh-flag is-error', idle: 'shokh-flag is-idle'}[tag.tone];
-    row.append(node('span', 'mgr-tag ' + tone, tag.text));
-  }
-  row.addEventListener('click', () => onOpen(card));
+  body.append(title, node('span', 'shokh-note', L().roleLine(card)));
+  const tag = L().rowTag(card);
+  const tone = {ok: 'shokh-ok', warn: 'shokh-flag', error: 'shokh-flag is-error', idle: 'shokh-flag is-idle'}[tag.tone];
+  row.append(thumb(card), body, node('span', 'mgr-tag ' + tone, tag.text));
+  row.addEventListener('click', () => openCard(card));
   return row;
+}
+
+function renderList() {
+  const cards = state.home?.employees || [];
+  const counts = L().summary(cards);
+  $('count-all').textContent = String(counts.total);
+  $('count-nophoto').textContent = String(counts.noPhoto);
+  $('count-problem').textContent = String(counts.problems);
+  $('count-problem').parentElement.hidden = !counts.problems && state.filter !== 'problem';
+  $('progress-text').textContent = counts.total
+    ? `Фото есть у ${counts.withPhoto} из ${counts.total}` : 'В ваших разделах пока нет сотрудников';
+  $('progress-bar').style.width = counts.total ? Math.round(counts.withPhoto * 100 / counts.total) + '%' : '0';
+  document.querySelectorAll('.mgr-filter').forEach(button => {
+    const on = button.dataset.filter === state.filter;
+    button.classList.toggle('is-on', on);
+    button.setAttribute('aria-pressed', String(on));
+  });
+  const query = $('search').value;
+  const shown = L().filterCards(cards, state.filter, query);
+  const list = $('list');
+  list.removeAttribute('aria-busy');
+  list.replaceChildren(...shown.map(personRow));
+  const note = $('list-note');
+  let text = '';
+  if (!cards.length) text = 'Сотрудников ваших разделов пока нет. Их заводит бухгалтер в «Сотрудниках».';
+  else if (!shown.length && L().collapse(query)) text = `Никого не нашли по «${L().collapse(query)}». Если человека нет в списке — попросите бухгалтера завести карточку.`;
+  else if (!shown.length && state.filter === 'nophoto') text = 'У всех есть фото.';
+  else if (!shown.length) text = 'Ошибок нет.';
+  note.textContent = text;
+  note.hidden = !text;
 }
 
 function renderHome(data) {
   state.home = data;
-  $('home-sub').textContent = data.directions.map(item => item.name).join(' · ') + ' · ' + data.login;
-  $('home-hikvision').textContent = data.hikvision.configured
-    ? 'Hikvision подключён: новый сотрудник уходит на устройство сразу.'
-    : 'Hikvision не подключён: карточки сохраняются и ждут отправки.';
-  const mine = $('mine');
-  mine.removeAttribute('aria-busy');
-  $('mine-count').textContent = data.mine.length ? String(data.mine.length) : '';
-  if (!data.mine.length) {
-    mine.replaceChildren(node('p', 'shokh-note', 'Вы ещё никого не добавили. Сначала найдите человека в базе — вдруг он уже есть.'));
-    return;
-  }
-  mine.replaceChildren(...data.mine.map(card => personRow(card, item => openCard(item, 'home'))));
+  $('home-sub').textContent = [data.directions.join(' · '), data.login].filter(Boolean).join(' · ');
+  renderList();
 }
 
 async function loadHome() {
@@ -101,198 +125,86 @@ async function loadHome() {
     const {data} = await api('/home');
     renderHome(data);
   } catch (error) {
-    $('mine').removeAttribute('aria-busy');
-    $('mine').replaceChildren(node('p', 'shokh-note', 'Не удалось загрузить список. Обновите страницу.'));
+    $('list').removeAttribute('aria-busy');
+    $('list').replaceChildren(node('p', 'shokh-note', 'Не удалось загрузить список. Обновите страницу.'));
     message(error.message, true);
   }
 }
 
-/* ── Поиск ─────────────────────────────────────────────────────────────── */
-let searchTimer = 0, searchSeq = 0;
-
-function searchNote(text) {
-  $('search-note').textContent = text || '';
-  $('search-note').hidden = !text;
-}
-
-async function runSearch() {
-  const query = L().collapse($('search').value);
-  const seq = ++searchSeq;
-  const results = $('search-results');
-  if (query.length < 2) {
-    results.hidden = true;
-    results.replaceChildren();
-    searchNote(query.length === 1 ? 'Наберите ещё хотя бы одну букву.' : '');
-    return;
-  }
-  try {
-    const {data} = await api('/search?q=' + encodeURIComponent(query));
-    if (seq !== searchSeq) return;
-    results.replaceChildren(...data.results.map(card => personRow(card, item => openCard(item, 'home'))));
-    results.hidden = !data.results.length;
-    if (!data.results.length) searchNote(`Никого не нашли по «${query}». Новый человек — нажмите «Новый сотрудник».`);
-    else searchNote(data.more ? 'Показаны первые 20 — уточните запрос.' : '');
-  } catch (error) {
-    if (seq === searchSeq) searchNote(error.message);
-  }
-}
-
-/* ── Новый сотрудник ───────────────────────────────────────────────────── */
-function readDraft() {
-  try { return JSON.parse(sessionStorage.getItem(DRAFT_KEY) || 'null'); } catch { return null; }
-}
-function keepDraft() {
-  try { sessionStorage.setItem(DRAFT_KEY, JSON.stringify(state.draft)); } catch { /* приватный режим */ }
-}
-function dropDraft() {
-  try { sessionStorage.removeItem(DRAFT_KEY); } catch { /* приватный режим */ }
-}
-
-function fieldError(field, text) {
-  const input = $('f-' + field);
-  const box = $('f-' + field + '-error');
-  if (!box) { message(text, true); return; }
-  box.textContent = text || '';
-  box.hidden = !text;
-  if (text) input.setAttribute('aria-invalid', 'true'); else input.removeAttribute('aria-invalid');
-}
-
-function fillRoles() {
-  const direction = (state.home?.directions || []).find(item => item.name === $('f-direction').value);
-  $('role-options').replaceChildren(...(direction?.roles || []).map(role => new Option(role, role)));
-}
-
-function setType(type) {
-  state.draft.type = type;
-  document.querySelectorAll('.mgr-type [data-type]').forEach(button => {
-    const on = button.dataset.type === type;
-    button.classList.toggle('is-on', on);
-    button.setAttribute('aria-pressed', String(on));
-  });
-}
-
-function openForm() {
-  const directions = state.home?.directions || [];
-  if (!directions.length) { message('Направления не заданы — обратитесь к администратору панели.', true); return; }
-  // Незаконченная отправка в этой вкладке продолжается с тем же ключом:
-  // если первая дошла, сервер вернёт ту же карточку.
-  const saved = readDraft();
-  const typed = L().collapse($('search').value);
-  state.draft = saved && saved.key ? saved : {
-    key: L().newKey(), name: typed && !L().checkText(typed).error ? typed : '', role: '',
-    direction: directions[0].name, type: 'shift'};
-  $('f-direction').replaceChildren(...directions.map(item => new Option(item.name, item.name)));
-  $('f-direction').value = directions.some(item => item.name === state.draft.direction)
-    ? state.draft.direction : directions[0].name;
-  $('f-name').value = state.draft.name || '';
-  $('f-role').value = state.draft.role || '';
-  fillRoles();
-  setType(state.draft.type || 'shift');
-  fieldError('name', ''); fieldError('role', '');
-  $('similar').hidden = true;
-  show('form');
-}
-
-function closeForm() {
-  // Ввод не терялся бы при случайном «×», но и не висел вечно: черновик
-  // остаётся только у незавершённой отправки (ключ уже ушёл на сервер).
-  if (!state.draft?.sent) dropDraft();
-  show('home');
-}
-
-function syncDraft() {
-  state.draft.name = $('f-name').value;
-  state.draft.role = $('f-role').value;
-  state.draft.direction = $('f-direction').value;
-}
-
-function liveCheck(field) {
-  // Латиница видна сразу, пока набирают; пустое поле — только при сохранении.
-  const value = $('f-' + field).value;
-  const result = value.trim() ? L().checkText(value, field) : {};
-  fieldError(field, result.error || '');
-}
-
-function renderSimilar(matches) {
-  $('similar-list').replaceChildren(...matches.map(card => personRow(card, item => openCard(item, 'form'))));
-  $('similar').hidden = false;
-  $('similar').scrollIntoView({block: 'nearest', behavior: 'smooth'});
-}
-
-async function save(confirmNew = false) {
-  syncDraft();
-  const name = L().checkText($('f-name').value, 'name');
-  const role = L().checkText($('f-role').value, 'role');
-  fieldError('name', name.error || '');
-  fieldError('role', role.error || '');
-  if (name.error || role.error) {
-    $(name.error ? 'f-name' : 'f-role').focus();
-    return false;
-  }
-  state.draft.sent = true;
-  keepDraft();
-  try {
-    const {data} = await api('/employees', {method: 'POST', body: JSON.stringify({
-      name: name.value, role: role.value, direction: state.draft.direction,
-      employment_type: state.draft.type, request_key: state.draft.key, confirm_new: confirmNew})});
-    dropDraft();
-    state.draft = null;
-    $('search').value = '';
-    runSearch();
-    openCard(data.employee, 'home');
-    if (!data.created) message('Эта карточка уже была сохранена — показываем её.');
-    if (data.employee.can_retry) await sendToHikvision();
-    Busy.silent(() => loadHome());
-    return true;
-  } catch (error) {
-    // Отказ сервера (4xx) — карточки нет; обрыв связи или 5xx — может быть,
-    // поэтому ключ остаётся прежним.
-    if (error.status && error.status < 500) state.draft.sent = false;
-    keepDraft();
-    if (error.status === 409 && error.payload?.matches) {
-      renderSimilar(error.payload.matches);
-      return false;
-    }
-    const field = L().fieldOfError(error.message);
-    if (field === 'name' || field === 'role') fieldError(field, error.message);
-    else message(error.message, true);
-    return false;
-  }
-}
-
-/* ── Карточка и Hikvision ──────────────────────────────────────────────── */
-function stamp(iso) {
-  return iso ? `${iso.slice(8, 10)}.${iso.slice(5, 7)} ${iso.slice(11, 16)}` : '';
+/* ── Сотрудник ─────────────────────────────────────────────────────────── */
+function paintStep(id, view) {
+  const step = $(id);
+  step.hidden = !view;
+  if (!view) return;
+  step.className = 'shokh-save-step is-' + view.step;
+  $(id + '-title').textContent = view.title;
 }
 
 function renderCard() {
   const card = state.card;
+  const src = state.preview || card.photo?.url || '';
+  $('card-photo').hidden = !src;
+  if (src) $('card-photo').src = src; else $('card-photo').removeAttribute('src');
+  $('card-initials').textContent = src ? '' : L().initials(card.name);
+  $('card-avatar').classList.toggle('has-photo', !!src);
   $('card-name').textContent = card.name;
-  $('card-role').textContent = card.role || '—';
-  $('card-direction').textContent = card.direction && card.group && card.group !== card.direction
-    ? card.direction + ' · ' + card.group : (card.direction || card.group || '—');
-  $('card-type').textContent = card.employment_label || '—';
-  $('card-author-row').hidden = !card.created_by;
-  $('card-author').textContent = [card.created_by, stamp(card.created_at)].filter(Boolean).join(' · ');
-  const view = L().hikvisionStep(card, state.sending);
-  $('step-saved').hidden = !card.created_by;
-  const step = $('step-hik');
-  step.className = 'shokh-save-step is-' + view.step;
-  $('step-hik-title').textContent = view.title;
-  $('step-hik-no').textContent = view.step === 'ok' && view.number ? 'ID ' + view.number : '';
-  $('card-hik-note').textContent = view.note || '';
-  $('card-hik-note').hidden = !view.note;
-  $('card-status').classList.toggle('is-waiting', state.sending);
-  $('card-status').classList.toggle('is-error', view.step === 'error');
-  $('card-retry').hidden = state.sending || !card.can_retry;
+  $('card-role').textContent = L().roleLine(card);
+  paintStep('step-photo', L().photoStep(card, state.uploading));
+  const person = L().hikvisionStep(card, state.sending);
+  paintStep('step-hik', person);
+  $('step-hik-no').textContent = person.step === 'ok' && person.number ? 'ID ' + person.number : '';
+  const face = person.step === 'ok' ? L().faceStep(card, state.sending) : null;
+  paintStep('step-face', face);
+  const note = person.note || face?.note || '';
+  $('card-hik-note').textContent = note;
+  $('card-hik-note').hidden = !note;
+  const busy = state.uploading || state.sending;
+  $('card-status').classList.toggle('is-waiting', busy);
+  $('card-status').classList.toggle('is-error', person.step === 'error' || face?.step === 'error');
+  $('card-retry').hidden = busy || !card.can_retry;
+  $('card-shoot-label').textContent = card.photo || state.preview ? 'Переснять фото' : 'Сфотографировать';
+  $('card-shoot').disabled = busy || card.can_photo === false;
+  $('card-avatar').disabled = busy || card.can_photo === false;
 }
 
-function openCard(card, from) {
+function openCard(card) {
   state.card = card;
-  state.cardFrom = from;
+  state.preview = null;
+  state.uploading = false;
   state.sending = false;
   renderCard();
   show('card');
+}
+
+function replaceCard(card) {
+  if (state.card && state.card.id === card.id) state.card = card;
+  const list = state.home?.employees;
+  const index = list ? list.findIndex(item => item.id === card.id) : -1;
+  if (index >= 0) list[index] = card;
+}
+
+/* Фото с камеры телефона: ужимаем до ~640 px JPEG — терминалу нужно небольшое
+   фото лица, а по сотовой связи большое грузилось бы долго. */
+async function shrinkPhoto(file, side = 640) {
+  let source;
+  try { source = await createImageBitmap(file, {imageOrientation: 'from-image'}); } catch { source = null; }
+  if (!source) {
+    source = await new Promise((resolve, reject) => {
+      const image = new Image();
+      const url = URL.createObjectURL(file);
+      image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+      image.onerror = () => { URL.revokeObjectURL(url); reject(new Error('photo')); };
+      image.src = url;
+    });
+  }
+  const width = source.width, height = source.height;
+  if (!width || !height) throw new Error('photo');
+  const scale = Math.min(1, side / Math.max(width, height));
+  const canvas = document.createElement('canvas');
+  canvas.width = Math.round(width * scale);
+  canvas.height = Math.round(height * scale);
+  canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+  return canvas.toDataURL('image/jpeg', 0.86);
 }
 
 async function sendToHikvision() {
@@ -301,8 +213,8 @@ async function sendToHikvision() {
   renderCard();
   try {
     const {data} = await api(`/employees/${card.id}/hikvision`, {method: 'POST'});
-    if (state.card && state.card.id === card.id) state.card = data.employee;
-    return data.employee.hikvision.state === 'sent';
+    replaceCard(data.employee);
+    return true;
   } catch (error) {
     message(error.network
       ? 'Нет связи с панелью — не знаем, дошло ли до Hikvision. Нажмите «Отправить ещё раз»: второго человека не будет.'
@@ -311,37 +223,58 @@ async function sendToHikvision() {
   } finally {
     state.sending = false;
     if (state.card && state.card.id === card.id) renderCard();
-    Busy.silent(() => loadHome());
+    renderList();
   }
 }
 
+/* Снятое фото сразу видно в круге; сохраняем его в карточке и отправляем на
+   терминал. Не дошло — фото на экране остаётся, можно повторить. */
+async function uploadPhoto(photo) {
+  const card = state.card;
+  state.preview = photo;
+  state.uploading = true;
+  renderCard();
+  try {
+    const {data} = await api(`/employees/${card.id}/photo`, {method: 'PUT', body: JSON.stringify({image: photo})});
+    replaceCard(data.employee);
+  } catch (error) {
+    state.preview = null;
+    message(error.network ? 'Нет связи — фото не сохранилось. Сфотографируйте ещё раз.' : error.message, true);
+    return false;
+  } finally {
+    state.uploading = false;
+    if (state.card && state.card.id === card.id) renderCard();
+  }
+  state.preview = null;
+  renderList();
+  if (state.card.can_retry) await sendToHikvision();
+  return true;
+}
+
+async function photoTaken() {
+  const file = $('photo-input').files[0];
+  $('photo-input').value = '';
+  if (!file || !state.card) return;
+  let photo;
+  try {
+    photo = await shrinkPhoto(file);
+  } catch {
+    message('Не удалось открыть фото. Сфотографируйте ещё раз.', true);
+    return;
+  }
+  await Busy.button($('card-shoot'), uploadPhoto(photo), {done: false});
+}
+
 /* ── События ───────────────────────────────────────────────────────────── */
-$('search').addEventListener('input', () => {
-  clearTimeout(searchTimer);
-  searchTimer = setTimeout(runSearch, 250);
+$('search').addEventListener('input', renderList);
+document.querySelectorAll('.mgr-filter').forEach(button => {
+  button.addEventListener('click', () => { state.filter = button.dataset.filter; renderList(); });
 });
-$('new-employee').addEventListener('click', openForm);
-$('form-close').addEventListener('click', closeForm);
-$('form-cancel').addEventListener('click', closeForm);
-$('f-name').addEventListener('input', () => { liveCheck('name'); $('similar').hidden = true; });
-$('f-role').addEventListener('input', () => liveCheck('role'));
-$('f-direction').addEventListener('change', () => { syncDraft(); fillRoles(); });
-document.querySelectorAll('.mgr-type [data-type]').forEach(button => {
-  button.addEventListener('click', () => setType(button.dataset.type));
-});
-$('employee-form').addEventListener('submit', event => {
-  event.preventDefault();
-  Busy.button($('form-save'), save(), {done: false});
-});
-$('form-save').addEventListener('click', () => Busy.button($('form-save'), save(), {done: false}));
-$('similar-new').addEventListener('click', () => Busy.button($('similar-new'), save(true), {done: false}));
+$('card-close').addEventListener('click', () => { show('home'); renderList(); });
+$('card-shoot').addEventListener('click', () => $('photo-input').click());
+$('card-avatar').addEventListener('click', () => $('photo-input').click());
+$('photo-input').addEventListener('change', photoTaken);
 $('card-retry').addEventListener('click', () => Busy.button($('card-retry'), sendToHikvision(), {done: false}));
-$('card-close').addEventListener('click', () => show(state.cardFrom === 'form' ? 'form' : 'home'));
-$('card-done').addEventListener('click', () => {
-  // «Это он» из похожих: нового не заводим — черновик больше не нужен.
-  if (state.cardFrom === 'form') { dropDraft(); state.draft = null; }
-  show('home');
-});
 
 loadHome();
 

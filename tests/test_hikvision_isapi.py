@@ -1,6 +1,7 @@
 import hashlib
 import json
 import asyncio
+import re
 from datetime import datetime
 from zoneinfo import ZoneInfo
 
@@ -258,3 +259,166 @@ def test_find_person_searches_one_employee_number():
     missing, _ = _run(lambda request: httpx.Response(200, json={'UserInfoSearch': {
         'responseStatusStrg': 'NO MATCH', 'numOfMatches': 0}}), lambda client: client.find_person('999'))
     assert missing is None
+
+
+# ── Лицо человека (фото из кабинета менеджера) ─────────────────────────────
+
+JPEG = b'\xff\xd8\xff\xe0\x00\x10JFIF\x00' + bytes(range(256)) + b'\r\n--\r\n\xff\xd9'
+
+
+def face_parts(content: bytes, content_type: str) -> dict[str, tuple[str, str | None, bytes]]:
+    """multipart/form-data → {имя части: (Content-Type, filename, байты)}."""
+    boundary = content_type.split('boundary=', 1)[1].encode()
+    chunks = content.split(b'--' + boundary)
+    assert chunks[0] == b'' and chunks[-1] == b'--\r\n'
+    parts = {}
+    for chunk in chunks[1:-1]:
+        assert chunk.startswith(b'\r\n') and chunk.endswith(b'\r\n')
+        head, _, body = chunk[2:-2].partition(b'\r\n\r\n')
+        headers = dict(line.split(': ', 1) for line in head.decode().split('\r\n'))
+        disposition = headers['Content-Disposition']
+        name = re.search(r'\bname="([^"]+)"', disposition).group(1)
+        filename = re.search(r'filename="([^"]+)"', disposition)
+        parts[name] = (headers['Content-Type'], filename.group(1) if filename else None, body)
+    return parts
+
+
+def digest_matches(request: httpx.Request) -> bool:
+    """Подпись digest посчитана для этого метода и адреса (PUT ≠ POST)."""
+    header = request.headers['authorization']
+    values = {match.group(1): match.group(2) if match.group(2) is not None else match.group(3)
+              for match in re.finditer(r'(\w+)=(?:"([^"]*)"|([^,\s]+))', header[7:])}
+    target = request.url.raw_path.decode()
+    ha1 = hashlib.md5(f'reader:{values["realm"]}:secret'.encode()).hexdigest()
+    ha2 = hashlib.md5(f'{request.method}:{target}'.encode()).hexdigest()
+    expected = hashlib.md5(f'{ha1}:{values["nonce"]}:{values["nc"]}:{values["cnonce"]}:'
+                           f'{values["qop"]}:{ha2}'.encode()).hexdigest()
+    return values['uri'] == target and values['response'] == expected
+
+
+def _face_run(handler, work):
+    requests = []
+
+    def terminal(request: httpx.Request):
+        if request.method == 'GET':
+            return httpx.Response(401, headers={
+                'WWW-Authenticate': 'Digest realm="terminal", nonce="abc", qop="auth"'})
+        assert digest_matches(request)
+        requests.append(request)
+        return handler(request)
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(terminal)) as http:
+            return await work(HikvisionClient(CONFIG, http=http, cnonce=lambda: '0011223344556677'))
+
+    return asyncio.run(exercise()), requests
+
+
+OK = {'statusCode': 1, 'statusString': 'OK', 'subStatusCode': 'ok'}
+
+
+def test_upload_face_posts_face_data_record_multipart_with_fpid():
+    result, requests = _face_run(lambda request: httpx.Response(200, json=OK),
+                                 lambda client: client.upload_face('134', JPEG))
+    assert result == 'created'
+    request, = requests
+    assert (request.method, request.url.path, request.url.query) == (
+        'POST', '/ISAPI/Intelligent/FDLib/FaceDataRecord', b'format=json')
+    assert request.headers['content-type'].startswith('multipart/form-data; boundary=')
+    assert request.headers['content-length'] == str(len(request.content))
+    parts = face_parts(request.content, request.headers['content-type'])
+    kind, filename, record = parts['FaceDataRecord']
+    assert (kind, filename) == ('application/json', None)
+    assert json.loads(record) == {'faceLibType': 'blackFD', 'FDID': '1', 'FPID': '134'}
+    assert parts['img'] == ('image/jpeg', 'face.jpg', JPEG)
+
+
+def test_face_multipart_is_readable_by_a_standard_form_parser():
+    from starlette.requests import Request
+    from retro.integrations.hikvision import face_multipart
+    content, content_type = face_multipart('134', JPEG)
+
+    async def parse():
+        async def receive():
+            return {'type': 'http.request', 'body': content, 'more_body': False}
+        form = await Request({'type': 'http', 'method': 'POST', 'headers': [
+            (b'content-type', content_type.encode())]}, receive).form()
+        image = form['img']
+        return form['FaceDataRecord'], image.filename, image.content_type, await image.read()
+
+    record, filename, kind, image = asyncio.run(parse())
+    assert json.loads(record)['FPID'] == '134'
+    assert (filename, kind, image) == ('face.jpg', 'image/jpeg', JPEG)
+
+
+@pytest.mark.parametrize('payload', [
+    {'statusCode': 6, 'statusString': 'Invalid Content', 'subStatusCode': 'deviceUserAlreadyExistFace'},
+    {'statusCode': 6, 'statusString': 'Invalid Content', 'errorMsg': 'faceExist'},
+])
+def test_existing_face_is_replaced_through_fd_setup(payload):
+    def handler(request):
+        if request.method == 'POST':
+            return httpx.Response(400, json=payload)
+        return httpx.Response(200, json=OK)
+
+    result, requests = _face_run(handler, lambda client: client.upload_face('134', JPEG))
+    assert result == 'replaced'
+    assert [(request.method, request.url.path) for request in requests] == [
+        ('POST', '/ISAPI/Intelligent/FDLib/FaceDataRecord'),
+        ('PUT', '/ISAPI/Intelligent/FDLib/FDSetUp')]
+    # Тот же снимок и тот же FPID, digest подписан методом PUT (digest_matches).
+    assert face_parts(requests[1].content, requests[1].headers['content-type']) == \
+        face_parts(requests[0].content, requests[0].headers['content-type'])
+
+
+def test_face_digest_refresh_resends_the_same_multipart_body():
+    bodies = []
+
+    def terminal(request: httpx.Request):
+        if request.method == 'GET':
+            return httpx.Response(401, headers={
+                'WWW-Authenticate': 'Digest realm="terminal", nonce="old", qop="auth"'})
+        bodies.append((request.headers['authorization'], request.content))
+        if len(bodies) == 1:
+            return httpx.Response(401, headers={
+                'WWW-Authenticate': 'Digest realm="terminal", nonce="new", qop="auth"'})
+        return httpx.Response(200, json=OK)
+
+    async def exercise():
+        async with httpx.AsyncClient(transport=httpx.MockTransport(terminal)) as http:
+            return await HikvisionClient(CONFIG, http=http).upload_face('134', JPEG)
+
+    assert asyncio.run(exercise()) == 'created'
+    assert 'nonce="old"' in bodies[0][0] and 'nonce="new"' in bodies[1][0]
+    assert bodies[0][1] == bodies[1][1]
+
+
+@pytest.mark.parametrize('status, payload, code', [
+    (400, {'statusCode': 6, 'statusString': 'Invalid Content', 'subStatusCode': 'faceModelingFailed'},
+     'face_rejected'),
+    (400, {'statusCode': 6, 'statusString': 'Invalid Content', 'subStatusCode': 'employeeNoNotExist'},
+     'device_error'),
+    (400, {'statusCode': 4, 'statusString': 'Invalid Operation', 'subStatusCode': 'notSupport'}, 'device_error'),
+    (500, None, 'device_error'),
+    (200, None, 'invalid_response'),
+])
+def test_refused_or_unreadable_face_is_an_error(status, payload, code):
+    def handler(request):
+        if payload is None:
+            return httpx.Response(status, content=b'<html>oops</html>')
+        return httpx.Response(status, json=payload)
+
+    with pytest.raises(HikvisionError) as caught:
+        _face_run(handler, lambda client: client.upload_face('134', JPEG))
+    assert caught.value.code == code
+
+
+def test_refused_face_replacement_is_an_error():
+    def handler(request):
+        if request.method == 'POST':
+            return httpx.Response(400, json={'statusCode': 6, 'subStatusCode': 'deviceUserAlreadyExistFace'})
+        return httpx.Response(500, content=b'')
+
+    with pytest.raises(HikvisionError) as caught:
+        _face_run(handler, lambda client: client.upload_face('134', JPEG))
+    assert caught.value.code == 'device_error'

@@ -1,31 +1,40 @@
 """Кабинет менеджера (ТЗ 09.10, М-01…М-04, T-432).
 
-Менеджер с телефона заводит сменного или временного сотрудника своего
-направления, система сама добавляет его в Hikvision. Повтор (двойной тап,
-обрыв связи, сбой устройства) не создаёт второго человека ни в реестре, ни на
-устройстве. Имена — только кириллицей, тёзки не объединяются сами.
-На SQLite и на Postgres (RETRO_TEST_POSTGRES_URL), как в CI.
+Карточки заводит бухгалтер. Менеджер видит сменных сотрудников своих
+направлений, фотографирует человека, и система отправляет в Hikvision его
+самого (если его там ещё нет) и его лицо. Повтор (двойной тап, обрыв связи,
+сбой устройства) не создаёт второго человека на устройстве; сбой лица не
+отменяет добавленного человека. Устройство — на уровне ISAPI (httpx
+MockTransport) за настоящим HikvisionClient. На SQLite и на Postgres
+(RETRO_TEST_POSTGRES_URL), как в CI.
 """
 
 import asyncio
+import base64
+import json
 import sqlite3
 from contextlib import contextmanager
 from datetime import datetime
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 
 from legacy_app import create_app
 from test_accountant_design_parity import POSTGRES_URL
+from test_hikvision_isapi import CONFIG, JPEG, OK, face_parts
 from retro.config import Settings, parse_dashboard_panel_users
-from retro.integrations.hikvision import HikvisionError, HikvisionEvent, HikvisionPerson
+from retro.integrations.hikvision import HikvisionClient, HikvisionEvent, HikvisionPerson
 from retro.modules.accountant.hikvision import AttendanceStore
-from retro.modules.accountant.names import person_name, role_name, similar_names
-from retro.modules.accountant.roster import RosterStore
+from retro.modules.accountant.names import person_name, role_name
+from retro.modules.accountant.roster import DeviceNamesakes, RosterStore
 from retro.modules.cashier.service import TZ
 from retro.modules.manager.directions import parse_manager_directions
+from retro.modules.manager.photos import NOT_IMAGE, TOO_LARGE, UNREADABLE
+from retro.modules.manager.routes import (FACE_FAILED, FACE_PENDING, FOREIGN, MANUAL_MESSAGE, NO_PHOTO,
+                                          NOT_FOUND, PENDING_MESSAGE)
 
 USERS = {'cashier': ('secret', 'cashier'), 'accountant': ('secret', 'accountant'),
          'director': ('secret', 'director'), 'founder': ('secret', 'founder'),
@@ -33,57 +42,97 @@ USERS = {'cashier': ('secret', 'cashier'), 'accountant': ('secret', 'accountant'
          'karina': ('secret', 'manager'), 'kitchen': ('secret', 'manager')}
 # karina — без строки направлений, то есть все; kitchen — только кухня.
 DIRECTIONS = {'kitchen': ('Кухня',)}
+PNG = b'\x89PNG\r\n\x1a\n' + bytes(range(64))
+FACE_RECORD = ('POST', '/ISAPI/Intelligent/FDLib/FaceDataRecord')
+FACE_SETUP = ('PUT', '/ISAPI/Intelligent/FDLib/FDSetUp')
+PERSON_RECORD = ('POST', '/ISAPI/AccessControl/UserInfo/Record')
 
 
-class FakeDevice:
-    """Hikvision в памяти: люди по номеру, счётчик созданий и сбои по заказу."""
+class Terminal:
+    """Hikvision на уровне ISAPI: люди по номеру, лица по FPID, сбои по заказу.
 
-    def __init__(self, people=None):
-        self.people = dict(people or {})
-        self.creates = 0
-        self.fail = None          # код HikvisionError на любой запрос
-        self.lose_response = False  # человек создан, но ответ потерян
+    fail='down' — устройство недоступно на любой запрос; face_fail — сбой
+    только у лица ('down' — обрыв, 'reject' — отказ устройства);
+    lose_record — человек записан, а ответ на запись потерян."""
 
-    async def find_person(self, employee_no):
-        if self.fail:
-            raise HikvisionError(self.fail)
-        name = self.people.get(employee_no)
-        return HikvisionPerson(employee_no, name) if name is not None else None
+    def __init__(self):
+        self.people: dict[str, str] = {}
+        self.faces: dict[str, bytes] = {}
+        self.requests: list[tuple[str, str]] = []
+        self.face_records: list[tuple[str, str, tuple]] = []
+        self.fail = None
+        self.face_fail = None
+        self.lose_record = False
 
-    async def create_person(self, employee_no, name, *, valid_from):
-        if self.fail:
-            raise HikvisionError(self.fail)
-        self.creates += 1
-        if employee_no in self.people:
-            return 'exists'
-        self.people[employee_no] = name
-        if self.lose_response:
-            self.lose_response = False
-            raise HikvisionError('timeout')
-        return 'created'
+    def count(self, call) -> int:
+        return self.requests.count(call)
 
-    async def fetch_people(self):
-        if self.fail:
-            raise HikvisionError(self.fail)
-        return tuple(HikvisionPerson(number, name) for number, name in self.people.items())
+    def __call__(self, request: httpx.Request) -> httpx.Response:
+        if request.method == 'GET':
+            return httpx.Response(401, headers={
+                'WWW-Authenticate': 'Digest realm="terminal", nonce="abc", qop="auth"'})
+        assert request.headers['authorization'].startswith('Digest ')
+        path = request.url.path
+        self.requests.append((request.method, path))
+        if self.fail == 'down':
+            raise httpx.ConnectError('down', request=request)
+        if path.startswith('/ISAPI/Intelligent/FDLib/'):
+            return self.face(request, path)
+        body = json.loads(request.content)
+        if path == '/ISAPI/AccessControl/UserInfo/Search':
+            cond = body['UserInfoSearchCond']
+            wanted = [item['employeeNo'] for item in cond.get('EmployeeNoList', [])]
+            people = sorted(self.people.items(), key=lambda item: int(item[0]))
+            if wanted:
+                people = [item for item in people if item[0] in wanted]
+            start, size = cond['searchResultPosition'], cond['maxResults']
+            page = people[start:start + size]
+            status = 'NO MATCH' if not people else ('MORE' if start + size < len(people) else 'OK')
+            return httpx.Response(200, json={'UserInfoSearch': {
+                'responseStatusStrg': status, 'numOfMatches': len(page), 'totalMatches': len(people),
+                'UserInfo': [{'employeeNo': number, 'name': name} for number, name in page]}})
+        if path == '/ISAPI/AccessControl/UserInfo/Record':
+            info = body['UserInfo']
+            if info['employeeNo'] in self.people:
+                return httpx.Response(400, json={'statusCode': 6, 'subStatusCode': 'employeeNoAlreadyExist'})
+            self.people[info['employeeNo']] = info['name']
+            if self.lose_record:
+                self.lose_record = False
+                raise httpx.ReadTimeout('lost', request=request)
+            return httpx.Response(200, json=OK)
+        return httpx.Response(404, json={'statusCode': 4, 'statusString': 'Invalid Operation'})
 
-    async def close(self):
-        pass
+    def face(self, request: httpx.Request, path: str) -> httpx.Response:
+        parts = face_parts(request.content, request.headers['content-type'])
+        record = json.loads(parts['FaceDataRecord'][2])
+        assert (record['faceLibType'], record['FDID']) == ('blackFD', '1')
+        number = record['FPID']
+        self.face_records.append((request.method, number, parts['img']))
+        if self.face_fail == 'down':
+            raise httpx.ConnectError('down', request=request)
+        if self.face_fail == 'reject':
+            return httpx.Response(500, content=b'')
+        if number not in self.people:
+            return httpx.Response(400, json={'statusCode': 6, 'subStatusCode': 'employeeNoNotExist'})
+        if request.method == 'POST' and number in self.faces:
+            return httpx.Response(400, json={'statusCode': 6, 'subStatusCode': 'deviceUserAlreadyExistFace'})
+        self.faces[number] = parts['img'][2]
+        return httpx.Response(200, json=OK)
 
 
 def settings(tmp_path, **extra):
     return Settings(data_dir=tmp_path, dashboard_panel_users=USERS, manager_directions=DIRECTIONS, **extra)
 
 
-def sqlite_app(tmp_path, device):
+def sqlite_app(tmp_path, writer):
     return create_app(settings(tmp_path), expense_db_path=tmp_path / 'cashier.sqlite3',
                       accountant_db_path=tmp_path / 'accountant.sqlite3',
                       director_db_path=tmp_path / 'director.sqlite3',
-                      founder_db_path=tmp_path / 'founder.sqlite3', hikvision_writer=device)
+                      founder_db_path=tmp_path / 'founder.sqlite3', hikvision_writer=writer)
 
 
 @contextmanager
-def postgres_app(tmp_path, device):
+def postgres_app(tmp_path, writer):
     import psycopg
     from psycopg import sql
     schema = 'manager_' + uuid4().hex
@@ -94,49 +143,67 @@ def postgres_app(tmp_path, device):
     query['options'] = '-csearch_path=' + schema
     url = urlunsplit(parts._replace(query=urlencode(query)))
     try:
-        yield create_app(settings(tmp_path, database_url=url), hikvision_writer=device)
+        yield create_app(settings(tmp_path, database_url=url), hikvision_writer=writer)
     finally:
         admin.execute(sql.SQL('DROP SCHEMA {} CASCADE').format(sql.Identifier(schema)))
         admin.close()
 
 
 @pytest.fixture
-def device():
-    return FakeDevice()
+def terminal():
+    return Terminal()
 
 
 @pytest.fixture(params=['sqlite', 'postgres'])
-def cabinet(request, tmp_path, device):
-    if request.param == 'postgres':
-        if not POSTGRES_URL:
-            pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
-        with postgres_app(tmp_path, device) as app, TestClient(
-                app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
-            yield client
-    else:
-        with TestClient(sqlite_app(tmp_path, device), base_url='http://127.0.0.1',
-                        client=('127.0.0.1', 50000)) as client:
-            yield client
+def cabinet(request, tmp_path, terminal):
+    http = httpx.AsyncClient(transport=httpx.MockTransport(terminal))
+    writer = HikvisionClient(CONFIG, http=http)
+    try:
+        if request.param == 'postgres':
+            if not POSTGRES_URL:
+                pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
+            with postgres_app(tmp_path, writer) as app, TestClient(
+                    app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+                yield client
+        else:
+            with TestClient(sqlite_app(tmp_path, writer), base_url='http://127.0.0.1',
+                            client=('127.0.0.1', 50000)) as client:
+                yield client
+    finally:
+        asyncio.run(http.aclose())
 
 
-def karamat(**extra):
-    return {'name': 'Карамат', 'role': 'Хостес', 'direction': 'Зал', 'employment_type': 'temporary',
-            'request_key': str(uuid4()), **extra}
+def roster(client) -> RosterStore:
+    return client.app.state.accountant_roster
 
 
-def create(client, body, user='karina'):
-    return client.post('/api/manager/employees', json=body, auth=(user, 'secret'))
+def staff(client, name='Карамат', role='хостес', group='Встреча гостей') -> int:
+    """Карточка, как её заводит бухгалтер в «Сотрудниках»."""
+    return roster(client).add(name=name, role=role, rate='150000', group_name=group).id
+
+
+def data_url(content=JPEG, mime='image/jpeg') -> str:
+    return f'data:{mime};base64,' + base64.b64encode(content).decode()
+
+
+def upload(client, employee_id, image=None, user='karina'):
+    return client.put(f'/api/manager/employees/{employee_id}/photo', json={'image': image or data_url()},
+                      auth=(user, 'secret'))
 
 
 def push(client, employee_id, user='karina'):
     return client.post(f'/api/manager/employees/{employee_id}/hikvision', auth=(user, 'secret'))
 
 
-def roster_rows(client):
-    return [row for row in client.app.state.accountant_roster.list()]
+def card(client, employee_id, user='karina') -> dict:
+    return client.get(f'/api/manager/employees/{employee_id}', auth=(user, 'secret')).json()['employee']
 
 
-# ── Кириллица (М-04) ────────────────────────────────────────────────────────
+def home(client, user='karina') -> dict:
+    return client.get('/api/manager/home', auth=(user, 'secret')).json()
+
+
+# ── Кириллица у бухгалтера (М-04) ──────────────────────────────────────────
 
 @pytest.mark.parametrize('value, expected', [
     ('Карамат', 'Карамат'),
@@ -170,217 +237,9 @@ def test_role_allows_digits_but_not_latin():
         role_name('Пов' + 'a' + 'р')
 
 
-@pytest.mark.parametrize('first, second', [
-    ('Каримов Жахонгир', 'Jahongir Karimov'),
-    ('Баходиров Ихтиер', 'Bahodirov Ixtiyor'),
-    ('Баходиров Ихтиёр', 'Баходиров Ихтиер'),
-    ('Карамат', 'Kарамат Юсупова'),
-    ('Абдулганиева Сельвина', 'abdulganieva selvina'),
-    ('Қодиров Ўткир', 'Кодиров Уткир'),
-])
-def test_possible_duplicates_survive_alphabet_order_and_spelling(first, second):
-    assert similar_names(first, second)
-
-
-def test_different_people_are_not_similar():
-    assert not similar_names('Каримов Жахонгир', 'Каримов Алишер')
-    assert not similar_names('Карамат', 'Камола')
-
-
-# ── Роль и направления ─────────────────────────────────────────────────────
-
-def test_manager_is_an_optional_role_and_directions_are_validated():
-    users = parse_dashboard_panel_users(
-        'c:p:cashier;a:p:accountant;d:p:director;f:p:founder;m1:p:manager;m2:p:manager')
-    assert users['m1'] == ('p', 'manager')
-    assert parse_manager_directions('m1=Кухня,Уборка;m2=Зал', users) == {
-        'm1': ('Кухня', 'Уборка'), 'm2': ('Зал',)}
-    assert parse_manager_directions('', users) == {}
-    for broken in ('m1=Бухгалтерия', 'a=Кухня', 'm1', 'm1=Кухня,Кухня', 'чужой=Зал'):
-        with pytest.raises(ValueError):
-            parse_manager_directions(broken, users)
-
-
-def test_home_lists_own_directions_roles_and_no_money(cabinet):
-    home = cabinet.get('/api/manager/home', auth=('kitchen', 'secret')).json()
-    assert [item['name'] for item in home['directions']] == ['Кухня']
-    assert 'Повар' in home['directions'][0]['roles']
-    every = cabinet.get('/api/manager/home', auth=('karina', 'secret')).json()
-    assert [item['name'] for item in every['directions']] == ['Кухня', 'Зал', 'Уборка']
-    assert every['hikvision'] == {'configured': True}
-
-
-def test_manager_cannot_create_in_a_foreign_direction(cabinet):
-    answer = create(cabinet, karamat(), user='kitchen')
-    assert answer.status_code == 403
-    assert answer.json()['detail'] == 'Это направление ведёт другой менеджер.'
-    answer = create(cabinet, karamat(direction='Кухня', role='Официант'), user='kitchen')
-    assert answer.status_code == 422
-    assert 'из направления «Зал»' in answer.json()['detail']
-    assert roster_rows(cabinet) == []
-
-
-# ── Сквозной сценарий: Карамат, временная хостес (М-02, приёмка п. 5, 8) ────
-
-def test_karamat_is_registered_once_and_added_to_hikvision(cabinet, device):
-    body = karamat()
-    answer = create(cabinet, body)
-    assert answer.status_code == 201, answer.text
-    card = answer.json()['employee']
-    assert (card['name'], card['role'], card['group'], card['direction']) == (
-        'Карамат', 'Хостес', 'Встреча гостей', 'Зал')
-    assert card['employment_label'] == 'Временный'
-    assert card['hikvision']['state'] == 'pending'
-    assert card['can_retry'] is True
-    assert 'rate' not in card
-
-    sent = push(cabinet, card['id']).json()['employee']
-    assert sent['hikvision']['state'] == 'sent'
-    number = sent['hikvision']['employee_no']
-    assert device.people == {number: 'Карамат'}
-
-    # Бухгалтер видит её в реестре без ставки, привязанной к устройству.
-    person, = roster_rows(cabinet)
-    assert (person.name, person.rate, person.group_name, person.hikvision_id) == (
-        'Карамат', None, 'Встреча гостей', number)
-    assert (person.employment_type, person.direction, person.created_by) == ('temporary', 'Зал', 'karina')
-    staff = cabinet.get('/api/accountant/staff', params={'date': '2026-10-09'}, auth=('accountant', 'secret'))
-    assert staff.status_code == 200
-    assert [row['name'] for row in staff.json()['employees']] == ['Карамат']
-    history = cabinet.app.state.accountant_roster.history(person.id)
-    assert [row['action'] for row in history] == ['hikvision', 'create']
-    assert history[1]['changed_by'] == 'karina'
-
-    # Повторное «Сохранить» с тем же ключом (двойной тап, обрыв связи).
-    again = create(cabinet, body)
-    assert again.status_code == 200
-    assert again.json()['created'] is False
-    assert again.json()['employee']['id'] == card['id']
-    # Повторная отправка уже отправленной — не трогает устройство.
-    assert push(cabinet, card['id']).json()['employee']['hikvision']['state'] == 'sent'
-    assert len(roster_rows(cabinet)) == 1
-    assert device.creates == 1
-    mine = cabinet.get('/api/manager/home', auth=('karina', 'secret')).json()['mine']
-    assert [item['name'] for item in mine] == ['Карамат']
-
-
-def test_device_down_keeps_the_card_and_retry_adds_exactly_one_person(cabinet, device):
-    device.fail = 'network'
-    card = create(cabinet, karamat()).json()['employee']
-    failed = push(cabinet, card['id']).json()['employee']
-    assert failed['hikvision']['state'] == 'error'
-    assert failed['hikvision']['message'] == 'Hikvision недоступен — карточка сохранена и ждёт отправки.'
-    assert failed['can_retry'] is True
-    assert roster_rows(cabinet)[0].hikvision_id is None
-    assert device.people == {}
-
-    device.fail = None
-    sent = push(cabinet, card['id']).json()['employee']
-    assert sent['hikvision']['state'] == 'sent'
-    assert list(device.people.values()) == ['Карамат']
-
-
-def test_lost_device_answer_is_found_by_number_not_created_twice(cabinet, device):
-    device.lose_response = True
-    card = create(cabinet, karamat()).json()['employee']
-    failed = push(cabinet, card['id']).json()['employee']
-    assert failed['hikvision']['state'] == 'error'
-    assert failed['hikvision']['error'] == 'timeout'
-    # Устройство человека всё-таки записало; повтор находит его по номеру.
-    sent = push(cabinet, card['id']).json()['employee']
-    assert sent['hikvision']['state'] == 'sent'
-    assert sent['hikvision']['employee_no'] == failed['hikvision']['employee_no']
-    assert device.creates == 1
-    assert len(device.people) == 1
-
-
-def test_number_taken_by_a_stranger_on_the_device_gets_a_new_number(cabinet, device):
-    card = create(cabinet, karamat()).json()['employee']
-    number = card['hikvision']['employee_no']
-    device.people[number] = 'Старый Сотрудник'
-    device.people['57'] = 'Ещё Один'
-    sent = push(cabinet, card['id']).json()['employee']
-    assert sent['hikvision']['state'] == 'sent'
-    assert sent['hikvision']['employee_no'] == '58'
-    assert device.people[number] == 'Старый Сотрудник'
-    assert device.people['58'] == 'Карамат'
-
-
-def test_without_hikvision_the_card_waits_and_says_why(tmp_path):
-    with TestClient(sqlite_app(tmp_path, None), base_url='http://127.0.0.1',
-                    client=('127.0.0.1', 50000)) as client:
-        card = create(client, karamat()).json()['employee']
-        waiting = push(client, card['id']).json()['employee']
-        assert waiting['hikvision']['state'] == 'pending'
-        assert waiting['hikvision']['message'] == 'Hikvision не подключён — карточка сохранена и ждёт отправки.'
-        assert client.get('/api/manager/home', auth=('karina', 'secret')).json()['hikvision'] == {
-            'configured': False}
-
-
-def test_only_the_author_can_resend(cabinet):
-    card = create(cabinet, karamat()).json()['employee']
-    other = cabinet.get(f'/api/manager/employees/{card["id"]}', auth=('kitchen', 'secret')).json()
-    assert other['employee']['mine'] is False and other['employee']['can_retry'] is False
-    assert push(cabinet, card['id'], user='kitchen').status_code == 403
-    assert push(cabinet, card['id'], user='boss').status_code == 200
-
-
-# ── Кириллица и тёзки в API (М-04, приёмка п. 10) ──────────────────────────
-
-def test_latin_name_is_refused_and_nothing_is_saved(cabinet, device):
-    answer = create(cabinet, karamat(name='Karamat'))
-    assert answer.status_code == 422
-    assert answer.json()['detail'] == 'Имя набрано латиницей — наберите кириллицей.'
-    answer = create(cabinet, karamat(name='Карамat'))
-    assert answer.status_code == 422
-    assert 'латинская «a» вместо кириллической «а»' in answer.json()['detail']
-    answer = create(cabinet, karamat(role='Hostess'))
-    assert answer.status_code == 422
-    assert answer.json()['detail'] == 'Должность набрана латиницей — наберите кириллицей.'
-    assert roster_rows(cabinet) == [] and device.people == {}
-
-
-def test_namesake_is_shown_and_saved_only_after_explicit_confirmation(cabinet):
-    roster = cabinet.app.state.accountant_roster
-    old = roster.add(name='Karamat Yusupova', role='хостес', rate='150000', group_name='Встреча гостей')
-    roster.add_monthly(name='Баходиров Ихтиёр', role='Менеджер', salary='5000000')
-    body = karamat()
-    answer = create(cabinet, body)
-    assert answer.status_code == 409
-    matches = answer.json()['matches']
-    assert [(item['id'], item['name']) for item in matches] == [(old.id, 'Karamat Yusupova')]
-    assert 'rate' not in matches[0]
-    assert len(roster_rows(cabinet)) == 1
-
-    answer = create(cabinet, {**body, 'confirm_new': True})
-    assert answer.status_code == 201
-    assert sorted(person.name for person in roster_rows(cabinet)) == ['Karamat Yusupova', 'Карамат']
-
-    # Окладник тоже в общей базе: совпадение покажем, денег — нет.
-    answer = create(cabinet, karamat(name='Баходиров Ихтиер', role='Официант', employment_type='shift'))
-    assert answer.status_code == 409
-    assert answer.json()['matches'][0]['kind'] == 'monthly'
-    assert answer.json()['matches'][0]['group'] == 'На окладе'
-
-
-def test_search_finds_latin_spelling_and_hikvision_number_without_money(cabinet):
-    roster = cabinet.app.state.accountant_roster
-    person = roster.add(name='Абдулганиева Сельвина', role='Хостес', rate='360000', group_name='Встреча гостей')
-    roster.set_hikvision_id(person.id, '204')
-    for query in ('селвина', 'Selvina', 'хостес', '204'):
-        results = cabinet.get('/api/manager/search', params={'q': query}, auth=('karina', 'secret')).json()['results']
-        assert [item['name'] for item in results] == ['Абдулганиева Сельвина'], query
-        assert 'rate' not in results[0]
-        assert results[0]['hikvision']['state'] == 'sent'
-    assert cabinet.get('/api/manager/search', params={'q': 'Жасур'},
-                       auth=('karina', 'secret')).json()['results'] == []
-    assert cabinet.get('/api/manager/search', params={'q': 'с'},
-                       auth=('karina', 'secret')).json()['results'] == []
-
-
 def test_accountant_input_is_cyrillic_but_old_names_stay(cabinet):
-    roster = cabinet.app.state.accountant_roster
-    old = roster.add(name='Karimov Jahongir', role='менеджер', rate='360000', group_name='Управление')
+    store = roster(cabinet)
+    old = store.add(name='Karimov Jahongir', role='менеджер', rate='360000', group_name='Управление')
     auth = ('accountant', 'secret')
     answer = cabinet.post('/api/accountant/employees', auth=auth, json={
         'name': 'Selvina', 'role': 'хостес', 'rate': '360000', 'group': 'Встреча гостей'})
@@ -397,56 +256,449 @@ def test_accountant_input_is_cyrillic_but_old_names_stay(cabinet):
     answer = cabinet.patch(f'/api/accountant/employees/{old.id}', auth=auth, json={
         'name': 'Каримов Жахонгиp', 'role': 'менеджер', 'rate': '370000', 'reason': 'Опечатка'})
     assert answer.status_code == 422
-    assert roster.list()[0].name == 'Каримов Жахонгир'
+    assert store.list()[0].name == 'Каримов Жахонгир'
 
 
-# ── Посещаемость и опрос Hikvision (М-03) ──────────────────────────────────
+# ── Роль, направления и список ─────────────────────────────────────────────
 
-def test_passes_before_confirmation_land_in_the_same_card(cabinet, device):
-    card = create(cabinet, karamat()).json()['employee']
-    number = card['hikvision']['employee_no']
+def test_manager_is_an_optional_role_and_directions_are_validated():
+    users = parse_dashboard_panel_users(
+        'c:p:cashier;a:p:accountant;d:p:director;f:p:founder;m1:p:manager;m2:p:manager')
+    assert users['m1'] == ('p', 'manager')
+    assert parse_manager_directions('m1=Кухня,Уборка;m2=Зал', users) == {
+        'm1': ('Кухня', 'Уборка'), 'm2': ('Зал',)}
+    assert parse_manager_directions('', users) == {}
+    for broken in ('m1=Бухгалтерия', 'a=Кухня', 'm1', 'm1=Кухня,Кухня', 'чужой=Зал'):
+        with pytest.raises(ValueError):
+            parse_manager_directions(broken, users)
+
+
+def test_home_lists_shift_staff_of_own_directions_alphabetically_without_money(cabinet):
+    store = roster(cabinet)
+    staff(cabinet, 'Юсупов Фаррух', 'Повар миллий', 'Кухня')
+    staff(cabinet, 'Алиев Жасур', 'официант', 'Обслуживание зала')
+    staff(cabinet, 'Ёқубов Самандар', 'ранер', 'Обслуживание зала')
+    staff(cabinet, 'Абдуллаев Тимур', 'бармен', 'Бар')
+    staff(cabinet, 'Юлдашев Дильшод', 'техперсонал', 'Уборка')
+    staff(cabinet, 'Каримов Жахонгир', 'менеджер', 'Управление')
+    gone = staff(cabinet, 'Мирзаев Шерзод', 'Повар тандыр', 'Кухня')
+    store.delete(gone)
+    store.add_monthly(name='Баходиров Ихтиёр', role='Менеджер', salary='5000000')
+
+    kitchen = home(cabinet, 'kitchen')
+    assert kitchen['directions'] == ['Кухня']
+    assert [item['name'] for item in kitchen['employees']] == ['Юсупов Фаррух']
+
+    every = home(cabinet)
+    assert set(every) == {'login', 'role', 'directions', 'hikvision', 'employees'}
+    assert (every['login'], every['role']) == ('karina', 'manager')
+    assert every['directions'] == ['Кухня', 'Зал', 'Уборка']
+    assert every['hikvision'] == {'configured': True}
+    # По алфавиту, ё = е; без окладников и удалённых. Менеджер без строки
+    # направлений ведёт весь ресторан — видит и «Управление».
+    assert [item['name'] for item in every['employees']] == [
+        'Абдуллаев Тимур', 'Алиев Жасур', 'Ёқубов Самандар', 'Каримов Жахонгир', 'Юлдашев Дильшод', 'Юсупов Фаррух']
+    first = every['employees'][0]
+    assert set(first) == {'id', 'name', 'role', 'group', 'employment_type', 'photo', 'hikvision',
+                          'can_photo', 'can_retry'}
+    assert (first['role'], first['group'], first['employment_type'], first['photo']) == (
+        'бармен', 'Бар', 'shift', None)
+    assert first['hikvision'] == {'state': 'none', 'employee_no': None, 'message': None,
+                                  'face': {'state': 'none', 'message': None}}
+    assert (first['can_photo'], first['can_retry']) == (True, False)
+    assert [item['name'] for item in home(cabinet, 'boss')['employees']] == [
+        item['name'] for item in every['employees']]
+
+
+def test_photo_and_send_rights_follow_directions(cabinet):
+    hall = staff(cabinet)
+    office = staff(cabinet, 'Каримов Жахонгир', 'менеджер', 'Управление')
+    # Менеджер кухни — не его направление.
+    assert upload(cabinet, hall, user='kitchen').status_code == 403
+    answer = push(cabinet, hall, user='kitchen')
+    assert (answer.status_code, answer.json()['detail']) == (403, FOREIGN)
+    other = card(cabinet, hall, 'kitchen')
+    assert (other['can_photo'], other['can_retry']) == (False, False)
+    # «Управление» ни в одном направлении: менеджеру с разделами нельзя, а
+    # администратору и менеджеру на весь ресторан (без строки направлений) — можно.
+    assert upload(cabinet, office, user='kitchen').status_code == 403
+    assert upload(cabinet, office).status_code == 200
+    assert upload(cabinet, office, user='boss').status_code == 200
+    # Удалённого бухгалтером нет; без фото не отправляем.
+    roster(cabinet).delete(office)
+    for answer in (upload(cabinet, office, user='boss'), push(cabinet, office, user='boss'),
+                   cabinet.get(f'/api/manager/employees/{office}', auth=('karina', 'secret'))):
+        assert (answer.status_code, answer.json()['detail']) == (404, NOT_FOUND)
+    answer = push(cabinet, hall)
+    assert (answer.status_code, answer.json()['detail']) == (422, NO_PHOTO)
+
+
+# ── Фото ───────────────────────────────────────────────────────────────────
+
+def test_photo_upload_jpeg_and_png_and_serve_the_bytes(cabinet, terminal):
+    employee_id = staff(cabinet)
+    answer = upload(cabinet, employee_id)
+    assert answer.status_code == 200, answer.text
+    employee = answer.json()['employee']
+    photo = employee['photo']
+    assert photo['url'].startswith(f'/api/manager/employees/{employee_id}/photo?v=')
+    assert photo['updated_at']
+    # Фото есть, на устройство ещё не отправляли — ждёт отправки.
+    assert employee['hikvision'] == {'state': 'pending', 'employee_no': None, 'message': PENDING_MESSAGE,
+                                     'face': {'state': 'pending', 'message': FACE_PENDING}}
+    assert (employee['can_photo'], employee['can_retry']) == (True, True)
+    assert terminal.requests == []
+
+    image = cabinet.get(photo['url'], auth=('kitchen', 'secret'))  # общая база: видно всем менеджерам
+    assert image.status_code == 200
+    assert image.content == JPEG
+    assert image.headers['content-type'] == 'image/jpeg'
+    assert image.headers['cache-control'] == 'private, max-age=31536000'
+    # Без версии в адресе — не кешируем.
+    plain = cabinet.get(f'/api/manager/employees/{employee_id}/photo', auth=('karina', 'secret'))
+    assert plain.content == JPEG and plain.headers['cache-control'] == 'no-store'
+
+    again = upload(cabinet, employee_id, data_url(PNG, 'image/png')).json()['employee']['photo']
+    assert again['url'] != photo['url']
+    image = cabinet.get(again['url'], auth=('karina', 'secret'))
+    assert (image.content, image.headers['content-type']) == (PNG, 'image/png')
+    history = roster(cabinet).history(employee_id)
+    assert [row['reason'] for row in history[:2]] == ['Фото заменено', 'Добавлено фото']
+    assert history[0]['changed_by'] == 'karina'
+
+
+@pytest.mark.parametrize('image, message', [
+    (data_url(b'just some text'), NOT_IMAGE),
+    (data_url(JPEG, 'text/plain'), NOT_IMAGE),
+    (data_url(b'GIF89a' + bytes(32), 'image/gif'), NOT_IMAGE),
+    ('просто текст', UNREADABLE),
+    ('data:image/jpeg;base64,@@@@', UNREADABLE),
+    ('data:image/jpeg,' + base64.b64encode(JPEG).decode(), UNREADABLE),
+    (data_url(b'\xff\xd8\xff' + bytes(2 * 1024 * 1024)), TOO_LARGE),
+])
+def test_photo_must_be_a_real_jpeg_or_png_up_to_2_mb(cabinet, image, message):
+    employee_id = staff(cabinet)
+    answer = upload(cabinet, employee_id, image)
+    assert (answer.status_code, answer.json()['detail']) == (422, message)
+    assert card(cabinet, employee_id)['photo'] is None
+    assert cabinet.get(f'/api/manager/employees/{employee_id}/photo',
+                       auth=('karina', 'secret')).json()['detail'] == 'У сотрудника нет фото.'
+
+
+def test_photo_of_exactly_2_mb_is_accepted(cabinet):
+    employee_id = staff(cabinet)
+    content = b'\xff\xd8\xff' + bytes(2 * 1024 * 1024 - 3)
+    assert upload(cabinet, employee_id, data_url(content)).status_code == 200
+    assert roster(cabinet).photo(employee_id)[0] == content
+
+
+# ── Отправка в Hikvision: человек и лицо ──────────────────────────────────
+
+def test_photo_sends_the_person_and_then_the_face_with_fpid(cabinet, terminal):
+    employee_id = staff(cabinet)
+    upload(cabinet, employee_id)
+    sent = push(cabinet, employee_id).json()['employee']
+    number = sent['hikvision']['employee_no']
+    assert sent['hikvision'] == {'state': 'sent', 'employee_no': number, 'message': None,
+                                 'face': {'state': 'sent', 'message': None}}
+    assert sent['can_retry'] is False
+    assert terminal.people == {number: 'Карамат'}
+    assert terminal.face_records == [('POST', number, ('image/jpeg', 'face.jpg', JPEG))]
+    assert terminal.faces == {number: JPEG}
+    # Сначала человек (поиск номера, запись, проверка), потом лицо.
+    assert terminal.requests[-2:] == [('POST', '/ISAPI/AccessControl/UserInfo/Search'), FACE_RECORD]
+
+    person, = roster(cabinet).list()
+    assert person.hikvision_id == number
+    reasons = [row['reason'] for row in roster(cabinet).history(employee_id)]
+    assert reasons[:2] == ['Фото добавлено в Hikvision', 'Добавлен в Hikvision']
+
+    # Повтор уже отправленного не трогает устройство.
+    calls = len(terminal.requests)
+    assert push(cabinet, employee_id).json()['employee']['hikvision']['state'] == 'sent'
+    assert len(terminal.requests) == calls
+
+
+def test_linked_employee_gets_only_the_face(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_hikvision_id(employee_id, '204')
+    terminal.people['204'] = 'Карамат'
+    before = upload(cabinet, employee_id).json()['employee']
+    assert before['hikvision']['state'] == 'sent'
+    assert before['hikvision']['face'] == {'state': 'pending', 'message': FACE_PENDING}
+    assert before['can_retry'] is True
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['face']['state'] == 'sent'
+    assert terminal.requests == [FACE_RECORD]
+    assert terminal.faces == {'204': JPEG}
+
+
+def test_existing_face_on_the_device_is_replaced_through_fd_setup(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_hikvision_id(employee_id, '204')
+    terminal.people['204'] = 'Карамат'
+    terminal.faces['204'] = b'old face'
+    upload(cabinet, employee_id)
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['face']['state'] == 'sent'
+    assert terminal.requests == [FACE_RECORD, FACE_SETUP]
+    assert terminal.faces == {'204': JPEG}
+
+
+def test_face_failure_keeps_the_person_and_retry_sends_only_the_face(cabinet, terminal):
+    employee_id = staff(cabinet)
+    upload(cabinet, employee_id)
+    terminal.face_fail = 'reject'
+    failed = push(cabinet, employee_id).json()['employee']
+    assert failed['hikvision']['state'] == 'sent'
+    assert failed['hikvision']['face'] == {'state': 'error', 'message': FACE_FAILED}
+    assert failed['can_retry'] is True
+
+    terminal.face_fail = 'down'
+    failed = push(cabinet, employee_id).json()['employee']
+    assert failed['hikvision']['face'] == {
+        'state': 'error', 'message': 'Hikvision недоступен — фото не ушло на устройство. Отправьте ещё раз.'}
+
+    terminal.face_fail = None
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['face']['state'] == 'sent'
+    assert sent['can_retry'] is False
+    assert terminal.count(PERSON_RECORD) == 1
+    assert terminal.count(FACE_RECORD) == 3
+    assert len(terminal.people) == 1
+
+
+def test_new_photo_puts_the_face_back_to_pending_and_resend_replaces_it(cabinet, terminal):
+    employee_id = staff(cabinet)
+    upload(cabinet, employee_id)
+    number = push(cabinet, employee_id).json()['employee']['hikvision']['employee_no']
+    fresh = upload(cabinet, employee_id, data_url(PNG, 'image/png')).json()['employee']
+    assert fresh['hikvision']['state'] == 'sent'
+    assert fresh['hikvision']['face'] == {'state': 'pending', 'message': FACE_PENDING}
+    assert fresh['can_retry'] is True
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['face']['state'] == 'sent'
+    assert terminal.faces == {number: PNG}
+    assert terminal.requests[-2:] == [FACE_RECORD, FACE_SETUP]
+    assert terminal.face_records[-1][2] == ('image/png', 'face.png', PNG)
+    assert terminal.count(PERSON_RECORD) == 1
+
+
+def test_manual_attendance_keeps_the_photo_but_never_sends(cabinet, terminal):
+    employee_id = staff(cabinet, 'Турсунов Камол', 'техперсонал', 'Уборка')
+    roster(cabinet).set_manual_attendance(employee_id, True)
+    employee = upload(cabinet, employee_id).json()['employee']
+    assert employee['photo'] is not None
+    assert employee['hikvision'] == {'state': 'manual', 'employee_no': None, 'message': MANUAL_MESSAGE,
+                                     'face': {'state': 'none', 'message': None}}
+    assert (employee['can_photo'], employee['can_retry']) == (True, False)
+    answer = push(cabinet, employee_id)
+    assert answer.status_code == 200
+    assert answer.json()['employee']['hikvision']['state'] == 'manual'
+    assert terminal.requests == []
+
+
+def test_device_down_keeps_the_photo_and_retry_adds_exactly_one_person(cabinet, terminal):
+    employee_id = staff(cabinet)
+    upload(cabinet, employee_id)
+    terminal.fail = 'down'
+    failed = push(cabinet, employee_id).json()['employee']
+    assert failed['hikvision']['state'] == 'error'
+    assert failed['hikvision']['message'] == 'Hikvision недоступен — карточка сохранена и ждёт отправки.'
+    assert failed['can_retry'] is True
+    assert roster(cabinet).list()[0].hikvision_id is None
+    assert terminal.people == {}
+
+    terminal.fail = None
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['state'] == 'sent'
+    assert list(terminal.people.values()) == ['Карамат']
+    assert terminal.faces == {sent['hikvision']['employee_no']: JPEG}
+
+
+def test_lost_device_answer_is_found_by_number_not_created_twice(cabinet, terminal):
+    employee_id = staff(cabinet)
+    upload(cabinet, employee_id)
+    terminal.lose_record = True
+    failed = push(cabinet, employee_id).json()['employee']
+    assert failed['hikvision']['state'] == 'error'
+    assert failed['hikvision']['message'] == \
+        'Hikvision не ответил вовремя — карточка сохранена. Отправьте ещё раз.'
+    assert failed['hikvision']['face']['state'] == 'pending'
+    # Устройство человека всё-таки записало; повтор находит его по номеру.
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['state'] == 'sent'
+    assert sent['hikvision']['employee_no'] == failed['hikvision']['employee_no']
+    assert sent['hikvision']['face']['state'] == 'sent'
+    assert terminal.count(PERSON_RECORD) == 1
+    assert len(terminal.people) == 1
+
+
+def test_numbers_start_above_everything_on_the_device(cabinet, terminal):
+    terminal.people.update({'150': 'Старый Сотрудник', '57': 'Ещё Один'})
+    employee_id = staff(cabinet)
+    upload(cabinet, employee_id)
+    assert push(cabinet, employee_id).json()['employee']['hikvision']['employee_no'] == '151'
+
+
+def test_number_taken_by_a_stranger_on_the_device_gets_a_new_number(cabinet, terminal):
+    employee_id = staff(cabinet)
+    number = roster(cabinet).reserve_employee_no(employee_id, ())
+    terminal.people.update({number: 'Старый Сотрудник', '57': 'Ещё Один'})
+    upload(cabinet, employee_id)
+    sent = push(cabinet, employee_id).json()['employee']
+    assert sent['hikvision']['state'] == 'sent'
+    assert sent['hikvision']['employee_no'] == '58'
+    assert terminal.people[number] == 'Старый Сотрудник'
+    assert terminal.people['58'] == 'Карамат'
+    assert terminal.faces == {'58': JPEG}
+
+
+def test_unlinked_namesake_on_the_device_is_taken_over_not_created_twice(cabinet, terminal):
+    terminal.people.update({'77': 'Карамат', '78': 'Камола'})
+    employee_id = staff(cabinet)
+    upload(cabinet, employee_id)
+    sent = push(cabinet, employee_id).json()['employee']
+    assert (sent['hikvision']['state'], sent['hikvision']['employee_no']) == ('sent', '77')
+    assert terminal.count(PERSON_RECORD) == 0
+    assert terminal.faces == {'77': JPEG}
+
+
+@pytest.mark.parametrize('device, extra_staff', [
+    ({'77': 'Карамат', '78': 'Карамат'}, False),
+    ({'77': 'Карамат'}, True),
+])
+def test_namesakes_are_left_to_the_accountant(cabinet, terminal, device, extra_staff):
+    terminal.people.update(device)
+    employee_id = staff(cabinet)
+    if extra_staff:
+        staff(cabinet, role='официант', group='Обслуживание зала')
+    upload(cabinet, employee_id)
+    failed = push(cabinet, employee_id).json()['employee']
+    assert failed['hikvision']['state'] == 'error'
+    assert failed['hikvision']['message'] == \
+        'В Hikvision уже есть люди с таким именем — номер привяжет бухгалтер в «Сотрудниках».'
+    assert terminal.count(PERSON_RECORD) == 0 and terminal.face_records == []
+    assert roster(cabinet).manager_card(employee_id)['hikvision_employee_no'] is None
+
+
+def test_without_hikvision_the_photo_waits_and_says_why(tmp_path):
+    with TestClient(sqlite_app(tmp_path, None), base_url='http://127.0.0.1',
+                    client=('127.0.0.1', 50000)) as client:
+        employee_id = staff(client)
+        upload(client, employee_id)
+        waiting = push(client, employee_id).json()['employee']
+        assert waiting['hikvision']['state'] == 'pending'
+        assert waiting['hikvision']['message'] == 'Hikvision не подключён — карточка сохранена и ждёт отправки.'
+        assert home(client)['hikvision'] == {'configured': False}
+        # Человек уже привязан бухгалтером — ждёт только лицо.
+        roster(client).set_hikvision_id(employee_id, '204')
+        waiting = push(client, employee_id).json()['employee']
+        assert waiting['hikvision']['state'] == 'sent'
+        assert waiting['hikvision']['face'] == {
+            'state': 'pending', 'message': 'Hikvision не подключён — фото сохранено и ждёт отправки.'}
+
+
+# ── Посещаемость, опрос и номера (М-03) ────────────────────────────────────
+
+def test_passes_before_confirmation_land_in_the_same_card(cabinet):
+    employee_id = staff(cabinet)
+    number = roster(cabinet).reserve_employee_no(employee_id, ())
     store = cabinet.app.state.attendance_store
     entered = datetime(2026, 10, 9, 9, 31, tzinfo=TZ)
     store.ingest(HikvisionEvent('retro-main-entry', 'serial-1', number, entered), None)
-    push(cabinet, card['id'])
+    upload(cabinet, employee_id)
+    assert push(cabinet, employee_id).json()['employee']['hikvision']['employee_no'] == number
     first = store.first_entries(entered.date())
-    assert first[card['id']].occurred_at == entered
+    assert first[employee_id].occurred_at == entered
 
 
 def test_reserved_number_is_never_name_linked_or_imported_as_a_second_card(tmp_path):
     path = tmp_path / 'accountant.sqlite3'
-    roster = RosterStore(path)
+    roster_store = RosterStore(path)
     AttendanceStore(path)
-    employee_id, created = roster.manager_create(
-        name='Карамат', role='Хостес', group_name='Встреча гостей', direction='Зал',
-        employment_type='temporary', created_by='karina', request_key=str(uuid4()))
-    assert created
-    number = roster.manager_card(employee_id)['hikvision_employee_no']
+    employee_id = roster_store.add(name='Карамат', role='хостес', rate=None, group_name='Встреча гостей').id
+    number = roster_store.reserve_employee_no(employee_id, ())
     # На устройстве есть тёзка под другим номером: по имени её не привязываем.
-    report = roster.link_hikvision_people((HikvisionPerson('900', 'Карамат'),))
+    report = roster_store.link_hikvision_people((HikvisionPerson('900', 'Карамат'),))
     assert report['linked'] == 0
-    assert roster.list()[0].hikvision_id is None
-    imported = roster.import_hikvision_people((HikvisionPerson(number, 'Карамат'),))
+    assert roster_store.list()[0].hikvision_id is None
+    imported = roster_store.import_hikvision_people((HikvisionPerson(number, 'Карамат'),))
     assert imported['created'] == 0
-    assert len(roster.list()) == 1
+    assert len(roster_store.list()) == 1
     # Опрос увидел нашего человека под нашим номером — отправка дошла.
-    report = roster.link_hikvision_people((HikvisionPerson(number, 'Карамат'),))
+    report = roster_store.link_hikvision_people((HikvisionPerson(number, 'Карамат'),))
     assert report['linked'] == 1
-    assert roster.list()[0].hikvision_id == number
-    assert roster.manager_card(employee_id)['hikvision_state'] == 'sent'
+    assert roster_store.list()[0].hikvision_id == number
+    assert roster_store.manager_card(employee_id)['hikvision_state'] == 'sent'
 
 
 def test_numbers_follow_the_largest_known_one(tmp_path):
     path = tmp_path / 'accountant.sqlite3'
-    roster, store = RosterStore(path), AttendanceStore(path)
-    person = roster.add(name='Баходиров Ихтиер', role='менеджер', rate='360000', group_name='Управление')
-    roster.set_hikvision_id(person.id, '120')
+    roster_store, store = RosterStore(path), AttendanceStore(path)
+    person = roster_store.add(name='Баходиров Ихтиер', role='менеджер', rate='360000', group_name='Управление')
+    roster_store.set_hikvision_id(person.id, '120')
     store.ingest(HikvisionEvent('entry', 's-1', '133', datetime(2026, 10, 8, 9, 0, tzinfo=TZ)), None)
     store.ingest(HikvisionEvent('entry', 's-2', '4400123456789', datetime(2026, 10, 8, 9, 1, tzinfo=TZ)), None)
-    ids = [roster.manager_create(name=name, role='Хостес', group_name='Встреча гостей', direction='Зал',
-                                 employment_type='shift', created_by='karina', request_key=str(uuid4()))[0]
+    ids = [roster_store.add(name=name, role='хостес', rate=None, group_name='Встреча гостей').id
            for name in ('Карамат', 'Камола')]
-    assert [roster.manager_card(item)['hikvision_employee_no'] for item in ids] == ['134', '135']
+    assert [roster_store.reserve_employee_no(item, ()) for item in ids] == ['134', '135']
+    # Выданный номер не меняется при повторе.
+    assert roster_store.reserve_employee_no(ids[0], (HikvisionPerson('500', 'Кто-то'),)) == '134'
+
+
+def test_concurrent_reservations_give_distinct_numbers_and_repeat_the_same(tmp_path):
+    roster_store = RosterStore(tmp_path / 'accountant.sqlite3')
+    first, second = (roster_store.add(name=name, role='хостес', rate=None, group_name='Встреча гостей').id
+                     for name in ('Карамат', 'Камола'))
+
+    async def together(*ids):
+        return await asyncio.gather(*(asyncio.to_thread(roster_store.reserve_employee_no, item, ())
+                                      for item in ids))
+
+    numbers = asyncio.run(together(first, second, first, second))
+    assert numbers[0] == numbers[2] and numbers[1] == numbers[3]
+    assert sorted(set(numbers)) == ['1', '2']
+
+
+def test_namesakes_on_the_device_raise_instead_of_guessing(tmp_path):
+    roster_store = RosterStore(tmp_path / 'accountant.sqlite3')
+    employee_id = roster_store.add(name='Карамат Юсупова', role='хостес', rate=None,
+                                   group_name='Встреча гостей').id
+    people = (HikvisionPerson('77', 'Юсупова Карамат'), HikvisionPerson('78', 'юсупова  карамат'))
+    with pytest.raises(DeviceNamesakes):
+        roster_store.reserve_employee_no(employee_id, people)
+    # Один из тёзок уже привязан к другому сотруднику — второй наш.
+    other = roster_store.add(name='Другая Сотрудница', role='хостес', rate=None, group_name='Встреча гостей')
+    roster_store.set_hikvision_id(other.id, '78')
+    assert roster_store.reserve_employee_no(employee_id, people) == '77'
+
+
+def test_accountant_cannot_hand_a_reserved_number_to_someone_else(tmp_path):
+    roster_store = RosterStore(tmp_path / 'accountant.sqlite3')
+    employee_id = roster_store.add(name='Карамат', role='хостес', rate=None, group_name='Встреча гостей').id
+    number = roster_store.reserve_employee_no(employee_id, ())
+    other = roster_store.add(name='Камола', role='хостес', rate='150000', group_name='Встреча гостей')
+    with pytest.raises(ValueError, match='Карамат'):
+        roster_store.set_hikvision_id(other.id, number)
+
+
+# ── Хранение фото ──────────────────────────────────────────────────────────
+
+def test_photo_lives_with_the_card_and_face_mark_follows_the_photo_version(tmp_path):
+    roster_store = RosterStore(tmp_path / 'accountant.sqlite3')
+    employee_id = roster_store.add(name='Карамат', role='хостес', rate=None, group_name='Встреча гостей').id
+    first = roster_store.set_photo(employee_id, 'image/jpeg', JPEG, by='karina')
+    second = roster_store.set_photo(employee_id, 'image/png', PNG, by='karina')
+    assert roster_store.photo(employee_id) == (PNG, 'image/png', second)
+    # Отправка старого снимка закончилась после загрузки нового: отметку не ставим.
+    assert roster_store.record_face(employee_id, 'sent', None, version=first) is False
+    assert roster_store.manager_card(employee_id)['face_state'] == 'pending'
+    assert roster_store.record_face(employee_id, 'sent', None, version=second) is True
+    with pytest.raises(ValueError):
+        roster_store.set_photo(employee_id, 'image/gif', b'GIF89a')
+    roster_store.delete(employee_id)
+    assert roster_store.photo(employee_id) is None
 
 
 def test_old_roster_gains_the_new_columns_without_losing_rows(tmp_path):
@@ -458,40 +710,11 @@ def test_old_roster_gains_the_new_columns_without_losing_rows(tmp_path):
             hikvision_id TEXT UNIQUE)''')
         connection.execute("INSERT INTO accountant_employees (source_row, name, role, group_name, rate, hikvision_id) "
                            "VALUES (1, 'Баходиров Ихтиер', 'менеджер', 'Управление', '360000', '7')")
-    roster = RosterStore(path)
+    roster_store = RosterStore(path)
     RosterStore(path)  # повторный запуск миграции ничего не ломает
-    person, = roster.list()
+    person, = roster_store.list()
     assert (person.name, str(person.rate), person.hikvision_id, person.employment_type) == (
         'Баходиров Ихтиер', '360000', '7', 'shift')
-    assert roster.manager_card(person.id)['created_by'] is None
-
-
-def test_concurrent_double_tap_creates_one_card(tmp_path):
-    path = tmp_path / 'accountant.sqlite3'
-    roster = RosterStore(path)
-    key = str(uuid4())
-
-    def save():
-        return roster.manager_create(name='Карамат', role='Хостес', group_name='Встреча гостей',
-                                     direction='Зал', employment_type='temporary',
-                                     created_by='karina', request_key=key)
-
-    async def both():
-        return await asyncio.gather(asyncio.to_thread(save), asyncio.to_thread(save))
-
-    first, second = asyncio.run(both())
-    assert first[0] == second[0]
-    assert sorted((first[1], second[1])) == [False, True]
-    assert len(roster.list()) == 1
-
-
-def test_accountant_cannot_hand_a_reserved_number_to_someone_else(tmp_path):
-    path = tmp_path / 'accountant.sqlite3'
-    roster = RosterStore(path)
-    employee_id, _ = roster.manager_create(
-        name='Карамат', role='Хостес', group_name='Встреча гостей', direction='Зал',
-        employment_type='temporary', created_by='karina', request_key=str(uuid4()))
-    number = roster.manager_card(employee_id)['hikvision_employee_no']
-    other = roster.add(name='Камола', role='хостес', rate='150000', group_name='Встреча гостей')
-    with pytest.raises(ValueError, match='Карамат'):
-        roster.set_hikvision_id(other.id, number)
+    row = roster_store.manager_card(person.id)
+    assert (row['face_state'], row['photo_updated_at']) == (None, None)
+    assert roster_store.photo(person.id) is None

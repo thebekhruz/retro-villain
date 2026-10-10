@@ -3320,6 +3320,65 @@ globalThis.RetroTemplatesUz.push(
   [/^Должность «(.+)» — из направления «(.+)», а не «(.+)»\.$/, "«$1» lavozimi «$2» yo'nalishiga tegishli, «$3»ga emas."],
 );
 /* ── /T-432 ── */
+/* ── Кабинет менеджера: список и фото (сотрудников заводит бухгалтер) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Выберите сотрудника и сфотографируйте его — по фото терминал узнает человека на входе. Новых сотрудников заводит бухгалтер.':
+    "Xodimni tanlang va suratga oling — kirishdagi terminal odamni surat bo'yicha taniydi. Yangi xodimlarni buxgalter qo'shadi.",
+  'Найти по имени или должности': "Ism yoki lavozim bo'yicha qidirish",
+  'Найти сотрудника': 'Xodimni qidirish',
+  'Без фото': 'Suratsiz',
+  'Сотрудник': 'Xodim',
+  'Назад к списку': "Ro'yxatga qaytish",
+  'Сфотографировать': 'Suratga olish',
+  'Переснять фото': 'Qayta suratga olish',
+  'Фото ещё нет': "Hali surat yo'q",
+  'Фото сохранено': 'Surat saqlandi',
+  'Загружаем фото…': 'Surat yuklanmoqda…',
+  'Добавляем в Hikvision…': "Hikvision'ga qo'shilmoqda…",
+  'В Hikvision': "Hikvision'da",
+  'Отмечает бухгалтер вручную — на устройство не отправляем': "Buxgalter qo'lda belgilaydi — qurilmaga yuborilmaydi",
+  'Ждёт отправки в Hikvision': "Hikvision'ga yuborilishini kutmoqda",
+  'В Hikvision уйдёт вместе с фото': "Hikvision'ga surat bilan birga yuboriladi",
+  'Фото на устройстве': 'Surat qurilmada',
+  'Отправляем фото на устройство…': 'Surat qurilmaga yuborilmoqda…',
+  'Фото не на устройстве': "Surat qurilmada yo'q",
+  'Фото ждёт отправки на устройство': 'Surat qurilmaga yuborilishini kutmoqda',
+  'Лицо прямо, без очков и кепки, на светлом фоне. Снимайте при хорошем свете — так терминал узнает человека с первого раза.':
+    "Yuz to'g'ri, ko'zoynak va kepkasiz, och fonda. Yaxshi yorug'likda suratga oling — shunda terminal odamni birinchi urinishda taniydi.",
+  'Нет фото': "Surat yo'q",
+  'Ошибка': 'Xato',
+  'Фото есть': 'Surat bor',
+  'В ваших разделах пока нет сотрудников': "Bo'limlaringizda hali xodimlar yo'q",
+  'Сотрудников ваших разделов пока нет. Их заводит бухгалтер в «Сотрудниках».': "Bo'limlaringizda hali xodimlar yo'q. Ularni buxgalter «Xodimlar» bo'limida qo'shadi.",
+  'У всех есть фото.': 'Hammaning surati bor.',
+  'Ошибок нет.': "Xatolar yo'q.",
+  'Нет связи с панелью. Проверьте интернет и повторите.': "Panel bilan aloqa yo'q. Internetni tekshirib, qayta urinib ko'ring.",
+  'Нет связи — фото не сохранилось. Сфотографируйте ещё раз.': "Aloqa yo'q — surat saqlanmadi. Qayta suratga oling.",
+  'Не удалось открыть фото. Сфотографируйте ещё раз.': "Suratni ochib bo'lmadi. Qayta suratga oling.",
+  // Ответы сервера кабинета.
+  'Сотрудника нет в реестре — возможно, бухгалтер его удалил.': "Xodim reyestrda yo'q — ehtimol, buxgalter uni o'chirgan.",
+  'Этот сотрудник — из другого направления.': "Bu xodim boshqa bo'limdan.",
+  'Сначала сфотографируйте сотрудника.': 'Avval xodimni suratga oling.',
+  'Нужна фотография в формате JPEG или PNG.': 'JPEG yoki PNG formatidagi surat kerak.',
+  'Не удалось прочитать фото — выберите снимок ещё раз.': "Suratni o'qib bo'lmadi — suratni qayta tanlang.",
+  'Фото больше 2 МБ — выберите снимок поменьше.': "Surat 2 MB dan katta — kichikroq surat tanlang.",
+  'У сотрудника нет фото.': "Xodimning surati yo'q.",
+  'Отмечает бухгалтер вручную — на устройство не отправляем.': "Buxgalter qo'lda belgilaydi — qurilmaga yuborilmaydi.",
+  'В Hikvision уже есть люди с таким именем — номер привяжет бухгалтер в «Сотрудниках».': "Hikvision'da shu ismli odamlar bor — raqamni buxgalter «Xodimlar» bo'limida bog'laydi.",
+  'Фото ждёт отправки в Hikvision.': "Surat Hikvision'ga yuborilishini kutmoqda.",
+  'Фото не ушло на устройство — отправьте ещё раз.': 'Surat qurilmaga yuborilmadi — qayta yuboring.',
+  'Hikvision не подключён — фото сохранено и ждёт отправки.': "Hikvision ulanmagan — surat saqlandi va yuborilishini kutmoqda.",
+  'Hikvision недоступен — фото не ушло на устройство. Отправьте ещё раз.': "Hikvision ishlamayapti — surat qurilmaga yuborilmadi. Qayta yuboring.",
+  'Hikvision не ответил вовремя — фото не ушло на устройство. Отправьте ещё раз.': "Hikvision o'z vaqtida javob bermadi — surat qurilmaga yuborilmadi. Qayta yuboring.",
+  'Hikvision не принял учётную запись панели — фото не ушло на устройство. Нужна проверка доступа к устройству.': "Hikvision panel hisobini qabul qilmadi — surat qurilmaga yuborilmadi. Qurilmaga kirishni tekshirish kerak.",
+  'Устройство не приняло фото: лицо должно быть крупно и хорошо видно. Загрузите другое фото и отправьте ещё раз.': "Qurilma suratni qabul qilmadi: yuz yirik va aniq ko'rinishi kerak. Boshqa surat yuklab, qayta yuboring.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Фото есть у (\d+) из (\d+)$/, "$2 kishidan $1 tasining surati bor"],
+  [/^Никого не нашли по «(.+)»\. Если человека нет в списке — попросите бухгалтера завести карточку\.$/,
+    "«$1» bo'yicha hech kim topilmadi. Agar odam ro'yxatda bo'lmasa — buxgalterdan karta ochishni so'rang."],
+);
+/* ── /Кабинет менеджера: список и фото ── */
 
 /* ── T-433 Вход по номеру телефона и SMS-коду ── */
 Object.assign(globalThis.RetroDictionaryUz, {

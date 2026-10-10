@@ -18,7 +18,8 @@
 <div class="rm-phone">
   <p id="mgr-message" class="shokh-message" role="status" aria-live="polite" hidden></p>
 
-  <!-- ── Главная: поиск по общей базе и свои сотрудники ───────────────── -->
+  <!-- ── Главная: сотрудники своих разделов. Заводит их бухгалтер, менеджер —
+       выбирает человека и фотографирует. ─────────────────────────────── -->
   <section id="screen-home" class="shokh-screen">
     <header class="shokh-hero rm-phone-hero">
       <div class="shokh-hero-top">
@@ -34,109 +35,72 @@
         <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
         <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
       </div>
-      <p id="home-hikvision" class="shokh-balance-sub mgr-hik-line"></p>
+      <div class="mgr-progress" aria-live="polite">
+        <span id="progress-text" class="mgr-progress-text">&nbsp;</span>
+        <span class="mgr-progress-bar" aria-hidden="true"><i id="progress-bar"></i></span>
+      </div>
     </header>
 
     <div class="shokh-body-scroll">
-      <article class="rm-phone-card mgr-search-card">
-        <label class="shokh-field"><span>Найти в общей базе</span>
-          <input id="search" type="search" class="shokh-search" maxlength="80" autocomplete="off"
-                 placeholder="ФИО или должность">
-        </label>
-        <p id="search-note" class="shokh-note mgr-search-note" hidden></p>
-        <div id="search-results" class="shokh-purchases" hidden></div>
-      </article>
-
-      <article class="rm-phone-card" id="mine-card">
-        <strong class="shokh-card-title"><span>Мои сотрудники</span><span id="mine-count" class="shokh-spent"></span></strong>
-        <div id="mine" class="shokh-purchases" aria-busy="true">
+      <article class="rm-phone-card mgr-list-card">
+        <p class="mgr-lead">Выберите сотрудника и сфотографируйте его — по фото терминал узнает человека на входе. Новых сотрудников заводит бухгалтер.</p>
+        <input id="search" type="search" class="shokh-search" maxlength="80" autocomplete="off"
+               placeholder="Найти по имени или должности" aria-label="Найти сотрудника">
+        <div class="mgr-filters" role="group" aria-label="Показать">
+          <button type="button" class="mgr-filter is-on" data-filter="all" aria-pressed="true">Все <b id="count-all"></b></button>
+          <button type="button" class="mgr-filter" data-filter="nophoto" aria-pressed="false">Без фото <b id="count-nophoto"></b></button>
+          <button type="button" class="mgr-filter" data-filter="problem" aria-pressed="false">Ошибки <b id="count-problem"></b></button>
+        </div>
+        <div id="list" class="shokh-purchases" aria-busy="true">
           <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:58%"></span><span class="rm-skel" style="width:36%"></span></span></div>
           <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:44%"></span><span class="rm-skel" style="width:30%"></span></span></div>
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:52%"></span><span class="rm-skel" style="width:34%"></span></span></div>
         </div>
+        <p id="list-note" class="shokh-note mgr-list-note" hidden></p>
       </article>
     </div>
-
-    <div class="shokh-cta">
-      <button id="new-employee" class="shokh-primary" type="button">
-        <span class="shokh-plus" aria-hidden="true">+</span>
-        <span><b>Новый сотрудник</b><small>Сменный или временный · сразу в Hikvision</small></span>
-      </button>
-    </div>
   </section>
 
-  <!-- ── Новый сотрудник ─────────────────────────────────────────────── -->
-  <section id="screen-form" class="shokh-screen" hidden>
-    <header class="shokh-flow-head">
-      <button id="form-close" class="shokh-round" type="button" aria-label="Закрыть">×</button>
-      <div class="shokh-step-label"><b>Новый сотрудник</b></div>
-      <span class="mgr-head-spacer" aria-hidden="true"></span>
-    </header>
-    <div class="shokh-flow-body">
-      <form id="employee-form" class="shokh-step" novalidate>
-        <label class="shokh-field"><span>ФИО кириллицей</span>
-          <input id="f-name" name="name" type="text" maxlength="160" autocomplete="off" autocapitalize="words"
-                 spellcheck="false" placeholder="Фамилия Имя">
-        </label>
-        <p id="f-name-error" class="rm-field-msg mgr-field-error" role="alert" hidden></p>
-        <label class="shokh-field"><span>Должность</span>
-          <input id="f-role" name="role" type="text" maxlength="80" autocomplete="off" list="role-options"
-                 placeholder="Например, хостес">
-        </label>
-        <datalist id="role-options"></datalist>
-        <p id="f-role-error" class="rm-field-msg mgr-field-error" role="alert" hidden></p>
-        <label class="shokh-field"><span>Направление</span>
-          <select id="f-direction" name="direction"></select>
-        </label>
-        <div class="shokh-field mgr-type"><span id="type-label">Тип</span>
-          <div class="shokh-switch shokh-mode" role="group" aria-labelledby="type-label">
-            <button type="button" class="shokh-switch-btn is-on" data-type="shift" aria-pressed="true">Сменный</button><button type="button" class="shokh-switch-btn" data-type="temporary" aria-pressed="false">Временный</button>
-          </div>
-        </div>
-        <p class="shokh-note">Ставку назначит бухгалтер. После сохранения карточка сама уйдёт в Hikvision.</p>
-
-        <!-- Похожие в базе: решает менеджер, тёзок сами не объединяем. -->
-        <article id="similar" class="rm-phone-card mgr-similar" hidden>
-          <strong class="shokh-card-title">Похожие уже есть в базе</strong>
-          <p class="shokh-note">Это он? Откройте карточку. Если это другой человек — сохраните нового.</p>
-          <div id="similar-list" class="shokh-purchases"></div>
-          <button id="similar-new" class="shokh-dashed" type="button">Это другой человек — сохранить</button>
-        </article>
-      </form>
-    </div>
-    <div class="shokh-flow-nav">
-      <button id="form-cancel" class="shokh-secondary" type="button">Отмена</button>
-      <button id="form-save" class="shokh-primary is-flat" type="button">Сохранить</button>
-    </div>
-  </section>
-
-  <!-- ── Карточка сотрудника и статус Hikvision ───────────────────────── -->
+  <!-- ── Сотрудник: фото и путь на терминал Hikvision ─────────────────── -->
   <section id="screen-card" class="shokh-screen" hidden>
     <header class="shokh-flow-head">
-      <button id="card-close" class="shokh-round" type="button" aria-label="Назад">‹</button>
-      <div class="shokh-step-label"><b>Карточка сотрудника</b></div>
+      <button id="card-close" class="shokh-round" type="button" aria-label="Назад к списку">‹</button>
+      <div class="shokh-step-label"><b>Сотрудник</b></div>
       <span class="mgr-head-spacer" aria-hidden="true"></span>
     </header>
     <div class="shokh-flow-body">
       <div class="shokh-step">
-        <article class="rm-phone-card shokh-summary">
-          <div class="shokh-summary-row"><span>ФИО</span><strong id="card-name" data-i18n="off">—</strong></div>
-          <div class="shokh-summary-row"><span>Должность</span><strong id="card-role">—</strong></div>
-          <div class="shokh-summary-row"><span>Направление</span><strong id="card-direction">—</strong></div>
-          <div class="shokh-summary-row"><span>Тип</span><strong id="card-type">—</strong></div>
-          <div class="shokh-summary-row" id="card-author-row"><span>Добавил</span><strong id="card-author" data-i18n="off">—</strong></div>
-        </article>
+        <div class="mgr-person">
+          <button id="card-avatar" class="mgr-avatar" type="button" aria-label="Сфотографировать">
+            <img id="card-photo" alt="" hidden>
+            <b id="card-initials" data-i18n="off"></b>
+            <span class="mgr-avatar-cam" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+            </span>
+          </button>
+          <strong id="card-name" class="mgr-person-name" data-i18n="off">—</strong>
+          <span id="card-role" class="mgr-person-role"></span>
+        </div>
+
         <div id="card-status" class="shokh-save mgr-status" role="status" aria-live="polite">
-          <div id="step-saved" class="shokh-save-step is-ok"><i aria-hidden="true"></i><span>Карточка сохранена</span></div>
+          <div id="step-photo" class="shokh-save-step is-wait"><i aria-hidden="true"></i><span id="step-photo-title">Фото ещё нет</span></div>
           <div id="step-hik" class="shokh-save-step is-wait"><i aria-hidden="true"></i><span id="step-hik-title">Hikvision</span><b id="step-hik-no" data-i18n="off"></b></div>
+          <div id="step-face" class="shokh-save-step is-wait" hidden><i aria-hidden="true"></i><span id="step-face-title">Фото на устройстве</span></div>
           <p id="card-hik-note" class="shokh-save-error" hidden></p>
           <span class="shokh-save-bar" aria-hidden="true"><span></span></span>
         </div>
+
+        <p id="card-hint" class="mgr-hint">Лицо прямо, без очков и кепки, на светлом фоне. Снимайте при хорошем свете — так терминал узнает человека с первого раза.</p>
         <button id="card-retry" class="shokh-secondary mgr-retry" type="button" hidden>Отправить ещё раз</button>
       </div>
     </div>
     <div class="shokh-flow-nav">
-      <button id="card-done" class="shokh-primary is-flat" type="button">Готово</button>
+      <button id="card-shoot" class="shokh-primary is-flat mgr-shoot" type="button">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+        <span id="card-shoot-label">Сфотографировать</span>
+      </button>
     </div>
+    <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
   </section>
 </div>
 </body>

@@ -1,8 +1,9 @@
 """Hikvision ISAPI client for people and entrance events.
 
-Reads people and passes. The only write is adding one person from the
-manager cabinet (create_person): it is explicit, never runs from the
-poller, and success means the device confirmed the person.
+Reads people and passes. Writes come only from the manager cabinet: adding
+one person (create_person) and that person's face (upload_face). Both are
+explicit, never run from the poller, and success means the device confirmed
+the record.
 """
 
 from __future__ import annotations
@@ -29,6 +30,11 @@ EVENT_PAGE_SIZE = 50
 # Срок действия карточки на устройстве для новых людей. Конец — как у
 # заводских карточек Hikvision: «бессрочно» в пределах формата устройства.
 VALID_UNTIL = '2037-12-31T23:59:59'
+# Лицо человека: библиотека лиц терминала доступа — «blackFD» с номером 1,
+# FPID — тот же номер, что у человека (employeeNo).
+FACE_RECORD = '/ISAPI/Intelligent/FDLib/FaceDataRecord?format=json'
+FACE_SETUP = '/ISAPI/Intelligent/FDLib/FDSetUp?format=json'
+FACE_LIBRARY = {'faceLibType': 'blackFD', 'FDID': '1'}
 
 
 class HikvisionError(Exception):
@@ -171,10 +177,55 @@ def _status_payload(raw: bytes) -> dict | None:
     return decoded if isinstance(decoded, dict) else None
 
 
+def _status_text(status: dict) -> str:
+    text = ' '.join(str(status.get(key, '')) for key in ('subStatusCode', 'errorMsg', 'statusString'))
+    return text.replace(' ', '').casefold()
+
+
 def _already_exists(status: dict) -> bool:
     """«employeeNoAlreadyExist» / «employeeNo already exist» — номер занят."""
-    text = ' '.join(str(status.get(key, '')) for key in ('subStatusCode', 'errorMsg', 'statusString'))
-    return 'alreadyexist' in text.replace(' ', '').casefold()
+    return 'alreadyexist' in _status_text(status)
+
+
+def _accepted(response: httpx.Response, status: dict | None) -> bool:
+    return (response.status_code == 200 and status is not None
+            and _integer(status.get('statusCode'), None) == 1)
+
+
+def _face_exists(status: dict) -> bool:
+    """«deviceUserAlreadyExistFace» / «faceExist» — у человека лицо уже есть."""
+    text = _status_text(status)
+    return 'faceexist' in text or ('face' in text and 'alreadyexist' in text)
+
+
+def _face_failure(response: httpx.Response, status: dict | None) -> HikvisionError:
+    if response.status_code == 200 and status is None:
+        return HikvisionError('invalid_response')
+    # «Invalid Content» на фото — устройство не нашло или не приняло лицо.
+    # Пропавший человек (…NotExist) — не про снимок, это обычный отказ.
+    if (status is not None and _integer(status.get('statusCode'), None) == 6
+            and 'notexist' not in _status_text(status)):
+        return HikvisionError('face_rejected')
+    return HikvisionError('device_error')
+
+
+def face_multipart(employee_no: str, image: bytes, mime: str = 'image/jpeg',
+                   boundary: str | None = None) -> tuple[bytes, str]:
+    """Тело FaceDataRecord / FDSetUp: JSON-часть «FaceDataRecord» и снимок «img».
+
+    Тело собирается целиком заранее: digest-повтор после 401 шлёт те же байты."""
+    record = json.dumps({**FACE_LIBRARY, 'FPID': employee_no}, separators=(',', ':')).encode()
+    while boundary is None or boundary.encode() in image:
+        boundary = 'retro' + secrets.token_hex(12)
+    extension = 'png' if mime == 'image/png' else 'jpg'
+    mark = b'--' + boundary.encode()
+    content = b''.join((
+        mark, b'\r\nContent-Disposition: form-data; name="FaceDataRecord"\r\n',
+        b'Content-Type: application/json\r\n\r\n', record, b'\r\n',
+        mark, b'\r\nContent-Disposition: form-data; name="img"; filename="face.',
+        extension.encode(), b'"\r\nContent-Type: ', mime.encode(), b'\r\n\r\n', image, b'\r\n',
+        mark, b'--\r\n'))
+    return content, f'multipart/form-data; boundary={boundary}'
 
 
 def _event_time(value) -> datetime | None:
@@ -241,41 +292,48 @@ class HikvisionClient:
         self._challenge = DigestChallenge.parse(response.headers.get('WWW-Authenticate'))
         self._nonce_count = 0
 
-    def _authorization(self, target: str) -> str:
+    def _authorization(self, method: str, target: str) -> str:
         if self._challenge is None:
             raise HikvisionError('unauthorized')
         self._nonce_count += 1
         return build_digest_header(
             self._challenge, username=self.config.username, password=self.config.password,
-            method='POST', request_target=target, nonce_count=self._nonce_count,
+            method=method, request_target=target, nonce_count=self._nonce_count,
             cnonce=self._cnonce())
 
-    async def _attempt(self, target: str, content: bytes) -> httpx.Response:
+    async def _attempt(self, method: str, target: str, content: bytes,
+                       content_type: str) -> httpx.Response:
         headers = {
-            'Authorization': self._authorization(target),
-            'Content-Type': 'application/json',
+            'Authorization': self._authorization(method, target),
+            'Content-Type': content_type,
             'Content-Length': str(len(content)),
         }
         try:
-            return await self._http.post(self._url(target), content=content, headers=headers)
+            return await self._http.request(method, self._url(target), content=content, headers=headers)
         except httpx.TimeoutException:
             raise HikvisionError('timeout') from None
         except httpx.HTTPError:
             raise HikvisionError('network') from None
 
-    async def _exchange(self, target: str, body: dict) -> httpx.Response:
+    async def _send(self, method: str, target: str, content: bytes,
+                    content_type: str) -> httpx.Response:
+        """Запрос с digest: JSON и multipart идут одним путём. Устаревший
+        nonce (401) обновляется один раз, и тело уходит повторно как есть."""
         await self._ensure_challenge()
-        content = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()
-        response = await self._attempt(target, content)
+        response = await self._attempt(method, target, content, content_type)
         if response.status_code == 401:
             self._challenge = DigestChallenge.parse(response.headers.get('WWW-Authenticate'))
             self._nonce_count = 0
-            response = await self._attempt(target, content)
+            response = await self._attempt(method, target, content, content_type)
         if response.status_code == 401:
             raise HikvisionError('unauthorized')
         if len(response.content) > MAX_RESPONSE_BYTES:
             raise HikvisionError('invalid_response')
         return response
+
+    async def _exchange(self, target: str, body: dict) -> httpx.Response:
+        content = json.dumps(body, ensure_ascii=False, separators=(',', ':')).encode()
+        return await self._send('POST', target, content, 'application/json')
 
     async def _post_json(self, target: str, body: dict) -> str:
         response = await self._exchange(target, body)
@@ -316,6 +374,22 @@ class HikvisionClient:
         if response.status_code == 200 and status is None:
             raise HikvisionError('invalid_response')
         raise HikvisionError('device_error')
+
+    async def upload_face(self, employee_no: str, image: bytes, *, mime: str = 'image/jpeg') -> str:
+        """Лицо человека под номером employee_no. 'created' — устройство
+        приняло новое лицо; 'replaced' — лицо у номера уже было, и его
+        заменили (FDSetUp). Человек на устройстве должен уже быть."""
+        content, content_type = face_multipart(employee_no, image, mime)
+        response = await self._send('POST', FACE_RECORD, content, content_type)
+        status = _status_payload(response.content)
+        if _accepted(response, status):
+            return 'created'
+        if status is not None and _face_exists(status):
+            response = await self._send('PUT', FACE_SETUP, content, content_type)
+            status = _status_payload(response.content)
+            if _accepted(response, status):
+                return 'replaced'
+        raise _face_failure(response, status)
 
     async def fetch_people(self) -> tuple[HikvisionPerson, ...]:
         people: list[HikvisionPerson] = []

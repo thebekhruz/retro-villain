@@ -6,11 +6,12 @@
 # поэтому локально всё работало, а на сервере приложение не поднималось.
 from __future__ import annotations
 
+import base64
 import re
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -37,8 +38,6 @@ GROUPS = {
 }
 
 HIKVISION_ID = re.compile(r'[0-9A-Za-z_-]+')
-EMPLOYMENT_TYPES = ('shift', 'temporary')
-REQUEST_KEY = re.compile(r'[0-9A-Za-z-]{8,64}')
 # Номер для Hikvision выдаём сами: следующий после самого большого известного.
 # Длинные числа (номера карт и т. п.) в счёт не берём.
 EMPLOYEE_NO_DIGITS = 9
@@ -92,6 +91,16 @@ def parse_money(value, *, allow_zero=True) -> Decimal:
             or amount > Decimal('1000000000000') or amount.as_tuple().exponent < -2):
         raise ValueError('Сумма должна быть неотрицательной, не более 1 трлн сум и с точностью до тиына.')
     return amount
+
+
+# Фото сотрудника: снимок с телефона менеджера, уже ужатый экраном.
+PHOTO_TYPES = ('image/jpeg', 'image/png')
+MAX_PHOTO_BYTES = 2 * 1024 * 1024
+
+
+class DeviceNamesakes(ValueError):
+    """На устройстве несколько непривязанных людей с этим именем (или тёзка
+    есть и в реестре): чей номер — решает бухгалтер, сами не выбираем."""
 
 
 def normalized_hikvision_name(value: str) -> str:
@@ -218,18 +227,35 @@ class RosterStore:
             # Кабинет менеджера (ТЗ 09.10, М-01…М-03). Колонки только
             # добавляются: старые карточки становятся «сменными» без менеджера,
             # их выплаты, посещаемость и привязки остаются как были.
-            # request_key — ключ запроса «Сохранить»: повтор после обрыва связи
-            # находит ту же карточку. hikvision_employee_no — номер для
-            # устройства, выданный до отправки: повтор шлёт тот же номер.
-            # hikvision_id появляется, только когда устройство подтвердило.
+            # employment_type/direction/created_by/created_at/request_key —
+            # из первой версии кабинета, где менеджер сам заводил карточки;
+            # теперь карточки заводит только бухгалтер, и эти колонки больше не
+            # пишутся, но остаются (на проде они уже могут быть).
+            # hikvision_employee_no — номер для устройства, выданный до
+            # отправки: повтор шлёт тот же номер. hikvision_id появляется,
+            # только когда устройство подтвердило.
+            # face_* — отправка лица на устройство: человек и его лицо уходят
+            # отдельными запросами, и сбой лица не отменяет добавленного человека.
             for column, declaration in (
                     ('employment_type', "TEXT NOT NULL DEFAULT 'shift'"),
                     ('direction', 'TEXT'), ('created_by', 'TEXT'), ('created_at', 'TEXT'),
                     ('request_key', 'TEXT'), ('hikvision_employee_no', 'TEXT'),
                     ('hikvision_state', 'TEXT'), ('hikvision_error', 'TEXT'),
-                    ('hikvision_synced_at', 'TEXT')):
+                    ('hikvision_synced_at', 'TEXT'), ('face_state', 'TEXT'), ('face_error', 'TEXT'),
+                    ('face_synced_at', 'TEXT')):
                 if column not in employee_columns:
                     connection.execute(f'ALTER TABLE accountant_employees ADD COLUMN {column} {declaration}')
+            # Фото сотрудника — своей таблицей, чтобы списки реестра не тащили
+            # снимки. Base64-текстом: одинаково в SQLite и Postgres, без
+            # BLOB/BYTEA. updated_at — версия снимка для адреса ?v= и для
+            # отметки «лицо отправлено» именно этого снимка.
+            connection.execute('''CREATE TABLE IF NOT EXISTS accountant_employee_photos (
+                employee_id INTEGER PRIMARY KEY,
+                mime TEXT NOT NULL,
+                data TEXT NOT NULL,
+                updated_at TEXT NOT NULL,
+                updated_by TEXT
+            )''')
             connection.execute('CREATE UNIQUE INDEX IF NOT EXISTS accountant_employee_request_key '
                                'ON accountant_employees(request_key) WHERE request_key IS NOT NULL')
             connection.execute('CREATE UNIQUE INDEX IF NOT EXISTS accountant_employee_hikvision_no '
@@ -358,6 +384,8 @@ class RosterStore:
                         self._stamp_version(connection, gone_id, deleted=True)
                     connection.execute('DELETE FROM accountant_employees WHERE source_row NOT IN (%s)' %
                                        placeholders, tuple(source_rows))
+                    connection.execute('DELETE FROM accountant_employee_photos WHERE employee_id NOT IN '
+                                       '(SELECT id FROM accountant_employees)')
                 for row in rows:
                     cursor = connection.execute(
                         'SELECT id,name FROM accountant_employees WHERE source_row = ?',
@@ -500,8 +528,9 @@ class RosterStore:
         unique_people = {person.employee_no: person for person in people if person.employee_no}
         employees = self.list()
         already_ids = {employee.hikvision_id for employee in employees if employee.hikvision_id}
-        # Карточки менеджера ждут свой номер: по имени их не привязываем, а их
-        # номер ни к кому другому не прикрепляем (ТЗ 09.10, М-03).
+        # Карточки, отправленные из кабинета менеджера, ждут свой номер: по
+        # имени их не привязываем, а их номер ни к кому другому не прикрепляем
+        # (ТЗ 09.10, М-03).
         reserved = self._reserved_numbers()
         already_ids |= set(reserved)
         unlinked_by_name: dict[str, list[Employee]] = {}
@@ -524,7 +553,7 @@ class RosterStore:
         with closing(self._open()) as connection, connection:
             for person in unique_people.values():
                 if person.employee_no in reserved:
-                    # Номер выдан менеджером, а ответ устройства мы потеряли:
+                    # Номер выдан под отправку, а ответ устройства мы потеряли:
                     # человек там есть — значит, отправка дошла.
                     employee_id, name = reserved[person.employee_no]
                     if device_name_matches(person.name, name) and \
@@ -807,6 +836,7 @@ class RosterStore:
             self._stamp_version(connection, employee_id, deleted=True)
             deleted = connection.execute('DELETE FROM accountant_employees WHERE id = ?',
                                          (employee_id,)).rowcount
+            connection.execute('DELETE FROM accountant_employee_photos WHERE employee_id = ?', (employee_id,))
         if not deleted:
             raise ValueError('Сотрудник не найден.')
 
@@ -863,14 +893,13 @@ class RosterStore:
                             new_group=derived_group, details='; '.join(notes))
         return next(person for person in self.list() if person.id == employee_id)
 
-    # ── Кабинет менеджера (ТЗ 09.10, М-01…М-04) ────────────────────────────
-    # Менеджер заводит сменного или временного сотрудника с телефона, система
-    # сама отправляет его в Hikvision. Карточка — обычная строка реестра:
-    # бухгалтер видит её в «Сотрудниках» и «Зарплате · день» и ставит ставку.
-    # Номер для устройства выдаётся и записывается ДО отправки, поэтому
-    # повтор после обрыва связи шлёт тот же номер, а не заводит второго
-    # человека. hikvision_id (привязка, по которой идут проходы) появляется
-    # только после подтверждения устройства.
+    # ── Кабинет менеджера (ТЗ 09.10, М-01…М-03) ────────────────────────────
+    # Карточки заводит бухгалтер. Менеджер выбирает человека своего
+    # направления, фотографирует, и система отправляет в Hikvision человека
+    # (если его там ещё нет) и его лицо. Номер для устройства выдаётся и
+    # записывается ДО отправки, поэтому повтор после обрыва связи шлёт тот же
+    # номер, а не заводит второго человека. hikvision_id (привязка, по
+    # которой идут проходы) появляется только после подтверждения устройства.
 
     def _reserved_numbers(self) -> dict[str, tuple[int, str]]:
         """Номера, выданные под отправку, но ещё не подтверждённые устройством."""
@@ -900,85 +929,131 @@ class RosterStore:
                    if value and value.isdigit() and len(value) <= EMPLOYEE_NO_DIGITS]
         return str(max(numbers, default=0) + 1)
 
-    def by_request_key(self, request_key: str) -> int | None:
-        with closing(self._open()) as connection:
-            row = connection.execute('SELECT id FROM accountant_employees WHERE request_key = ?',
-                                     (request_key,)).fetchone()
-        return row[0] if row else None
+    def reserve_employee_no(self, employee_id: int, device_people: tuple[HikvisionPerson, ...]) -> str:
+        """Номер для устройства сотруднику без привязки — до отправки, чтобы
+        повтор шёл с тем же номером. Уже выданный номер не меняется.
 
-    def manager_create(self, *, name: str, role: str, group_name: str, direction: str,
-                       employment_type: str, created_by: str | None,
-                       request_key: str) -> tuple[int, bool]:
-        """Карточка от менеджера. Возвращает (id, создана ли сейчас).
-
-        Повтор с тем же ключом запроса (двойной тап, обрыв связи) отдаёт уже
-        созданную карточку — второй строки в реестре не будет."""
-        name, role = person_name(name), role_name(role)
-        if employment_type not in EMPLOYMENT_TYPES:
-            raise ValueError('Выберите тип: сменный или временный.')
-        if group_name not in set(GROUPS.values()) | {'Кухня'}:
-            raise ValueError('Неизвестная группа.')
-        key = (request_key or '').strip()
-        if not REQUEST_KEY.fullmatch(key):
-            raise ValueError('Обновите страницу и сохраните ещё раз.')
-        existing = self.by_request_key(key)
-        if existing is not None:
-            return existing, False
+        Человек с этим именем уже есть на устройстве и ни к кому не привязан —
+        берём его номер, второго не заводим (сверка та же, что у опроса:
+        имя без регистра и порядка слов, уникальное с обеих сторон). Таких
+        несколько или тёзка есть и в реестре — DeviceNamesakes. Иначе —
+        новый номер выше всех известных и всех номеров на устройстве."""
+        on_device = {person.employee_no for person in device_people if person.employee_no}
         for _ in range(5):
             try:
                 with closing(self._open()) as connection, connection:
                     if not self.db.is_postgres:
-                        # Номер и строка реестра выдаются по одному.
                         connection.execute('BEGIN IMMEDIATE')
-                    source_row = connection.execute('SELECT COALESCE(MAX(source_row), 0) + 1 '
-                                                    'FROM accountant_employees').fetchone()[0]
-                    employee_no = self._next_employee_no(connection)
-                    employee_id = connection.execute(
-                        'INSERT INTO accountant_employees (source_row, name, role, group_name, rate, '
-                        'employment_type, direction, created_by, created_at, request_key, '
-                        'hikvision_employee_no, hikvision_state) '
-                        'VALUES (?, ?, ?, ?, NULL, ?, ?, ?, ?, ?, ?, ?)',
-                        (source_row, name, role, group_name, employment_type, direction, created_by,
-                         datetime.now(TZ).isoformat(timespec='seconds'), key, employee_no,
-                         'pending')).lastrowid
-                    # Как у бухгалтера: карточка действует с начала времён, чтобы
-                    # вчерашнюю смену временного можно было выдать сегодня.
-                    self._stamp_version(connection, employee_id, day='0001-01-01')
-                    self._audit(connection, employee_id, action='create', by=created_by,
-                                reason='Добавлен менеджером', new_group=group_name,
-                                details=' · '.join((
-                                    'Временный' if employment_type == 'temporary' else 'Сменный',
-                                    direction, f'номер для Hikvision {employee_no}')))
-                return employee_id, True
+                    row = connection.execute(
+                        'SELECT name, hikvision_id, hikvision_employee_no FROM accountant_employees WHERE id = ?',
+                        (employee_id,)).fetchone()
+                    if row is None:
+                        raise ValueError('Сотрудник не найден.')
+                    if row[1] or row[2]:
+                        return row[1] or row[2]
+                    key = normalized_hikvision_name(row[0])
+                    taken = {value for (value,) in connection.execute(
+                        'SELECT hikvision_id FROM accountant_employees WHERE hikvision_id IS NOT NULL '
+                        'UNION SELECT hikvision_employee_no FROM accountant_employees '
+                        'WHERE hikvision_employee_no IS NOT NULL')}
+                    candidates = {person.employee_no for person in device_people
+                                  if person.employee_no and person.employee_no not in taken
+                                  and normalized_hikvision_name(person.name or '') == key}
+                    namesakes = [other for other, in connection.execute(
+                        'SELECT name FROM accountant_employees WHERE id <> ? AND hikvision_id IS NULL '
+                        'AND manual_attendance = 0', (employee_id,))
+                        if normalized_hikvision_name(other) == key]
+                    if len(candidates) > 1 or (candidates and namesakes):
+                        raise DeviceNamesakes(key)
+                    number = candidates.pop() if candidates else self._next_employee_no(connection, on_device)
+                    connection.execute('UPDATE accountant_employees SET hikvision_employee_no = ? '
+                                       'WHERE id = ? AND hikvision_id IS NULL AND hikvision_employee_no IS NULL',
+                                       (number, employee_id))
+                return number
             except Exception as error:
                 if not unique_violation(error):
                     raise
-                existing = self.by_request_key(key)
-                if existing is not None:
-                    return existing, False
-                # Номер или строку реестра в ту же секунду занял другой — берём следующие.
-        raise ValueError('Не удалось выдать номер для Hikvision. Сохраните ещё раз.')
+                # Номер в ту же секунду выдали другому — берём следующий.
+        raise ValueError('Не удалось выдать номер для Hikvision.')
 
     def manager_card(self, employee_id: int) -> dict | None:
         rows = self.manager_cards(employee_id=employee_id)
         return rows[0] if rows else None
 
     def manager_cards(self, *, employee_id: int | None = None) -> list[dict]:
-        """Поля карточки для кабинета менеджера — без ставок и выплат."""
-        query = ('SELECT id, name, role, group_name, hikvision_id, manual_attendance, employment_type, '
-                 'direction, created_by, created_at, hikvision_employee_no, hikvision_state, '
-                 'hikvision_error, hikvision_synced_at FROM accountant_employees')
+        """Поля карточки для кабинета менеджера — без ставок и выплат. От фото
+        только версия (photo_updated_at): сам снимок читает photo()."""
+        query = ('SELECT e.id, e.name, e.role, e.group_name, e.hikvision_id, e.manual_attendance, '
+                 'e.employment_type, e.hikvision_employee_no, e.hikvision_state, e.hikvision_error, '
+                 'e.hikvision_synced_at, e.face_state, e.face_error, e.face_synced_at, p.updated_at '
+                 'FROM accountant_employees e LEFT JOIN accountant_employee_photos p ON p.employee_id = e.id')
         params = ()
         if employee_id is not None:
-            query += ' WHERE id = ?'
+            query += ' WHERE e.id = ?'
             params = (employee_id,)
         with closing(self._open()) as connection:
-            rows = connection.execute(query + ' ORDER BY source_row', params).fetchall()
+            rows = connection.execute(query + ' ORDER BY e.source_row', params).fetchall()
         return [dict(id=row[0], name=row[1], role=row[2], group=row[3], hikvision_id=row[4],
                      manual_attendance=bool(row[5]), employment_type=row[6] or 'shift',
-                     direction=row[7], created_by=row[8], created_at=row[9],
-                     hikvision_employee_no=row[10], hikvision_state=row[11],
-                     hikvision_error=row[12], hikvision_synced_at=row[13]) for row in rows]
+                     hikvision_employee_no=row[7], hikvision_state=row[8], hikvision_error=row[9],
+                     hikvision_synced_at=row[10], face_state=row[11], face_error=row[12],
+                     face_synced_at=row[13], photo_updated_at=row[14]) for row in rows]
+
+    def set_photo(self, employee_id: int, mime: str, content: bytes, *, by: str | None = None) -> str:
+        """Новое фото сотрудника. Лицо на устройстве после этого снова «ждёт
+        отправки»: на нём старый снимок. Возвращает версию снимка."""
+        if mime not in PHOTO_TYPES or not content or len(content) > MAX_PHOTO_BYTES:
+            raise ValueError('Нужна фотография JPEG или PNG до 2 МБ.')
+        now = datetime.now(TZ)
+        with closing(self._open()) as connection, connection:
+            exists = connection.execute('SELECT 1 FROM accountant_employees WHERE id = ?',
+                                        (employee_id,)).fetchone()
+            if exists is None:
+                raise ValueError('Сотрудник не найден.')
+            before = connection.execute('SELECT updated_at FROM accountant_employee_photos WHERE employee_id = ?',
+                                        (employee_id,)).fetchone()
+            replaced = before is not None
+            # Версия только растёт: два снимка в одну миллисекунду не делят
+            # ни адрес ?v=, ни отметку «лицо отправлено».
+            if replaced and now <= datetime.fromisoformat(before[0]):
+                now = datetime.fromisoformat(before[0]) + timedelta(milliseconds=1)
+            stamp = now.isoformat(timespec='milliseconds')
+            connection.execute(
+                'INSERT INTO accountant_employee_photos (employee_id, mime, data, updated_at, updated_by) '
+                'VALUES (?, ?, ?, ?, ?) ON CONFLICT(employee_id) DO UPDATE SET mime = excluded.mime, '
+                'data = excluded.data, updated_at = excluded.updated_at, updated_by = excluded.updated_by',
+                (employee_id, mime, base64.b64encode(content).decode('ascii'), stamp, by))
+            connection.execute("UPDATE accountant_employees SET face_state = 'pending', face_error = NULL "
+                               'WHERE id = ?', (employee_id,))
+            self._audit(connection, employee_id, action='update', by=by,
+                        reason='Фото заменено' if replaced else 'Добавлено фото')
+        return stamp
+
+    def photo(self, employee_id: int) -> tuple[bytes, str, str] | None:
+        """(снимок, MIME, версия) или None, если фото нет."""
+        with closing(self._open()) as connection:
+            row = connection.execute('SELECT data, mime, updated_at FROM accountant_employee_photos '
+                                     'WHERE employee_id = ?', (employee_id,)).fetchone()
+        if row is None:
+            return None
+        return base64.b64decode(row[0]), row[1], row[2]
+
+    def record_face(self, employee_id: int, state: str, error: str | None, *, version: str,
+                    by: str | None = None) -> bool:
+        """Итог отправки лица — только для того снимка, что ушёл (version).
+        Пока шла отправка, менеджер мог загрузить новое фото: тогда отметка
+        не ставится, и новое лицо по-прежнему ждёт отправки."""
+        stamp = datetime.now(TZ).isoformat(timespec='seconds')
+        with closing(self._open()) as connection, connection:
+            updated = connection.execute(
+                'UPDATE accountant_employees SET face_state = ?, face_error = ?, face_synced_at = ? '
+                'WHERE id = ? AND EXISTS (SELECT 1 FROM accountant_employee_photos '
+                'WHERE employee_id = ? AND updated_at = ?)',
+                (state, error, stamp, employee_id, employee_id, version)).rowcount
+            if updated and state == 'sent':
+                self._audit(connection, employee_id, action='hikvision', by=by,
+                            reason='Фото добавлено в Hikvision')
+        return bool(updated)
 
     def reassign_employee_no(self, employee_id: int, taken: set[str], *, by: str | None = None) -> str:
         """Номер на устройстве занят чужим человеком — выдать новый, выше

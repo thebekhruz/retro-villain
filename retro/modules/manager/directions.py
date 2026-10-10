@@ -6,8 +6,8 @@
 Направление — то, за что отвечает менеджер (ТЗ 09.10, М-01): кухня,
 уборка, зал. В реестре бухгалтера людей делят группы («Обслуживание зала»,
 «Встреча гостей», «Бар»…), поэтому направление — набор групп. Группы те же,
-что в roster.group_for: новый сотрудник встаёт в ту группу, где его ждут
-«Сотрудники» и «Зарплата · день».
+что в roster.group_for. Менеджер видит и фотографирует сотрудников групп
+своих направлений; заводит карточки только бухгалтер.
 """
 
 from dataclasses import dataclass
@@ -17,16 +17,6 @@ DIRECTIONS: dict[str, tuple[str, ...]] = {
     'Зал': ('Обслуживание зала', 'Встреча гостей', 'Бар', 'Присмотр за детьми'),
     'Уборка': ('Уборка',),
 }
-
-# Подсказки в поле «Должность»: к ним добавляются должности, которые уже
-# есть в реестре у групп направления.
-DIRECTION_ROLES: dict[str, tuple[str, ...]] = {
-    'Кухня': ('Повар', 'Кондитер'),
-    'Зал': ('Официант', 'Ранер', 'Хостес', 'Бармен', 'Няня'),
-    'Уборка': ('Техперсонал',),
-}
-
-EMPLOYMENT_TYPES = {'shift': 'Сменный', 'temporary': 'Временный'}
 
 
 @dataclass(frozen=True)
@@ -38,9 +28,17 @@ class ManagerAccount:
     login: str
     role: str
     directions: tuple[str, ...]
+    # Весь ресторан: администратор и менеджер без строки в
+    # DASHBOARD_MANAGER_DIRECTIONS. Видит и группы вне направлений
+    # («Управление», «Охрана») — иначе их некому сфотографировать.
+    everyone: bool = False
 
-    def owns(self, direction: str) -> bool:
-        return direction in self.directions
+    def groups(self) -> set[str]:
+        """Группы реестра всех направлений учётной записи."""
+        return {group for name in self.directions for group in DIRECTIONS[name]}
+
+    def sees(self, group: str | None) -> bool:
+        return self.everyone or group in self.groups()
 
 
 def parse_manager_directions(value: str, panel_users: dict[str, tuple[str, str]]) -> dict[str, tuple[str, ...]]:
@@ -66,20 +64,3 @@ def parse_manager_directions(value: str, panel_users: dict[str, tuple[str, str]]
             raise ValueError('DASHBOARD_MANAGER_DIRECTIONS: направления — ' + ', '.join(DIRECTIONS) + '.')
         result[login] = directions
     return result
-
-
-def group_in_direction(direction: str, role_group: str | None) -> str | None:
-    """Группа нового сотрудника: по должности, если она из этого направления;
-    незнакомая должность («Тандырщик») — первая группа направления. None —
-    должность из чужого направления (официант у менеджера кухни)."""
-    groups = DIRECTIONS[direction]
-    if role_group is None:
-        return groups[0]
-    return role_group if role_group in groups else None
-
-
-def direction_of_group(group: str | None) -> str | None:
-    for name, groups in DIRECTIONS.items():
-        if group in groups:
-            return name
-    return None
