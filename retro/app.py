@@ -16,7 +16,7 @@ from retro.accounting_access import require_accounting_dates
 from retro.accounting_period import ACCOUNTING_START
 from retro.report_cache import ReportCache, load_iiko
 from retro.financial_requests import FinancialRequests
-from retro.static_assets import IMMUTABLE, Pages
+from retro.static_assets import IMMUTABLE, VERSIONED_PRIVATE, Pages
 from retro.config import Settings
 from retro.db import Database
 from retro.integrations.iiko import IikoClient
@@ -44,6 +44,7 @@ from retro.modules.director.store import DirectorReportStore
 from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
+from retro.modules.manager.routes import router as manager_router
 from retro.modules.founder.chat import FounderChatStore
 from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
@@ -63,7 +64,7 @@ PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js
                 '/static/favicon-32.png', '/static/apple-touch-icon.png'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
-              'shokh': '/shokh', 'admin': '/', 'all': '/'}
+              'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
 FULL_ACCESS_ROLES = {'admin', 'all'}
 SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс Шохруха».'
 
@@ -113,7 +114,11 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'founder.css': {'founder'}, 'founder-cabinet.css': {'founder'},
         # Закуп · Шох
         'shokh.html': {'shokh'}, 'shokh.js': {'shokh'}, 'shokh-logic.js': {'shokh'},
-        'shokh.css': {'shokh'},
+        # Телефонный каркас закупа — тот же у кабинета менеджера: те же классы.
+        'shokh.css': {'shokh', 'manager'},
+        # Менеджер (ТЗ 09.10, М-01): регистрация сотрудников с телефона
+        'manager.html': {'manager'}, 'manager.js': {'manager'}, 'manager-logic.js': {'manager'},
+        'manager.css': {'manager'},
     }.items()
 }
 
@@ -140,6 +145,8 @@ def panel_for_path(path: str) -> str | None:
         return 'founder'
     if path == '/shokh' or path.startswith('/shokh/') or path.startswith('/api/shokh/'):
         return 'shokh'
+    if path == '/manager' or path.startswith('/manager/') or path.startswith('/api/manager/'):
+        return 'manager'
     return None
 
 
@@ -172,7 +179,8 @@ def dashboard_identity(
 
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
-               broadcast_transport=None, hikvision_client=None, hikvision_poller=None):
+               broadcast_transport=None, hikvision_client=None, hikvision_poller=None,
+               hikvision_writer=None):
     configure_logging()
     settings = settings or Settings.from_env()
 
@@ -190,6 +198,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         finally:
             if poller is not None:
                 await poller.stop()
+            writer = application.state.hikvision_writer
+            if writer is not None and writer is not getattr(poller, 'client', None):
+                close = getattr(writer, 'close', None)
+                if close is not None:
+                    await close()
             if application.state.cashier_days is not None:
                 await application.state.cashier_days.close()
             if application.state.menu_sync is not None:
@@ -255,6 +268,18 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             app.state.attendance_store)
     else:
         app.state.hikvision_poller = None
+    # Запись в Hikvision — только из кабинета менеджера (человек и его фото).
+    # Свой клиент, а не опросчика: у каждого своя digest-сессия, и отправка не
+    # ждёт очереди опроса. Без HIKVISION_URL — None: карточка ждёт отправки.
+    if hikvision_writer is not None:
+        app.state.hikvision_writer = hikvision_writer
+    elif settings.hikvision is not None:
+        app.state.hikvision_writer = HikvisionClient(settings.hikvision)
+    else:
+        app.state.hikvision_writer = None
+    app.state.manager_push_locks = {}
+    from retro.modules.manager.device_photos import DevicePhotos
+    app.state.manager_device_photos = DevicePhotos()
     director_path = director_db_path or shared or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
     # Меню — справочник, а не отчёт: лежит у нас и обновляется раз в неделю.
@@ -324,7 +349,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if reads is not None:
                 request_reads.end(reads)
         if not request.url.path.startswith('/static/'):
-            response.headers['Cache-Control'] = 'no-store'
+            # Фото сотрудника по адресу с ?v= не меняется: его роут сам просит
+            # долгий приватный кеш. Всё остальное API — no-store, как было.
+            if not ('v' in request.query_params
+                    and response.headers.get('Cache-Control') == VERSIONED_PRIVATE):
+                response.headers['Cache-Control'] = 'no-store'
         elif 'v' in request.query_params and response.status_code in (200, 304):
             # Адрес с хэшем содержимого (см. static_assets): файл по нему не меняется.
             response.headers['Cache-Control'] = IMMUTABLE
@@ -422,6 +451,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             raise HTTPException(404, SHOKH_MODULE_OFF)
         return app.state.pages.response('shokh.html')
 
+    @app.get('/manager')
+    def manager_page():
+        # Кабинет менеджера — только телефон (ТЗ 09.10, М-01).
+        return app.state.pages.response('manager.html')
+
     @app.get('/director')
     def director():
         # Телефон директора (6a). Прежний десктопный отчёт с полной таблицей
@@ -444,7 +478,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
                     ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),
-                    ('shokh', 'Закуп · Шох', '/shokh'))
+                    ('shokh', 'Закуп · Шох', '/shokh'), ('manager', 'Менеджер', '/manager'))
 
     @app.get('/api/config')
     def config(request: Request):
@@ -476,6 +510,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(shokh_router, dependencies=[Depends(shokh_module_on)])
     app.include_router(director_router)
     app.include_router(founder_router)
+    app.include_router(manager_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 

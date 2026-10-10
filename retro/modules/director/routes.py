@@ -328,9 +328,9 @@ def add_team_member(request: Request, body: TeamInput):
         if body.type == 'monthly':
             return dict(employee=roster.add_monthly(
                 name=body.name, role=body.role, salary=_amount(body.amount),
-                no_hikvision=body.manual_attendance, by=_who(request)).json())
+                no_hikvision=body.manual_attendance, by=_who(request), cyrillic=True).json())
         employee = roster.add(name=body.name, role=body.role, rate=_amount(body.amount),
-                              group_name=_group(body.role), by=_who(request))
+                              group_name=_group(body.role), by=_who(request), cyrillic=True)
         if body.manual_attendance:
             employee = roster.set_manual_attendance(employee.id, True, by=_who(request))
     except ValueError as error:
@@ -348,7 +348,7 @@ def update_shift_member(request: Request, employee_id: int, body: TeamUpdateInpu
         employee = roster.update(employee_id, name=body.name, role=body.role,
                                  rate=_amount(body.amount),
                                  group_name=_group(body.role, current.group_name),
-                                 reason='Изменено директором', by=_who(request))
+                                 reason='Изменено директором', by=_who(request), cyrillic=True)
         if body.manual_attendance is not None and body.manual_attendance != employee.manual_attendance:
             employee = roster.set_manual_attendance(employee_id, body.manual_attendance, by=_who(request))
     except ValueError as error:
@@ -371,7 +371,8 @@ def update_monthly_member(request: Request, employee_id: int, body: TeamUpdateIn
     # записанная бухгалтером в ту же секунду, не затёрлась старыми цифрами.
     try:
         employee = request.app.state.accountant_roster.update_monthly_basics(
-            employee_id, name=body.name, role=body.role, salary=_amount(body.amount), by=_who(request))
+            employee_id, name=body.name, role=body.role, salary=_amount(body.amount), by=_who(request),
+            cyrillic=True)
     except ValueError as error:
         raise HTTPException(404 if 'не найден' in str(error) else 422, str(error)) from None
     return dict(employee=employee.json())

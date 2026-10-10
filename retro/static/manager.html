@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143e35">
+  <title>Менеджер · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css">
+  <!-- Телефонный каркас — тот же, что у закупа (3a): те же классы и вид. -->
+  <link rel="stylesheet" href="/static/shokh.css">
+  <link rel="stylesheet" href="/static/manager.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/manager-logic.js" defer></script><script src="/static/manager.js" defer></script>
+</head>
+<body class="shokh-body mgr-body">
+<div class="rm-phone">
+  <p id="mgr-message" class="shokh-message" role="status" aria-live="polite" hidden></p>
+
+  <!-- ── Главная: сотрудники своих разделов. Заводит их бухгалтер, менеджер —
+       выбирает человека и фотографирует. ─────────────────────────────── -->
+  <section id="screen-home" class="shokh-screen">
+    <header class="shokh-hero rm-phone-hero">
+      <div class="shokh-hero-top">
+        <span class="shokh-mark" aria-hidden="true">М</span>
+        <div class="shokh-hello">
+          <strong>Кабинет менеджера</strong>
+          <span id="home-sub">&nbsp;</span>
+        </div>
+      </div>
+      <div class="shokh-hero-actions">
+        <!-- Администратор заходит сюда из меню панели — ему нужна дорога назад. -->
+        <a id="mgr-back" class="logout-button shokh-logout shokh-back" href="/login" hidden>‹ Панель</a>
+        <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+        <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
+      </div>
+      <div class="mgr-progress" aria-live="polite">
+        <span id="progress-text" class="mgr-progress-text">&nbsp;</span>
+        <span class="mgr-progress-bar" aria-hidden="true"><i id="progress-bar"></i></span>
+      </div>
+    </header>
+
+    <div class="shokh-body-scroll">
+      <article class="rm-phone-card mgr-list-card">
+        <p class="mgr-lead">Выберите сотрудника и добавьте фото с камеры или из галереи — оно отправится на терминал Hikvision. Новых сотрудников заводит бухгалтер.</p>
+        <p id="device-photo-note" class="shokh-note" role="status" hidden></p>
+        <input id="search" type="search" class="shokh-search" maxlength="80" autocomplete="off"
+               placeholder="Найти по имени или должности" aria-label="Найти сотрудника">
+        <div class="mgr-filters" role="group" aria-label="Показать">
+          <button type="button" class="mgr-filter is-on" data-filter="all" aria-pressed="true">Все <b id="count-all"></b></button>
+          <button type="button" class="mgr-filter" data-filter="nophoto" aria-pressed="false">Без фото <b id="count-nophoto"></b></button>
+          <button type="button" class="mgr-filter" data-filter="problem" aria-pressed="false">Ошибки <b id="count-problem"></b></button>
+        </div>
+        <!-- Раздел и должность внутри раздела — как чипы групп в «Сотрудниках». -->
+        <div id="groups" class="mgr-filters mgr-filters-sub" role="group" aria-label="Раздел"></div>
+        <div id="roles" class="mgr-filters mgr-filters-sub" role="group" aria-label="Должность" hidden></div>
+        <div id="list" class="shokh-purchases" aria-busy="true">
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:58%"></span><span class="rm-skel" style="width:36%"></span></span></div>
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:44%"></span><span class="rm-skel" style="width:30%"></span></span></div>
+          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:52%"></span><span class="rm-skel" style="width:34%"></span></span></div>
+        </div>
+        <p id="list-note" class="shokh-note mgr-list-note" hidden></p>
+      </article>
+    </div>
+  </section>
+
+  <!-- ── Сотрудник: фото и путь на терминал Hikvision ─────────────────── -->
+  <section id="screen-card" class="shokh-screen" hidden>
+    <header class="shokh-flow-head">
+      <button id="card-close" class="shokh-round" type="button" aria-label="Назад к списку">‹</button>
+      <div class="shokh-step-label"><b>Сотрудник</b></div>
+      <span class="mgr-head-spacer" aria-hidden="true"></span>
+    </header>
+    <div class="shokh-flow-body">
+      <div class="shokh-step">
+        <div class="mgr-person">
+          <button id="card-avatar" class="mgr-avatar" type="button" aria-label="Сфотографировать">
+            <img id="card-photo" alt="" hidden>
+            <b id="card-initials" data-i18n="off"></b>
+            <span class="mgr-avatar-cam" aria-hidden="true">
+              <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+            </span>
+          </button>
+          <strong id="card-name" class="mgr-person-name" data-i18n="off">—</strong>
+          <span id="card-role" class="mgr-person-role"></span>
+        </div>
+
+        <div id="card-status" class="shokh-save mgr-status" role="status" aria-live="polite">
+          <div id="step-photo" class="shokh-save-step is-wait"><i aria-hidden="true"></i><span id="step-photo-title">Фото ещё нет</span></div>
+          <div id="step-hik" class="shokh-save-step is-wait"><i aria-hidden="true"></i><span id="step-hik-title">Hikvision</span><b id="step-hik-no" data-i18n="off"></b></div>
+          <div id="step-face" class="shokh-save-step is-wait" hidden><i aria-hidden="true"></i><span id="step-face-title">Фото на устройстве</span></div>
+          <p id="card-hik-note" class="shokh-save-error" hidden></p>
+          <span class="shokh-save-bar" aria-hidden="true"><span></span></span>
+        </div>
+
+        <p id="card-hint" class="mgr-hint">Лицо прямо, без очков и кепки, на светлом фоне. Держите лицо по центру: фото обрезается до квадрата 1:1 без растягивания.</p>
+        <button id="card-retry" class="shokh-secondary mgr-retry" type="button" hidden>Отправить ещё раз</button>
+      </div>
+    </div>
+    <div class="shokh-flow-nav mgr-photo-actions">
+      <button id="card-shoot" class="shokh-primary is-flat mgr-shoot" type="button">
+        <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+        <span id="card-shoot-label">Сфотографировать</span>
+      </button>
+      <button id="card-gallery" class="shokh-secondary" type="button">Выбрать из галереи</button>
+    </div>
+    <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
+    <input id="gallery-input" type="file" accept="image/*" hidden>
+  </section>
+</div>
+</body>
+</html>
