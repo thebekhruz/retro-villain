@@ -22,7 +22,7 @@ from .service import DataError, TZ, demo_snapshot, today_tashkent
 from .transfer_breakdown import PAYMENT_NAME
 from .till import (HandoverChanged, NothingToHandOver, add_usd_deposit, delete_shokh_give,
                    delete_usd_deposit, give_shokh, hand_over, handover_check, shokh_gives, shokh_total,
-                   till_summary, usd_balance, usd_day)
+                   load_till_totals, till_summary, till_totals, usd_amount, usd_balance, usd_day, usd_deposits)
 
 router = APIRouter(prefix='/api/cashier', tags=['cashier'])
 
@@ -118,18 +118,27 @@ def save_usd_balance(request: Request, body: UsdBalanceInput):
 
 @router.get('/usd-deposits')
 def list_usd_deposits(request: Request, date: date):
-    return usd_day(request.app.state.accountant_finance, selected_day(date))
+    return usd_payload(request.app.state.accountant_finance, selected_day(date))
+
+
+def usd_payload(finance, day):
+    data = usd_day(finance, day)
+    return dict(data, revision=gives_revision(data['deposits']))
 
 
 @router.post('/usd-deposits', status_code=201)
-def add_usd(request: Request, body: AmountInput):
+async def add_usd(request: Request, body: AmountInput):
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
     try:
-        deposit = add_usd_deposit(finance, day, body.amount)
+        value = usd_amount(body.amount)
+        await request.app.state.usd_rates.get(day)
+        deposit = await asyncio.to_thread(add_usd_deposit, finance, day, value)
     except LedgerError as error:
         raise HTTPException(422, str(error)) from None
-    return dict(deposit=deposit, **usd_day(finance, day))
+    except DataError as error:
+        raise HTTPException(503, f'{error} Взнос не сохранён. Повторите после обновления курса.') from None
+    return dict(deposit=deposit, **await asyncio.to_thread(usd_payload, finance, day))
 
 
 @router.delete('/usd-deposits/{deposit_id}', status_code=204)
@@ -211,7 +220,7 @@ def screen_amount(value):
 
 
 @router.get('/summary')
-def day_summary(request: Request, date: date,
+async def day_summary(request: Request, date: date,
                 snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$')):
     """«К передаче» и «Касса за день» после записи кассира — числа с сервера,
     по тому снимку iiko, что открыт на экране."""
@@ -220,7 +229,8 @@ def day_summary(request: Request, date: date,
         snapshot = request.app.state.cache.get(snapshot_id, day)
     except DataError:
         raise HTTPException(409, 'Отчёт на экране устарел. Обновите его.') from None
-    return till_summary(request.app.state, day, snapshot)
+    totals = None if snapshot.demo else await load_till_totals(request.app.state, day)
+    return await asyncio.to_thread(till_summary, request.app.state, day, snapshot, totals=totals)
 
 
 @router.get('/payment-breakdown')
@@ -377,12 +387,13 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
                 ensure_ascii=False, sort_keys=True)
             result = replace(result, id=hashlib.sha256(registry_revision.encode()).hexdigest()[:32])
         state.cache.put(result)
+        totals = None if result.demo else await load_till_totals(state, day)
         # Передача дня бухгалтеру: «Передано в 21:40» у кассира. В демо — никогда.
         handover = None if result.demo else await asyncio.to_thread(handover_check, state, day)
         return {**result.json(),
                 'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured),
                 'handover': handover,
-                'summary': await asyncio.to_thread(till_summary, state, day, result)}
+                'summary': await asyncio.to_thread(till_summary, state, day, result, totals=totals)}
     except TimeoutError as error:
         log_safe_failure('cashier-route', error, operation='day_report',
                          request_id=request.state.request_id)
@@ -405,7 +416,7 @@ def till_expense_rows(day, gives):
 def download_report(request: Request, date: date,
                     snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$'),
                     expense_revision: str | None = None, receipt_revision: str | None = None,
-                    shokh_revision: str | None = None):
+                    shokh_revision: str | None = None, usd_revision: str | None = None):
     day = selected_day(date)
     try:
         snapshot = request.app.state.cache.get(snapshot_id, day)
@@ -416,11 +427,17 @@ def download_report(request: Request, date: date,
     expenses = [] if snapshot.demo else request.app.state.expenses.list(day)
     receipts = [] if snapshot.demo else request.app.state.expenses.list_receipts(day)
     gives = [] if snapshot.demo else shokh_gives(request.app.state.accountant_finance, day)
+    deposits = [] if snapshot.demo else usd_deposits(request.app.state.accountant_finance, day)
     if ((expense_revision is not None and expense_revision != entries_revision(expenses))
             or (receipt_revision is not None and receipt_revision != entries_revision(receipts))
-            or (shokh_revision is not None and shokh_revision != gives_revision(gives))):
-        raise HTTPException(409, 'Расходы или поступления изменились. Обновите день перед скачиванием.')
-    data = export_report(snapshot, [*expenses, *till_expense_rows(day, gives)], receipts)
+            or (shokh_revision is not None and shokh_revision != gives_revision(gives))
+            or (usd_revision is not None and usd_revision != gives_revision(deposits))):
+        raise HTTPException(409, 'Расходы, поступления или доллары изменились. Обновите день перед скачиванием.')
+    totals = None if snapshot.demo else till_totals(request.app.state, day)
+    data = export_report(snapshot, [*expenses, *till_expense_rows(day, gives)], receipts,
+                         usd_total=totals.usd_total if totals else Decimal(0),
+                         usd_rate=totals.usd_rate if totals else None,
+                         usd_deduction=totals.usd_deduction if totals else Decimal(0))
     prefix = 'DEMO-' if snapshot.demo else ''
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{prefix}Retro-{day.isoformat()}.xlsx"'})

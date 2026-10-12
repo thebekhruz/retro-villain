@@ -149,7 +149,8 @@
   const SKELETON={
     revenue:['day'],receipts:['day'],average:['day'],'real-cash':['day'],'payment-total':['day'],
     'prepay-received':['prepay'],'prepay-credited':['day'],'prepay-total':['prepay'],
-    handover:['day','expenses','receipts','shokh'],'demo-cash':['day'],'cash-prepay':['day'],
+    handover:['day','expenses','receipts','shokh','usd','rate'],'demo-cash':['day'],'cash-prepay':['day'],
+    'handover-usd':['day','usd','rate'],
     'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],
     'expense-total':['expenses','shokh'],'receipt-total':['receipts'],
     'usd-today':['usd'],'usd-safe':['usd'],'usd-official':['rate'],'usd-restaurant':['rate'],

@@ -86,7 +86,7 @@ def test_iiko_formula_names_are_rejected_before_export():
         build_snapshot(DAY, [row('2026-09-10', 1, 10)], [row('=1+2', 10)])
 
 
-def test_handover_formula_lives_only_on_the_server():
+def test_handover_formula_lives_only_on_the_server(monkeypatch):
     """Функционал §1: формула передачи одна — на сервере. Экран получает
     готовые числа (till_summary), своей копии формулы у него нет, поэтому
     сервер и экран не могут разойтись."""
@@ -110,6 +110,7 @@ def test_handover_formula_lives_only_on_the_server():
         def _open(self):
             raise AssertionError('not used')
     import retro.modules.cashier.till as till
+    monkeypatch.setattr(till, 'usd_deposits', lambda *_args: [])
     original = till.shokh_gives
     till.shokh_gives = lambda *_args: []
     try:

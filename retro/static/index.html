@@ -91,9 +91,13 @@
 
         <!-- Реестр предоплат (ТЗ, п. 3.2): деньги и время — из iiko, кто внёс,
              телефон и дата события — со слов гостя, их вписывает кассир. -->
-        <section class="rm-section cashier-prepay" id="prepay-section">
-          <div class="cashier-section-head">
+        <details class="rm-section cashier-prepay" id="prepay-section">
+          <summary class="cashier-section-head prepay-toggle">
             <div><p class="eyebrow">РЕЕСТР ПРЕДОПЛАТ</p><h2>Предоплаты</h2></div>
+            <span class="prepay-toggle-action"><span id="prepay-toggle-label">Развернуть</span><span class="rm-section-chevron" aria-hidden="true">⌄</span></span>
+          </summary>
+          <div id="prepay-content">
+          <div class="cashier-prepay-tabs">
             <div class="ops-tabs prepay-tabs" role="tablist" aria-label="Реестр предоплат">
               <button class="ops-tab is-active" type="button" role="tab" aria-selected="true" data-tab="received"><span class="prepay-tab-name">Получено сегодня</span> <b id="prepay-count-received" class="prepay-count">0</b></button>
               <button class="ops-tab" type="button" role="tab" aria-selected="false" data-tab="credited"><span class="prepay-tab-name">Зачтено сегодня</span> <b id="prepay-count-credited" class="prepay-count">0</b></button>
@@ -114,7 +118,8 @@
           <div id="prepay-empty" class="expense-empty prepay-empty">Предоплат за этот день нет.</div>
           <p id="prepay-note" class="cashier-pay-note" hidden></p>
           <div class="cashier-total"><span id="prepay-total-label">Итого получено</span><strong id="prepay-total" class="rm-num">0</strong></div>
-        </section>
+          </div>
+        </details>
 
         <!-- Ручной учёт: расходы и поступления рядом, а не по вкладкам —
              к концу смены заполняют и то, и другое. -->
@@ -159,6 +164,9 @@
           <div class="handover-rule"><span>+ Предоплаты</span><strong id="cash-prepay" class="rm-num">—</strong></div>
           <div class="handover-rule"><span>+ Поступления</span><strong id="handover-receipts" class="rm-num">—</strong></div>
           <div class="handover-rule"><span>− Расходы</span><strong id="handover-expenses" class="rm-num">0</strong></div>
+          <div class="handover-rule"><span>− Доллары в сейф</span><strong id="handover-usd" class="rm-num">—</strong></div>
+          <p id="handover-usd-detail" class="handover-caption" hidden></p>
+          <p id="handover-usd-issue" class="handover-caption is-warn" hidden></p>
           <!-- Нажатие записывает сумму у бухгалтера: в «Финансах дня» она из
                «ожидается» становится «получено» с временем. -->
           <!-- Предоплаты не посчитались (возврат аванса гонит смену в минус):
@@ -181,14 +189,15 @@
         </section>
 
         <section class="panel usd-card" id="usd-card">
-          <div class="usd-head"><p class="eyebrow">ДОЛЛАРЫ · СРАЗУ В СЕЙФ</p><span class="usd-aside-note">не в передаче</span></div>
-          <!-- Каждый взнос — приход «Доллары в сейфе» у бухгалтера; в передачу сумов не входит. -->
+          <div class="usd-head"><p class="eyebrow">ДОЛЛАРЫ · СРАЗУ В СЕЙФ</p><span class="usd-aside-note">вычет по курсу Retro</span></div>
+          <!-- Взнос увеличивает долларовый сейф, а его эквивалент уменьшает передачу сумов. -->
           <form id="usd-form" class="usd-balance-entry" novalidate>
             <label for="usd-amount" class="visually-hidden">Доллары в сейф, USD</label>
             <div class="usd-input"><input id="usd-amount" type="text" inputmode="decimal" autocomplete="off" placeholder="0"><span>USD</span></div>
             <button id="usd-add" class="usd-save" type="submit"><span class="usd-plus" aria-hidden="true">+</span> В сейф</button>
           </form>
           <p id="usd-hint" class="usd-hint">Введите сумму и нажмите «В сейф»</p>
+          <p class="usd-hint">Эквивалент в сумах вычитается из передачи бухгалтеру.</p>
           <div id="usd-deposits" class="usd-deposits" aria-live="polite"></div>
           <div class="usd-rates">
             <div class="usd-rate" id="usd-official-tile"><span>Курс ЦБ</span><strong id="usd-official" class="rm-num">—</strong></div>

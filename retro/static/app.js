@@ -30,7 +30,7 @@ const SKELETON_LISTS = {payments: ['day', 2, 'payment'], 'prepay-rows': ['prepay
   'expense-list': ['expenses', 1, 'item'], 'receipt-list': ['receipts', 1, 'item']};
 // Что гаснет, пока часть перечитывается: «К передаче» считается из всех.
 const SECTIONS = {day: ['metrics', 'payments-section', 'handover-panel'], expenses: ['expenses-section', 'handover-panel'],
-  shokh: ['expenses-section', 'handover-panel'], receipts: ['receipts-section', 'handover-panel'], usd: ['usd-card'], rate: ['usd-card'],
+  shokh: ['expenses-section', 'handover-panel'], receipts: ['receipts-section', 'handover-panel'], usd: ['usd-card', 'handover-panel'], rate: ['usd-card', 'handover-panel'],
   prepay: ['prepay-section']};
 function skeletonRows(count, kind) {
   const bar = width => { const node = document.createElement('span'); node.className = 'rm-skel'; node.style.width = width; return node; };
@@ -95,7 +95,7 @@ function removeRow(button, url, {part, reload, done, fail}) {
     .then(async () => {
       if (current !== generation) return false;
       await loadPart(part, current, reload(current));
-      if (part !== 'usd') await refreshSummary();
+      await refreshSummary();
       if (current === generation) done();
       return true;
     })
@@ -148,6 +148,7 @@ async function loadUsdRate(day, current, signal) {
     $('usd-official-tile').title = 'Курс ЦБ действует с ' + formattedDay(data.source_date);
     $('usd-status').textContent = '';
     showUsd();
+    await refreshSummary();
   } catch (error) {
     if (current === generation && error.name !== 'AbortError') {
       $('usd-status').textContent = error.message;
@@ -233,6 +234,8 @@ async function putUsd(day, value) {
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, amount:String(value)})}));
     if (current !== generation) return false;
     usdData = data; $('usd-amount').value = ''; $('usd-amount').dispatchEvent(new Event('input', {bubbles: true})); showUsd();
+    await refreshSummary();
+    if (current !== generation) return false;
     if (data.deposit) flashKey('cash-usd:' + data.deposit.id);
     const text = 'Положено в сейф: ' + usdFormat.format(value) + ' USD. Бухгалтер видит в «Резервах».';
     showUsdHint(text); globalThis.RetroToast?.show(text);
@@ -333,6 +336,14 @@ function showHandover() {
   $('expense-total').textContent = text('cash_out');
   $('handover-expenses').textContent = text('cash_out');
   $('handover-receipts').textContent = text('receipts');
+  $('handover-usd').textContent = text('usd_deduction');
+  const usdTotal = summaryValue('usd_total'), usdDayRate = summaryValue('usd_rate');
+  $('handover-usd-detail').hidden = !usdTotal || usdDayRate === null;
+  $('handover-usd-detail').textContent = usdTotal && usdDayRate !== null
+    ? `${usdFormat.format(usdTotal)} USD × ${rateRestaurant.format(usdDayRate)} = ${text('usd_deduction')} сум` : '';
+  const usdIssue = summary?.usd_issue;
+  $('handover-usd-issue').hidden = !usdIssue;
+  $('handover-usd-issue').textContent = usdIssue || '';
   const result = currentHandover();
   $('handover').textContent = result === null ? '—' : money.format(result);
   $('handover-number').classList.toggle('is-negative', result !== null && result < 0);
@@ -890,9 +901,20 @@ $('prepay-period').addEventListener('submit', event => {
   prepayEditing = null;
   Busy.button($('prepay-show'), loadPrepayPeriod());
 });
+const prepaySection = $('prepay-section');
+try { prepaySection.open = localStorage.getItem('retro.cashier.prepayments.open') === 'true'; } catch {}
+function showPrepayToggle() {
+  $('prepay-toggle-label').replaceChildren(prepaySection.open ? 'Свернуть' : 'Развернуть');
+}
+showPrepayToggle();
+prepaySection.addEventListener('toggle', () => {
+  showPrepayToggle();
+  try { localStorage.setItem('retro.cashier.prepayments.open', String(prepaySection.open)); } catch {}
+});
 $('prepay-open').addEventListener('click', event => {
   event.preventDefault();
-  $('prepay-section').scrollIntoView({behavior: 'smooth', block: 'start'});
+  prepaySection.open = true;
+  prepaySection.scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 
 function show(data) {
@@ -1093,7 +1115,7 @@ $('download').addEventListener('click', () => {
 async function downloadReport() {
   const data = snapshot, current = generation;
   try {
-    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}${shokhData && shokhData.revision ? "&shokh_revision=" + shokhData.revision : ""}`);
+    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}${shokhData && shokhData.revision ? "&shokh_revision=" + shokhData.revision : ""}${usdData?.revision ? "&usd_revision=" + usdData.revision : ""}`);
     const blob = await response.blob();
     if (current !== generation) return false;
     const url = URL.createObjectURL(blob), link = document.createElement('a');
