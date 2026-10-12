@@ -9,13 +9,14 @@
   своей таблице, а не среди движений его кассы (accountant_movements), поэтому
   ни в остаток бухгалтера, ни в его «Выдано Шоху на закуп» не попадают.
   Подотчёт Шоха (резерв `shoh`) считает их приходом, как выдачу бухгалтера.
-* Доллары «сразу в сейф» — приход резерва `usd` (реальные доллары). В передачу
-  сумов не входят.
+* Доллары «сразу в сейф» — приход резерва `usd` (реальные доллары). Их эквивалент
+  по сохранённому курсу Retro за день вычитается из передачи сумов.
 * Передача. Сумма считается на сервере по той же формуле, что у бухгалтера
   (cash_to_finance), из того снимка iiko, что открыт у кассира, и пишется в
   accountant_handover_days датой следующего дня — приход у бухгалтера.
 """
 
+import asyncio
 from contextlib import closing
 from dataclasses import dataclass
 from datetime import date
@@ -30,6 +31,7 @@ from retro.modules.accountant.audit import record_audit
 from retro.modules.accountant.ledger import LedgerError, amount_value, ensure_open, local_timestamp, now_stamp
 
 from .expenses import cash_to_finance
+from .service import DataError
 
 CASHIER = 'cashier'
 # Кассир переписывает только свою передачу или автоматическую (расчёт iiko вне
@@ -321,6 +323,14 @@ class TillTotals:
     expenses: Decimal   # расходы кассира (его база)
     shokh: Decimal      # выдано Шоху из кассы (база бухгалтера)
     receipts: Decimal   # прочие поступления наличными
+    usd_total: Decimal = Decimal(0)
+    usd_rate: Decimal | None = None
+    usd_deduction: Decimal | None = Decimal(0)
+
+    @property
+    def usd_issue(self):
+        return ('Нет курса Retro за этот день. Обновите курс USD перед передачей.'
+                if self.usd_deduction is None else None)
 
     @property
     def cash_out(self) -> Decimal:
@@ -334,23 +344,43 @@ def till_totals(state, day: date) -> TillTotals:
     режима, проверка передачи у учредителя, выгрузка кассы."""
     expenses = state.expenses.list(day)
     receipts = state.expenses.list_receipts(day)
+    # Старое поле legacy описывало остаток, а не новое поступление в сейф.
+    # Вычитаем только реальные взносы выбранного дня, не весь остаток сейфа.
+    usd_total = sum((Decimal(item['amount']) for item in usd_deposits(state.accountant_finance, day)
+                     if not item['legacy']), Decimal(0))
+    rate = state.usd_rates.stored(day) if usd_total else None
+    usd_deduction = usd_total * rate.restaurant_rate if rate else (None if usd_total else Decimal(0))
     return TillTotals(sum((item.amount for item in expenses), Decimal(0)),
                       shokh_total(shokh_gives(state.accountant_finance, day)),
-                      sum((item.amount for item in receipts), Decimal(0)))
+                      sum((item.amount for item in receipts), Decimal(0)),
+                      usd_total, rate.restaurant_rate if rate else None, usd_deduction)
 
 
-def expected_handover(snapshot, totals: TillTotals) -> Decimal:
-    return cash_to_finance(snapshot, totals.cash_out, totals.receipts)
+async def load_till_totals(state, day: date) -> TillTotals:
+    totals = await asyncio.to_thread(till_totals, state, day)
+    if totals.usd_deduction is None:
+        try:
+            await state.usd_rates.get(day)
+        except DataError as error:
+            log_safe_failure('cashier-till', error, operation='usd_handover_rate')
+            return totals
+        totals = await asyncio.to_thread(till_totals, state, day)
+    return totals
 
 
-def till_summary(state, day: date, snapshot) -> dict:
+def expected_handover(snapshot, totals: TillTotals) -> Decimal | None:
+    return cash_to_finance(snapshot, totals.cash_out, totals.receipts, totals.usd_deduction)
+
+
+def till_summary(state, day: date, snapshot, *, totals=None) -> dict:
     """Готовые числа карточки «К передаче бухгалтеру» и «Касса за день» (5a).
 
     Экран их не пересчитывает (Функционал §1): формула одна — здесь и в
     cash_to_finance. К передаче = «Демо» + предоплаты наличными + прочие
-    поступления − расходы наличными − выдано Шоху из кассы. Доллары и открытые
-    счета в неё не входят. В демо ручных операций нет."""
-    totals = TillTotals(Decimal(0), Decimal(0), Decimal(0)) if snapshot.demo else till_totals(state, day)
+    поступления − расходы наличными − выдано Шоху − доллары по курсу Retro.
+    Открытые счета не входят. В демо ручных операций нет."""
+    if totals is None or snapshot.demo:
+        totals = TillTotals(Decimal(0), Decimal(0), Decimal(0)) if snapshot.demo else till_totals(state, day)
     demo_cash = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
     register = snapshot.register_received_total
     if register is not None:
@@ -367,6 +397,10 @@ def till_summary(state, day: date, snapshot) -> dict:
                 cash_prepayment=str(snapshot.cash_prepayment) if snapshot.cash_prepayment is not None else None,
                 receipts=str(totals.receipts), expenses=str(totals.expenses),
                 shokh=str(totals.shokh), cash_out=str(totals.cash_out),
+                usd_total=str(totals.usd_total),
+                usd_rate=str(totals.usd_rate) if totals.usd_rate is not None else None,
+                usd_deduction=str(totals.usd_deduction) if totals.usd_deduction is not None else None,
+                usd_issue=totals.usd_issue,
                 handover=str(handover) if handover is not None else None,
                 prepayment_issue=snapshot.prepayment_issue,
                 sales=str(snapshot.revenue),
@@ -450,12 +484,16 @@ class NothingToHandOver(LedgerError):
 
 def hand_over(state, day: date, snapshot, *, expected: Decimal | None = None) -> dict:
     """Записать передачу кассира: сумма с сервера, а не из браузера."""
-    amount = expected_handover(snapshot, till_totals(state, day))
+    totals = till_totals(state, day)
+    amount = expected_handover(snapshot, totals)
+    if amount is None:
+        raise LedgerError(totals.usd_issue or snapshot.prepayment_issue or
+                          'Не удалось рассчитать передачу. Обновите день.')
     if expected is not None and abs(expected - amount) >= Decimal('0.01'):
         raise HandoverChanged(amount)
     if amount < 0:
         raise NothingToHandOver('Расходы больше наличных в кассе — передавать нечего. '
-                                'Проверьте расходы и выдачи Шоху.')
+                                'Проверьте расходы, выдачи Шоху и доллары в сейфе.')
     finance = state.accountant_finance
     finance.record_handover(receipt_day(day), amount, source=CASHIER, replace_sources=CASHIER_MAY_REPLACE)
     return finance.handover_state(receipt_day(day), current_expected=amount, cashier_active=True)

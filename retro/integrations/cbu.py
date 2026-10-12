@@ -80,7 +80,8 @@ class UsdRates:
                                (day.isoformat(), str(value)))
         return {'date': day.isoformat(), 'amount': str(value)}
 
-    def _stored(self, day: date):
+    def stored(self, day: date):
+        """Persisted rate for this day, without an external request."""
         with closing(self._open()) as connection:
             row = connection.execute(
                 'SELECT source_date, official_rate, restaurant_rate FROM cashier_usd_rates WHERE day = ?',
@@ -97,14 +98,14 @@ class UsdRates:
                     (day, source_date, official_rate, restaurant_rate) VALUES (?, ?, ?, ?)''',
                     (rate.day.isoformat(), rate.source_date.isoformat(),
                      str(rate.official_rate), str(rate.restaurant_rate)))
-        return self._stored(rate.day)
+        return self.stored(rate.day)
 
     async def get(self, day: date):
-        saved = await asyncio.to_thread(self._stored, day)
+        saved = await asyncio.to_thread(self.stored, day)
         if saved is not None:
             return saved
         async with self.lock:
-            saved = await asyncio.to_thread(self._stored, day)
+            saved = await asyncio.to_thread(self.stored, day)
             if saved is not None:
                 return saved
             rate = await self._fetch(day)

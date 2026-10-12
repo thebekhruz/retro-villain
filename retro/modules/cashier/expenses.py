@@ -230,16 +230,16 @@ class ExpenseStore:
                 return result.rowcount > 0
 
 
-def cash_to_finance(snapshot, expense_total, other_receipts=Decimal(0)):
+def cash_to_finance(snapshot, expense_total, other_receipts=Decimal(0), usd_deduction=Decimal(0)):
     """Сколько наличных кассир передаёт бухгалтеру; None — посчитать нельзя.
 
     Предоплаты наличными входят в сумму слагаемым, поэтому неизвестные
     предоплаты делают неизвестной и передачу. Подставлять вместо них ноль
     нельзя: это молча занизило бы передачу на весь возврат аванса."""
-    if snapshot.cash_prepayment is None:
+    if snapshot.cash_prepayment is None or usd_deduction is None:
         return None
     demo_amount = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
-    return demo_amount + snapshot.cash_prepayment + other_receipts - expense_total
+    return demo_amount + snapshot.cash_prepayment + other_receipts - expense_total - usd_deduction
 
 
 def seed_cashier_expense(path: Path, date_from: date, date_to: date, description: str,

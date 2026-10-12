@@ -828,6 +828,12 @@ globalThis.RetroDictionaryUz = {
   'Выбранный период по данным iiko: что продаётся, что съедает маржу, кто продаёт.': "iiko ma'lumotlari bo'yicha tanlangan davr: nima sotiladi, nima marjani yeydi, kim sotadi.",
   'Категория → тип → наименование → сумма. Сохранённая строка сразу пересчитывает таблицу дня выше.': "Turkum → tur → nomi → summa. Saqlangan satr yuqoridagi kun jadvalini darhol qayta hisoblaydi.",
   // Кассир — выручка по кассам iiko и реестр предоплат (ТЗ 08.10.2026)
+  'Развернуть': "Ochish",
+  'Свернуть': "Yig'ish",
+  '− Доллары в сейф': "− Seyfga dollar",
+  'вычет по курсу Retro': "Retro kursi bo'yicha ayiriladi",
+  'Эквивалент в сумах вычитается из передачи бухгалтеру.': "So'mdagi ekvivalent buxgalterga topshiriladigan summadan ayiriladi.",
+  'Нет курса Retro за этот день. Обновите курс USD перед передачей.': "Bu kun uchun Retro kursi yo'q. Topshirishdan oldin USD kursini yangilang.",
   'Выручка за день': "Kunlik tushum",
   'Оплаты счетов + полученные предоплаты': "Hisob to'lovlari + olingan oldindan to'lovlar",
   'Закрытых чеков:': "Yopilgan cheklar:",

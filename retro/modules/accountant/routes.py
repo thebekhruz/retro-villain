@@ -13,9 +13,8 @@ from retro.accounting_period import accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
-from retro.modules.cashier.expenses import cash_to_finance
 from retro.modules.cashier.till import (expected_from_saved, expected_handover, handover_check, shokh_gives,
-                                        shokh_total, till_totals)
+                                        shokh_total, load_till_totals)
 from retro.modules.founder.cabinet import dividend_summary
 from retro.modules.shokh.store import pocket_position
 
@@ -99,9 +98,9 @@ async def cashier_handover_detail(request: Request, day: date) -> tuple[Decimal 
     if snapshot is None:
         return None, None
     # Расходы кассы вместе с выдачами Шоху из кассы: одна формула для всех экранов.
-    totals = await asyncio.to_thread(till_totals, state, day)
-    amount = cash_to_finance(snapshot, totals.cash_out, totals.receipts)
-    return amount, snapshot.prepayment_issue if amount is None else None
+    totals = await load_till_totals(state, day)
+    amount = expected_handover(snapshot, totals)
+    return amount, (totals.usd_issue or snapshot.prepayment_issue) if amount is None else None
 
 
 async def required_handover(request: Request, day: date) -> Decimal:
@@ -147,7 +146,7 @@ async def current_cashier_expected(request: Request, day: date, *, force: bool =
     if snapshot is None or snapshot.demo:
         return None, None
     state.cache.put(snapshot)
-    totals = await asyncio.to_thread(till_totals, state, day)
+    totals = await load_till_totals(state, day)
     return expected_handover(snapshot, totals), snapshot.fetched_at
 
 

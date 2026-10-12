@@ -125,10 +125,11 @@ def export_prepayments(workbook, snapshot):
     detail.page_setup.fitToHeight = 0
 
 
-def export_report(snapshot, expenses=(), receipts=()):
+def export_report(snapshot, expenses=(), receipts=(), *, usd_total=Decimal(0),
+                  usd_rate=None, usd_deduction=Decimal(0)):
     expense_total = sum((item.amount for item in expenses), Decimal(0))
     receipt_total = sum((item.amount for item in receipts), Decimal(0))
-    handover = cash_to_finance(snapshot, expense_total, receipt_total)
+    handover = cash_to_finance(snapshot, expense_total, receipt_total, usd_deduction)
     workbook = openpyxl.load_workbook(TEMPLATE)
     sheet = workbook['отчет']
     total_label_style = copy(sheet['C11']._style)
@@ -187,8 +188,16 @@ def export_report(snapshot, expenses=(), receipts=()):
     sheet['A30'], sheet['B30'] = 'Прочие поступления наличными', receipt_total
     for position in ('B28', 'B30'):
         sheet[position].number_format = MONEY
-    sheet['A31'] = ('Расчёт: Демо + предоплаты наличными + прочие поступления − расходы − выдано Шоху.'
+    sheet['A31'] = ('Расчёт: Демо + предоплаты наличными + прочие поступления − расходы − выдано Шоху − USD по курсу Retro.'
                     + (' ' + snapshot.prepayment_issue if snapshot.prepayment_issue else ''))
+    sheet['A32'], sheet['B32'] = 'Доллары в сейф за день, USD', usd_total
+    sheet['A33'] = 'Курс Retro за выбранный день, сум/USD'
+    money_cell(sheet['B33'], usd_rate if usd_total else Decimal(0))
+    sheet['A34'] = 'Вычет из передачи: доллары × курс Retro'
+    money_cell(sheet['B34'], usd_deduction)
+    for row in (31, 32, 33, 34):
+        sheet.cell(row, 1).alignment = Alignment(wrap_text=True, vertical='center')
+        sheet.row_dimensions[row].height = 45 if row == 31 else 30
     sheet['A39'] = ('ДЕМОНСТРАЦИЯ — НЕ ОТЧЁТ iiko' if snapshot.demo else
                     'Сформировано из iiko • только Retro, без школы и зала Бехруз')
     amounts = {p.name: p.amount for p in snapshot.payments}
@@ -314,6 +323,13 @@ def export_report(snapshot, expenses=(), receipts=()):
         text(manual.cell(row, 3), item.description)
         manual.cell(row, 4, item.amount)
     last_row = max(8, 7 + len(expenses), 7 + len(receipts))
+    manual.cell(last_row + 2, 1, 'Доллары в сейф за день, USD')
+    manual.cell(last_row + 2, 2, usd_total)
+    manual.cell(last_row + 3, 1, 'Курс Retro, сум/USD')
+    money_cell(manual.cell(last_row + 3, 2), usd_rate if usd_total else Decimal(0))
+    manual.cell(last_row + 4, 1, 'Вычет из передачи, сум')
+    money_cell(manual.cell(last_row + 4, 2), usd_deduction)
+    last_row += 4
     if not expenses:
         manual['A8'] = 'Расходы не внесены'
     manual.column_dimensions['A'].width = 54
