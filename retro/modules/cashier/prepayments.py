@@ -38,7 +38,7 @@ def report_body_range(store_id, start, end, orders=None):
     return body
 
 
-def prepayments_from_olap(rows):
+def prepayments_from_olap(rows, *, include_order_ids=False):
     """Use only the credit of the advance liability: debit is the same money.
 
     iiko leaves section blank on some open orders. Preserve those advances of
@@ -49,13 +49,14 @@ def prepayments_from_olap(rows):
     if not isinstance(rows, list):
         raise DataError('iiko не вернул список предоплат.')
     result = []
+    group_count = len(GROUPS) + int(include_order_ids)
 
     def walk(row, parents):
         if not isinstance(row, dict):
             raise DataError('iiko вернул некорректную строку предоплаты.')
         # Subtotals belong to their parent, never to a missing leaf amount.
-        values = {index: value for index, value in parents.items() if index < len(GROUPS)}
-        for index in range(len(GROUPS) + 2):
+        values = {index: value for index, value in parents.items() if index < group_count}
+        for index in range(group_count + 2):
             key = f'field{index}'
             if key in row:
                 if not isinstance(row[key], dict) or 'value' not in row[key]:
@@ -67,7 +68,7 @@ def prepayments_from_olap(rows):
             for child in row['children']:
                 walk(child, values)
             return
-        if any(index not in values for index in range(len(GROUPS) + 2)):
+        if any(index not in values for index in range(group_count + 2)):
             raise DataError('iiko вернул неполную детализацию предоплат.')
         register, section, received_at, order, account, _, _, comment = (
             values[index] for index in range(len(GROUPS)))
@@ -79,7 +80,7 @@ def prepayments_from_olap(rows):
             return
         if account != PREPAYMENT_ACCOUNT:
             return
-        incoming, outgoing = number(values[8]), number(values[9])
+        incoming, outgoing = number(values[group_count]), number(values[group_count + 1])
         if incoming != 0 or outgoing <= 0:
             raise DataError('iiko вернул неоднозначную сумму внесения предоплаты.')
         try:
@@ -98,6 +99,7 @@ def prepayments_from_olap(rows):
             ensure_ascii=False).encode()).hexdigest()
         result.append(Prepayment(id=identifier, received_at=timestamp,
                                  amount=outgoing, order_number=str(order) if order is not None else None,
+                                 order_id=values[8] if include_order_ids else None,
                                  comment=comment or ''))
 
     for row in rows:

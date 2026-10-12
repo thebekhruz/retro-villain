@@ -143,6 +143,25 @@
    Таблица на широком экране, карточки — когда раздел уже 720 точек
    (меряем сам раздел: он сужается и от правой колонки, и от окна). */
 .cashier-prepay{container:prepay/inline-size}
+.prepay-sources{container:sources/inline-size}
+.prepay-sources-content{padding-bottom:12px}
+.prepay-source-caption{margin:8px 18px 14px;font-size:12px;line-height:1.55;color:var(--muted-2)}
+.prepay-source-caption.is-warn{color:var(--warn)}
+.prepay-source-part{border-top:1px solid #edf0e9;padding-top:14px}
+.prepay-source-part h3{margin:0 18px;font-size:15px;color:var(--green)}
+.prepay-source-row{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;padding:14px 18px;border-top:1px solid #f0f3ec;font-size:13px}
+.prepay-source-main{display:grid;gap:5px;min-width:0;overflow-wrap:anywhere}
+.prepay-source-meta{font-size:12px;color:var(--muted-2);line-height:1.5}
+.prepay-source-candidate{color:var(--warn);font-size:12px}
+.prepay-source-label{white-space:nowrap;background:#edf2e9;color:var(--green)}
+.prepay-source-amount{white-space:nowrap;font-size:15px}
+@container sources (max-width:420px){
+  .prepay-source-row{padding:12px 16px;gap:10px;flex-wrap:wrap}
+  .prepay-source-amount{margin-left:auto}
+  .prepay-source-caption,.prepay-source-part h3{margin-left:16px;margin-right:16px}
+  .prepay-sources .prepay-field{width:calc(50% - 6px)}
+  .prepay-sources .prepay-show{width:100%}
+}
 .cashier-prepay .cashier-section-head{align-items:center;flex-wrap:wrap}
 .prepay-tabs{flex-wrap:wrap;border-radius:14px}
 .prepay-tabs .ops-tab,.prepay-by .ops-tab{min-height:40px;padding:8px 14px;border-radius:11px;font-size:13px;
@@ -460,9 +479,10 @@
 .cashier-shift.is-skel>*{visibility:hidden}
 /* Маленькие × и «Отменить» — спиннер помельче, как у ячеек бухгалтера. */
 :is(.expense-remove,.usd-remove,.handover-undo){--rm-spin:13px}
-.cashier-prepay>summary.prepay-toggle{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;
+.cashier-prepay>summary.prepay-toggle,.prepay-sources>summary.prepay-toggle{display:flex;flex-direction:row;flex-wrap:nowrap;align-items:center;
   width:100%;text-align:left;color:inherit;cursor:pointer;list-style:none}
-.cashier-prepay>summary.prepay-toggle::before{content:none}
+.cashier-prepay>summary.prepay-toggle::before,.prepay-sources>summary.prepay-toggle::before{content:none}
+.prepay-sources[open]>summary .rm-section-chevron{transform:rotate(90deg)}
 .prepay-toggle::-webkit-details-marker{display:none}
 .prepay-toggle:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
 .prepay-toggle-action{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}
