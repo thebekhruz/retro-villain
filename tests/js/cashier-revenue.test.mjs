@@ -122,3 +122,126 @@ test('период по людям и по датам события: без и�
   const dates = logic.prepaymentGroups(rows, 'dates');
   assert.deepEqual(dates.map(group => [group.title, group.rows.length]), [['2026-10-09', 2], ['2026-10-12', 1], ['', 1]]);
 });
+
+const click = 'Click/Payme Безналичный перевод';
+const receiptDay = () => ({date: '2026-10-08', revenue: '50147800', daily_revenue: '50647800',
+  received_prepayments_total: '500000', redeemed_total: '3400000',
+  payment_groups: [
+    {name: 'Наличные', types: [{name: 'Демо', paid: '29621000', redeemed: '3400000'},
+      {name: 'Наличные (Инкасса QR)', paid: '1300000'}]},
+    {name: 'Банковские карты', types: [{name: click, paid: '1010500'},
+      {name: 'UzCard', paid: '12298500'}, {name: 'Xumo', paid: '2804000'},
+      {name: 'Я Rahmat', paid: '1325800'}, {name: 'Яндекс Еда', paid: '1788000'}]}],
+  prepayments: [
+    {id: 'a', order_number: '71034', amount: '300000', received_at: '2026-10-08T17:37:00+05:00'},
+    {id: 'b', order_number: '71067', amount: '200000', received_at: '2026-10-08T19:29:00+05:00'}]});
+const receiptRegistry = () => ({date: '2026-10-08', received: receiptDay().prepayments.map(entry=>({
+  order_number: entry.order_number, received_day: '2026-10-08', amount: entry.amount,
+  credited_methods: [click], credited_amount: entry.amount, method: '', guest: ''}))});
+const clickType = view => view.groups.flatMap(group=>group.types).find(item=>item.name===click);
+
+test('8 октября: Click/Payme 1 010 500 + две предоплаты = 1 510 500, общий итог прежний', () => {
+  const snapshot = receiptDay(), registry = receiptRegistry();
+  const original = JSON.stringify({snapshot, registry});
+  const view = logic.revenueGroups(snapshot, registry), type = clickType(view);
+  assert.deepEqual([type.paid, type.received, type.total], [1010500, 500000, 1510500]);
+  assert.deepEqual(type.advances.map(item=>item.amount), [300000, 200000]);
+  assert.equal(view.groups[1].total, 19726800);
+  assert.equal(view.unassignedTotal, 0);
+  assert.equal(view.total, 50647800);
+  assert.equal(view.realCash, 50147800);
+  assert.equal(view.match, true);
+  assert.equal(JSON.stringify({snapshot, registry}), original);
+});
+
+test('поздний ответ реестра меняет только разбивку; чужой день не используется', () => {
+  const pending = logic.revenueGroups(receiptDay());
+  assert.equal(clickType(pending).total, 1010500);
+  assert.equal(pending.unassignedTotal, 500000);
+  const old = receiptRegistry(); old.date = '2026-10-07';
+  assert.equal(clickType(logic.revenueGroups(receiptDay(), old)).total, 1010500);
+  const failed = {...receiptRegistry(), failed:true};
+  assert.equal(logic.revenueGroups(receiptDay(), failed).unassignedTotal, 500000);
+});
+
+test('смешанный, частичный и несовпадающий зачёт не назначает способ входящей предоплате', () => {
+  for (const patch of [{credited_methods:[click,'Демо']}, {credited_amount:'100000'},
+    {amount:'999999'}, {received_day:'2026-10-07'}]) {
+    const registry = receiptRegistry(); Object.assign(registry.received[0], patch);
+    const view = logic.revenueGroups(receiptDay(), registry);
+    assert.equal(clickType(view).received, 200000);
+    assert.equal(view.unassignedTotal, 300000);
+    assert.equal(view.match, true);
+  }
+});
+
+test('отдельные способы внесений одного заказа сохраняются; пометка реестра не заменяет iiko', () => {
+  const snapshot = receiptDay(), registry = receiptRegistry();
+  snapshot.prepayments[0].payment_method = 'Наличные';
+  snapshot.prepayments[1].order_number = '71034';
+  snapshot.prepayments[1].payment_method = click;
+  const view = logic.revenueGroups(snapshot, registry);
+  assert.equal(view.groups[0].types[0].received, 300000);
+  assert.equal(clickType(view).received, 200000);
+  assert.equal(view.match, true);
+});
+
+test('неуказанный способ остаётся видимым; ручное уточнение распределяет только соответствующий аванс', () => {
+  const registry = receiptRegistry();
+  registry.received[0].credited_methods = [];
+  registry.received[0].method = 'Наличные';
+  registry.received[1].credited_methods = [];
+  registry.received[1].method = 'непонятная карта';
+  const view = logic.revenueGroups(receiptDay(), registry);
+  assert.equal(view.groups[0].types[0].received, 300000);
+  assert.equal(view.unassignedTotal, 200000);
+  assert.equal(view.unassigned[0].order_number, '71067');
+  assert.equal(view.match, true);
+});
+
+test('справочник и текущая группа не удваивают аванс одного способа', () => {
+  const snapshot = receiptDay();
+  snapshot.payment_groups.unshift({name:'Старая группа',types:[{name:click,paid:'0'}]});
+  const view = logic.revenueGroups(snapshot, receiptRegistry());
+  assert.equal(view.groups[0].total, 0);
+  assert.equal(view.groups[2].total, 19726800);
+  assert.equal(view.match, true);
+});
+
+test('неполный список внесений не перераспределяет общий итог по способам', () => {
+  const snapshot = receiptDay(); snapshot.prepayments.pop();
+  const view = logic.revenueGroups(snapshot, receiptRegistry());
+  assert.equal(view.unassignedTotal, 500000);
+  assert.equal(clickType(view).received, 0);
+  assert.equal(view.match, true);
+});
+
+test('зачёт в другой день не возвращает старый аванс в выручку или строку способа оплаты', () => {
+  const snapshot = {...receiptDay(), date:'2026-10-11', prepayments:[], received_prepayments_total:'0',
+    daily_revenue:'50147800', redeemed_total:'500000'};
+  const view = logic.revenueGroups(snapshot, receiptRegistry());
+  assert.equal(clickType(view).total, 1010500);
+  assert.equal(view.unassignedTotal, 0);
+  assert.equal(view.total, 50147800);
+  assert.equal(view.match, true);
+});
+
+test('предоплата без оплаты счёта создаёт видимую строку своего способа', () => {
+  const snapshot = {...receiptDay(), revenue:'0', daily_revenue:'500000', payment_groups:[],
+    payments:[{name:click, amount:'0'}]};
+  const view = logic.revenueGroups(snapshot, receiptRegistry());
+  assert.equal(clickType(view).total, 500000);
+  assert.equal(clickType(view).zero, false);
+  assert.equal(view.groups[0].shown.length, 1);
+  assert.equal(view.match, true);
+});
+
+test('получено несколькими взносами: подпись заказа не повторяет всю сумму на каждом взносе', () => {
+  const snapshot = receiptDay(), registry = receiptRegistry();
+  snapshot.prepayments[1].order_number = '71034';
+  registry.received = [{...registry.received[0],amount:'500000',credited_amount:'500000'}];
+  const view = logic.revenueGroups(snapshot, registry);
+  assert.equal(clickType(view).received, 500000);
+  assert.deepEqual(clickType(view).advances.map(item=>item.amount), [300000,200000]);
+  assert.equal(view.match, true);
+});

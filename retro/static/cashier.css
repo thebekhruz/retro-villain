@@ -114,7 +114,21 @@
 .pay-group-body[hidden]{display:none}
 .cashier-revenue .pay-type{padding-left:58px;background:#fff}
 .cashier-revenue .pay-type.is-cash{background:var(--accent-soft)}
-.pay-type-redeemed{flex-basis:100%;color:#8c7a50}
+.cashier-revenue .pay-detail{border:0;border-radius:0;padding:0;margin:0;background:#fff}
+.cashier-revenue .pay-detail>summary{display:grid;list-style:none;cursor:pointer;min-height:44px}
+.cashier-revenue .pay-detail>summary::-webkit-details-marker{display:none}
+.cashier-revenue .pay-detail>summary::before,.cashier-revenue .pay-detail>summary::after{display:none;content:none}
+.cashier-revenue .pay-detail>summary:hover{background:#f1f5ed}
+.cashier-revenue .pay-detail>summary:focus-visible{outline:2px solid var(--green);outline-offset:-3px}
+.pay-detail-chevron{display:grid;place-items:center;width:22px;height:24px;border-radius:5px;
+  background:var(--green);color:#fff;font-size:21px;font-weight:600;line-height:1;justify-self:center}
+.pay-detail[open]>summary>.pay-detail-chevron{transform:rotate(90deg)}
+.cashier-revenue .pay-detail .pay-detail-row{padding-left:80px;background:#f7f9f3}
+.pay-advance-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  padding:10px 18px 10px 102px;border-top:1px solid #e7ece3;background:#fbfcf9;font-size:12px}
+.pay-advance-row>span{display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}
+.pay-advance-row small{color:#53675c;font-size:11px}
+.pay-advance-row strong{white-space:nowrap;color:var(--ink)}
 .pay-group-more{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 18px 8px 58px;border:0;
   border-top:1px solid #f0f3ec;background:#fbfcf9;color:#53675c;font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .pay-group-more small{color:var(--muted-3);font-size:11px}
@@ -348,6 +362,8 @@
   .handover-undo{min-height:40px;padding:0 6px}
 }
 @media(max-width:650px){
+  .cashier-revenue .pay-detail .pay-detail-row{padding-left:42px}
+  .cashier-revenue .pay-advance-row{padding-left:64px;padding-right:16px}
   .cashier-workspace{padding:22px 16px 25px}
   .cashier-cards{--cards:1fr;--cards-md:1fr;--cards-sm:1fr}
   .cashier-rail{grid-template-columns:1fr}
