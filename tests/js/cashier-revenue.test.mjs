@@ -5,6 +5,7 @@ import logic from '../../retro/static/cashier-logic.js';
 /* ТЗ «Выручка, оплаты и предоплаты» (08.10.2026): день 07.10 из живого iiko. */
 const day = extra => ({
   revenue: '57003000', receipt_count: 101, average_receipt: '564386.13',
+  daily_revenue: '59003000', received_prepayments_total: '2000000',
   payments: [{name: 'Демо', amount: '24464000'}],
   payment_groups: [
     {name: 'Оплата наличными', total: '28869000', types: [
@@ -21,15 +22,15 @@ const day = extra => ({
   ...extra,
 });
 
-test('кассы iiko: суммы и проценты от выручки по чекам, нулевые типы спрятаны до «показать все»', () => {
+test('кассы iiko: только оплаты, доля от оплат и полученных авансов; нулевые типы скрыты', () => {
   const view = logic.revenueGroups(day());
   assert.equal(view.fallback, false);
-  assert.equal(view.total, 63503000);
+  assert.equal(view.total, 59003000);
   assert.equal(view.receipts, 101);
   assert.deepEqual(view.groups.map(group => group.name), ['Оплата наличными', 'Банковские карты']);
   const [cash, cards] = view.groups;
-  assert.equal(cash.total + cards.total, view.total);
-  assert.equal(cash.percent, 45.5);
+  assert.equal(cash.total + cards.total + view.received, view.total);
+  assert.equal(cash.percent, 47.2);
   assert.deepEqual(cards.shown.map(type => type.name), ['UzCard', 'Xumo', 'Я Rahmat']);
   assert.equal(cards.hidden, 2);
   assert.equal(cards.types.length, 5);
@@ -43,29 +44,54 @@ test('«Демо» — это наличные к бухгалтеру, инка
   assert.equal(cash.types[0].redeemed, 1000000);
 });
 
-test('реальная касса = выручка по чекам − зачтённые предоплаты, без двойного счёта', () => {
+test('дневная выручка = оплаты счетов + полученные авансы; зачёт не прибавляется', () => {
   const view = logic.revenueGroups(day());
   assert.equal(view.redeemed, 6500000);
   assert.equal(view.realCash, 57003000);
-  assert.equal(view.total - view.redeemed, view.realCash);
+  assert.equal(view.total, view.realCash + view.received);
 });
 
 test('сверка с iiko: совпало — ✓, разошлось — разница со знаком', () => {
   assert.equal(logic.revenueGroups(day()).match, true);
-  const off = logic.revenueGroups(day({groups_total: '63491000', groups_match: false}));
+  const off = logic.revenueGroups(day({daily_revenue: '59015000'}));
   assert.equal(off.match, false);
   assert.equal(off.difference, -12000);
 });
 
-test('iiko не отдал кассы: оплаты продаж одним списком, реальная касса неизвестна, а не ноль', () => {
+test('iiko не отдал кассы: оплаты одним списком, дневной итог включает новые авансы', () => {
   const view = logic.revenueGroups(day({payment_groups: null, full_total: undefined}));
   assert.equal(view.fallback, true);
-  assert.equal(view.total, 57003000);
-  assert.equal(view.realCash, null);
+  assert.equal(view.total, 59003000);
+  assert.equal(view.realCash, 57003000);
   assert.equal(view.redeemed, null);
   assert.equal(view.groups.length, 1);
   assert.equal(view.groups[0].types[0].label, 'Наличные');
   assert.equal(logic.revenueGroups(null), null);
+});
+
+test('неизвестные полученные авансы не превращаются в ноль или полную сумму счетов', () => {
+  const view = logic.revenueGroups(day({daily_revenue: null, received_prepayments_total: null}));
+  assert.equal(view.total, null);
+  assert.equal(view.received, null);
+  assert.equal(view.match, null);
+  assert.equal(view.groups[0].percent, null);
+  assert.equal(view.realCash, 57003000);
+  assert.equal(logic.revenueGroups(day({daily_revenue: undefined})).total, null);
+});
+
+test('аванс без закрытых счетов даёт выручку; закрытие без доплаты не даёт повторной', () => {
+  const received = logic.revenueGroups(day({revenue: '0', daily_revenue: '2000000',
+    payment_groups: [], full_receipt_count: 0, redeemed_total: '0', full_average_receipt: null}));
+  assert.equal(received.total, 2000000);
+  assert.equal(received.receipts, 0);
+  assert.equal(received.match, true);
+  const credited = logic.revenueGroups(day({revenue: '0', daily_revenue: '0',
+    received_prepayments_total: '0', payment_groups: [
+      {name: 'Наличные', types: [{name: 'Демо', paid: '0', redeemed: '2000000', total: '2000000'}]}],
+    redeemed_total: '2000000'}));
+  assert.equal(credited.total, 0);
+  assert.equal(credited.groups[0].total, 0);
+  assert.equal(credited.match, true);
 });
 
 test('статус предоплаты: ждёт, зачтена с датой, возврат, дата события прошла', () => {

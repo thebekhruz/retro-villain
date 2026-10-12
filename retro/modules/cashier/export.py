@@ -155,9 +155,15 @@ def export_report(snapshot, expenses=(), receipts=()):
                     cell.value = None
     sheet['A1'] = datetime.combine(snapshot.day, datetime.min.time())
     sheet['A1'].number_format = 'dd.mm.yyyy'
-    sheet['A2'] = 'ОПЛАТЫ ПРОДАЖ'
-    sheet['B2'] = snapshot.revenue
-    sheet['B2'].number_format = MONEY
+    sheet['A2'] = 'ВЫРУЧКА ЗА ДЕНЬ'
+    money_cell(sheet['B2'], snapshot.daily_revenue)
+    sheet['A22'] = 'Полученные предоплаты за день'
+    money_cell(sheet['B22'], snapshot.received_prepayments_total)
+    sheet['A23'], sheet['B23'] = 'Оплаты счетов без зачёта предоплат', snapshot.revenue
+    sheet['B23'].number_format = MONEY
+    sheet['A24'] = 'Выручка = оплаты счетов + полученные предоплаты. Зачёт повторно не учитывается.'
+    sheet['A24'].alignment = Alignment(wrap_text=True, vertical='center')
+    sheet.row_dimensions[24].height = 45
     for label, pos in [('Количество чеков', 'A25'), ('Средний чек', 'A26')]:
         sheet[pos] = label
     sheet['B25'] = snapshot.receipt_count
