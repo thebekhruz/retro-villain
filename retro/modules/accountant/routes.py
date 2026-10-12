@@ -549,6 +549,67 @@ class SalaryShiftCellInput(BaseModel):
     expected_amount: str
 
 
+class SalaryBatchItem(BaseModel):
+    employee_id: int = Field(gt=0)
+    work_day: date
+    amount: str
+    version: str = Field(min_length=64, max_length=64)
+
+
+class SalaryBatchInput(BaseModel):
+    paid_day: date
+    items: list[SalaryBatchItem] = Field(min_length=1, max_length=1000)
+
+
+class SalaryBatchUpdate(BaseModel):
+    amount: str
+    expected_amount: str
+
+
+@router.get('/salary-day/batch')
+def salary_batch_preview(request: Request, first: date, last: date, paid_day: date):
+    from . import salary_batch
+    try:
+        days = salary_batch.days_between(first, last, paid_day)
+        attendance = request.app.state.attendance.rows_by_day(days, request.app.state.accountant_roster.list)
+        return salary_batch.preview(request.app.state.accountant_finance, first, last, paid_day, attendance)
+    except LedgerError as error:
+        finance_error(error)
+
+
+@router.post('/salary-day/batch', status_code=201)
+async def salary_batch_record(request: Request, body: SalaryBatchInput):
+    from . import salary_batch
+    try:
+        days = salary_batch.days_between(min(i.work_day for i in body.items), max(i.work_day for i in body.items), body.paid_day)
+        attendance = await asyncio.to_thread(request.app.state.attendance.rows_by_day,
+                                              days, request.app.state.accountant_roster.list)
+        cashier_amount = await required_handover(request, body.paid_day)
+        return await asyncio.to_thread(salary_batch.record, request.app.state.accountant_finance,
+                                       body.paid_day, [i.model_dump() for i in body.items], attendance,
+                                       cashier_amount=cashier_amount, actor=changed_by(request))
+    except LedgerError as error:
+        finance_error(error)
+
+
+@router.put('/salary-day/batch-payments/{payment_id}')
+async def salary_batch_update(request: Request, payment_id: int, body: SalaryBatchUpdate):
+    from . import salary_batch
+    finance = request.app.state.accountant_finance
+    try:
+        value = amount_value(body.amount, allow_zero=True)
+        expected = amount_value(body.expected_amount, allow_zero=True)
+        with closing(finance._open()) as connection:
+            row = connection.execute('SELECT paid_day FROM accountant_salary_payments WHERE id=?', (payment_id,)).fetchone()
+        if row is None:
+            raise HTTPException(404, 'Выплата не найдена. Обновите ведомость.')
+        cashier_amount = await required_handover(request, date.fromisoformat(row[0])) if value > expected else None
+        return await asyncio.to_thread(salary_batch.update, finance, payment_id, body.amount, body.expected_amount,
+                                       cashier_amount=cashier_amount, actor=changed_by(request))
+    except LedgerError as error:
+        finance_error(error)
+
+
 @router.put('/salary-day/shift-cell')
 async def salary_shift_cell(request: Request, body: SalaryShiftCellInput):
     """Выбран день СМЕНЫ: расход приходится на следующий календарный день."""

@@ -17,6 +17,7 @@ from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_da
 # общей суммой или подтверждённой сменой, — остаются закрытыми: двойной выплаты нет.
 ENTRY_START = ACCOUNTING_START
 MANUAL_STATUS = 'manual_salary'
+BATCH_STATUS = 'batch_salary'
 # Посещаемость смены в клетке выплаты (ТЗ 09.10, Б-04) — статус страницы
 # «Сотрудники», сведённый к пяти состояниям клетки. «Не пришёл» — только по
 # завершённой выгрузке Hikvision или ручной отметке; без привязки или данных —
@@ -46,6 +47,8 @@ def _existing(connection, employee_id, work_day, paid_day):
     accrual = connection.execute(
         'SELECT id, attendance_status, amount FROM accountant_accruals '
         'WHERE employee_id=? AND work_day=?', (employee_id, work_day.isoformat())).fetchone()
+    if accrual is not None and accrual[1] == BATCH_STATUS:
+        raise SalaryCellChanged('Эта смена ведётся в выдаче за несколько дней. Откройте расшифровку выплаты.')
     payments = connection.execute(
         'SELECT p.id,p.accrual_id,p.paid_day,p.amount FROM accountant_salary_payments p '
         'JOIN accountant_accruals a ON a.id=p.accrual_id '
@@ -294,6 +297,17 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
                                              work_day=work_day,
                                              editable=bool(editable and not conflict and not outside),
                                              rate=str(rate) if rate is not None else None)
+            managed = bool(earned_row and earned_row[3] == BATCH_STATUS) or any(row[7] == BATCH_STATUS for row in paid_rows)
+            if managed:
+                person['cells'][column_day]['editable'] = False
+                person['cells'][column_day]['batch_managed'] = managed
+                person['cells'][column_day]['payment_details'] = [
+                    dict(id=row[9], work_day=row[6], paid_day=row[4], amount=row[5],
+                         restores_balance=row[7] == BATCH_STATUS,
+                         editable=row[7] in (BATCH_STATUS, MANUAL_STATUS) and row[4] > closed_through and row[6] > closed_through)
+                    for row in paid_rows]
+                person['cells'][column_day]['paid_elsewhere'] = sorted({
+                    row[1] for row in all_payments[earned_row[0]] if row[1] != paid_day}) if earned_row else []
             if outside:
                 person['cells'][column_day]['outside'] = True
             if by_shift:

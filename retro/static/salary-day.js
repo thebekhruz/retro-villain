@@ -59,6 +59,11 @@
     const title=[dates,v.outside?L.outsideTitle(person):'',L.shiftTitle(day,shift,v.amount),v.rate?'Ставка за смену: '+fmt(v.rate)+' сум':'',v.extra?'Доп. выплата '+fmt(v.extra)+' сум — в списке под таблицей':'']
       .filter(Boolean).join('\n');
     if(title)el.title=title;else el.removeAttribute('title');
+    const details=person.cells?.[day]?.payment_details||[], elsewhere=person.cells?.[day]?.paid_elsewhere||[];
+    if(person.cells?.[day]?.batch_managed&&details.length){
+      el.classList.add('is-batch');el.textContent=fmt(v.amount);el.append(node('small','','Расшифровка'));
+      el.setAttribute('aria-label',person.name+' · '+dates+' · '+fmt(v.amount)+' сум. Открыть расшифровку');
+    }else if(!v.amount&&elsewhere.length){el.classList.add('is-elsewhere');el.textContent='выдано '+elsewhere.map(dm).join(', ');}
     if(v.editable){
       el.setAttribute('aria-pressed',String(v.state!=='off'));
       el.setAttribute('aria-label',person.name+' · '+dates
@@ -67,9 +72,9 @@
     }
   }
   function makeCell(person,day){
-    const editable=L.canEdit(current,person,day), el=node(editable?'button':'div');
+    const editable=L.canEdit(current,person,day), detail=person.cells?.[day]?.batch_managed&&person.cells?.[day]?.payment_details?.length, el=node(editable||detail?'button':'div');
     el.id=cellId(person.id,day);el.dataset.day=day;
-    if(editable){el.type='button';el.dataset.person=String(person.id);el.dataset.busyKey='sd:'+person.id+':'+day;}
+    if(editable||detail){el.type='button';el.dataset.person=String(person.id);el.dataset.busyKey='sd:'+person.id+':'+day;}
     paintCell(person,day,el);
     return el;
   }
@@ -107,7 +112,8 @@
     $('salary-selected').textContent=fmt(view.perDay[selectedDay]||0)+' сум';
     $('salary-people').textContent=fmt(view.people.length);
     $('selected-title').textContent='Выдано '+dm(selectedDay);
-    $('selected-shift').textContent='За смену '+dm(L.previousDay(selectedDay));
+    const shifts=[...new Set(current.people.flatMap(p=>p.cells?.[selectedDay]?.work_days||[]))].sort();
+    $('selected-shift').textContent='За смены '+(shifts.length?shifts:[L.previousDay(selectedDay)]).map(dm).join(', ');
     view.people.forEach(person=>{const el=$('sd-person-'+person.id);if(el)el.textContent=fmt(person.paid);});
     const filtered=isFiltered();
     const shown=view.people.filter((summary,index)=>visible(current.people[index]));
@@ -135,8 +141,10 @@
       const cell=node('div','sd-header-cell');cell.setAttribute('role','columnheader');
       const future=day>today, button=node(future?'div':'button','pr-day'+(day===today?' is-today':'')+(day===yesterday?' is-shift':'')+(future?' is-future':''));button.dataset.day=day;
       button.append(node('strong','',String(Number(day.slice(8,10)))),node('span','',day===today?'сегодня':new Intl.DateTimeFormat('ru-RU',{weekday:'short',timeZone:'UTC'}).format(new Date(day+'T12:00:00Z'))));
-      button.append(node('small','sd-paid-date','за смену '+dm(L.previousDay(day))));
-      if(!future){button.type='button';button.setAttribute('aria-label','Выплата '+dm(day)+' · за смену '+dm(L.previousDay(day)));button.addEventListener('click',()=>selectDay(day));}
+      const paidShifts=[...new Set(current.people.flatMap(p=>p.cells?.[day]?.work_days||[]))].sort();
+      const shiftLabel=paidShifts.length&&!(paidShifts.length===1&&paidShifts[0]===L.previousDay(day))?'за '+paidShifts.map(dm).join(', '):'за смену '+dm(L.previousDay(day));
+      button.append(node('small','sd-paid-date',shiftLabel));
+      if(!future){button.type='button';button.setAttribute('aria-label','Выплата '+dm(day)+' · '+shiftLabel);button.addEventListener('click',()=>selectDay(day));}
       cell.append(button);head.append(cell);
     });
     const paidHead=node('div','pr-c pr-c-paid','Выдано');paidHead.setAttribute('role','columnheader');head.append(paidHead);grid.append(head);
@@ -158,7 +166,7 @@
     current.days.forEach(day=>{const el=node('div','pr-t rm-num'+(day===today?' is-today':''));el.id='sd-total-'+day;el.setAttribute('role','cell');foot.append(el);});
     const grand=node('div','pr-c pr-c-grand rm-num');grand.id='sd-grand';grand.setAttribute('role','cell');foot.append(grand);grid.append(foot);
     renderTabs();applyFilter();
-    selectDay(selectedDay);
+    selectDay(selectedDay);batch?.render();
     const entry=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(current.shift_start+'T12:00:00Z')).replace(/\.$/,'');
     // Общая зарплата без сотрудников в «Финансах дня» — клетки работают, но те же деньги
     // по людям посчитаются второй раз: говорим, за какие дни и сколько.
@@ -167,7 +175,7 @@
     $('aggregate-note').textContent=aggregate.length?'В «Финансах дня» есть общая зарплата без сотрудников: '
       +aggregate.map(item=>dm(item.day)+' — '+fmt(Number(item.amount))).join(', ')
       +'. Если вводите эти дни по людям, удалите общую строку, иначе выплата посчитается дважды.':'';
-    $('entry-note').textContent=current.closed?'Месяц закрыт — только для чтения':'В столбце — дата выдачи денег. Под ней — дата предыдущей смены. Расход в «Финансах дня» — в день выдачи. Учёт выплат с 6 октября 2026 г. Смены с '+entry+'.';
+    $('entry-note').textContent=current.closed?'Месяц закрыт — только для чтения':'В столбце — дата выдачи денег. Выплату за несколько смен можно раскрыть и проверить по датам. Расход в «Финансах дня» — в день выдачи. Учёт выплат с 6 октября 2026 г. Смены с '+entry+'.';
   }
   /* Одна клетка — один PUT с абсолютной суммой и ожидаемой прежней (сервер
      сверяет её и не задвоит выплату). Клетка перекрашивается сразу; если
@@ -203,7 +211,7 @@
       const response=await fetch('/api/accountant/salary-day/month?month='+encodeURIComponent(month)+'&basis=payment',{signal:controller.signal,cache:'no-store'});
       const data=await response.json();if(!response.ok)throw new Error(data.detail||'Не удалось загрузить ведомость.');
       if(token!==sequence)return false;
-      if(preserveDraft&&(editing||writes||extra?.busy()||globalThis.RetroSave?.pending().length))return false;
+      if(preserveDraft&&(editing||writes||extra?.busy()||batch?.busy()||globalThis.RetroSave?.pending().length))return false;
       current=data;today=data.today;calendarDay=requestedOn;
       const latest=today;
       selectedDay=followLatest&&data.days.includes(latest)?latest:data.days.includes(selectedDay)?selectedDay:data.days.includes(latest)?latest:data.days.at(-1);
@@ -229,7 +237,7 @@
      Дату подтверждает сервер; часы устройства только подсказывают, когда проверить.
      Начатую сумму/доп. выплату и запись в пути не трогаем. Исторический день не переключаем. */
   function dateRefreshBlocked(){
-    return !current||document.hidden||loading||writes>0||!!editing||extra?.busy()
+    return !current||document.hidden||loading||writes>0||!!editing||extra?.busy()||batch?.busy()
       ||!!globalThis.RetroSave?.pending().length;
   }
   async function refreshDate(force=false){
@@ -317,6 +325,7 @@
   grid.addEventListener('click',event=>{
     const el=cellOf(event.target);if(!el)return;
     const t=targetOf(el);if(!t)return;
+    if(t.person.cells?.[t.day]?.batch_managed&&t.person.cells?.[t.day]?.payment_details?.length){batch?.showHistory(t.person.id,t.day);return;}
     const v=view(t.person,t.day);if(!v.editable)return;
     selectDay(t.day);
     // Первый клик — ✓ по ставке; второй (или нет ставки) — поле суммы.
@@ -337,6 +346,7 @@
     const arrows={ArrowLeft:[-1,0],ArrowRight:[1,0],ArrowUp:[0,-1],ArrowDown:[0,1]};
     if(arrows[event.key]){event.preventDefault();move(el,...arrows[event.key]);return;}
     const t=targetOf(el);if(!t)return;
+    if(!L.canEdit(current,t.person,t.day))return;
     if(/^\d$/.test(event.key)){event.preventDefault();startEdit(t.person,t.day,el,event.key);}
     else if((event.key==='Delete'||event.key==='Backspace')&&view(t.person,t.day).amount){event.preventDefault();write(t.person,t.day,0);}
   });
@@ -362,6 +372,11 @@
   // Доп. выплаты под ведомостью (Б-05): после записи месяц перечитывается целиком.
   const extra=globalThis.SalaryExtra?.mount({data:()=>current,visible,filtered:isFiltered,selectedDay:()=>selectedDay,
     reload:()=>loadMonth(current.month),message:(text,error)=>error?message(text,true):done(text)});
+  const batch=globalThis.SalaryBatch?.mount({data:()=>current,reload:paid=>{if(paid)selectedDay=paid;return loadMonth(paid?paid.slice(0,7):current.month);}});
+  $('salary-sheet')?.addEventListener('toggle',()=>{if(!$('salary-sheet').open)return;requestAnimationFrame(()=>{
+    const focus=$('sheet-grid').querySelector('.pr-day[data-day="'+selectedDay+'"]');
+    if(focus){const sticky=[...$('sheet-grid').querySelectorAll('.is-head>.pr-c-name,.is-head>.pr-c-sum')].filter(el=>getComputedStyle(el).position==='sticky').reduce((n,el)=>n+el.offsetWidth,0);$('sheet-scroll').scrollLeft=Math.max(0,focus.parentElement.offsetLeft-sticky-focus.offsetWidth);}
+  });});
   function navigate(month){if(current&&globalThis.RetroSave?.confirmLeave()===false){$('month-input').value=current.month;return;}const work=loadMonth(month);if(B&&!$('salary-body').hidden)B.section($('salary-body'),work);}
   $('sd-search').addEventListener('input',event=>{filter.q=event.target.value;if(current)applyFilter();});
   $('month-prev').addEventListener('click',()=>navigate(L.shiftMonth($('month-input').value,-1)));

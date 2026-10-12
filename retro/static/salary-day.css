@@ -135,3 +135,75 @@
   .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1fr);
     grid-template-areas:"who" "work" "paid" "sum" "note" "btn"}
 }
+
+/* Выдача за несколько смен: два независимых, изначально закрытых блока. */
+.sd-fold{margin:18px 0;background:#fff;border:1px solid #bdcfc3;border-radius:14px;overflow:clip}
+.sd-fold>summary{display:flex;align-items:center;justify-content:space-between;gap:20px;padding:20px 22px;cursor:pointer;list-style:none;background:#eff5ef;color:#163f34}
+.sd-fold>summary::-webkit-details-marker{display:none}
+.sd-fold-title{font-size:21px;font-weight:750;line-height:1.3}
+.sd-fold-title small{display:block;margin-top:5px;font-size:14px;font-weight:400;color:#435e50}
+.sd-fold-action{display:flex;align-items:center;gap:12px;flex:none;padding:10px 16px;background:#174b3d;color:#fff;border-radius:8px;font-size:15px;font-weight:650}
+.sd-fold-close,.sd-fold[open] .sd-fold-open{display:none}
+.sd-fold[open] .sd-fold-close{display:inline}
+.sd-fold[open]>summary{border-bottom:1px solid #bdcfc3}
+.sd-fold[open] .sd-fold-action>span:last-child{transform:rotate(180deg)}
+.sd-fold>summary:focus-visible{outline:3px solid #b67805;outline-offset:-4px}
+.sd-fold .pr-sheet{border:0;border-radius:0;margin:0}
+.sd-batch>summary{background:#e3efe6;border-left:5px solid #174b3d;padding-left:17px}
+.sb-body{padding:22px}
+.sb-dates{display:grid;grid-template-columns:minmax(200px,1.2fr) minmax(155px,1fr) minmax(155px,1fr) auto;align-items:start;gap:16px}
+.sb-dates label,.sb-tools label,.sb-payment label{display:flex;flex-direction:column;gap:7px;color:#183b30;font-size:15px;font-weight:650}
+.sb-dates input,.sb-tools input,.sb-amount{height:44px;padding:9px 12px;border:1px solid #789485;border-radius:8px;background:#fff;color:#173b30;font:inherit;min-width:0}
+.sb-dates input{width:100%}
+.sb-dates small{font-weight:500;color:#435d4e;min-height:20px}
+.sb-dates>.sb-button{margin-top:29px}
+.sb-button{display:inline-flex;align-items:center;justify-content:center;min-height:44px;padding:10px 16px;border:1px solid #789485;border-radius:8px;background:#fff;color:#174b3d;font-family:inherit;font-size:15px;font-weight:600;line-height:1.3;cursor:pointer}
+.sb-button.sb-primary{background:#174b3d;color:#fff;border-color:#174b3d;box-shadow:0 2px 0 #09291f}
+.sb-button:hover:not(:disabled){background:#e4efe6;border-color:#174b3d}
+.sb-button.sb-primary:hover:not(:disabled){background:#0d352a}
+.sb-button:disabled{cursor:default;background:#e1e6e1;color:#4e6156;border-color:#bcc9bf;box-shadow:none}
+.sb-button:focus-visible,.sb-body input:focus-visible,.sb-dialog input:focus-visible{outline:3px solid #b67805;outline-offset:3px}
+.sb-help{color:#405e4e;font-size:14px;line-height:1.6;margin:16px 0}
+.sb-message{padding:12px 16px;border-left:4px solid #174b3d;background:#eff5ef;color:#173b30;font-size:15px;line-height:1.5}
+.sb-message.is-error{border-color:#a32e24;background:#fff0ec;color:#92261e}
+.sb-tools{display:flex;align-items:end;flex-wrap:wrap;gap:12px;margin:20px 0 16px}
+.sb-tools label{flex:1;min-width:220px}
+.sb-tools input{max-width:480px}
+.sb-scroll{overflow:auto;max-height:65vh;border:1px solid #c8d6cb;border-radius:10px}
+.sb-table{width:100%;border-collapse:separate;border-spacing:0;font-size:15px;font-variant-numeric:tabular-nums}
+.sb-table caption{text-align:left;font-weight:650;padding:14px 16px;background:#eef4ef;color:#183b30}
+.sb-table thead th{position:sticky;top:0;z-index:2;padding:12px 16px;text-align:left;white-space:nowrap;color:#fff;background:#254f3f;font-weight:650}
+.sb-table tbody th,.sb-table td{padding:14px 16px;border-top:1px solid #c8d6cb;vertical-align:top;background:#fff;min-width:155px}
+.sb-table tbody .sb-who{min-width:190px;position:sticky;left:0;z-index:1;text-align:left}
+.sb-table .sb-who strong{display:block;max-width:250px}
+.sb-table td small,.sb-table th small{display:block;font-size:13px;color:#405e4e;line-height:1.5;margin-top:5px;font-weight:400}
+.sb-table td.is-selected{background:#e5f3e7;box-shadow:inset 0 0 0 2px #237144}
+.sb-check{display:flex;align-items:center;gap:9px;cursor:pointer;min-height:32px;white-space:nowrap;color:#123a27}
+.sb-check input{width:21px;height:21px;margin:0;accent-color:#174b3d;flex:none}
+.sb-table .sb-amount{width:135px;max-width:100%;margin-top:8px;font-weight:650}
+.sb-table input[aria-invalid=true]{border:2px solid #a32e24;background:#fff0ec}
+.sb-table .sb-change{min-height:34px;padding:5px 9px;margin-top:8px;font-size:13px}
+.sb-state{font-size:14px;color:#405749;display:block;max-width:210px}
+.sb-link{display:block;margin-top:7px;color:#174b3d;text-decoration:underline;font-size:13px;font-weight:650}
+.sb-person-total{text-align:right;font-weight:750;white-space:nowrap;color:#183b30}
+.sb-footer{display:flex;justify-content:space-between;align-items:center;gap:20px;margin-top:18px;padding:20px;background:#eaf2eb;border:1px solid #adc4b3;border-radius:10px}
+.sb-footer>div{display:flex;flex-direction:column;gap:5px;font-size:14px;color:#304c3b}
+.sb-footer strong{font-size:30px;color:#123c29;font-variant-numeric:tabular-nums;line-height:1.2}
+.sb-footer .sb-button{min-height:50px;font-size:17px;padding:12px 24px}
+.sb-receipt{padding:18px;margin-top:16px;border:2px solid #237144;background:#e5f3e7;border-radius:10px;color:#163e2b}
+.sb-receipt strong{font-size:20px}
+.sb-receipt p{margin:7px 0 0}
+.sb-dialog{width:min(780px,calc(100vw - 32px));max-height:85vh;overflow:auto;padding:24px;border:1px solid #789485;border-radius:16px;background:#fff;color:#173b30}
+.sb-dialog::backdrop{background:#09271fc2}
+.sb-dialog-head{display:flex;align-items:center;justify-content:space-between;gap:20px}
+.sb-dialog-head h2{margin:0;font-size:23px}
+.sb-payment{display:flex;flex-wrap:wrap;gap:10px;align-items:end;padding:16px 0;border-top:1px solid #c8d6cb}
+.sb-payment label{flex:1;min-width:150px}
+.sb-danger{color:#92261e;border-color:#a32e24}
+.salary-day-page button.sd-m.is-batch{color:#174b3d;background:#e0efe5;font-weight:700;cursor:pointer;font-size:13px;flex-direction:column;gap:3px}
+.salary-day-page button.sd-m.is-batch small{font-size:11px;font-weight:500;text-decoration:underline}
+.salary-day-page .sd-m.is-elsewhere{font-size:11px;text-align:center;color:#315b44;line-height:1.4;white-space:normal}
+@media(max-width:1100px){.sb-dates{grid-template-columns:1fr 1fr}.sb-dates>.sb-button{margin-top:29px}.sb-body{padding:18px}}
+@media(max-width:650px){.sd-fold>summary{padding:16px;gap:10px}.sd-fold-title{font-size:18px}.sd-fold-title small{font-size:13px}.sd-fold-action{padding:10px;font-size:14px;gap:7px}.sb-dates{grid-template-columns:1fr}.sb-dates>.sb-button{margin-top:0}.sb-footer{align-items:stretch;flex-direction:column;padding:16px}.sb-body{padding:14px}.sb-table tbody .sb-who{min-width:150px;max-width:170px}.sb-table td{min-width:150px;padding:12px}.sb-tools{align-items:stretch}.sb-tools label{flex-basis:100%}.sb-tools input{max-width:none}.sb-dialog{padding:18px}}
+/* Общий стиль summary добавляет свой маркер; здесь уже есть подписанный переключатель. */
+.sd-fold>summary::before{display:none}

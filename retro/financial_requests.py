@@ -28,7 +28,7 @@ PATHS = {'/api/cashier/expenses', '/api/cashier/receipts', '/api/cashier/usd-bal
         'salary-payments', 'debts/pay', 'procurement', 'payroll/confirm',
         'employees', 'monthly-employees', 'monthly-payments', 'supplier-transfers',
         # Доп. выплата «Зарплата · день» (Б-05): повтор после потерянного ответа — не вторая выдача.
-        'salary-day/extra')} | {
+        'salary-day/extra', 'salary-day/batch')} | {
     '/api/founder/dividends/weekly', '/api/director/team'}
 
 

@@ -108,7 +108,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # ТЗ 02.10: «Зарплата · день», «Баланс Шохруха», общая кнопка «Сохранить»
         'salary-day.html': {'accountant'}, 'shoh-balance.html': {'accountant'},
         'salary-day.js': {'accountant'}, 'salary-day-logic.js': {'accountant'},
-        'salary-day.css': {'accountant'},
+        'salary-day.css': {'accountant'}, 'salary-batch.js': {'accountant'},
         # ТЗ 09.10, Б-05: доп. выплаты под ведомостью «Зарплата · день»
         'salary-extra.js': {'accountant'}, 'salary-extra-logic.js': {'accountant'},
         'shoh-balance.js': {'accountant'}, 'save.js': {'accountant'},
