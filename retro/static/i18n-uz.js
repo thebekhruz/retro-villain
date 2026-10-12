@@ -3558,3 +3558,32 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Похожие уже есть в реестре. Это тот же человек?': "Reyestrda o'xshashlari bor. Bu o'sha odammi?",
 });
 /* ── /Тёзки ── */
+
+Object.assign(globalThis.RetroDictionaryUz, {
+  'БРОНИ И ПЛАТЕЖИ IIKO': 'IIKO BRONLARI VA TO‘LOVLARI',
+  'До визита гостя': 'Mehmon kelishidan oldin',
+  'Брони — по дате визита, платежи — по дате внесения. До 31 дня.': 'Bronlar tashrif sanasi, to‘lovlar kiritilgan sana bo‘yicha. 31 kungacha.',
+  'Плановые визиты': 'Rejalashtirilgan tashriflar',
+  'Дата и стол из брони iiko. Связь с предоплатой пока не подтверждена.': 'Sana va stol iiko bronidan olingan. Oldindan to‘lov bilan bog‘liqlik hali tasdiqlanmagan.',
+  'Внесённые предоплаты · способы': 'Kiritilgan oldindan to‘lovlar · usullar',
+  'Безналичные записи кассы Retro, включая банкетный зал. Наличные здесь не показаны. Справочный список не изменяет выручку и сумму к передаче.': 'Retro kassasining naqdsiz yozuvlari, banket zali ham kiradi. Naqd to‘lovlar bu yerda ko‘rsatilmagan. Ma’lumot ro‘yxati tushum va topshiriladigan summani o‘zgartirmaydi.',
+  'Совпали сумма и время · связь с заказом не подтверждена': 'Summa va vaqt mos · buyurtma bilan bog‘liqlik tasdiqlanmagan',
+  'Несколько совпадений · заказ не определён': 'Bir nechta moslik · buyurtma aniqlanmagan',
+  'Заказ не определён': 'Buyurtma aniqlanmagan',
+  'Возможно, заказ': 'Ehtimol, buyurtma',
+  'Гостей': 'Mehmonlar',
+  'мин': 'daq',
+  'Бронь iiko': 'iiko broni',
+  'Способ не указан': 'To‘lov usuli ko‘rsatilmagan',
+  'Выберите период не больше 31 дня.': '31 kundan oshmagan davrni tanlang.',
+  'Загружаем брони и платежи iiko…': 'iiko bronlari va to‘lovlari yuklanmoqda…',
+  'Броней на этот период нет.': 'Bu davrga bronlar yo‘q.',
+  'Безналичных предоплат за этот период не найдено.': 'Bu davrda naqdsiz oldindan to‘lovlar topilmadi.',
+  'Показан период': 'Ko‘rsatilgan davr',
+  'Не удалось загрузить источники iiko. Повторите запрос.': 'iiko manbalarini yuklab bo‘lmadi. Qayta urinib ko‘ring.',
+  'Не удалось получить брони iiko.': 'iiko bronlarini olib bo‘lmadi.',
+  'Не удалось получить платежи из смен iiko.': 'iiko smenalaridan to‘lovlarni olib bo‘lmadi.',
+  'Не удалось проверить совпадения с заказами.': 'Buyurtmalar bilan mosliklarni tekshirib bo‘lmadi.',
+  'Источник временно недоступен.': 'Manba vaqtincha mavjud emas.',
+  'Не все смены iiko доступны. Показаны только прочитанные платежи.': 'Barcha iiko smenalari mavjud emas. Faqat o‘qilgan to‘lovlar ko‘rsatilgan.',
+});

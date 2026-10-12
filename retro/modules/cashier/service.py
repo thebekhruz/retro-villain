@@ -53,11 +53,15 @@ class Prepayment:
     payment_method: str | None = None
     comment: str = ''
     order_number: str | None = None
+    order_id: str | None = None
 
     def json(self):
-        return dict(id=self.id, received_at=self.received_at, amount=str(self.amount),
+        data = dict(id=self.id, received_at=self.received_at, amount=str(self.amount),
                     payment_method=self.payment_method, comment=self.comment,
                     order_number=self.order_number)
+        if self.order_id is not None:
+            data['order_id'] = self.order_id
+        return data
 
 
 @dataclass(frozen=True)

@@ -12,6 +12,7 @@ from pydantic import BaseModel, Field
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
+from retro.integrations.iiko_prepayment_sources import demo_sources
 from retro.modules.accountant.ledger import LedgerError
 from retro.modules.shokh.store import pocket_position
 
@@ -484,6 +485,20 @@ def group_advances(entries, day=None):
         orders[key] = (min(received_at, entry.received_at), amount + entry.amount)
     return [(order, day or date.fromisoformat(received_at[:10]), received_at, amount)
             for order, (received_at, amount) in orders.items()]
+
+
+@router.get('/prepayment-sources')
+async def prepayment_sources(request: Request, start: date, end: date,
+                             demo: bool = False, refresh: bool = False):
+    """Independent read-only sources, never merged into accounting totals."""
+    if start > end or (end - start).days > 30:
+        raise HTTPException(422, 'Выберите период не больше 31 дня.')
+    if demo:
+        return demo_sources(start, end)
+    try:
+        return await request.app.state.prepayment_sources.read(start, end, refresh=refresh)
+    except DataError as error:
+        raise HTTPException(503, str(error)) from None
 
 
 @router.get('/prepayments')
