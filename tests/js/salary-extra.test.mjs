@@ -152,8 +152,8 @@ test('временный с периодом: в «Кому» — только �
 });
 
 test('shift grid defaults to selected shift and warns using actual shift/payment dates', () => {
-  assert.deepEqual(extra.defaults('2026-10-09', 'shift'), {work:'2026-10-09',paid:'2026-10-10'});
-  assert.deepEqual(extra.defaults('2026-10-31', 'shift'), {work:'2026-10-31',paid:'2026-11-01'});
+  assert.deepEqual(extra.defaults('2026-10-09', 'shift', '2026-10-12'), {work:'2026-10-09',paid:'2026-10-12'});
+  assert.deepEqual(extra.defaults('2026-10-31', 'shift', '2026-11-03'), {work:'2026-10-31',paid:'2026-11-03'});
   const data = {...month(), basis:'shift'};
   const person = {...data.people[0], cells: {'2026-10-08': {amount:'360000',paid_days:['2026-10-09']}}};
   assert.match(extra.warnings(data, person, '2026-10-08', '2026-10-10', 50000)[0], /08\.10 — 360\s000 сум \(смена 08\.10\)/);

@@ -1,4 +1,4 @@
-/* Ручная ведомость сменных: столбец — выплата, смена — предыдущий день.
+/* Ручная ведомость сменных: в виде по сменам новая галочка расходует деньги сегодня.
    Клетка — галочка: выдано по ставке смены, другая сумма или не выдано. */
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.SalaryDayLogic=api;})(typeof globalThis!=='undefined'?globalThis:this,function(){
   function parseAmount(value){
@@ -18,10 +18,10 @@
   }
   function shiftMonth(month,step){const date=new Date(month+'-01T12:00:00Z');date.setUTCMonth(date.getUTCMonth()+step);return date.toISOString().slice(0,7);}
   function canEdit(data,person,day){
-    const paid=data.basis==='shift'?nextDay(day):day;
+    const paid=data.basis==='shift'?(person.cells?.[day]?.paid_day||data.today):day;
     const work=data.basis==='shift'?day:previousDay(day);
     return !data.closed&&!person.archived&&paid>=data.entry_start&&paid<=data.today
-      &&work>=(data.shift_start||data.entry_start)&&data.days.includes(day)&&person.cells?.[day]?.editable!==false;
+      &&work>=(data.shift_start||data.entry_start)&&work<=data.today&&data.days.includes(day)&&person.cells?.[day]?.editable!==false;
   }
   /* Ставка смены: сервер отдаёт её по версии реестра на день смены; если нет —
      нынешняя ставка сотрудника. Ноль и пусто — ставки нет, галочкой не выдать. */

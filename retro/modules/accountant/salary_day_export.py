@@ -134,14 +134,14 @@ def salary_day_workbook(data: dict, *, group: str | None = None, query: str | No
 def _sheet(sheet, data, days, people, extras, month, period, mode):
     sheet.title = 'Ведомость'
     by_shift = data.get('basis') == 'shift'
-    headings = ([f'Смена {_dm(day)}\nвыплата {_dm((date.fromisoformat(day)+timedelta(days=1)).isoformat())}'
+    headings = ([f'Смена {_dm(day)}'
                  for day in days] if by_shift else [f'Выплата {_dm(day)}\nза смену {_dm(_previous(day))}' for day in days])
     labels = (['№', 'Сотрудник', 'Должность', 'Ставка']
               + headings
               + ['Доп. выплаты', 'Итого'])
     width = len(labels)
     _title(sheet, f'RETRO MILLIY · Зарплата · день · {MONTHS[month.month - 1]} {month.year}', width)
-    explanation = (f'Период смен {period}. {mode}. В столбце — дата смены; обычная выплата и расход — на следующий день. '
+    explanation = (f'Период смен {period}. {mode}. В столбце — дата смены; новая выдача и расход — в день отметки. '
                    'Фактические даты выплат — в примечаниях к клеткам.' if by_shift else
                    f'Период выплат {period}. {mode}. В столбце — деньги, выданные в этот день за смену предыдущего дня.')
     _note(sheet, 2, explanation + ' Доп. выплаты входят в итоги и расписаны на листе «Доп. выплаты».', width)

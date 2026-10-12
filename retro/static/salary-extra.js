@@ -67,11 +67,11 @@
     people = list.map(item => item.label);
     $('extra-people').replaceChildren(...list.map(item => { const option = node('option'); option.value = item.label; return option; }));
   }
-  /* Форма, которую ещё не трогали, берёт выбранную смену и выплату на следующий день. */
+  /* Форма, которую ещё не трогали, берёт выбранную смену и сегодняшнюю выплату. */
   function day(selected) {
     if (touched || editing || !selected) return;
     const current = data();
-    const next = X.defaults(selected, current.basis);
+    const next = X.defaults(selected, current.basis, current.today);
     $('extra-paid').value = next.paid; $('extra-work').value = next.work;
     $('extra-paid').max = $('extra-work').max = current.today;
     $('extra-paid').min = current.entry_start; $('extra-work').min = (current.shift_start || current.entry_start);

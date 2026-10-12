@@ -1,4 +1,4 @@
-"""Manual daily salaries: one paid-day cell, one accrual and one cash payment."""
+"""Manual salary checks: one shift, one accrual and one dated cash payment."""
 from collections import defaultdict
 from contextlib import closing
 from datetime import date, timedelta
@@ -36,21 +36,24 @@ def _assert_day(paid_day):
         raise LedgerError('Нельзя записать зарплату за будущий день.')
 
 
-def _existing(connection, employee_id, work_day, paid_day):
+def _existing(connection, employee_id, work_day, paid_day, *, by_shift=False):
     """Что уже записано за смену: (начисление, его выплаты, выдано в этот день, прежнее ли).
 
     Прежнее — начисление старой ведомости (до ручной таблицы) или пара, которая
     разошлась: его берём в ручную пару при правке клетки. Нельзя только одно —
     выплата за эту смену в другой день или выплата другой смены в этот день:
-    такая правка задвоила бы деньги."""
+    такая правка задвоила бы деньги. В виде по сменам другие смены того же дня
+    выдачи независимы, проверяем только выплаты выбранной смены."""
     accrual = connection.execute(
         'SELECT id, attendance_status, amount FROM accountant_accruals '
         'WHERE employee_id=? AND work_day=?', (employee_id, work_day.isoformat())).fetchone()
+    payment_scope = 'a.work_day=?' if by_shift else '(p.paid_day=? OR a.work_day=?)'
+    payment_args = (work_day.isoformat(),) if by_shift else (paid_day.isoformat(), work_day.isoformat())
     payments = connection.execute(
         'SELECT p.id,p.accrual_id,p.paid_day,p.amount FROM accountant_salary_payments p '
         'JOIN accountant_accruals a ON a.id=p.accrual_id '
-        'WHERE a.employee_id=? AND (p.paid_day=? OR a.work_day=?) ORDER BY p.id',
-        (employee_id, paid_day.isoformat(), work_day.isoformat())).fetchall()
+        f'WHERE a.employee_id=? AND {payment_scope} ORDER BY p.id',
+        (employee_id, *payment_args)).fetchall()
     if accrual is None:
         if payments:
             raise SalaryCellChanged('За день уже есть выплата другой смены. Проверьте журнал зарплаты.')
@@ -63,9 +66,32 @@ def _existing(connection, employee_id, work_day, paid_day):
     return accrual[0], [row[0] for row in own], current, not manual
 
 
-def set_cell(finance, paid_day, employee_id, amount, expected_amount, *, cashier_amount=None):
+def _assert_shift(work_day):
+    if work_day < SALARY_SHIFT_START or work_day > today_tashkent():
+        raise LedgerError(f'Выберите смену с {SALARY_SHIFT_START:%d.%m.%Y} по сегодняшний день.')
+
+
+def shift_payout_day(finance, work_day, employee_id):
+    """New checks spend today's cash; correcting an existing check keeps its date."""
+    _assert_shift(work_day)
+    with closing(finance._open()) as connection:
+        days = [row[0] for row in connection.execute(
+            'SELECT DISTINCT p.paid_day FROM accountant_salary_payments p '
+            'JOIN accountant_accruals a ON a.id=p.accrual_id WHERE a.employee_id=? AND a.work_day=?',
+            (employee_id, work_day.isoformat()))]
+    if len(days) > 1:
+        raise SalaryCellChanged('За смену есть выплаты в разные дни. Проверьте журнал зарплаты.')
+    return date.fromisoformat(days[0]) if days else today_tashkent()
+
+
+def set_cell(finance, paid_day, employee_id, amount, expected_amount, *, cashier_amount=None, work_day=None):
     _assert_day(paid_day)
-    work_day = paid_day - timedelta(days=1)
+    by_shift = work_day is not None
+    work_day = work_day if by_shift else paid_day - timedelta(days=1)
+    if by_shift:
+        _assert_shift(work_day)
+        if work_day > paid_day:
+            raise LedgerError('Смена не может быть позже дня выплаты.')
     value = amount_value(amount, allow_zero=True)
     expected = amount_value(expected_amount, allow_zero=True)
     with closing(finance._open()) as connection:
@@ -93,7 +119,9 @@ def set_cell(finance, paid_day, employee_id, amount, expected_amount, *, cashier
             if version is None or version[3]:
                 # В реестр завели позже этой смены — берём нынешние имя, группу и ставку.
                 version = (employee[0], employee[1], employee[2], 0)
-            accrual_id, payment_ids, current, legacy = _existing(connection, employee_id, work_day, paid_day)
+            accrual_id, payment_ids, current, legacy = _existing(connection, employee_id, work_day, paid_day, by_shift=by_shift)
+            if by_shift and not payment_ids and paid_day != today_tashkent():
+                raise SalaryCellChanged('День выдачи уже изменился. Обновите таблицу и повторите.')
             if value == current:
                 connection.commit()
                 return dict(date=paid_day.isoformat(), employee_id=employee_id, amount=plain(value),
@@ -168,7 +196,7 @@ def cell_attendance(row) -> dict:
 
 
 def month_data(finance, first, last, attendance=None, *, basis='payment'):
-    """Столбцы по дате выдачи; вид по сменам доступен через basis='shift'.
+    """Столбцы по дате выдачи или смены; экран использует basis='shift'.
 
     Меняется только представление: сохранённые work_day/paid_day не переносятся.
     attendance(смены) возвращает {день: {сотрудник: строка «Сотрудников»}}.
@@ -221,10 +249,12 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
         # Общая зарплата без сотрудников в «Финансах дня»: клетки не запираем, но
         # экран предупреждает — ввод тех же денег по людям посчитает выплату дважды.
         aggregate = defaultdict(Decimal)
+        aggregate_scope = '((day>=? AND day<=?) OR day=?)' if by_shift else '(day>=? AND day<=?)'
+        aggregate_bounds = (paid_first.isoformat(), paid_last.isoformat()) + ((today.isoformat(),) if by_shift else ())
         for day_text, amount_text in connection.execute(
-                "SELECT day, amount FROM accountant_movements WHERE day>=? AND day<=? AND kind='other_expense' "
+                f"SELECT day, amount FROM accountant_movements WHERE {aggregate_scope} AND kind='other_expense' "
                 "AND item_code IN ('salary_cashier','salary_staff','salary_technical','salary_carryover')",
-                (paid_first.isoformat(), paid_last.isoformat())):
+                aggregate_bounds):
             aggregate[day_text] += Decimal(amount_text)
     closed_through = closure[1] if closure else ''
     people = {row[0]: dict(id=row[0], name=row[1], role=row[2], group=row[3],
@@ -267,13 +297,14 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
     for employee_id, person in people.items():
         for column_day in days:
             work_day = column_day if by_shift else (date.fromisoformat(column_day)-timedelta(days=1)).isoformat()
-            paid_day = (date.fromisoformat(work_day)+timedelta(days=1)).isoformat()
+            actual_days = sorted(paid_dates[(employee_id, column_day)])
+            paid_day = ((actual_days[0] if actual_days else today.isoformat()) if by_shift
+                        else (date.fromisoformat(work_day)+timedelta(days=1)).isoformat())
             history = [row for row in versions[employee_id] if row[1] <= work_day]
-            # Все прошедшие дни с начала учёта, как в «Зарплате · месяц». Запираем только
-            # то, что задвоило бы деньги: выплату этой смены в другой день или выплату
-            # другой смены в этот день.
+            # В виде по сменам новая отметка расходует сегодня; существующая
+            # сохраняет дату. Разные смены с одной датой выдачи независимы.
             editable = (not person['archived'] and ENTRY_START.isoformat() <= paid_day <= today.isoformat()
-                        and work_day >= SALARY_SHIFT_START.isoformat()
+                        and SALARY_SHIFT_START.isoformat() <= work_day <= today.isoformat()
                         and work_day > closed_through and paid_day > closed_through)
             # Смена вне периода временного — клетка заперта и пуста (T-434).
             outside = (employee_id in bounds and not person['archived']
@@ -283,6 +314,8 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
             conflict = bool(paid_rows) if earned_row is None else (
                 any(row[8] != earned_row[0] for row in paid_rows)
                 or any(row[1] != paid_day for row in all_payments[earned_row[0]]))
+            if by_shift:
+                conflict = len(actual_days) > 1 or paid_day < work_day
             # Ставка на день смены (по версии реестра), а не нынешняя: галочка
             # «выдано по ставке» за прошлый день платит то, что действовало тогда.
             # Завели в реестр позже смены — нынешняя ставка.
@@ -298,7 +331,7 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
                 person['cells'][column_day]['outside'] = True
             if by_shift:
                 person['cells'][column_day].update(paid_day=paid_day,
-                    paid_days=sorted(paid_dates[(employee_id, column_day)]))
+                    paid_days=actual_days)
             else:
                 # Старые/отложенные выдачи могут относиться к другой смене.
                 # Дата столбца — фактическая выдача, в подсказке нужны реальные смены.

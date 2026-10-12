@@ -16,8 +16,8 @@
   }
   const key=text=>String(text??'').toLowerCase().replace(/ё/g,'е').replace(/\s+/g,' ').trim();
 
-  /* В виде по сменам выбран день смены, выплата — следующим днём. */
-  function defaults(day,basis='payment'){return basis==='shift'?{paid:shiftDay(day,1),work:day}:{paid:day,work:shiftDay(day,-1)};}
+  /* В виде по сменам новая выдача по умолчанию расходует сегодняшнюю кассу. */
+  function defaults(day,basis='payment',today=day){return basis==='shift'?{paid:today,work:day}:{paid:day,work:shiftDay(day,-1)};}
 
   /* Временный (T-434): «временный · 08.10–10.10»; период подписывает сервер. */
   function typeTag(person){return person?.temporary?(person.work_period?'временный · '+person.work_period:'временный'):'';}

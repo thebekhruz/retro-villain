@@ -135,3 +135,7 @@
   .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1fr);
     grid-template-areas:"who" "work" "paid" "sum" "note" "btn"}
 }
+
+/* Дата реального расхода остаётся видна рядом с галочкой за смену. */
+.sd-m .sd-payout-date{display:block;font-size:9px;font-weight:500;line-height:1.25;color:#285249;margin-top:2px;white-space:normal}
+.sd-m:has(.sd-payout-date){flex-direction:column;line-height:1.15}

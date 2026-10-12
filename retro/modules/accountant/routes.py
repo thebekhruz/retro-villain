@@ -551,12 +551,24 @@ class SalaryShiftCellInput(BaseModel):
 
 @router.put('/salary-day/shift-cell')
 async def salary_shift_cell(request: Request, body: SalaryShiftCellInput):
-    """Выбран день СМЕНЫ: расход приходится на следующий календарный день."""
-    if body.work_day >= today_tashkent():
-        raise HTTPException(422, 'Выберите завершённую смену: выплата записывается следующим днём.')
-    paid_day = body.work_day + timedelta(days=1)
-    return await salary_day_cell(request, SalaryDayCellInput(
-        date=paid_day, employee_id=body.employee_id, amount=body.amount, expected_amount=body.expected_amount))
+    """Новая галочка за выбранную смену — расход сегодня, по времени Ташкента."""
+    from .salary_day import SalaryCellChanged, _assert_day, set_cell, shift_payout_day
+    finance = request.app.state.accountant_finance
+    try:
+        paid_day = await asyncio.to_thread(shift_payout_day, finance, body.work_day, body.employee_id)
+        _assert_day(paid_day)
+        amount = amount_value(body.amount, allow_zero=True)
+        expected = amount_value(body.expected_amount, allow_zero=True)
+        if amount > expected:
+            refuse_outside_period(request, body.employee_id, body.work_day, 'cell')
+        cashier_amount = await required_handover(request, paid_day) if amount > expected else None
+        return await asyncio.to_thread(set_cell, finance, paid_day, body.employee_id,
+                                       body.amount, body.expected_amount, cashier_amount=cashier_amount,
+                                       work_day=body.work_day)
+    except SalaryCellChanged as error:
+        raise HTTPException(409, str(error)) from None
+    except LedgerError as error:
+        finance_error(error)
 
 
 class ExtraPayoutInput(BaseModel):

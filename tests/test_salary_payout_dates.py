@@ -218,9 +218,9 @@ def test_payment_column_writes_same_day_expense_and_exports_previous_shift(c, pa
 
 
 @pytest.mark.parametrize('work,paid', [
-    (oct_(5), oct_(6)), (oct_(8), oct_(9)), (oct_(9), oct_(10)),
-    (oct_(31), date(2026, 11, 1)), (date(2026, 12, 31), date(2027, 1, 1))])
-def test_selected_shift_creates_expense_next_day_for_any_date(c, work, paid):
+    (oct_(5), oct_(12)), (oct_(8), oct_(12)), (oct_(9), oct_(12)),
+    (oct_(31), date(2026, 11, 3)), (date(2026, 12, 31), date(2027, 1, 4))])
+def test_selected_shift_creates_expense_on_server_today_for_any_date(c, work, paid):
     person = seed(c)['ikhtiyor']
     c.clock['today'] = paid
     cash_days(c, oct_(11), paid)
@@ -249,15 +249,15 @@ def test_selected_shift_creates_expense_next_day_for_any_date(c, work, paid):
     assert table(c, 'accountant_salary_payments') == []
 
 
-def test_shift_view_attendance_and_rejection_of_unfinished_shift(c):
+def test_shift_view_attendance_and_rejection_of_future_shift(c):
     person = seed(c)['ikhtiyor']
     data = shift_sheet(c)
     cells = next(p for p in data['people'] if p['id'] == person.id)['cells']
     assert data['days'][0] == data['shift_start'] == '2026-10-05'
     assert cells['2026-10-08']['attendance']['time'] == '09:31'
     assert cells['2026-10-09']['editable'] is True
-    assert cells['2026-10-10']['editable'] is False
-    for work in (oct_(10), oct_(11)):
+    assert cells['2026-10-10']['editable'] is True
+    for work in (oct_(11), oct_(12)):
         assert shift_cell(c, work, person, 360000).status_code == 422
     assert table(c, 'accountant_salary_payments') == []
 
@@ -290,8 +290,8 @@ def test_shift_view_and_export_keep_actual_dates_of_existing_payments_and_extras
     book = load_workbook(BytesIO(response.content))
     sheet = book['Ведомость']
     headers = [cell.value for cell in sheet[4]]
-    assert 'Смена 31.10\nвыплата 01.11' in headers
-    col = headers.index('Смена 08.10\nвыплата 09.10') + 1
+    assert 'Смена 31.10' in headers
+    col = headers.index('Смена 08.10') + 1
     row = next(row for row in sheet.iter_rows(min_row=5) if row[1].value == person.name)
     assert row[col-1].value == 360000
     assert '09.10.2026' in row[col-1].comment.text
@@ -576,10 +576,10 @@ def test_shift_entry_respects_temporary_employee_work_dates(c):
     assert cells['2026-10-08']['editable'] is True
     assert cells['2026-10-09']['editable'] is True
     assert cells['2026-10-10']['outside'] is True
-    # Последняя рабочая смена 09.10 оплачивается 10.10, уже после конца периода.
+    # Последняя рабочая смена 09.10 оплачивается сегодня, 12.10, после конца периода.
     paid = shift_cell(c, oct_(9), person, 150000)
     assert paid.status_code == 200, paid.text
-    assert paid.json()['date'] == '2026-10-10'
+    assert paid.json()['date'] == '2026-10-12'
     assert shift_cell(c, oct_(7), person, 150000).status_code == 422
     assert shift_cell(c, oct_(10), person, 150000).status_code == 422
-    assert day_json(c, oct_(10))['ledger']['salary_paid_on_day'] == '150000'
+    assert day_json(c, oct_(12))['ledger']['salary_paid_on_day'] == '150000'
