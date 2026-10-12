@@ -12,7 +12,7 @@ DATE_ADAPTER = TypeAdapter(date)
 MESSAGE = f'Учёт доступен с {ACCOUNTING_START:%d.%m.%Y}. Более ранние даты недоступны.'
 
 
-def check_dates(values, *, salary=False, salary_shift_range=False):
+def check_dates(values, *, salary=False):
     for key, value in values:
         if key == 'month' and isinstance(value, str):
             try:
@@ -27,7 +27,7 @@ def check_dates(values, *, salary=False, salary_shift_range=False):
             except ValidationError:
                 continue
             # A first-day receipt may refer to the preceding cashier shift.
-            if (key == 'work_day' and salary) or (salary_shift_range and key in {'first', 'last'}):
+            if key == 'work_day' and salary:
                 minimum = SALARY_SHIFT_START
             elif key == 'cashier_date':
                 minimum = ACCOUNTING_START - timedelta(days=1)
@@ -41,8 +41,7 @@ async def require_accounting_dates(request: Request):
     if not request.url.path.startswith('/api/'):
         return
     salary = request.url.path.startswith('/api/accountant/salary-day/')
-    check_dates(request.query_params.multi_items(), salary=salary,
-                salary_shift_range=request.url.path == '/api/accountant/salary-day/batch' and request.method == 'GET')
+    check_dates(request.query_params.multi_items(), salary=salary)
     check_dates(request.path_params.items())
     if request.url.path.startswith('/api/shokh/'):
         for field, getter in (('trip_id', request.app.state.shokh.trip),

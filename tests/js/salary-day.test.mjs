@@ -184,11 +184,11 @@ function calendarHarness({today='2026-10-09',selected=today,sheetMonth=selected.
   const context=vm.createContext({L:logic,Date:ClockDate,AbortController,encodeURIComponent,
     current:month({month:sheetMonth,today}),today,selectedDay:selected,calendarDay:today,
     loading:false,writes:0,editing:null,dateCheck:null,sequence:0,controller:null,
-    document:{hidden:false},dirty:[],extraBusy:false,batchBusy:false,
+    document:{hidden:false},dirty:[],extraBusy:false,
     $:element,monthTitle:value=>value,message:(...args)=>messages.push(args),controls(){},render(){},
     fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve})),
   });
-  vm.runInContext('globalThis.RetroSave={pending:()=>dirty};const extra={busy:()=>extraBusy};const batch={busy:()=>batchBusy};'+calendarCode,context);
+  vm.runInContext('globalThis.RetroSave={pending:()=>dirty};const extra={busy:()=>extraBusy};'+calendarCode,context);
   const reply=(index,data,ok=true)=>requests[index].resolve({ok,json:async()=>data});
   const sheet=(day,which=day.slice(0,7))=>month({basis:'payment',month:which,today:day,entry_start:'2026-10-02',
     days:which==='2026-10'?['2026-10-08','2026-10-09','2026-10-10','2026-10-31']:[which+'-01',which+'-02']});
@@ -299,13 +299,4 @@ test('shift columns allow only completed shifts and sum extras by actual work da
   assert.equal(logic.nextDay('2028-02-29'),'2028-03-01');
   assert.equal(logic.shiftTitle('2026-10-09',{status:'on_time',time:'09:31'},0,'shift'),
     'Смена 09.10: пришёл 09:31, вовремя');
-});
-
-test('a selected multi-shift payout defers midnight refresh until its draft is resolved',async()=>{
-  const h=calendarHarness();h.context.batchBusy=true;
-  assert.equal(await h.refresh(true),false);
-  assert.equal(h.requests.length,0);
-  h.context.batchBusy=false;
-  const work=h.refresh(true);h.reply(0,{today:'2026-10-09'});
-  assert.equal(await work,false);
 });

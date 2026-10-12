@@ -846,7 +846,7 @@ class FinanceStore:
                 if stored_day != day.isoformat():
                     raise LedgerError('Нельзя изменить дату операции.')
                 if operation_type == 'salary_payment':
-                    self._guard_manual_salary_payment(connection, before['accrual_id'], day)
+                    self._guard_manual_salary_payment(connection, before['accrual_id'])
                 if operation_type == 'reserve_transfer':
                     if before['kind'] != 'transfer':
                         raise LedgerError('Эту резервную операцию нельзя удалить здесь.')
@@ -1154,10 +1154,10 @@ class FinanceStore:
             try:
                 lock_day(connection, day)
                 ensure_open(connection, day)
-                from .salary_day import MANUAL_STATUS, BATCH_STATUS
+                from .salary_day import MANUAL_STATUS
                 if connection.execute(
-                        'SELECT 1 FROM accountant_accruals WHERE work_day=? AND attendance_status IN (?,?)',
-                        (day.isoformat(), MANUAL_STATUS, BATCH_STATUS)).fetchone():
+                        'SELECT 1 FROM accountant_accruals WHERE work_day=? AND attendance_status=?',
+                        (day.isoformat(), MANUAL_STATUS)).fetchone():
                     raise LedgerError('За смену уже введена ручная зарплата. Используйте таблицу «Зарплата · день».')
                 if connection.execute('SELECT 1 FROM accountant_payroll_days WHERE day = ?',
                                       (day.isoformat(),)).fetchone():
@@ -1448,13 +1448,13 @@ class FinanceStore:
     def _guard_manual_salary_expense(connection, day, item_code):
         if item_code not in {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}:
             return
-        from .salary_day import MANUAL_STATUS, BATCH_STATUS
+        from .salary_day import MANUAL_STATUS
         lock_day(connection, day)
         if connection.execute(
                 'SELECT 1 FROM accountant_salary_payments p '
                 'JOIN accountant_accruals a ON a.id=p.accrual_id '
-                'WHERE p.paid_day=? AND a.attendance_status IN (?,?)',
-                (day.isoformat(), MANUAL_STATUS, BATCH_STATUS)).fetchone():
+                'WHERE p.paid_day=? AND a.attendance_status=?',
+                (day.isoformat(), MANUAL_STATUS)).fetchone():
             raise LedgerError('За день уже введена зарплата по сотрудникам. '
                               'Измените её в таблице «Зарплата · день», чтобы не задвоить общий расход.')
 
@@ -1640,7 +1640,7 @@ class FinanceStore:
                     raise LedgerError('Выплата не найдена.')
                 if row[3] != day.isoformat():
                     raise LedgerError('Нельзя изменить дату операции.')
-                self._guard_manual_salary_payment(connection, row[2], day)
+                self._guard_manual_salary_payment(connection, row[2])
                 before = self._row_dict(connection, 'accountant_salary_payments', payment_id)
                 paid_elsewhere = sum((Decimal(item[0]) for item in connection.execute(
                     'SELECT amount FROM accountant_salary_payments WHERE accrual_id = ? AND id != ?',
@@ -1773,18 +1773,10 @@ class FinanceStore:
                      amount=row[5], created_at=local_timestamp(row[6])) for row in rows]
 
     @staticmethod
-    def _guard_manual_salary_payment(connection, accrual_id, paid_day):
-        from .salary_day import MANUAL_STATUS, BATCH_STATUS
-        target = connection.execute('SELECT work_day,employee_id FROM accountant_accruals WHERE id=?', (accrual_id,)).fetchone()
-        if target:
-            for locked in sorted({date.fromisoformat(target[0]), paid_day}):
-                lock_day(connection, locked)
-            from .work_period import lock_employee
-            lock_employee(connection, target[1])
+    def _guard_manual_salary_payment(connection, accrual_id):
+        from .salary_day import MANUAL_STATUS
         row = connection.execute('SELECT attendance_status FROM accountant_accruals WHERE id=?',
                                  (accrual_id,)).fetchone()
-        if row and row[0] == BATCH_STATUS:
-            raise LedgerError('Откройте расшифровку этой выплаты в «Зарплата · день».')
         if row and row[0] == MANUAL_STATUS:
             raise LedgerError('Эта выплата ведётся в таблице «Зарплата · день». Измените сумму в её ячейке.')
 
@@ -1799,7 +1791,7 @@ class FinanceStore:
                                              (accrual_id,)).fetchone()
                 if accrual is None:
                     raise LedgerError('Начисление не найдено.')
-                self._guard_manual_salary_payment(connection, accrual_id, paid_day)
+                self._guard_manual_salary_payment(connection, accrual_id)
                 if accrual[0] < salary_period_start(paid_day).isoformat():
                     raise LedgerError(f'Начисление относится к архиву до {salary_period_start(paid_day):%d.%m.%Y}.')
                 if paid_day.isoformat() < accrual[0]:

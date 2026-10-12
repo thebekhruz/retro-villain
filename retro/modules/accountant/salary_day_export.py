@@ -136,11 +136,6 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
     by_shift = data.get('basis') == 'shift'
     headings = ([f'Смена {_dm(day)}\nвыплата {_dm((date.fromisoformat(day)+timedelta(days=1)).isoformat())}'
                  for day in days] if by_shift else [f'Выплата {_dm(day)}\nза смену {_dm(_previous(day))}' for day in days])
-    if not by_shift:
-        for index, day in enumerate(days):
-            shifts = sorted({work for p in people for work in p['cells'].get(day, {}).get('work_days', [])})
-            if shifts and shifts != [_previous(day)]:
-                headings[index] = f'Выплата {_dm(day)}\nза ' + ', '.join(_dm(work) for work in shifts)
     labels = (['№', 'Сотрудник', 'Должность', 'Ставка']
               + headings
               + ['Доп. выплаты', 'Итого'])
@@ -148,7 +143,7 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
     _title(sheet, f'RETRO MILLIY · Зарплата · день · {MONTHS[month.month - 1]} {month.year}', width)
     explanation = (f'Период смен {period}. {mode}. В столбце — дата смены; обычная выплата и расход — на следующий день. '
                    'Фактические даты выплат — в примечаниях к клеткам.' if by_shift else
-                   f'Период выплат {period}. {mode}. В столбце — деньги, выданные в этот день. Даты смен — в заголовках и примечаниях.')
+                   f'Период выплат {period}. {mode}. В столбце — деньги, выданные в этот день за смену предыдущего дня.')
     _note(sheet, 2, explanation + ' Доп. выплаты входят в итоги и расписаны на листе «Доп. выплаты».', width)
     sheet.row_dimensions[2].height = 30
     _widths(sheet, [5, 30, 18, 12] + [11] * len(days) + [13, 14])
@@ -185,8 +180,7 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
             if dates:
                 sheet.cell(row, 5 + index).comment = Comment(
                     ('Фактическая выплата: ' if by_shift else 'За смены: ')
-                    + ', '.join(_dmy(value) for value in dates)
-                    + ''.join(f"\nСмена {_dmy(p['work_day'])}: {p['amount']} сум" for p in person['cells'].get(day, {}).get('payment_details', [])), 'Retro Milliy')
+                    + ', '.join(_dmy(value) for value in dates), 'Retro Milliy')
         # Доп. выплата в этот день — ячейка подсвечена, сумма — в столбце «Доп. выплаты».
         for index, value in enumerate(own_extra):
             if value:

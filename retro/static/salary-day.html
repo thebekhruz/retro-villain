@@ -10,7 +10,7 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/accountant.css"><link rel="stylesheet" href="/static/payroll.css">
   <link rel="stylesheet" href="/static/salary-day.css"><link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/employees-logic.js" defer></script><script src="/static/salary-day-logic.js" defer></script><script src="/static/salary-extra-logic.js" defer></script><script src="/static/salary-extra.js" defer></script><script src="/static/salary-batch.js" defer></script><script src="/static/salary-day.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/save.js" defer></script><script src="/static/employees-logic.js" defer></script><script src="/static/salary-day-logic.js" defer></script><script src="/static/salary-extra-logic.js" defer></script><script src="/static/salary-extra.js" defer></script><script src="/static/salary-day.js" defer></script>
 </head>
 <body class="pr-page salary-day-page" data-page="salary-day">
 <aside class="sidebar">
@@ -47,27 +47,6 @@
         <article class="pr-card"><div class="pr-card-label" id="selected-title">Выдано за день</div><div class="pr-card-value rm-num" id="salary-selected">—</div><div class="pr-card-sub" id="selected-shift"></div></article>
         <article class="pr-card"><div class="pr-card-label">Сотрудников в ведомости</div><div class="pr-card-value rm-num" id="salary-people">—</div></article>
       </section>
-      <details class="sd-fold sd-batch" id="salary-batch">
-        <summary><span class="sd-fold-title">Выдать за несколько дней<small>Несколько смен — одна дата выдачи денег</small></span><span class="sd-fold-action"><span class="sd-fold-open">Раскрыть</span><span class="sd-fold-close">Свернуть</span><span aria-hidden="true">⌄</span></span></summary>
-        <div class="sb-body">
-          <form id="batch-dates" class="sb-dates">
-            <label>Когда выдали деньги?<input id="batch-paid" type="date" required><small id="batch-paid-label"></small></label>
-            <label>Смены с<input id="batch-first" type="date" required></label>
-            <label>По<input id="batch-last" type="date" required></label>
-            <button class="sb-button sb-primary" type="submit" id="batch-load">Показать смены</button>
-          </form>
-          <p class="sb-help">Выберите смены и отметьте тех, кому выдали деньги. Суммы — по ставке смены с учётом уже выданного. При меньшей выдаче остаток сохранится.</p>
-          <p id="batch-message" class="sb-message" role="status" hidden></p>
-          <div id="batch-list" hidden>
-            <div class="sb-tools"><label>Найти сотрудника<input id="batch-search" type="search" placeholder="Имя или должность" data-save-ignore></label><button class="sb-button" type="button" id="batch-select">Отметить доступные</button><button class="sb-button" type="button" id="batch-clear">Снять выбор</button></div>
-            <div class="sb-scroll"><table class="sb-table" id="batch-table"><caption>Отметьте смены, за которые выдали деньги</caption><thead id="batch-head"></thead><tbody id="batch-rows"></tbody></table></div>
-            <div class="sb-footer"><div><span id="batch-count">Ничего не выбрано</span><strong id="batch-total">0 сум</strong><span id="batch-expense"></span></div><button class="sb-button sb-primary" type="button" id="batch-save" disabled>Записать выдачу</button></div>
-          </div>
-          <div id="batch-receipt" class="sb-receipt" role="status" hidden></div>
-        </div>
-      </details>
-      <details class="sd-fold" id="salary-sheet">
-        <summary><span class="sd-fold-title">Ведомость выплат<small>Сотрудники, посещаемость и выплаты по дням</small></span><span class="sd-fold-action"><span class="sd-fold-open">Раскрыть</span><span class="sd-fold-close">Свернуть</span><span aria-hidden="true">⌄</span></span></summary>
       <section class="pr-sheet" aria-label="Ведомость выплат: сотрудник × день выдачи">
         <!-- Группы и поиск — как в «Сотрудниках»: те же чипы и тот же поиск по имени или должности.
              Под выбранной группой — её должности (в «Кухне» — повара по цехам). -->
@@ -83,7 +62,6 @@
         <p id="sd-nothing" class="sd-nothing" hidden>Никого не нашли. Сбросьте поиск или выберите «Все».</p>
         <div id="sheet-empty" class="empty-state" hidden><p>Сменных сотрудников пока нет. Добавьте их в «Сотрудниках».</p></div>
       </section>
-      </details>
       <!-- Доп. выплаты (ТЗ 09.10, Б-05): список месяца и строка ввода в конце — как
            «Оклады, выданные сегодня» в «Зарплате · месяц». В клетку не входят, в итоги — да. -->
       <section class="fd-sec pr-today sd-extra" id="extra-section" aria-labelledby="extra-title">
@@ -101,12 +79,6 @@
         <p class="fd-mo-hint" id="extra-hint">Разовая выплата сверх клетки: уйдёт расходом в день выплаты и войдёт в итоги ведомости.</p>
       </section>
     </div>
-    <dialog id="batch-history" class="sb-dialog" aria-labelledby="batch-history-title">
-      <div class="sb-dialog-head"><h2 id="batch-history-title">Расшифровка выдачи</h2><button type="button" class="sb-button" id="batch-history-close">Закрыть</button></div>
-      <p id="batch-history-info"></p><p id="batch-history-message" class="sb-message" role="status" hidden></p>
-      <div id="batch-history-rows"></div>
-      <p class="sb-help">Изменение суммы пересчитает расход и остаток за смену. Чтобы исправить дату выдачи, отмените выплату и запишите её заново.</p>
-    </dialog>
     <footer class="pr-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Зарплата · день</span><span>Время Ташкента · UZS</span></footer>
   </div>
 </main>
