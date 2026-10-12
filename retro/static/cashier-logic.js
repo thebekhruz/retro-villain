@@ -79,18 +79,16 @@
   const toNumber=value=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?null:Number(value);
   const percentOf=(value,total)=>total>0&&value!==null?Math.round(value/total*1000)/10:null;
 
-  /* Выручка по кассам iiko (ТЗ «Выручка, оплаты и предоплаты», 08.10.2026, 3.1).
-     Группы и типы — как прислал iiko, порядок задаёт сервер (касса с «Демо»
-     первой). Сумма типа — полный счёт: оплаты плюс зачтённые в этот день
-     предоплаты; проценты — от выручки по чекам. Типы без денег прячутся до
-     «показать все». Нет групп от iiko — показываем оплаты продаж одним списком
-     и прямо говорим, что предоплат в нём нет. */
+  /* День получения денег: оплаты счетов + фактически полученные предоплаты.
+     Зачёт аванса не приносит денег повторно. Группы iiko показывают только
+     paid; полученные авансы идут отдельной строкой без выдуманного способа
+     оплаты. Полные счета используются только для числа и среднего чека. */
   function revenueGroups(snapshot){
     if(!snapshot)return null;
     const type=(item,total)=>{
       const paid=toNumber(item.paid!==undefined?item.paid:item.amount);
       const redeemed=toNumber(item.redeemed)||0;
-      const sum=toNumber(item.total!==undefined?item.total:item.amount);
+      const sum=paid;
       return {name:item.name,label:item.name===CASH_PAYMENT?'Наличные':item.name,isCash:item.name===CASH_PAYMENT,
         goesToSafe:String(item.name).includes(COLLECTION_HINT),paid,redeemed,total:sum,
         percent:percentOf(sum,total),zero:!sum};
@@ -103,19 +101,16 @@
     };
     const receipts=toNumber(snapshot.full_receipt_count!==undefined&&snapshot.full_receipt_count!==null
       ?snapshot.full_receipt_count:snapshot.receipt_count);
-    if(!Array.isArray(snapshot.payment_groups)){
-      const total=toNumber(snapshot.revenue);
-      return {fallback:true,total,receipts,average:toNumber(snapshot.average_receipt),
-        groups:[group('Оплаты продаж',snapshot.payments||[],total)],
-        match:null,difference:null,redeemed:null,realCash:null};
-    }
-    const total=toNumber(snapshot.full_total);
-    const groups=snapshot.payment_groups.map(item=>group(item.name,item.types||[],total));
-    const groupsTotal=toNumber(snapshot.groups_total);
-    const difference=groupsTotal===null||total===null?null:Math.round((groupsTotal-total)*100)/100;
-    return {fallback:false,total,receipts,average:toNumber(snapshot.full_average_receipt),groups,
-      match:snapshot.groups_match===true,difference,
-      redeemed:toNumber(snapshot.redeemed_total),realCash:toNumber(snapshot.real_cash)};
+    const total=toNumber(snapshot.daily_revenue), received=toNumber(snapshot.received_prepayments_total);
+    const paid=toNumber(snapshot.revenue), fallback=!Array.isArray(snapshot.payment_groups);
+    const groups=fallback?[group('Оплаты счетов',snapshot.payments||[],total)]
+      :snapshot.payment_groups.map(item=>group(item.name,item.types||[],total));
+    const groupsTotal=groups.reduce((sum,item)=>sum+Math.round(item.total*100),0)/100;
+    const difference=total===null||received===null?null:Math.round((groupsTotal+received-total)*100)/100;
+    return {fallback,total,received,receipts,groups,
+      average:toNumber(fallback?snapshot.average_receipt:snapshot.full_average_receipt),
+      match:difference===null?null:Math.abs(difference)<=1,difference,
+      redeemed:fallback?null:toNumber(snapshot.redeemed_total),realCash:paid};
   }
 
   /* Реестр предоплат (ТЗ 3.2). Статус: ждёт → зачтена / возврат; ждущая

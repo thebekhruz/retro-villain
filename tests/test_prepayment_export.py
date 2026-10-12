@@ -39,6 +39,9 @@ def test_exports_each_prepayment_without_adding_it_to_cash_twice():
     book = workbook((entry(1, order_number='42'),
                      entry(2, '800000', payment_method='UzCard')))
     summary, detail = book['отчет'], book['Предоплаты']
+    assert summary['B2'].value == 1100000
+    assert summary['B22'].value == 1000000
+    assert summary['B23'].value == 100000
     assert summary['A3'].value == 'ПРЕДОПЛАТЫ ЗА ДЕНЬ'
     assert all(label in summary['A4'].value for label in ('11:01', '42', 'Гость 1', 'Наличными'))
     assert 'UzCard' in summary['A5'].value
@@ -73,6 +76,8 @@ def test_missing_details_are_not_exported_as_no_prepayments():
     assert unknown['B4'].value is None
     assert empty['A4'].value == 'Предоплат за день нет'
     assert empty['B4'].value is None
+    assert unknown['B2'].value == 'требует проверки'
+    assert empty['B2'].value == 100000
 
 
 def test_iiko_text_cannot_become_a_formula_and_unknown_method_is_explicit():

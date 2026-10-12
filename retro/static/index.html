@@ -49,20 +49,19 @@
     <div id="message" class="notice" role="status" aria-live="polite" hidden></div>
     <section id="setup" class="setup" hidden><span class="setup-symbol">⌁</span><div><h2>Подключим ваши данные</h2><p>Интерфейс готов к работе. Осталось настроить доступ к iiko на сервере.</p><a class="text-link" href="/?demo=1">Посмотреть на примере <span>↗</span></a></div></section>
 
-    <!-- ТЗ «Выручка, оплаты и предоплаты» (08.10.2026, п. 3.4). Выручка по чекам —
-         полные счета дня, как в отчёте iiko «по типам оплат»: сверяется с iiko
-         отметкой «= iiko ✓». Реальная касса — без предоплат, зачтённых сегодня:
-         их деньги пришли в день аванса и уже посчитаны тогда. Предоплаты — вход в реестр. -->
+    <!-- Выручка по дню получения: оплаты счетов + полученные предоплаты.
+         Зачёт ранее полученного аванса повторно в выручку не входит. -->
     <section class="rm-cards cashier-cards" id="metrics" aria-busy="false" aria-label="Показатели дня">
       <article class="rm-card rm-card--hero">
-        <div class="rm-card-label"><span>Выручка по чекам · iiko</span><span id="revenue-check" class="cashier-check" hidden></span></div>
+        <div class="rm-card-label"><span>Выручка за день</span><span id="revenue-check" class="cashier-check" hidden></span></div>
         <div class="rm-card-value"><strong id="revenue" class="rm-num">—</strong><small>сум</small></div>
-        <div class="cashier-card-sub"><span id="receipts" class="rm-num">—</span> чеков · средний <span id="average" class="rm-num">—</span></div>
+        <div class="cashier-card-sub">Оплаты счетов + полученные предоплаты</div>
+        <div class="cashier-card-sub">Закрытых чеков: <span id="receipts" class="rm-num">—</span> · средний счёт <span id="average" class="rm-num">—</span></div>
       </article>
       <article class="rm-card">
-        <div class="rm-card-label">Реальная касса дня<i class="cashier-square" aria-hidden="true"></i></div>
+        <div class="rm-card-label">Оплаты счетов за день<i class="cashier-square" aria-hidden="true"></i></div>
         <div class="rm-card-value"><strong id="real-cash" class="rm-num">—</strong><small id="real-cash-unit">сум</small></div>
-        <div class="cashier-card-sub cashier-real-sub" id="real-cash-sub"><span>Выручка без предоплат, зачтённых сегодня</span></div>
+        <div class="cashier-card-sub cashier-real-sub" id="real-cash-sub"><span>Без зачёта ранее полученных предоплат</span></div>
       </article>
       <article class="rm-card rm-card--warn cashier-prepay-card">
         <div class="rm-card-label">Предоплаты<i class="cashier-square is-soft" aria-hidden="true"></i></div>
@@ -81,13 +80,13 @@
              («Демо» в iiko) выделены: именно они уходят бухгалтеру. -->
         <section class="rm-section cashier-revenue" id="payments-section">
           <div class="cashier-section-head">
-            <div><p class="eyebrow">ВЫРУЧКА ПО КАССАМ IIKO</p><h2>Выручка</h2></div>
-            <span class="cashier-section-sub">Как в отчёте iiko «по типам оплат»</span>
+            <div><p class="eyebrow">ПО ДАННЫМ IIKO</p><h2>Выручка за день</h2></div>
+            <span class="cashier-section-sub">Деньги учитываются в день получения</span>
           </div>
           <div id="payment-empty" class="empty-state"><span aria-hidden="true">▤</span><p>Здесь появятся оплаты за выбранный день</p></div>
           <div id="payments" class="payments"></div>
           <p id="payments-note" class="cashier-pay-note" hidden></p>
-          <div class="cashier-pay-total"><span class="cashier-pay-total-name"><span>Выручка по чекам · iiko</span><span id="payment-check" class="cashier-check" hidden></span></span><span class="payment-share">100%</span><strong id="payment-total" class="rm-num">—</strong></div>
+          <div class="cashier-pay-total"><span class="cashier-pay-total-name"><span>Выручка за день</span><span id="payment-check" class="cashier-check" hidden></span></span><span id="payment-total-share" class="payment-share"></span><strong id="payment-total" class="rm-num">—</strong></div>
         </section>
 
         <!-- Реестр предоплат (ТЗ, п. 3.2): деньги и время — из iiko, кто внёс,

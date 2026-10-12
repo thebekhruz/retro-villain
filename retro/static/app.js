@@ -58,8 +58,7 @@ function paintWaiting() {
   $('shift-pill').classList.toggle('is-skel', waiting.has('day'));
   if (waiting.has('day')) $('shift-pill').hidden = false;
   else if (!snapshot) $('shift-pill').hidden = true;
-  if (waiting.has('day')) $('payment-empty').hidden = true;
-  else if (!snapshot) $('payment-empty').hidden = false;
+  $('payment-empty').hidden = waiting.has('day') || Boolean(snapshot && revenueView?.total !== 0);
   $('prepay-empty').hidden = prepayEmptyHidden();
   $('expenses-empty').hidden = waiting.has('expenses') || waiting.has('shokh')
     || Boolean(financeData && financeData.expenses.length) || Boolean(shokhData && shokhData.gives.length);
@@ -260,6 +259,7 @@ function clearSnapshot() {
   $('shift-pill').hidden = true;
   $('download').disabled = true;
   for (const id of ['revenue','receipts','average','payment-total','real-cash','prepay-credited']) $(id).textContent = '—';
+  $('payment-total-share').textContent = '';
   $('real-cash').classList.remove('is-note');
   $('real-cash-unit').hidden = false;
   showRealCashSub(null);
@@ -562,25 +562,21 @@ function showStatus() {
   const tail = snapshot.refreshing ? ' · обновляем iiko…' : snapshot.stale ? ' · требуют обновления' : '';
   status.textContent = `${source} ${time}${tail}`;
 }
-/* «= iiko ✓» — сумма по кассам сошлась с итогом iiko за день; иначе красная разница. */
+/* Сверяем оплаты по кассам + полученные авансы с дневным итогом. */
 function showCheck(node, view) {
-  const known = Boolean(view && !view.fallback && view.total !== null);
+  const known = Boolean(view && view.match !== null);
   node.hidden = !known;
   if (!known) return;
   node.classList.toggle('is-off', !view.match);
-  if (view.match) { node.replaceChildren('= iiko ✓'); return; }
+  if (view.match) { node.replaceChildren('Суммы сходятся ✓'); return; }
   const diff = document.createElement('span'); diff.className = 'rm-num';
   diff.textContent = view.difference === null ? '' : (view.difference > 0 ? '+' : '−') + money.format(Math.abs(view.difference));
-  node.replaceChildren('≠ iiko ', diff);
+  node.replaceChildren('Расхождение ', diff);
 }
-/* Подпись реальной кассы: из чего она получилась (ТЗ 3.3). */
+/* Оплаты счетов не включают ранее полученные авансы. */
 function showRealCashSub(view) {
-  const node = $('real-cash-sub'), label = text => { const span = document.createElement('span'); span.textContent = text; return span; };
-  const figure = value => { const b = document.createElement('b'); b.className = 'rm-num'; b.textContent = money.format(value); return b; };
-  if (!view) { node.replaceChildren(label('Выручка без предоплат, зачтённых сегодня')); return; }
-  if (view.realCash === null) { node.replaceChildren(label('iiko не отдал зачёт предоплат')); return; }
-  if (!view.redeemed) { node.replaceChildren(label('Зачтённых предоплат нет — равна выручке')); return; }
-  node.replaceChildren(label('Выручка'), ' ', figure(view.total), ' ', label('− зачтено предоплат'), ' ', figure(view.redeemed));
+  $('real-cash-sub').textContent = view && view.realCash === null
+    ? 'iiko не отдал оплаты счетов' : 'Без зачёта ранее полученных предоплат';
 }
 const percentText = value => value === null ? '' : value.toLocaleString('ru-RU', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + '%';
 /* Кассы iiko аккордеоном (ТЗ 3.1): по умолчанию всё свёрнуто — сверка с iiko
@@ -601,7 +597,7 @@ function renderGroups() {
     chevron.setAttribute('aria-hidden', 'true'); chevron.textContent = '⌄';
     const name = document.createElement('span'); name.className = 'payment-name';
     const label = document.createElement('span'); label.className = 'payment-label'; label.textContent = group.name;
-    label.dataset.i18n = 'off';
+    if (!view.fallback) label.dataset.i18n = 'off';
     name.append(label);
     const share = document.createElement('span'); share.className = 'payment-share'; share.textContent = percentText(group.percent);
     const value = document.createElement('strong'); value.className = 'payment-value'; value.textContent = money.format(group.total);
@@ -631,13 +627,17 @@ function renderGroups() {
     }
     box.append(head, body); list.append(box);
   }
+  const advances = typeRow({label: 'Полученные предоплаты', isPrepayment: true, total: view.received,
+    percent: view.total > 0 && view.received !== null ? Math.round(view.received / view.total * 1000) / 10 : null}, colors[0]);
+  advances.id = 'received-payment-row';
+  list.append(advances);
 }
 function typeRow(type, color) {
   const row = document.createElement('div'); row.className = 'payment-row pay-type'; row.style.setProperty('--color', color);
   const dot = document.createElement('span'); dot.className = 'payment-dot';
   const name = document.createElement('span'); name.className = 'payment-name';
   const label = document.createElement('span'); label.className = 'payment-label'; label.textContent = type.label;
-  if (!type.isCash) label.dataset.i18n = 'off';
+  if (!type.isCash && !type.isPrepayment) label.dataset.i18n = 'off';
   name.append(label);
   if (type.isCash) {
     // В iiko наличные называются «Демо»; кассиру понятнее «Наличные».
@@ -646,10 +646,10 @@ function typeRow(type, color) {
     name.append(source, tag);
     row.classList.add('is-cash');
   }
-  // Часть суммы типа — зачтённая сегодня предоплата: в реальную кассу дня она не входит.
+  // Зачёт показываем справочно: он не входит в сумму оплаты и дневную выручку.
   if (type.redeemed) {
     const note = document.createElement('small'); note.className = 'payment-source pay-type-redeemed';
-    const words = document.createElement('span'); words.textContent = 'в т.ч. зачтено предоплат';
+    const words = document.createElement('span'); words.textContent = 'Зачтено отдельно, не входит в выручку:';
     const figure = document.createElement('span'); figure.className = 'rm-num'; figure.textContent = money.format(type.redeemed);
     note.append(words, ' ', figure);
     name.append(note);
@@ -914,7 +914,7 @@ function show(data) {
   // читается дольше и обещает точность, которой нет.
   $('average').textContent = view.average === null ? '—' : count.format(Math.round(view.average));
   for (const id of ['revenue-check', 'payment-check']) showCheck($(id), view);
-  // Реальная касса: без зачёта предоплат её не посчитать — пишем прямо, не ноль.
+  // Оплаты счетов доступны даже при недоступном реестре предоплат.
   const realUnknown = view.realCash === null;
   $('real-cash').textContent = realUnknown ? 'требует проверки' : money.format(view.realCash);
   $('real-cash').classList.toggle('is-note', realUnknown);
@@ -922,11 +922,14 @@ function show(data) {
   showRealCashSub(view);
   $('prepay-credited').textContent = amountText(view.redeemed);
   $('payment-total').textContent = amountText(view.total);
+  $('payment-total-share').textContent = view.total > 0 ? '100%' : '';
   $('payment-empty').hidden = view.total !== 0;
-  $('payment-empty').querySelector('p').textContent = 'За этот день продаж нет';
-  $('payments-note').hidden = !view.fallback;
-  $('payments-note').textContent = view.fallback
-    ? 'iiko не отдал кассы и зачёт предоплат — показаны только оплаты продаж. Обновите день.' : '';
+  $('payment-empty').querySelector('p').textContent = 'За этот день оплат и новых предоплат нет';
+  $('payments-note').hidden = false;
+  $('payments-note').textContent = view.received === null
+    ? 'Предоплаты за день недоступны — итоговая выручка требует проверки. Обновите день.'
+    : 'Зачёт предоплат не увеличивает выручку: деньги учтены в день получения.';
+  if (view.fallback) $('payments-note').textContent += ' Разбивка по кассам iiko недоступна — оплаты показаны одним списком.';
   renderGroups();
   prepayMethods();
   $('download').disabled = Boolean(data.stale || data.refreshing);

@@ -42,7 +42,7 @@ def test_first_sheet_is_populated_even_without_environment_mapping():
     assert s['D12'].value == '=SUM(D3:D11)'
     assert s['B25'].value == 204
     assert w['Касса']['C8'].value == pytest.approx(37329000/58284000)
-    assert s['B23'].value is None
+    assert s['B23'].value == 58284000
 
 
 def test_no_sales_retains_all_known_sources_with_zero_amounts():
