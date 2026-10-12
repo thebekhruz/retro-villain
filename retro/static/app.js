@@ -13,6 +13,7 @@ let summary = null;
 // Выручка по кассам iiko на экране и какие кассы раскрыты (живут при обновлении дня).
 let revenueView = null;
 const openGroups = new Set(), allTypes = new Set();
+const openPaymentDetails = new Set();
 // Реестр предоплат: день, период, вкладка, группировка, строка в правке.
 let prepayData = null, prepayPeriod = null, prepayTab = 'received', prepayBy = 'people', prepayEditing = null;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
@@ -638,10 +639,13 @@ function renderGroups() {
     }
     box.append(head, body); list.append(box);
   }
-  const advances = typeRow({label: 'Полученные предоплаты', isPrepayment: true, total: view.received,
-    percent: view.total > 0 && view.received !== null ? Math.round(view.received / view.total * 1000) / 10 : null}, colors[0]);
-  advances.id = 'received-payment-row';
-  list.append(advances);
+  if (view.unassignedTotal !== 0) {
+    const advances = typeRow({name: 'unassigned', label: 'Предоплаты · способ не указан', isPrepayment: true,
+      total: view.unassignedTotal, advances: view.unassigned,
+      percent: view.total > 0 && view.unassignedTotal !== null ? Math.round(view.unassignedTotal / view.total * 1000) / 10 : null}, colors[0]);
+    advances.id = 'received-payment-row';
+    list.append(advances);
+  }
 }
 function typeRow(type, color) {
   const row = document.createElement('div'); row.className = 'payment-row pay-type'; row.style.setProperty('--color', color);
@@ -657,20 +661,59 @@ function typeRow(type, color) {
     name.append(source, tag);
     row.classList.add('is-cash');
   }
-  // Зачёт показываем справочно: он не входит в сумму оплаты и дневную выручку.
-  if (type.redeemed) {
-    const note = document.createElement('small'); note.className = 'payment-source pay-type-redeemed';
-    const words = document.createElement('span'); words.textContent = 'Зачтено отдельно, не входит в выручку:';
-    const figure = document.createElement('span'); figure.className = 'rm-num'; figure.textContent = money.format(type.redeemed);
-    note.append(words, ' ', figure);
-    name.append(note);
-  }
   if (type.zero) row.classList.add('is-zero');
   const share = document.createElement('span'); share.className = 'payment-share'; share.textContent = percentText(type.percent);
   const value = document.createElement('strong'); value.className = 'payment-value';
   value.textContent = type.total === null ? '—' : money.format(type.total);
   row.append(dot, name, share, value);
+  if (!type.advances?.length) return row;
+  const detail = paymentDisclosure(row, 'method:' + type.name);
+  detail.dataset.paymentMethod = type.name;
+  if (!type.isPrepayment) {
+    const paid = typeRow({label: 'Оплаты счетов', isPrepayment: true, total: type.paid, percent: null}, color);
+    paid.classList.add('pay-detail-row'); detail.append(paid);
+    const received = typeRow({label: 'Полученные предоплаты', isPrepayment: true, total: type.received, percent: null}, color);
+    received.classList.add('pay-detail-row');
+    const deposits = paymentDisclosure(received, 'advances:' + type.name);
+    deposits.classList.add('pay-advances');
+    deposits.append(...type.advances.map(paymentAdvanceRow));
+    detail.append(deposits);
+  } else detail.append(...type.advances.map(paymentAdvanceRow));
+  return detail;
+}
+
+function paymentDisclosure(row, key) {
+  const detail = document.createElement('details'); detail.className = 'pay-detail';
+  detail.open = openPaymentDetails.has(key);
+  const head = document.createElement('summary'); head.className = row.className;
+  head.style.cssText = row.style.cssText;
+  head.append(...row.childNodes);
+  const arrow = head.querySelector('.payment-dot');
+  arrow.className = 'pay-detail-chevron'; arrow.textContent = '›'; arrow.setAttribute('aria-hidden', 'true');
+  detail.append(head);
+  detail.addEventListener('toggle', () => {
+    if (!detail.isConnected) return;
+    if (detail.open) openPaymentDetails.add(key); else openPaymentDetails.delete(key);
+  });
+  return detail;
+}
+
+function paymentAdvanceRow(entry) {
+  const row = document.createElement('div'); row.className = 'pay-advance-row';
+  const info = document.createElement('span');
+  const label = document.createElement('span'); label.dataset.i18n = 'off';
+  label.textContent = entry.guest || (entry.order_number ? '№' + entry.order_number : '—');
+  const stamp = document.createElement('small'); stamp.textContent = stampText(entry.received_at);
+  info.append(label, stamp);
+  const amount = document.createElement('strong'); amount.className = 'rm-num'; amount.textContent = money.format(entry.amount);
+  row.append(info, amount);
   return row;
+}
+
+function refreshPaymentGroups() {
+  if (!snapshot) return;
+  revenueView = CashierLogic.revenueGroups(snapshot, prepayData);
+  renderGroups();
 }
 
 /* ── Реестр предоплат (ТЗ 3.2) ────────────────────────────────────────────
@@ -699,6 +742,7 @@ async function loadPrepay(day, current, signal) {
     if (current !== generation || error.name === 'AbortError') return;
     prepayData = {date: day, received: [], credited: [], received_total: null, credited_total: null, issue: error.message, failed: true};
   }
+  refreshPaymentGroups();
   showPrepay();
 }
 function loadPrepayPeriod() {
@@ -872,7 +916,7 @@ async function savePrepay(order, body, feedback) {
     if (current !== generation) return false;
     const swap = list => list && list.forEach((item, index) => { if (item.order_number === order) list[index] = row; });
     swap(prepayData?.received); swap(prepayData?.credited); swap(prepayPeriod?.rows);
-    prepayEditing = null; showPrepay(); flashKey('prepay:' + order);
+    prepayEditing = null; refreshPaymentGroups(); showPrepay(); flashKey('prepay:' + order);
     globalThis.RetroToast?.show('Предоплата сохранена');
     return true;
   } catch (error) {
@@ -927,7 +971,7 @@ function show(data) {
     $('shift-text').textContent = shift.text;
     $('shift-pill').classList.toggle('is-closed', !shift.open);
   }
-  const view = CashierLogic.revenueGroups(data);
+  const view = CashierLogic.revenueGroups(data, prepayData);
   revenueView = view;
   const amountText = value => value === null ? '—' : money.format(value);
   $('revenue').textContent = amountText(view.total);
