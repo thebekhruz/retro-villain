@@ -225,12 +225,12 @@ def test_restarting_does_not_reset_new_period_operations(database):
     assert finance.reserves(START)['dividends']['balance'] == '200'
 
 
-def test_shift_five_pays_on_six_and_earlier_shifts_are_blocked(client, monkeypatch):
+def test_shift_five_pays_today_and_earlier_shifts_are_blocked(client, monkeypatch):
     for module in ('routes', 'salary_day', 'extra_payouts'):
         monkeypatch.setattr(f'retro.modules.accountant.{module}.today_tashkent', lambda: date(2026, 10, 10))
     person = client.app.state.accountant_roster.add(name='Тестовый Сотрудник', role='Официант', rate='100', group_name='Обслуживание зала')
     finance = client.app.state.accountant_finance
-    for number in range(5, 9):
+    for number in range(5, 11):
         finance.record_handover(date(2026, 10, number), Decimal('1000'))
     sheet = client.get('/api/accountant/salary-day/month?month=2026-10&basis=shift').json()
     assert sheet['first'] == sheet['days'][0] == sheet['shift_start'] == '2026-10-05'
@@ -238,11 +238,11 @@ def test_shift_five_pays_on_six_and_earlier_shifts_are_blocked(client, monkeypat
         body = dict(work_day=f'2026-10-{shift:02d}', employee_id=person.id, amount='100', expected_amount='0')
         response = client.put('/api/accountant/salary-day/shift-cell', json=body)
         assert response.status_code == 200, response.text
-        assert response.json()['date'] == f'2026-10-{shift+1:02d}'
+        assert response.json()['date'] == '2026-10-10'
         assert client.put('/api/accountant/salary-day/shift-cell', json=body).json()['changed'] is False
-    assert finance.daily_summary(START, None)['salary_paid_on_day'] == Decimal('100')
-    for paid in range(6, 9):
-        assert finance.daily_summary(date(2026, 10, paid), None)['salary_paid_on_day'] == Decimal('100')
+    assert finance.daily_summary(date(2026, 10, 10), None)['salary_paid_on_day'] == Decimal('300')
+    for paid in range(6, 10):
+        assert finance.daily_summary(date(2026, 10, paid), None)['salary_paid_on_day'] == Decimal('0')
     assert client.put('/api/accountant/salary-day/shift-cell', json=dict(body, work_day='2026-10-04')).status_code == 422
     assert client.put('/api/accountant/salary-day/cell', json=dict(date='2026-10-05', employee_id=person.id, amount='100', expected_amount='0')).status_code == 422
     assert client.post('/api/accountant/salary-day/extra', json=dict(body, work_day='2026-10-04', paid_day='2026-10-06', note='Old')).status_code == 422
