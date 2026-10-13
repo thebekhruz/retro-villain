@@ -1,7 +1,7 @@
 """Управление учётными записями панели из командной строки (T-442).
 
     python -m retro.panel_users list
-    python -m retro.panel_users add boss --role admin --phone "+998 90 646 25 40"
+    python -m retro.panel_users add boss --role admin --name "Бехруз" --phone "+998 90 646 25 40"
     python -m retro.panel_users add anvar --role cashier --password
     python -m retro.panel_users set karina --directions Кухня,Уборка
     python -m retro.panel_users set karina --no-phone
@@ -43,7 +43,7 @@ def ask_password(stdin=sys.stdin) -> str:
 
 
 def describe(account) -> str:
-    parts = [f'{account.login:<16}', f'{account.role:<10}', account.phone or '—',
+    parts = [f'{account.login:<16}', f'{account.name or "—":<20}', f'{account.role:<10}', account.phone or '—',
              'пароль' if account.has_password else 'только SMS']
     if account.directions:
         parts.append(','.join(account.directions))
@@ -62,6 +62,7 @@ def run(argv, *, settings: Settings | None = None, store: PanelUserStore | None 
         command = commands.add_parser(name, help='завести запись' if name == 'add' else 'изменить запись')
         command.add_argument('login')
         command.add_argument('--role', choices=ROLES, required=name == 'add')
+        command.add_argument('--name', help='имя для интерфейса, например «Карина»')
         command.add_argument('--phone', help='номер для входа по SMS')
         command.add_argument('--password', action='store_true', help='задать пароль (спросит)')
         command.add_argument('--directions', help='направления менеджера через запятую')
@@ -104,6 +105,8 @@ def run(argv, *, settings: Settings | None = None, store: PanelUserStore | None 
         changes = {}
         if args.role:
             changes['role'] = args.role
+        if args.name is not None:
+            changes['name'] = args.name
         if args.phone:
             changes['phone'] = args.phone
         if getattr(args, 'no_phone', False):

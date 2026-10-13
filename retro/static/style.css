@@ -951,3 +951,6 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
   html.sidebar-collapsed main{margin-left:80px;width:calc(100% - 80px)}
 }
 @media(prefers-reduced-motion:reduce){.sidebar-animate :is(.sidebar,main,.sidebar-toggle-arrow){transition:none}}
+/* Кто вошёл (T-446): имя учётной записи рядом с «Выйти». */
+.top-user{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#40584c}
+@media(max-width:650px){.top-user{max-width:96px;font-size:12px}}

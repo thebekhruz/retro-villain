@@ -93,7 +93,10 @@
       : h('button', {class: 'fd-btn fd-btn-light us-row-btn', type: 'button', text: 'Изменить',
                      onclick: () => openDialog(user)});
     return h('div', {class: 'fd-row us-cols' + (user.active ? '' : ' is-off')},
-      h('span', {class: 'us-login'}, h('b', {'data-i18n': 'off', text: user.login}), user.me ? h('small', {text: 'это вы'}) : null),
+      h('span', {class: 'us-login'},
+        h('b', {'data-i18n': 'off', text: user.name || user.login}),
+        user.name ? h('small', {class: 'us-login-id', 'data-i18n': 'off', text: user.login}) : null,
+        user.me ? h('small', {text: 'это вы'}) : null),
       h('span', {'data-label': 'Роль', text: user.role_name}),
       h('span', {'data-label': 'Телефон', class: 'us-phone', text: user.phone || '—'}),
       h('span', {'data-label': 'Вход', text: signIn(user)}),
@@ -134,7 +137,12 @@
     formMessage('');
     $('us-form').reset();
     $('us-dialog-kicker').textContent = tr(user ? 'УЧЁТНАЯ ЗАПИСЬ' : 'НОВЫЙ ЧЕЛОВЕК');
-    $('us-dialog-title').textContent = user ? user.login : tr('Добавить в панель');
+    // Имя человека не переводится; заголовок «Добавить в панель» — переводится.
+    if (user) $('us-dialog-title').dataset.i18n = 'off'; else delete $('us-dialog-title').dataset.i18n;
+    $('us-dialog-title').textContent = user ? user.label : tr('Добавить в панель');
+    $('us-name').value = user && user.name ? user.name : '';
+    // Имя есть только у записей из базы; у строк из переменных его не задать.
+    $('us-name').disabled = Boolean(user && user.source === 'env');
     $('us-login').value = user ? user.login : '';
     $('us-login').readOnly = Boolean(user);
     $('us-role').value = user ? user.role : 'manager';
@@ -157,7 +165,7 @@
 
   function formBody() {
     const directions = [...$('us-direction-list').querySelectorAll('input:checked')].map(box => box.value);
-    const body = {role: $('us-role').value, phone: $('us-phone').value.trim(), directions};
+    const body = {role: $('us-role').value, name: $('us-name').value.trim(), phone: $('us-phone').value.trim(), directions};
     const password = $('us-password').value;
     if (editing) {
       if ($('us-remove-password').checked) body.remove_password = true;

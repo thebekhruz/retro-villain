@@ -332,10 +332,12 @@ HIKVISION_VERIFY_TLS=true
 
 ## Учётные записи панели
 
-Логины, пароли, номера телефонов и направления менеджеров хранятся в базе —
+Логины, имена, пароли, номера телефонов и направления менеджеров хранятся в базе —
 таблица `panel_users` (Postgres на бою, `panel-users.sqlite3` локально). Пароль
 лежит только отпечатком (PBKDF2 с солью); запись без пароля входит только по
-номеру и коду из SMS. Номер в базе открывает вход по SMS любой роли.
+номеру и коду из SMS. Номер в базе открывает вход по SMS любой роли. Имя
+(`display_name`) интерфейс показывает вместо логина — в шапке рядом с «Выйти» и в
+кабинете менеджера; без имени показывается логин. В `/api/config` — поле `user_name`.
 
 Управление — экран **«Пользователи»** (`/users`, виден только администратору):
 добавить человека, сменить роль, номер, пароль и направления, выключить,
@@ -346,7 +348,7 @@ HIKVISION_VERIFY_TLS=true
 
 ```bash
 python -m retro.panel_users list
-python -m retro.panel_users add boss --role admin --phone "+998 90 646 25 40"
+python -m retro.panel_users add boss --role admin --name "Бехруз" --phone "+998 90 646 25 40"
 python -m retro.panel_users add anvar --role cashier --password   # спросит пароль
 python -m retro.panel_users set karina --directions Кухня,Уборка
 python -m retro.panel_users set karina --no-phone

@@ -158,7 +158,7 @@ function renderHome(data) {
   state.home = data;
   $('device-photo-note').textContent = data.photo_message || '';
   $('device-photo-note').hidden = !data.photo_message;
-  $('home-sub').textContent = [data.directions.join(' · '), data.login].filter(Boolean).join(' · ');
+  $('home-sub').textContent = [data.directions.join(' · '), data.name || data.login].filter(Boolean).join(' · ');
   renderList();
 }
 

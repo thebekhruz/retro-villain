@@ -562,6 +562,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # модули не отдаём вовсе: роль не должна даже знать, какие окна есть
         # у других (раньше они приходили погашенными, с замком).
         role = getattr(request.state, 'dashboard_role', 'all')
+        user = getattr(request.state, 'dashboard_user', None)
+        # Имя для интерфейса (T-446): из учётной записи, без него — логин.
+        account = app.state.accounts.get(user) if user else None
         modules = [dict(id=panel, name=name, path=path, available=True)
                    for panel, name, path in MODULE_NAMES
                    if (role in FULL_ACCESS_ROLES or role == panel)
@@ -571,7 +574,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         return dict(today=today_tashkent().isoformat(), timezone='Asia/Tashkent',
                     configured=settings.configured, restaurant='Retro Milliy',
                     accounting_start=ACCOUNTING_START.isoformat(),
-                    role=role, user=getattr(request.state, 'dashboard_user', None),
+                    role=role, user=user, user_name=account.label if account else user,
                     # Экран запирает выдачу сам, до похода на сервер: без этого
                     # флага кнопки остались бы мёртвыми даже при снятом гейте.
                     check_mode=settings.check_mode,

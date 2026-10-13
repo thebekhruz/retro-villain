@@ -3647,3 +3647,10 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "Свою учётную запись нельзя выключить, удалить или лишить роли администратора.": "O‘z hisob yozuvingizni o‘chirib, olib tashlab yoki administrator rolidan mahrum qilib bo‘lmaydi.",
   "Эта запись пока в переменных окружения — сначала перенесите её в базу.": "Bu yozuv hozircha muhit o‘zgaruvchilarida — avval uni bazaga ko‘chiring.",
 });
+
+/* ── T-446: имя учётной записи ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Имя и логин": "Ism va login",
+  "как показывать в панели, например, Карина": "panelda qanday ko‘rsatish, masalan, Karina",
+  "Имя — до 80 знаков, без служебных символов.": "Ism — 80 belgigacha, xizmat belgilarisiz.",
+});

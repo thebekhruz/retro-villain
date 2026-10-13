@@ -227,3 +227,21 @@ def test_postgres_store_and_sms_admin(tmp_path):
             assert confirm(client, sms.code(), ADMIN_PHONE).json()['role'] == 'admin'
             client.cookies.clear()
             assert sign_in(client, 'boss', 'boss-pass-1').json()['role'] == 'admin'
+
+
+def test_cli_sets_the_display_name(tmp_path):
+    code, out = cli(tmp_path, 'add', 'boss', '--role', 'admin', '--name', 'Бехруз', '--phone', '90 646 25 40')
+    assert code == 0 and 'Бехруз' in out
+    assert store_of(tmp_path).get('boss').name == 'Бехруз'
+
+
+def test_name_column_is_added_to_an_existing_table(tmp_path):
+    import sqlite3
+    # Таблица в том виде, как её создавал T-443 (и SQL руками на бою).
+    with sqlite3.connect(tmp_path / 'panel-users.sqlite3') as connection:
+        connection.execute('''CREATE TABLE panel_users (login TEXT PRIMARY KEY, role TEXT NOT NULL,
+            password_hash TEXT, phone TEXT UNIQUE, directions TEXT NOT NULL DEFAULT '',
+            active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL, updated_at TEXT NOT NULL)''')
+        connection.execute("INSERT INTO panel_users VALUES ('admin_phone','admin',NULL,'+998906462540','',1,'t','t')")
+    account = store_of(tmp_path).get('admin_phone')
+    assert account.name is None and account.label == 'admin_phone' and account.phone == '+998906462540'
