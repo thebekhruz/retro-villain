@@ -18,6 +18,7 @@ function harness(saved = null) {
     prepayRequest:null, prepayData:null, prepayLoadedGeneration:-1, prepayReadyGeneration:-1, prepayNeedsRefresh:false,
     localStorage:{getItem:()=> 'true'}, // Старое сохранённое раскрытие больше не запускает загрузку.
     AbortController,
+    requestAnimationFrame:fn=>queueMicrotask(fn),
     $: id => {
       if (!elements.has(id)) elements.set(id, {id, value:TODAY, checkValidity:()=>true, events:{},
         addEventListener(name,fn){this.events[name]=fn;}, replaceChildren(){}, scrollIntoView(){},
@@ -144,14 +145,17 @@ test('a failed load resolves false so the refresh button shows no ✓', async()=
 
 const registry = day => ({date:day, received:[], credited:[], received_total:'0', credited_total:'0'});
 
-test('closed registry stays lazy on entry, day refresh and date change despite saved disclosure', async()=>{
+test('closed registry loads automatically after each completed dashboard load', async()=>{
   const h=harness();
   assert.equal(h.context.$('prepay-section').open,false);
-  for (const day of [TODAY,TODAY,'2026-09-27']) {
+  for (const [index,day] of [TODAY,TODAY,'2026-09-27'].entries()) {
     h.day(day); const done=h.run('{refresh:true}');
+    assert.equal(h.registryRequests().length,index);
     h.respond(h.pending.length-1,{date:day,revenue:'100'}); await done;
-    assert.equal(h.registryRequests().length,0);
-    assert.equal(h.context.waiting.has('prepay'),false);
+    assert.equal(h.registryRequests().length,index+1);
+    assert.equal(h.context.$('prepay-section').open,false);
+    assert.equal(h.registryRequests().at(-1).options.retroBusy,false);
+    h.respond(h.pending.length-1,registry(day)); await setImmediate();
   }
 });
 
@@ -172,9 +176,12 @@ test('opening before the day arrives shows waiting, then makes one registry requ
 
 test('registry error can retry on reopening without reloading the day', async()=>{
   const h=harness(),done=h.run();
-  h.respond(0,{date:TODAY,revenue:'100'}); await done; h.link();
+  h.respond(0,{date:TODAY,revenue:'100',snapshot_id:'base',prepayments_deferred:true,daily_revenue:null});
+  await done;
   h.pending[1].reject(new Error('registry unavailable')); await setImmediate();
   assert.equal(h.context.prepayData.failed,true);
+  assert.equal(h.context.snapshot.prepayments_deferred,false,'show failure even when the registry is closed');
+  assert.equal(h.context.snapshot.daily_revenue,null,'a failed advance read is never zero');
   assert.equal(h.context.waiting.has('prepay'),false);
   h.open(false); h.open();
   assert.equal(h.registryRequests().length,2);
@@ -193,47 +200,35 @@ test('changing day cancels registry work and ignores a late response', async()=>
   assert.equal(h.context.prepayData.date,'2026-09-27');
 });
 
-test('background day update refreshes an open registry without accepting the older response', async()=>{
+test('registry waits for the daily background refresh and then starts only once', async()=>{
   const h=harness(),done=h.run(); h.open();
   h.respond(0,{date:TODAY,revenue:'100',refreshing:true}); await setImmediate();
+  assert.equal(h.registryRequests().length,0);
+  assert.equal(h.context.snapshot.revenue,'100','saved daily figures are already shown');
   h.waits[0].resolve(); await setImmediate();
-  h.respond(2,{date:TODAY,revenue:'200',refreshing:false}); await done;
-  assert.equal(h.pending[1].signal.aborted,true);
-  h.respond(3,{...registry(TODAY),marker:'fresh'}); await setImmediate();
-  h.respond(1,{...registry(TODAY),marker:'old'}); await setImmediate();
+  h.respond(1,{date:TODAY,revenue:'200',refreshing:false}); await done;
+  assert.equal(h.registryRequests().length,1);
+  h.respond(2,{...registry(TODAY),marker:'fresh'}); await setImmediate();
   assert.equal(h.context.prepayData.marker,'fresh');
   assert.equal(h.context.waiting.has('prepay'),false);
 });
 
-test('closing during day polling prevents another registry fetch until reopened', async()=>{
+test('closing during day polling does not suppress the automatic background load', async()=>{
   const h=harness(),done=h.run(); h.open();
   h.respond(0,{date:TODAY,revenue:'100',refreshing:true}); await setImmediate();
-  h.respond(1,registry(TODAY)); await setImmediate(); h.open(false);
+  h.open(false);
   h.waits[0].resolve(); await setImmediate();
-  h.respond(2,{date:TODAY,revenue:'200',refreshing:false}); await done;
+  h.respond(1,{date:TODAY,revenue:'200',refreshing:false}); await done;
   assert.equal(h.registryRequests().length,1);
-  h.open(); assert.equal(h.registryRequests().length,2);
-  h.respond(3,registry(TODAY)); await setImmediate();
+  h.open(); assert.equal(h.registryRequests().length,1);
+  h.respond(2,registry(TODAY)); await setImmediate();
 });
 
-test('background update invalidates a still-pending registry even after it was collapsed', async()=>{
-  const h=harness(),done=h.run(); h.open();
-  h.respond(0,{date:TODAY,revenue:'100',refreshing:true}); await setImmediate(); h.open(false);
-  h.waits[0].resolve(); await setImmediate();
-  h.respond(2,{date:TODAY,revenue:'200',refreshing:false}); await done;
-  assert.equal(h.pending[1].signal.aborted,true);
-  h.respond(1,{...registry(TODAY),marker:'old'}); await setImmediate();
-  assert.equal(h.context.prepayData,null);
-  h.open(); assert.equal(h.registryRequests().length,2);
-  h.respond(3,{...registry(TODAY),marker:'fresh'}); await setImmediate();
-  assert.equal(h.context.prepayData.marker,'fresh');
-});
-
-test('opening the registry updates the daily totals and export revision', async()=>{
+test('automatic registry load updates the daily totals and export revision while collapsed', async()=>{
   const h=harness(),done=h.run();
   h.respond(0,{date:TODAY,snapshot_id:'base',daily_revenue:null,received_prepayments_total:null}); await done;
-  assert.equal(h.registryRequests().length,0);
-  h.open();
+  assert.equal(h.registryRequests().length,1);
+  assert.equal(h.context.$('prepay-section').open,false);
   h.respond(1,{...registry(TODAY),snapshot:{date:TODAY,snapshot_id:'with-advances',
     daily_revenue:'300',received_prepayments_total:'200'}}); await setImmediate();
   assert.equal(h.context.snapshot.daily_revenue,'300');
@@ -251,11 +246,55 @@ test('a registry revision cannot replace a later daily snapshot', async()=>{
   assert.equal(h.context.snapshot.daily_revenue,'400');
 });
 
-test('manual refresh defers refreshing the source until the registry is opened', async()=>{
+test('manual refresh updates the registry automatically after the dashboard', async()=>{
   const h=harness(),done=h.run('{refresh:true}');
   h.respond(0,{date:TODAY,snapshot_id:'base'}); await done;
-  assert.equal(h.registryRequests().length,0);
-  h.open();
+  assert.equal(h.registryRequests().length,1);
   assert.ok(h.registryRequests()[0].url.includes('refresh=true'));
   h.respond(1,registry(TODAY)); await setImmediate();
+});
+
+test('all five side blocks must settle before the registry starts, even when opened early', async()=>{
+  const h=harness(),parts=[];
+  for(const name of ['loadExpenses','loadReceipts','loadUsdRate','loadShokh','loadUsd'])
+    h.context[name]=()=>new Promise(resolve=>parts.push(resolve));
+  const done=h.run(); h.open();
+  h.respond(0,{date:TODAY,revenue:'100'}); await setImmediate();
+  assert.equal(h.context.snapshot.revenue,'100');
+  assert.equal(h.registryRequests().length,0);
+  for(const resolve of parts.slice(0,-1)) resolve();
+  await setImmediate();
+  assert.equal(h.registryRequests().length,0,'the slowest side block still has priority');
+  parts.at(-1)(); await done;
+  assert.equal(h.registryRequests().length,1);
+});
+
+test('a failed side block does not permanently prevent the registry from loading', async()=>{
+  const h=harness();
+  h.context.loadUsdRate=()=>Promise.reject(new Error('rate unavailable'));
+  const done=h.run(); h.respond(0,{date:TODAY,revenue:'100'}); await done;
+  assert.equal(h.registryRequests().length,1);
+});
+
+test('the dashboard gets a paint opportunity before background prepayments start', async()=>{
+  const h=harness(),frames=[];
+  h.context.requestAnimationFrame=fn=>frames.push(fn);
+  const done=h.run();h.respond(0,{date:TODAY,revenue:'100'}); await setImmediate();
+  assert.equal(h.context.snapshot.revenue,'100');
+  assert.equal(h.registryRequests().length,0);
+  frames.shift()();
+  assert.equal(h.registryRequests().length,0);
+  frames.shift()(); await done;
+  assert.equal(h.registryRequests().length,1);
+});
+
+test('changing date while side blocks load cannot start an old registry request', async()=>{
+  const h=harness();let finishOld;
+  h.context.loadExpenses=()=>new Promise(resolve=>{finishOld=resolve;});
+  const old=h.run();h.respond(0,{date:TODAY,revenue:'100'});await setImmediate();
+  h.context.loadExpenses=()=>undefined;h.day('2026-09-27');
+  const current=h.run();h.respond(1,{date:'2026-09-27',revenue:'200'});await current;
+  finishOld();await old;
+  assert.equal(h.registryRequests().length,1);
+  assert.ok(h.registryRequests()[0].url.includes('date=2026-09-27'));
 });
