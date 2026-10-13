@@ -22,6 +22,7 @@ from fastapi.testclient import TestClient
 
 from legacy_app import create_app
 from retro.config import Settings
+from retro.integrations.cbu import UsdRate
 from retro.accounting_period import ACCOUNTING_START
 from retro.modules.cashier.archive import decode_snapshot
 from retro.modules.cashier.service import TZ, build_snapshot, shift_status, today_tashkent
@@ -94,6 +95,7 @@ def make_app(request, tmp_path):
 @pytest.fixture
 def c(make_app):
     with client_for(make_app()) as client:
+        client.app.state.usd_rates._save(UsdRate(DAY, DAY, Decimal('11897.90'), Decimal('11700')))
         yield client
 
 
@@ -661,8 +663,9 @@ def test_usd_deposits_feed_the_accountant_safe(c):
     usd = accountant_day(c, DAY)['reserves']['usd']
     assert Decimal(usd['balance']) == Decimal('3480.5')
     assert {entry['source'] for entry in usd['entries']} == {'cashier'}
-    # Передача сумов от долларов не меняется.
+    # Доллары — отдельный вычет, а не расход ресторана.
     assert till_totals(c.app.state, DAY).cash_out == 0
+    assert till_totals(c.app.state, DAY).usd_deduction == Decimal('1760850')
     # Удалить можно, пока доллары не выданы из сейфа.
     deposit_id = second['deposit']['id']
     assert c.delete(f'/api/cashier/usd-deposits/{deposit_id}', params={'date': DAY.isoformat()}).status_code == 204
@@ -694,6 +697,8 @@ def test_old_daily_usd_sums_become_one_deposit_without_changing_the_safe(make_ap
     migrated = usd_day(finance, day)
     assert [(row['amount'], row['legacy'], row['created_at']) for row in migrated['deposits']] == [('1250.50', True, None)]
     assert migrated['safe_balance'] == '1000'  # сейф бухгалтера задним числом не изменился
+    assert till_totals(app.state, day).usd_total == 0  # Старый остаток — не новое поступление.
+    assert till_totals(app.state, day).usd_deduction == 0
     assert usd_day(finance, DAY - timedelta(days=4))['deposits'] == []
     # «Перезапуск»: ничего не дублируется, удалённый перенос не воскресает.
     again = make_app()
@@ -726,10 +731,11 @@ def test_screen_gets_ready_handover_numbers_from_the_server(c):
     assert summary['receipts'] == '50000'
     # Касса за день: продажи + новые предоплаты (регистра нет) + ручные поступления.
     assert Decimal(summary['total_inflow']) == snapshot.revenue + PREPAY + Decimal('50000')
-    # Доллары в сейф в передачу не входят.
+    # Эквивалент долларов вычитается по курсу Retro за день.
     assert c.post('/api/cashier/usd-deposits', json={'date': DAY.isoformat(), 'amount': '100'}).status_code == 201
     again = c.get('/api/cashier/summary', params={'date': DAY.isoformat(), 'snapshot_id': snapshot.id}).json()
-    assert again['handover'] == '850000'
+    assert Decimal(again['handover']) == Decimal('850000') - Decimal('1170000')
+    assert again['usd_deduction'] == '1170000'
     stale = c.get('/api/cashier/summary', params={'date': DAY.isoformat(), 'snapshot_id': 'f' * 32})
     assert stale.status_code == 409
 

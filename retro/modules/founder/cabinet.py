@@ -15,9 +15,8 @@ from fastapi import HTTPException
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.expenses import cash_to_finance
 from retro.modules.cashier.service import DataError, today_tashkent
-from retro.modules.cashier.till import handover_check, shokh_gives, shokh_total, till_totals
+from retro.modules.cashier.till import expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
@@ -108,7 +107,7 @@ async def cashier_day(request, day: date):
     state = request.app.state
     # Выдачи Шоху из кассы вычитаются вместе с расходами кассира: без них
     # «Проверка передачи» показывала бы недостачу там, где её нет.
-    totals = await asyncio.to_thread(till_totals, state, day)
+    totals = await load_till_totals(state, day)
     demo = next((payment.amount for payment in snapshot.payments if payment.name == 'Демо'), Decimal(0))
     breakdown = snapshot.revenue_breakdown
     return dict(
@@ -116,7 +115,7 @@ async def cashier_day(request, day: date):
         school=money(breakdown.school) if breakdown else None,
         banquet=money(breakdown.bekhruz_banquet) if breakdown else None,
         register_revenue=money(snapshot.revenue), retro_checks=snapshot.receipt_count, demo=money(demo),
-        expected_handover=money(cash_to_finance(snapshot, totals.cash_out, totals.receipts)),
+        expected_handover=money(expected_handover(snapshot, totals)),
         fetched_at=snapshot.fetched_at.isoformat()), None
 
 
@@ -185,7 +184,8 @@ async def month_cashier(request, first: date, last: date):
         async with gate:
             cashier, error = await cashier_day(request, day)
         handover_state = await asyncio.to_thread(
-            handover_check, state, day, Decimal(cashier['expected_handover']) if cashier else None)
+            handover_check, state, day, Decimal(cashier['expected_handover'])
+            if cashier and cashier['expected_handover'] is not None else None)
         expected, _ = handover_expected(cashier, handover_state)
         if cashier is None:
             return day, None, error
@@ -210,7 +210,8 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
     values = flows.get(day.isoformat(), {})
     recorded = await asyncio.to_thread(state.accountant_finance.handover_for_day, receipt_day(day))
     handover_state = await asyncio.to_thread(
-        handover_check, state, day, Decimal(cashier['expected_handover']) if cashier else None) or {}
+        handover_check, state, day, Decimal(cashier['expected_handover'])
+        if cashier and cashier['expected_handover'] is not None else None) or {}
     expected, confirmed = handover_expected(cashier, handover_state)
     checked = bool(handover_state.get('checked')) and handover_state.get('shortfall') is not None
     if checked:

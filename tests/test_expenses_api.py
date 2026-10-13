@@ -107,7 +107,8 @@ def test_export_includes_manual_expenses_and_demo_less_expenses(tmp_path):
         })
         assert response.status_code == 200
         workbook = openpyxl.load_workbook(BytesIO(response.content))
-        assert workbook['отчет']['B2'].value == 450000
+        assert workbook['отчет']['B2'].value == 'требует проверки'
+        assert workbook['отчет']['B23'].value == 450000
         assert workbook['отчет']['B28'].value == 370000
         assert workbook['отчет']['B29'].value == -270000
         assert workbook['Расходы']['A8'].value == 'Зарплата'

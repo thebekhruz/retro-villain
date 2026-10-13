@@ -203,6 +203,20 @@ class Snapshot:
         return self.cash_prepayment is not None and self.new_prepayment is not None
 
     @property
+    def received_prepayments_total(self):
+        """Actual advances received on this report day; never the shift estimate."""
+        if self.prepayments is None:
+            return None
+        return sum((entry.amount for entry in self.prepayments), Decimal(0))
+
+    @property
+    def daily_revenue(self):
+        # PAYMENT excludes redeemed advances. PREPAY receipts enter the total
+        # only on receipt, even if the order closes on another day.
+        received = self.received_prepayments_total
+        return self.revenue + received if received is not None else None
+
+    @property
     def redeemed_total(self):
         if self.redeemed_orders is None:
             return None
@@ -222,6 +236,9 @@ class Snapshot:
 
     def json(self):
         result = dict(snapshot_id=self.id, date=self.day.isoformat(), revenue=str(self.revenue),
+                    daily_revenue=str(self.daily_revenue) if self.daily_revenue is not None else None,
+                    received_prepayments_total=(str(self.received_prepayments_total)
+                                               if self.received_prepayments_total is not None else None),
                     receipt_count=self.receipt_count,
                     average_receipt=str(self.average_receipt) if self.average_receipt is not None else None,
                     payments=[dict(name=p.name, amount=str(p.amount)) for p in self.payments],
@@ -407,5 +424,8 @@ def demo_snapshot(day):
     redeemed = [('101', cash, 'Демо', Decimal(2000000))]
     from dataclasses import replace
     return replace(snapshot, payment_groups=build_payment_groups(paid, redeemed, [(cash, 'Демо', 0)]),
+                   prepayments=(Prepayment('demo-102', f'{day.isoformat()}T13:20:00+05:00',
+                                           Decimal(3000000), payment_method='Наличные',
+                                           comment='Гость (пример)', order_number='102'),),
                    redeemed_orders=redeemed_orders(redeemed), full_total=Decimal(20450000),
                    full_receipt_count=126)

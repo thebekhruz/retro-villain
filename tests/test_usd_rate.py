@@ -66,7 +66,9 @@ def test_historical_rate_stays_unchanged_after_restart_and_source_change(tmp_pat
 def test_usd_for_the_day_is_the_sum_of_deposits_to_the_safe(tmp_path):
     # Одной суммы на день больше нет: доллары кладут в сейф взносами (5a).
     app = create_app(Settings(data_dir=tmp_path), expense_db_path=tmp_path / 'cashier.sqlite3',
-                     accountant_db_path=tmp_path / 'accountant.sqlite3')
+                     accountant_db_path=tmp_path / 'accountant.sqlite3',
+                     rate_transport=httpx.MockTransport(lambda request: httpx.Response(200, json=[{
+                         'Ccy': 'USD', 'Nominal': '1', 'Rate': '11897.90', 'Date': '17.09.2026'}])))
     with TestClient(app, client=('127.0.0.1', 50000)) as client:
         assert client.post('/api/cashier/usd-balance', json={
             'date': '2026-09-17', 'amount': '1250.50'}).status_code == 410

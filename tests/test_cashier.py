@@ -65,14 +65,15 @@ def test_export_keeps_template_and_removes_historical_operations():
     w = openpyxl.load_workbook(BytesIO(export_report(snapshot())))
     assert w.sheetnames == ['отчет', 'Касса', 'Расходы']
     s = w['отчет']
-    assert s['B2'].value == 450000
+    assert s['B2'].value == 'требует проверки'  # Actual advances were not loaded.
+    assert s['B23'].value == 450000
     assert s['B25'].value == 3
     assert s['D4'].value == 150000
     assert s['A1'].value.date() == DAY
     assert s['B28'].value == 0
     assert s['B29'].value == 100000
     assert 'A1:D1' in str(s.merged_cells)
-    for cell in ['D2', 'D13', 'D22', 'D40', 'B23']:
+    for cell in ['D2', 'D13', 'D22', 'D40']:
         assert s[cell].value is None
     text = ' '.join(str(c.value) for sheet in w for cells in sheet for c in cells)
     assert '13312000' not in text
@@ -85,7 +86,7 @@ def test_iiko_formula_names_are_rejected_before_export():
         build_snapshot(DAY, [row('2026-09-10', 1, 10)], [row('=1+2', 10)])
 
 
-def test_handover_formula_lives_only_on_the_server():
+def test_handover_formula_lives_only_on_the_server(monkeypatch):
     """Функционал §1: формула передачи одна — на сервере. Экран получает
     готовые числа (till_summary), своей копии формулы у него нет, поэтому
     сервер и экран не могут разойтись."""
@@ -109,6 +110,7 @@ def test_handover_formula_lives_only_on_the_server():
         def _open(self):
             raise AssertionError('not used')
     import retro.modules.cashier.till as till
+    monkeypatch.setattr(till, 'usd_deposits', lambda *_args: [])
     original = till.shokh_gives
     till.shokh_gives = lambda *_args: []
     try:

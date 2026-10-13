@@ -111,5 +111,7 @@ test('skeletonMap: a figure stays a skeleton until every part it is computed fro
   assert.equal(onlyShokh.revenue, false);
   assert.equal(onlyShokh['receipt-total'], false);
   const onlyRate = logic.skeletonMap(new Set(['rate']));
-  assert.deepEqual(Object.keys(onlyRate).filter(id => onlyRate[id]).sort(), ['usd-official', 'usd-restaurant']);
+  assert.deepEqual(Object.keys(onlyRate).filter(id => onlyRate[id]).sort(),
+    ['handover', 'handover-usd', 'usd-official', 'usd-restaurant']);
+  assert.equal(logic.skeletonMap(['usd']).handover, true);
 });

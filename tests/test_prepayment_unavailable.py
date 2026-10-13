@@ -155,8 +155,9 @@ def test_export_prints_the_reason_not_a_number():
     assert sheet['D39'].value == UNKNOWN
     assert workbook['Расходы']['D6'].value == UNKNOWN
     assert 'минус' in sheet['A31'].value
-    # Выручка и чеки — обычными числами.
-    assert sheet['B2'].value == unknown_snapshot().revenue
+    # Фактические авансы доступны независимо от несверенной разницы смены.
+    assert sheet['B2'].value == unknown_snapshot().daily_revenue
+    assert sheet['B23'].value == unknown_snapshot().revenue
     assert sheet['B25'].value == unknown_snapshot().receipt_count
 
 

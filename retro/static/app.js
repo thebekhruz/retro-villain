@@ -13,8 +13,9 @@ let summary = null;
 // Выручка по кассам iiko на экране и какие кассы раскрыты (живут при обновлении дня).
 let revenueView = null;
 const openGroups = new Set(), allTypes = new Set();
+const openPaymentDetails = new Set();
 // Реестр предоплат: день, период, вкладка, группировка, строка в правке.
-let prepayData = null, prepayPeriod = null, prepayTab = 'received', prepayBy = 'people', prepayEditing = null;
+let prepayData = null, prepayPeriod = null, prepayTab = 'received', prepayEditing = null;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 
 /* ── Отклик и ожидание (busy.js, T-393; docs/feedback-principles.md) ─────
@@ -30,7 +31,7 @@ const SKELETON_LISTS = {payments: ['day', 2, 'payment'], 'prepay-rows': ['prepay
   'expense-list': ['expenses', 1, 'item'], 'receipt-list': ['receipts', 1, 'item']};
 // Что гаснет, пока часть перечитывается: «К передаче» считается из всех.
 const SECTIONS = {day: ['metrics', 'payments-section', 'handover-panel'], expenses: ['expenses-section', 'handover-panel'],
-  shokh: ['expenses-section', 'handover-panel'], receipts: ['receipts-section', 'handover-panel'], usd: ['usd-card'], rate: ['usd-card'],
+  shokh: ['expenses-section', 'handover-panel'], receipts: ['receipts-section', 'handover-panel'], usd: ['usd-card', 'handover-panel'], rate: ['usd-card', 'handover-panel'],
   prepay: ['prepay-section']};
 function skeletonRows(count, kind) {
   const bar = width => { const node = document.createElement('span'); node.className = 'rm-skel'; node.style.width = width; return node; };
@@ -58,8 +59,7 @@ function paintWaiting() {
   $('shift-pill').classList.toggle('is-skel', waiting.has('day'));
   if (waiting.has('day')) $('shift-pill').hidden = false;
   else if (!snapshot) $('shift-pill').hidden = true;
-  if (waiting.has('day')) $('payment-empty').hidden = true;
-  else if (!snapshot) $('payment-empty').hidden = false;
+  $('payment-empty').hidden = waiting.has('day') || Boolean(snapshot && revenueView?.total !== 0);
   $('prepay-empty').hidden = prepayEmptyHidden();
   $('expenses-empty').hidden = waiting.has('expenses') || waiting.has('shokh')
     || Boolean(financeData && financeData.expenses.length) || Boolean(shokhData && shokhData.gives.length);
@@ -96,7 +96,7 @@ function removeRow(button, url, {part, reload, done, fail}) {
     .then(async () => {
       if (current !== generation) return false;
       await loadPart(part, current, reload(current));
-      if (part !== 'usd') await refreshSummary();
+      await refreshSummary();
       if (current === generation) done();
       return true;
     })
@@ -149,6 +149,7 @@ async function loadUsdRate(day, current, signal) {
     $('usd-official-tile').title = 'Курс ЦБ действует с ' + formattedDay(data.source_date);
     $('usd-status').textContent = '';
     showUsd();
+    await refreshSummary();
   } catch (error) {
     if (current === generation && error.name !== 'AbortError') {
       $('usd-status').textContent = error.message;
@@ -234,6 +235,8 @@ async function putUsd(day, value) {
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, amount:String(value)})}));
     if (current !== generation) return false;
     usdData = data; $('usd-amount').value = ''; $('usd-amount').dispatchEvent(new Event('input', {bubbles: true})); showUsd();
+    await refreshSummary();
+    if (current !== generation) return false;
     if (data.deposit) flashKey('cash-usd:' + data.deposit.id);
     const text = 'Положено в сейф: ' + usdFormat.format(value) + ' USD. Бухгалтер видит в «Резервах».';
     showUsdHint(text); globalThis.RetroToast?.show(text);
@@ -260,6 +263,7 @@ function clearSnapshot() {
   $('shift-pill').hidden = true;
   $('download').disabled = true;
   for (const id of ['revenue','receipts','average','payment-total','real-cash','prepay-credited']) $(id).textContent = '—';
+  $('payment-total-share').textContent = '';
   $('real-cash').classList.remove('is-note');
   $('real-cash-unit').hidden = false;
   showRealCashSub(null);
@@ -333,6 +337,14 @@ function showHandover() {
   $('expense-total').textContent = text('cash_out');
   $('handover-expenses').textContent = text('cash_out');
   $('handover-receipts').textContent = text('receipts');
+  $('handover-usd').textContent = text('usd_deduction');
+  const usdTotal = summaryValue('usd_total'), usdDayRate = summaryValue('usd_rate');
+  $('handover-usd-detail').hidden = !usdTotal || usdDayRate === null;
+  $('handover-usd-detail').textContent = usdTotal && usdDayRate !== null
+    ? `${usdFormat.format(usdTotal)} USD × ${rateRestaurant.format(usdDayRate)} = ${text('usd_deduction')} сум` : '';
+  const usdIssue = summary?.usd_issue;
+  $('handover-usd-issue').hidden = !usdIssue;
+  $('handover-usd-issue').textContent = usdIssue || '';
   const result = currentHandover();
   $('handover').textContent = result === null ? '—' : money.format(result);
   $('handover-number').classList.toggle('is-negative', result !== null && result < 0);
@@ -562,25 +574,21 @@ function showStatus() {
   const tail = snapshot.refreshing ? ' · обновляем iiko…' : snapshot.stale ? ' · требуют обновления' : '';
   status.textContent = `${source} ${time}${tail}`;
 }
-/* «= iiko ✓» — сумма по кассам сошлась с итогом iiko за день; иначе красная разница. */
+/* Сверяем оплаты по кассам + полученные авансы с дневным итогом. */
 function showCheck(node, view) {
-  const known = Boolean(view && !view.fallback && view.total !== null);
+  const known = Boolean(view && view.match !== null);
   node.hidden = !known;
   if (!known) return;
   node.classList.toggle('is-off', !view.match);
-  if (view.match) { node.replaceChildren('= iiko ✓'); return; }
+  if (view.match) { node.replaceChildren('Суммы сходятся ✓'); return; }
   const diff = document.createElement('span'); diff.className = 'rm-num';
   diff.textContent = view.difference === null ? '' : (view.difference > 0 ? '+' : '−') + money.format(Math.abs(view.difference));
-  node.replaceChildren('≠ iiko ', diff);
+  node.replaceChildren('Расхождение ', diff);
 }
-/* Подпись реальной кассы: из чего она получилась (ТЗ 3.3). */
+/* Оплаты счетов не включают ранее полученные авансы. */
 function showRealCashSub(view) {
-  const node = $('real-cash-sub'), label = text => { const span = document.createElement('span'); span.textContent = text; return span; };
-  const figure = value => { const b = document.createElement('b'); b.className = 'rm-num'; b.textContent = money.format(value); return b; };
-  if (!view) { node.replaceChildren(label('Выручка без предоплат, зачтённых сегодня')); return; }
-  if (view.realCash === null) { node.replaceChildren(label('iiko не отдал зачёт предоплат')); return; }
-  if (!view.redeemed) { node.replaceChildren(label('Зачтённых предоплат нет — равна выручке')); return; }
-  node.replaceChildren(label('Выручка'), ' ', figure(view.total), ' ', label('− зачтено предоплат'), ' ', figure(view.redeemed));
+  $('real-cash-sub').textContent = view && view.realCash === null
+    ? 'iiko не отдал оплаты счетов' : 'Без зачёта ранее полученных предоплат';
 }
 const percentText = value => value === null ? '' : value.toLocaleString('ru-RU', {minimumFractionDigits: 1, maximumFractionDigits: 1}) + '%';
 /* Кассы iiko аккордеоном (ТЗ 3.1): по умолчанию всё свёрнуто — сверка с iiko
@@ -601,7 +609,7 @@ function renderGroups() {
     chevron.setAttribute('aria-hidden', 'true'); chevron.textContent = '⌄';
     const name = document.createElement('span'); name.className = 'payment-name';
     const label = document.createElement('span'); label.className = 'payment-label'; label.textContent = group.name;
-    label.dataset.i18n = 'off';
+    if (!view.fallback) label.dataset.i18n = 'off';
     name.append(label);
     const share = document.createElement('span'); share.className = 'payment-share'; share.textContent = percentText(group.percent);
     const value = document.createElement('strong'); value.className = 'payment-value'; value.textContent = money.format(group.total);
@@ -631,13 +639,20 @@ function renderGroups() {
     }
     box.append(head, body); list.append(box);
   }
+  if (view.unassignedTotal !== 0) {
+    const advances = typeRow({name: 'unassigned', label: 'Предоплаты · способ не указан', isPrepayment: true,
+      total: view.unassignedTotal, advances: view.unassigned,
+      percent: view.total > 0 && view.unassignedTotal !== null ? Math.round(view.unassignedTotal / view.total * 1000) / 10 : null}, colors[0]);
+    advances.id = 'received-payment-row';
+    list.append(advances);
+  }
 }
 function typeRow(type, color) {
   const row = document.createElement('div'); row.className = 'payment-row pay-type'; row.style.setProperty('--color', color);
   const dot = document.createElement('span'); dot.className = 'payment-dot';
   const name = document.createElement('span'); name.className = 'payment-name';
   const label = document.createElement('span'); label.className = 'payment-label'; label.textContent = type.label;
-  if (!type.isCash) label.dataset.i18n = 'off';
+  if (!type.isCash && !type.isPrepayment) label.dataset.i18n = 'off';
   name.append(label);
   if (type.isCash) {
     // В iiko наличные называются «Демо»; кассиру понятнее «Наличные».
@@ -646,20 +661,59 @@ function typeRow(type, color) {
     name.append(source, tag);
     row.classList.add('is-cash');
   }
-  // Часть суммы типа — зачтённая сегодня предоплата: в реальную кассу дня она не входит.
-  if (type.redeemed) {
-    const note = document.createElement('small'); note.className = 'payment-source pay-type-redeemed';
-    const words = document.createElement('span'); words.textContent = 'в т.ч. зачтено предоплат';
-    const figure = document.createElement('span'); figure.className = 'rm-num'; figure.textContent = money.format(type.redeemed);
-    note.append(words, ' ', figure);
-    name.append(note);
-  }
   if (type.zero) row.classList.add('is-zero');
   const share = document.createElement('span'); share.className = 'payment-share'; share.textContent = percentText(type.percent);
   const value = document.createElement('strong'); value.className = 'payment-value';
   value.textContent = type.total === null ? '—' : money.format(type.total);
   row.append(dot, name, share, value);
+  if (!type.advances?.length) return row;
+  const detail = paymentDisclosure(row, 'method:' + type.name);
+  detail.dataset.paymentMethod = type.name;
+  if (!type.isPrepayment) {
+    const paid = typeRow({label: 'Оплаты счетов', isPrepayment: true, total: type.paid, percent: null}, color);
+    paid.classList.add('pay-detail-row'); detail.append(paid);
+    const received = typeRow({label: 'Полученные предоплаты', isPrepayment: true, total: type.received, percent: null}, color);
+    received.classList.add('pay-detail-row');
+    const deposits = paymentDisclosure(received, 'advances:' + type.name);
+    deposits.classList.add('pay-advances');
+    deposits.append(...type.advances.map(paymentAdvanceRow));
+    detail.append(deposits);
+  } else detail.append(...type.advances.map(paymentAdvanceRow));
+  return detail;
+}
+
+function paymentDisclosure(row, key) {
+  const detail = document.createElement('details'); detail.className = 'pay-detail';
+  detail.open = openPaymentDetails.has(key);
+  const head = document.createElement('summary'); head.className = row.className;
+  head.style.cssText = row.style.cssText;
+  head.append(...row.childNodes);
+  const arrow = head.querySelector('.payment-dot');
+  arrow.className = 'pay-detail-chevron'; arrow.textContent = '›'; arrow.setAttribute('aria-hidden', 'true');
+  detail.append(head);
+  detail.addEventListener('toggle', () => {
+    if (!detail.isConnected) return;
+    if (detail.open) openPaymentDetails.add(key); else openPaymentDetails.delete(key);
+  });
+  return detail;
+}
+
+function paymentAdvanceRow(entry) {
+  const row = document.createElement('div'); row.className = 'pay-advance-row';
+  const info = document.createElement('span');
+  const label = document.createElement('span'); label.dataset.i18n = 'off';
+  label.textContent = entry.guest || (entry.order_number ? '№' + entry.order_number : '—');
+  const stamp = document.createElement('small'); stamp.textContent = stampText(entry.received_at);
+  info.append(label, stamp);
+  const amount = document.createElement('strong'); amount.className = 'rm-num'; amount.textContent = money.format(entry.amount);
+  row.append(info, amount);
   return row;
+}
+
+function refreshPaymentGroups() {
+  if (!snapshot) return;
+  revenueView = CashierLogic.revenueGroups(snapshot, prepayData);
+  renderGroups();
 }
 
 /* ── Реестр предоплат (ТЗ 3.2) ────────────────────────────────────────────
@@ -688,6 +742,7 @@ async function loadPrepay(day, current, signal) {
     if (current !== generation || error.name === 'AbortError') return;
     prepayData = {date: day, received: [], credited: [], received_total: null, credited_total: null, issue: error.message, failed: true};
   }
+  refreshPaymentGroups();
   showPrepay();
 }
 function loadPrepayPeriod() {
@@ -735,20 +790,16 @@ function showPrepay() {
     tab.classList.toggle('is-active', active); tab.setAttribute('aria-selected', String(active));
   }
   $('prepay-period').hidden = prepayTab !== 'period';
-  for (const button of document.querySelectorAll('.prepay-by [data-by]')) {
-    const active = button.dataset.by === prepayBy;
-    button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', String(active));
-  }
   const rows = prepayRows(), list = $('prepay-rows');
   if (!waiting.has('prepay')) list.replaceChildren();
   const known = Array.isArray(rows);
   if (known && rows.length) {
     if (prepayTab === 'period') {
-      for (const group of CashierLogic.prepaymentGroups(rows, prepayBy)) {
+      for (const group of CashierLogic.prepaymentGroups(rows)) {
         const head = document.createElement('div'); head.className = 'prepay-group-head';
         const title = document.createElement('span');
-        title.textContent = prepayBy === 'dates' ? (group.title ? dayMonth(group.title) : 'Без даты') : (group.title || 'Кто — не указано');
-        if (prepayBy !== 'dates' && group.title) title.dataset.i18n = 'off';
+        title.textContent = group.title || 'Кто — не указано';
+        if (group.title) title.dataset.i18n = 'off';
         const total = document.createElement('strong'); total.className = 'rm-num'; total.textContent = money.format(group.total);
         head.append(title, total); list.append(head);
         for (const row of group.rows) list.append(...prepayLine(row, 'period'));
@@ -797,7 +848,6 @@ function prepayLine(row, tab) {
     node.append(name, text); return node;
   };
   const received = fact('prepay-received', 'Получено', row.received_at ? stampText(row.received_at) : '—', !row.received_at);
-  const eventDay = fact('prepay-event', 'На дату', row.event_day ? dayMonth(row.event_day) : 'не указана', !row.event_day);
   // Способ из iiko называет наличные «Демо» — на экране они «Наличные», как в выручке.
   const methodText = String(row.method_shown || '').split(', ').filter(Boolean)
     .map(name => name === CashierLogic.CASH_PAYMENT ? 'Наличные' : name).join(', ');
@@ -813,7 +863,7 @@ function prepayLine(row, tab) {
   edit.disabled = demo;
   edit.addEventListener('click', () => { prepayEditing = prepayEditing === row.order_number ? null : row.order_number; showPrepay(); });
   const state = document.createElement('span'); state.className = 'prepay-cell prepay-state'; state.append(pill);
-  line.append(who, received, eventDay, method, sum, state, edit);
+  line.append(who, received, method, sum, state, edit);
   if (prepayEditing !== row.order_number) return [line];
   line.classList.add('is-editing');
   return [line, prepayEditor(row)];
@@ -832,8 +882,11 @@ function prepayEditor(row) {
   };
   const guest = input('guest', row.guest, {maxlength: 120, placeholder: 'Имя гостя или компания', autocomplete: 'off'});
   const phone = input('phone', row.phone, {maxlength: 40, type: 'tel', placeholder: '+998', autocomplete: 'off'});
-  const eventDay = input('event_day', row.event_day, {type: 'date'});
-  const method = input('method', row.method, {maxlength: 60, list: 'prepay-methods', placeholder: 'Наличные, карта…', autocomplete: 'off'});
+  // Способ внесения, определённый по iiko, кассир не переписывает — поле только для чтения.
+  const fromIiko = (row.received_methods || []).map(name => name === CashierLogic.CASH_PAYMENT ? 'Наличные' : name).join(', ');
+  const method = fromIiko
+    ? input('method', fromIiko, {readonly: '', 'aria-readonly': 'true', title: 'Способ внесения — из iiko'})
+    : input('method', row.method, {maxlength: 60, list: 'prepay-methods', placeholder: 'Наличные, карта…', autocomplete: 'off'});
   const refund = document.createElement('label'); refund.className = 'prepay-refund';
   const box = document.createElement('input'); box.type = 'checkbox'; box.name = 'refunded'; box.checked = Boolean(row.refunded);
   const refundText = document.createElement('span'); refundText.textContent = 'Возврат предоплаты';
@@ -843,12 +896,14 @@ function prepayEditor(row) {
   const save = document.createElement('button'); save.type = 'submit'; save.className = 'button primary'; save.textContent = 'Сохранить';
   actions.append(cancel, save);
   const feedback = document.createElement('p'); feedback.className = 'expense-feedback'; feedback.setAttribute('role', 'status');
-  form.append(field('Кто', guest), field('Телефон', phone), field('На дату', eventDay), field('Способ', method), refund, actions, feedback);
+  form.append(field('Кто', guest), field('Телефон', phone),
+    field(fromIiko ? 'Способ · из iiko' : 'Способ', method), refund, actions, feedback);
   cancel.addEventListener('click', () => { prepayEditing = null; showPrepay(); });
   form.addEventListener('submit', event => {
     event.preventDefault();
-    Busy.button(save, savePrepay(row.order_number, {guest: guest.value, phone: phone.value, event_day: eventDay.value || null,
-      method: method.value, refunded: box.checked}, feedback));
+    Busy.button(save, savePrepay(row.order_number, {guest: guest.value, phone: phone.value, // «На дату» скрыта (13.10.2026): записанную раньше дату не стираем.
+      event_day: row.event_day || null,
+      method: fromIiko ? row.method || '' : method.value, refunded: box.checked}, feedback));
   });
   requestAnimationFrame(() => guest.focus({preventScroll: true}));
   return form;
@@ -861,7 +916,7 @@ async function savePrepay(order, body, feedback) {
     if (current !== generation) return false;
     const swap = list => list && list.forEach((item, index) => { if (item.order_number === order) list[index] = row; });
     swap(prepayData?.received); swap(prepayData?.credited); swap(prepayPeriod?.rows);
-    prepayEditing = null; showPrepay(); flashKey('prepay:' + order);
+    prepayEditing = null; refreshPaymentGroups(); showPrepay(); flashKey('prepay:' + order);
     globalThis.RetroToast?.show('Предоплата сохранена');
     return true;
   } catch (error) {
@@ -881,18 +936,26 @@ for (const tab of document.querySelectorAll('.prepay-tabs [data-tab]')) tab.addE
   }
   showPrepay();
 });
-for (const button of document.querySelectorAll('.prepay-by [data-by]')) button.addEventListener('click', () => {
-  prepayBy = button.dataset.by; showPrepay();
-});
 $('prepay-period').addEventListener('submit', event => {
   event.preventDefault();
   if (!$('prepay-period').reportValidity()) return;
   prepayEditing = null;
   Busy.button($('prepay-show'), loadPrepayPeriod());
 });
+const prepaySection = $('prepay-section');
+try { prepaySection.open = localStorage.getItem('retro.cashier.prepayments.open') === 'true'; } catch {}
+function showPrepayToggle() {
+  $('prepay-toggle-label').replaceChildren(prepaySection.open ? 'Свернуть' : 'Развернуть');
+}
+showPrepayToggle();
+prepaySection.addEventListener('toggle', () => {
+  showPrepayToggle();
+  try { localStorage.setItem('retro.cashier.prepayments.open', String(prepaySection.open)); } catch {}
+});
 $('prepay-open').addEventListener('click', event => {
   event.preventDefault();
-  $('prepay-section').scrollIntoView({behavior: 'smooth', block: 'start'});
+  prepaySection.open = true;
+  prepaySection.scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 
 function show(data) {
@@ -905,7 +968,7 @@ function show(data) {
     $('shift-text').textContent = shift.text;
     $('shift-pill').classList.toggle('is-closed', !shift.open);
   }
-  const view = CashierLogic.revenueGroups(data);
+  const view = CashierLogic.revenueGroups(data, prepayData);
   revenueView = view;
   const amountText = value => value === null ? '—' : money.format(value);
   $('revenue').textContent = amountText(view.total);
@@ -914,7 +977,7 @@ function show(data) {
   // читается дольше и обещает точность, которой нет.
   $('average').textContent = view.average === null ? '—' : count.format(Math.round(view.average));
   for (const id of ['revenue-check', 'payment-check']) showCheck($(id), view);
-  // Реальная касса: без зачёта предоплат её не посчитать — пишем прямо, не ноль.
+  // Оплаты счетов доступны даже при недоступном реестре предоплат.
   const realUnknown = view.realCash === null;
   $('real-cash').textContent = realUnknown ? 'требует проверки' : money.format(view.realCash);
   $('real-cash').classList.toggle('is-note', realUnknown);
@@ -922,11 +985,14 @@ function show(data) {
   showRealCashSub(view);
   $('prepay-credited').textContent = amountText(view.redeemed);
   $('payment-total').textContent = amountText(view.total);
+  $('payment-total-share').textContent = view.total > 0 ? '100%' : '';
   $('payment-empty').hidden = view.total !== 0;
-  $('payment-empty').querySelector('p').textContent = 'За этот день продаж нет';
-  $('payments-note').hidden = !view.fallback;
-  $('payments-note').textContent = view.fallback
-    ? 'iiko не отдал кассы и зачёт предоплат — показаны только оплаты продаж. Обновите день.' : '';
+  $('payment-empty').querySelector('p').textContent = 'За этот день оплат и новых предоплат нет';
+  $('payments-note').hidden = false;
+  $('payments-note').textContent = view.received === null
+    ? 'Предоплаты за день недоступны — итоговая выручка требует проверки. Обновите день.'
+    : 'Зачёт предоплат не увеличивает выручку: деньги учтены в день получения.';
+  if (view.fallback) $('payments-note').textContent += ' Разбивка по кассам iiko недоступна — оплаты показаны одним списком.';
   renderGroups();
   prepayMethods();
   $('download').disabled = Boolean(data.stale || data.refreshing);
@@ -1090,7 +1156,7 @@ $('download').addEventListener('click', () => {
 async function downloadReport() {
   const data = snapshot, current = generation;
   try {
-    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}${shokhData && shokhData.revision ? "&shokh_revision=" + shokhData.revision : ""}`);
+    const response = await request(`/api/cashier/export?date=${data.date}&snapshot_id=${data.snapshot_id}${financeData.revision ? "&expense_revision=" + financeData.revision : ""}${receiptData.revision ? "&receipt_revision=" + receiptData.revision : ""}${shokhData && shokhData.revision ? "&shokh_revision=" + shokhData.revision : ""}${usdData?.revision ? "&usd_revision=" + usdData.revision : ""}`);
     const blob = await response.blob();
     if (current !== generation) return false;
     const url = URL.createObjectURL(blob), link = document.createElement('a');

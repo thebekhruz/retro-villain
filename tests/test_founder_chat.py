@@ -2,6 +2,7 @@ import asyncio
 import json
 from dataclasses import replace
 from datetime import date, datetime
+from decimal import Decimal
 from types import SimpleNamespace
 
 import httpx
@@ -283,10 +284,13 @@ def test_founder_tools_expose_iiko_and_local_cashier_data(tmp_path):
             return replace(demo_snapshot(day), demo=False)
 
     class RateStub:
-        async def get(self, day):
-            return SimpleNamespace(json=lambda: {
+        def stored(self, day):
+            return SimpleNamespace(restaurant_rate=Decimal('12300'), json=lambda: {
                 'date': day.isoformat(), 'official_rate': '12500',
                 'restaurant_rate': '12300'})
+
+        async def get(self, day):
+            return self.stored(day)
 
     app = create_app(Settings(data_dir=tmp_path))
     app.state.iiko = IikoStub()

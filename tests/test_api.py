@@ -34,7 +34,9 @@ def test_export_matches_displayed_snapshot_and_rejects_wrong_day():
         assert response.status_code == 200
         assert 'DEMO' in response.headers['content-disposition']
         w = openpyxl.load_workbook(BytesIO(response.content))
-        assert w['отчет']['B2'].value == 18450000
+        assert w['отчет']['B2'].value == 21450000
+        assert data['daily_revenue'] == '21450000'
+        assert w['отчет']['B23'].value == 18450000
         assert w['отчет']['B25'].value == 126
         params['date'] = '2026-09-11'
         assert client.get('/api/cashier/export', params=params).status_code == 409

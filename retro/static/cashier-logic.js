@@ -79,20 +79,78 @@
   const toNumber=value=>value===null||value===undefined||value===''||!Number.isFinite(Number(value))?null:Number(value);
   const percentOf=(value,total)=>total>0&&value!==null?Math.round(value/total*1000)/10:null;
 
-  /* Выручка по кассам iiko (ТЗ «Выручка, оплаты и предоплаты», 08.10.2026, 3.1).
-     Группы и типы — как прислал iiko, порядок задаёт сервер (касса с «Демо»
-     первой). Сумма типа — полный счёт: оплаты плюс зачтённые в этот день
-     предоплаты; проценты — от выручки по чекам. Типы без денег прячутся до
-     «показать все». Нет групп от iiko — показываем оплаты продаж одним списком
-     и прямо говорим, что предоплат в нём нет. */
-  function revenueGroups(snapshot){
+  /* Receipt amounts always come from this day's transaction snapshot. The
+     registry supplies labels only, never additional money or a receipt date.
+     An order with mixed/partial redemption cannot establish a receipt method. */
+  function receivedAdvances(snapshot,registry){
+    const entries=Array.isArray(snapshot.prepayments)?snapshot.prepayments:[];
+    const received=toNumber(snapshot.received_prepayments_total);
+    if(received===null||entries.some(entry=>toNumber(entry.amount)===null||Number(entry.amount)<=0)||
+      entries.reduce((sum,entry)=>sum+Math.round(Number(entry.amount)*100),0)!==Math.round(received*100))return [];
+    const orderTotals=new Map();
+    for(const entry of entries){
+      const key=entry.order_number;
+      orderTotals.set(key,(orderTotals.get(key)||0)+Math.round((toNumber(entry.amount)||0)*100));
+    }
+    const notes=new Map(registry&&registry.date===snapshot.date&&!registry.failed
+      ?(registry.received||[]).map(row=>[row.order_number,row]):[]);
+    return entries.map(entry=>{
+      const note=notes.get(entry.order_number);
+      const sameReceipt=note&&note.received_day===snapshot.date&&
+        Math.round((toNumber(note.amount)||0)*100)===orderTotals.get(entry.order_number);
+      let method=entry.payment_method||null;
+      if(!method&&sameReceipt){
+        if(note.method)method=note.method;
+        else if(note.credited_methods?.length===1&&
+          Math.round((toNumber(note.credited_amount)||0)*100)===orderTotals.get(entry.order_number))
+          method=note.credited_methods[0];
+      }
+      return {...entry,amount:toNumber(entry.amount),payment_method:method,guest:sameReceipt?note.guest:''};
+    });
+  }
+
+  /* Receipt-day revenue: bill payments + incoming advances, counted once.
+     Redeemed advances remain available to the registry but never enter totals. */
+  function revenueGroups(snapshot,registry=null){
     if(!snapshot)return null;
+    const total=toNumber(snapshot.daily_revenue), received=toNumber(snapshot.received_prepayments_total);
+    const paid=toNumber(snapshot.revenue), fallback=!Array.isArray(snapshot.payment_groups);
+    const sourceGroups=fallback?[{name:'Оплаты счетов',types:[...(snapshot.payments||[])]}]
+      :snapshot.payment_groups.map(item=>({...item,types:[...(item.types||[])]}));
+    const normalize=name=>String(name||'').trim().toLocaleLowerCase('ru');
+    const methods=new Map();
+    for(const item of [...(snapshot.payments||[]),...sourceGroups.flatMap(group=>group.types)])
+      methods.set(normalize(item.name),item.name);
+    if(methods.has(normalize(CASH_PAYMENT)))methods.set(normalize('Наличные'),CASH_PAYMENT);
+    const allocated=new Map(),unassigned=[];
+    for(const entry of receivedAdvances(snapshot,registry)){
+      const method=methods.get(normalize(entry.payment_method));
+      if(!method||entry.amount===null||entry.amount<=0){unassigned.push(entry);continue;}
+      if(!allocated.has(method))allocated.set(method,[]);
+      allocated.get(method).push(entry);
+      if(!sourceGroups.some(group=>group.types.some(item=>item.name===method))){
+        let other=sourceGroups.find(group=>group.name==='Другие способы оплаты');
+        if(!other){other={name:'Другие способы оплаты',types:[]};sourceGroups.push(other);}
+        const payment=(snapshot.payments||[]).find(item=>item.name===method);
+        other.types.push({name:method,paid:payment?.amount||0});
+      }
+    }
+    // A type can occur in both a historical dictionary group and today's
+    // group. Attach receipts once, preferring the group with actual payments.
+    const owners=new Map();
+    for(const item of sourceGroups.flatMap(group=>group.types)){
+      const previous=owners.get(item.name);
+      if(!previous||(!(toNumber(previous.paid??previous.amount)||0)&&
+        (toNumber(item.paid??item.amount)||0)))owners.set(item.name,item);
+    }
     const type=(item,total)=>{
       const paid=toNumber(item.paid!==undefined?item.paid:item.amount);
       const redeemed=toNumber(item.redeemed)||0;
-      const sum=toNumber(item.total!==undefined?item.total:item.amount);
+      const advances=owners.get(item.name)===item?allocated.get(item.name)||[]:[];
+      const received=advances.reduce((sum,entry)=>sum+Math.round(entry.amount*100),0)/100;
+      const sum=paid===null?null:Math.round((paid+received)*100)/100;
       return {name:item.name,label:item.name===CASH_PAYMENT?'Наличные':item.name,isCash:item.name===CASH_PAYMENT,
-        goesToSafe:String(item.name).includes(COLLECTION_HINT),paid,redeemed,total:sum,
+        goesToSafe:String(item.name).includes(COLLECTION_HINT),paid,redeemed,received,advances,total:sum,
         percent:percentOf(sum,total),zero:!sum};
     };
     const group=(name,items,total)=>{
@@ -103,28 +161,23 @@
     };
     const receipts=toNumber(snapshot.full_receipt_count!==undefined&&snapshot.full_receipt_count!==null
       ?snapshot.full_receipt_count:snapshot.receipt_count);
-    if(!Array.isArray(snapshot.payment_groups)){
-      const total=toNumber(snapshot.revenue);
-      return {fallback:true,total,receipts,average:toNumber(snapshot.average_receipt),
-        groups:[group('Оплаты продаж',snapshot.payments||[],total)],
-        match:null,difference:null,redeemed:null,realCash:null};
-    }
-    const total=toNumber(snapshot.full_total);
-    const groups=snapshot.payment_groups.map(item=>group(item.name,item.types||[],total));
-    const groupsTotal=toNumber(snapshot.groups_total);
-    const difference=groupsTotal===null||total===null?null:Math.round((groupsTotal-total)*100)/100;
-    return {fallback:false,total,receipts,average:toNumber(snapshot.full_average_receipt),groups,
-      match:snapshot.groups_match===true,difference,
-      redeemed:toNumber(snapshot.redeemed_total),realCash:toNumber(snapshot.real_cash)};
+    const groups=sourceGroups.map(item=>group(item.name,item.types,total));
+    const assignedTotal=[...allocated.values()].flat().reduce((sum,entry)=>sum+Math.round(entry.amount*100),0)/100;
+    const unassignedTotal=received===null?null:Math.round((received-assignedTotal)*100)/100;
+    const groupsTotal=groups.reduce((sum,item)=>sum+Math.round(item.total*100),0)/100;
+    const difference=total===null||unassignedTotal===null?null:Math.round((groupsTotal+unassignedTotal-total)*100)/100;
+    return {fallback,total,received,receipts,groups,unassigned,unassignedTotal,
+      average:toNumber(fallback?snapshot.average_receipt:snapshot.full_average_receipt),
+      match:difference===null?null:Math.abs(difference)<=1,difference,
+      redeemed:fallback?null:toNumber(snapshot.redeemed_total),realCash:paid};
   }
 
-  /* Реестр предоплат (ТЗ 3.2). Статус: ждёт → зачтена / возврат; ждущая
-     предоплата с прошедшей датой события — отдельный сигнал кассиру. */
+  /* Реестр предоплат (ТЗ 3.2). Статус: ждёт → зачтена / возврат. «На дату»
+     скрыта до точного источника даты визита (13.10.2026) — и сигнал по ней тоже. */
   function prepaymentStatus(row,today){
     if(!row)return null;
     if(row.status==='refund')return {key:'refund',text:'возврат'};
     if(row.status==='credited')return {key:'credited',text:'зачтена',day:row.credited_day||null};
-    if(row.event_day&&today&&row.event_day<today)return {key:'overdue',text:'ждёт · дата прошла'};
     return {key:'pending',text:'ждёт'};
   }
   /* Сумма строки: во вкладке «Зачтено» — сколько зачли, в остальных — сколько внесли. */
@@ -132,14 +185,13 @@
     const received=toNumber(row?.amount),credited=toNumber(row?.credited_amount);
     return tab==='credited'?(credited!==null?credited:received):(received!==null?received:credited);
   }
-  /* Группировка периода: по людям (без имени — в конце) или по датам события
-     (по возрастанию, без даты — в конце). Итог группы — сумма её предоплат. */
-  function prepaymentGroups(rows,by){
+  /* Группировка периода по людям (без имени — в конце). Итог группы — сумма её предоплат. */
+  function prepaymentGroups(rows){
     const groups=new Map();
     for(const row of rows||[]){
       const guest=String(row.guest||'').trim();
-      const key=by==='dates'?(row.event_day||''):guest.toLocaleLowerCase('ru');
-      if(!groups.has(key))groups.set(key,{key,title:by==='dates'?(row.event_day||''):guest,rows:[],total:0});
+      const key=guest.toLocaleLowerCase('ru');
+      if(!groups.has(key))groups.set(key,{key,title:guest,rows:[],total:0});
       const entry=groups.get(key);
       entry.rows.push(row);
       entry.total=Math.round((entry.total+(prepaymentAmount(row,'period')||0))*100)/100;
@@ -154,7 +206,8 @@
   const SKELETON={
     revenue:['day'],receipts:['day'],average:['day'],'real-cash':['day'],'payment-total':['day'],
     'prepay-received':['prepay'],'prepay-credited':['day'],'prepay-total':['prepay'],
-    handover:['day','expenses','receipts','shokh'],'demo-cash':['day'],'cash-prepay':['day'],
+    handover:['day','expenses','receipts','shokh','usd','rate'],'demo-cash':['day'],'cash-prepay':['day'],
+    'handover-usd':['day','usd','rate'],
     'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],
     'expense-total':['expenses','shokh'],'receipt-total':['receipts'],
     'usd-today':['usd'],'usd-safe':['usd'],'usd-official':['rate'],'usd-restaurant':['rate'],
