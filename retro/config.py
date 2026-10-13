@@ -16,7 +16,7 @@ IIKO_ORIGIN = 'https://retro3158.iikoweb.ru'
 SMS_PROVIDERS = ('eskiz', 'console')
 # Текст SMS с кодом входа. У Eskiz каждый текст проходит модерацию шаблона:
 # отправится только тот, что одобрен в кабинете Eskiz, слово в слово.
-SMS_TEMPLATE = 'Retro Milliy: код для входа в панель {code}. Никому его не сообщайте.'
+SMS_TEMPLATE = 'Код подтверждения для входа в платформу Retro: {code}'
 
 
 @dataclass(frozen=True)

@@ -343,7 +343,7 @@ SMS_PROVIDER=eskiz
 ESKIZ_EMAIL=...
 ESKIZ_PASSWORD=...
 ESKIZ_FROM=4546
-# SMS_TEMPLATE=Retro Milliy: код для входа в панель {code}. Никому его не сообщайте.
+# SMS_TEMPLATE=Код подтверждения для входа в платформу Retro: {code}
 ```
 
 - Номер привязывается к уже заведённой учётной записи `DASHBOARD_PANEL_USERS` с
