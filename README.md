@@ -191,7 +191,7 @@ PYTHONPATH=. python scripts/migrate_to_postgres.py --target "$DATABASE_URL" \
 
 | Переменная | Зачем |
 |---|---|
-| `DASHBOARD_PANEL_USERS` | вход по ролям: кассир, бухгалтер, директор, учредитель, необязательные администратор и менеджеры |
+| `DASHBOARD_PANEL_USERS` | запасной источник учётных записей на время переезда в базу (см. «Учётные записи панели») |
 | `DASHBOARD_MANAGER_DIRECTIONS` | направления менеджеров: `логин=Кухня,Уборка;логин2=Зал` (без строки — все) |
 | `DASHBOARD_PHONE_USERS` | вход менеджера или админа по номеру и SMS-коду: `+998901234567=логин;…` |
 | `SMS_PROVIDER`, `ESKIZ_EMAIL`, `ESKIZ_PASSWORD`, `ESKIZ_FROM`, `SMS_TEMPLATE` | SMS с кодом входа через Eskiz |
@@ -329,6 +329,35 @@ HIKVISION_VERIFY_TLS=true
 После перезапуска проверьте `/api/director/attendance`: `attendance.status` должен стать `ok`,
 а `last_success` — обновиться. Для отката удалите три обязательные `HIKVISION_*` переменные
 и перезапустите сервер. Опрос отключится, сохранённая история останется в SQLite.
+
+## Учётные записи панели
+
+Логины, пароли, номера телефонов и направления менеджеров хранятся в базе —
+таблица `panel_users` (Postgres на бою, `panel-users.sqlite3` локально). Пароль
+лежит только отпечатком (PBKDF2 с солью); запись без пароля входит только по
+номеру и коду из SMS. Номер в базе открывает вход по SMS любой роли.
+
+Управление — командой из окружения панели (на Railway: `railway ssh`, затем):
+
+```bash
+python -m retro.panel_users list
+python -m retro.panel_users add boss --role admin --phone "+998 90 646 25 40"
+python -m retro.panel_users add anvar --role cashier --password   # спросит пароль
+python -m retro.panel_users set karina --directions Кухня,Уборка
+python -m retro.panel_users set karina --no-phone
+python -m retro.panel_users disable karina                        # вход и сессии закрыты
+python -m retro.panel_users enable karina
+python -m retro.panel_users delete karina
+```
+
+Изменения панель видит в течение 5 секунд, перезапуск не нужен. Выключение,
+удаление или смена роли закрывает открытые сессии записи сразу.
+
+Переезд с переменных: `python -m retro.panel_users import-env` переносит
+`DASHBOARD_PANEL_USERS`, `DASHBOARD_PHONE_USERS` и `DASHBOARD_MANAGER_DIRECTIONS`
+в базу (уже существующие записи не трогает). Пока переменные заданы, они —
+запасной источник: запись из базы сильнее одноимённой строки, а логин, которого
+в базе нет, ищется в переменных. После переноса переменные можно снять.
 
 ## Вход по номеру телефона (SMS)
 
