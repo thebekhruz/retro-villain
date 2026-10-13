@@ -107,13 +107,9 @@
           <form id="prepay-period" class="prepay-period" hidden>
             <label class="prepay-field"><span>С</span><input id="prepay-from" type="date" min="2026-10-06" required></label>
             <label class="prepay-field"><span>По</span><input id="prepay-to" type="date" min="2026-10-06" required></label>
-            <div class="ops-tabs prepay-by" role="group" aria-label="Группировать">
-              <button class="ops-tab is-active" type="button" aria-pressed="true" data-by="people">По людям</button>
-              <button class="ops-tab" type="button" aria-pressed="false" data-by="dates">По датам события</button>
-            </div>
             <button id="prepay-show" class="button secondary prepay-show" type="submit">Показать</button>
           </form>
-          <div class="prepay-head" aria-hidden="true"><span>Кто</span><span>Получено</span><span>На дату</span><span>Способ</span><span>Сумма</span><span>Статус</span><span></span></div>
+          <div class="prepay-head" aria-hidden="true"><span>Кто</span><span>Получено</span><span>Способ</span><span>Сумма</span><span>Статус</span><span></span></div>
           <div id="prepay-rows" class="prepay-rows" aria-live="polite"></div>
           <div id="prepay-empty" class="expense-empty prepay-empty">Предоплат за этот день нет.</div>
           <p id="prepay-note" class="cashier-pay-note" hidden></p>

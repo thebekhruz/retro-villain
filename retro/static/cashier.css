@@ -145,7 +145,7 @@
 .cashier-prepay{container:prepay/inline-size}
 .cashier-prepay .cashier-section-head{align-items:center;flex-wrap:wrap}
 .prepay-tabs{flex-wrap:wrap;border-radius:14px}
-.prepay-tabs .ops-tab,.prepay-by .ops-tab{min-height:40px;padding:8px 14px;border-radius:11px;font-size:13px;
+.prepay-tabs .ops-tab{min-height:40px;padding:8px 14px;border-radius:11px;font-size:13px;
   display:inline-flex;align-items:center;gap:6px}
 .prepay-count{min-width:20px;padding:1px 6px;border-radius:10px;background:#e3e9df;color:#53675c;font-size:11px;
   font-weight:650;text-align:center;font-variant-numeric:tabular-nums}
@@ -158,12 +158,11 @@
 /* Общее правило даёт полю даты 44 точки и предел ширины — здесь оно в ряд с остальными. */
 .prepay-field input[type=date]{min-height:40px;max-width:none;font-weight:500}
 .prepay-period .prepay-field{width:150px}
-.prepay-by{padding:3px;border-radius:13px}
 .prepay-period .prepay-show{min-height:40px;margin:0;border-radius:10px}
-.prepay-head,.prepay-row{display:grid;grid-template-columns:minmax(0,1.2fr) 88px 70px minmax(0,1.3fr) 112px 128px 40px;
+.prepay-head,.prepay-row{display:grid;grid-template-columns:minmax(0,1.2fr) 88px minmax(0,1.3fr) 112px 128px 40px;
   column-gap:10px;align-items:center;padding:10px 18px}
 .prepay-head{border-top:1px solid #f0f3ec;background:#f7f9f4;font-size:11px;color:var(--muted-2);padding-top:8px;padding-bottom:8px}
-.prepay-head span:nth-child(5){text-align:right}
+.prepay-head span:nth-child(4){text-align:right}
 .prepay-row{border-top:1px solid #f0f3ec;font-size:13px;min-height:52px}
 .prepay-row.is-editing{background:#fbf7ed}
 .prepay-who{display:grid;gap:2px;min-width:0}
@@ -177,7 +176,6 @@
 .prepay-status.is-pending{background:var(--warn-bg);color:var(--warn)}
 .prepay-status.is-credited{background:var(--ok-bg);color:var(--ok)}
 .prepay-status.is-refund{background:var(--idle-bg);color:var(--idle)}
-.prepay-status.is-overdue{background:var(--late-bg);color:var(--late)}
 .prepay-edit{width:40px;height:36px;border:0;border-radius:8px;background:#f3f5f0;color:#53675c;font-size:15px;line-height:1;padding:0}
 .prepay-edit:hover:not(:disabled){background:#e9eee5}
 .prepay-edit[aria-expanded=true]{background:var(--green);color:#e8cf95}
@@ -185,7 +183,7 @@
 .prepay-group-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:9px 18px;
   border-top:1px solid #e3e9df;background:#f4f7f1;font-size:12px;font-weight:650;color:#285140}
 .prepay-group-head strong{font-variant-numeric:tabular-nums;white-space:nowrap}
-.prepay-editor{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) 150px minmax(0,1fr);gap:10px 12px;
+.prepay-editor{display:grid;grid-template-columns:minmax(0,1.4fr) minmax(0,1fr) minmax(0,1fr) auto;gap:10px 12px;
   align-items:end;padding:12px 18px 14px;background:#fbf7ed;border-top:1px dashed #eddfbe}
 .prepay-refund{display:flex;align-items:center;gap:8px;min-height:40px;font-size:13px;color:var(--ink-2);cursor:pointer}
 .prepay-refund input{width:18px;height:18px;accent-color:var(--green)}
@@ -198,8 +196,8 @@
 @container prepay (max-width:720px){
   .prepay-head{display:none}
   .prepay-row{grid-template-columns:repeat(3,minmax(0,1fr)) 40px;grid-template-areas:
-    "who who sum edit" "rec evt met edit" "state state state edit";row-gap:8px;align-items:start;padding:12px 16px}
-  .prepay-who{grid-area:who}.prepay-received{grid-area:rec}.prepay-event{grid-area:evt}.prepay-method{grid-area:met}
+    "who who sum edit" "rec met met edit" "state state state edit";row-gap:8px;align-items:start;padding:12px 16px}
+  .prepay-who{grid-area:who}.prepay-received{grid-area:rec}.prepay-method{grid-area:met}
   .prepay-amount{grid-area:sum;font-size:15px}.prepay-state{grid-area:state}
   .prepay-edit{grid-area:edit;align-self:start;height:40px}
   .prepay-amount .prepay-cell-label{display:none}
@@ -212,14 +210,13 @@
 @container prepay (max-width:420px){
   /* Три факта в строку на телефоне рвали слова («Наличны-е»), сумма уезжала под ✎. */
   .prepay-row{grid-template-columns:minmax(0,1fr) minmax(0,1fr) 40px;grid-template-areas:
-    "who sum edit" "rec evt edit" "met state edit"}
+    "who sum edit" "rec met edit" "state state edit"}
   .prepay-amount{justify-self:end}
   .prepay-state{align-self:end}
   .prepay-editor{grid-template-columns:minmax(0,1fr)}
   .prepay-editor-actions .button{flex:1}
   .prepay-period .prepay-field{width:calc(50% - 6px)}
-  .prepay-period .prepay-by,.prepay-period .prepay-show{width:100%}
-  .prepay-by .ops-tab{flex:1;justify-content:center}
+  .prepay-period .prepay-show{width:100%}
 }
 
 /* ── Ручной учёт: расходы и поступления рядом ─────────────────────────── */
@@ -467,8 +464,3 @@
 .prepay-toggle:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
 .prepay-toggle-action{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}
 .cashier-prepay-tabs{padding:12px 18px;border-bottom:1px solid var(--border)}
-
-/* Дата визита предоплаты: откуда она и брони стола на выбор (T-440). */
-.prepay-cell-note{display:block;font-size:11px;color:var(--muted-2)}
-.prepay-day-options{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.prepay-day-options>span{font-size:11px;color:var(--muted-2)}

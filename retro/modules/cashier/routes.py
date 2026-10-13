@@ -20,7 +20,6 @@ from .expenses import AutomaticExpense, Expense
 from .export import export_report
 from .service import DataError, TZ, demo_snapshot, today_tashkent
 from .transfer_breakdown import PAYMENT_NAME
-from .visits import load_visits
 from .till import (HandoverChanged, NothingToHandOver, add_usd_deposit, delete_shokh_give,
                    delete_usd_deposit, give_shokh, hand_over, handover_check, shokh_gives, shokh_total,
                    load_till_totals, till_summary, till_totals, usd_amount, usd_balance, usd_day, usd_deposits)
@@ -491,24 +490,6 @@ def group_advances(entries, day=None):
             for order, (received_at, amount, methods) in orders.items()]
 
 
-VISITS_TIMEOUT = 25
-
-
-async def refresh_visits(state, orders, today):
-    """Даты визита предоплат из iiko и броней Cloud → в реестр.
-
-    Не успели или источник не ответил — в реестре остаётся то, что уже известно."""
-    if not callable(getattr(state.iiko, 'prepaid_tables', None)):
-        return  # заглушки iiko в тестах и демо без журнала событий
-    try:
-        visits = await asyncio.wait_for(
-            load_visits(state.iiko, getattr(state, 'cloud_reserves', None), orders, today), VISITS_TIMEOUT)
-    except (DataError, TimeoutError) as error:
-        log_safe_failure('cashier-route', error, operation='prepayment_visits')
-        return
-    await asyncio.to_thread(state.prepayment_registry.record_visits, visits)
-
-
 @router.get('/prepayments')
 async def prepayment_registry(request: Request, date: date | None = None,
                               start: date | None = None, end: date | None = None, demo: bool = False):
@@ -552,9 +533,6 @@ async def prepayment_registry(request: Request, date: date | None = None,
             log_safe_failure('cashier-route', error, operation='prepayment_registry_period')
             issue = 'Не всё удалось получить из iiko: показано то, что уже есть в реестре.'
         rows = await asyncio.to_thread(registry.rows_between, start, end)
-        await refresh_visits(state, [row['order_number'] for row in rows if row['status'] != 'credited'
-                                     or not row['event_day']], today)
-        rows = await asyncio.to_thread(registry.rows_between, start, end)
         return dict(start=start.isoformat(), end=end.isoformat(), rows=rows, issue=issue)
 
     day = selected_day(date)
@@ -584,7 +562,6 @@ async def prepayment_registry(request: Request, date: date | None = None,
         except (DataError, TimeoutError) as error:
             log_safe_failure('cashier-route', error, operation='prepayment_received_lookup')
             issue = 'По части зачтённых предоплат iiko не сказал, когда они получены.'
-    await refresh_visits(state, [item[0] for item in received] + [order.order_number for order in credited], today)
     received_rows = await asyncio.to_thread(registry.rows, [item[0] for item in received])
     credited_rows = await asyncio.to_thread(registry.rows, [order.order_number for order in credited])
     if snapshot.redeemed_orders is None:

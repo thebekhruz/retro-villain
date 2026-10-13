@@ -47,10 +47,6 @@ class Settings:
     login: str = field(default='', repr=False)
     password: str = field(default='', repr=False)
     store_id: int | None = None
-    # ID существующего подключения Retro к iiko Cloud, не ключ. Ключ читается на
-    # сервере под пользователем iikoWeb и живёт только в памяти HTTP-клиента.
-    # Cloud нужен только для дат визита по броням (T-440).
-    iiko_cloud_api_login_id: str = '3abb0f3c-40ca-4e18-9b22-0622b0c95fb7'
     dashboard_user: str = field(default='', repr=False)
     dashboard_password: str = field(default='', repr=False)
     dashboard_panel_users: dict[str, tuple[str, str]] = field(default_factory=dict, repr=False)
@@ -180,8 +176,6 @@ class Settings:
             login=os.getenv('IIKO_LOGIN', ''),
             password=os.getenv('IIKO_PASSWORD', ''),
             store_id=int(store) if store else None,
-            iiko_cloud_api_login_id=os.getenv('IIKO_CLOUD_API_LOGIN_ID',
-                '3abb0f3c-40ca-4e18-9b22-0622b0c95fb7').strip(),
             dashboard_user=user,
             dashboard_password=password,
             dashboard_panel_users=panel_users,
