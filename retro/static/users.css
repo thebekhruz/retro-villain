@@ -8,6 +8,7 @@
 .us-login{display:flex;flex-direction:column;gap:2px}
 .us-login b{font-weight:600;color:#1c302b}
 .us-login small{font-size:12px;color:#906c2b}
+.us-login small.us-login-id{color:#71827d;font-family:ui-monospace,SFMono-Regular,Menlo,monospace}
 .us-row-action{display:flex;justify-content:flex-end}
 .us-row-btn{min-height:38px;padding:7px 12px;font-size:13px}
 .us-count{font-size:13px;color:#71827d;white-space:nowrap}

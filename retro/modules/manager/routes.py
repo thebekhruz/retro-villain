@@ -172,7 +172,9 @@ async def home(request: Request):
     rows, photo_message = await request.app.state.manager_device_photos.enrich(
         rows, request.app.state.hikvision_writer)
     rows.sort(key=lambda row: (row['name'].casefold().replace('ё', 'е'), row['id']))
-    return dict(login=account.login, role=account.role, directions=list(account.directions),
+    stored = await asyncio.to_thread(request.app.state.accounts.get, account.login)
+    return dict(login=account.login, name=stored.label if stored else account.login,
+                role=account.role, directions=list(account.directions),
                 hikvision=dict(configured=request.app.state.hikvision_writer is not None),
                 photo_message=photo_message,
                 employees=[card_json(row, account) for row in rows])
