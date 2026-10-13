@@ -53,7 +53,8 @@ from retro.integrations.hikvision_poller import HikvisionPoller
 from retro.integrations.sms import sms_sender
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
-from retro.phone_login import PhoneLogin, PhoneLoginError, PhoneLoginStore, phone_session_valid
+from retro.panel_users import PanelAccounts, PanelUserStore
+from retro.phone_login import PhoneLogin, PhoneLoginError, PhoneLoginStore
 from retro.phone_numbers import display_phone
 from retro import request_reads
 from retro.security import (MUTATING_METHODS, effective_scheme, client_address,
@@ -167,12 +168,13 @@ def panel_for_path(path: str) -> str | None:
 
 
 def dashboard_identity(
-        request: Request, settings: Settings, sessions: SessionStore,
+        request: Request, settings: Settings, sessions: SessionStore, accounts: PanelAccounts,
 ) -> SessionIdentity | None:
     token = request.cookies.get(SESSION_COOKIE)
     session_identity = sessions.identity(token)
-    if session_identity and session_identity.phone and not phone_session_valid(session_identity, settings):
-        # Номер сняли с учётной записи (или саму запись): сессия по нему закрыта.
+    if session_identity and not accounts.session_valid(session_identity):
+        # Учётную запись выключили, удалили или сменили ей роль; у сессии по
+        # номеру — сняли номер. Сессия закрывается сразу, а не через 30 дней.
         sessions.delete(token)
         session_identity = None
     if session_identity:
@@ -185,11 +187,9 @@ def dashboard_identity(
             header[6:], validate=True).decode().split(':', 1)
     except (ValueError, UnicodeDecodeError, binascii.Error):
         return None
-    panel_user = settings.dashboard_panel_users.get(username)
-    if panel_user:
-        expected_password, role = panel_user
-        if secrets.compare_digest(password.encode(), expected_password.encode()):
-            return SessionIdentity(username, role)
+    account = accounts.authenticate(username, password)
+    if account is not None:
+        return SessionIdentity(username, account.role)
     if settings.dashboard_password:
         valid = (secrets.compare_digest(username.encode(), settings.dashboard_user.encode())
                  & secrets.compare_digest(password.encode(), settings.dashboard_password.encode()))
@@ -253,6 +253,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     # В Postgres все таблицы живут в одной базе; в SQLite — каждый модуль в
     # своём файле, как было. Явно переданные пути (тесты, скрипты) сильнее.
     shared = Database(settings.database_url) if settings.database_url else None
+    # Учётные записи панели (T-442): таблица в общей базе, за ней — переменные.
+    app.state.accounts = PanelAccounts(
+        settings, PanelUserStore(shared or settings.data_dir / 'panel-users.sqlite3'))
     database_path = expense_db_path or shared or settings.data_dir / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
     app.state.prepayment_registry = PrepaymentRegistry(database_path)
@@ -323,7 +326,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     # пережить выкат; SMS — Eskiz на бою, консоль на стенде.
     app.state.phone_login = PhoneLogin(
         PhoneLoginStore(shared or settings.data_dir / 'phone-login.sqlite3'), settings,
-        sms_client if sms_client is not None else sms_sender(settings.sms))
+        sms_client if sms_client is not None else sms_sender(settings.sms), accounts=app.state.accounts)
 
     app.state.financial_requests = FinancialRequests(
         shared or Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3')
@@ -339,8 +342,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         if settings.dashboard_allowed_network:
             if not address.is_loopback and address not in settings.dashboard_allowed_network:
                 return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
-        auth_configured = bool(settings.dashboard_password or settings.dashboard_panel_users)
-        identity = (dashboard_identity(request, settings, app.state.sessions)
+        accounts = app.state.accounts
+        auth_configured = await asyncio.to_thread(accounts.configured)
+        # Проверка сессии читает базу, пароль — PBKDF2: не в цикле событий.
+        identity = (await asyncio.to_thread(dashboard_identity, request, settings, app.state.sessions, accounts)
                     if auth_configured else SessionIdentity('local', 'all'))
         role = identity.role if identity else None
         public = request.url.path in PUBLIC_PATHS
@@ -418,12 +423,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     @app.post('/api/session')
     def login(request: Request, body: LoginInput):
-        role = None
-        panel_user = settings.dashboard_panel_users.get(body.username)
-        if panel_user:
-            expected_password, candidate_role = panel_user
-            if secrets.compare_digest(body.password.encode(), expected_password.encode()):
-                role = candidate_role
+        account = app.state.accounts.authenticate(body.username, body.password)
+        role = account.role if account is not None else None
         if role is None and settings.dashboard_password:
             valid = (secrets.compare_digest(body.username.encode(), settings.dashboard_user.encode())
                      & secrets.compare_digest(body.password.encode(), settings.dashboard_password.encode()))
