@@ -17,6 +17,7 @@ const openPaymentDetails = new Set();
 // Реестр предоплат: день, период, вкладка, группировка, строка в правке.
 let prepayData = null, prepayPeriod = null, prepayTab = 'received', prepayEditing = null;
 let prepayRequest = null, prepayLoadedGeneration = -1, prepayReadyGeneration = -1;
+let prepayNeedsRefresh = false;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 
 /* ── Отклик и ожидание (busy.js, T-393; docs/feedback-principles.md) ─────
@@ -734,12 +735,16 @@ function clearPrepay() {
   $('prepay-note').hidden = true;
   showPrepay();
 }
-async function loadPrepay(day, current, signal) {
+async function loadPrepay(day, current, signal, refresh = false) {
+  const baseId = snapshot?.snapshot_id;
   try {
     const data = await RetroState.responseJson(
-      await request(`/api/cashier/prepayments?date=${encodeURIComponent(day)}&demo=${demo}`, signal));
+      await request(`/api/cashier/prepayments?date=${encodeURIComponent(day)}&demo=${demo}&refresh=${refresh}`, signal));
     if (current !== generation || signal.aborted) return;
     prepayData = data;
+    // The registry supplies its coherent daily revision (including export id).
+    // A later day response must not be replaced by an older registry request.
+    if (data.snapshot?.date === day && snapshot?.snapshot_id === baseId) show(data.snapshot);
   } catch (error) {
     if (current !== generation || signal.aborted || error.name === 'AbortError') return;
     prepayData = {date: day, received: [], credited: [], received_total: null, credited_total: null, issue: error.message, failed: true};
@@ -747,15 +752,17 @@ async function loadPrepay(day, current, signal) {
   refreshPaymentGroups();
   showPrepay();
 }
-function resetPrepayLoading() {
+function resetPrepayLoading(refresh = false) {
   prepayRequest?.controller.abort(); prepayRequest = null;
   prepayLoadedGeneration = -1; prepayReadyGeneration = -1;
+  prepayNeedsRefresh = refresh;
   waiting.delete('prepay'); paintWaiting();
 }
 /* Реестр нужен только раскрытому разделу. До первого ответа дня показываем
    скелет внутри; повторное раскрытие использует текущий запрос или результат. */
 function ensurePrepay(refresh = false) {
   if (refresh) {
+    prepayNeedsRefresh = true;
     prepayLoadedGeneration = -1;
     prepayRequest?.controller.abort(); prepayRequest = null;
     arrive('prepay', generation);
@@ -773,11 +780,12 @@ function ensurePrepay(refresh = false) {
   const active = {current: generation, controller: new AbortController()};
   prepayRequest = active;
   if (!prepayData) expect([...waiting, 'prepay']);
-  active.work = loadPrepay(day, active.current, active.controller.signal).finally(() => {
+  active.work = loadPrepay(day, active.current, active.controller.signal, prepayNeedsRefresh).finally(() => {
     if (prepayRequest !== active) return;
     prepayRequest = null; prepayLoadedGeneration = active.current;
     arrive('prepay', active.current); showPrepay();
   });
+  prepayNeedsRefresh = false;
   if (prepayData) dim('prepay', active.work);
   return active.work;
 }
@@ -1029,7 +1037,9 @@ function show(data) {
   $('payment-empty').querySelector('p').textContent = 'За этот день оплат и новых предоплат нет';
   $('payments-note').hidden = false;
   $('payments-note').textContent = view.received === null
-    ? 'Предоплаты за день недоступны — итоговая выручка требует проверки. Обновите день.'
+    ? data.prepayments_deferred
+      ? 'Показаны оплаты счетов. Предоплаты и итоговая выручка загрузятся при открытии реестра предоплат.'
+      : 'Предоплаты за день недоступны — итоговая выручка требует проверки. Откройте реестр ещё раз.'
     : 'Зачёт предоплат не увеличивает выручку: деньги учтены в день получения.';
   if (view.fallback) $('payments-note').textContent += ' Разбивка по кассам iiko недоступна — оплаты показаны одним списком.';
   renderGroups();
@@ -1059,7 +1069,7 @@ async function loadDay(options = {}) {
   }
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
-  resetPrepayLoading();
+  resetPrepayLoading(options.refresh === true);
   const signal = controller.signal;
   $('refresh').disabled = false;
   const keepSnapshot = snapshot?.date === day;

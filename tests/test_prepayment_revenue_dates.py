@@ -55,7 +55,10 @@ def test_day_api_and_export_count_advance_only_on_receipt(tmp_path, received_day
             expected = (2_000_000 if day == received_day else 0) + (extra if day == closed_day else 0)
             response = client.get('/api/cashier/day', params={'date': day.isoformat()})
             assert response.status_code == 200, response.text
-            data = response.json()
+            assert response.json()['daily_revenue'] is None
+            response = client.get('/api/cashier/prepayments', params={'date': day.isoformat()})
+            assert response.status_code == 200, response.text
+            data = response.json()['snapshot']
             assert Decimal(data['daily_revenue']) == expected
             assert Decimal(data['received_prepayments_total']) == (2_000_000 if day == received_day else 0)
             assert Decimal(data['redeemed_total']) == (2_000_000 if day == closed_day else 0)

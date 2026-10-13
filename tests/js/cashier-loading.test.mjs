@@ -15,7 +15,7 @@ function harness(saved = null) {
   let clears = 0;
   const context = vm.createContext({
     generation:0, controller:null, snapshot:saved, config:{today:TODAY, configured:true}, demo:false,
-    prepayRequest:null, prepayData:null, prepayLoadedGeneration:-1, prepayReadyGeneration:-1,
+    prepayRequest:null, prepayData:null, prepayLoadedGeneration:-1, prepayReadyGeneration:-1, prepayNeedsRefresh:false,
     localStorage:{getItem:()=> 'true'}, // Старое сохранённое раскрытие больше не запускает загрузку.
     AbortController,
     $: id => {
@@ -227,4 +227,35 @@ test('background update invalidates a still-pending registry even after it was c
   h.open(); assert.equal(h.registryRequests().length,2);
   h.respond(3,{...registry(TODAY),marker:'fresh'}); await setImmediate();
   assert.equal(h.context.prepayData.marker,'fresh');
+});
+
+test('opening the registry updates the daily totals and export revision', async()=>{
+  const h=harness(),done=h.run();
+  h.respond(0,{date:TODAY,snapshot_id:'base',daily_revenue:null,received_prepayments_total:null}); await done;
+  assert.equal(h.registryRequests().length,0);
+  h.open();
+  h.respond(1,{...registry(TODAY),snapshot:{date:TODAY,snapshot_id:'with-advances',
+    daily_revenue:'300',received_prepayments_total:'200'}}); await setImmediate();
+  assert.equal(h.context.snapshot.daily_revenue,'300');
+  assert.equal(h.context.snapshot.received_prepayments_total,'200');
+  assert.equal(h.context.snapshot.snapshot_id,'with-advances');
+});
+
+test('a registry revision cannot replace a later daily snapshot', async()=>{
+  const h=harness(),done=h.run();
+  h.respond(0,{date:TODAY,snapshot_id:'base'}); await done; h.open();
+  h.context.snapshot={date:TODAY,snapshot_id:'newer',daily_revenue:'400'};
+  h.respond(1,{...registry(TODAY),snapshot:{date:TODAY,snapshot_id:'old',daily_revenue:'300'}});
+  await setImmediate();
+  assert.equal(h.context.snapshot.snapshot_id,'newer');
+  assert.equal(h.context.snapshot.daily_revenue,'400');
+});
+
+test('manual refresh defers refreshing the source until the registry is opened', async()=>{
+  const h=harness(),done=h.run('{refresh:true}');
+  h.respond(0,{date:TODAY,snapshot_id:'base'}); await done;
+  assert.equal(h.registryRequests().length,0);
+  h.open();
+  assert.ok(h.registryRequests()[0].url.includes('refresh=true'));
+  h.respond(1,registry(TODAY)); await setImmediate();
 });
