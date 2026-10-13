@@ -1,0 +1,48 @@
+/* «Пользователи» (T-445). Каркас, карточки, таблица и диалог — из accountant.css. */
+.us-table{min-width:880px}
+.us-cols{grid-template-columns:minmax(150px,1.3fr) minmax(110px,1fr) minmax(150px,1.1fr) minmax(110px,.9fr) minmax(130px,1.1fr) minmax(110px,.8fr) 150px}
+.us-cols>span{min-width:0;overflow-wrap:anywhere}
+.us-phone{font-variant-numeric:tabular-nums;white-space:nowrap}
+.fd-row.us-cols{padding:10px 18px;font-size:14px}
+.fd-row.us-cols.is-off{background:#fafbf8;color:#8a978b}
+.us-login{display:flex;flex-direction:column;gap:2px}
+.us-login b{font-weight:600;color:#1c302b}
+.us-login small{font-size:12px;color:#906c2b}
+.us-row-action{display:flex;justify-content:flex-end}
+.us-row-btn{min-height:38px;padding:7px 12px;font-size:13px}
+.us-count{font-size:13px;color:#71827d;white-space:nowrap}
+.fd-pill.us-env-pill{background:#fbf0d7;color:#906c2b}
+
+.us-env{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-bottom:16px;background:#fffbf1;border-color:#efe1bd}
+.us-env .fd-kicker{margin-bottom:6px;color:#906c2b}
+.us-env-text{margin:0;font-size:14px;line-height:1.5;color:#53675c;max-width:640px}
+
+.us-form{display:grid;gap:14px;padding:4px 20px 8px}
+.us-hint{margin:-6px 0 0;font-size:13px;line-height:1.45;color:#71827d}
+.us-check{display:flex;align-items:center;gap:9px;font-size:14px;color:#203d33;min-height:32px}
+.us-check input{width:18px;height:18px;accent-color:#143e35;flex:none}
+.us-directions{border:1px solid #e3e7df;border-radius:12px;padding:10px 14px 12px;margin:0;display:grid;gap:4px}
+.us-directions legend{padding:0 6px;font-size:13px;font-weight:600;color:#607368}
+#us-direction-list{display:flex;flex-wrap:wrap;gap:4px 18px}
+.us-actions{display:flex;align-items:center;gap:10px;padding:12px 20px 20px}
+.us-actions-gap{flex:1}
+.us-delete{border:1px solid #f1c6cf;background:#fff;color:#aa4656}
+.us-delete:hover:not(:disabled){background:#fff0f2}
+
+/* Узкий экран (планшет, телефон, окно рядом с другим): таблица не помещается
+   без прокрутки вбок — строки становятся карточками, подписи колонок — из data-label. */
+@media(max-width:1180px){
+  .us-table{min-width:0}
+  .us-table .fd-thead{display:none}
+  .fd-row.us-cols{grid-template-columns:1fr;gap:6px;padding:14px 18px}
+  .us-cols>span[data-label]{display:flex;justify-content:space-between;gap:12px;text-align:right}
+  .us-cols>span[data-label]:before{content:attr(data-label);color:#71827d;font-size:13px;text-align:left}
+  .us-row-action{justify-content:flex-start;margin-top:4px}
+}
+@media(max-width:760px){
+  .us-row-action .fd-btn{width:100%;justify-content:center}
+  .us-env{flex-direction:column;align-items:stretch}
+  .us-actions{flex-wrap:wrap}
+  .us-actions .fd-btn{flex:1 1 120px;justify-content:center}
+  .us-actions-gap{display:none}
+}

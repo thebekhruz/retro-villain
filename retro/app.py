@@ -45,6 +45,7 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.modules.manager.routes import router as manager_router
+from retro.modules.users.routes import router as users_router
 from retro.modules.founder.chat import FounderChatStore
 from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
@@ -106,7 +107,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'accountant.html': {'accountant'}, 'employees.html': {'accountant'},
         'payroll.html': {'accountant'}, 'accountant.js': {'accountant'},
         'employees.js': {'accountant'}, 'employees-logic.js': {'accountant'}, 'payroll.js': {'accountant'},
-        'payroll-logic.js': {'accountant'}, 'accountant.css': {'accountant'},
+        'payroll-logic.js': {'accountant'}, 'accountant.css': {'accountant', 'users'},
         'employees.css': {'accountant'}, 'payroll.css': {'accountant'},
         # ТЗ 02.10: «Зарплата · день», «Баланс Шохруха», общая кнопка «Сохранить»
         'salary-day.html': {'accountant'}, 'shoh-balance.html': {'accountant'},
@@ -138,6 +139,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # Менеджер (ТЗ 09.10, М-01): регистрация сотрудников с телефона
         'manager.html': {'manager'}, 'manager.js': {'manager'}, 'manager-logic.js': {'manager'},
         'manager.css': {'manager'},
+        # Пользователи (T-445): только администратор; каркас — из accountant.css
+        'users.html': {'users'}, 'users.js': {'users'}, 'users.css': {'users'},
     }.items()
 }
 
@@ -166,6 +169,9 @@ def panel_for_path(path: str) -> str | None:
         return 'shokh'
     if path == '/manager' or path.startswith('/manager/') or path.startswith('/api/manager/'):
         return 'manager'
+    if path == '/users' or path == '/api/users' or path.startswith('/api/users/'):
+        # Роли «users» нет: модуль открыт только полному доступу (admin).
+        return 'users'
     return None
 
 
@@ -521,6 +527,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # Кабинет менеджера — только телефон (ТЗ 09.10, М-01).
         return app.state.pages.response('manager.html')
 
+    @app.get('/users')
+    def users_page():
+        return app.state.pages.response('users.html')
+
     @app.get('/director')
     def director():
         # Телефон директора (6a). Прежний десктопный отчёт с полной таблицей
@@ -543,7 +553,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
                     ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),
-                    ('shokh', 'Закуп · Шох', '/shokh'), ('manager', 'Менеджер', '/manager'))
+                    ('shokh', 'Закуп · Шох', '/shokh'), ('manager', 'Менеджер', '/manager'),
+                    ('users', 'Пользователи', '/users'))
 
     @app.get('/api/config')
     def config(request: Request):
@@ -576,6 +587,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(director_router)
     app.include_router(founder_router)
     app.include_router(manager_router)
+    app.include_router(users_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 
