@@ -107,16 +107,18 @@ def test_iiko_registry_uses_received_operation_and_operational_day():
     assert requests[0]['filters'][2]['valueList'] == [RETRO_REGISTER]
 
 
-def test_day_enriches_old_snapshot_and_preserves_export_revision(tmp_path, monkeypatch):
+def test_only_registry_enriches_day_and_preserves_export_revision(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from legacy_app import create_app
     from retro.modules.cashier import routes
 
     app = create_app(Settings(data_dir=tmp_path))
-    base = replace(demo_snapshot(DAY), demo=False)
+    base = replace(demo_snapshot(DAY), demo=False, prepayments=None, redeemed_orders=())
+    calls = []
     outcomes = iter([prepayments_from_olap([branch()]), (), DataError('Unavailable')])
     async def load(state, method, day, **kwargs):
         assert day == DAY
+        calls.append(method)
         if method == 'load':
             return base
         assert method == 'load_prepayments'
@@ -126,11 +128,25 @@ def test_day_enriches_old_snapshot_and_preserves_export_revision(tmp_path, monke
         return result
     monkeypatch.setattr(routes, 'load_iiko', load)
     with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
-        first, empty, failed = [client.get('/api/cashier/day?date=2026-10-04').json() for _ in range(3)]
+        for query in ['', '&refresh=true', '&allow_stale=true']:
+            deferred = client.get('/api/cashier/day?date=2026-10-04' + query).json()
+            assert deferred['prepayments'] is None
+            assert deferred['daily_revenue'] is None
+            assert deferred['received_prepayments_total'] is None
+            assert deferred['prepayments_deferred'] is True
+            assert deferred['revenue'] == str(base.revenue)
+        assert calls == ['load'] * 3
+        first, empty = [client.get('/api/cashier/prepayments?date=2026-10-04').json()['snapshot']
+                        for _ in range(2)]
+        failed = client.get('/api/cashier/prepayments?date=2026-10-04')
+        assert failed.status_code == 503
         assert first['prepayments'][0]['amount'] == '500000'
+        assert first['prepayments_deferred'] is False
+        assert Decimal(first['daily_revenue']) == base.revenue + 500000
         assert empty['prepayments'] == []
-        assert failed['prepayments'] is None and failed['prepayments_issue']
-        assert len({first['snapshot_id'], empty['snapshot_id'], failed['snapshot_id']}) == 3
+        assert empty['received_prepayments_total'] == '0'
+        assert len({first['snapshot_id'], empty['snapshot_id'], deferred['snapshot_id']}) == 3
+        assert app.state.cache.get(deferred['snapshot_id'], DAY).prepayments is None
         original = app.state.cache.get(first['snapshot_id'], DAY)
         assert original.prepayments[0].amount == 500000
         assert original.revenue == base.revenue
