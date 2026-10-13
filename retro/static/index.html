@@ -11,7 +11,6 @@
   <link rel="stylesheet" href="/static/cashier.css">
   <link rel="stylesheet" href="/static/mobile.css">
   <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/frontend-state.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/cashier-logic.js" defer></script><script src="/static/app.js" defer></script>
-  <script src="/static/prepayment-sources.js" defer></script>
 </head>
 <body>
 <aside class="sidebar">
@@ -119,43 +118,6 @@
           <div id="prepay-empty" class="expense-empty prepay-empty">Предоплат за этот день нет.</div>
           <p id="prepay-note" class="cashier-pay-note" hidden></p>
           <div class="cashier-total"><span id="prepay-total-label">Итого получено</span><strong id="prepay-total" class="rm-num">0</strong></div>
-          </div>
-        </details>
-
-        <details class="rm-section prepay-sources" id="prepay-sources">
-          <summary class="cashier-section-head prepay-toggle">
-            <div><p class="eyebrow">БРОНИ И ПЛАТЕЖИ IIKO</p><h2>До визита гостя</h2></div>
-            <span class="rm-section-chevron" aria-hidden="true">⌄</span>
-          </summary>
-          <div class="prepay-sources-content">
-            <section id="prepay-reserves-panel" class="prepay-source-part" aria-labelledby="prepay-reserves-heading">
-              <h3 id="prepay-reserves-heading">Брони на дату</h3>
-              <p class="prepay-source-caption">Все доступные залы iiko. Выберите день, на который гости забронировали стол.</p>
-              <form id="prepay-reserves-day" class="prepay-period prepay-visit-day">
-                <button id="prepay-reserves-prev" type="button" class="button secondary prepay-day-step" aria-label="Предыдущий день визита">←</button>
-                <label class="prepay-field"><span>Дата визита</span><input id="prepay-reserves-date" type="date" required></label>
-                <button id="prepay-reserves-next" type="button" class="button secondary prepay-day-step" aria-label="Следующий день визита">→</button>
-                <button id="prepay-reserves-today" type="button" class="button secondary">Сегодня</button>
-                <button id="prepay-reserves-load" type="submit" class="button secondary">Обновить</button>
-              </form>
-              <p id="prepay-reserves-summary" class="prepay-source-caption" role="status" aria-live="polite"></p>
-              <p id="prepay-reserves-status" class="prepay-source-caption" role="status" aria-live="polite"></p>
-              <div id="prepay-reserves-list" class="prepay-source-list"></div>
-            </section>
-            <section id="prepay-payments-panel" class="prepay-source-part" aria-labelledby="prepay-payments-heading">
-              <h3 id="prepay-payments-heading">Внесённые предоплаты · способы</h3>
-              <p class="prepay-source-caption">Безналичные записи кассы Retro, включая банкетный зал. Наличные здесь не показаны. Справочный список не изменяет выручку и сумму к передаче.</p>
-              <p class="prepay-source-caption">Период внесения денег выбирается отдельно от даты визита. До 31 дня.</p>
-              <form id="prepay-sources-period" class="prepay-period">
-                <label class="prepay-field"><span>С</span><input id="prepay-sources-from" type="date" required></label>
-                <label class="prepay-field"><span>По</span><input id="prepay-sources-to" type="date" required></label>
-                <button id="prepay-sources-load" type="submit" class="button secondary prepay-show">Показать</button>
-              </form>
-              <p id="prepay-sources-status" class="prepay-source-caption" role="status" aria-live="polite">Выберите период и нажмите «Показать».</p>
-              <p id="prepay-payments-status" class="prepay-source-caption" role="status"></p>
-              <p id="prepay-matches-status" class="prepay-source-caption is-warn" role="status" hidden></p>
-              <div id="prepay-source-payments" class="prepay-source-list"></div>
-            </section>
           </div>
         </details>
 

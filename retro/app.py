@@ -20,7 +20,6 @@ from retro.static_assets import IMMUTABLE, VERSIONED_PRIVATE, Pages
 from retro.config import Settings
 from retro.db import Database
 from retro.integrations.iiko import IikoClient
-from retro.integrations.iiko_prepayment_sources import IikoPrepaymentSources
 from retro.integrations.bookings import BookingAnalyticsClient
 from retro.integrations.broadcasts import BookingBroadcastClient
 from retro.integrations.cbu import UsdRates
@@ -99,7 +98,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
     name: frozenset(panels) for name, panels in {
         # Кассир
         'index.html': {'cashier'}, 'app.js': {'cashier'}, 'cashier-logic.js': {'cashier'},
-        'cashier.css': {'cashier'}, 'prepayment-sources.js': {'cashier'},
+        'cashier.css': {'cashier'},
         # Бухгалтер: финансы дня, сотрудники, ведомость
         'accountant.html': {'accountant'}, 'employees.html': {'accountant'},
         'payroll.html': {'accountant'}, 'accountant.js': {'accountant'},
@@ -233,7 +232,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             await application.state.phone_login.close()
             # Клиенты держат свои пулы соединений всё время жизни приложения;
             # в тестах на их месте могут стоять заглушки без close().
-            for integration in (application.state.prepayment_sources, application.state.iiko, application.state.bookings,
+            for integration in (application.state.iiko, application.state.bookings,
                                 application.state.broadcasts):
                 close = getattr(integration, 'close', None)
                 if close is not None:
@@ -246,7 +245,6 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     # иначе каждый деплой выбрасывает смену на экран входа.
     app.state.sessions = SessionStore(settings.data_dir / 'sessions.json')
     app.state.iiko = IikoClient(settings)
-    app.state.prepayment_sources = IikoPrepaymentSources(settings, app.state.iiko)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.broadcasts = BookingBroadcastClient(settings, transport=broadcast_transport)
     app.state.reports = ReportCache()
