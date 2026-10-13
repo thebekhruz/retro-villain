@@ -129,3 +129,36 @@ def test_environment_account_is_read_only_until_moved(admin, tmp_path):
     assert password_matches('secret', store_of(tmp_path).password_hash('karina'))
     assert admin.post('/api/users/karina/import').status_code == 422
     assert admin.patch('/api/users/karina', json={'phone': '+998 90 111 22 33'}).status_code == 200
+
+
+# ── Имя для интерфейса (T-446) ──────────────────────────────────────────────
+
+def test_admin_sets_a_display_name_shown_instead_of_the_login(admin, tmp_path):
+    answer = admin.post('/api/users', json={'login': 'karina2', 'role': 'manager', 'name': '  Карина   Юсупова ',
+                                            'password': 'karina-2026'})
+    row = logins(answer)['karina2']
+    assert row['name'] == 'Карина Юсупова' and row['label'] == 'Карина Юсупова'
+    with open_client(make_app(tmp_path, dashboard_panel_users=USERS), Clock()) as manager:
+        manager.post('/api/session', json={'username': 'karina2', 'password': 'karina-2026'})
+        config = manager.get('/api/config').json()
+        assert config['user'] == 'karina2' and config['user_name'] == 'Карина Юсупова'
+        assert manager.get('/api/manager/home').json()['name'] == 'Карина Юсупова'
+    # Пустое имя снимает его — экран снова показывает логин.
+    row = logins(admin.patch('/api/users/karina2', json={'name': ''}))['karina2']
+    assert row['name'] is None and row['label'] == 'karina2'
+    # Изменение другого поля имя не трогает.
+    admin.patch('/api/users/karina2', json={'name': 'Карина'})
+    assert logins(admin.patch('/api/users/karina2', json={'active': False}))['karina2']['name'] == 'Карина'
+
+
+def test_name_is_validated(admin):
+    answer = admin.post('/api/users', json={'login': 'x1', 'role': 'cashier', 'password': 'long-enough',
+                                            'name': 'А' * 81})
+    assert answer.status_code == 422 and 'Имя' in answer.json()['detail']
+
+
+def test_without_a_name_the_interface_uses_the_login(admin):
+    assert admin.get('/api/config').json()['user_name'] == 'boss'
+    # Записи из переменных имени не имеют.
+    with_env = logins(admin.get('/api/users'))['karina']
+    assert with_env['name'] is None and with_env['label'] == 'karina'

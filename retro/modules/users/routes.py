@@ -29,6 +29,7 @@ ENV_ONLY = 'Эта запись пока в переменных окружен�
 class NewUser(BaseModel):
     login: str
     role: str
+    name: str | None = None
     phone: str | None = None
     password: str | None = None
     directions: list[str] = []
@@ -36,6 +37,8 @@ class NewUser(BaseModel):
 
 class UserChange(BaseModel):
     role: str | None = None
+    # Пустая строка — убрать имя (экран покажет логин); не передано — не менять.
+    name: str | None = None
     # Пустая строка — снять номер; поле не передано — не менять.
     phone: str | None = None
     password: str | None = None
@@ -45,7 +48,7 @@ class UserChange(BaseModel):
 
 
 def row(account, me: str | None) -> dict:
-    return dict(login=account.login, role=account.role, role_name=ROLE_NAMES.get(account.role, account.role),
+    return dict(login=account.login, name=account.name, label=account.label, role=account.role, role_name=ROLE_NAMES.get(account.role, account.role),
                 phone=display_phone(account.phone) if account.phone else None,
                 password=account.has_password, directions=list(account.directions),
                 active=account.active, source=account.source, me=account.login == me,
@@ -97,7 +100,7 @@ async def add_user(request: Request, body: NewUser):
     if body.login.strip() in accounts.settings.dashboard_panel_users:
         raise HTTPException(409, f'«{body.login.strip()}» уже есть в переменных окружения — перенесите её в базу.')
     return await apply(request, lambda: change_account(
-        store, body.login, create=True, role=body.role, phone=(body.phone or '').strip() or None,
+        store, body.login, create=True, role=body.role, name=body.name, phone=(body.phone or '').strip() or None,
         password=body.password or None, directions=body.directions, by=me))
 
 
@@ -110,6 +113,8 @@ async def change_user(request: Request, login: str, body: UserChange):
     changes = {}
     if body.role is not None:
         changes['role'] = body.role
+    if body.name is not None:
+        changes['name'] = body.name
     if body.phone is not None:
         changes['phone'] = body.phone.strip() or None
     if body.remove_password:
