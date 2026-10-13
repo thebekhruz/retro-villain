@@ -1,8 +1,8 @@
 """Вход по номеру телефона и одноразовому SMS-коду (ТЗ 09.10, М-05).
 
 Ввёл номер → пришёл код → подтвердил → кабинет открыт в сохранённой сессии.
-Номер находит уже заведённую учётную запись панели (DASHBOARD_PHONE_USERS →
-логин из DASHBOARD_PANEL_USERS) и никогда не создаёт новую: заводить людей
+Номер находит уже заведённую учётную запись панели (таблица panel_users,
+T-442; запасной путь — DASHBOARD_PHONE_USERS) и никогда не создаёт новую: заводить людей
 для входа — отдельное действие администратора, не менеджера.
 
 Правила кода:
@@ -39,7 +39,8 @@ from retro.config import SMS_TEMPLATE
 from retro.db import PostgresConnection, as_database
 from retro.integrations.sms import render_message
 from retro.logging_config import log_safe_failure
-from retro.phone_numbers import PHONE_ROLES, normalize_phone
+from retro.panel_users import PanelAccounts
+from retro.phone_numbers import normalize_phone
 
 CODE_LENGTH = 6
 CODE_LIFETIME = timedelta(minutes=5)
@@ -113,21 +114,12 @@ def new_code() -> str:
     return f'{secrets.randbelow(10 ** CODE_LENGTH):0{CODE_LENGTH}d}'
 
 
-def phone_account(settings, phone: str) -> PhoneAccount | None:
+def phone_account(accounts: PanelAccounts, phone: str) -> PhoneAccount | None:
     """Учётная запись по подтверждаемому номеру — только уже заведённая."""
-    login = settings.phone_users.get(phone)
-    user = settings.dashboard_panel_users.get(login) if login else None
-    if user is None or user[1] not in PHONE_ROLES:
+    account = accounts.by_phone(phone)
+    if account is None:
         return None
-    return PhoneAccount(phone=phone, login=login, role=user[1])
-
-
-def phone_session_valid(identity, settings) -> bool:
-    """Сессия, открытая по номеру, жива, пока номер привязан к той же учётной
-    записи: сняли номер или учётную запись из настроек — после перезапуска
-    кабинет закрывается, не дожидаясь конца 30 дней."""
-    account = phone_account(settings, identity.phone)
-    return account is not None and account.login == identity.username and account.role == identity.role
+    return PhoneAccount(phone=phone, login=account.login, role=account.role)
 
 
 class PhoneLoginStore:
@@ -240,13 +232,15 @@ class PhoneLoginStore:
 
 
 class PhoneLogin:
-    def __init__(self, store: PhoneLoginStore, settings, sender, *, clock=None):
+    def __init__(self, store: PhoneLoginStore, settings, sender, *, clock=None, accounts=None):
         self.store, self.settings, self.sender = store, settings, sender
+        # Без базы учётных записей (скрипты, старые тесты) — только переменные.
+        self.accounts = accounts if accounts is not None else PanelAccounts(settings)
         self.clock = clock or (lambda: datetime.now(timezone.utc))
 
     @property
     def enabled(self) -> bool:
-        return bool(self.settings.phone_users) and self.sender is not None
+        return self.sender is not None and self.accounts.phones_configured()
 
     def _phone(self, raw) -> str:
         phone = normalize_phone(raw)
@@ -262,7 +256,7 @@ class PhoneLogin:
         self._off()
         phone = self._phone(raw_phone)
         now = self.clock()
-        account = phone_account(self.settings, phone)
+        account = phone_account(self.accounts, phone)
         code = new_code()
         salt = secrets.token_hex(16)
         # Отпечаток считаем заранее и вне цикла событий: PBKDF2 — десятки
@@ -324,7 +318,7 @@ class PhoneLogin:
                 raise PhoneLoginError(401, 'wrong', 'Неверный код. Попытки закончились — запросите новый код.',
                                       attempts_left=0)
             raise PhoneLoginError(401, 'wrong', f'Неверный код. Осталось попыток: {left}.', attempts_left=left)
-        account = phone_account(self.settings, phone)
+        account = phone_account(self.accounts, phone)
         if account is None:
             raise PhoneLoginError(404, 'unknown', UNKNOWN)
         if not self.store.use(row_id, now):
