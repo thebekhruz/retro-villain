@@ -103,17 +103,19 @@ test('skeletonMap: a figure stays a skeleton until every part it is computed fro
   const all = logic.skeletonMap(new Set(logic.PARTS));
   assert.equal(all['prepay-total'],false,'registry is not part of initial page loading');
   assert.ok(Object.entries(all).filter(([id])=>id!=='prepay-total').every(([,value])=>value));
-  assert.equal(logic.skeletonMap(['prepay'])['prepay-received'],false,'day totals do not wait for registry');
+  assert.equal(logic.skeletonMap(['prepay']).revenue,false,'day totals do not wait for registry');
   const none = logic.skeletonMap([]);
   assert.ok(Object.values(none).every(value => value === false));
   // «К передаче» — из iiko, расходов, поступлений и выдач Шоху.
   const onlyShokh = logic.skeletonMap(['shokh']);
   assert.equal(onlyShokh.handover, true);
-  assert.equal(onlyShokh['expense-total'], true);
+  assert.equal(onlyShokh['handover-shokh'], true);
+  assert.equal(onlyShokh['shokh-pocket'], true);
+  assert.equal(onlyShokh['handover-expenses'], false, 'выдачи на закуп — свой шаг формулы');
   assert.equal(onlyShokh.revenue, false);
-  assert.equal(onlyShokh['receipt-total'], false);
+  assert.equal(onlyShokh['handover-receipts'], false);
   const onlyRate = logic.skeletonMap(new Set(['rate']));
   assert.deepEqual(Object.keys(onlyRate).filter(id => onlyRate[id]).sort(),
-    ['handover', 'handover-usd', 'usd-official', 'usd-restaurant']);
+    ['handover', 'handover-usd', 'usd-restaurant']);
   assert.equal(logic.skeletonMap(['usd']).handover, true);
 });
