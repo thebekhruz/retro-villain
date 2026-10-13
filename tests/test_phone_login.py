@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from legacy_app import create_app
 from test_accountant_design_parity import POSTGRES_URL
 from retro.config import SmsConfig, Settings, parse_sms_config
-from retro.integrations.sms import ConsoleSms, EskizSms, SmsError, sms_sender
+from retro.integrations.sms import ConsoleSms, EskizSms, SmsError, render_message, sms_sender
 from retro.phone_login import ADDRESS_REQUESTS_PER_HOUR, MAX_ATTEMPTS, PHONE_SENDS_PER_HOUR
 from retro.phone_numbers import display_phone, normalize_phone, parse_phone_users
 
@@ -158,6 +158,11 @@ def test_number_is_shown_in_groups():
     assert display_phone('+998901234567') == '+998 90 123 45 67'
 
 
+def test_phone_users_bind_numbers_to_existing_manager_and_admin_logins():
+    users = parse_phone_users('+998 90 646 25 40=boss', {**USERS, 'boss': ('secret', 'admin')})
+    assert users == {'+998906462540': 'boss'}
+
+
 def test_phone_users_bind_numbers_to_existing_manager_logins():
     users = parse_phone_users('+998 90 123 45 67=karina; 935550011=oshxona;998935550012=karina', USERS)
     assert users == {'+998901234567': 'karina', '+998935550011': 'oshxona', '+998935550012': 'karina'}
@@ -175,6 +180,21 @@ def test_phone_users_are_validated_on_start(value, problem):
         parse_phone_users(value, USERS)
 
 
+def test_admin_enters_by_number_into_the_full_panel(tmp_path, sms, clock):
+    users = {**USERS, 'boss': ('secret', 'admin')}
+    admin_phone = '+998906462540'
+    app = sqlite_app(tmp_path, sms, dashboard_panel_users=users,
+                     phone_users={**PHONES, admin_phone: 'boss'})
+    with open_client(app, clock) as client:
+        assert ask(client, '90 646 25 40').status_code == 200
+        login = confirm(client, sms.code(), admin_phone)
+        assert login.status_code == 200
+        assert login.json() == {'role': 'admin', 'path': '/'}
+        # Админ видит все панели, не только кабинет менеджера.
+        assert client.get('/accountant').status_code == 200
+        assert client.get('/manager').status_code == 200
+
+
 # ── Настройки SMS ───────────────────────────────────────────────────────────
 
 def test_sms_is_off_without_a_provider():
@@ -190,6 +210,17 @@ def test_eskiz_needs_its_credentials():
     assert '{code}' in config.template
     # Пароль Eskiz не печатается вместе с настройками.
     assert 'eskiz-pass' not in repr(config)
+
+
+def test_default_sms_text_matches_the_eskiz_template():
+    # Eskiz пропускает только одобренный текст слово в слово — правка
+    # умолчания без новой модерации молча останавливает все SMS.
+    config = parse_sms_config({'SMS_PROVIDER': 'eskiz', 'ESKIZ_EMAIL': 'retro@example.com',
+                               'ESKIZ_PASSWORD': 'eskiz-pass'})
+    text = render_message(config.template, '123456')
+    assert text == 'Код подтверждения для входа в платформу Retro: 123456'
+    # Кириллица: одна SMS — до 70 знаков.
+    assert len(text) <= 70
 
 
 def test_console_sms_is_refused_on_hosting():
@@ -226,7 +257,7 @@ def test_number_then_code_opens_the_manager_cabinet(phone, sms):
     assert sent.status_code == 200
     assert sent.json() == {'phone': '+998 90 123 45 67', 'sent': True, 'resend_in': 60, 'expires_in': 300}
     assert [number for number, _ in sms.sent] == [KARINA]
-    assert 'Retro Milliy' in sms.sent[0][1]
+    assert sms.sent[0][1].startswith('Код подтверждения для входа в платформу Retro: ')
 
     login = confirm(phone, sms.code())
     assert login.status_code == 200
