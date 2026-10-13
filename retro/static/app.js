@@ -853,19 +853,6 @@ function prepayLine(row, tab) {
   };
   const received = fact('prepay-received', 'Получено', row.received_at ? stampText(row.received_at) : '—', !row.received_at);
   const eventDay = fact('prepay-event', 'На дату', row.event_day ? dayMonth(row.event_day) : 'не указана', !row.event_day);
-  // Откуда дата: заказ закрыт (факт iiko), единственная бронь стола в Cloud — или брони на выбор.
-  const options = row.event_day ? [] : (row.visit_options || []);
-  const sourceNote = {closed: 'визит был', reserve: 'по брони'}[row.event_day_source];
-  if (sourceNote || options.length) {
-    const note = document.createElement('small'); note.className = 'prepay-cell-note';
-    if (sourceNote) note.textContent = sourceNote;
-    else {
-      const days = document.createElement('span'); days.dataset.i18n = 'off'; days.textContent = ' ' + options.map(dayMonth).join(', ');
-      const label = document.createElement('span'); label.textContent = 'брони стола:';
-      note.append(label, days);
-    }
-    eventDay.append(note);
-  }
   // Способ из iiko называет наличные «Демо» — на экране они «Наличные», как в выручке.
   const methodText = String(row.method_shown || '').split(', ').filter(Boolean)
     .map(name => name === CashierLogic.CASH_PAYMENT ? 'Наличные' : name).join(', ');
@@ -900,23 +887,7 @@ function prepayEditor(row) {
   };
   const guest = input('guest', row.guest, {maxlength: 120, placeholder: 'Имя гостя или компания', autocomplete: 'off'});
   const phone = input('phone', row.phone, {maxlength: 40, type: 'tel', placeholder: '+998', autocomplete: 'off'});
-  // Заказ закрыт — день визита известен iiko, его не правят. Иначе — запись кассира,
-  // а без неё дата единственной брони стола (сохранение её подтверждает).
-  const fixedDay = row.event_day_source === 'closed';
-  const eventDay = fixedDay
-    ? input('event_day', row.event_day, {type: 'date', readonly: '', 'aria-readonly': 'true', title: 'Заказ закрыт — день визита из iiko'})
-    : input('event_day', row.event_day_manual || row.event_day, {type: 'date'});
-  const choices = document.createElement('div'); choices.className = 'prepay-day-options';
-  if (!fixedDay && row.visit_options?.length) {
-    const label = document.createElement('span'); label.textContent = 'Брони стола';
-    choices.append(label);
-    for (const day of row.visit_options) {
-      const pick = document.createElement('button'); pick.type = 'button'; pick.className = 'button secondary';
-      pick.textContent = dayMonth(day); pick.dataset.i18n = 'off';
-      pick.addEventListener('click', () => { eventDay.value = day; });
-      choices.append(pick);
-    }
-  }
+  const eventDay = input('event_day', row.event_day, {type: 'date'});
   // Способ внесения, определённый по iiko, кассир не переписывает — поле только для чтения.
   const fromIiko = (row.received_methods || []).map(name => name === CashierLogic.CASH_PAYMENT ? 'Наличные' : name).join(', ');
   const method = fromIiko
@@ -931,13 +902,12 @@ function prepayEditor(row) {
   const save = document.createElement('button'); save.type = 'submit'; save.className = 'button primary'; save.textContent = 'Сохранить';
   actions.append(cancel, save);
   const feedback = document.createElement('p'); feedback.className = 'expense-feedback'; feedback.setAttribute('role', 'status');
-  form.append(field('Кто', guest), field('Телефон', phone), field(fixedDay ? 'На дату · из iiko' : 'На дату', eventDay),
-    ...(choices.childElementCount ? [choices] : []),
+  form.append(field('Кто', guest), field('Телефон', phone), field('На дату', eventDay),
     field(fromIiko ? 'Способ · из iiko' : 'Способ', method), refund, actions, feedback);
   cancel.addEventListener('click', () => { prepayEditing = null; showPrepay(); });
   form.addEventListener('submit', event => {
     event.preventDefault();
-    Busy.button(save, savePrepay(row.order_number, {guest: guest.value, phone: phone.value, event_day: fixedDay ? row.event_day_manual || null : eventDay.value || null,
+    Busy.button(save, savePrepay(row.order_number, {guest: guest.value, phone: phone.value, event_day: eventDay.value || null,
       method: fromIiko ? row.method || '' : method.value, refunded: box.checked}, feedback));
   });
   requestAnimationFrame(() => guest.focus({preventScroll: true}));

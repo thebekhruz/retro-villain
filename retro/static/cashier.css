@@ -467,8 +467,3 @@
 .prepay-toggle:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
 .prepay-toggle-action{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}
 .cashier-prepay-tabs{padding:12px 18px;border-bottom:1px solid var(--border)}
-
-/* Дата визита предоплаты: откуда она и брони стола на выбор (T-440). */
-.prepay-cell-note{display:block;font-size:11px;color:var(--muted-2)}
-.prepay-day-options{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
-.prepay-day-options>span{font-size:11px;color:var(--muted-2)}

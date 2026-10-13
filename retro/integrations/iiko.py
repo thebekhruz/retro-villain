@@ -19,7 +19,7 @@ from retro.report_cache import ReportCache, refresh_source
 from retro.config import IIKO_ORIGIN
 from retro.logging_config import log_upstream_failure
 from retro.modules.cashier.service import (
-    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, TZ, DataError, PrepaymentUnavailable,
+    BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, PrepaymentUnavailable,
     build_revenue_breakdown, build_snapshot, cell, number, shift_status, today_tashkent,
 )
 from retro.modules.cashier.prepayments import (assign_methods, cashless_prepays_from_shift,
@@ -1029,76 +1029,6 @@ class IikoClient:
             raise DataError('Не удалось получить список предоплат из iiko. Обновите страницу.') from None
         finally:
             cashier_read.reset(token)
-
-    async def prepaid_tables(self, start, end):
-        """Журнал событий iikoWeb: за какой стол внесена предоплата.
-
-        {номер заказа: (стол, возвращена ли)}. В отчётах OLAP у открытого заказа
-        стола нет, а журнал пишет его в событии «Внесение предоплаты»."""
-        if not self.settings.configured:
-            raise DataError('Подключение iiko ещё не настроено.')
-        body = {'storeId': str(self.settings.store_id), 'types': ['orderPrepaid', 'orderPrepayReturned'],
-                'from': start.isoformat(), 'to': end.isoformat(),
-                'prefilter': {'terminal': None, 'user': None, 'timeInterval': None}}
-        try:
-            async with self._client() as client:
-                data = await self._shift_cache.get(
-                    'event-log:' + json.dumps(body, sort_keys=True),
-                    lambda: self._post(client, '/api/web-event-log', body),
-                    ttl=300, timeout=60, refresh=refresh_source.get(), label='iiko_event_log')
-        except (httpx.HTTPError, TimeoutError) as error:
-            log_upstream_failure('iiko', error, operation='prepaid_tables')
-            raise DataError('Не удалось прочитать журнал событий iiko.') from None
-        events = (data.get('data') or {}).get('events') if isinstance(data, dict) else None
-        if not isinstance(events, list):
-            raise DataError('iiko не вернул журнал событий.')
-        result = {}
-        for event in events:
-            attributes = event.get('attributes') if isinstance(event, dict) else None
-            if not isinstance(attributes, dict):
-                raise DataError('iiko вернул неполное событие журнала.')
-            order, table = attributes.get('orderNum'), attributes.get('tableNum')
-            if order is None:
-                continue
-            known_table, returned = result.get(str(order), (None, False))
-            if event.get('type') == 'orderPrepayReturned':
-                returned = True
-            elif table not in (None, ''):
-                known_table = str(table).strip()
-            result[str(order)] = (known_table, returned)
-        return result
-
-    async def order_close_times(self, orders, start, end):
-        """Когда закрыты заказы кассы Retro (открытые в [start, end]): {номер: время}."""
-        if not self.settings.configured:
-            raise DataError('Подключение iiko ещё не настроено.')
-        numbers = sorted({int(order) for order in orders if str(order).isdigit()})
-        if not numbers:
-            return {}
-        filters = [dict(field='CashRegisterName', filterType='value_list', valueList=[RETRO_REGISTER], inclusiveList=True),
-                   dict(field='OrderNum', filterType='value_list', valueList=numbers, inclusiveList=True)]
-        token = cashier_read.set(True)
-        try:
-            async with self._client() as client:
-                rows = await self._olap_range(client, start, end, ['OrderNum', 'CloseTime'],
-                                              ['DishDiscountSumInt'], filters)
-        except (httpx.HTTPError, TimeoutError) as error:
-            log_upstream_failure('iiko', error, operation='order_close_times')
-            raise DataError('Не удалось проверить закрытие заказов в iiko.') from None
-        finally:
-            cashier_read.reset(token)
-        result = {}
-        for order, closed, _ in pay_leaves(rows, 2):
-            if order is None or not closed:
-                continue
-            try:
-                stamp = datetime.fromisoformat(closed)
-            except (TypeError, ValueError):
-                raise DataError('iiko вернул некорректное время закрытия заказа.') from None
-            stamp = stamp.replace(tzinfo=TZ) if stamp.tzinfo is None else stamp.astimezone(TZ)
-            key = str(order)
-            result[key] = max(result.get(key, stamp), stamp)
-        return result
 
     async def prepayment_redemptions(self, orders, start, end):
         """Когда закрыты заказы с авансом: [(заказ, день, тип оплаты, сумма зачёта)]."""

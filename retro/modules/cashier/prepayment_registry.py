@@ -17,12 +17,7 @@ STATUS_PENDING, STATUS_CREDITED, STATUS_REFUND = 'pending', 'credited', 'refund'
 LIMITS = dict(guest=120, phone=40, method=60)
 COLUMNS = ('order_number', 'received_day', 'received_at', 'amount', 'guest', 'phone', 'event_day',
            'method', 'refunded', 'credited_day', 'credited_amount', 'credited_methods',
-           'updated_at', 'updated_by', 'received_methods', 'visit_day', 'visit_source', 'visit_options')
-# Колонки, добавленные после первого выпуска реестра: старым базам — ALTER TABLE.
-ADDED_COLUMNS = (('received_methods', "TEXT NOT NULL DEFAULT ''"),       # способ внесения, 13.10.2026
-                 ('visit_day', 'TEXT'),                                  # дата визита по iiko/Cloud
-                 ('visit_source', "TEXT NOT NULL DEFAULT ''"),           # closed | reserve
-                 ('visit_options', "TEXT NOT NULL DEFAULT ''"))          # даты броней стола на выбор
+           'updated_at', 'updated_by', 'received_methods')
 
 
 class PrepaymentRegistry:
@@ -36,11 +31,11 @@ class PrepaymentRegistry:
                 event_day TEXT, method TEXT NOT NULL DEFAULT '',
                 refunded INTEGER NOT NULL DEFAULT 0,
                 credited_day TEXT, credited_amount TEXT, credited_methods TEXT NOT NULL DEFAULT '',
-                updated_at TEXT, updated_by TEXT)''')
-            existing = table_columns(connection, 'cashier_prepayment_registry')
-            for column, declaration in ADDED_COLUMNS:
-                if column not in existing:
-                    connection.execute(f'ALTER TABLE cashier_prepayment_registry ADD COLUMN {column} {declaration}')
+                updated_at TEXT, updated_by TEXT, received_methods TEXT NOT NULL DEFAULT '')''')
+            # Способ внесения аванса из iiko (13.10.2026) — у старых баз колонки нет.
+            if 'received_methods' not in table_columns(connection, 'cashier_prepayment_registry'):
+                connection.execute('ALTER TABLE cashier_prepayment_registry '
+                                   "ADD COLUMN received_methods TEXT NOT NULL DEFAULT ''")
 
     # ── факты iiko ──────────────────────────────────────────────────────────
     def record_received(self, entries):
@@ -70,29 +65,6 @@ class PrepaymentRegistry:
                     'credited_day=excluded.credited_day, credited_amount=excluded.credited_amount, '
                     'credited_methods=excluded.credited_methods',
                     (str(order), day.isoformat(), str(amount), ', '.join(methods)))
-
-    def record_visits(self, visits):
-        """visits: {заказ: Visit} — дата визита по iiko (закрыт) или по брони Cloud.
-
-        Только для заказов, уже записанных в реестр. Факт «заказ закрыт» больше не
-        меняется; пустой ответ (источник не ответил) не стирает известное."""
-        orders = [str(order) for order in visits]
-        if not orders:
-            return
-        marks = ','.join('?' * len(orders))
-        with closing(self.db.connect()) as connection, connection:
-            known = dict(connection.execute(
-                f'SELECT order_number, visit_source FROM cashier_prepayment_registry WHERE order_number IN ({marks})',
-                orders).fetchall())
-            for order, visit in visits.items():
-                order = str(order)
-                if order not in known or known[order] == 'closed' or not (visit.source or visit.options):
-                    continue
-                connection.execute(
-                    'UPDATE cashier_prepayment_registry SET visit_day=?, visit_source=?, visit_options=? '
-                    'WHERE order_number=?',
-                    (visit.day.isoformat() if visit.day else None, visit.source,
-                     ','.join(day.isoformat() for day in visit.options), order))
 
     # ── ввод кассира ────────────────────────────────────────────────────────
     def annotate(self, order, *, guest='', phone='', event_day=None, method='', refunded=False, by=None):
@@ -135,9 +107,8 @@ class PrepaymentRegistry:
             found = connection.execute(
                 f'SELECT {", ".join(COLUMNS)} FROM cashier_prepayment_registry '
                 'WHERE (received_day>=? AND received_day<=?) OR (event_day>=? AND event_day<=?) '
-                'OR (credited_day>=? AND credited_day<=?) OR (visit_day>=? AND visit_day<=?) '
-                'ORDER BY received_at, order_number',
-                (start.isoformat(), end.isoformat()) * 4).fetchall()
+                'OR (credited_day>=? AND credited_day<=?) ORDER BY received_at, order_number',
+                (start.isoformat(), end.isoformat()) * 3).fetchall()
         return [registry_row(row) for row in found]
 
     def missing_received(self, orders):
@@ -151,22 +122,8 @@ def registry_row(row):
     item['refunded'] = bool(item['refunded'])
     item['credited_methods'] = [part for part in (item['credited_methods'] or '').split(', ') if part]
     item['received_methods'] = [part for part in (item['received_methods'] or '').split(', ') if part]
-    closed = item['visit_source'] == 'closed' and bool(item['visit_day'])
     item['status'] = (STATUS_REFUND if item['refunded'] else
-                      STATUS_CREDITED if item['credited_day'] or closed else STATUS_PENDING)
-    # «На дату»: заказ закрыт — день визита (факт iiko); иначе что вписал кассир;
-    # иначе единственная бронь стола в Cloud. event_day_manual — для редактора.
-    manual = item['event_day']
-    item['event_day_manual'] = manual
-    if closed:
-        item['event_day'], item['event_day_source'] = item['visit_day'], 'closed'
-    elif manual:
-        item['event_day_source'] = 'cashier'
-    elif item['visit_source'] == 'reserve' and item['visit_day']:
-        item['event_day'], item['event_day_source'] = item['visit_day'], 'reserve'
-    else:
-        item['event_day_source'] = None
-    item['visit_options'] = [part for part in (item['visit_options'] or '').split(',') if part]
+                      STATUS_CREDITED if item['credited_day'] else STATUS_PENDING)
     # Способ — как внесён аванс по iiko; не определён — что ввёл кассир; нет и
     # этого — чем был зачтён аванс при закрытии заказа.
     item['method_shown'] = (', '.join(item['received_methods']) or item['method']
