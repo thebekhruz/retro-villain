@@ -7,7 +7,7 @@ from contextvars import ContextVar
 from time import monotonic
 from collections import defaultdict
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal, ROUND_HALF_UP
 from urllib.parse import quote
 
@@ -22,8 +22,10 @@ from retro.modules.cashier.service import (
     BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError, PrepaymentUnavailable,
     build_revenue_breakdown, build_snapshot, cell, number, shift_status, today_tashkent,
 )
-from retro.modules.cashier.prepayments import (prepayments_from_olap, report_body as prepayments_body,
-                                               report_body_range as prepayments_range_body)
+from retro.modules.cashier.prepayments import (assign_methods, cashless_prepays_from_shift,
+                                               prepayments_from_olap, report_body as prepayments_body,
+                                               report_body_range as prepayments_range_body,
+                                               shift_identifier, shift_window)
 from retro.modules.cashier.pay_groups import (build_payment_groups, flat_payment_rows, full_totals,
                                               pay_leaves, redeemed_orders)
 from retro.modules.cashier.transfer_breakdown import (
@@ -914,6 +916,81 @@ class IikoClient:
         finally:
             cashier_read.reset(token)
 
+    async def _shift_details(self, client, shift_id, *, closed):
+        """Детализация кассовой смены (GET). Закрытая смена не меняется — держим долго;
+        открытую читаем заново, иначе свежий перевод показался бы наличными."""
+        path = '/api/cash/shift/details/' + shift_id
+
+        async def fetch():
+            token = client.headers.get('Authorization')
+            response = await client.get(path)
+            if response.status_code in (401, 403):
+                await self._authorize(client, rejected_token=token)
+                response = await client.get(path)
+            if not 200 <= response.status_code < 300:
+                raise DataError(f'iiko не отдал кассовую смену (HTTP {response.status_code}).')
+            try:
+                data = response.json()
+            except ValueError:
+                raise DataError('iiko вернул смену не в формате JSON.') from None
+            if not isinstance(data, dict) or data.get('error'):
+                raise DataError('iiko отклонил чтение кассовой смены.')
+            return data
+        return await self._shift_cache.get(
+            'shift-details:' + shift_id, fetch, ttl=OLAP_TTL_CLOSED if closed else 0,
+            timeout=60, refresh=not closed or refresh_source.get(), label='iiko_shift_details')
+
+    async def _prepayment_methods(self, client, entries):
+        """Способы оплаты авансов по кассовым сменам Retro (см. assign_methods).
+
+        Смена, которую не удалось прочитать, просто не даёт вывода «наличные»:
+        реестр от этого не падает, способ остаётся неизвестным."""
+        if not entries:
+            return entries
+        days = sorted({date.fromisoformat(entry.received_at[:10]) for entry in entries})
+        # Аванс после полуночи принадлежит смене, открытой накануне.
+        body = {'dateFrom': (days[0] - timedelta(days=1)).isoformat(), 'dateTo': days[-1].isoformat()}
+        try:
+            listed = await self._shift_cache.get(
+                'shifts:' + json.dumps(body, sort_keys=True),
+                lambda: self._post(client, '/api/cash/shift/list_period', body),
+                ttl=olap_ttl(days[-1]), timeout=60, refresh=refresh_source.get(), label='iiko_shifts')
+            shifts = listed.get('shifts')
+            if not isinstance(shifts, list):
+                raise DataError('iiko не вернул список кассовых смен.')
+        except (DataError, httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='prepayment_methods')
+            return assign_methods(entries, [], [])
+        stamps = [datetime.fromisoformat(entry.received_at) for entry in entries]
+        wanted = []
+        for shift in shifts:
+            if not isinstance(shift, dict) or shift.get('cashRegNumber') != 1:
+                continue
+            try:
+                start, end = shift_window(shift)
+                identifier = shift_identifier(shift)
+            except DataError as error:
+                log_upstream_failure('iiko', error, operation='prepayment_methods')
+                continue
+            # Детализацию читаем только у смен, в которые попал хоть один аванс.
+            if any(start <= stamp and (end is None or stamp <= end) for stamp in stamps):
+                wanted.append((identifier, start, end))
+
+        async def read(identifier, end):
+            try:
+                return cashless_prepays_from_shift(
+                    await self._shift_details(client, identifier, closed=end is not None))
+            except (DataError, httpx.HTTPError, TimeoutError) as error:
+                log_upstream_failure('iiko', error, operation='prepayment_shift_details')
+                return None
+        answers = await gather_reads(*(read(identifier, end) for identifier, _, end in wanted))
+        records, windows = [], []
+        for (_, start, end), answer in zip(wanted, answers):
+            if answer is not None:
+                records.extend(answer)
+                windows.append((start, end))
+        return assign_methods(entries, records, windows)
+
     async def load_prepayments(self, day):
         if not self.settings.configured:
             raise DataError('Подключение iiko ещё не настроено.')
@@ -922,7 +999,7 @@ class IikoClient:
         try:
             async with self._client() as client:
                 rows = await self._fetch_olap(client, body)
-                return prepayments_from_olap(rows)
+                return await self._prepayment_methods(client, prepayments_from_olap(rows))
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_prepayments')
             raise DataError('Не удалось получить список предоплат из iiko. Обновите день.') from None
@@ -938,15 +1015,15 @@ class IikoClient:
         try:
             async with self._client() as client:
                 if orders:
-                    return prepayments_from_olap(await self._fetch_olap(
-                        client, prepayments_range_body(self.settings.store_id, start, end, orders)))
+                    return await self._prepayment_methods(client, prepayments_from_olap(await self._fetch_olap(
+                        client, prepayments_range_body(self.settings.store_id, start, end, orders))))
                 entries, chunk = [], start
                 while chunk <= end:
                     chunk_end = min(end, chunk + timedelta(days=6))
                     entries.extend(prepayments_from_olap(await self._fetch_olap(
                         client, prepayments_range_body(self.settings.store_id, chunk, chunk_end))))
                     chunk = chunk_end + timedelta(days=1)
-                return tuple(entries)
+                return await self._prepayment_methods(client, tuple(entries))
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_prepayments_range')
             raise DataError('Не удалось получить список предоплат из iiko. Обновите страницу.') from None

@@ -172,13 +172,12 @@
       redeemed:fallback?null:toNumber(snapshot.redeemed_total),realCash:paid};
   }
 
-  /* Реестр предоплат (ТЗ 3.2). Статус: ждёт → зачтена / возврат; ждущая
-     предоплата с прошедшей датой события — отдельный сигнал кассиру. */
+  /* Реестр предоплат (ТЗ 3.2). Статус: ждёт → зачтена / возврат. «На дату»
+     скрыта до точного источника даты визита (13.10.2026) — и сигнал по ней тоже. */
   function prepaymentStatus(row,today){
     if(!row)return null;
     if(row.status==='refund')return {key:'refund',text:'возврат'};
     if(row.status==='credited')return {key:'credited',text:'зачтена',day:row.credited_day||null};
-    if(row.event_day&&today&&row.event_day<today)return {key:'overdue',text:'ждёт · дата прошла'};
     return {key:'pending',text:'ждёт'};
   }
   /* Сумма строки: во вкладке «Зачтено» — сколько зачли, в остальных — сколько внесли. */
@@ -186,14 +185,13 @@
     const received=toNumber(row?.amount),credited=toNumber(row?.credited_amount);
     return tab==='credited'?(credited!==null?credited:received):(received!==null?received:credited);
   }
-  /* Группировка периода: по людям (без имени — в конце) или по датам события
-     (по возрастанию, без даты — в конце). Итог группы — сумма её предоплат. */
-  function prepaymentGroups(rows,by){
+  /* Группировка периода по людям (без имени — в конце). Итог группы — сумма её предоплат. */
+  function prepaymentGroups(rows){
     const groups=new Map();
     for(const row of rows||[]){
       const guest=String(row.guest||'').trim();
-      const key=by==='dates'?(row.event_day||''):guest.toLocaleLowerCase('ru');
-      if(!groups.has(key))groups.set(key,{key,title:by==='dates'?(row.event_day||''):guest,rows:[],total:0});
+      const key=guest.toLocaleLowerCase('ru');
+      if(!groups.has(key))groups.set(key,{key,title:guest,rows:[],total:0});
       const entry=groups.get(key);
       entry.rows.push(row);
       entry.total=Math.round((entry.total+(prepaymentAmount(row,'period')||0))*100)/100;
