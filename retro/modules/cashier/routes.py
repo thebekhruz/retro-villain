@@ -316,6 +316,19 @@ def add_expense(request: Request, body: ExpenseInput):
         raise HTTPException(422, str(error)) from None
 
 
+@router.patch('/expenses/{expense_id}')
+def set_automatic_expense(request: Request, expense_id: int, body: AmountInput):
+    """Кассир меняет сумму авто-строки «Зарплата кассира» за день (T-442)."""
+    day = selected_day(body.date)
+    try:
+        item = request.app.state.expenses.set_automatic_amount(expense_id, day, body.amount)
+    except DataError as error:
+        raise HTTPException(422, str(error)) from None
+    if item is None:
+        raise HTTPException(404, 'Расход не найден для выбранного дня.')
+    return item.json()
+
+
 @router.delete('/expenses/{expense_id}', status_code=204)
 def delete_expense(request: Request, expense_id: int, date: date):
     day = selected_day(date)
