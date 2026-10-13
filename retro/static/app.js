@@ -120,17 +120,14 @@ function message(text, error = false) {
   $('message').setAttribute('role', error ? 'alert' : 'status');
   globalThis.RetroToast?.show(text, error ? 'error' : 'ok');
 }
-/* «чт, 24 сентября» — как подпись даты в макете. */
-function shortDay(day) {
-  return new Intl.DateTimeFormat('ru-RU', {weekday:'short', day:'numeric', month:'long', timeZone:'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
+/* «Вторник, 13 октября» — заголовок экрана (T-447). */
+function headingDay(day) {
+  const text = new Intl.DateTimeFormat('ru-RU', {weekday:'long', day:'numeric', month:'long', timeZone:'Asia/Tashkent'})
+    .format(new Date(day + 'T12:00:00+05:00'));
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 function formattedDay(day) {
   return new Intl.DateTimeFormat('ru-RU', {day:'numeric', month:'long', year:'numeric', timeZone:'Asia/Tashkent'}).format(new Date(day + 'T12:00:00+05:00'));
-}
-function previousDay(day) {
-  const value = new Date(day + 'T12:00:00Z');
-  value.setUTCDate(value.getUTCDate()-1);
-  return value.toISOString().slice(0,10);
 }
 function offsetDay(day, offset) {
   const value = new Date(day + 'T12:00:00Z');
@@ -638,6 +635,7 @@ async function loadExpenses(day, current, signal) {
 function showStatus() {
   const status = $('connection');
   if (!config) return;
+  showDayStatus();
   const base = demo ? 'Демонстрация' : config.configured ? 'iiko подключён' : 'iiko не подключён';
   if (!snapshot || !snapshot.fetched_at) { status.textContent = base; return; }
   const time = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tashkent'}).format(new Date(snapshot.fetched_at));
@@ -646,6 +644,21 @@ function showStatus() {
   const tail = snapshot.refreshing ? ' · обновляем iiko…' : snapshot.stale ? ' · требуют обновления' : '';
   status.textContent = `${source} ${time}${tail}`;
 }
+/* Строка под датой: «iiko 16:06», при фоновом обновлении — «обновляем iiko…»,
+   устаревший снимок — предупреждением. Подробная подпись остаётся в подсказке. */
+function showDayStatus() {
+  const node = $('iiko-status');
+  node.classList.remove('is-warn');
+  if (!config) return;
+  if (demo || snapshot?.demo) { node.textContent = 'Демонстрация'; node.title = ''; return; }
+  if (!config.configured) { node.textContent = 'iiko не подключён'; node.classList.add('is-warn'); return; }
+  if (!snapshot || !snapshot.fetched_at) { node.textContent = 'iiko'; node.title = ''; return; }
+  const time = new Intl.DateTimeFormat('ru-RU',{hour:'2-digit',minute:'2-digit',timeZone:'Asia/Tashkent'}).format(new Date(snapshot.fetched_at));
+  if (snapshot.refreshing) node.textContent = 'обновляем iiko…';
+  else if (snapshot.stale) { node.textContent = 'iiko ' + time + ' · нужно обновить'; node.classList.add('is-warn'); }
+  else node.textContent = 'iiko ' + time;
+  node.title = (snapshot.source === 'database' ? 'Сохранённый отчёт iiko' : 'Данные iiko') + ' · ' + time;
+}
 /* Сверяем оплаты по кассам + полученные авансы с дневным итогом. */
 function showCheck(node, view) {
   const known = Boolean(view && view.match !== null);
@@ -653,7 +666,7 @@ function showCheck(node, view) {
   if (!known) return;
   node.classList.toggle('is-off', !view.match);
   node.title = view.match ? 'Сумма по кассам сходится с итогом iiko' : 'Сумма по кассам не сходится с итогом iiko';
-  if (view.match) { node.replaceChildren('✓'); return; }
+  if (view.match) { node.replaceChildren(globalThis.RetroIcons ? RetroIcons.svg('check') : '✓'); return; }
   const diff = document.createElement('span'); diff.className = 'rm-num';
   diff.textContent = view.difference === null ? '' : (view.difference > 0 ? '+' : '−') + money.format(Math.abs(view.difference));
   node.replaceChildren('Расхождение ', diff);
@@ -1143,12 +1156,9 @@ async function loadDay(options = {}) {
   if (!keepSnapshot) { clearUsdRate(day); expect(CashierLogic.PARTS); }
   ensurePrepay();
   $('report-date-text').classList.remove('is-skel');
-  $('report-date-text').textContent = shortDay(day);
-  const isToday = day === config.today, isYesterday = day === previousDay(config.today);
-  $('today').classList.toggle('is-active', isToday);
-  $('today').setAttribute('aria-pressed', String(isToday));
-  $('yesterday').classList.toggle('is-active', isYesterday);
-  $('yesterday').setAttribute('aria-pressed', String(isYesterday));
+  $('report-date-text').textContent = headingDay(day);
+  // «Сегодня» — только когда открыт другой день; «вчера» — это «‹».
+  $('today').hidden = day === config.today;
   $('day-next').disabled = day >= config.today;
   $('day-prev').disabled = day <= '2026-10-02';
   const mainParts = Promise.allSettled([
@@ -1264,7 +1274,6 @@ $('report-date').addEventListener('change',load);
 $('report-date').addEventListener('click', event => { try { event.target.showPicker?.(); } catch {} });
 $('refresh').addEventListener('click',()=>load({refresh:true}));
 $('today').addEventListener('click',()=>{if(config){$('report-date').value=config.today;load();}});
-$('yesterday').addEventListener('click',()=>{if(config){$('report-date').value=previousDay(config.today);load();}});
 /* Excel: кнопка крутится, пока файл не начал скачиваться, затем ✓. */
 $('download').addEventListener('click', () => {
   if (!snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData) return;
