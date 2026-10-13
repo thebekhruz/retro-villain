@@ -858,6 +858,7 @@ globalThis.RetroDictionaryUz = {
   'За этот день оплат и новых предоплат нет': "Bu kunda to'lovlar va yangi oldindan to'lovlar yo'q",
   'Предоплаты за день недоступны — итоговая выручка требует проверки. Обновите день.': "Kunlik oldindan to'lovlar mavjud emas — jami tushumni tekshirish kerak. Kunni yangilang.",
   'Показаны оплаты счетов. Предоплаты и итоговая выручка загрузятся при открытии реестра предоплат.': "Hisoblar uchun to'lovlar ko'rsatilgan. Oldindan to'lovlar va jami tushum oldindan to'lovlar reyestri ochilganda yuklanadi.",
+  'Показаны оплаты счетов. Предоплаты и итоговая выручка загрузятся автоматически после основных данных.': "Hisoblar uchun to'lovlar ko'rsatilgan. Oldindan to'lovlar va jami tushum asosiy ma'lumotlardan keyin avtomatik yuklanadi.",
   'Предоплаты за день недоступны — итоговая выручка требует проверки. Откройте реестр ещё раз.': "Kunlik oldindan to'lovlar mavjud emas — jami tushumni tekshirish kerak. Reyestrni qayta oching.",
   'Зачёт предоплат не увеличивает выручку: деньги учтены в день получения.': "Oldindan to'lovni hisobga olish tushumni oshirmaydi: pul olingan kuni hisoblangan.",
   'Разбивка по кассам iiko недоступна — оплаты показаны одним списком.': "iiko kassalari bo'yicha taqsimot mavjud emas — to'lovlar bitta ro'yxatda ko'rsatilgan.",
