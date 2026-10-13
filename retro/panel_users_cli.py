@@ -22,9 +22,10 @@ import sys
 from retro.config import Settings
 from retro.db import Database
 from retro.panel_users import (
-    ROLES, PanelUserError, PanelUserStore, check_directions, check_login, check_password, check_phone,
-    check_role, hash_password,
+    ROLES, PanelUserError, PanelUserStore, change_account, check_login, import_env_account,
 )
+
+BY = 'команда'  # кем записано изменение в базе
 
 
 def open_store(settings: Settings) -> PanelUserStore:
@@ -88,46 +89,35 @@ def run(argv, *, settings: Settings | None = None, store: PanelUserStore | None 
             return import_env(settings, store, out)
         login = check_login(args.login)
         current = store.get(login)
-        if args.command in ('disable', 'enable', 'delete'):
+        if args.command == 'delete':
             if current is None:
                 raise PanelUserError(f'«{login}» в базе нет.')
-            if args.command == 'delete':
-                store.delete(login)
-                print(f'«{login}» удалена.', file=out)
-                if login in settings.dashboard_panel_users:
-                    print('Внимание: логин остался в DASHBOARD_PANEL_USERS и снова действует оттуда.', file=out)
-                return 0
-            store.save(login, role=current.role, password_hash=store.password_hash(login), phone=current.phone,
-                       directions=current.directions, active=args.command == 'enable')
-            print(describe(store.get(login)), file=out)
+            store.delete(login)
+            print(f'«{login}» удалена.', file=out)
+            if login in settings.dashboard_panel_users:
+                print('Внимание: логин остался в DASHBOARD_PANEL_USERS и снова действует оттуда.', file=out)
             return 0
-        if args.command == 'add' and current is not None:
-            raise PanelUserError(f'«{login}» уже есть — меняйте командой set.')
-        if args.command == 'set' and current is None:
-            raise PanelUserError(f'«{login}» в базе нет — заведите командой add.')
-        role = check_role(args.role) if args.role else current.role
-        phone = current.phone if current else None
+        if args.command in ('disable', 'enable'):
+            account = change_account(store, login, create=False, active=args.command == 'enable', by=BY)
+            print(describe(account), file=out)
+            return 0
+        changes = {}
+        if args.role:
+            changes['role'] = args.role
         if args.phone:
-            phone = check_phone(args.phone)
+            changes['phone'] = args.phone
         if getattr(args, 'no_phone', False):
-            phone = None
-        directions = current.directions if current else ()
+            changes['phone'] = None
         if args.directions:
-            directions = check_directions(args.directions)
+            changes['directions'] = args.directions
         if getattr(args, 'all_directions', False):
-            directions = ()
-        if role != 'manager':
-            directions = ()
-        password_hash = store.password_hash(login) if current else None
+            changes['directions'] = ()
         if args.password:
-            password_hash = hash_password(check_password(password_source()))
+            changes['password'] = password_source()
         if getattr(args, 'no_password', False):
-            password_hash = None
-        if password_hash is None and phone is None:
-            raise PanelUserError('Нужен пароль (--password) или номер (--phone): иначе войти нечем.')
-        store.save(login, role=role, password_hash=password_hash, phone=phone, directions=directions,
-                   active=current.active if current else True)
-        print(describe(store.get(login)), file=out)
+            changes['password'] = None
+        account = change_account(store, login, create=args.command == 'add', by=BY, **changes)
+        print(describe(account), file=out)
         if login in settings.dashboard_panel_users:
             print('Запись в базе теперь сильнее строки из DASHBOARD_PANEL_USERS.', file=out)
         return 0
@@ -137,23 +127,15 @@ def run(argv, *, settings: Settings | None = None, store: PanelUserStore | None 
 
 
 def import_env(settings: Settings, store: PanelUserStore, out) -> int:
-    """Перенос из переменных: пароли — отпечатками, номера и направления — как есть.
-    Записи, которые уже есть в базе, не трогаем: база сильнее."""
-    phones: dict[str, str] = {}
-    for phone, login in settings.phone_users.items():
-        phones.setdefault(login, phone)
+    """Перенос из переменных. Записи, которые уже есть в базе, не трогаем: база сильнее."""
     moved = []
-    for login, (password, role) in settings.dashboard_panel_users.items():
+    for login in settings.dashboard_panel_users:
         if store.get(login) is not None:
             print(f'«{login}» уже в базе — пропуск.', file=out)
             continue
-        store.save(login, role=role, password_hash=hash_password(password), phone=phones.get(login),
-                   directions=settings.manager_directions.get(login, ()))
+        import_env_account(store, settings, login, by=BY)
         moved.append(login)
-    extra = [phone for phone, login in settings.phone_users.items() if phones.get(login) != phone]
     print(f'Перенесено: {len(moved)}' + (f' ({", ".join(moved)})' if moved else '') + '.', file=out)
-    if extra:
-        print('В базе у записи один номер; не перенесены: ' + ', '.join(extra), file=out)
     if moved:
         print('Теперь можно снять DASHBOARD_PANEL_USERS, DASHBOARD_PHONE_USERS и '
               'DASHBOARD_MANAGER_DIRECTIONS.', file=out)
