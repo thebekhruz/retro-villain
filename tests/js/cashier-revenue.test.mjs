@@ -94,13 +94,14 @@ test('аванс без закрытых счетов даёт выручку; �
   assert.equal(credited.match, true);
 });
 
-test('статус предоплаты: ждёт, зачтена с датой, возврат, дата события прошла', () => {
+test('статус предоплаты: ждёт, зачтена с датой, возврат; дата события на статус не влияет', () => {
   const today = '2026-10-08';
   assert.equal(logic.prepaymentStatus({status: 'pending', event_day: '2026-10-09'}, today).key, 'pending');
   assert.deepEqual(logic.prepaymentStatus({status: 'credited', credited_day: '2026-10-07'}, today),
     {key: 'credited', text: 'зачтена', day: '2026-10-07'});
   assert.equal(logic.prepaymentStatus({status: 'refund', credited_day: '2026-10-07'}, today).key, 'refund');
-  assert.equal(logic.prepaymentStatus({status: 'pending', event_day: '2026-10-06'}, today).key, 'overdue');
+  // «На дату» скрыта (13.10.2026): прошедшая дата больше не даёт сигнал «дата прошла».
+  assert.equal(logic.prepaymentStatus({status: 'pending', event_day: '2026-10-06'}, today).key, 'pending');
   assert.equal(logic.prepaymentStatus({status: 'pending', event_day: null}, today).key, 'pending');
 });
 
@@ -111,16 +112,14 @@ test('сумма строки: «Зачтено» — сколько зачли,
   assert.equal(logic.prepaymentAmount({amount: null, credited_amount: '1000'}, 'period'), 1000);
 });
 
-test('период по людям и по датам события: без имени и без даты — в конце', () => {
+test('период по людям: без имени — в конце', () => {
   const rows = [
     {order_number: '1', guest: 'Иванов', event_day: '2026-10-12', amount: '1000'},
     {order_number: '2', guest: '', event_day: '2026-10-09', amount: '500'},
     {order_number: '3', guest: 'иванов ', event_day: null, amount: '250'},
     {order_number: '4', guest: 'Ахмедов', event_day: '2026-10-09', amount: '100'}];
-  const people = logic.prepaymentGroups(rows, 'people');
+  const people = logic.prepaymentGroups(rows);
   assert.deepEqual(people.map(group => [group.title, group.total]), [['Ахмедов', 100], ['Иванов', 1250], ['', 500]]);
-  const dates = logic.prepaymentGroups(rows, 'dates');
-  assert.deepEqual(dates.map(group => [group.title, group.rows.length]), [['2026-10-09', 2], ['2026-10-12', 1], ['', 1]]);
 });
 
 const click = 'Click/Payme Безналичный перевод';

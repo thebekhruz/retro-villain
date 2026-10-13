@@ -15,7 +15,7 @@ let revenueView = null;
 const openGroups = new Set(), allTypes = new Set();
 const openPaymentDetails = new Set();
 // Реестр предоплат: день, период, вкладка, группировка, строка в правке.
-let prepayData = null, prepayPeriod = null, prepayTab = 'received', prepayBy = 'people', prepayEditing = null;
+let prepayData = null, prepayPeriod = null, prepayTab = 'received', prepayEditing = null;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 
 /* ── Отклик и ожидание (busy.js, T-393; docs/feedback-principles.md) ─────
@@ -790,20 +790,16 @@ function showPrepay() {
     tab.classList.toggle('is-active', active); tab.setAttribute('aria-selected', String(active));
   }
   $('prepay-period').hidden = prepayTab !== 'period';
-  for (const button of document.querySelectorAll('.prepay-by [data-by]')) {
-    const active = button.dataset.by === prepayBy;
-    button.classList.toggle('is-active', active); button.setAttribute('aria-pressed', String(active));
-  }
   const rows = prepayRows(), list = $('prepay-rows');
   if (!waiting.has('prepay')) list.replaceChildren();
   const known = Array.isArray(rows);
   if (known && rows.length) {
     if (prepayTab === 'period') {
-      for (const group of CashierLogic.prepaymentGroups(rows, prepayBy)) {
+      for (const group of CashierLogic.prepaymentGroups(rows)) {
         const head = document.createElement('div'); head.className = 'prepay-group-head';
         const title = document.createElement('span');
-        title.textContent = prepayBy === 'dates' ? (group.title ? dayMonth(group.title) : 'Без даты') : (group.title || 'Кто — не указано');
-        if (prepayBy !== 'dates' && group.title) title.dataset.i18n = 'off';
+        title.textContent = group.title || 'Кто — не указано';
+        if (group.title) title.dataset.i18n = 'off';
         const total = document.createElement('strong'); total.className = 'rm-num'; total.textContent = money.format(group.total);
         head.append(title, total); list.append(head);
         for (const row of group.rows) list.append(...prepayLine(row, 'period'));
@@ -852,7 +848,6 @@ function prepayLine(row, tab) {
     node.append(name, text); return node;
   };
   const received = fact('prepay-received', 'Получено', row.received_at ? stampText(row.received_at) : '—', !row.received_at);
-  const eventDay = fact('prepay-event', 'На дату', row.event_day ? dayMonth(row.event_day) : 'не указана', !row.event_day);
   // Способ из iiko называет наличные «Демо» — на экране они «Наличные», как в выручке.
   const methodText = String(row.method_shown || '').split(', ').filter(Boolean)
     .map(name => name === CashierLogic.CASH_PAYMENT ? 'Наличные' : name).join(', ');
@@ -868,7 +863,7 @@ function prepayLine(row, tab) {
   edit.disabled = demo;
   edit.addEventListener('click', () => { prepayEditing = prepayEditing === row.order_number ? null : row.order_number; showPrepay(); });
   const state = document.createElement('span'); state.className = 'prepay-cell prepay-state'; state.append(pill);
-  line.append(who, received, eventDay, method, sum, state, edit);
+  line.append(who, received, method, sum, state, edit);
   if (prepayEditing !== row.order_number) return [line];
   line.classList.add('is-editing');
   return [line, prepayEditor(row)];
@@ -887,7 +882,6 @@ function prepayEditor(row) {
   };
   const guest = input('guest', row.guest, {maxlength: 120, placeholder: 'Имя гостя или компания', autocomplete: 'off'});
   const phone = input('phone', row.phone, {maxlength: 40, type: 'tel', placeholder: '+998', autocomplete: 'off'});
-  const eventDay = input('event_day', row.event_day, {type: 'date'});
   // Способ внесения, определённый по iiko, кассир не переписывает — поле только для чтения.
   const fromIiko = (row.received_methods || []).map(name => name === CashierLogic.CASH_PAYMENT ? 'Наличные' : name).join(', ');
   const method = fromIiko
@@ -902,12 +896,13 @@ function prepayEditor(row) {
   const save = document.createElement('button'); save.type = 'submit'; save.className = 'button primary'; save.textContent = 'Сохранить';
   actions.append(cancel, save);
   const feedback = document.createElement('p'); feedback.className = 'expense-feedback'; feedback.setAttribute('role', 'status');
-  form.append(field('Кто', guest), field('Телефон', phone), field('На дату', eventDay),
+  form.append(field('Кто', guest), field('Телефон', phone),
     field(fromIiko ? 'Способ · из iiko' : 'Способ', method), refund, actions, feedback);
   cancel.addEventListener('click', () => { prepayEditing = null; showPrepay(); });
   form.addEventListener('submit', event => {
     event.preventDefault();
-    Busy.button(save, savePrepay(row.order_number, {guest: guest.value, phone: phone.value, event_day: eventDay.value || null,
+    Busy.button(save, savePrepay(row.order_number, {guest: guest.value, phone: phone.value, // «На дату» скрыта (13.10.2026): записанную раньше дату не стираем.
+      event_day: row.event_day || null,
       method: fromIiko ? row.method || '' : method.value, refunded: box.checked}, feedback));
   });
   requestAnimationFrame(() => guest.focus({preventScroll: true}));
@@ -940,9 +935,6 @@ for (const tab of document.querySelectorAll('.prepay-tabs [data-tab]')) tab.addE
     loadPrepayPeriod();
   }
   showPrepay();
-});
-for (const button of document.querySelectorAll('.prepay-by [data-by]')) button.addEventListener('click', () => {
-  prepayBy = button.dataset.by; showPrepay();
 });
 $('prepay-period').addEventListener('submit', event => {
   event.preventDefault();
