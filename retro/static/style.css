@@ -925,3 +925,33 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
 /* Кто вошёл (T-446): имя учётной записи рядом с «Выйти». */
 .top-user{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#40584c}
 @media(max-width:650px){.top-user{max-width:96px;font-size:12px}}
+
+
+/* ── Свёрнутое меню слева (T-442) ─────────────────────────────────────────
+   Кнопка в шапке сворачивает меню в полосу значков — ту же, что на
+   планшете, — и рабочая область получает всю ширину. Включается страницей
+   (<aside class="sidebar" data-collapsible>); состояние читает sidebar-state.js
+   до первого кадра. На ≤900 меню и так узкое — кнопки там нет. */
+.sidebar-toggle{display:none}
+@media(min-width:901px){
+  .sidebar-toggle{display:grid;place-items:center;flex:none;width:36px;height:36px;margin:0 12px 0 -10px;padding:0;
+    border:1px solid transparent;border-radius:9px;background:transparent;color:#53675c;cursor:pointer}
+  .sidebar-toggle:hover{background:#eef2ea;border-color:var(--border)}
+  .sidebar-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
+  .sidebar-toggle-arrow{transform-origin:14.25px 12px}
+  .sidebar-animate .sidebar-toggle-arrow{transition:transform .22s ease-out}
+  .sidebar-collapsed .sidebar-toggle-arrow{transform:rotate(180deg)}
+  .sidebar-toggle+.breadcrumb{margin-right:auto}
+  .sidebar-animate .sidebar{transition:width .22s ease-out,padding .22s ease-out}
+  .sidebar-animate main{transition:margin-left .22s ease-out,width .22s ease-out}
+  html.sidebar-collapsed .sidebar{width:80px;align-items:center;padding:26px 12px}
+  html.sidebar-collapsed .sidebar :is(.brand>span:last-child,.nav-label,.coming,.sidebar-bottom,.side-rule){display:none}
+  html.sidebar-collapsed .brand-mark{font-size:41px}
+  html.sidebar-collapsed .sidebar nav{margin-top:38px;width:100%;gap:10px}
+  html.sidebar-collapsed .sidebar nav>a{width:100%;min-width:0}
+  html.sidebar-collapsed .sidebar :is(.nav-link,.nav-active){font-size:0;justify-content:center;padding:15px 13px;gap:0}
+  html.sidebar-collapsed .sidebar .nav-icon{font-size:24px}
+  html.sidebar-collapsed .sidebar :is(.nav-dot,.rm-subnav){display:none}
+  html.sidebar-collapsed main{margin-left:80px;width:calc(100% - 80px)}
+}
+@media(prefers-reduced-motion:reduce){.sidebar-animate :is(.sidebar,main,.sidebar-toggle-arrow){transition:none}}

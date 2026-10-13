@@ -2,12 +2,14 @@
    что специфично для смены: приход, выручка по типам оплаты, ручной учёт и
    передача. Размеры и цвета — из макета «Финансы дня» 5a. */
 
-.cashier-workspace{padding:30px 36px 28px;max-width:none}
+/* Контейнер: крупные числа растут вместе с рабочей областью — когда меню
+   слева свёрнуто, им достаётся освободившаяся ширина. */
+.cashier-workspace{padding:30px 36px 28px;max-width:none;container:cashier/inline-size}
 /* Шапка экрана кассира ниже общей, как в макете (64 px). */
 @media(min-width:901px){.topbar{height:64px;padding:0 36px}}
 
 /* ── Шапка: заголовок слева, дата и выгрузка справа ───────────────────── */
-.cashier-heading{align-items:flex-end;gap:20px;margin-bottom:24px}
+.cashier-heading{align-items:center;gap:20px;margin-bottom:24px}
 .cashier-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
 .cashier-source{font-size:11px;color:var(--muted-2)}
 .cashier-date{position:relative;min-width:136px}
@@ -26,119 +28,89 @@
 .cashier-download{color:#53675c}
 .cashier-download .file-type{color:#9aab9d}
 
-/* ── Карточки прихода ─────────────────────────────────────────────────── */
-/* Карточек три: у общего слоя на ≤1180 своя сетка auto-fit, и под широкой
-   главной карточкой оставалась пустая колонка. Сетку задаём сами на всех ширинах. */
-.cashier-cards{--cards:minmax(0,1.6fr) minmax(0,1fr) minmax(0,1fr);--cards-md:var(--cards);margin:0 0 20px}
-.cashier-cards .rm-card{border-radius:18px;padding:22px}
-.cashier-cards .rm-card-value{margin:16px 0 12px}
-.cashier-cards .rm-card-value strong{font-size:28px;letter-spacing:-.8px}
-.cashier-cards .rm-card--hero .rm-card-value{margin:14px 0 16px}
-.cashier-cards .rm-card--hero .rm-card-value strong{font-size:36px;letter-spacing:-1.2px}
-/* Вместо суммы — фраза («требует проверки»): цифровой кегль её не вмещает. */
-.cashier-cards .rm-card-value strong.is-note,
-.cashier-cards .rm-card--hero .rm-card-value strong.is-note{font-size:16px;letter-spacing:0;line-height:1.3}
-.cashier-cards .rm-card-value small{font-size:11px}
-.cashier-square{width:8px;height:8px;border-radius:2px;background:#d8b977;margin-top:4px;flex:none}
-.cashier-square.is-soft{background:#d8b97777}
-.cashier-card-sub{font-size:11px;color:var(--muted-2)}
-.rm-card--warn .cashier-card-sub{color:#7a6a45}
-.rm-card--warn .rm-card-value strong{color:#7a5a22}
-.rm-card--warn .rm-card-value small{color:#a8946a}
-/* Отметка сверки с iiko: «= iiko ✓» зелёным, разница — красным. */
-.cashier-check{display:inline-flex;align-items:center;gap:4px;padding:3px 8px;border-radius:20px;background:var(--ok-bg);
+/* ── Главные числа: подпись, число, факты рядом ─────────────────────────
+   Одна тёмная карточка на экране — «К передаче»; выручка того же кроя, но
+   светлая: взгляд сначала идёт к сумме, которую кассир отдаёт. */
+.cashier-kpi-label{display:flex;align-items:center;gap:8px;margin:0;font-size:13px;font-weight:550;letter-spacing:0;
+  line-height:1.3;color:var(--muted)}
+.cashier-kpi{display:flex;align-items:flex-end;justify-content:space-between;flex-wrap:wrap;gap:14px 32px;padding:22px 22px 18px}
+.cashier-kpi-value{display:flex;align-items:baseline;gap:8px;margin:12px 0 0;line-height:1;font-variant-numeric:tabular-nums}
+.cashier-kpi-value strong{font-size:clamp(30px,2.9cqi,44px);font-weight:600;letter-spacing:-1.2px;white-space:nowrap}
+.cashier-kpi-value small{font-size:13px;color:#909b8e}
+.cashier-kpi-facts{display:flex;gap:28px;margin:0}
+.cashier-kpi-facts>div{display:grid;gap:7px;min-width:0}
+.cashier-kpi-facts dt{font-size:11px;color:var(--muted-2)}
+.cashier-kpi-facts dd{margin:0;font-size:clamp(16px,1.35cqi,20px);font-weight:600;color:var(--ink-2);
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Сверка касс с итогом iiko: сошлось — тихая галочка, нет — красная плашка с разницей. */
+.cashier-check{display:inline-flex;align-items:center;gap:4px;padding:2px 8px;border-radius:20px;background:var(--ok-bg);
   color:var(--ok);font-size:11px;font-weight:650;white-space:nowrap;font-variant-numeric:tabular-nums}
 .cashier-check.is-off{background:var(--late-bg);color:var(--late)}
 .cashier-check[hidden]{display:none}
-.rm-card--hero .cashier-check{position:relative;background:#d8b97726;color:#e8cf95}
-.rm-card--hero .cashier-check.is-off{background:#f2b1b438;color:#ffd3d6}
-.rm-card--hero .rm-card-label{align-items:center}
-.rm-card--hero .cashier-card-sub{position:relative;color:#c5d3c9}
-/* Реальная касса: из чего она получилась, цифры чуть темнее подписи. */
-.cashier-real-sub b{font-weight:600;color:var(--ink-2)}
-/* Предоплаты: две суммы и вход в реестр; вся карточка нажимается. */
-.cashier-prepay-card{display:flex;flex-direction:column}
-.cashier-prepay-card:hover{border-color:#d8c18f}
-.cashier-prepay-breakdown{display:grid;gap:8px;margin:14px 0 12px;font-size:12px;color:#7a6a45}
-.cashier-prepay-breakdown>div{display:flex;justify-content:space-between;align-items:baseline;gap:12px;min-width:0}
-.cashier-prepay-breakdown strong{font-size:20px;font-weight:600;letter-spacing:-.4px;color:#7a5a22;
-  font-variant-numeric:tabular-nums;text-align:right;white-space:nowrap}
-.cashier-card-link{margin-top:auto;display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
-  color:#7a5a22;text-decoration:none}
-.cashier-card-link::after{content:"";position:absolute;inset:0;border-radius:18px}
-.cashier-card-link:focus-visible{outline:none}
-.cashier-card-link:focus-visible::after{outline:3px solid #c5a359;outline-offset:-3px}
+/* Доли касс: отрезки того же цвета, что точки у строк. */
+.cashier-bar{display:flex;gap:3px;height:8px;margin:0 22px 18px;border-radius:5px;overflow:hidden;background:#f1f4ec}
+.cashier-bar:empty{display:none}
+.cashier-bar>span{flex:1 1 0;min-width:3px;background:var(--color)}
 
 /* ── Раскладка: работа слева, итог справа ─────────────────────────────── */
-.cashier-layout{display:grid;grid-template-columns:minmax(0,1fr) 340px;gap:20px;align-items:start}
-.cashier-main{display:grid;gap:20px;min-width:0}
+.cashier-layout{display:grid;grid-template-columns:minmax(0,1fr) clamp(320px,29cqi,410px);gap:20px;align-items:start}
+.cashier-main{display:grid;gap:20px;min-width:0;container:cashier-main/inline-size}
 .cashier-rail{gap:14px;grid-template-columns:minmax(0,1fr)}
 .cashier-rail>.panel{min-width:0}
 
-/* ── Выручка по типам оплаты ──────────────────────────────────────────── */
-.cashier-section-head{display:flex;justify-content:space-between;align-items:baseline;gap:12px;padding:20px 18px 14px}
-.cashier-section-head .eyebrow,.cashier-ops-head .eyebrow{margin:0 0 9px}
-.cashier-section-head h2{font-size:20px}
-.cashier-section-sub{font-size:12px;color:var(--muted-2);text-align:right}
+/* ── Выручка по кассам iiko ───────────────────────────────────────────── */
+.cashier-section-head{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:18px 20px}
+.cashier-section-head h2,.cashier-op-title{margin:0;font-size:16px;font-weight:600;letter-spacing:-.2px}
 .payments{padding:0}
-.cashier-revenue .payment-row{grid-template-columns:12px minmax(0,1fr) 70px 130px;column-gap:10px;
-  padding:10px 18px;border-bottom:0;border-top:1px solid #f0f3ec;font-size:13px}
+.cashier-revenue .payment-row{grid-template-columns:12px minmax(0,1fr) auto;column-gap:12px;
+  padding:10px 22px;border-bottom:0;border-top:1px solid #f0f3ec;font-size:13px}
 .payment-dot{width:8px;height:8px;border-radius:50%;background:var(--color);margin:0}
-.cashier-revenue .payment-name{display:flex;align-items:center;flex-wrap:wrap;gap:4px 8px;min-width:0;line-height:1.35}
-.payment-source{font-size:10px;color:#9aa69b}
-.cashier-revenue .payment-row .payment-share{grid-column:3;grid-row:1}
-.cashier-revenue .payment-row .payment-value{grid-column:4;grid-row:1;justify-self:end}
-.payment-share{text-align:right;font-size:11px;color:var(--muted-3);font-variant-numeric:tabular-nums}
-.cashier-revenue .payment-value{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
+.cashier-revenue .payment-name{display:flex;align-items:center;flex-wrap:wrap;gap:4px 10px;min-width:0;line-height:1.35}
+.cashier-revenue .payment-value{text-align:right;font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
 .payment-row.is-zero{color:#a4afa3}
-/* Наличные — единственная строка, которая физически уезжает бухгалтеру. */
+/* Наличные — строка, которая физически уезжает бухгалтеру (первая строка формулы). */
 .payment-row.is-cash{background:var(--accent-soft)}
 .payment-row.is-cash .payment-label{font-weight:650}
-.payment-tag{display:inline-block;padding:3px 7px;border-radius:6px;background:var(--green);
-  color:#e8cf95;font-size:10px;font-weight:650;white-space:nowrap}
 .cashier-revenue #payment-empty{border-top:1px solid #f0f3ec}
-/* Касса iiko — строка-кнопка со стрелкой; раскрытая показывает свои типы
-   оплат с отступом под названием. Свёрнуто всё: сверка идёт по итогам касс. */
+/* Касса iiko — строка-кнопка; раскрытая показывает свои типы оплат. */
 .pay-group+.pay-group{border-top:1px solid #e7ece3}
-.cashier-revenue .pay-group-head{width:100%;grid-template-columns:30px minmax(0,1fr) 70px 130px;padding:12px 18px;
+.cashier-revenue .pay-group-head{width:100%;grid-template-columns:24px minmax(0,1fr) auto;padding:13px 22px 13px 16px;
   border:0;border-top:1px solid #f0f3ec;background:#fff;color:inherit;text-align:left;font:inherit;font-size:14px;cursor:pointer}
-.cashier-revenue .pay-group:first-child .pay-group-head{border-top-color:#f0f3ec}
 .cashier-revenue .pay-group-head:hover{background:#fafbf7}
-.cashier-revenue .pay-group-head .payment-label{font-weight:650}
+.cashier-revenue .pay-group-head .payment-label{font-weight:600}
 .cashier-revenue .pay-group-head .payment-value{font-size:15px}
-.pay-group-chevron{width:28px;height:28px;font-size:16px}
+.pay-group-dot{width:9px;height:9px;border-radius:50%;background:var(--color);flex:none}
+.pay-group-chevron{width:24px;height:24px;font-size:15px;background:transparent;color:#7d8a80}
 /* Раздел выручки — не <details>: общее правило «не открыт — стрелка вбок»
    повернуло бы и стрелку раскрытой кассы. */
 .cashier-revenue .pay-group-head[aria-expanded=true] .pay-group-chevron{transform:none}
 .pay-group.is-open .pay-group-head{background:#fafbf7}
 .pay-group-body[hidden]{display:none}
-.cashier-revenue .pay-type{padding-left:58px;background:#fff}
+.cashier-revenue .pay-type{padding-left:56px;background:#fff}
+.cashier-revenue .pay-type .payment-dot{opacity:.55}
 .cashier-revenue .pay-type.is-cash{background:var(--accent-soft)}
 .cashier-revenue .pay-detail{border:0;border-radius:0;padding:0;margin:0;background:#fff}
-.cashier-revenue .pay-detail>summary{display:grid;list-style:none;cursor:pointer;min-height:44px}
+.cashier-revenue .pay-detail>summary{display:grid;list-style:none;cursor:pointer;min-height:44px;color:var(--ink)}
 .cashier-revenue .pay-detail>summary::-webkit-details-marker{display:none}
 .cashier-revenue .pay-detail>summary::before,.cashier-revenue .pay-detail>summary::after{display:none;content:none}
 .cashier-revenue .pay-detail>summary:hover{background:#f1f5ed}
 .cashier-revenue .pay-detail>summary:focus-visible{outline:2px solid var(--green);outline-offset:-3px}
-.pay-detail-chevron{display:grid;place-items:center;width:22px;height:24px;border-radius:5px;
-  background:var(--green);color:#fff;font-size:21px;font-weight:600;line-height:1;justify-self:center}
+.pay-detail-chevron{display:grid;place-items:center;width:20px;height:22px;border-radius:5px;
+  color:var(--green);font-size:20px;font-weight:600;line-height:1;justify-self:center}
 .pay-detail[open]>summary>.pay-detail-chevron{transform:rotate(90deg)}
 .cashier-revenue .pay-detail .pay-detail-row{padding-left:80px;background:#f7f9f3}
+.cashier-revenue .is-advance>summary{padding-left:22px}
 .pay-advance-row{display:flex;align-items:center;justify-content:space-between;gap:12px;
-  padding:10px 18px 10px 102px;border-top:1px solid #e7ece3;background:#fbfcf9;font-size:12px}
+  padding:10px 22px 10px 102px;border-top:1px solid #e7ece3;background:#fbfcf9;font-size:12px}
 .pay-advance-row>span{display:grid;gap:3px;min-width:0;overflow-wrap:anywhere}
 .pay-advance-row small{color:#53675c;font-size:11px}
 .pay-advance-row strong{white-space:nowrap;color:var(--ink)}
-.pay-group-more{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 18px 8px 58px;border:0;
+.pay-group-more{display:flex;align-items:center;gap:8px;width:100%;min-height:40px;padding:8px 22px 8px 56px;border:0;
   border-top:1px solid #f0f3ec;background:#fbfcf9;color:#53675c;font:inherit;font-size:12px;text-align:left;cursor:pointer}
 .pay-group-more small{color:var(--muted-3);font-size:11px}
 .pay-group-more:hover{background:#f5f7f1}
-.cashier-pay-note{margin:0;padding:10px 18px;border-top:1px solid #f0f3ec;background:#fbf7ed;color:#7a6a45;font-size:12px;line-height:1.45}
+.cashier-pay-note{margin:0;padding:10px 22px;border-top:1px solid #f0f3ec;background:#fff0f2;color:#9b4b5a;font-size:12px;line-height:1.45}
 .cashier-pay-note[hidden]{display:none}
-.cashier-pay-total{display:grid;grid-template-columns:minmax(0,1fr) 70px 130px;column-gap:10px;align-items:center;
-  padding:13px 18px;border-top:1px solid #dfe6db;background:#fbfcf9;font-size:13px;color:var(--ink-2)}
-.cashier-pay-total-name{display:flex;align-items:center;flex-wrap:wrap;gap:6px 10px;min-width:0;font-weight:600;color:var(--ink)}
-.cashier-pay-total strong{font-size:16px;color:var(--ink);font-variant-numeric:tabular-nums;white-space:nowrap;text-align:right}
 /* ── Реестр предоплат ─────────────────────────────────────────────────────
    Таблица на широком экране, карточки — когда раздел уже 720 точек
    (меряем сам раздел: он сужается и от правой колонки, и от окна). */
@@ -167,7 +139,7 @@
 .prepay-row.is-editing{background:#fbf7ed}
 .prepay-who{display:grid;gap:2px;min-width:0}
 .prepay-who strong{font-weight:600;overflow-wrap:anywhere}
-.prepay-who strong.is-empty{font-weight:500;color:#a08a5a}
+.prepay-who strong.is-empty{font-weight:500;color:#a4afa3}
 .prepay-who small{font-size:11px;color:var(--muted-2);overflow-wrap:anywhere}
 .prepay-cell{min-width:0;overflow-wrap:break-word;font-variant-numeric:tabular-nums}
 .prepay-cell-label{display:none}
@@ -219,25 +191,35 @@
   .prepay-period .prepay-show{width:100%}
 }
 
-/* ── Ручной учёт: расходы и поступления рядом ─────────────────────────── */
-.cashier-ops{display:grid;grid-template-columns:1fr 1fr;gap:20px;min-width:0}
-.cashier-ops .rm-section{display:flex;flex-direction:column}
-.cashier-ops-head{padding:18px 18px 10px}
-.cashier-ops-head h2{font-size:18px;letter-spacing:-.3px}
+/* ── Наличные: расходы и поступления в одном блоке ────────────────────── */
+.cashier-ops{display:grid;grid-template-columns:1fr 1fr;min-width:0}
+.cashier-op{display:flex;flex-direction:column;min-width:0}
+.cashier-op+.cashier-op{border-left:1px solid var(--border)}
+.cashier-op-title{display:flex;align-items:center;gap:10px;padding:18px 20px 14px}
+/* Знак говорит, куда идут деньги, — подписи «из кассы / в кассу» не нужны крупно. */
+.cashier-op-sign{display:grid;place-items:center;width:24px;height:24px;flex:none;border-radius:7px;font-size:16px;
+  font-weight:650;line-height:1}
+.cashier-op-sign.is-out{background:#f7ecea;color:#a4544d}
+.cashier-op-sign.is-in{background:#e8f1e6;color:#3f7350}
 .cashier-ops .expense-list{padding:0}
-.cashier-ops .expense-empty{padding:10px 18px;margin:0;border-top:1px solid #f0f3ec;color:var(--muted-2);font-size:12px}
-.cashier-ops .expense-item{display:flex;align-items:center;gap:10px;padding:9px 18px;border-top:1px solid #f0f3ec;
-  border-bottom:0;font-size:12px}
+.cashier-ops .expense-item{display:flex;align-items:center;gap:10px;padding:9px 20px;border-top:1px solid #f0f3ec;
+  border-bottom:0;font-size:13px}
 .cashier-ops .expense-item-name{flex:1;min-width:0;overflow-wrap:anywhere}
 .cashier-ops .expense-item-value{font-weight:600;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Колонки рядом, пока у поля «На что» остаётся хотя бы полторы сотни точек;
+   меряем сам столбец работы — он шире, когда меню слева свёрнуто. */
+@container cashier-main (max-width:700px){
+  .cashier-ops{grid-template-columns:1fr}
+  .cashier-op+.cashier-op{border-left:0;border-top:1px solid var(--border)}
+}
 .expense-remove{width:44px;height:28px;border:0;border-radius:6px;background:#f7f1ee;
   color:#a46a65;font-size:14px;line-height:1;flex:none}
 .expense-remove:hover{background:#f8e8e4}
 .expense-automatic{width:44px;text-align:center;border-radius:6px;background:#eef3e9;color:#4d7959;padding:3px 0;font-size:10px;flex:none}
 .cashier-form{display:grid;grid-template-columns:minmax(0,1fr) 110px 40px;gap:8px;align-items:center;
-  padding:10px 18px;border-top:1px solid #e7ece3;background:#f9fbf7;margin:auto 0 0}
+  padding:10px 20px;border-top:1px solid #e7ece3;background:#f9fbf7;margin:auto 0 0}
 .cashier-form input{width:100%;min-width:0;height:40px;border:1px solid #dbe3d8;border-radius:7px;
-  padding:0 10px;background:#fff;color:#203d33;font-size:12px}
+  padding:0 10px;background:#fff;color:#203d33;font-size:13px}
 .cashier-form input[type=number]{text-align:right;font-variant-numeric:tabular-nums}
 .cashier-add{width:40px;height:40px;border:0;border-radius:8px;background:var(--green);color:#d8b977;
   font-size:20px;line-height:1;padding:0}
@@ -250,35 +232,32 @@
 .cashier-total strong{color:var(--ink);font-variant-numeric:tabular-nums}
 
 /* ── Передача и доллары ───────────────────────────────────────────────── */
-.cashier-rail .handover-panel{padding:20px;border-radius:18px;order:0}
-.cashier-rail .handover-number{margin:10px 0 14px;gap:8px}
-.cashier-rail .handover-number span{font-size:32px;letter-spacing:-.8px}
-.cashier-rail .handover-rule{padding:9px 0;font-size:12px}
-.cashier-rail .handover-rule strong{font-size:12px}
-.cashier-rail .handover-note{margin-top:10px;padding-top:10px;border-top:1px solid #ffffff20;font-size:11px;color:#a9bfb1}
+.cashier-rail .handover-panel{padding:22px;border-radius:18px;order:0}
+.handover-panel .cashier-kpi-label{color:#c5d3c9}
+.cashier-rail .handover-number{margin:12px 0 18px;gap:8px;line-height:1}
+.cashier-rail .handover-number span{font-size:clamp(34px,3.3cqi,50px);font-weight:600;letter-spacing:-1.2px}
+.cashier-rail .handover-number small{font-size:13px;color:#acbcae}
+.cashier-rail .handover-rule{padding:9px 0;font-size:13px;color:#c5d3c9}
+.cashier-rail .handover-rule strong{font-size:13px;font-weight:600;color:#fff;font-variant-numeric:tabular-nums;white-space:nowrap}
+/* Нулевой шаг формулы — фон, а не число: глаз идёт к шагам, где есть деньги. */
+.cashier-rail .handover-rule.is-zero{opacity:.42}
 .cashier-rail .usd-card{padding:20px;border-radius:18px}
-.usd-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
-.usd-head .eyebrow{margin:0}
-.usd-aside-note{font-size:10px;color:#9aa69b;white-space:nowrap}
+.cashier-card-title{margin:0;font-size:15px;font-weight:600;letter-spacing:-.2px}
 .cashier-rail .usd-balance-entry{display:flex;align-items:center;gap:8px;margin-top:12px}
 .usd-input{flex:1;min-width:0;display:flex;align-items:baseline;gap:6px;border-bottom:2px solid #dbe3d8;padding-bottom:4px}
 .usd-input:focus-within{border-color:var(--green2)}
-.usd-input input{flex:1;min-width:0;height:38px;border:0;background:none;padding:0;font:inherit;font-size:26px;font-weight:600;
+.usd-input input{flex:1;min-width:0;height:38px;border:0;background:none;padding:0;font:inherit;font-size:24px;font-weight:600;
   color:var(--ink);font-variant-numeric:tabular-nums;outline:none}
 .usd-input span{font-size:13px;color:var(--muted-2)}
 .usd-save{height:42px;border:0;border-radius:10px;background:var(--green);color:#fff;font-size:12px;font-weight:600;
   padding:0 14px;white-space:nowrap}
-.usd-hint{margin:8px 0 0;font-size:11px;color:var(--ink-2)}
+.usd-hint{margin:8px 0 0;font-size:12px;color:var(--ink-2)}
+.usd-hint:empty{display:none}
 .usd-hint.is-error{color:#aa4656}
-.usd-rates{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
-.usd-rate{display:grid;gap:4px;padding:10px 12px;border-radius:10px;background:#f5f7f1;min-width:0}
-.usd-rate.restaurant{background:var(--accent-soft)}
-.usd-rate>span{font-size:10px;color:var(--muted-2)}
-.usd-rate.restaurant>span{color:#7a6a45}
-.usd-rate>strong{font-size:14px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.usd-foot{display:flex;justify-content:space-between;gap:10px;margin-top:12px;padding-top:10px;border-top:1px solid #edf1e9;
-  font-size:11px;color:var(--ink-2)}
-.usd-foot a{color:#315e4c;text-decoration:underline;text-underline-offset:2px;white-space:nowrap}
+.usd-foot{display:flex;justify-content:space-between;flex-wrap:wrap;gap:6px 14px;margin-top:14px;padding-top:12px;
+  border-top:1px solid #edf1e9;font-size:12px;color:#607368}
+.usd-foot strong{margin-left:4px;color:#1c302b;font-weight:600;white-space:nowrap;font-variant-numeric:tabular-nums}
+#usd-rate-tile[title]{cursor:help}
 .usd-status{margin:10px 0 0;color:#728674;font-size:11px}
 .usd-status:empty{display:none}
 .usd-status.is-error{color:#aa4656}
@@ -308,7 +287,6 @@
 .handover-check{display:grid;place-items:center;width:24px;height:24px;flex:none;border-radius:50%;
   background:#d8b977;color:#143e35;font-size:12px;font-weight:700}
 .handover-done-text{flex:1;min-width:0;font-size:12px;color:#fff;overflow-wrap:anywhere}
-.handover-where{display:block;font-size:10px;color:#e8cf95;margin-top:2px}
 .handover-undo{flex:none;border:0;background:none;color:#a9bfb1;font-size:11px;cursor:pointer;padding:0 2px;min-height:32px}
 .handover-undo[hidden]{display:none}
 .handover-diff .handover-caption{color:#e8cf95}
@@ -319,23 +297,14 @@
 /* ── Доллары: взносы в сейф ───────────────────────────────────────────── */
 .usd-plus{color:#d8b977}
 .usd-deposit{display:flex;align-items:center;gap:8px;padding:8px 0;margin-top:6px;border-top:1px solid #edf1e9;font-size:12px}
-.usd-deposit-time{color:#7d8881;flex:none}
-.usd-deposit-note{flex:1;min-width:0;color:#607368}
+.usd-deposit-time{flex:1;min-width:0;color:#7d8881}
 .usd-deposit strong{font-weight:600;white-space:nowrap}
 .usd-remove{width:24px;height:24px;flex:none;border:0;border-radius:6px;background:#f7f1ee;color:#a46a65;font-size:14px;line-height:1;padding:0}
 .usd-remove:hover{background:#f8e8e4}
-.cashier-rail .usd-foot{font-size:11px;color:#607368;align-items:baseline}
-.cashier-rail .usd-foot strong{color:#1c302b;font-weight:600;white-space:nowrap}
 
-/* Рядом два блока учёта помещаются только когда у поля «На что» остаётся
-   хотя бы полторы сотни точек; уже — ставим их друг под другом. */
-@media(max-width:1380px){
-  .cashier-ops{grid-template-columns:1fr}
-}
 @media(max-width:1180px){
   .cashier-workspace{padding:26px 25px}
   .cashier-layout{grid-template-columns:minmax(0,1fr) 300px;gap:16px}
-  .cashier-ops{gap:16px}
 }
 @media(max-width:1024px){
   .cashier-heading{flex-wrap:wrap;align-items:flex-start}
@@ -345,13 +314,9 @@
   .cashier-layout{grid-template-columns:1fr}
   /* Итог смены поднимаем над ручным учётом: с телефона открывают ради него. */
   .cashier-rail{order:-1;grid-template-columns:1fr 1fr;position:static}
-  .cashier-ops{grid-template-columns:1fr}
-  .cashier-cards{--cards:1fr 1fr;--cards-md:1fr 1fr}
-  .cashier-cards .rm-card--hero{grid-column:1/-1}
   /* Планшет и телефон — это палец: удаление строки и ссылка на источник
      курса не ниже 40 точек. */
   .expense-remove{height:40px}
-  .usd-foot a{display:inline-flex;align-items:center;min-height:40px}
   .usd-remove{width:40px;height:40px}
   .usd-input input{height:40px}
   .cashier-actions .date-nav-arrow{min-width:40px;min-height:40px}
@@ -362,30 +327,25 @@
   .cashier-revenue .pay-detail .pay-detail-row{padding-left:42px}
   .cashier-revenue .pay-advance-row{padding-left:64px;padding-right:16px}
   .cashier-workspace{padding:22px 16px 25px}
-  .cashier-cards{--cards:1fr;--cards-md:1fr;--cards-sm:1fr}
   .cashier-rail{grid-template-columns:1fr}
   .cashier-actions{width:100%;display:grid;grid-template-columns:1fr 48px;gap:8px}
   .cashier-actions .date-nav{grid-column:1/-1;width:100%;flex-wrap:wrap;height:auto;min-height:48px}
   .cashier-actions .cashier-date{flex:1}
   .cashier-actions .cashier-download{width:100%}
-  .cashier-section-head{flex-direction:column;gap:6px;padding:18px 16px 12px}
-  .cashier-prepay .cashier-section-head{align-items:stretch;gap:12px}
+  .cashier-section-head{padding:16px}
+  .cashier-kpi{padding:18px 16px 14px}
+  .cashier-bar{margin:0 16px 14px}
   .prepay-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}
   .prepay-tabs .ops-tab{justify-content:center;text-align:center;padding:8px 6px;line-height:1.25;flex-wrap:wrap}
-  .cashier-section-sub{text-align:left}
-  .cashier-revenue .payment-row{grid-template-columns:12px minmax(0,1fr) auto;padding:10px 16px;row-gap:2px}
-  .cashier-revenue .payment-row .payment-share{grid-column:2;grid-row:2;text-align:left}
-  .cashier-revenue .payment-row .payment-value{grid-column:3;grid-row:1/span 2}
-  .cashier-revenue .pay-group-head{grid-template-columns:30px minmax(0,1fr) auto;padding:12px 16px}
+  .cashier-revenue .payment-row{padding:10px 16px}
+  .cashier-revenue .pay-group-head{padding:12px 16px 12px 10px}
   .cashier-revenue .pay-type{padding-left:56px}
   .pay-group-more{padding-left:56px;padding-right:16px}
-  .cashier-pay-total{grid-template-columns:minmax(0,1fr) auto;padding:13px 16px}
-  .cashier-pay-total .payment-share{display:none}
   .cashier-pay-note{padding-left:16px;padding-right:16px}
   .cashier-form{grid-template-columns:minmax(0,1fr) 96px 40px;padding:10px 16px}
   /* Под палец: быстрые дни — не ниже 40 точек. */
   .cashier-actions .date-nav-chip{min-height:40px}
-  .cashier-ops .expense-item,.cashier-ops-head,.cashier-total{padding-left:16px;padding-right:16px}
+  .cashier-ops .expense-item,.cashier-op-title,.cashier-total{padding-left:16px;padding-right:16px}
   .cashier-actions .cashier-shift{grid-column:1/-1;flex:1 1 100%;width:100%;justify-content:center;height:44px}
 }
 @media(max-width:380px){
@@ -395,7 +355,6 @@
   .cashier-form{grid-template-columns:minmax(0,1fr) 40px}
   .cashier-form input[type=number]{grid-column:1;grid-row:2}
   .cashier-form .cashier-add{grid-column:2;grid-row:1/span 2;height:88px}
-  .usd-rates{grid-template-columns:1fr}
 }
 
 /* Планшет (651–900 px): меню модулей — полоса 80 px со значками. Подписи
@@ -423,7 +382,7 @@
 @keyframes cashier-shimmer{from{background-position:100% 50%}to{background-position:0 50%}}
 @media(prefers-reduced-motion:reduce){.cashier-workspace .is-skel,.cashier-workspace.is-booting .rm-num{animation:none}}
 /* На тёмно-зелёных панелях полоса светлая, иначе она читается как дыра. */
-.cashier-cards .rm-card--hero,.cashier-rail .handover-panel{--rm-skel-a:rgba(255,255,255,.08);--rm-skel-b:rgba(255,255,255,.2)}
+.cashier-rail .handover-panel{--rm-skel-a:rgba(255,255,255,.08);--rm-skel-b:rgba(255,255,255,.2)}
 #report-date-text.is-skel{min-width:112px}
 /* Строки-заглушки — той же высоты, что настоящие. */
 .cashier-skel-row{pointer-events:none}
@@ -433,7 +392,7 @@
 .cashier-revenue .cashier-skel-row .rm-skel:nth-child(n+3){justify-self:end}
 .cashier-ops .expense-item.cashier-skel-row{min-height:47px;justify-content:space-between}
 /* До первого кадра скрипта пустых состояний не показываем — только скелет. */
-.cashier-workspace.is-booting :is(.empty-state,.expense-empty){visibility:hidden}
+.cashier-workspace.is-booting :is(.empty-state,.expense-empty,.cashier-bar){visibility:hidden}
 
 /* Кнопка «в работе» бывает и выключенной (пока идёт передача, модуль гасит
    соседние). Сама она не бледнеет — спиннер должен читаться. */
@@ -464,3 +423,13 @@
 .prepay-toggle:focus-visible{outline:3px solid var(--accent);outline-offset:-3px}
 .prepay-toggle-action{display:flex;align-items:center;gap:8px;font-size:12px;font-weight:600;color:var(--ink)}
 .cashier-prepay-tabs{padding:12px 18px;border-bottom:1px solid var(--border)}
+
+/* T-442. Точка кассы — в одной строке с названием, даже когда оно переносится. */
+.cashier-revenue .pay-group-head .payment-name{flex-wrap:nowrap}
+.cashier-revenue .pay-group-head .payment-label{min-width:0}
+/* 320 точек: «чт, 8 октября» целиком — «Сегодня / Вчера» уходят второй строкой. */
+@media(max-width:359px){
+  .cashier-actions .date-nav .cashier-date{flex:1 1 calc(100% - 80px)}
+  .cashier-actions .date-nav .date-nav-sep{display:none}
+  .cashier-actions .date-nav .date-nav-chip{flex:1;border-top:1px solid var(--border);border-radius:0}
+}
