@@ -749,6 +749,8 @@ async function loadPrepay(day, current, signal, refresh = false) {
   } catch (error) {
     if (current !== generation || signal.aborted || error.name === 'AbortError') return;
     prepayData = {date: day, received: [], credited: [], received_total: null, credited_total: null, issue: error.message, failed: true};
+    if (snapshot?.snapshot_id === baseId && snapshot?.prepayments_deferred)
+      show({...snapshot, prepayments_deferred: false, prepayments_issue: error.message});
   }
   refreshPaymentGroups();
   showPrepay();

@@ -176,9 +176,12 @@ test('opening before the day arrives shows waiting, then makes one registry requ
 
 test('registry error can retry on reopening without reloading the day', async()=>{
   const h=harness(),done=h.run();
-  h.respond(0,{date:TODAY,revenue:'100'}); await done; h.link();
+  h.respond(0,{date:TODAY,revenue:'100',snapshot_id:'base',prepayments_deferred:true,daily_revenue:null});
+  await done;
   h.pending[1].reject(new Error('registry unavailable')); await setImmediate();
   assert.equal(h.context.prepayData.failed,true);
+  assert.equal(h.context.snapshot.prepayments_deferred,false,'show failure even when the registry is closed');
+  assert.equal(h.context.snapshot.daily_revenue,null,'a failed advance read is never zero');
   assert.equal(h.context.waiting.has('prepay'),false);
   h.open(false); h.open();
   assert.equal(h.registryRequests().length,2);
