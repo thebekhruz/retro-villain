@@ -1,4 +1,5 @@
 from datetime import date
+from pathlib import Path
 
 import httpx
 from fastapi.testclient import TestClient
@@ -25,12 +26,11 @@ def test_usd_rate_is_for_selected_day_and_rounded_down_to_one_decimal(tmp_path):
             'discount_percent': '1.5',
         }
         page = client.get('/').text
-        # Кассир должен видеть оба курса и понимать, чем они отличаются.
-        # Скидка теперь подписана в самой метке курса, а не отдельной строкой.
-        # Подпись официального курса — «Курс ЦБ», как в макете 5a.
-        assert '<span>Курс ЦБ</span>' in page
+        # T-442: на экране один курс — Retro, по нему считается вычет из передачи.
+        # Курс ЦБ и разница в 1,5% — в подсказке к нему (app.js).
         assert 'Курс Retro' in page
-        assert '1,5%' in page
+        script = (Path(__file__).resolve().parent.parent / 'retro' / 'static' / 'app.js').read_text(encoding='utf-8')
+        assert "'Курс ЦБ '" in script and '1,5%' in script
 
 
 def test_historical_rate_stays_unchanged_after_restart_and_source_change(tmp_path):
