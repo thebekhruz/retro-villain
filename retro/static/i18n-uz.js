@@ -3435,5 +3435,15 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Сумма по кассам не сходится с итогом iiko': "Kassalar bo'yicha summa iiko jami bilan mos emas",
   'Наличные: расходы и поступления': "Naqd pul: xarajatlar va kirimlar",
   'курс Retro на 1,5% ниже': "Retro kursi 1,5% past",
+  'Выдать на закуп': "Xarid uchun berish",
+  'у Шоха': "Shohda",
+  '− На закуп': "− Xarid uchun",
+  'Сумма на закуп, сум': "Xarid uchun summa, so'm",
+  'авто': "avto",
+  'Сохранить сумму': "Summani saqlash",
+  'Сумма сохранена': "Summa saqlandi",
+  'Укажите сумму на закуп.': "Xarid uchun summani kiriting.",
+  'Укажите сумму: 0 или больше.': "Summani kiriting: 0 yoki undan ko'p.",
+  'Выдано на закуп': "Xarid uchun berildi",
 });
 /* ── /T-442 ── */

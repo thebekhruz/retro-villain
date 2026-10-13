@@ -209,8 +209,8 @@
     revenue:['day'],receipts:['day'],average:['day'],'prepay-total':['prepay'],
     handover:['day','expenses','receipts','shokh','usd','rate'],'demo-cash':['day'],'cash-prepay':['day'],
     'handover-usd':['day','usd','rate'],
-    'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],
-    'usd-safe':['usd'],'usd-restaurant':['rate'],
+    'handover-receipts':['receipts'],'handover-expenses':['expenses'],'handover-shokh':['shokh'],
+    'shokh-pocket':['shokh'],'usd-safe':['usd'],'usd-restaurant':['rate'],
   };
   /* {id: скелет ли} по набору ещё не пришедших частей. */
   function skeletonMap(waiting){

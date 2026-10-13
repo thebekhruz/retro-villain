@@ -433,3 +433,42 @@
   .cashier-actions .date-nav .date-nav-sep{display:none}
   .cashier-actions .date-nav .date-nav-chip{flex:1;border-top:1px solid var(--border);border-radius:0}
 }
+
+/* ── T-442: выдать на закуп и правка авто-строки ─────────────────────────
+   Вторая строка формы под расходами: подпись слева вместо поля «На что». */
+.cashier-form.cashier-give{grid-template-columns:minmax(0,1fr) 110px auto;margin-top:0;border-top-style:dashed}
+.cashier-give-label{display:grid;gap:2px;min-width:0;font-size:13px;font-weight:600;color:var(--ink)}
+.cashier-give-label small{font-size:11px;font-weight:500;color:var(--muted-2);white-space:nowrap}
+.cashier-give-label small[hidden]{display:none}
+.cashier-give-button{height:40px;padding:0 14px;border:0;border-radius:8px;background:var(--green);color:#e8cf95;
+  font-size:12px;font-weight:650;white-space:nowrap}
+.cashier-give .rm-money-hint{grid-column:2;grid-row:2;margin:-2px 0 0;text-align:right}
+.cashier-give .rm-money-hint:empty{display:none}
+/* «авто» — тихая метка у названия; справа вместо × — ✎ правки суммы. */
+.cashier-ops .expense-item-name .expense-automatic{display:inline-block;width:auto;margin-left:2px;padding:1px 6px;
+  border-radius:5px;background:#eef3e9;color:#4d7959;font-size:10px;vertical-align:1px}
+.expense-edit{width:44px;height:28px;flex:none;border:0;border-radius:6px;background:#f3f5f0;color:#53675c;font-size:14px;line-height:1;padding:0}
+.expense-edit:hover:not(:disabled){background:#e9eee5}
+.expense-edit-form{display:flex;align-items:center;gap:6px;flex:none}
+.expense-edit-form input{width:110px;height:32px;min-width:0;border:1px solid #dbe3d8;border-radius:7px;padding:0 10px;
+  background:#fff;color:#203d33;font:inherit;font-size:13px;text-align:right;font-variant-numeric:tabular-nums}
+.expense-edit-form input:focus-visible{border-color:var(--green2);outline:0;box-shadow:0 0 0 3px rgba(35,87,74,.14)}
+.expense-save-edit{width:44px;height:32px;flex:none;border:0;border-radius:6px;background:var(--green);color:#e8cf95;
+  font-size:14px;line-height:1;padding:0}
+.expense-edit-form .expense-remove{height:32px}
+@media(max-width:900px){
+  .expense-edit,.expense-save-edit,.expense-edit-form .expense-remove{height:40px}
+  .expense-edit-form input{height:40px;font-size:16px}
+}
+@media(max-width:650px){
+  .cashier-form.cashier-give{grid-template-columns:minmax(0,1fr) 96px auto}
+  .expense-edit-form input{width:96px}
+}
+@media(max-width:380px){
+  .cashier-form.cashier-give{grid-template-columns:minmax(0,1fr) auto}
+  .cashier-give .cashier-give-label{grid-column:1/-1}
+  .cashier-give input{grid-column:1;grid-row:2}
+  .cashier-give .cashier-give-button{grid-column:2;grid-row:2}
+  .expense-edit-form input{width:80px}
+}
+.cashier-give input{text-align:right;font-variant-numeric:tabular-nums}

@@ -79,14 +79,20 @@
             <div class="cashier-op" id="expenses-section">
               <h2 class="cashier-op-title"><span class="cashier-op-sign is-out" aria-hidden="true">−</span>Расходы из кассы</h2>
               <div id="expense-list" class="expense-list" aria-live="polite"></div>
-              <!-- Выдачи Шоху из кассы, записанные раньше: уходят из передачи бухгалтеру
-                   и попадают в подотчёт Шоха. Выдавать с кассы больше нельзя — строку
-                   «Выдать Шоху» убрали по просьбе стейкхолдера. -->
+              <!-- Выдачи Шоху на закуп: уходят из передачи бухгалтеру отдельным шагом
+                   формулы и попадают в подотчёт Шоха (у бухгалтера — «Баланс Шохруха»). -->
               <div id="shokh-gives" class="expense-list" aria-live="polite"></div>
               <form id="expense-form" class="cashier-form">
                 <label for="expense-description" class="visually-hidden">На что потрачено</label><input id="expense-description" name="description" type="text" maxlength="160" placeholder="На что" required>
                 <label for="expense-amount" class="visually-hidden">Сумма, сум</label><input id="expense-amount" name="amount" type="number" min="0.01" step="0.01" inputmode="decimal" placeholder="Сумма" required>
                 <button id="expense-save" class="cashier-add" type="submit" aria-label="Добавить расход">+</button>
+              </form>
+              <!-- T-442: выдача на закуп вернулась (в T-409 её убирали). Рядом —
+                   сколько у Шоха уже на руках, чтобы не выдать лишнего. -->
+              <form id="shokh-form" class="cashier-form cashier-give" novalidate>
+                <span class="cashier-give-label">Выдать на закуп<small id="shokh-pocket-note" hidden>у Шоха <span id="shokh-pocket" class="rm-num"></span></small></span>
+                <label for="shokh-amount" class="visually-hidden">Сумма на закуп, сум</label><input id="shokh-amount" type="text" inputmode="numeric" autocomplete="off" placeholder="Сумма">
+                <button id="shokh-give" class="cashier-give-button" type="submit">Выдать</button>
               </form>
               <p id="expense-feedback" class="expense-feedback" role="status" aria-live="polite"></p>
             </div>
@@ -142,6 +148,7 @@
             <div class="handover-rule"><span>+ Предоплаты наличными</span><strong id="cash-prepay" class="rm-num">—</strong></div>
             <div class="handover-rule"><span>+ Поступления</span><strong id="handover-receipts" class="rm-num">—</strong></div>
             <div class="handover-rule"><span>− Расходы</span><strong id="handover-expenses" class="rm-num">0</strong></div>
+            <div class="handover-rule"><span>− На закуп</span><strong id="handover-shokh" class="rm-num">0</strong></div>
             <div class="handover-rule"><span>− Доллары в сейф</span><strong id="handover-usd" class="rm-num">—</strong></div>
           </div>
           <p id="handover-usd-issue" class="handover-caption is-warn" hidden></p>

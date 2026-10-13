@@ -109,7 +109,9 @@ test('skeletonMap: a figure stays a skeleton until every part it is computed fro
   // «К передаче» — из iiko, расходов, поступлений и выдач Шоху.
   const onlyShokh = logic.skeletonMap(['shokh']);
   assert.equal(onlyShokh.handover, true);
-  assert.equal(onlyShokh['handover-expenses'], true);
+  assert.equal(onlyShokh['handover-shokh'], true);
+  assert.equal(onlyShokh['shokh-pocket'], true);
+  assert.equal(onlyShokh['handover-expenses'], false, 'выдачи на закуп — свой шаг формулы');
   assert.equal(onlyShokh.revenue, false);
   assert.equal(onlyShokh['handover-receipts'], false);
   const onlyRate = logic.skeletonMap(new Set(['rate']));
