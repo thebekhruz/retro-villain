@@ -174,6 +174,30 @@ class ExpenseStore:
                 item_id = cursor.lastrowid
         return Expense(item_id, day, name, value)
 
+    def set_automatic_amount(self, item_id: int, day: date, amount):
+        """Сумма авто-строки (зарплата кассира) за один день: кассир работал
+        неполный день или ставка в этот день другая. Строка остаётся авто —
+        удалить её по-прежнему нельзя, а политика её не перезапишет: она
+        добавляет строку только в день, где её нет. Ноль допустим — смены не было."""
+        try:
+            value = Decimal(str(amount).replace(' ', '').replace(',', '.'))
+        except (InvalidOperation, ValueError):
+            raise DataError('Укажите корректную сумму.') from None
+        if (not value.is_finite() or value < 0 or value > Decimal('1000000000000')
+                or value.as_tuple().exponent < -2):
+            raise DataError('Сумма должна быть от 0 до 1 трлн сум, не более двух знаков после запятой.')
+        with closing(self._open()) as connection:
+            with connection:
+                row = connection.execute(
+                    'SELECT operation_key, description FROM cashier_expenses WHERE id = ? AND day = ?',
+                    (item_id, day.isoformat())).fetchone()
+                if row is None:
+                    return None
+                if not is_policy_key(row[0]):
+                    raise DataError('Сумму меняют только у авто-строки. Обычный расход удалите и внесите заново.')
+                connection.execute('UPDATE cashier_expenses SET amount = ? WHERE id = ?', (str(value), item_id))
+        return Expense(item_id, day, row[1], value, True)
+
     def policy_configured(self):
         with closing(self._open()) as connection:
             return connection.execute('SELECT 1 FROM cashier_expense_policy WHERE id=1').fetchone() is not None
