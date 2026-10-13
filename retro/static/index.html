@@ -24,24 +24,29 @@
   <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Кассир</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <!-- is-booting: до первого кадра скрипта все цифры — скелет (T-393). -->
   <div class="workspace cashier-workspace is-booting">
+    <!-- T-447: заголовок экрана — сам день. Под ним одна строка состояния:
+         смена из iiko и время снимка с «↻». «Вчера» — это «‹», «Сегодня»
+         появляется, только когда открыт другой день. -->
     <div class="page-heading cashier-heading">
-      <h1>День в цифрах<span>.</span></h1>
-      <div class="emp-head-actions cashier-actions">
-        <span id="source-title" class="cashier-source" hidden>Источник: iikoWeb</span>
-        <!-- Смена кассы из iiko. Открытых счетов iiko нам не отдаёт, поэтому
-             «· N открытых счетов» из макета не показываем. -->
-        <span id="shift-pill" class="cashier-shift" role="status" hidden><span class="cashier-shift-dot" aria-hidden="true"></span><span id="shift-text">Смена открыта</span></span>
-        <div class="date-nav" role="group" aria-label="Дата отчёта">
-          <button id="day-prev" class="date-nav-arrow" type="button" aria-label="Предыдущий день">‹</button>
-          <!-- Дата словами, как в макете; само поле лежит поверх подписи прозрачным —
-               нажатие открывает системный календарь. -->
-          <div class="date-nav-label cashier-date"><label for="report-date">Дата отчёта</label><strong id="report-date-text" class="is-skel" aria-hidden="true">—</strong><input id="report-date" type="date" min="2026-10-06" required></div>
-          <button id="day-next" class="date-nav-arrow" type="button" aria-label="Следующий день">›</button>
-          <span class="date-nav-sep"></span>
-          <button id="today" class="date-nav-chip" type="button" aria-pressed="false">Сегодня</button>
-          <button id="yesterday" class="date-nav-chip" type="button" aria-pressed="false">Вчера</button>
+      <div class="cashier-day">
+        <div class="cashier-day-row">
+          <h1 class="cashier-date"><label for="report-date" class="visually-hidden">Дата отчёта</label><span id="report-date-text" class="is-skel">—</span><span class="cashier-date-dot" aria-hidden="true">.</span><input id="report-date" type="date" min="2026-10-06" required></h1>
+          <div class="cashier-day-nav" role="group" aria-label="Другой день">
+            <button id="day-prev" class="cashier-day-arrow" type="button" aria-label="Предыдущий день">‹</button>
+            <button id="day-next" class="cashier-day-arrow" type="button" aria-label="Следующий день">›</button>
+            <button id="today" class="cashier-day-today" type="button" hidden>Сегодня</button>
+          </div>
         </div>
-        <button id="refresh" class="button secondary cashier-icon-button" type="button" data-busy-key="cashier:refresh" aria-label="Обновить" title="Обновить"><span aria-hidden="true">↻</span></button>
+        <p class="cashier-day-status" role="status">
+          <!-- Смена кассы из iiko. Открытых счетов iiko нам не отдаёт, поэтому
+               «· N открытых счетов» из макета не показываем. -->
+          <span id="shift-pill" class="cashier-shift" hidden><span class="cashier-shift-dot" aria-hidden="true"></span><span id="shift-text">Смена открыта</span></span>
+          <span id="iiko-status" class="cashier-iiko"></span>
+          <button id="refresh" class="cashier-refresh" type="button" data-busy-key="cashier:refresh" aria-label="Обновить данные iiko" title="Обновить данные iiko"><span aria-hidden="true">↻</span></button>
+        </p>
+      </div>
+      <div class="cashier-actions">
+        <span id="source-title" class="cashier-source" hidden>Источник: iikoWeb</span>
         <button id="download" class="button secondary cashier-download" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/></svg>Скачать <span class="file-type">XLSX</span></button>
       </div>
     </div>
