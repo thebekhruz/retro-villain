@@ -3447,3 +3447,12 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Выдано на закуп': "Xarid uchun berildi",
 });
 /* ── /T-442 ── */
+
+/* ── T-447: шапка кассира ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Другой день': "Boshqa kun",
+  'Данные iiko': "iiko ma'lumotlari",
+  'нужно обновить': "yangilash kerak",
+  'Обновить данные iiko': "iiko ma'lumotlarini yangilash",
+});
+/* ── /T-447 ── */

@@ -27,7 +27,7 @@ function harness(saved = null) {
     },
     document:{body:{classList:{remove(){},add(){}}}},
     clearSnapshot(){ clears++; context.snapshot = null; context.prepayData = null; }, clearFinance(){}, clearUsdRate(){},
-    message:text=>messages.push(text), formattedDay:day=>day, shortDay:day=>day, previousDay:()=> '2026-09-27',
+    message:text=>messages.push(text), formattedDay:day=>day, headingDay:day=>day,
     loadExpenses(){}, loadReceipts(){}, loadUsdRate(){}, loadShokh(){}, loadUsd(){},
     RetroState:{responseJson:response=>response.json()},
     paintWaiting(){}, refreshPaymentGroups(){}, showPrepay(){},

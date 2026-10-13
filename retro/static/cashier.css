@@ -8,25 +8,43 @@
 /* Шапка экрана кассира ниже общей, как в макете (64 px). */
 @media(min-width:901px){.topbar{height:64px;padding:0 36px}}
 
-/* ── Шапка: заголовок слева, дата и выгрузка справа ───────────────────── */
-.cashier-heading{align-items:center;gap:20px;margin-bottom:24px}
-.cashier-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end}
-.cashier-source{font-size:11px;color:var(--muted-2)}
-.cashier-date{position:relative;min-width:136px}
-/* Подпись не ловит нажатие: под ней на всю плашку лежит поле даты. */
-.cashier-date label{font-size:10px;color:var(--muted-2);pointer-events:none}
-.cashier-date strong{font-size:14px;font-weight:600;text-transform:none;white-space:nowrap}
-/* Системное поле даты лежит поверх подписи: нажатие открывает календарь,
-   а на экране остаётся «чт, 24 сентября». */
+/* ── Шапка (T-447): заголовок — сам день, под ним строка состояния ─────
+   Подпись «Дата отчёта» и «Вчера» ушли: дата в заголовке говорит сама,
+   «вчера» — это «‹». Выгрузка — тихая кнопка справа. */
+.cashier-heading{align-items:flex-start;gap:16px 24px;margin-bottom:22px}
+.cashier-day{display:grid;gap:8px;min-width:0}
+.cashier-day-row{display:flex;align-items:center;flex-wrap:wrap;gap:6px 14px;min-width:0}
+.cashier-date{position:relative;margin:0;font-size:clamp(28px,2.6cqi,38px);letter-spacing:-1.2px;line-height:1.1;
+  white-space:nowrap;cursor:pointer}
+.cashier-date-dot{color:#bba26d}
+/* Общее правило красит span в h1 золотом (это для точки) — сам день остаётся тёмным. */
+.cashier-date #report-date-text{color:var(--ink)}
+#report-date-text.is-skel{display:inline-block;min-width:9em}
+/* Системное поле даты лежит поверх заголовка: нажатие открывает календарь. */
 .cashier-date input#report-date[type=date]{position:absolute;inset:0;width:100%;max-width:none;height:100%;min-height:0;
   opacity:0;border:0;padding:0;cursor:pointer}
 .cashier-date input#report-date::-webkit-calendar-picker-indicator{position:absolute;inset:0;width:100%;height:100%;cursor:pointer}
-.cashier-date:focus-within{outline:3px solid #c5a359;outline-offset:2px;border-radius:8px}
-.cashier-actions .button{min-height:48px;border-radius:10px;margin:0}
-.cashier-icon-button{width:48px;padding:0}
-.cashier-icon-button>span{font-size:20px}
+.cashier-date:focus-within{outline:3px solid #c5a359;outline-offset:4px;border-radius:8px}
+.cashier-day-nav{display:flex;align-items:center;gap:6px}
+.cashier-day-arrow{display:grid;place-items:center;width:36px;height:36px;padding:0;border:1px solid var(--border);
+  border-radius:10px;background:#fff;color:#53675c;font-size:20px;line-height:1}
+.cashier-day-arrow:hover:not(:disabled){background:#f3f6f0}
+.cashier-day-today{height:36px;padding:0 12px;border:1px solid var(--border);border-radius:10px;background:#fff;
+  color:var(--green);font-size:12px;font-weight:600}
+.cashier-day-today:hover{background:#f3f6f0}
+.cashier-day-status{display:flex;align-items:center;flex-wrap:wrap;gap:4px 12px;margin:0;font-size:13px;color:var(--muted)}
+.cashier-iiko{font-variant-numeric:tabular-nums}
+.cashier-iiko.is-warn{color:var(--warn,#8a5a12)}
+.cashier-refresh{display:grid;place-items:center;width:28px;height:28px;margin-left:-6px;padding:0;border:0;border-radius:8px;
+  background:transparent;color:#53675c;font-size:16px;line-height:1}
+.cashier-refresh:hover:not(:disabled){background:#eef2ea}
+.cashier-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:flex-end;padding-top:4px}
+.cashier-source{font-size:11px;color:var(--muted-2)}
+.cashier-actions .button{min-height:40px;border-radius:10px;margin:0}
 .cashier-download{color:#53675c}
 .cashier-download .file-type{color:#9aab9d}
+/* Верхняя строка состояния iiko у кассира переехала под дату — не дублируем. */
+body:has(.cashier-workspace) .topbar #connection{display:none}
 
 /* ── Главные числа: подпись, число, факты рядом ─────────────────────────
    Одна тёмная карточка на экране — «К передаче»; выручка того же кроя, но
@@ -262,12 +280,11 @@
 .usd-status:empty{display:none}
 .usd-status.is-error{color:#aa4656}
 
-/* ── Смена в шапке (5a) ───────────────────────────────────────────────── */
-.cashier-shift{display:flex;align-items:center;gap:8px;height:48px;padding:0 14px;border-radius:11px;
-  background:#fbf7ed;border:1px solid #eddfbe;font-size:12px;color:#7a6a45;white-space:nowrap}
+/* ── Смена в строке состояния: точка и текст, без плашки ──────────────── */
+.cashier-shift{display:inline-flex;align-items:center;gap:7px;white-space:nowrap;color:var(--ink-2,#33463f);font-weight:550}
 .cashier-shift[hidden]{display:none}
-.cashier-shift-dot{width:7px;height:7px;border-radius:50%;background:#d8b977;flex:none}
-.cashier-shift.is-closed{background:#f5f7f1;border-color:#e3e7df;color:#607368}
+.cashier-shift-dot{width:8px;height:8px;border-radius:50%;background:#d8b977;flex:none}
+.cashier-shift.is-closed{color:var(--muted)}
 .cashier-shift.is-closed .cashier-shift-dot{background:#a9b9a5}
 
 /* ── Выдать Шоху из кассы ─────────────────────────────────────────────── */
@@ -307,8 +324,7 @@
   .cashier-layout{grid-template-columns:minmax(0,1fr) 300px;gap:16px}
 }
 @media(max-width:1024px){
-  .cashier-heading{flex-wrap:wrap;align-items:flex-start}
-  .cashier-actions{justify-content:flex-start}
+  .cashier-heading{flex-wrap:wrap}
 }
 @media(max-width:900px){
   .cashier-layout{grid-template-columns:1fr}
@@ -319,8 +335,9 @@
   .expense-remove{height:40px}
   .usd-remove{width:40px;height:40px}
   .usd-input input{height:40px}
-  .cashier-actions .date-nav-arrow{min-width:40px;min-height:40px}
-  .cashier-actions .date-nav-chip{min-height:40px}
+  .cashier-day-arrow{width:40px;height:40px}
+  .cashier-day-today{height:40px}
+  .cashier-refresh{width:40px;height:40px;margin-left:-10px}
   .handover-undo{min-height:40px;padding:0 6px}
 }
 @media(max-width:650px){
@@ -328,10 +345,11 @@
   .cashier-revenue .pay-advance-row{padding-left:64px;padding-right:16px}
   .cashier-workspace{padding:22px 16px 25px}
   .cashier-rail{grid-template-columns:1fr}
-  .cashier-actions{width:100%;display:grid;grid-template-columns:1fr 48px;gap:8px}
-  .cashier-actions .date-nav{grid-column:1/-1;width:100%;flex-wrap:wrap;height:auto;min-height:48px}
-  .cashier-actions .cashier-date{flex:1}
-  .cashier-actions .cashier-download{width:100%}
+  .cashier-heading{flex-direction:column;gap:12px;margin-bottom:18px}
+  .cashier-date{font-size:26px;letter-spacing:-.8px}
+  .cashier-actions{padding-top:0;justify-content:flex-start}
+  /* Выгрузка на телефоне нужна редко — кнопка по содержимому, не во всю ширину. */
+  .cashier-actions .cashier-download{width:auto;min-height:40px;padding:8px 14px}
   .cashier-section-head{padding:16px}
   .cashier-kpi{padding:18px 16px 14px}
   .cashier-bar{margin:0 16px 14px}
@@ -343,15 +361,11 @@
   .pay-group-more{padding-left:56px;padding-right:16px}
   .cashier-pay-note{padding-left:16px;padding-right:16px}
   .cashier-form{grid-template-columns:minmax(0,1fr) 96px 40px;padding:10px 16px}
-  /* Под палец: быстрые дни — не ниже 40 точек. */
-  .cashier-actions .date-nav-chip{min-height:40px}
   .cashier-ops .expense-item,.cashier-op-title,.cashier-total{padding-left:16px;padding-right:16px}
-  .cashier-actions .cashier-shift{grid-column:1/-1;flex:1 1 100%;width:100%;justify-content:center;height:44px}
 }
 @media(max-width:380px){
-  /* «вт, 29 сентября» целиком: на 360 точках плашка даты делит строку с «Сегодня/Вчера». */
-  .cashier-actions .date-nav .date-nav-chip{padding:8px 6px}
-  .cashier-date strong{font-size:13px}
+  /* «Понедельник, 28 сентября» целиком: на узком телефоне заголовок мельче. */
+  .cashier-date{font-size:22px;letter-spacing:-.5px}
   .cashier-form{grid-template-columns:minmax(0,1fr) 40px}
   .cashier-form input[type=number]{grid-column:1;grid-row:2}
   .cashier-form .cashier-add{grid-column:2;grid-row:1/span 2;height:88px}
@@ -412,7 +426,7 @@
 @media(max-width:380px){.cashier-form .rm-money-hint{grid-column:1;grid-row:3}}
 /* Взнос в сейф: кромке «в работе» и вспышке нужен отступ слева, текст остаётся на месте. */
 .usd-deposit{margin-left:-6px;padding-left:6px;border-radius:0 6px 6px 0}
-.cashier-shift.is-skel{display:flex;min-width:0;border-color:transparent;background-size:300% 100%}
+.cashier-shift.is-skel{display:inline-flex;min-width:7em;border-radius:6px;background-size:300% 100%}
 .cashier-shift.is-skel>*{visibility:hidden}
 /* Маленькие × и «Отменить» — спиннер помельче, как у ячеек бухгалтера. */
 :is(.expense-remove,.usd-remove,.handover-undo){--rm-spin:13px}
@@ -427,12 +441,6 @@
 /* T-442. Точка кассы — в одной строке с названием, даже когда оно переносится. */
 .cashier-revenue .pay-group-head .payment-name{flex-wrap:nowrap}
 .cashier-revenue .pay-group-head .payment-label{min-width:0}
-/* 320 точек: «чт, 8 октября» целиком — «Сегодня / Вчера» уходят второй строкой. */
-@media(max-width:359px){
-  .cashier-actions .date-nav .cashier-date{flex:1 1 calc(100% - 80px)}
-  .cashier-actions .date-nav .date-nav-sep{display:none}
-  .cashier-actions .date-nav .date-nav-chip{flex:1;border-top:1px solid var(--border);border-radius:0}
-}
 
 /* ── T-442: выдать на закуп и правка авто-строки ─────────────────────────
    Вторая строка формы под расходами: подпись слева вместо поля «На что». */
