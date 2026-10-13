@@ -71,12 +71,12 @@ class PhotoInput(BaseModel):
 def current_account(request: Request) -> ManagerAccount:
     """Учётная запись кабинета: логин, роль и направления.
 
-    Направления менеджера — из DASHBOARD_MANAGER_DIRECTIONS; без строки там и
+    Направления менеджера — из его учётной записи (T-442); без них и
     у администратора — весь ресторан, включая группы вне направлений. Вход по
     телефону (T-433) даёт тот же логин."""
     role = getattr(request.state, 'dashboard_role', None) or 'all'
     login = getattr(request.state, 'dashboard_user', None) or role
-    own = request.app.state.settings.manager_directions.get(login) if role == 'manager' else None
+    own = request.app.state.accounts.directions(login) if role == 'manager' else None
     return ManagerAccount(login=login, role=role, directions=own or tuple(DIRECTIONS), everyone=not own)
 
 

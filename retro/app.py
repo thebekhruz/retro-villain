@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, RedirectResponse, Response
+from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
@@ -45,13 +45,18 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.modules.manager.routes import router as manager_router
+from retro.modules.users.routes import router as users_router
 from retro.modules.founder.chat import FounderChatStore
 from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
 from retro.integrations.hikvision_poller import HikvisionPoller
+from retro.integrations.sms import sms_sender
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.logging_config import configure_logging
+from retro.panel_users import PanelAccounts, PanelUserStore
+from retro.phone_login import PhoneLogin, PhoneLoginError, PhoneLoginStore
+from retro.phone_numbers import display_phone
 from retro import request_reads
 from retro.security import (MUTATING_METHODS, effective_scheme, client_address,
                            validate_mutation_origin)
@@ -61,7 +66,9 @@ STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js',
                 '/static/i18n.js', '/static/i18n-uz.js', '/static/busy.js', '/static/favicon.svg',
-                '/static/favicon-32.png', '/static/apple-touch-icon.png'}
+                '/static/favicon-32.png', '/static/apple-touch-icon.png',
+                # Вход по номеру телефона и SMS-коду (ТЗ 09.10, М-05)
+                '/api/session/phone/code', '/api/session/phone/verify', '/static/login-logic.js'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
@@ -72,6 +79,15 @@ SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы �
 class LoginInput(BaseModel):
     username: str
     password: str
+
+
+class PhoneInput(BaseModel):
+    phone: str
+
+
+class PhoneCodeInput(BaseModel):
+    phone: str
+    code: str
 
 
 # Статика модулей: файл → панели, которым он нужен. Раньше /static/ отдавался
@@ -89,7 +105,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'accountant.html': {'accountant'}, 'employees.html': {'accountant'},
         'payroll.html': {'accountant'}, 'accountant.js': {'accountant'},
         'employees.js': {'accountant'}, 'employees-logic.js': {'accountant'}, 'payroll.js': {'accountant'},
-        'payroll-logic.js': {'accountant'}, 'accountant.css': {'accountant'},
+        'payroll-logic.js': {'accountant'}, 'accountant.css': {'accountant', 'users'},
         'employees.css': {'accountant'}, 'payroll.css': {'accountant'},
         # ТЗ 02.10: «Зарплата · день», «Баланс Шохруха», общая кнопка «Сохранить»
         'salary-day.html': {'accountant'}, 'shoh-balance.html': {'accountant'},
@@ -119,6 +135,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # Менеджер (ТЗ 09.10, М-01): регистрация сотрудников с телефона
         'manager.html': {'manager'}, 'manager.js': {'manager'}, 'manager-logic.js': {'manager'},
         'manager.css': {'manager'},
+        # Пользователи (T-445): только администратор; каркас — из accountant.css
+        'users.html': {'users'}, 'users.js': {'users'}, 'users.css': {'users'},
     }.items()
 }
 
@@ -147,13 +165,22 @@ def panel_for_path(path: str) -> str | None:
         return 'shokh'
     if path == '/manager' or path.startswith('/manager/') or path.startswith('/api/manager/'):
         return 'manager'
+    if path == '/users' or path == '/api/users' or path.startswith('/api/users/'):
+        # Роли «users» нет: модуль открыт только полному доступу (admin).
+        return 'users'
     return None
 
 
 def dashboard_identity(
-        request: Request, settings: Settings, sessions: SessionStore,
+        request: Request, settings: Settings, sessions: SessionStore, accounts: PanelAccounts,
 ) -> SessionIdentity | None:
-    session_identity = sessions.identity(request.cookies.get(SESSION_COOKIE))
+    token = request.cookies.get(SESSION_COOKIE)
+    session_identity = sessions.identity(token)
+    if session_identity and not accounts.session_valid(session_identity):
+        # Учётную запись выключили, удалили или сменили ей роль; у сессии по
+        # номеру — сняли номер. Сессия закрывается сразу, а не через 30 дней.
+        sessions.delete(token)
+        session_identity = None
     if session_identity:
         return session_identity
     header = request.headers.get('Authorization', '')
@@ -164,11 +191,9 @@ def dashboard_identity(
             header[6:], validate=True).decode().split(':', 1)
     except (ValueError, UnicodeDecodeError, binascii.Error):
         return None
-    panel_user = settings.dashboard_panel_users.get(username)
-    if panel_user:
-        expected_password, role = panel_user
-        if secrets.compare_digest(password.encode(), expected_password.encode()):
-            return SessionIdentity(username, role)
+    account = accounts.authenticate(username, password)
+    if account is not None:
+        return SessionIdentity(username, account.role)
     if settings.dashboard_password:
         valid = (secrets.compare_digest(username.encode(), settings.dashboard_user.encode())
                  & secrets.compare_digest(password.encode(), settings.dashboard_password.encode()))
@@ -180,7 +205,7 @@ def dashboard_identity(
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
                broadcast_transport=None, hikvision_client=None, hikvision_poller=None,
-               hikvision_writer=None):
+               hikvision_writer=None, sms_client=None):
     configure_logging()
     settings = settings or Settings.from_env()
 
@@ -208,6 +233,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             if application.state.menu_sync is not None:
                 await application.state.menu_sync.close()
             await application.state.reports.close()
+            await application.state.phone_login.close()
             # Клиенты держат свои пулы соединений всё время жизни приложения;
             # в тестах на их месте могут стоять заглушки без close().
             for integration in (application.state.iiko, application.state.bookings,
@@ -231,6 +257,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     # В Postgres все таблицы живут в одной базе; в SQLite — каждый модуль в
     # своём файле, как было. Явно переданные пути (тесты, скрипты) сильнее.
     shared = Database(settings.database_url) if settings.database_url else None
+    # Учётные записи панели (T-442): таблица в общей базе, за ней — переменные.
+    app.state.accounts = PanelAccounts(
+        settings, PanelUserStore(shared or settings.data_dir / 'panel-users.sqlite3'))
     database_path = expense_db_path or shared or settings.data_dir / 'cashier.sqlite3'
     app.state.expenses = ExpenseStore(database_path)
     app.state.prepayment_registry = PrepaymentRegistry(database_path)
@@ -297,6 +326,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # Сервис передаёт период (start/end): без **kw «Сформировать отчёт» падал с 500.
         loader=lambda today, **kw: load_iiko(app.state, 'load_director_report', today, timeout=150, **kw))
 
+    # Вход по номеру (ТЗ 09.10, М-05): коды и лимиты — в общей базе, чтобы
+    # пережить выкат; SMS — Eskiz на бою, консоль на стенде.
+    app.state.phone_login = PhoneLogin(
+        PhoneLoginStore(shared or settings.data_dir / 'phone-login.sqlite3'), settings,
+        sms_client if sms_client is not None else sms_sender(settings.sms), accounts=app.state.accounts)
+
     app.state.financial_requests = FinancialRequests(
         shared or Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3')
         .with_name('financial-requests.sqlite3'))
@@ -311,8 +346,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         if settings.dashboard_allowed_network:
             if not address.is_loopback and address not in settings.dashboard_allowed_network:
                 return JSONResponse({'detail': 'Доступ разрешён только из локальной сети ресторана.'}, 403)
-        auth_configured = bool(settings.dashboard_password or settings.dashboard_panel_users)
-        identity = (dashboard_identity(request, settings, app.state.sessions)
+        accounts = app.state.accounts
+        auth_configured = await asyncio.to_thread(accounts.configured)
+        # Проверка сессии читает базу, пароль — PBKDF2: не в цикле событий.
+        identity = (await asyncio.to_thread(dashboard_identity, request, settings, app.state.sessions, accounts)
                     if auth_configured else SessionIdentity('local', 'all'))
         role = identity.role if identity else None
         public = request.url.path in PUBLIC_PATHS
@@ -382,16 +419,16 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         role = getattr(request.state, 'dashboard_role', None)
         if role:
             return RedirectResponse(ROLE_PATHS[role], status_code=303)
-        return app.state.pages.response('login.html')
+        if not app.state.phone_login.enabled:
+            return app.state.pages.response('login.html')
+        # Вход по номеру настроен — экран показывает его сразу, без запроса.
+        return HTMLResponse(app.state.pages.html('login.html').replace(
+            'data-phone-login="off"', 'data-phone-login="on"', 1))
 
     @app.post('/api/session')
     def login(request: Request, body: LoginInput):
-        role = None
-        panel_user = settings.dashboard_panel_users.get(body.username)
-        if panel_user:
-            expected_password, candidate_role = panel_user
-            if secrets.compare_digest(body.password.encode(), expected_password.encode()):
-                role = candidate_role
+        account = app.state.accounts.authenticate(body.username, body.password)
+        role = account.role if account is not None else None
         if role is None and settings.dashboard_password:
             valid = (secrets.compare_digest(body.username.encode(), settings.dashboard_user.encode())
                      & secrets.compare_digest(body.password.encode(), settings.dashboard_password.encode()))
@@ -406,6 +443,36 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response.set_cookie(
             SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
             samesite='strict', secure=effective_scheme(request) == 'https', path='/')
+        return response
+
+    def phone_failure(error: PhoneLoginError):
+        headers = {'Retry-After': str(error.extra['retry_after'])} if 'retry_after' in error.extra else None
+        return JSONResponse(error.payload(), error.status, headers=headers)
+
+    @app.post('/api/session/phone/code')
+    async def phone_code(request: Request, body: PhoneInput):
+        # Адрес — тот же, что видит защита панели (за прокси — из доверенной сети).
+        address = str(client_address(request, settings))
+        try:
+            sent = await app.state.phone_login.request_code(body.phone, address)
+        except PhoneLoginError as error:
+            return phone_failure(error)
+        return dict(phone=display_phone(sent.phone), sent=sent.sent,
+                    resend_in=sent.resend_in, expires_in=sent.expires_in)
+
+    @app.post('/api/session/phone/verify')
+    def phone_verify(request: Request, body: PhoneCodeInput):
+        try:
+            account = app.state.phone_login.verify(body.phone, body.code)
+        except PhoneLoginError as error:
+            return phone_failure(error)
+        # Сохранённая сессия на телефоне: кабинет открывается без кода, пока
+        # она жива (30 дней) или пока человек не нажал «Выйти».
+        token = app.state.sessions.create(account.login, account.role, phone=account.phone)
+        response = JSONResponse({'role': account.role, 'path': ROLE_PATHS[account.role]})
+        response.set_cookie(
+            SESSION_COOKIE, token, max_age=int(app.state.sessions.lifetime.total_seconds()),
+            httponly=True, samesite='strict', secure=effective_scheme(request) == 'https', path='/')
         return response
 
     def finish_logout(request: Request, response: Response):
@@ -456,6 +523,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # Кабинет менеджера — только телефон (ТЗ 09.10, М-01).
         return app.state.pages.response('manager.html')
 
+    @app.get('/users')
+    def users_page():
+        return app.state.pages.response('users.html')
+
     @app.get('/director')
     def director():
         # Телефон директора (6a). Прежний десктопный отчёт с полной таблицей
@@ -478,7 +549,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
                     ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),
-                    ('shokh', 'Закуп · Шох', '/shokh'), ('manager', 'Менеджер', '/manager'))
+                    ('shokh', 'Закуп · Шох', '/shokh'), ('manager', 'Менеджер', '/manager'),
+                    ('users', 'Пользователи', '/users'))
 
     @app.get('/api/config')
     def config(request: Request):
@@ -511,6 +583,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(director_router)
     app.include_router(founder_router)
     app.include_router(manager_router)
+    app.include_router(users_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 

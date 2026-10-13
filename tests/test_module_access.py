@@ -16,7 +16,8 @@ USERS = {role: ('secret', role) for role in ROLES} | {'boss': ('secret', 'admin'
 PAGES = {'index.html': 'cashier', 'accountant.html': 'accountant', 'employees.html': 'accountant',
          'payroll.html': 'accountant', 'director.html': 'director', 'director-app.html': 'director',
          'founder.html': 'founder', 'founder-cabinet.html': 'founder', 'shokh.html': 'shokh',
-         'salary-day.html': 'accountant', 'shoh-balance.html': 'accountant', 'manager.html': 'manager'}
+         'salary-day.html': 'accountant', 'shoh-balance.html': 'accountant', 'manager.html': 'manager',
+         'users.html': 'users'}
 PATHS = {'cashier': '/', 'accountant': '/accountant', 'director': '/director',
          'founder': '/founder', 'shokh': '/shokh', 'manager': '/manager'}
 
@@ -42,7 +43,8 @@ def test_single_role_gets_only_its_own_module(client, role):
 
 
 def test_full_access_sees_every_module_including_purchase(client):
-    assert module_ids(client, 'boss') == list(ROLES)
+    # «Пользователи» (T-445) — модуль без своей роли: его видит только полный доступ.
+    assert module_ids(client, 'boss') == list(ROLES) + ['users']
 
 
 def test_legacy_shared_login_sees_every_module(tmp_path):
@@ -51,7 +53,7 @@ def test_legacy_shared_login_sees_every_module(tmp_path):
                     client=('203.0.113.10', 50000)) as test_client:
         answer = test_client.get('/api/config', auth=('boss', 'secret'))
     # Закупа Шоха по умолчанию нет — ни в меню, ни где-либо ещё (ТЗ 02.10).
-    assert [row['id'] for row in answer.json()['modules']] == [role for role in ROLES if role != 'shokh']
+    assert [row['id'] for row in answer.json()['modules']] == [role for role in ROLES if role != 'shokh'] + ['users']
 
 
 def test_config_rows_carry_no_lock_reason(client):
