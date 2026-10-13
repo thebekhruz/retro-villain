@@ -313,7 +313,7 @@ def test_home_lists_shift_staff_of_own_directions_alphabetically_without_money(c
     assert [item['name'] for item in kitchen['employees']] == ['Юсупов Фаррух']
 
     every = home(cabinet)
-    assert set(every) == {'login', 'role', 'directions', 'hikvision', 'employees', 'photo_message'}
+    assert set(every) == {'login', 'name', 'role', 'directions', 'hikvision', 'employees', 'photo_message'}
     assert (every['login'], every['role']) == ('karina', 'manager')
     assert every['directions'] == ['Кухня', 'Зал', 'Уборка']
     assert every['hikvision'] == {'configured': True}

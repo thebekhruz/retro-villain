@@ -58,6 +58,13 @@ class PanelAccount:
     has_password: bool = False
     updated_at: str | None = None
     updated_by: str | None = None
+    # Имя человека для интерфейса (T-446): «Карина», «Анвар Каримов».
+    name: str | None = None
+
+    @property
+    def label(self) -> str:
+        """Как называть человека на экране: имя, а без него — логин."""
+        return self.name or self.login
 
 
 def hash_password(password: str) -> str:
@@ -98,6 +105,18 @@ def check_password(password: str) -> str:
     return password
 
 
+MAX_NAME = 80
+
+
+def check_name(raw) -> str | None:
+    name = ' '.join(str(raw or '').split())
+    if not name:
+        return None
+    if len(name) > MAX_NAME or any(not char.isprintable() for char in name):
+        raise PanelUserError(f'Имя — до {MAX_NAME} знаков, без служебных символов.')
+    return name
+
+
 def check_phone(raw) -> str:
     phone = normalize_phone(raw)
     if phone is None:
@@ -118,14 +137,15 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-_COLUMNS = 'login, role, password_hash, phone, directions, active, updated_at, updated_by'
+_COLUMNS = 'login, role, password_hash, phone, directions, active, updated_at, updated_by, display_name'
 
 
 def _account(row) -> PanelAccount:
-    login, role, password_hash, phone, directions, active, updated_at, updated_by = row
+    login, role, password_hash, phone, directions, active, updated_at, updated_by, display_name = row
     return PanelAccount(login=login, role=role, directions=tuple(filter(None, (directions or '').split(','))),
                         phone=phone or None, source='db', active=bool(active),
-                        has_password=bool(password_hash), updated_at=updated_at, updated_by=updated_by)
+                        has_password=bool(password_hash), updated_at=updated_at, updated_by=updated_by,
+                        name=display_name or None)
 
 
 class PanelUserStore:
@@ -144,8 +164,12 @@ class PanelUserStore:
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL)''')
             # Кто менял запись последним: экран «Пользователи» (T-445) или команда.
-            if 'updated_by' not in table_columns(connection, 'panel_users'):
+            columns = table_columns(connection, 'panel_users')
+            if 'updated_by' not in columns:
                 connection.execute('ALTER TABLE panel_users ADD COLUMN updated_by TEXT')
+            # Имя для интерфейса (T-446); пусто — экран показывает логин.
+            if 'display_name' not in columns:
+                connection.execute('ALTER TABLE panel_users ADD COLUMN display_name TEXT')
 
     def all(self) -> list[PanelAccount]:
         with closing(self.db.connect()) as connection:
@@ -178,7 +202,8 @@ class PanelUserStore:
         return bool(users), bool(phones)
 
     def save(self, login: str, *, role: str, password_hash: str | None, phone: str | None,
-             directions: tuple[str, ...], active: bool = True, by: str | None = None) -> None:
+             directions: tuple[str, ...], active: bool = True, by: str | None = None,
+             name: str | None = None) -> None:
         stamp = _now()
         with closing(self.db.connect()) as connection, connection:
             if phone is not None:
@@ -188,11 +213,11 @@ class PanelUserStore:
                     raise PanelUserError(f'Номер {phone} уже привязан к «{owner[0]}».')
             connection.execute(
                 'INSERT INTO panel_users (login, role, password_hash, phone, directions, active, created_at, '
-                'updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(login) DO UPDATE SET '
+                'updated_at, updated_by, display_name) VALUES (?,?,?,?,?,?,?,?,?,?) ON CONFLICT(login) DO UPDATE SET '
                 'role=excluded.role, password_hash=excluded.password_hash, phone=excluded.phone, '
                 'directions=excluded.directions, active=excluded.active, updated_at=excluded.updated_at, '
-                'updated_by=excluded.updated_by',
-                (login, role, password_hash, phone, ','.join(directions), int(active), stamp, stamp, by))
+                'updated_by=excluded.updated_by, display_name=excluded.display_name',
+                (login, role, password_hash, phone, ','.join(directions), int(active), stamp, stamp, by, name))
 
     def delete(self, login: str) -> bool:
         with closing(self.db.connect()) as connection, connection:
@@ -203,7 +228,7 @@ KEEP = object()  # «не менять» для change_account
 
 
 def change_account(store: PanelUserStore, login: str, *, create: bool, role=KEEP, phone=KEEP,
-                   password=KEEP, directions=KEEP, active=KEEP, by: str | None = None) -> PanelAccount:
+                   password=KEEP, directions=KEEP, active=KEEP, name=KEEP, by: str | None = None) -> PanelAccount:
     """Завести или изменить запись по одним правилам — для экрана и команды.
 
     phone=None снимает номер, password=None снимает пароль (вход только по
@@ -233,10 +258,11 @@ def change_account(store: PanelUserStore, login: str, *, create: bool, role=KEEP
     if role != 'manager':
         directions = ()
     active = bool(active) if active is not KEEP else (current.active if current else True)
+    name = check_name(name) if name is not KEEP else (current.name if current else None)
     if password_hash is None and phone is None:
         raise PanelUserError('Нужен пароль или номер телефона: иначе войти нечем.')
     store.save(login, role=role, password_hash=password_hash, phone=phone, directions=directions,
-               active=active, by=by)
+               active=active, by=by, name=name)
     return store.get(login)
 
 
