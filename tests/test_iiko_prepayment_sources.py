@@ -103,7 +103,8 @@ def test_ambiguous_matches_in_either_direction_do_not_suggest_order():
     assert all(row['link_status'] == 'ambiguous' and row['candidate_order'] is None for row in result)
 
 
-def clients(*, fail_cloud=False, fail_ledger=False, fail_payments=False, missing_open_shift=False):
+def clients(*, fail_cloud=False, fail_ledger=False, fail_payments=False, missing_open_shift=False,
+            sections=None, reserves=None, cloud_payloads=None):
     calls = []
 
     def web_handler(request):
@@ -137,6 +138,8 @@ def clients(*, fail_cloud=False, fail_ledger=False, fail_payments=False, missing
     def cloud_handler(request):
         path = request.url.path
         calls.append(('cloud', request.method, path))
+        if cloud_payloads is not None:
+            cloud_payloads.append((path, json.loads(request.content)))
         assert path in CLOUD_READ_PATHS
         if path == '/api/1/access_token':
             assert json.loads(request.content) == {'apiLogin': 'cloud-test-secret'}
@@ -145,8 +148,8 @@ def clients(*, fail_cloud=False, fail_ledger=False, fail_payments=False, missing
         if fail_cloud:
             return httpx.Response(403, text='secret upstream content')
         if path == '/api/1/reserve/available_restaurant_sections':
-            return httpx.Response(200, json={'restaurantSections': SECTIONS})
-        return httpx.Response(200, json=RESERVES)
+            return httpx.Response(200, json={'restaurantSections': sections if sections is not None else SECTIONS})
+        return httpx.Response(200, json=reserves if reserves is not None else RESERVES)
 
     settings = Settings(login='test', password='test', store_id=82907)
     web = IikoClient(settings, transport=httpx.MockTransport(web_handler), poll_delay=0)
@@ -231,3 +234,82 @@ def test_endpoint_future_demo_and_period_validation_without_registry_writes(tmp_
             assert client.get('/api/cashier/prepayment-sources?' + query).status_code == 422
         result = client.get('/api/cashier/prepayment-sources?start=2026-10-10&end=2026-10-10').json()
         assert result['reservations']['status'] == result['payments']['status'] == 'unavailable'
+
+
+def test_visit_day_reads_all_sections_without_financial_requests_and_refreshes_moves():
+    async def run():
+        visit_day = date(2026, 10, 16)
+        sections = SECTIONS + [{'id': IDS[8], 'name': 'Бехруз',
+                                'tables': [{'id': SECOND, 'number': 1}]}]
+        payload = deepcopy(RESERVES)
+        payload['reserves'].append({**payload['reserves'][0], 'id': IDS[9], 'tableIds': [SECOND]})
+        payload['reserves'].append(deepcopy(payload['reserves'][0]))
+        requests = []
+        source, web, calls = clients(sections=sections, reserves=payload, cloud_payloads=requests)
+        try:
+            result = await source.read_reservations(visit_day)
+            assert result['date'] == '2026-10-16'
+            assert {r['tables'][0]['section'] for r in result['reservations']['items']} == {'Ресторан', 'Бехруз'}
+            assert len(result['reservations']['items']) == 2
+            workload_body = next(body for path, body in requests if path.endswith('restaurant_sections_workload'))
+            assert workload_body == {'restaurantSectionIds': [SECTION, IDS[8]],
+                'dateFrom': '2026-10-16 00:00:00.000', 'dateTo': '2026-10-16 23:59:59.999'}
+            assert not any('/shift/' in path or '/olap/' in path for _, _, path in calls)
+            count = len(calls)
+            assert await source.read_reservations(visit_day) == result
+            assert len(calls) == count
+            # A moved/cancelled reservation must disappear after a refresh.
+            payload['reserves'] = [{**payload['reserves'][0], 'estimatedStartTime': '2026-10-17 19:00:00.000'}]
+            refreshed = await source.read_reservations(visit_day, refresh=True)
+            assert refreshed['reservations']['items'] == []
+            assert len(result['reservations']['items']) == 2
+            moved = await source.read_reservations(date(2026, 10, 17))
+            assert moved['reservations']['items'][0]['id'] == RESERVE
+        finally:
+            await source.close()
+            await web.close()
+    asyncio.run(run())
+
+
+def test_visit_day_uses_tashkent_midnight_boundaries():
+    values = ['2026-10-15T18:59:59Z', '2026-10-15T19:00:00Z',
+              '2026-10-16T18:59:59.999Z', '2026-10-16T19:00:00Z']
+    payload = {'reserves': [{**RESERVES['reserves'][0], 'id': IDS[i], 'estimatedStartTime': value}
+                            for i, value in enumerate(values)]}
+    rows = reservations_from_workload(SECTIONS, payload, date(2026, 10, 16), date(2026, 10, 16))
+    assert [row['id'] for row in rows] == IDS[1:3]
+    assert all(row['estimated_start_time'].startswith('2026-10-16T') for row in rows)
+
+
+def test_payments_endpoint_does_not_require_cloud():
+    async def run():
+        source, web, calls = clients(fail_cloud=True)
+        try:
+            result = await source.read_payments(DAY, DAY)
+            assert result['payments']['status'] == 'ok'
+            assert 'reservations' not in result
+            assert not any(origin == 'cloud' for origin, _, _ in calls)
+        finally:
+            await source.close()
+            await web.close()
+    asyncio.run(run())
+
+
+def test_visit_and_payment_endpoints_are_independent_and_validate_dates(tmp_path):
+    app = create_app(Settings(data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        response = client.get('/api/cashier/reservations?date=2099-01-16&demo=true')
+        assert response.status_code == 200
+        data = response.json()
+        assert data['date'] == '2099-01-16'
+        assert data['reservations']['items'][0]['estimated_start_time'].startswith(data['date'])
+        assert 'payments' not in data
+        for query in ['', '?date=invalid', '?date=2026-02-30']:
+            assert client.get('/api/cashier/reservations' + query).status_code == 422
+        unavailable = client.get('/api/cashier/reservations?date=2026-10-16').json()['reservations']
+        assert unavailable['status'] == 'unavailable' and unavailable['items'] is None
+        payment_data = client.get('/api/cashier/prepayment-sources/payments?start=2026-10-10&end=2026-10-10&demo=true').json()
+        assert payment_data['payments']['items']
+        assert 'reservations' not in payment_data
+        assert client.get('/api/cashier/prepayment-sources/payments?start=2026-10-01&end=2026-11-01').status_code == 422
+        assert app.state.prepayment_registry.rows_between(date(2000, 1, 1), date(2100, 1, 1)) == []

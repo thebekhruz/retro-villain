@@ -487,6 +487,25 @@ def group_advances(entries, day=None):
             for order, (received_at, amount) in orders.items()]
 
 
+@router.get('/reservations')
+async def reservations(request: Request, date: date, demo: bool = False, refresh: bool = False):
+    """All available Retro sections, filtered by the planned local visit day."""
+    if demo:
+        return {'date': date.isoformat(), 'reservations': demo_sources(date, date)['reservations']}
+    return await request.app.state.prepayment_sources.read_reservations(date, refresh=refresh)
+
+
+@router.get('/prepayment-sources/payments')
+async def prepayment_source_payments(request: Request, start: date, end: date,
+                                    demo: bool = False, refresh: bool = False):
+    if start > end or (end - start).days > 30:
+        raise HTTPException(422, 'Выберите период не больше 31 дня.')
+    if demo:
+        data = demo_sources(start, end)
+        return {key: value for key, value in data.items() if key != 'reservations'}
+    return await request.app.state.prepayment_sources.read_payments(start, end, refresh=refresh)
+
+
 @router.get('/prepayment-sources')
 async def prepayment_sources(request: Request, start: date, end: date,
                              demo: bool = False, refresh: bool = False):

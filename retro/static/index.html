@@ -128,22 +128,30 @@
             <span class="rm-section-chevron" aria-hidden="true">⌄</span>
           </summary>
           <div class="prepay-sources-content">
-            <p class="prepay-source-caption">Брони — по дате визита, платежи — по дате внесения. До 31 дня.</p>
-            <form id="prepay-sources-period" class="prepay-period">
-              <label class="prepay-field"><span>С</span><input id="prepay-sources-from" type="date" required></label>
-              <label class="prepay-field"><span>По</span><input id="prepay-sources-to" type="date" required></label>
-              <button id="prepay-sources-load" type="submit" class="button secondary prepay-show">Показать</button>
-            </form>
-            <p id="prepay-sources-status" class="prepay-source-caption" role="status" aria-live="polite"></p>
-            <section class="prepay-source-part" aria-labelledby="prepay-reserves-heading">
-              <h3 id="prepay-reserves-heading">Плановые визиты</h3>
-              <p class="prepay-source-caption">Дата и стол из брони iiko. Связь с предоплатой пока не подтверждена.</p>
-              <p id="prepay-reserves-status" class="prepay-source-caption" role="status"></p>
+            <section id="prepay-reserves-panel" class="prepay-source-part" aria-labelledby="prepay-reserves-heading">
+              <h3 id="prepay-reserves-heading">Брони на дату</h3>
+              <p class="prepay-source-caption">Все доступные залы iiko. Выберите день, на который гости забронировали стол.</p>
+              <form id="prepay-reserves-day" class="prepay-period prepay-visit-day">
+                <button id="prepay-reserves-prev" type="button" class="button secondary prepay-day-step" aria-label="Предыдущий день визита">←</button>
+                <label class="prepay-field"><span>Дата визита</span><input id="prepay-reserves-date" type="date" required></label>
+                <button id="prepay-reserves-next" type="button" class="button secondary prepay-day-step" aria-label="Следующий день визита">→</button>
+                <button id="prepay-reserves-today" type="button" class="button secondary">Сегодня</button>
+                <button id="prepay-reserves-load" type="submit" class="button secondary">Обновить</button>
+              </form>
+              <p id="prepay-reserves-summary" class="prepay-source-caption" role="status" aria-live="polite"></p>
+              <p id="prepay-reserves-status" class="prepay-source-caption" role="status" aria-live="polite"></p>
               <div id="prepay-reserves-list" class="prepay-source-list"></div>
             </section>
-            <section class="prepay-source-part" aria-labelledby="prepay-payments-heading">
+            <section id="prepay-payments-panel" class="prepay-source-part" aria-labelledby="prepay-payments-heading">
               <h3 id="prepay-payments-heading">Внесённые предоплаты · способы</h3>
               <p class="prepay-source-caption">Безналичные записи кассы Retro, включая банкетный зал. Наличные здесь не показаны. Справочный список не изменяет выручку и сумму к передаче.</p>
+              <p class="prepay-source-caption">Период внесения денег выбирается отдельно от даты визита. До 31 дня.</p>
+              <form id="prepay-sources-period" class="prepay-period">
+                <label class="prepay-field"><span>С</span><input id="prepay-sources-from" type="date" required></label>
+                <label class="prepay-field"><span>По</span><input id="prepay-sources-to" type="date" required></label>
+                <button id="prepay-sources-load" type="submit" class="button secondary prepay-show">Показать</button>
+              </form>
+              <p id="prepay-sources-status" class="prepay-source-caption" role="status" aria-live="polite">Выберите период и нажмите «Показать».</p>
               <p id="prepay-payments-status" class="prepay-source-caption" role="status"></p>
               <p id="prepay-matches-status" class="prepay-source-caption is-warn" role="status" hidden></p>
               <div id="prepay-source-payments" class="prepay-source-list"></div>

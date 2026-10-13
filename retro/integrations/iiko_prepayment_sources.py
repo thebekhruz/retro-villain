@@ -325,13 +325,17 @@ class IikoPrepaymentSources:
                               'payments': 'Не удалось получить платежи из смен iiko.',
                               'transactions': 'Не удалось проверить совпадения с заказами.'}[name]}
 
-    async def read(self, start, end, *, refresh=False):
+    async def read_reservations(self, day, *, refresh=False):
+        """Visit-day calendar: never wait for shifts, transactions or payment links."""
+        reservations = await self._part('reservations', day, day, self._reservations,
+                                        refresh=refresh)
+        return {'date': day.isoformat(), 'reservations': reservations}
+
+    async def read_payments(self, start, end, *, refresh=False):
         if start > end or (end - start).days > 30:
             raise DataError('Выберите период не больше 31 дня.')
         until = min(end, today_tashkent())
-        reservations, payments = await asyncio.gather(
-            self._part('reservations', start, end, self._reservations, refresh=refresh),
-            self._part('payments', start, until, self._payments, refresh=refresh))
+        payments = await self._part('payments', start, until, self._payments, refresh=refresh)
         matching_issue = None
         if payments['items']:
             transactions = await self._part('transactions', start - timedelta(days=1), until,
@@ -340,5 +344,14 @@ class IikoPrepaymentSources:
             # Never mutate the shared cached source rows with request-specific hints.
             payments = {**payments, 'items': payment_matches(payments['items'], transactions['items'] or [])}
         return {'start': start.isoformat(), 'end': end.isoformat(),
-                'reservations': reservations, 'payments': payments, 'matching_issue': matching_issue,
+                'payments': payments, 'matching_issue': matching_issue,
                 'links_verified': False}
+
+    async def read(self, start, end, *, refresh=False):
+        """Keep the original combined API available to existing clients."""
+        if start > end or (end - start).days > 30:
+            raise DataError('Выберите период не больше 31 дня.')
+        reservations, payments = await asyncio.gather(
+            self._part('reservations', start, end, self._reservations, refresh=refresh),
+            self.read_payments(start, end, refresh=refresh))
+        return {**payments, 'reservations': reservations}
