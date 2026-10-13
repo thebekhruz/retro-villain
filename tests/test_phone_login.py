@@ -158,6 +158,11 @@ def test_number_is_shown_in_groups():
     assert display_phone('+998901234567') == '+998 90 123 45 67'
 
 
+def test_phone_users_bind_numbers_to_existing_manager_and_admin_logins():
+    users = parse_phone_users('+998 90 646 25 40=boss', {**USERS, 'boss': ('secret', 'admin')})
+    assert users == {'+998906462540': 'boss'}
+
+
 def test_phone_users_bind_numbers_to_existing_manager_logins():
     users = parse_phone_users('+998 90 123 45 67=karina; 935550011=oshxona;998935550012=karina', USERS)
     assert users == {'+998901234567': 'karina', '+998935550011': 'oshxona', '+998935550012': 'karina'}
@@ -173,6 +178,21 @@ def test_phone_users_bind_numbers_to_existing_manager_logins():
 def test_phone_users_are_validated_on_start(value, problem):
     with pytest.raises(ValueError, match=problem):
         parse_phone_users(value, USERS)
+
+
+def test_admin_enters_by_number_into_the_full_panel(tmp_path, sms, clock):
+    users = {**USERS, 'boss': ('secret', 'admin')}
+    admin_phone = '+998906462540'
+    app = sqlite_app(tmp_path, sms, dashboard_panel_users=users,
+                     phone_users={**PHONES, admin_phone: 'boss'})
+    with open_client(app, clock) as client:
+        assert ask(client, '90 646 25 40').status_code == 200
+        login = confirm(client, sms.code(), admin_phone)
+        assert login.status_code == 200
+        assert login.json() == {'role': 'admin', 'path': '/'}
+        # Админ видит все панели, не только кабинет менеджера.
+        assert client.get('/accountant').status_code == 200
+        assert client.get('/manager').status_code == 200
 
 
 # ── Настройки SMS ───────────────────────────────────────────────────────────

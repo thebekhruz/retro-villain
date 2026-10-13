@@ -8,10 +8,10 @@
 
 import re
 
-# Каким ролям открыт вход по номеру. Официант добавится сюда, когда появится
-# его роль (следующий этап ТЗ); бухгалтер, кассир, директор и учредитель
-# входят по логину и паролю, как раньше.
-PHONE_ROLES = frozenset({'manager'})
+# Каким ролям открыт вход по номеру. Админ — с 13.10 (Timur): первый номер
+# панели. Официант добавится сюда, когда появится его роль (следующий этап
+# ТЗ); бухгалтер, кассир, директор и учредитель входят по логину и паролю.
+PHONE_ROLES = frozenset({'manager', 'admin'})
 LOCAL_DIGITS = 9  # после +998: код оператора и номер
 
 
@@ -65,6 +65,6 @@ def parse_phone_users(value: str, panel_users: dict[str, tuple[str, str]]) -> di
             raise ValueError(f'DASHBOARD_PHONE_USERS: номер {phone} указан дважды.')
         user = panel_users.get(login)
         if user is None or user[1] not in PHONE_ROLES:
-            raise ValueError(f'DASHBOARD_PHONE_USERS: «{login}» нет среди менеджеров DASHBOARD_PANEL_USERS.')
+            raise ValueError(f'DASHBOARD_PHONE_USERS: «{login}» нет среди менеджеров и админов DASHBOARD_PANEL_USERS.')
         result[phone] = login
     return result
