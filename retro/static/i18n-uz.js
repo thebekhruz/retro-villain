@@ -3663,3 +3663,10 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Обновить данные iiko': "iiko ma'lumotlarini yangilash",
 });
 /* ── /T-447 ── */
+
+/* ── T-448: стрелка в «‹ Панель» и «Полный отчёт →» стала иконкой, текст — отдельно ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Панель': "Panel",
+  'Полный отчёт': "To'liq hisobot",
+});
+/* ── /T-448 ── */
