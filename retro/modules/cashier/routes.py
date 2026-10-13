@@ -369,7 +369,8 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
                                      ttl=CLOSED_DAY_TTL if day < today_tashkent() else None,
                                      allow_stale=allow_stale)
             # The daily archive is independent of incoming advance receipts.
-            # Only opening the registry may fetch transactions / shift details.
+            # The separate registry request fetches transactions / shift details
+            # after the dashboard's primary data has been displayed.
             result = replace(result, prepayments=None, prepayments_issue=None)
         return await day_response(state, result)
     except TimeoutError as error:
