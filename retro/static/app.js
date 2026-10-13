@@ -666,7 +666,7 @@ function showCheck(node, view) {
   if (!known) return;
   node.classList.toggle('is-off', !view.match);
   node.title = view.match ? 'Сумма по кассам сходится с итогом iiko' : 'Сумма по кассам не сходится с итогом iiko';
-  if (view.match) { node.replaceChildren('✓'); return; }
+  if (view.match) { node.replaceChildren(globalThis.RetroIcons ? RetroIcons.svg('check') : '✓'); return; }
   const diff = document.createElement('span'); diff.className = 'rm-num';
   diff.textContent = view.difference === null ? '' : (view.difference > 0 ? '+' : '−') + money.format(Math.abs(view.difference));
   node.replaceChildren('Расхождение ', diff);

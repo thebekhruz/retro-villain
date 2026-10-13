@@ -955,3 +955,14 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
   html.sidebar-collapsed main{margin-left:80px;width:calc(100% - 80px)}
 }
 @media(prefers-reduced-motion:reduce){.sidebar-animate :is(.sidebar,main,.sidebar-toggle-arrow){transition:none}}
+/* ── Векторные иконки (T-448) ─────────────────────────────────────────────
+   icons.js заменяет символы-иконки (▤ ◫ ↻ ✎ × ‹ ›…) на SVG одного рисунка:
+   размер — 1em от шрифта элемента, цвет — от текста. */
+.ri{width:1em;height:1em;flex:none;fill:none;stroke:currentColor;stroke-width:1.75;stroke-linecap:round;
+  stroke-linejoin:round;vertical-align:-.14em;overflow:visible}
+.nav-icon .ri,.location-icon .ri{stroke-width:1.6}
+.location-icon .ri{width:.8em;height:.8em}
+/* В ссылках-кнопках («‹ Панель», «Полный отчёт →») раскладка гибкая и съедает
+   пробел у текста — отступ у иконки задаём сами. */
+:is(.dir-back,.fo-back,.shokh-back)>.has-ri{margin-right:.3em}
+.dir-report-link>.has-ri{margin-left:.3em}
