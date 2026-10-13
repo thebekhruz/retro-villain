@@ -25,7 +25,7 @@ from fastapi.testclient import TestClient
 from legacy_app import create_app
 from test_accountant_design_parity import POSTGRES_URL
 from retro.config import SmsConfig, Settings, parse_sms_config
-from retro.integrations.sms import ConsoleSms, EskizSms, SmsError, sms_sender
+from retro.integrations.sms import ConsoleSms, EskizSms, SmsError, render_message, sms_sender
 from retro.phone_login import ADDRESS_REQUESTS_PER_HOUR, MAX_ATTEMPTS, PHONE_SENDS_PER_HOUR
 from retro.phone_numbers import display_phone, normalize_phone, parse_phone_users
 
@@ -192,6 +192,17 @@ def test_eskiz_needs_its_credentials():
     assert 'eskiz-pass' not in repr(config)
 
 
+def test_default_sms_text_matches_the_eskiz_template():
+    # Eskiz пропускает только одобренный текст слово в слово — правка
+    # умолчания без новой модерации молча останавливает все SMS.
+    config = parse_sms_config({'SMS_PROVIDER': 'eskiz', 'ESKIZ_EMAIL': 'retro@example.com',
+                               'ESKIZ_PASSWORD': 'eskiz-pass'})
+    text = render_message(config.template, '123456')
+    assert text == 'Код подтверждения для входа в платформу Retro: 123456'
+    # Кириллица: одна SMS — до 70 знаков.
+    assert len(text) <= 70
+
+
 def test_console_sms_is_refused_on_hosting():
     # Консоль пишет код в лог: на Railway это раздача входа всем, кто читает лог.
     with pytest.raises(ValueError, match='только для стенда'):
@@ -226,7 +237,7 @@ def test_number_then_code_opens_the_manager_cabinet(phone, sms):
     assert sent.status_code == 200
     assert sent.json() == {'phone': '+998 90 123 45 67', 'sent': True, 'resend_in': 60, 'expires_in': 300}
     assert [number for number, _ in sms.sent] == [KARINA]
-    assert 'Retro Milliy' in sms.sent[0][1]
+    assert sms.sent[0][1].startswith('Код подтверждения для входа в платформу Retro: ')
 
     login = confirm(phone, sms.code())
     assert login.status_code == 200
