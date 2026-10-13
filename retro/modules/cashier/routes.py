@@ -12,7 +12,6 @@ from pydantic import BaseModel, Field
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.integrations.iiko_prepayment_sources import demo_sources
 from retro.modules.accountant.ledger import LedgerError
 from retro.modules.shokh.store import pocket_position
 
@@ -474,50 +473,21 @@ def demo_registry(day, period=False):
 
 
 def group_advances(entries, day=None):
-    """Авансы iiko → по заказу: [(заказ, день получения, первое время, сумма)].
+    """Авансы iiko → по заказу: [(заказ, день получения, первое время, сумма, способы)].
 
     Один заказ часто получает аванс частями (наличные, потом картой) — в реестре
-    это одна предоплата. Без номера заказа аванс держим отдельной строкой."""
+    это одна предоплата. Без номера заказа аванс держим отдельной строкой.
+    Способы — по времени внесения; если хоть у одной части способ неизвестен,
+    не показываем половину правды: способов нет вовсе."""
     orders = {}
-    for entry in entries or ():
+    for entry in sorted(entries or (), key=lambda item: item.received_at):
         key = entry.order_number or 'iiko-' + entry.id[:12]
-        received_at, amount = orders.get(key, (entry.received_at, Decimal(0)))
-        orders[key] = (min(received_at, entry.received_at), amount + entry.amount)
-    return [(order, day or date.fromisoformat(received_at[:10]), received_at, amount)
-            for order, (received_at, amount) in orders.items()]
-
-
-@router.get('/reservations')
-async def reservations(request: Request, date: date, demo: bool = False, refresh: bool = False):
-    """All available Retro sections, filtered by the planned local visit day."""
-    if demo:
-        return {'date': date.isoformat(), 'reservations': demo_sources(date, date)['reservations']}
-    return await request.app.state.prepayment_sources.read_reservations(date, refresh=refresh)
-
-
-@router.get('/prepayment-sources/payments')
-async def prepayment_source_payments(request: Request, start: date, end: date,
-                                    demo: bool = False, refresh: bool = False):
-    if start > end or (end - start).days > 30:
-        raise HTTPException(422, 'Выберите период не больше 31 дня.')
-    if demo:
-        data = demo_sources(start, end)
-        return {key: value for key, value in data.items() if key != 'reservations'}
-    return await request.app.state.prepayment_sources.read_payments(start, end, refresh=refresh)
-
-
-@router.get('/prepayment-sources')
-async def prepayment_sources(request: Request, start: date, end: date,
-                             demo: bool = False, refresh: bool = False):
-    """Independent read-only sources, never merged into accounting totals."""
-    if start > end or (end - start).days > 30:
-        raise HTTPException(422, 'Выберите период не больше 31 дня.')
-    if demo:
-        return demo_sources(start, end)
-    try:
-        return await request.app.state.prepayment_sources.read(start, end, refresh=refresh)
-    except DataError as error:
-        raise HTTPException(503, str(error)) from None
+        received_at, amount, methods = orders.get(key, (entry.received_at, Decimal(0), []))
+        methods = (None if methods is None or not entry.payment_method else
+                   methods + ([entry.payment_method] if entry.payment_method not in methods else []))
+        orders[key] = (min(received_at, entry.received_at), amount + entry.amount, methods)
+    return [(order, day or date.fromisoformat(received_at[:10]), received_at, amount, tuple(methods or ()))
+            for order, (received_at, amount, methods) in orders.items()]
 
 
 @router.get('/prepayments')

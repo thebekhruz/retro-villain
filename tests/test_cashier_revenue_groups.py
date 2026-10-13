@@ -134,7 +134,7 @@ def test_advances_of_one_order_are_one_prepayment():
     entries = [Prepayment('a', '2026-10-06T17:37:28+05:00', Decimal(278000), order_number='70551'),
                Prepayment('b', '2026-10-06T17:38:58+05:00', Decimal(2671000), order_number='70551'),
                Prepayment('c', '2026-10-06T11:57:28+05:00', Decimal(1000000), order_number='70700')]
-    grouped = {order: (day, at, amount) for order, day, at, amount in group_advances(entries)}
+    grouped = {order: (day, at, amount) for order, day, at, amount, _ in group_advances(entries)}
     assert grouped['70551'] == (date(2026, 10, 6), '2026-10-06T17:37:28+05:00', Decimal(2949000))
     assert grouped['70700'][2] == Decimal(1000000)
 

@@ -85,6 +85,9 @@ def test_iiko_registry_uses_received_operation_and_operational_day():
     def handler(request):
         if request.url.path == '/api/auth/login':
             return httpx.Response(200, json={'token': 'synthetic'})
+        if request.url.path.startswith('/api/cash/shift/'):
+            # Способ аванса читается из кассовых смен (тест — test_prepayment_methods).
+            return httpx.Response(200, json={'shifts': []})
         body = json.loads(request.content)
         requests.append(body)
         if request.url.path == '/api/olap/init':
