@@ -3563,3 +3563,24 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Похожие уже есть в реестре. Это тот же человек?': "Reyestrda o'xshashlari bor. Bu o'sha odammi?",
 });
 /* ── /Тёзки ── */
+
+/* ── T-442: редизайн кассира ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'К передаче бухгалтеру': "Buxgalterga topshiriladi",
+  'Средний счёт': "O'rtacha hisob",
+  'Расходы из кассы': "Kassadan xarajatlar",
+  'Поступления в кассу': "Kassaga kirimlar",
+  '+ Предоплаты наличными': "+ Naqd oldindan to'lovlar",
+  'Доллары в сейф': "Seyfga dollar",
+  'Курс Retro': "Retro kursi",
+  'В сейфе': "Seyfda",
+  'Свернуть меню': "Menyuni yig'ish",
+  'Развернуть меню': "Menyuni ochish",
+  'Без имени': "Ismsiz",
+  'Кто внёс — не указано': "Kim kiritgani ko'rsatilmagan",
+  'Сумма по кассам сходится с итогом iiko': "Kassalar bo'yicha summa iiko jami bilan mos",
+  'Сумма по кассам не сходится с итогом iiko': "Kassalar bo'yicha summa iiko jami bilan mos emas",
+  'Наличные: расходы и поступления': "Naqd pul: xarajatlar va kirimlar",
+  'курс Retro на 1,5% ниже': "Retro kursi 1,5% past",
+});
+/* ── /T-442 ── */

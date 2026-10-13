@@ -49,7 +49,6 @@ function harness(saved = null) {
     respond:(n,value)=>pending[n].resolve({json:async()=>value}),
     day:value=>context.$('report-date').value=value,
     open(value=true){const el=context.$('prepay-section');el.open=value;el.events.toggle();},
-    link(){context.$('prepay-open').events.click({preventDefault(){}});},
     registryRequests:()=>pending.filter(item=>item.url.includes('/prepayments?'))};
 }
 
@@ -166,8 +165,8 @@ test('opening before the day arrives shows waiting, then makes one registry requ
   assert.equal(h.registryRequests().length,0);
   h.respond(0,{date:TODAY,revenue:'100'}); await done;
   assert.equal(h.registryRequests().length,1);
-  h.open(false); h.open(); h.link(); h.open();
-  assert.equal(h.registryRequests().length,1,'toggle and card link share the pending request');
+  h.open(false); h.open(); h.open(false); h.open();
+  assert.equal(h.registryRequests().length,1,'repeated toggles share the pending request');
   h.respond(1,registry(TODAY)); await setImmediate();
   assert.equal(h.context.waiting.has('prepay'),false);
   h.open(false); h.open();

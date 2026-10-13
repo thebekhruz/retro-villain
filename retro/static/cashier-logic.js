@@ -203,14 +203,14 @@
      Цифра — скелетом, пока не пришла хотя бы одна часть, из которых она
      считается: «К передаче» ждёт и iiko, и расходы, и поступления, и Шоха. */
   const PARTS=['day','expenses','receipts','shokh','usd','rate'];
+  /* Редизайн T-442: каждое число на экране один раз — итоги расходов,
+     поступлений и долларов за день живут только в формуле «К передаче». */
   const SKELETON={
-    revenue:['day'],receipts:['day'],average:['day'],'real-cash':['day'],'payment-total':['day'],
-    'prepay-received':['day'],'prepay-credited':['day'],'prepay-total':['prepay'],
+    revenue:['day'],receipts:['day'],average:['day'],'prepay-total':['prepay'],
     handover:['day','expenses','receipts','shokh','usd','rate'],'demo-cash':['day'],'cash-prepay':['day'],
     'handover-usd':['day','usd','rate'],
     'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],
-    'expense-total':['expenses','shokh'],'receipt-total':['receipts'],
-    'usd-today':['usd'],'usd-safe':['usd'],'usd-official':['rate'],'usd-restaurant':['rate'],
+    'usd-safe':['usd'],'usd-restaurant':['rate'],
   };
   /* {id: скелет ли} по набору ещё не пришедших частей. */
   function skeletonMap(waiting){

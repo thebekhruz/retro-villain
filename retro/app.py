@@ -99,6 +99,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # Кассир
         'index.html': {'cashier'}, 'app.js': {'cashier'}, 'cashier-logic.js': {'cashier'},
         'cashier.css': {'cashier'},
+        # Свёрнутое меню (T-442): пока включено только у кассира
+        'sidebar-state.js': {'cashier'},
         # Бухгалтер: финансы дня, сотрудники, ведомость
         'accountant.html': {'accountant'}, 'employees.html': {'accountant'},
         'payroll.html': {'accountant'}, 'accountant.js': {'accountant'},
