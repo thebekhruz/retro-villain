@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from threading import Lock
 
-from retro.db import as_database
+from retro.db import as_database, table_columns
 from retro.modules.manager.directions import DIRECTIONS
 from retro.phone_numbers import PHONE_ROLES, normalize_phone
 
@@ -56,6 +56,8 @@ class PanelAccount:
     source: str = 'db'          # db — из таблицы, env — из переменных
     active: bool = True
     has_password: bool = False
+    updated_at: str | None = None
+    updated_by: str | None = None
 
 
 def hash_password(password: str) -> str:
@@ -116,14 +118,14 @@ def _now() -> str:
     return datetime.now(timezone.utc).strftime('%Y-%m-%dT%H:%M:%SZ')
 
 
-_COLUMNS = 'login, role, password_hash, phone, directions, active'
+_COLUMNS = 'login, role, password_hash, phone, directions, active, updated_at, updated_by'
 
 
 def _account(row) -> PanelAccount:
-    login, role, password_hash, phone, directions, active = row
+    login, role, password_hash, phone, directions, active, updated_at, updated_by = row
     return PanelAccount(login=login, role=role, directions=tuple(filter(None, (directions or '').split(','))),
                         phone=phone or None, source='db', active=bool(active),
-                        has_password=bool(password_hash))
+                        has_password=bool(password_hash), updated_at=updated_at, updated_by=updated_by)
 
 
 class PanelUserStore:
@@ -141,6 +143,9 @@ class PanelUserStore:
                 active INTEGER NOT NULL DEFAULT 1,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL)''')
+            # Кто менял запись последним: экран «Пользователи» (T-445) или команда.
+            if 'updated_by' not in table_columns(connection, 'panel_users'):
+                connection.execute('ALTER TABLE panel_users ADD COLUMN updated_by TEXT')
 
     def all(self) -> list[PanelAccount]:
         with closing(self.db.connect()) as connection:
@@ -173,7 +178,7 @@ class PanelUserStore:
         return bool(users), bool(phones)
 
     def save(self, login: str, *, role: str, password_hash: str | None, phone: str | None,
-             directions: tuple[str, ...], active: bool = True) -> None:
+             directions: tuple[str, ...], active: bool = True, by: str | None = None) -> None:
         stamp = _now()
         with closing(self.db.connect()) as connection, connection:
             if phone is not None:
@@ -182,15 +187,72 @@ class PanelUserStore:
                 if owner is not None:
                     raise PanelUserError(f'Номер {phone} уже привязан к «{owner[0]}».')
             connection.execute(
-                'INSERT INTO panel_users (login, role, password_hash, phone, directions, active, created_at, updated_at) '
-                'VALUES (?,?,?,?,?,?,?,?) ON CONFLICT(login) DO UPDATE SET role=excluded.role, '
-                'password_hash=excluded.password_hash, phone=excluded.phone, directions=excluded.directions, '
-                'active=excluded.active, updated_at=excluded.updated_at',
-                (login, role, password_hash, phone, ','.join(directions), int(active), stamp, stamp))
+                'INSERT INTO panel_users (login, role, password_hash, phone, directions, active, created_at, '
+                'updated_at, updated_by) VALUES (?,?,?,?,?,?,?,?,?) ON CONFLICT(login) DO UPDATE SET '
+                'role=excluded.role, password_hash=excluded.password_hash, phone=excluded.phone, '
+                'directions=excluded.directions, active=excluded.active, updated_at=excluded.updated_at, '
+                'updated_by=excluded.updated_by',
+                (login, role, password_hash, phone, ','.join(directions), int(active), stamp, stamp, by))
 
     def delete(self, login: str) -> bool:
         with closing(self.db.connect()) as connection, connection:
             return connection.execute('DELETE FROM panel_users WHERE login=?', (login,)).rowcount == 1
+
+
+KEEP = object()  # «не менять» для change_account
+
+
+def change_account(store: PanelUserStore, login: str, *, create: bool, role=KEEP, phone=KEEP,
+                   password=KEEP, directions=KEEP, active=KEEP, by: str | None = None) -> PanelAccount:
+    """Завести или изменить запись по одним правилам — для экрана и команды.
+
+    phone=None снимает номер, password=None снимает пароль (вход только по
+    SMS). Направления бывают только у менеджера. Запись, которой нечем
+    войти — ни пароля, ни номера, — не сохраняется."""
+    login = check_login(login)
+    current = store.get(login)
+    if create and current is not None:
+        raise PanelUserError(f'«{login}» уже есть.')
+    if not create and current is None:
+        raise PanelUserError(f'«{login}» нет среди учётных записей.')
+    role = check_role(role) if role is not KEEP else current.role
+    if phone is KEEP:
+        phone = current.phone if current else None
+    elif phone is not None:
+        phone = check_phone(phone)
+    if password is KEEP:
+        password_hash = store.password_hash(login) if current else None
+    elif password is None:
+        password_hash = None
+    else:
+        password_hash = hash_password(check_password(password))
+    if directions is KEEP:
+        directions = current.directions if current else ()
+    else:
+        directions = check_directions(directions)
+    if role != 'manager':
+        directions = ()
+    active = bool(active) if active is not KEEP else (current.active if current else True)
+    if password_hash is None and phone is None:
+        raise PanelUserError('Нужен пароль или номер телефона: иначе войти нечем.')
+    store.save(login, role=role, password_hash=password_hash, phone=phone, directions=directions,
+               active=active, by=by)
+    return store.get(login)
+
+
+def import_env_account(store: PanelUserStore, settings, login: str, *, by: str | None = None) -> PanelAccount:
+    """Перенести одну запись из DASHBOARD_PANEL_USERS в базу: пароль —
+    отпечатком, первый номер и направления — как были."""
+    user = settings.dashboard_panel_users.get(login)
+    if user is None:
+        raise PanelUserError(f'«{login}» нет в переменных окружения.')
+    if store.get(login) is not None:
+        raise PanelUserError(f'«{login}» уже в базе.')
+    phones = [phone for phone, owner in settings.phone_users.items() if owner == login]
+    phone = phones[0] if phones and store.by_phone(phones[0]) is None else None
+    store.save(login, role=user[1], password_hash=hash_password(user[0]), phone=phone,
+               directions=settings.manager_directions.get(login, ()), by=by)
+    return store.get(login)
 
 
 class PanelAccounts:
@@ -223,6 +285,13 @@ class PanelAccounts:
 
     def _db(self, login: str) -> PanelAccount | None:
         return self._cached(('login', login), lambda: self.store.get(login))
+
+    def env_logins(self) -> list[str]:
+        """Логины из переменных, которых нет в базе, — ещё не перенесённые."""
+        return [login for login in self.settings.dashboard_panel_users if self._db(login) is None]
+
+    def env_account(self, login: str) -> PanelAccount | None:
+        return self._env(login)
 
     def _env(self, login: str) -> PanelAccount | None:
         user = self.settings.dashboard_panel_users.get(login)

@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#143e35">
+  <title>Пользователи · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/accountant.css">
+  <link rel="stylesheet" href="/static/users.css"><link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/busy.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/users.js" defer></script>
+</head>
+<body class="fd-page" data-page="users">
+<aside class="sidebar">
+  <a href="/users" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
+  <nav aria-label="Модули"><a href="/users" class="nav-active" aria-current="page"><span class="nav-icon">◍</span> Пользователи <span class="nav-dot"></span></a></nav>
+  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
+</aside>
+<main>
+  <header class="topbar"><span class="breadcrumb">Администрирование <span>/</span> <strong>Пользователи</strong></span><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <div class="workspace accountant-workspace fd">
+    <div class="fd-head">
+      <div><p class="fd-kicker">АДМИНИСТРИРОВАНИЕ</p><h1 class="fd-h1">Пользователи<span>.</span></h1></div>
+      <div class="fd-head-actions">
+        <button id="us-add" class="fd-btn fd-btn-dark" type="button"><span aria-hidden="true">+</span>Добавить человека</button>
+      </div>
+    </div>
+    <p id="us-message" class="fd-notice" role="status" aria-live="polite" hidden></p>
+
+    <!-- Записи, которые ещё живут в переменных окружения: видны, но меняются
+         только после переноса в базу. -->
+    <section id="us-env" class="fd-card us-env" hidden>
+      <div><p class="fd-kicker">ЕЩЁ В ПЕРЕМЕННЫХ ОКРУЖЕНИЯ</p>
+        <p class="us-env-text">Эти записи заданы в Railway. Перенесите их в базу — тогда их можно менять здесь, а переменные снять.</p></div>
+      <button id="us-import-all" class="fd-btn fd-btn-light" type="button">Перенести все в базу</button>
+    </section>
+
+    <section class="fd-sec" aria-labelledby="us-title">
+      <div class="fd-sec-head">
+        <span class="fd-sec-titles"><span class="fd-kicker">ДОСТУП К ПАНЕЛИ</span><span class="fd-sec-title" id="us-title">Учётные записи</span></span>
+        <span class="us-count" id="us-count"></span>
+      </div>
+      <div class="fd-scroll">
+        <div class="us-table">
+          <div class="fd-thead us-cols"><span>Логин</span><span>Роль</span><span>Телефон</span><span>Вход</span><span>Направления</span><span>Статус</span><span></span></div>
+          <div id="us-rows" aria-live="polite" aria-busy="true"><div class="fd-empty">Загрузка…</div></div>
+        </div>
+      </div>
+    </section>
+    <footer class="fd-footer"><span>RETRO MILLIY <span class="footer-divider">/</span> Пользователи</span><span>Время Ташкента</span></footer>
+  </div>
+</main>
+
+<dialog id="us-dialog" class="fd-dialog" aria-labelledby="us-dialog-title">
+  <form id="us-form" method="dialog" novalidate>
+    <div class="fd-dialog-head">
+      <div><p class="fd-kicker" id="us-dialog-kicker">НОВЫЙ ЧЕЛОВЕК</p><h2 id="us-dialog-title">Добавить в панель</h2></div>
+      <button type="button" class="fd-dialog-close" id="us-close" aria-label="Закрыть">×</button>
+    </div>
+    <p class="fd-dialog-msg" id="us-form-message" role="alert" hidden></p>
+    <div class="us-form">
+      <label class="sb-field"><span>Логин</span><input id="us-login" maxlength="64" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="например, karina" required></label>
+      <label class="sb-field"><span>Роль</span><select id="us-role" required></select></label>
+      <label class="sb-field"><span>Телефон для входа по SMS</span><input id="us-phone" type="tel" inputmode="tel" autocomplete="off" placeholder="+998 90 123 45 67"></label>
+      <label class="sb-field"><span id="us-password-label">Пароль</span><input id="us-password" type="password" autocomplete="new-password" maxlength="256" placeholder="не меньше 8 знаков"></label>
+      <p class="us-hint" id="us-password-hint">Без пароля человек входит только по номеру и коду из SMS.</p>
+      <label class="us-check" id="us-remove-password-row" hidden><input id="us-remove-password" type="checkbox"> Убрать пароль — вход только по SMS</label>
+      <fieldset class="us-directions" id="us-directions" hidden>
+        <legend>Направления менеджера</legend>
+        <div id="us-direction-list"></div>
+        <p class="us-hint">Ни одного — весь ресторан.</p>
+      </fieldset>
+      <label class="us-check" id="us-active-row" hidden><input id="us-active" type="checkbox"> Учётная запись включена</label>
+    </div>
+    <div class="us-actions">
+      <button type="button" class="fd-btn us-delete" id="us-delete" hidden>Удалить</button>
+      <span class="us-actions-gap"></span>
+      <button type="button" class="fd-btn fd-btn-light" id="us-cancel">Отмена</button>
+      <button type="submit" class="fd-btn fd-btn-dark" id="us-save">Сохранить</button>
+    </div>
+  </form>
+</dialog>
+</body>
+</html>
