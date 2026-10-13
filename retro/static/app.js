@@ -888,7 +888,11 @@ function prepayEditor(row) {
   const guest = input('guest', row.guest, {maxlength: 120, placeholder: 'Имя гостя или компания', autocomplete: 'off'});
   const phone = input('phone', row.phone, {maxlength: 40, type: 'tel', placeholder: '+998', autocomplete: 'off'});
   const eventDay = input('event_day', row.event_day, {type: 'date'});
-  const method = input('method', row.method, {maxlength: 60, list: 'prepay-methods', placeholder: 'Наличные, карта…', autocomplete: 'off'});
+  // Способ внесения, определённый по iiko, кассир не переписывает — поле только для чтения.
+  const fromIiko = (row.received_methods || []).map(name => name === CashierLogic.CASH_PAYMENT ? 'Наличные' : name).join(', ');
+  const method = fromIiko
+    ? input('method', fromIiko, {readonly: '', 'aria-readonly': 'true', title: 'Способ внесения — из iiko'})
+    : input('method', row.method, {maxlength: 60, list: 'prepay-methods', placeholder: 'Наличные, карта…', autocomplete: 'off'});
   const refund = document.createElement('label'); refund.className = 'prepay-refund';
   const box = document.createElement('input'); box.type = 'checkbox'; box.name = 'refunded'; box.checked = Boolean(row.refunded);
   const refundText = document.createElement('span'); refundText.textContent = 'Возврат предоплаты';
@@ -898,12 +902,13 @@ function prepayEditor(row) {
   const save = document.createElement('button'); save.type = 'submit'; save.className = 'button primary'; save.textContent = 'Сохранить';
   actions.append(cancel, save);
   const feedback = document.createElement('p'); feedback.className = 'expense-feedback'; feedback.setAttribute('role', 'status');
-  form.append(field('Кто', guest), field('Телефон', phone), field('На дату', eventDay), field('Способ', method), refund, actions, feedback);
+  form.append(field('Кто', guest), field('Телефон', phone), field('На дату', eventDay),
+    field(fromIiko ? 'Способ · из iiko' : 'Способ', method), refund, actions, feedback);
   cancel.addEventListener('click', () => { prepayEditing = null; showPrepay(); });
   form.addEventListener('submit', event => {
     event.preventDefault();
     Busy.button(save, savePrepay(row.order_number, {guest: guest.value, phone: phone.value, event_day: eventDay.value || null,
-      method: method.value, refunded: box.checked}, feedback));
+      method: fromIiko ? row.method || '' : method.value, refunded: box.checked}, feedback));
   });
   requestAnimationFrame(() => guest.focus({preventScroll: true}));
   return form;

@@ -10,14 +10,14 @@ from contextlib import closing
 from datetime import date, datetime
 from decimal import Decimal
 
-from retro.db import as_database
+from retro.db import as_database, table_columns
 from .service import TZ, DataError
 
 STATUS_PENDING, STATUS_CREDITED, STATUS_REFUND = 'pending', 'credited', 'refund'
 LIMITS = dict(guest=120, phone=40, method=60)
 COLUMNS = ('order_number', 'received_day', 'received_at', 'amount', 'guest', 'phone', 'event_day',
            'method', 'refunded', 'credited_day', 'credited_amount', 'credited_methods',
-           'updated_at', 'updated_by')
+           'updated_at', 'updated_by', 'received_methods')
 
 
 class PrepaymentRegistry:
@@ -31,20 +31,29 @@ class PrepaymentRegistry:
                 event_day TEXT, method TEXT NOT NULL DEFAULT '',
                 refunded INTEGER NOT NULL DEFAULT 0,
                 credited_day TEXT, credited_amount TEXT, credited_methods TEXT NOT NULL DEFAULT '',
-                updated_at TEXT, updated_by TEXT)''')
+                updated_at TEXT, updated_by TEXT, received_methods TEXT NOT NULL DEFAULT '')''')
+            # Способ внесения аванса из iiko (13.10.2026) — у старых баз колонки нет.
+            if 'received_methods' not in table_columns(connection, 'cashier_prepayment_registry'):
+                connection.execute('ALTER TABLE cashier_prepayment_registry '
+                                   "ADD COLUMN received_methods TEXT NOT NULL DEFAULT ''")
 
     # ── факты iiko ──────────────────────────────────────────────────────────
     def record_received(self, entries):
-        """entries: [(order, received_day, received_at, amount)] — авансы из iiko.
+        """entries: [(order, received_day, received_at, amount[, methods])] — авансы из iiko.
 
-        Сумму и время аванса пишет только iiko; то, что ввёл кассир, не трогаем."""
+        Сумму, время и способ аванса пишет только iiko; то, что ввёл кассир, не
+        трогаем. Неизвестный в этот раз способ не стирает уже известный."""
         with closing(self.db.connect()) as connection, connection:
-            for order, day, received_at, amount in entries:
+            for order, day, received_at, amount, *rest in entries:
+                methods = ', '.join(rest[0]) if rest else ''
                 connection.execute(
-                    'INSERT INTO cashier_prepayment_registry (order_number, received_day, received_at, amount) '
-                    'VALUES (?,?,?,?) ON CONFLICT(order_number) DO UPDATE SET '
-                    'received_day=excluded.received_day, received_at=excluded.received_at, amount=excluded.amount',
-                    (str(order), day.isoformat(), received_at, str(amount)))
+                    'INSERT INTO cashier_prepayment_registry '
+                    '(order_number, received_day, received_at, amount, received_methods) '
+                    'VALUES (?,?,?,?,?) ON CONFLICT(order_number) DO UPDATE SET '
+                    'received_day=excluded.received_day, received_at=excluded.received_at, amount=excluded.amount, '
+                    "received_methods=CASE WHEN excluded.received_methods<>'' THEN excluded.received_methods "
+                    'ELSE cashier_prepayment_registry.received_methods END',
+                    (str(order), day.isoformat(), received_at, str(amount), methods))
 
     def record_credited(self, day, orders):
         """orders: [(order, amount, methods)] — заказы, закрытые в этот день с зачётом аванса."""
@@ -112,10 +121,13 @@ def registry_row(row):
     item = dict(zip(COLUMNS, row))
     item['refunded'] = bool(item['refunded'])
     item['credited_methods'] = [part for part in (item['credited_methods'] or '').split(', ') if part]
+    item['received_methods'] = [part for part in (item['received_methods'] or '').split(', ') if part]
     item['status'] = (STATUS_REFUND if item['refunded'] else
                       STATUS_CREDITED if item['credited_day'] else STATUS_PENDING)
-    # Способ — что ввёл кассир; нет — чем был аванс по закрытию заказа в iiko.
-    item['method_shown'] = item['method'] or ', '.join(item['credited_methods'])
+    # Способ — как внесён аванс по iiko; не определён — что ввёл кассир; нет и
+    # этого — чем был зачтён аванс при закрытии заказа.
+    item['method_shown'] = (', '.join(item['received_methods']) or item['method']
+                            or ', '.join(item['credited_methods']))
     for key in ('amount', 'credited_amount'):
         item[key] = str(Decimal(item[key])) if item[key] is not None else None
     return item

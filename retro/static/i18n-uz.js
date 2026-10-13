@@ -880,6 +880,8 @@ globalThis.RetroDictionaryUz = {
   'Получено': "Olingan",
   'На дату': "Sanaga",
   'Способ': "Usul",
+  'Способ · из iiko': "Usul · iikodan",
+  'Способ внесения — из iiko': "To'lov usuli — iikodan",
   'Предоплат за этот день нет.': "Bu kunda oldindan to'lovlar yo'q.",
   'Зачтённых предоплат за этот день нет.': "Bu kunda hisobga olingan oldindan to'lovlar yo'q.",
   'За этот период предоплат нет.': "Bu davrda oldindan to'lovlar yo'q.",

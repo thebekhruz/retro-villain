@@ -473,17 +473,21 @@ def demo_registry(day, period=False):
 
 
 def group_advances(entries, day=None):
-    """Авансы iiko → по заказу: [(заказ, день получения, первое время, сумма)].
+    """Авансы iiko → по заказу: [(заказ, день получения, первое время, сумма, способы)].
 
     Один заказ часто получает аванс частями (наличные, потом картой) — в реестре
-    это одна предоплата. Без номера заказа аванс держим отдельной строкой."""
+    это одна предоплата. Без номера заказа аванс держим отдельной строкой.
+    Способы — по времени внесения; если хоть у одной части способ неизвестен,
+    не показываем половину правды: способов нет вовсе."""
     orders = {}
-    for entry in entries or ():
+    for entry in sorted(entries or (), key=lambda item: item.received_at):
         key = entry.order_number or 'iiko-' + entry.id[:12]
-        received_at, amount = orders.get(key, (entry.received_at, Decimal(0)))
-        orders[key] = (min(received_at, entry.received_at), amount + entry.amount)
-    return [(order, day or date.fromisoformat(received_at[:10]), received_at, amount)
-            for order, (received_at, amount) in orders.items()]
+        received_at, amount, methods = orders.get(key, (entry.received_at, Decimal(0), []))
+        methods = (None if methods is None or not entry.payment_method else
+                   methods + ([entry.payment_method] if entry.payment_method not in methods else []))
+        orders[key] = (min(received_at, entry.received_at), amount + entry.amount, methods)
+    return [(order, day or date.fromisoformat(received_at[:10]), received_at, amount, tuple(methods or ()))
+            for order, (received_at, amount, methods) in orders.items()]
 
 
 @router.get('/prepayments')
