@@ -16,6 +16,8 @@ const openGroups = new Set(), allTypes = new Set();
 const openPaymentDetails = new Set();
 // Реестр предоплат: день, период, вкладка, группировка, строка в правке.
 let prepayData = null, prepayPeriod = null, prepayTab = 'received', prepayEditing = null;
+let prepayRequest = null, prepayLoadedGeneration = -1, prepayReadyGeneration = -1;
+let prepayNeedsRefresh = false;
 const usdFormat = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
 
 /* ── Отклик и ожидание (busy.js, T-393; docs/feedback-principles.md) ─────
@@ -32,7 +34,7 @@ const SKELETON_LISTS = {payments: ['day', 2, 'payment'], 'prepay-rows': ['prepay
 // Что гаснет, пока часть перечитывается: «К передаче» считается из всех.
 const SECTIONS = {day: ['metrics', 'payments-section', 'handover-panel'], expenses: ['expenses-section', 'handover-panel'],
   shokh: ['expenses-section', 'handover-panel'], receipts: ['receipts-section', 'handover-panel'], usd: ['usd-card', 'handover-panel'], rate: ['usd-card', 'handover-panel'],
-  prepay: ['prepay-section']};
+  prepay: ['prepay-content']};
 function skeletonRows(count, kind) {
   const bar = width => { const node = document.createElement('span'); node.className = 'rm-skel'; node.style.width = width; return node; };
   return Array.from({length: count}, (_, i) => {
@@ -65,6 +67,7 @@ function paintWaiting() {
     || Boolean(financeData && financeData.expenses.length) || Boolean(shokhData && shokhData.gives.length);
   $('receipts-empty').hidden = waiting.has('receipts') || Boolean(receiptData && receiptData.receipts.length);
   $('metrics').setAttribute('aria-busy', String(waiting.has('day')));
+  $('prepay-content').setAttribute('aria-busy', String(waiting.has('prepay')));
 }
 /* Новый день: всё, что перечислено, грузится впервые. */
 function expect(parts) {
@@ -732,18 +735,61 @@ function clearPrepay() {
   $('prepay-note').hidden = true;
   showPrepay();
 }
-async function loadPrepay(day, current, signal) {
+async function loadPrepay(day, current, signal, refresh = false) {
+  const baseId = snapshot?.snapshot_id;
   try {
     const data = await RetroState.responseJson(
-      await request(`/api/cashier/prepayments?date=${encodeURIComponent(day)}&demo=${demo}`, signal));
-    if (current !== generation) return;
+      await request(`/api/cashier/prepayments?date=${encodeURIComponent(day)}&demo=${demo}&refresh=${refresh}`,
+        signal, {retroBusy: false}));
+    if (current !== generation || signal.aborted) return;
     prepayData = data;
+    // The registry supplies its coherent daily revision (including export id).
+    // A later day response must not be replaced by an older registry request.
+    if (data.snapshot?.date === day && snapshot?.snapshot_id === baseId) show(data.snapshot);
   } catch (error) {
-    if (current !== generation || error.name === 'AbortError') return;
+    if (current !== generation || signal.aborted || error.name === 'AbortError') return;
     prepayData = {date: day, received: [], credited: [], received_total: null, credited_total: null, issue: error.message, failed: true};
+    if (snapshot?.snapshot_id === baseId && snapshot?.prepayments_deferred)
+      show({...snapshot, prepayments_deferred: false, prepayments_issue: error.message});
   }
   refreshPaymentGroups();
   showPrepay();
+}
+function resetPrepayLoading(refresh = false) {
+  prepayRequest?.controller.abort(); prepayRequest = null;
+  prepayLoadedGeneration = -1; prepayReadyGeneration = -1;
+  prepayNeedsRefresh = refresh;
+  waiting.delete('prepay'); paintWaiting();
+}
+/* Реестр читается в фоне после основных блоков и их отрисовки. Раскрытие
+   до этого момента показывает ожидание, но не запускает источник раньше. */
+function ensurePrepay(refresh = false) {
+  if (refresh) {
+    prepayNeedsRefresh = true;
+    prepayLoadedGeneration = -1;
+    prepayRequest?.controller.abort(); prepayRequest = null;
+    arrive('prepay', generation);
+  }
+  const day = $('report-date').value;
+  if (config && !config.configured && !demo) return;
+  if (prepayReadyGeneration !== generation || snapshot?.date !== day) {
+    if (prepaySection.open) expect([...waiting, 'prepay']);
+    return;
+  }
+  if (!refresh && prepayRequest?.current === generation) return prepayRequest.work;
+  if (!refresh && prepayLoadedGeneration === generation && !prepayData?.failed) return;
+  prepayRequest?.controller.abort();
+  const active = {current: generation, controller: new AbortController()};
+  prepayRequest = active;
+  if (!prepayData) expect([...waiting, 'prepay']);
+  active.work = loadPrepay(day, active.current, active.controller.signal, prepayNeedsRefresh).finally(() => {
+    if (prepayRequest !== active) return;
+    prepayRequest = null; prepayLoadedGeneration = active.current;
+    arrive('prepay', active.current); showPrepay();
+  });
+  prepayNeedsRefresh = false;
+  if (prepayData) dim('prepay', active.work);
+  return active.work;
 }
 function loadPrepayPeriod() {
   const from = $('prepay-from').value, to = $('prepay-to').value, current = generation;
@@ -782,9 +828,9 @@ function showPrepay() {
     const tab = document.querySelector(`.prepay-tabs [data-tab="${key}"] .prepay-tab-name`);
     if (tab.dataset.label !== text) { tab.dataset.label = text; tab.replaceChildren(text); }
   }
-  $('prepay-received').textContent = prepayData && prepayData.received_total !== null ? money.format(Number(prepayData.received_total)) : '—';
-  $('prepay-count-received').textContent = prepayData ? count.format(prepayData.received.length) : '0';
-  $('prepay-count-credited').textContent = prepayData ? count.format(prepayData.credited.length) : '0';
+  $('prepay-received').textContent = revenueView?.received != null ? money.format(revenueView.received) : '—';
+  $('prepay-count-received').textContent = prepayData && !prepayData.failed ? count.format(prepayData.received.length) : '—';
+  $('prepay-count-credited').textContent = prepayData && !prepayData.failed ? count.format(prepayData.credited.length) : '—';
   for (const tab of document.querySelectorAll('.prepay-tabs [data-tab]')) {
     const active = tab.dataset.tab === prepayTab;
     tab.classList.toggle('is-active', active); tab.setAttribute('aria-selected', String(active));
@@ -824,7 +870,7 @@ function showPrepay() {
 function prepayEmptyHidden() {
   if (prepayTab === 'period') return Boolean(prepayPeriod && prepayPeriod.rows.length);
   const rows = prepayRows();
-  return waiting.has('prepay') || !Array.isArray(rows) || rows.length > 0;
+  return waiting.has('prepay') || prepayData?.failed || !Array.isArray(rows) || rows.length > 0;
 }
 function prepayLine(row, tab) {
   const line = document.createElement('div'); line.className = 'prepay-row'; line.dataset.busyKey = 'prepay:' + row.order_number;
@@ -943,18 +989,20 @@ $('prepay-period').addEventListener('submit', event => {
   Busy.button($('prepay-show'), loadPrepayPeriod());
 });
 const prepaySection = $('prepay-section');
-try { prepaySection.open = localStorage.getItem('retro.cashier.prepayments.open') === 'true'; } catch {}
+// Новый вход всегда без запроса реестра, даже если раньше его оставили открытым.
+prepaySection.open = false;
 function showPrepayToggle() {
   $('prepay-toggle-label').replaceChildren(prepaySection.open ? 'Свернуть' : 'Развернуть');
 }
 showPrepayToggle();
 prepaySection.addEventListener('toggle', () => {
   showPrepayToggle();
-  try { localStorage.setItem('retro.cashier.prepayments.open', String(prepaySection.open)); } catch {}
+  ensurePrepay();
 });
 $('prepay-open').addEventListener('click', event => {
   event.preventDefault();
   prepaySection.open = true;
+  ensurePrepay();
   prepaySection.scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 
@@ -983,6 +1031,7 @@ function show(data) {
   $('real-cash').classList.toggle('is-note', realUnknown);
   $('real-cash-unit').hidden = realUnknown;
   showRealCashSub(view);
+  $('prepay-received').textContent = amountText(view.received);
   $('prepay-credited').textContent = amountText(view.redeemed);
   $('payment-total').textContent = amountText(view.total);
   $('payment-total-share').textContent = view.total > 0 ? '100%' : '';
@@ -990,7 +1039,9 @@ function show(data) {
   $('payment-empty').querySelector('p').textContent = 'За этот день оплат и новых предоплат нет';
   $('payments-note').hidden = false;
   $('payments-note').textContent = view.received === null
-    ? 'Предоплаты за день недоступны — итоговая выручка требует проверки. Обновите день.'
+    ? data.prepayments_deferred
+      ? 'Показаны оплаты счетов. Предоплаты и итоговая выручка загрузятся автоматически после основных данных.'
+      : 'Предоплаты за день недоступны — итоговая выручка требует проверки. Откройте реестр ещё раз.'
     : 'Зачёт предоплат не увеличивает выручку: деньги учтены в день получения.';
   if (view.fallback) $('payments-note').textContent += ' Разбивка по кассам iiko недоступна — оплаты показаны одним списком.';
   renderGroups();
@@ -1020,6 +1071,7 @@ async function loadDay(options = {}) {
   }
   const current = ++generation;
   controller?.abort(); controller = new AbortController();
+  resetPrepayLoading(options.refresh === true);
   const signal = controller.signal;
   $('refresh').disabled = false;
   const keepSnapshot = snapshot?.date === day;
@@ -1028,6 +1080,7 @@ async function loadDay(options = {}) {
   message('');
   // Другой день — прежние цифры не показываем даже приглушёнными: скелет до ответа.
   if (!keepSnapshot) { clearUsdRate(day); expect(CashierLogic.PARTS); }
+  ensurePrepay();
   $('report-date-text').classList.remove('is-skel');
   $('report-date-text').textContent = shortDay(day);
   const isToday = day === config.today, isYesterday = day === previousDay(config.today);
@@ -1037,18 +1090,15 @@ async function loadDay(options = {}) {
   $('yesterday').setAttribute('aria-pressed', String(isYesterday));
   $('day-next').disabled = day >= config.today;
   $('day-prev').disabled = day <= '2026-10-02';
-  loadPart('expenses', current, loadExpenses(day, current, signal));
-  loadPart('receipts', current, loadReceipts(day, current, signal));
-  loadPart('rate', current, loadUsdRate(day, current, signal));
-  loadPart('shokh', current, loadShokh(day, current, signal));
-  loadPart('usd', current, loadUsd(day, current, signal));
+  const mainParts = Promise.allSettled([
+    loadPart('expenses', current, loadExpenses(day, current, signal)),
+    loadPart('receipts', current, loadReceipts(day, current, signal)),
+    loadPart('rate', current, loadUsdRate(day, current, signal)),
+    loadPart('shokh', current, loadShokh(day, current, signal)),
+    loadPart('usd', current, loadUsd(day, current, signal)),
+  ]);
   if (!config.configured && !demo) { arrive('day', current); arrive('prepay', current); return true; }
   $('refresh').disabled = true;
-  let registry = false;
-  const startRegistry = () => {
-    registry = true;
-    loadPart('prepay', current, loadPrepay(day, current, signal));
-  };
   try {
     const endpoint = `/api/cashier/day?date=${encodeURIComponent(day)}&demo=${demo}&allow_stale=true`;
     const first = request(`${endpoint}&refresh=${options.refresh === true}`, signal).then(response => response.json());
@@ -1056,10 +1106,7 @@ async function loadDay(options = {}) {
     let data = await first;
     if (current !== generation) return false;
     show(data); arrive('day', current);
-    // Реестр предоплат читает тот же снимок дня, поэтому — после него;
-    // после фонового обновления iiko перечитываем и его.
     const polling = data.refreshing;
-    startRegistry();
     // Фоновое обновление iiko: цифры уже на экране, опрос тихий — без полосы
     // сверху; идёт ли он, видно по «↻» и строке статуса.
     for (let attempt = 0; data.refreshing && attempt < 45; attempt++) {
@@ -1068,7 +1115,13 @@ async function loadDay(options = {}) {
       if (current !== generation) return false;
       show(data);
     }
-    if (polling) loadPart('prepay', current, loadPrepay(day, current, signal));
+    // Все основные блоки сначала показывают данные (либо свою ошибку).
+    // Ждём также обновление снимка, чтобы не читать реестр дважды подряд.
+    await mainParts;
+    await afterDashboardPaint();
+    if (current !== generation || signal.aborted) return false;
+    prepayReadyGeneration = current;
+    ensurePrepay(polling);
     message(data.refresh_error || (data.refreshing ? 'Обновление продолжается. Повторите проверку позже.' :
       data.stale ? 'Показаны последние сохранённые данные. Требуется обновление iiko.' : ''), Boolean(data.refresh_error || data.stale));
     return !data.refresh_error;
@@ -1084,9 +1137,12 @@ async function loadDay(options = {}) {
   } finally {
     if (current === generation) {
       $('refresh').disabled = false; arrive('day', current);
-      if (!registry) arrive('prepay', current);
+      if (prepayReadyGeneration !== current) arrive('prepay', current);
     }
   }
+}
+function afterDashboardPaint() {
+  return new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)));
 }
 function waitForRefresh(signal) {
   return new Promise((resolve, reject) => {

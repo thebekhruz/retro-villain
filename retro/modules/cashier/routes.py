@@ -368,32 +368,11 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
             result = await load_iiko(state, 'load', day, refresh=refresh, request=request,
                                      ttl=CLOSED_DAY_TTL if day < today_tashkent() else None,
                                      allow_stale=allow_stale)
-            # Load the registry separately so old daily archives also receive it,
-            # and an unavailable transaction report never hides sales/handover.
-            try:
-                entries = await load_iiko(state, 'load_prepayments', day,
-                                          refresh=refresh, request=request, timeout=35,
-                                          ttl=CLOSED_DAY_TTL if day < today_tashkent() else 30)
-                result = replace(result, prepayments=entries, prepayments_issue=None)
-            except (DataError, TimeoutError) as error:
-                log_safe_failure('cashier-route', error, operation='prepayments')
-                result = replace(result, prepayments=None,
-                                 prepayments_issue='Не удалось получить список предоплат из iiko. Обновите день.')
-            # Keep an already displayed/exportable registry immutable even when
-            # the base daily archive still has the same snapshot id.
-            registry_revision = json.dumps(
-                [result.id, [entry.json() for entry in result.prepayments]
-                 if result.prepayments is not None else None, result.prepayments_issue],
-                ensure_ascii=False, sort_keys=True)
-            result = replace(result, id=hashlib.sha256(registry_revision.encode()).hexdigest()[:32])
-        state.cache.put(result)
-        totals = None if result.demo else await load_till_totals(state, day)
-        # Передача дня бухгалтеру: «Передано в 21:40» у кассира. В демо — никогда.
-        handover = None if result.demo else await asyncio.to_thread(handover_check, state, day)
-        return {**result.json(),
-                'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured),
-                'handover': handover,
-                'summary': await asyncio.to_thread(till_summary, state, day, result, totals=totals)}
+            # The daily archive is independent of incoming advance receipts.
+            # The separate registry request fetches transactions / shift details
+            # after the dashboard's primary data has been displayed.
+            result = replace(result, prepayments=None, prepayments_issue=None)
+        return await day_response(state, result)
     except TimeoutError as error:
         log_safe_failure('cashier-route', error, operation='day_report',
                          request_id=request.state.request_id)
@@ -402,6 +381,25 @@ async def day_report(request: Request, date: date | None = None, demo: bool = Fa
         log_safe_failure('cashier-route', error, operation='day_report',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+
+
+async def day_response(state, result):
+    """A coherent, exportable revision shared by the day and lazy registry."""
+    state.cache.put(result)
+    totals = None if result.demo else await load_till_totals(state, result.day)
+    handover = None if result.demo else await asyncio.to_thread(handover_check, state, result.day)
+    return {**result.json(), 'prepayments_deferred': result.prepayments is None,
+            'expense_policy_configured': await asyncio.to_thread(state.expenses.policy_configured),
+            'handover': handover,
+            'summary': await asyncio.to_thread(till_summary, state, result.day, result, totals=totals)}
+
+
+def with_prepayments(snapshot, entries):
+    # Preserve the base and all previous exports when receipts are refreshed.
+    revision = json.dumps([snapshot.id, [entry.json() for entry in entries]],
+                          ensure_ascii=False, sort_keys=True)
+    return replace(snapshot, prepayments=entries, prepayments_issue=None,
+                   id=hashlib.sha256(revision.encode()).hexdigest()[:32])
 
 
 def till_expense_rows(day, gives):
@@ -492,7 +490,8 @@ def group_advances(entries, day=None):
 
 @router.get('/prepayments')
 async def prepayment_registry(request: Request, date: date | None = None,
-                              start: date | None = None, end: date | None = None, demo: bool = False):
+                              start: date | None = None, end: date | None = None, demo: bool = False,
+                              refresh: bool = False):
     """Реестр: «Получено сегодня», «Зачтено сегодня» или все предоплаты за период."""
     state = request.app.state
     registry = state.prepayment_registry
@@ -541,7 +540,7 @@ async def prepayment_registry(request: Request, date: date | None = None,
         snapshot = await load_iiko(state, 'load', day, request=request, allow_stale=True,
                                    ttl=CLOSED_DAY_TTL if day < today else None)
         entries = await load_iiko(state, 'load_prepayments', day, request=request, timeout=35,
-                                  ttl=CLOSED_DAY_TTL if day < today else 30)
+                                  ttl=CLOSED_DAY_TTL if day < today else 30, refresh=refresh)
     except (DataError, TimeoutError) as error:
         log_safe_failure('cashier-route', error, operation='prepayment_registry')
         raise HTTPException(503, 'Не удалось получить предоплаты из iiko. Обновите день.') from None
@@ -569,7 +568,7 @@ async def prepayment_registry(request: Request, date: date | None = None,
     return dict(date=day.isoformat(), received=received_rows, credited=credited_rows,
                 received_total=str(sum((item[3] for item in received), Decimal(0))),
                 credited_total=str(sum((order.amount for order in credited), Decimal(0))),
-                issue=issue)
+                issue=issue, snapshot=await day_response(state, with_prepayments(snapshot, entries)))
 
 
 @router.put('/prepayments/{order_number}')

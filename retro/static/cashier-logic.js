@@ -202,10 +202,10 @@
   /* Первая загрузка дня (T-393): экран собирается из независимых частей.
      Цифра — скелетом, пока не пришла хотя бы одна часть, из которых она
      считается: «К передаче» ждёт и iiko, и расходы, и поступления, и Шоха. */
-  const PARTS=['day','expenses','receipts','shokh','usd','rate','prepay'];
+  const PARTS=['day','expenses','receipts','shokh','usd','rate'];
   const SKELETON={
     revenue:['day'],receipts:['day'],average:['day'],'real-cash':['day'],'payment-total':['day'],
-    'prepay-received':['prepay'],'prepay-credited':['day'],'prepay-total':['prepay'],
+    'prepay-received':['day'],'prepay-credited':['day'],'prepay-total':['prepay'],
     handover:['day','expenses','receipts','shokh','usd','rate'],'demo-cash':['day'],'cash-prepay':['day'],
     'handover-usd':['day','usd','rate'],
     'handover-receipts':['receipts'],'handover-expenses':['expenses','shokh'],

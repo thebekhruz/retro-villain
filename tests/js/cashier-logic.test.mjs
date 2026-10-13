@@ -101,7 +101,9 @@ test('сумма из поля: пробелы и запятая допусти�
 
 test('skeletonMap: a figure stays a skeleton until every part it is computed from has arrived', () => {
   const all = logic.skeletonMap(new Set(logic.PARTS));
-  assert.ok(Object.values(all).every(Boolean));
+  assert.equal(all['prepay-total'],false,'registry is not part of initial page loading');
+  assert.ok(Object.entries(all).filter(([id])=>id!=='prepay-total').every(([,value])=>value));
+  assert.equal(logic.skeletonMap(['prepay'])['prepay-received'],false,'day totals do not wait for registry');
   const none = logic.skeletonMap([]);
   assert.ok(Object.values(none).every(value => value === false));
   // «К передаче» — из iiko, расходов, поступлений и выдач Шоху.
