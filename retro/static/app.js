@@ -1160,7 +1160,7 @@ async function loadDay(options = {}) {
   // «Сегодня» — только когда открыт другой день; «вчера» — это «‹».
   $('today').hidden = day === config.today;
   $('day-next').disabled = day >= config.today;
-  $('day-prev').disabled = day <= '2026-10-02';
+  $('day-prev').disabled = day <= '2026-10-13';
   const mainParts = Promise.allSettled([
     loadPart('expenses', current, loadExpenses(day, current, signal)),
     loadPart('receipts', current, loadReceipts(day, current, signal)),
@@ -1325,7 +1325,7 @@ function stepDay(offset) {
   const current = $('report-date').value;
   if (!current) return;
   const next = offsetDay(current, -offset);
-  if (next < '2026-10-02' || (offset > 0 && config && next > config.today)) return;
+  if (next < '2026-10-13' || (offset > 0 && config && next > config.today)) return;
   $('report-date').value = next;
   load();
 }

@@ -322,17 +322,35 @@ def test_home_lists_shift_staff_of_own_directions_alphabetically_without_money(c
     assert [item['name'] for item in every['employees']] == [
         'Абдуллаев Тимур', 'Алиев Жасур', 'Ёқубов Самандар', 'Каримов Жахонгир', 'Юлдашев Дильшод', 'Юсупов Фаррух']
     first = every['employees'][0]
-    assert set(first) == {'id', 'name', 'role', 'group', 'employment_type', 'photo', 'hikvision',
+    assert set(first) == {'id', 'name', 'role', 'group', 'employment_type', 'work_period', 'photo', 'hikvision',
                           'can_photo', 'can_retry', 'photo_unknown', 'rate'}
     # Ставку бухгалтера менеджер не видит — только что она есть (T-453).
     assert first['rate'] == {'state': 'set', 'proposed': None}
-    assert (first['role'], first['group'], first['employment_type'], first['photo']) == (
-        'бармен', 'Бар', 'shift', None)
+    assert (first['role'], first['group'], first['employment_type'], first['work_period'], first['photo']) == (
+        'бармен', 'Бар', 'shift', None, None)
     assert first['hikvision'] == {'state': 'none', 'employee_no': None, 'message': None,
                                   'face': {'state': 'none', 'message': None}}
     assert (first['can_photo'], first['can_retry']) == (True, False)
     assert [item['name'] for item in home(cabinet, 'boss')['employees']] == [
         item['name'] for item in every['employees']]
+
+
+def test_home_hides_temporaries_whose_period_ended_and_labels_the_rest(cabinet, monkeypatch):
+    """T-434: временный, чей период закончился, менеджеру не нужен; у остальных
+    временных — пометка периода рядом с «временный»."""
+    from datetime import date
+    from retro.modules.manager import routes as manager_routes
+    monkeypatch.setattr(manager_routes, 'today_tashkent', lambda: date(2026, 10, 12))
+    store = roster(cabinet)
+    hall = dict(rate='150000', group_name='Встреча гостей', employment_type='temporary')
+    store.add(name='Карамат', role='хостес', work_from=date(2026, 10, 8), work_to=date(2026, 10, 10), **hall)
+    store.add(name='Гулноза', role='хостес', work_from=date(2026, 10, 8), work_to=date(2026, 10, 12), **hall)
+    store.add(name='Дилноза', role='хостес', work_from=date(2026, 10, 14), **hall)
+    store.add(name='Мадина', role='хостес', **hall)
+    staff(cabinet, 'Сельвина')
+    shown = {item['name']: (item['employment_type'], item['work_period']) for item in home(cabinet)['employees']}
+    assert shown == {'Гулноза': ('temporary', '08.10–12.10'), 'Дилноза': ('temporary', 'с 14.10'),
+                     'Мадина': ('temporary', None), 'Сельвина': ('shift', None)}
 
 
 def test_photo_and_send_rights_follow_directions(cabinet):
@@ -380,11 +398,11 @@ def test_roles_for_the_form_follow_the_managers_directions(cabinet):
 
 
 def test_manager_adds_an_employee_without_a_rate_and_photographs_them(cabinet, terminal):
-    answer = add(cabinet, role='Хостес')
+    answer = add(cabinet, role='Хостес', employment_type='temporary', work_from='2026-10-20')
     assert answer.status_code == 201
     created = answer.json()['employee']
-    assert (created['name'], created['role'], created['group'], created['employment_type']) == (
-        'Каримова Лола', 'Хостес', 'Встреча гостей', 'shift')
+    assert (created['name'], created['role'], created['group'], created['employment_type'], created['work_period']) == (
+        'Каримова Лола', 'Хостес', 'Встреча гостей', 'temporary', 'с 20.10')
     assert (created['photo'], created['can_photo'], created['hikvision']['state']) == (None, True, 'none')
     assert created['rate'] == {'state': 'none', 'proposed': None}
     person = next(item for item in roster(cabinet).list() if item.id == created['id'])

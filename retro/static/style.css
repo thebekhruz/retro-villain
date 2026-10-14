@@ -922,10 +922,6 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
 .top-status.rm-status-skel:empty{display:inline-block;width:132px;height:10px!important;min-height:0!important;padding:0!important;border:0!important;border-radius:6px;vertical-align:middle;align-self:center;
   background:linear-gradient(90deg,var(--rm-skel-a) 25%,var(--rm-skel-b) 40%,var(--rm-skel-a) 60%);background-size:300% 100%;
   animation:rm-shimmer 1.3s ease-in-out infinite}
-/* Кто вошёл (T-446): имя учётной записи рядом с «Выйти». */
-.top-user{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#40584c}
-@media(max-width:650px){.top-user{max-width:96px;font-size:12px}}
-
 
 /* ── Свёрнутое меню слева (T-442, T-449) ───────────────────────────────────
    Круглая стрелка на правом краю меню сворачивает его в полосу значков —
@@ -1003,6 +999,9 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
   .side-user-mark,.side-user-name,.side-logout [data-logout-text]{display:none}
   .side-logout{width:44px;height:44px;padding:0}
 }
+/* Кто вошёл (T-446): имя учётной записи рядом с «Выйти». */
+.top-user{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#40584c}
+@media(max-width:650px){.top-user{max-width:96px;font-size:12px}}
 
 /* ── Векторные иконки (T-448) ─────────────────────────────────────────────
    icons.js заменяет символы-иконки (▤ ◫ ↻ ✎ × ‹ ›…) на SVG одного рисунка:

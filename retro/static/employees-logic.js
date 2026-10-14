@@ -63,6 +63,31 @@
     return GROUPS[normalized] || null;
   }
 
+  /* Должности внутри группы — второй ряд чипов под группами (ТЗ 09.10, Б-06):
+     в «Кухне» — повар миллий, тандыр, турк, холодный цех… Набор не придуман,
+     это должности из реестра как их записали; одна должность — с точностью до
+     регистра, пробелов и «ё». В группе меньше двух должностей — ряда нет:
+     выбирать не из чего. Общая логика «Сотрудников» и «Зарплаты · день». */
+  const roleKey = role => plain(role);
+  function roleLabel(role) {
+    const text = String(role || '').replace(/\s+/g, ' ').trim();
+    return text ? text[0].toUpperCase() + text.slice(1) : '';
+  }
+  function groupRoles(rows, group) {
+    const roles = new Map();
+    (rows || []).forEach(row => {
+      const key = roleKey(row.role);
+      if (row.group !== group || !key) return;
+      const item = roles.get(key) || {key, label: roleLabel(row.role), count: 0};
+      item.count += 1;
+      roles.set(key, item);
+    });
+    const list = [...roles.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+    return list.length > 1 ? list : [];
+  }
+  // Пустой фильтр — все должности.
+  const matchesRole = (filter, role) => !filter || roleKey(role) === filter;
+
   /* Почему сменному не начисляется — всё сразу, а не первое попавшееся:
      «Нет ставки · нет привязки Hikvision». */
   function attentionReasons(row) {
@@ -73,5 +98,34 @@
     return reasons;
   }
 
-  return {parseAmount, formatAmount, latinKey, matchesQuery, groupForRole, attentionReasons};
+  /* Временный сотрудник (T-434): пометка «временный · 08.10–10.10» («с 08.10»,
+     «по 10.10»). Период подписывает сервер (work_period) — одна подпись на
+     всех экранах и в Excel. Сменному — пусто. */
+  function typeTag(row) {
+    if (!row || row.employment_type !== 'temporary') return '';
+    return row.work_period ? 'временный · ' + row.work_period : 'временный';
+  }
+  const dm = day => day.slice(8, 10) + '.' + day.slice(5, 7);
+  /* Период «с — по» из полей даты: обе границы необязательны, «по» не раньше
+     «с». Текст — тот же, что у сервера. */
+  function periodError(from, to) {
+    return from && to && to < from ? 'Период работы: «по» (' + dm(to) + ') раньше, чем «с» (' + dm(from) + ').' : '';
+  }
+  /* Что отправить серверу: у сменного период всегда пустой — переключили
+     временного обратно в сменные, и даты, оставшиеся в полях, не уйдут. */
+  function periodPayload(draft) {
+    const temporary = draft.type === 'temporary';
+    return {employment_type: temporary ? 'temporary' : 'shift',
+      work_from: temporary && draft.from ? draft.from : null, work_to: temporary && draft.to ? draft.to : null};
+  }
+
+  /* Похожий в реестре (ТЗ 09.10, М-04) одной строкой: должность, группа,
+     временный с периодом — чтобы бухгалтер узнала человека, не открывая карточку. */
+  function namesakeLine(person) {
+    const temporary = person.temporary ? 'временный' + (person.work_period ? ' · ' + person.work_period : '') : '';
+    return [roleLabel(person.role), person.group, temporary].filter(Boolean).join(' · ');
+  }
+
+  return {parseAmount, formatAmount, latinKey, matchesQuery, groupForRole, groupRoles, matchesRole, attentionReasons,
+    typeTag, periodError, periodPayload, namesakeLine};
 });
