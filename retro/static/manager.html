@@ -56,13 +56,15 @@
           <span class="mgr-tile-count"><b id="tile-shoot-num" data-i18n="off"></b> <span id="tile-shoot-label">без фото</span></span>
           <span id="tile-shoot-go" class="mgr-tile-go">Снимать по очереди</span>
         </button>
+        <!-- Две малые плитки устроены одинаково: значок, заголовок, подпись. -->
         <button id="tile-add" class="mgr-tile is-add" type="button">
-          <span class="shokh-plus" aria-hidden="true">+</span>
+          <span class="mgr-tile-mark" aria-hidden="true">+</span>
           <span class="mgr-tile-title">Новый сотрудник</span>
           <span class="mgr-tile-sub">Ставку подтвердит бухгалтер</span>
         </button>
         <button id="tile-problem" class="mgr-tile is-alert" type="button" hidden>
-          <span class="mgr-tile-count"><b id="tile-problem-num" data-i18n="off"></b> <span>не на терминале</span></span>
+          <span class="mgr-tile-mark" aria-hidden="true">!</span>
+          <span class="mgr-tile-title"><b id="tile-problem-num" data-i18n="off"></b> <span>не на терминале</span></span>
           <span class="mgr-tile-sub">Показать</span>
         </button>
       </div>
@@ -162,14 +164,15 @@
         <!-- T-453: ставку менеджер только предлагает — подтверждает бухгалтер. -->
         <label class="shokh-field"><span>Ставка за смену, сум</span>
           <input id="f-rate" name="rate" type="text" inputmode="numeric" maxlength="13" autocomplete="off"
-                 placeholder="Необязательно" aria-describedby="f-rate-note">
+                 placeholder="Необязательно" aria-describedby="f-rate-note" data-money-hint="off">
         </label>
         <p id="f-rate-note" class="shokh-note mgr-rate-note">Бухгалтер подтвердит эту ставку или поставит свою.</p>
         <p id="f-rate-error" class="mgr-field-error" role="alert" hidden></p>
 
         <div class="shokh-field"><span id="type-label">Тип</span>
-          <div class="shokh-switch mgr-type" role="group" aria-labelledby="type-label">
-            <button type="button" class="shokh-switch-btn is-on" data-type="shift" aria-pressed="true">Сменный</button><button type="button" class="shokh-switch-btn" data-type="temporary" aria-pressed="false">Временный</button>
+          <!-- Те же чипы, что у должности: выбор одного из двух. -->
+          <div class="mgr-role-chips mgr-type" role="radiogroup" aria-labelledby="type-label">
+            <button type="button" class="mgr-role" data-type="shift" role="radio" aria-checked="true">Сменный</button><button type="button" class="mgr-role" data-type="temporary" role="radio" aria-checked="false">Временный</button>
           </div>
         </div>
         <div id="f-period" class="mgr-period" hidden>
