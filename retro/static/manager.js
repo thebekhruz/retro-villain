@@ -303,6 +303,8 @@ function renderCard() {
   $('card-gallery').disabled = busy || card.can_photo === false;
   $('card-avatar').disabled = busy || card.can_photo === false;
   $('card-close').disabled = busy;
+  $('card-delete').hidden = card.can_photo === false;
+  $('card-delete').disabled = busy;
 }
 
 function openCard(card, {queue = state.queue} = {}) {
@@ -454,7 +456,7 @@ function setType(type) {
     button.classList.toggle('is-on', on);
     button.setAttribute('aria-pressed', String(on));
   });
-  $('f-period').hidden = type !== 'temporary';
+  if ($('f-period')) $('f-period').hidden = type !== 'temporary';
 }
 
 function openForm() {
@@ -493,7 +495,7 @@ function similarRow(match) {
 async function saveEmployee(confirm = false) {
   if (state.saving) return;
   const form = {name: $('f-name').value, role: state.form.role, type: state.form.type,
-    from: $('f-from').value, to: $('f-to').value};
+    from: $('f-from')?.value || '', to: $('f-to')?.value || ''};
   const errors = L().formErrors(form);
   fieldError('f-name-error', errors.name);
   fieldError('f-role-error', errors.role || errors.period);
@@ -531,15 +533,44 @@ async function saveEmployee(confirm = false) {
   }
 }
 
-/* ── Учётная запись ────────────────────────────────────────────────────── */
-function openAccount() {
-  const sheet = $('account-sheet');
+/* ── Удалить сотрудника (T-452) ────────────────────────────────────────── */
+function openSheet(id) {
+  const sheet = $(id);
   if (typeof sheet.showModal === 'function') sheet.showModal(); else sheet.setAttribute('open', '');
 }
-function closeAccount() {
-  const sheet = $('account-sheet');
+function closeSheet(id) {
+  const sheet = $(id);
   if (typeof sheet.close === 'function') sheet.close(); else sheet.removeAttribute('open');
 }
+
+function askDelete() {
+  if (!state.card || photoBusy()) return;
+  $('delete-name').textContent = state.card.name;
+  openSheet('delete-sheet');
+}
+
+/* Удаляем у всех сразу: сервер стирает человека из реестра бухгалтера.
+   Уже удалён (404) — тоже убираем из списка. */
+async function deleteEmployee() {
+  const card = state.card;
+  if (!card) return;
+  try {
+    await api(`/employees/${card.id}`, {method: 'DELETE'});
+  } catch (error) {
+    if (error.status !== 404) { message(error.message, true); return; }
+  }
+  closeSheet('delete-sheet');
+  if (state.home) state.home.employees = state.home.employees.filter(item => item.id !== card.id);
+  state.card = null;
+  state.queue = false;
+  show('home');
+  renderList();
+  done(`Сотрудник удалён: ${card.name}.`);
+}
+
+/* ── Учётная запись ────────────────────────────────────────────────────── */
+const openAccount = () => openSheet('account-sheet');
+const closeAccount = () => closeSheet('account-sheet');
 
 /* ── События ───────────────────────────────────────────────────────────── */
 $('search').addEventListener('input', renderList);
@@ -569,13 +600,18 @@ document.querySelectorAll('.mgr-type [data-type]').forEach(button => {
 });
 $('account-open').addEventListener('click', openAccount);
 $('account-close').addEventListener('click', closeAccount);
+$('card-delete').addEventListener('click', askDelete);
+$('delete-cancel').addEventListener('click', () => closeSheet('delete-sheet'));
+$('delete-confirm').addEventListener('click', () => Busy.button($('delete-confirm'), deleteEmployee(), {done: false}));
 // Нажатие на затемнение вокруг листа закрывает его (по самому листу — нет).
-$('account-sheet').addEventListener('click', event => {
-  if (event.target !== event.currentTarget) return;
-  const box = event.currentTarget.getBoundingClientRect();
-  const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
-  if (!inside) closeAccount();
-});
+for (const id of ['account-sheet', 'delete-sheet']) {
+  $(id).addEventListener('click', event => {
+    if (event.target !== event.currentTarget) return;
+    const box = event.currentTarget.getBoundingClientRect();
+    const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
+    if (!inside) closeSheet(id);
+  });
+}
 
 loadHome();
 
