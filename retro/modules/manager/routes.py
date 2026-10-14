@@ -2,24 +2,27 @@
 
 Менеджер видит сменных сотрудников своих направлений, фотографирует человека,
 и система отправляет в Hikvision его самого (если его там ещё нет) и его
-лицо. С T-450 менеджер и заводит новых людей своих разделов: имя и должность;
-с T-452 — и удаляет их. Ставку менеджер может только предложить (T-453): она
-ждёт бухгалтера, который подтверждает её или ставит свою. Похожие имена в
-реестре показываем, как бухгалтеру: решает человек, карточки сами не
-объединяем. Самих ставок, выплат и денег в ответах нет — только то, что
-менеджер предложил сам: разделы бухгалтера ему закрыты.
+лицо. С T-450 менеджер и заводит новых людей своих разделов: имя, должность,
+сменный или временный; с T-452 — и удаляет их. Ставку менеджер может только
+предложить (T-453): она ждёт бухгалтера, который подтверждает её или ставит
+свою. Похожие имена в реестре показываем, как бухгалтеру: решает человек,
+карточки сами не объединяем. Самих ставок, выплат и денег в ответах нет —
+только то, что менеджер предложил сам: разделы бухгалтера ему закрыты.
 """
 
 import asyncio
+from datetime import date
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
+from retro.modules.accountant import work_period
 from retro.modules.accountant.names import person_name, similar_names
 from retro.modules.accountant.roster import GROUPS, group_for
 from retro.integrations.hikvision import HikvisionError
+from retro.modules.cashier.service import today_tashkent
 from retro.static_assets import VERSIONED_PRIVATE
 
 from .directions import DIRECTIONS, ManagerAccount
@@ -83,6 +86,10 @@ class EmployeeInput(BaseModel):
     name: str
     role: str
     proposed_rate: str | None = None
+    # Временный (T-434): период «с — по», обе границы необязательны.
+    employment_type: str = 'shift'
+    work_from: date | None = None
+    work_to: date | None = None
     # «Это другой человек»: менеджер видел похожих в реестре и подтвердил.
     confirm_new: bool = False
 
@@ -162,7 +169,10 @@ def card_json(row: dict, account: ManagerAccount) -> dict:
     # «Отправить ещё раз» — пока человек или его лицо не дошли до устройства.
     due = hikvision['state'] in ('pending', 'error') or hikvision['face']['state'] in ('pending', 'error')
     return dict(id=row['id'], name=row['name'], role=row['role'], group=row['group'],
-                employment_type=row['employment_type'], photo=photo_json(row), hikvision=hikvision,
+                employment_type=row['employment_type'],
+                # Период временного (T-434): пометка «временный · 08.10–10.10».
+                work_period=work_period.label(row.get('work_from'), row.get('work_to')),
+                photo=photo_json(row), hikvision=hikvision,
                 photo_unknown=bool(row.get('photo_unknown')),
                 rate=rate_json(row),
                 can_photo=allowed, can_retry=allowed and bool(row['photo_updated_at']) and due)
@@ -191,6 +201,11 @@ def _photo_card(request: Request, employee_id: int, account: ManagerAccount) -> 
     if not can_photo(row, account):
         raise HTTPException(403, FOREIGN)
     return row
+
+
+def ended(row: dict) -> bool:
+    """Временный, чей период уже закончился (T-434): в списке менеджера его нет."""
+    return bool(row.get('work_to')) and row['work_to'] < today_tashkent()
 
 
 def capitalized(text: str) -> str:
@@ -239,11 +254,12 @@ def similar_people(request: Request, name: str, account: ManagerAccount) -> list
 @router.get('/home')
 async def home(request: Request):
     """Сменные сотрудники направлений менеджера по алфавиту. Окладники — не
-    здесь: у них нет смен и турникета в этом кабинете."""
+    здесь: у них нет смен и турникета в этом кабинете. Временный, чей период
+    закончился, — тоже не здесь."""
     account = current_account(request)
     cards = await asyncio.to_thread(request.app.state.accountant_roster.manager_cards)
     rows = [row for row in cards
-            if account.sees(row['group'])]
+            if account.sees(row['group']) and not ended(row)]
     rows, photo_message = await request.app.state.manager_device_photos.enrich(
         rows, request.app.state.hikvision_writer)
     rows.sort(key=lambda row: (row['name'].casefold().replace('ё', 'е'), row['id']))
@@ -275,7 +291,8 @@ async def create_employee(request: Request, body: EmployeeInput):
     try:
         employee = await asyncio.to_thread(
             request.app.state.accountant_roster.add, name=body.name, role=body.role, rate=None,
-            group_name=group, by=account.login, cyrillic=True, proposed_rate=body.proposed_rate or None)
+            group_name=group, by=account.login, cyrillic=True, employment_type=body.employment_type,
+            work_from=body.work_from, work_to=body.work_to, proposed_rate=body.proposed_rate or None)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     row = await asyncio.to_thread(_card_or_404, request, employee.id)

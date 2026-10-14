@@ -29,6 +29,7 @@ from retro.modules.cashier.service import TZ, build_snapshot, shift_status, toda
 from retro.modules.cashier.till import (add_usd_deposit, give_shokh, migrate_legacy_usd,
                                          till_totals, usd_day)
 from retro.modules.founder import cabinet
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
 
 POSTGRES_URL = os.getenv('RETRO_TEST_POSTGRES_URL', '')
 DAY = today_tashkent() - timedelta(days=1)
@@ -651,6 +652,8 @@ def test_cashier_export_lists_the_till_give_as_an_expense(c):
 
 # ── Доллары сразу в сейф ─────────────────────────────────────────────────
 
+# Сценарий на неделе до «сегодня»: в первые дни после 13.10 он выпадает в архив.
+@pytest.mark.usefixtures('legacy_boundary')
 def test_usd_deposits_feed_the_accountant_safe(c):
     finance = c.app.state.accountant_finance
     finance.reserve_entry(min(DAY - timedelta(days=1), ACCOUNTING_START), 'usd', 'opening', '3330', 'Пересчёт сейфа')
@@ -682,6 +685,8 @@ def test_usd_without_safe_count_is_unknown_not_zero(c):
     assert data['safe_balance'] is None and data['total'] == '50'
 
 
+# Сценарий на неделе до «сегодня»: в первые дни после 13.10 он выпадает в архив.
+@pytest.mark.usefixtures('legacy_boundary')
 def test_old_daily_usd_sums_become_one_deposit_without_changing_the_safe(make_app):
     app = make_app()
     old_day = (DAY - timedelta(days=5)).isoformat()

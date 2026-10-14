@@ -27,7 +27,13 @@ globalThis.RetroDictionaryUz = {
   'Не удалось проверить сохранённую сумму. Обновите ведомость.': "Saqlangan summani tekshirib bo‘lmadi. Qaydnomani yangilang.",
   // «Зарплата · день» — таблица с галочками
   'Без группы': "Guruhsiz",
+  'Выдано за день': "Kunlik berilgan",
   'Выдано за день · по фильтру': "Kunlik berilgan · filtr bo‘yicha",
+  'Ведомость выплат: сотрудник × день выдачи': "To‘lovlar qaydnomasi: xodim × to‘lov kuni",
+  'Выдано за смену': "Smena uchun berilgan",
+  'Выдано за смену · по фильтру': "Smena uchun berilgan · filtr bo‘yicha",
+  'Ведомость сменных: сотрудник × день смены': "Smenali xodimlar qaydnomasi: xodim × smena kuni",
+  'Выберите завершённую смену: выплата записывается следующим днём.': "Tugagan smenani tanlang: to‘lov keyingi kunga yoziladi.",
   'Никого не нашли. Сбросьте поиск или выберите «Все».': "Hech kim topilmadi. Qidiruvni tozalang yoki «Hammasi»ni tanlang.",
   'выдано по ставке': "stavka bo‘yicha berilgan",
   'другая сумма': "boshqa summa",
@@ -1340,7 +1346,23 @@ globalThis.RetroTemplatesUz = [
   [/^Ручной ввод выплат с (.+)\. В столбце указана дата выплаты за предыдущую смену\. Прежние общие выплаты без сотрудника сохранены в «Финансах дня»\.$/, "$1 sanasidan to‘lovlar qo‘lda kiritiladi. Ustunda oldingi smena uchun to‘lov sanasi ko‘rsatilgan. Xodimi ko‘rsatilmagan avvalgi umumiy to‘lovlar «Kun moliyasi»da saqlangan."],
   [/^Ручная ведомость · (.+)$/, "Qo‘lda to‘ldiriladigan qaydnoma · $1"],
   [/^Выдано (\d\d\.\d\d)$/, "$1 kuni berilgan"],
+  [/^за смену (\d\d\.\d\d)$/, "$1 smenasi uchun"],
+  [/^Выплата (\d\d\.\d\d) · за смену ([\d., ]+)$/, "$1 to‘lovi · $2 smenasi uchun"],
+  [/^(.+) · Выплата (\d\d\.\d\d) · за смену ([\d., ]+) · (выдано (.+) сум|не выдано)( · .+)?$/,
+    (_, name, paid, work, state, amount) => `${name} · ${paid} to‘lovi · ${work} smenasi uchun · `
+      + (amount ? `${amount} so‘m berildi` : 'berilmagan')],
+  [/^Ставка за смену: (.+) сум$/, "Smena stavkasi: $1 so‘m"],
+  [/^В столбце — дата выдачи денег\. Под ней — дата предыдущей смены\. Расход в «Финансах дня» — в день выдачи\. Учёт выплат с 13 октября 2026 г\. Смены с (.+)\.$/,
+    "Ustunda — pul berilgan sana. Uning ostida — oldingi smena sanasi. «Kun moliyasi»dagi xarajat pul berilgan kunga yoziladi. To‘lovlar hisobi 2026-yil 13-oktabrdan. Smenalar $1 sanasidan."],
   [/^За смену (\d\d\.\d\d)$/, "$1 smenasi uchun"],
+  [/^Обычная выплата (\d\d\.\d\d)$/, "Odatiy to‘lov $1"],
+  [/^выплата (\d\d\.\d\d)$/, "to‘lov $1"],
+  [/^Смена (\d\d\.\d\d) · выплата ([\d., ]+)$/, "Smena $1 · to‘lov $2"],
+  [/^(.+) · Смена (\d\d\.\d\d) · выплата ([\d., ]+) · (выдано (.+) сум|не выдано)( · .+)?$/,
+    (_, name, work, paid, state, amount) => `${name} · Smena ${work} · to‘lov ${paid} · `
+      + (amount ? `${amount} so‘m berildi` : 'berilmagan')],
+  [/^В столбце — дата смены\. Обычная выплата и расход в «Финансах дня» — на следующий день\. Ручной ввод выплат с (.+)\.$/,
+    "Ustunda — smena sanasi. Odatiy to‘lov va «Kun moliyasi»dagi xarajat keyingi kunga yoziladi. To‘lovlar $1 sanasidan qo‘lda kiritiladi."],
   [/^за (\d\d\.\d\d)$/, "$1 uchun"],
   [/^(.+) · выплата (\d\d\.\d\d) за смену (\d\d\.\d\d) · (выдано (.+) сум|не выдано)( · .+)?$/, "$1 · $2 to‘lovi, $3 smenasi uchun"],
   [/^(.+) · выплата (\d\d\.\d\d)(, сум)?$/, "$1 · $2 to‘lovi$3"],
@@ -1787,6 +1809,7 @@ globalThis.RetroTemplatesUz.push(
   [/^Удалить поступление «(.+)»$/, "«$1» tushumini o'chirish"],
   [/^Неизвестная должность в реестре: (.+)$/, "Reyestrda noma'lum lavozim: $1"],
   [/^Для переноса остатка загрузите данные кассира за (.+)$/, "Qoldiqni o'tkazish uchun $1 kassir ma'lumotlarini yuklang"],
+  [/^Нет суммы от кассира за (\d\d\.\d\d) \(касса за (\d\d\.\d\d)\)\. Впишите её в «Финансах дня» за (\d\d\.\d\d) и повторите\.$/, "$1 uchun kassirdan summa yo'q ($2 kassasi). Uni «Kunlik moliya»da $3 kuniga yozing va qayta urinib ko'ring."],
   [/^Слишком длинное значение: (.+)$/, "Qiymat juda uzun: $1"],
 );
 
@@ -2914,11 +2937,9 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'ДЭШБОРД БУХГАЛТЕРА': "BUXGALTER PANELI",
   'Касса сегодня': "Bugungi kassa",
   'Получено от кассира · подтвердите': "Kassirdan olindi · tasdiqlang",
-  'Прогноз расхода на сегодня': "Bugungi xarajat prognozi",
   'Счёт Шохруха': "Shohrux hisobi",
   'на руках у Шоха →': "Shohning qo'lida →",
   'Отчёт за день не сдан': "Kunlik hisobot topshirilmagan",
-  'вчерашних данных нет': "kechagi ma'lumot yo'q",
   '− Зарплаты · сменные и оклады': "− Ish haqi · smenaliklar va oyliklar",
   '− Выдано Шоху': "− Shohga berildi",
   '− Прочие расходы и сейф': "− Boshqa xarajatlar va seyf",
@@ -2926,11 +2947,22 @@ Object.assign(globalThis.RetroDictionaryUz, {
   '− Оклады': "− Oyliklar",
   '− Шоху на закуп': "− Shohga xarid uchun",
   '− В сейф': "− Seyfga",
-  '+ От кассира · подтверждено': "+ Kassirdan · tasdiqlangan",
-  '+ От кассира · записал бухгалтер': "+ Kassirdan · buxgalter yozgan",
-  '+ От кассира · не подтверждено · в остаток не вошло': "+ Kassirdan · tasdiqlanmagan · qoldiqqa kirmagan",
-  '+ От кассира · передачи нет': "+ Kassirdan · topshirilmagan",
-  '= На начало дня': "= Kun boshida",
+  // Дэшборд: подписи и формула кассы, дивиденды своими строками (ТЗ 09.10, Б-08, Б-09)
+  '= Остаток на начало дня': "= Kun boshidagi qoldiq",
+  '= Остаток на конец дня': "= Kun oxiridagi qoldiq",
+  'Подтверждено бухгалтером': "Buxgalter tasdiqlagan",
+  'Записано бухгалтером': "Buxgalter yozgan",
+  'ожидается': "kutilmoqda",
+  'ожидается · не в остатке': "kutilmoqda · qoldiqqa kirmagan",
+  '− Дивиденды · из кассы': "− Dividendlar · kassadan",
+  '− Дивиденды · в сейф': "− Dividendlar · seyfga",
+  '✓ Сумма от кассира подтверждена': "✓ Kassirdan summa tasdiqlandi",
+  'Остаток на начало + подтверждённые поступления − фактические списания': "Boshlang'ich qoldiq + tasdiqlangan kirimlar − haqiqiy chiqimlar",
+  'Отложить дивиденды в сейф': "Dividendlarni seyfga ajratish",
+  'Выдать дивиденды из сейфа': "Seyfdan dividend berish",
+  'Выдать дивиденды из кассы': "Kassadan dividend berish",
+  'Выдано из кассы': "Kassadan berildi",
+  'Доп. зарплата и временный персонал': "Qo'shimcha ish haqi va vaqtinchalik xodimlar",
   'Сверка за месяц по дням · Excel ↓': "Oy bo'yicha kunlik solishtirish · Excel ↓",
   'Вчера остаток не посчитан.': "Kecha qoldiq hisoblanmadi.",
   'Кассир ещё не передал кассу. Впишите, сколько получено, и подтвердите.': "Kassir hali kassani topshirmadi. Qancha olinganini yozing va tasdiqlang.",
@@ -3037,19 +3069,23 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 globalThis.RetroTemplatesUz.push(
   [/^Касса на конец (.+)$/, "$1 oxiridagi kassa"],
-  [/^\+ От кассира · касса (\d\d\.\d\d) · ожидается, не в остатке$/, "+ Kassirdan · $1 kassasi · kutilmoqda, qoldiqqa kirmagan"],
-  [/^\+ От кассира · касса (\d\d\.\d\d) · ожидается$/, "+ Kassirdan · $1 kassasi · kutilmoqda"],
-  [/^\+ От кассира · касса (\d\d\.\d\d) · получено (\d\d:\d\d)$/, "+ Kassirdan · $1 kassasi · olindi $2"],
-  [/^\+ От кассира · касса (\d\d\.\d\d) · записано$/, "+ Kassirdan · $1 kassasi · yozilgan"],
-  [/^как вчера, (\d\d\.\d\d) · уже ушло (.+)$/, "kechagidek, $1 · allaqachon ketdi: $2"],
+  [/^\+ Касса за (\d\d\.\d\d)$/, "+ $1 kassasi"],
+  [/^\+ Касса за (\d\d\.\d\d) · подтверждено$/, "+ $1 kassasi · tasdiqlangan"],
+  [/^\+ Касса за (\d\d\.\d\d) · записал бухгалтер$/, "+ $1 kassasi · buxgalter yozgan"],
+  [/^\+ Касса за (\d\d\.\d\d) · не подтверждено · в остаток не вошло$/, "+ $1 kassasi · tasdiqlanmagan · qoldiqqa kirmagan"],
+  [/^\+ Касса за (\d\d\.\d\d) · передачи нет$/, "+ $1 kassasi · topshirilmagan"],
+  [/^Подтверждено бухгалтером (\d\d\.\d\d)\s+в\s+(\d\d:\d\d)$/, "Buxgalter $1 kuni soat $2 da tasdiqlagan"],
+  [/^Записано бухгалтером (\d\d\.\d\d)\s+в\s+(\d\d:\d\d)$/, "Buxgalter $1 kuni soat $2 da yozgan"],
+  [/^Остаток на начало (\d\d\.\d\d)$/, "$1 boshidagi qoldiq"],
+  [/^= Остаток на конец (\d\d\.\d\d)$/, "= $1 oxiridagi qoldiq"],
   [/^Кассир передал (.+) сум\. Пересчитайте и подтвердите — до этого сумма не в остатке\.$/, "Kassir $1 so'm topshirdi. Sanab, tasdiqlang — shungacha summa qoldiqqa kirmaydi."],
   [/^По отчёту iiko (.+) сум\. Пересчитайте и подтвердите — до этого сумма не в остатке\.$/, "iiko hisoboti bo'yicha $1 so'm. Sanab, tasdiqlang — shungacha summa qoldiqqa kirmaydi."],
-  [/^✓ Сумма от кассира подтверждена · (\d\d:\d\d)$/, "✓ Kassirdan summa tasdiqlandi · $1"],
   [/^Из дня (.+) — конец вчерашнего дня:$/, "$1 kunidan — kechagi kun oxiri:"],
-  [/^Начало (\d\d\.\d\d)$/, "$1 boshida"],
+  [/^Из дня (.+) — конец предыдущего дня:$/, "$1 kunidan — oldingi kun oxiri:"],
   [/^Передача кассира за (\d\d\.\d\d) — (.+) сум — не подтверждена и в остаток не вошла\.$/, "$1 kassir topshirig'i — $2 so'm — tasdiqlanmagan va qoldiqqa kirmagan."],
   [/^Открыть (\d\d\.\d\d) →$/, "$1 ni ochish →"],
   [/^= Конец (\d\d\.\d\d) → начало сегодня$/, "= $1 oxiri → bugun boshida"],
+  [/^= Конец (\d\d\.\d\d) → начало (\d\d\.\d\d)$/, "= $1 oxiri → $2 boshida"],
   [/^Остаток на конец закрытого месяца \((.+)\) — перенесён на 1-е число$/, "Yopilgan oy oxiridagi qoldiq ($1) — 1-sanaga o'tkazildi"],
   [/^Начальный остаток бухгалтера на (.+)$/, "Buxgalterning boshlang'ich qoldig'i: $1"],
   [/^Вчера остаток не посчитан: нет передачи кассы за (\d\d\.\d\d)\.$/, "Kecha qoldiq hisoblanmadi: $1 kassa topshirilmagan."],
@@ -3154,6 +3190,96 @@ globalThis.RetroTemplatesUz.push(
 );
 /* ── /T-405 ── */
 
+/* ── T-429 «Зарплата · день»: посещаемость смены в клетке, должности в группе ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Все должности': 'Barcha lavozimlar',
+  'Должности': 'Lavozimlar',
+  // Должности кухни в реестре пишут с заглавной — так их видит и чип группы.
+  'Повар': 'Oshpaz',
+  'Кондитер': 'Qandolatchi',
+  'Повар миллий': 'Milliy oshpaz',
+  'Повар горячего цеха': 'Issiq sex oshpazi',
+  'Повар холодного цеха': 'Sovuq sex oshpazi',
+  'тандыр': 'tandir',
+  'турк': 'turk',
+  'мангал': 'mangal',
+});
+globalThis.RetroTemplatesUz.push(
+  // Невыданная клетка: «нет» — не пришёл, «был» — отмечен вручную. Шаблоном, а не
+  // словом словаря: короткое слово не должно переводиться внутри других строк.
+  [/^нет$/, "yo'q"],
+  [/^был$/, 'keldi'],
+  // Подсказка клетки: «Смена 08.10: пришёл 09:31, вовремя · выдано 360 000 сум».
+  [/^Смена (\d\d\.\d\d): (пришёл (\d\d:\d\d), (вовремя|опоздал)|не пришёл|не был, отмечено вручную|был, отмечено вручную|нет привязки к Hikvision|нет данных Hikvision)(?: · выдано (.+) сум)?$/,
+    (all, day, state, time, when, amount) => day + ' smenasi: ' + (time
+      ? time + ' da keldi, ' + (when === 'вовремя' ? "o'z vaqtida" : 'kechikdi')
+      : {'не пришёл': 'kelmadi', 'не был, отмечено вручную': "kelmagan, qo'lda belgilangan",
+        'был, отмечено вручную': "kelgan, qo'lda belgilangan",
+        'нет привязки к Hikvision': "Hikvision'ga bog'lanmagan",
+        'нет данных Hikvision': "Hikvision ma'lumotlari yo'q"}[state])
+      + (amount ? ' · ' + amount + " so'm berildi" : '')],
+);
+/* ── /T-429 ── */
+/* ── T-430 «Зарплата · день»: доп. выплаты и «Скачать Excel» ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'СМЕННЫЕ И ВРЕМЕННЫЕ · РАЗОВАЯ ВЫПЛАТА': "SMENALI VA VAQTINCHALIK XODIMLAR · BIR MARTALIK TO'LOV",
+  'Доп. выплаты': "Qo'shimcha to'lovlar",
+  'Кому · имя или должность': "Kimga · ism yoki lavozim",
+  'Кому выдаём доп. выплату': "Qo'shimcha to'lov kimga beriladi",
+  'Выплата': "To'lov",
+  'Назначение: за что': "Maqsadi: nima uchun",
+  'Назначение выплаты': "To'lov maqsadi",
+  'Разовая выплата сверх клетки: уйдёт расходом в день выплаты и войдёт в итоги ведомости.': "Katakdan tashqari bir martalik to'lov: to'lov kunida xarajat bo'lib yoziladi va qaydnoma jamiga kiradi.",
+  'Сохранить изменения': "O'zgarishlarni saqlash",
+  'Отменить правку': "Tahrirni bekor qilish",
+  'Удалить доп. выплату': "Qo'shimcha to'lovni o'chirish",
+  'По фильтру доп. выплат нет.': "Filtr bo'yicha qo'shimcha to'lovlar yo'q.",
+  'В этом месяце доп. выплат нет.': "Bu oyda qo'shimcha to'lovlar yo'q.",
+  'временный': "vaqtinchalik",
+  'смена': "smena",
+  'Скачана выборка ведомости.': "Qaydnomadan tanlanganlar yuklab olindi.",
+  'Выберите сотрудника из списка.': "Ro'yxatdan xodimni tanlang.",
+  'Укажите дату выплаты.': "To'lov sanasini kiriting.",
+  'Укажите дату смены.': "Smena sanasini kiriting.",
+  'Доп. выплаты вводятся с 13.10.2026 — с начала рабочего учёта.': "Qo'shimcha to'lovlar 13.10.2026 dan — ish hisobi boshlanganidan kiritiladi.",
+  'Нельзя записать выплату будущим днём.': "To'lovni kelgusi kun bilan yozib bo'lmaydi.",
+  'Смена не может быть позже дня выплаты.': "Smena to'lov kunidan keyin bo'lishi mumkin emas.",
+  'Смена — не раньше 12.10.2026: с неё начинается ручная ведомость.': "Smena — 12.10.2026 dan oldin emas: qo'lda yuritiladigan qaydnoma shundan boshlanadi.",
+  'Введите сумму цифрами, больше нуля.': "Summani raqamlar bilan, noldan katta kiriting.",
+  'Укажите назначение: за что выплата.': "Maqsadini kiriting: to'lov nima uchun.",
+  'Укажите назначение выплаты (до 160 символов).': "To'lov maqsadini kiriting (160 belgigacha).",
+  'Сотрудник не найден или находится в архиве.': "Xodim topilmadi yoki arxivda.",
+  'Сумма уже изменилась. Обновите страницу и повторите.': "Summa allaqachon o'zgargan. Sahifani yangilang va qaytaring.",
+  'Доп. выплата не найдена.': "Qo'shimcha to'lov topilmadi.",
+  'Это доп. выплата сотруднику: измените или удалите её в «Зарплата · день».': "Bu xodimga qo'shimcha to'lov: uni «Ish haqi · kun» bo'limida o'zgartiring yoki o'chiring.",
+  'Доп. выплату записывают в «Зарплата · день»: с сотрудником и датой смены.': "Qo'shimcha to'lov «Ish haqi · kun» bo'limida yoziladi: xodim va smena sanasi bilan.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Доп\. выплаты за смены · (.+)$/, "Smenalar uchun qo‘shimcha to‘lovlar · $1"],
+  [/^Доп\. выплаты за (.+)$/, "Qo'shimcha to'lovlar · $1"],
+  [/^Доп\. выплаты · (\d+) чел\.$/, "Qo'shimcha to'lovlar · $1 kishi"],
+  [/^по фильтру · (\d+) · (.+) сум$/, "filtr bo'yicha · $1 · $2 so'm"],
+  [/^выплата (\d\d\.\d\d) · смена (\d\d\.\d\d)( · .*)?$/, "to'lov $1 · smena $2$3"],
+  [/^(.+) · ставка (.+)\. В клетке (\d\d\.\d\d) выплаты нет\.$/, "$1 · stavka $2. $3 katagida to'lov yo'q."],
+  [/^(.+)\. В клетке (\d\d\.\d\d) выплаты нет\.$/, "$1. $2 katagida to'lov yo'q."],
+  [/^У сотрудника «(.+)» уже отмечена выплата в клетке: (.+)\. Доп\. выплата — отдельные деньги сверх клетки; если это та же выдача, второй раз её не записывайте\.$/,
+    // Внутри списка клеток — «09.10 — 360 000 сум (смена 08.10)»: сумма и смена тоже по-узбекски.
+    (_, name, cells) => `«${name}» xodimining katagida to'lov allaqachon belgilangan: `
+      + cells.replace(/ сум \(смена /g, " so'm (smena ") + ". Qo'shimcha to'lov — katakdan tashqari alohida pul; "
+      + "agar bu o'sha to'lov bo'lsa, uni ikkinchi marta yozmang."],
+  [/^Такая доп\. выплата уже записана: (.+) сум, выплата (\d\d\.\d\d) за смену (\d\d\.\d\d)\.$/,
+    "Bunday qo'shimcha to'lov allaqachon yozilgan: $1 so'm, $3 smenasi uchun $2 to'lov."],
+  [/^Правка: (.+) · выплата (\d\d\.\d\d)\. Сотрудника и день выплаты не изменить — удалите запись и запишите заново\.$/,
+    "Tahrir: $1 · to'lov $2. Xodim va to'lov kunini o'zgartirib bo'lmaydi — yozuvni o'chiring va qaytadan yozing."],
+  [/^Записано: (.+), (.+) сум\. Выплата попала в «Операции за день» за (\d\d\.\d\d) и уменьшила кассу\.$/,
+    "Yozildi: $1, $2 so'm. To'lov $3 «Kun amallari»ga tushdi va kassani kamaytirdi."],
+  [/^Изменено: (.+), (.+) сум\.$/, "O'zgartirildi: $1, $2 so'm."],
+  [/^Доп\. выплата удалена\. Деньги вернулись в кассу (\d\d\.\d\d)\.$/, "Qo'shimcha to'lov o'chirildi. Pul $1 kassasiga qaytdi."],
+  [/^Удалить доп\. выплату (.+) · (.+) сум за (\d\d\.\d\d)\?$/, "$1 · $2 so'mlik $3 qo'shimcha to'lovini o'chirasizmi?"],
+  [/^Изменить доп\. выплату (.+) · (.+) сум$/, "$1 · $2 so'mlik qo'shimcha to'lovni o'zgartirish"],
+  [/^Доп\. выплата (.+) сум — в списке под таблицей$/, "Qo'shimcha to'lov $1 so'm — jadval ostidagi ro'yxatda"],
+);
+/* ── /T-430 ── */
 /* ── T-432 Кабинет менеджера: регистрация сотрудника и Hikvision ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Менеджер · Retro Milliy': "Menejer · Retro Milliy",
@@ -3357,6 +3483,118 @@ globalThis.RetroTemplatesUz.push(
 );
 /* ── /T-433 ── */
 
+/* ── T-434 Временные сотрудники: тип, период работы, отказы вне периода ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Тип сотрудника': "Xodim turi",
+  'Период работы (необязательно)': "Ish davri (majburiy emas)",
+  'Вне этих дней человека не будет в ведомости, и выплату ему не записать.':
+    "Bu kunlardan tashqarida odam qaydnomada bo'lmaydi va unga to'lov yozib bo'lmaydi.",
+  'Вне периода': "Davrdan tashqarida",
+  'Временные вне периода': "Davrdan tashqaridagi vaqtinchalik xodimlar",
+  'Вне периода работы: в этот день его нет ни в списке, ни в ведомости.':
+    "Ish davridan tashqarida: bu kunda u na ro'yxatda, na qaydnomada yo'q.",
+  'Тип: сменный → временный': "Turi: smenali → vaqtinchalik",
+  'Тип: временный → сменный': "Turi: vaqtinchalik → smenali",
+  // Ответы сервера
+  'Тип сотрудника — сменный или временный.': "Xodim turi — smenali yoki vaqtinchalik.",
+  'Период работы указывают только у временного сотрудника.': "Ish davri faqat vaqtinchalik xodimga ko'rsatiladi.",
+  'Дата периода — в виде ГГГГ-ММ-ДД.': "Davr sanasi — YYYY-OO-KK ko'rinishida.",
+});
+(() => {
+  // Период — «с 08.10 по 10.10», «только 08.10», «с 08.10», «по 10.10»; в пометке — «08.10–10.10».
+  const span = text => text
+    .replace(/^с (\d\d\.\d\d) по (\d\d\.\d\d)$/, '$1 dan $2 gacha').replace(/^только (\d\d\.\d\d)$/, 'faqat $1')
+    .replace(/^с (\d\d\.\d\d)$/, '$1 dan').replace(/^по (\d\d\.\d\d)$/, '$1 gacha');
+  const ACTIONS = [
+    [/^выплату за смену (\d\d\.\d\d) записать нельзя\.$/, "$1 smenasi uchun to'lovni yozib bo'lmaydi."],
+    [/^доп\. выплату за смену (\d\d\.\d\d) записать нельзя\.$/, "$1 smenasi uchun qo'shimcha to'lovni yozib bo'lmaydi."],
+    [/^смену (\d\d\.\d\d) отметить нельзя\.$/, "$1 smenasini belgilab bo'lmaydi."],
+    [/^исключение за смену (\d\d\.\d\d) дать нельзя\.$/, "$1 smenasi uchun istisno berib bo'lmaydi."],
+    [/^смену (\d\d\.\d\d) начислить нельзя\.( Обновите смену и подтвердите снова\.)?$/,
+      (_, day, again) => day + " smenasini hisoblab bo'lmaydi." + (again ? ' Smenani yangilang va qayta tasdiqlang.' : '')],
+  ];
+  const action = text => {
+    for (const [pattern, uz] of ACTIONS) if (pattern.test(text)) return text.replace(pattern, uz);
+    return text;
+  };
+  // Что мешает сократить период — по частям через «; ».
+  const PARTS = [
+    [/^начисления или выплаты за смены (.+)$/, "$1 smenalari uchun hisoblash yoki to'lovlar"],
+    [/^доп\. выплаты за смены (.+)$/, "$1 smenalari uchun qo'shimcha to'lovlar"],
+    [/^отметки «был \/ не был» за (.+)$/, "$1 uchun «keldi / kelmadi» belgilari"],
+    [/^исключение за (.+)$/, '$1 uchun istisno'],
+  ];
+  const part = text => {
+    const days = text.replace(/ и ещё (\d+)$/, ' va yana $1');
+    for (const [pattern, uz] of PARTS) if (pattern.test(days)) return days.replace(pattern, uz);
+    return days;
+  };
+  const tag = text => text === '—' ? '—' : span(text);
+  globalThis.RetroTemplatesUz.push(
+    // Пометка рядом с именем и подсказка запертой клетки «Зарплаты · день».
+    [/^временный · (с \d\d\.\d\d|по \d\d\.\d\d|\d\d\.\d\d–\d\d\.\d\d|\d\d\.\d\d)$/, (_, period) => 'vaqtinchalik · ' + span(period)],
+    [/^Временный · (с \d\d\.\d\d|по \d\d\.\d\d|\d\d\.\d\d–\d\d\.\d\d|\d\d\.\d\d)$/, (_, period) => 'Vaqtinchalik · ' + span(period)],
+    // Период отдельным узлом рядом с «временный» (строка ведомости).
+    [/^(с \d\d\.\d\d|по \d\d\.\d\d)$/, (_, period) => span(period)],
+    [/^Работает (\d\d\.\d\d)–(\d\d\.\d\d)$/, '$1–$2 ishlaydi'],
+    [/^Работает (с \d\d\.\d\d|по \d\d\.\d\d)$/, (_, period) => span(period) + ' ishlaydi'],
+    [/^Работает (\d\d\.\d\d)$/, 'Faqat $1 ishlaydi'],
+    // История: «Период: — → 08.10–10.10».
+    [/^Период: (.+) → (.+)$/, (_, before, after) => 'Davr: ' + tag(before) + ' → ' + tag(after)],
+    // «Карамат работает с 08.10 по 10.10 — смену 12.10 отметить нельзя.»
+    [/^(.+) работает (с \d\d\.\d\d по \d\d\.\d\d|только \d\d\.\d\d|с \d\d\.\d\d|по \d\d\.\d\d) — (.+)$/,
+      (_, name, period, rest) => name + ' ' + span(period) + ' ishlaydi — ' + action(rest)],
+    [/^Период работы: «по» \((\d\d\.\d\d)\) раньше, чем «с» \((\d\d\.\d\d)\)\.$/,
+      'Ish davri: tugash sanasi ($1) boshlanish sanasi ($2) dan oldin.'],
+    [/^Период не изменить: вне новых дат уже есть (.+)\. Сначала уберите их или выберите другие даты\.$/,
+      (_, list) => "Davrni o'zgartirib bo'lmaydi: yangi sanalardan tashqarida allaqachon "
+        + list.split('; ').map(part).join('; ') + " bor. Avval ularni olib tashlang yoki boshqa sanalarni tanlang."],
+  );
+})();
+/* ── /T-434 ── */
+
+/* ── Тёзки при добавлении сотрудника (ТЗ 09.10, М-04) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Похожие уже есть в реестре': "Reyestrda o'xshashlari bor",
+  'Проверьте, не тот же ли это человек: второй карточкой задвоятся смены и выплаты.':
+    "Bu o'sha odam emasligini tekshiring: ikkinchi karta smenalar va to'lovlarni ikki marta hisoblaydi.",
+  'Это он': "Bu o'sha",
+  'Это другой человек — добавить': "Bu boshqa odam — qo'shish",
+  'Похожие уже есть в реестре. Это тот же человек?': "Reyestrda o'xshashlari bor. Bu o'sha odammi?",
+});
+/* ── /Тёзки ── */
+
+/* ── T-442: редизайн кассира ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'К передаче бухгалтеру': "Buxgalterga topshiriladi",
+  'Средний счёт': "O'rtacha hisob",
+  'Расходы из кассы': "Kassadan xarajatlar",
+  'Поступления в кассу': "Kassaga kirimlar",
+  '+ Предоплаты наличными': "+ Naqd oldindan to'lovlar",
+  'Доллары в сейф': "Seyfga dollar",
+  'Курс Retro': "Retro kursi",
+  'В сейфе': "Seyfda",
+  'Свернуть меню': "Menyuni yig'ish",
+  'Развернуть меню': "Menyuni ochish",
+  'Без имени': "Ismsiz",
+  'Кто внёс — не указано': "Kim kiritgani ko'rsatilmagan",
+  'Сумма по кассам сходится с итогом iiko': "Kassalar bo'yicha summa iiko jami bilan mos",
+  'Сумма по кассам не сходится с итогом iiko': "Kassalar bo'yicha summa iiko jami bilan mos emas",
+  'Наличные: расходы и поступления': "Naqd pul: xarajatlar va kirimlar",
+  'курс Retro на 1,5% ниже': "Retro kursi 1,5% past",
+  'Выдать на закуп': "Xarid uchun berish",
+  'у Шоха': "Shohda",
+  '− На закуп': "− Xarid uchun",
+  'Сумма на закуп, сум': "Xarid uchun summa, so'm",
+  'авто': "avto",
+  'Сохранить сумму': "Summani saqlash",
+  'Сумма сохранена': "Summa saqlandi",
+  'Укажите сумму на закуп.': "Xarid uchun summani kiriting.",
+  'Укажите сумму: 0 или больше.': "Summani kiriting: 0 yoki undan ko'p.",
+  'Выдано на закуп': "Xarid uchun berildi",
+});
+/* ── /T-442 ── */
+
 /* ── T-445: «Пользователи» ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   "Перенесено в базу": "Bazaga ko‘chirildi",
@@ -3416,37 +3654,6 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "как показывать в панели, например, Карина": "panelda qanday ko‘rsatish, masalan, Karina",
   "Имя — до 80 знаков, без служебных символов.": "Ism — 80 belgigacha, xizmat belgilarisiz.",
 });
-
-/* ── T-442: редизайн кассира ── */
-Object.assign(globalThis.RetroDictionaryUz, {
-  'К передаче бухгалтеру': "Buxgalterga topshiriladi",
-  'Средний счёт': "O'rtacha hisob",
-  'Расходы из кассы': "Kassadan xarajatlar",
-  'Поступления в кассу': "Kassaga kirimlar",
-  '+ Предоплаты наличными': "+ Naqd oldindan to'lovlar",
-  'Доллары в сейф': "Seyfga dollar",
-  'Курс Retro': "Retro kursi",
-  'В сейфе': "Seyfda",
-  'Свернуть меню': "Menyuni yig'ish",
-  'Развернуть меню': "Menyuni ochish",
-  'Без имени': "Ismsiz",
-  'Кто внёс — не указано': "Kim kiritgani ko'rsatilmagan",
-  'Сумма по кассам сходится с итогом iiko': "Kassalar bo'yicha summa iiko jami bilan mos",
-  'Сумма по кассам не сходится с итогом iiko': "Kassalar bo'yicha summa iiko jami bilan mos emas",
-  'Наличные: расходы и поступления': "Naqd pul: xarajatlar va kirimlar",
-  'курс Retro на 1,5% ниже': "Retro kursi 1,5% past",
-  'Выдать на закуп': "Xarid uchun berish",
-  'у Шоха': "Shohda",
-  '− На закуп': "− Xarid uchun",
-  'Сумма на закуп, сум': "Xarid uchun summa, so'm",
-  'авто': "avto",
-  'Сохранить сумму': "Summani saqlash",
-  'Сумма сохранена': "Summa saqlandi",
-  'Укажите сумму на закуп.': "Xarid uchun summani kiriting.",
-  'Укажите сумму: 0 или больше.': "Summani kiriting: 0 yoki undan ko'p.",
-  'Выдано на закуп': "Xarid uchun berildi",
-});
-/* ── /T-442 ── */
 
 /* ── T-447: шапка кассира ── */
 Object.assign(globalThis.RetroDictionaryUz, {

@@ -72,6 +72,13 @@ test('инициалы для строки без фото', () => {
   assert.equal(logic.initials(''), '·');
 });
 
+test('T-434: временный — с периодом рядом с пометкой, сменный — без пометки', () => {
+  assert.equal(logic.typeTag(card({employment_type: 'temporary', work_period: '08.10–10.10'})), 'временный · 08.10–10.10');
+  assert.equal(logic.typeTag(card({employment_type: 'temporary', work_period: 'по 10.10'})), 'временный · по 10.10');
+  assert.equal(logic.typeTag(card({employment_type: 'temporary', work_period: null})), 'временный');
+  assert.equal(logic.typeTag(card({employment_type: 'shift'})), '');
+});
+
 test('device photos count as ready; an unreachable terminal is not proof of no photo', () => {
   const remote = card({id: 1, photo: {...photo, source: 'hikvision'},
     hikvision: {state: 'sent', face: {state: 'sent'}}});

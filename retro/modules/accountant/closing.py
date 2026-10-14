@@ -17,7 +17,7 @@ from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 
-from retro.accounting_period import accounting_range_start, period_start
+from retro.accounting_period import accounting_range_start, period_start, salary_period_start
 from retro.request_reads import call as cached_call
 
 from .audit import record_audit
@@ -178,7 +178,7 @@ def _debts_at(connection, last: date) -> dict:
     shifts = []
     for accrual_id, work_day, name, amount in connection.execute(
             'SELECT id, work_day, employee_name, amount FROM accountant_accruals WHERE work_day >= ? AND work_day <= ? '
-            'ORDER BY work_day, employee_name', (period_start(last).isoformat(), through)):
+            'ORDER BY work_day, employee_name', (salary_period_start(last).isoformat(), through)):
         left = Decimal(amount) - paid.get(accrual_id, Decimal(0))
         if left > 0:
             shifts.append(dict(day=work_day, name=name, debt=plain(left)))

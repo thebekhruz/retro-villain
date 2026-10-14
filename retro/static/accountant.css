@@ -675,7 +675,12 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-cash-total span{font-size:30px;font-weight:600;letter-spacing:-1px}
 .fd-cash-total span.is-negative{color:#f2b1b4}
 .fd-cash-total small{font-size:13px;color:#b5c6b9}
-.fd-cash-line{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #ffffff20;font-size:13px;color:#b9cbbd}
+.fd-cash-line{display:flex;justify-content:space-between;gap:12px;padding:10px 0;border-top:1px solid #ffffff20;font-size:14px;color:#b9cbbd}
+/* Под строкой кассы во всю ширину — когда бухгалтер её подтвердил (ТЗ 09.10, Б-09). */
+.fd-cash-line.has-note{flex-wrap:wrap;row-gap:3px}
+.fd-cash-note{flex-basis:100%;color:#9fb3a5}
+/* «= Остаток на конец» замыкает формулу, как итог в расшифровке. */
+.fd-cash-line.is-total{border-top-color:#ffffff40;color:#fff;font-weight:600}
 .fd-cash-line b{color:#fff;font-size:14px;font-weight:550;font-variant-numeric:tabular-nums;white-space:nowrap}
 .fd-cash-set{position:relative;margin-top:6px;border:0;background:none;padding:6px 0;color:#d8b977;font-size:13px;font-weight:600}
 .fd-cash.is-focus,.fd-dv.is-focus{box-shadow:0 0 0 3px #d2af59}
@@ -1094,8 +1099,9 @@ body.is-readonly .fd-jr-new,body.is-readonly .fd-sh-give{opacity:.55}
 .fd-bd-warn .fd-link-btn{color:#d8b977;padding:0}
 .fd-bd-link{display:inline-block;margin-top:8px;font-size:13px;color:#d8b977;font-weight:600;text-decoration:none}
 
-/* Прогноз расхода и счёт Шохруха — плитки дэшборда. */
-.fd-dash-tiles{position:relative;display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:14px}
+/* Счёт Шохруха — плитка дэшборда. Прогноз расхода снят (ТЗ 09.10, Б-10):
+   плитка одна и идёт во всю ширину карточки. */
+.fd-dash-tiles{position:relative;display:grid;grid-template-columns:minmax(0,1fr);gap:8px;margin-top:14px}
 .fd-dash-tile{display:flex;flex-direction:column;gap:4px;padding:11px 12px;border-radius:11px;background:#ffffff12;color:#c5d3c9;font-size:12.5px;text-decoration:none;min-width:0}
 .fd-dash-tile b{color:#fff;font-size:15px;font-weight:600;font-variant-numeric:tabular-nums}
 .fd-dash-tile small{font-size:12px;color:#9fb3a5;line-height:1.35}

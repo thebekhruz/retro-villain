@@ -14,7 +14,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from pathlib import Path
 
-from retro.accounting_period import accounting_range_start, period_start
+from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.db import as_database, table_columns
 from retro.request_reads import once
 from retro.runtime import secure_directory, secure_file
@@ -355,7 +355,7 @@ class ShokhStore:
             # Из подотчёта уходят наличные — целые сумы, а не итог накладной с тийинами.
             row = c.execute('SELECT day,cash_total,item,point FROM shokh_purchases WHERE id=?', (purchase_id,)).fetchone()
             if row[0] < period_start(day).isoformat():
-                raise ShokhError('Покупка относится к архиву до 02.10.2026.')
+                raise ShokhError(f'Покупка относится к архиву до {ACCOUNTING_START:%d.%m.%Y}.')
             if day.isoformat() < row[0]:
                 raise ShokhError('Нельзя принять покупку раньше даты закупа.')
             add_reserve_entry(finance, day, 'shoh', 'withdrawal', row[1],

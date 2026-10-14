@@ -6,7 +6,7 @@ const L = globalThis.EmployeesLogic;
 const money = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2}).format(Number(value || 0));
 const sum = value => money(value) + ' сум';
 const statuses = {on_time: 'Вовремя', late: 'Опоздал', missing: 'Не пришёл', unlinked: 'Нет привязки', unavailable: 'Нет данных',
-  manual_present: 'Был · вручную', manual_absent: 'Не был · вручную'};
+  manual_present: 'Был · вручную', manual_absent: 'Не был · вручную', outside: 'Вне периода'};
 // «На месте» — пришёл по турникету или отмечен вручную; «не пришёл» — так же.
 const PRESENT = new Set(['on_time', 'late', 'manual_present']);
 const ABSENT = new Set(['missing', 'manual_absent']);
@@ -14,7 +14,8 @@ const NO_SOURCE = new Set(['unlinked', 'unavailable']);
 let today, current, monthPaid = {}, requestNo = 0;
 // UI-состояние живёт отдельно от данных API: карточки-фильтры, вкладка группы, поиск и открытый drawer.
 // sel: id сменного | 'new' | 'm:<id>' сотрудника на окладе | 'm:new'.
-const ui = {filter: 'all', tab: 'all', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false,
+// role — должность внутри выбранной группы (второй ряд чипов), '' — все.
+const ui = {filter: 'all', tab: 'all', role: '', q: '', sel: null, draft: null, confirm: false, feedback: '', fbErr: false, namesakes: null,
   history: null};
 const SALARY_TAB = '__salary';
 
@@ -89,6 +90,20 @@ function people() {
     pay: payFor(row)
   }));
 }
+/* Временные, чей период не задевает выбранный день (T-434): в списке дня,
+   карточках-счётчиках и начислениях их нет — отдельным разделом реестра,
+   чтобы карточку можно было открыть (продлить период, удалить). */
+function outsiders() {
+  return (current?.outside_period || []).map(row => ({
+    ...row,
+    rate: row.rate == null || row.rate === '' ? null : Number(row.rate),
+    proposed_rate: row.proposed_rate == null || row.proposed_rate === '' ? null : Number(row.proposed_rate),
+    min: null,
+    pay: null
+  }));
+}
+// Сменный по id — из списка дня или из «вне периода».
+const shiftRow = id => people().find(p => p.employee_id === id) || outsiders().find(p => p.employee_id === id);
 function salaried() {
   return (current?.monthly_employees || []).slice().sort((a, b) => Number(a.id) - Number(b.id)).map(row => {
     const salary = Number(row.salary || 0), paid = Number(monthPaid[String(row.id)] || 0);
@@ -98,7 +113,7 @@ function salaried() {
 function groupOrder() {
   const known = (current?.groups || []).map(item => item.name);
   const seen = new Set(known);
-  people().forEach(row => { if (row.group && !seen.has(row.group)) { seen.add(row.group); known.push(row.group); } });
+  [...people(), ...outsiders()].forEach(row => { if (row.group && !seen.has(row.group)) { seen.add(row.group); known.push(row.group); } });
   return known;
 }
 const editable = () => current && current.date === today;
@@ -186,9 +201,11 @@ function renderStats(s) {
       dot: 'gold', footer: attentionFooter(s)})
   );
 }
-function renderTabs(all) {
+function renderTabs(inDay) {
   const box = $('employees-tabs');
   const monthly = current?.monthly_employees || [];
+  // Строки реестра — и «вне периода»: чипы считают то, что видно в списке.
+  const all = [...inDay, ...outsiders()];
   const tabs = [{key: 'all', label: 'Все', count: all.length + monthly.length}];
   groupOrder().forEach(name => {
     const count = all.filter(p => p.group === name).length;
@@ -199,7 +216,20 @@ function renderTabs(all) {
     const button = el('button', 'emp-tab' + (ui.tab === tab.key ? ' is-active' : ''), {type: 'button', role: 'tab'});
     button.setAttribute('aria-selected', String(ui.tab === tab.key));
     button.append(text('span', null, tab.label), text('small', null, String(tab.count)));
-    button.addEventListener('click', () => { ui.tab = tab.key; render(); });
+    button.addEventListener('click', () => { ui.tab = tab.key; ui.role = ''; render(); });
+    return button;
+  }));
+  // Должности выбранной группы — тем же видом чипов; в группе одна должность — ряда нет.
+  const roles = ui.tab === 'all' || ui.tab === SALARY_TAB ? [] : L.groupRoles(all, ui.tab);
+  if (!roles.some(role => role.key === ui.role)) ui.role = '';
+  const roleBox = $('employees-roles');
+  roleBox.hidden = !roles.length;
+  roleBox.replaceChildren(...(roles.length ? [{key: '', label: 'Все должности', count: all.filter(p => p.group === ui.tab).length},
+    ...roles] : []).map(role => {
+    const button = el('button', 'emp-tab' + (ui.role === role.key ? ' is-active' : ''), {type: 'button', role: 'tab'});
+    button.setAttribute('aria-selected', String(ui.role === role.key));
+    button.append(text('span', null, role.label), text('small', null, String(role.count)));
+    button.addEventListener('click', () => { ui.role = role.key; render(); });
     return button;
   }));
 }
@@ -207,6 +237,7 @@ function renderTabs(all) {
 const queryMatches = (name, role) => L.matchesQuery(ui.q, name, role);
 function matches(row) {
   if (ui.tab !== 'all' && row.group !== ui.tab) return false;
+  if (!L.matchesRole(ui.role, row.role)) return false;
   if (!queryMatches(row.name, row.role)) return false;
   if (ui.filter === 'present') return PRESENT.has(row.status);
   if (ui.filter === 'late') return row.status === 'late';
@@ -214,7 +245,7 @@ function matches(row) {
   if (ui.filter === 'attention') return needsAttention(row);
   return true;
 }
-function whoCell(name, role, warn, noHik) {
+function whoCell(name, role, warn, noHik, kind) {
   const who = text('div', 'emp-cell-who', null);
   who.append(text('span', 'emp-avatar' + (warn ? ' is-warn' : ''), initials(name)));
   const idBox = text('div', 'emp-who-text', null);
@@ -228,7 +259,13 @@ function whoCell(name, role, warn, noHik) {
     nameLine.append(tag);
   }
   idBox.append(nameLine);
-  if (role != null) idBox.append(text('div', 'emp-who-role', role));
+  if (role != null) {
+    // Должность и «временный · 08.10–10.10» — отдельными узлами: переводчик берёт их по одному.
+    const roleLine = text('div', 'emp-who-role', null);
+    roleLine.append(text('span', null, role));
+    if (kind) roleLine.append(' · ', text('span', null, kind));
+    idBox.append(roleLine);
+  }
   who.append(idBox);
   return who;
 }
@@ -262,16 +299,23 @@ function registryRow(row) {
   const meta = text('div', 'emp-cell-meta', null);
   meta.append(entry, statusCell);
   if (row.rate != null) rate.prepend(text('span', 'emp-m-label', 'ставка '));
-  line.append(whoCell(row.name, row.role, false, row.manual_attendance), meta, rate, pay);
+  line.append(whoCell(row.name, row.role, false, row.manual_attendance, L.typeTag(row)), meta, rate, pay);
   return line;
+}
+// «Вне периода» — те же фильтры, что у строк дня, кроме карточек-счётчиков.
+function outsidersShown() {
+  if (ui.filter !== 'all' || ui.tab === SALARY_TAB) return [];
+  return outsiders().filter(row => (ui.tab === 'all' || row.group === ui.tab) && L.matchesRole(ui.role, row.role)
+    && queryMatches(row.name, row.role));
 }
 function renderRegistry(all) {
   const container = $('employees-groups');
   container.replaceChildren();
   const salaryOnly = ui.tab === SALARY_TAB;
   const shown = salaryOnly ? [] : all.filter(matches);
+  const away = outsidersShown();
   const salaryShown = salaryRowsShown();
-  const count = shown.length + salaryShown.length;
+  const count = shown.length + away.length + salaryShown.length;
   $('employees-shown').textContent = count + ' ' + plural(count, ['сотрудник', 'сотрудника', 'сотрудников']);
   const filterNames = {present: 'На месте', late: 'Опоздали', missing: 'Не пришли', attention: 'Требуют внимания'};
   const clear = $('employees-clear-filter');
@@ -287,7 +331,7 @@ function renderRegistry(all) {
     empty.append(text('p', null, 'Никого не нашли под текущими фильтрами.'));
     const reset = text('button', 'text-link', 'Сбросить фильтры');
     reset.type = 'button';
-    reset.addEventListener('click', () => { ui.filter = 'all'; ui.tab = 'all'; ui.q = ''; $('employees-search').value = ''; render(); });
+    reset.addEventListener('click', () => { ui.filter = 'all'; ui.tab = 'all'; ui.role = ''; ui.q = ''; $('employees-search').value = ''; render(); });
     empty.append(reset);
     container.append(empty);
     return;
@@ -303,6 +347,15 @@ function renderRegistry(all) {
     container.append(head);
     rows.forEach(row => container.append(registryRow(row)));
   });
+  if (away.length) {
+    // Шапка — как у группы, без суммы: начислений вне периода нет.
+    const head = text('div', 'emp-group-head', null);
+    const left = text('div', 'emp-group-name', null);
+    left.append(text('strong', null, 'Временные вне периода'), text('span', null, away.length + ' чел.'));
+    head.append(left);
+    container.append(head);
+    away.sort((a, b) => a.name.localeCompare(b.name, 'ru')).forEach(row => container.append(registryRow(row)));
+  }
 }
 
 // ── Сотрудники на окладе — раздел того же реестра ─────────────────────────
@@ -348,7 +401,7 @@ function renderMonthly() {
 
 // ── Боковая панель (drawer) ──────────────────────────────────────────────────
 function openDrawer(id) {
-  const row = people().find(p => p.employee_id === id);
+  const row = shiftRow(id);
   if (!row) return;
   ui.sel = id;
   ui.confirm = false; ui.feedback = ''; ui.fbErr = false;
@@ -357,7 +410,8 @@ function openDrawer(id) {
   render(); revealDrawer();
 }
 const shiftDraft = row => ({name: row.name, role: row.role, rate: L.formatAmount(row.rate), group: row.group, reason: '',
-  manual: !!row.manual_attendance, hikId: row.hikvision_id || '', groupTouched: false});
+  manual: !!row.manual_attendance, hikId: row.hikvision_id || '', groupTouched: false,
+  type: row.employment_type === 'temporary' ? 'temporary' : 'shift', from: row.work_from || '', to: row.work_to || ''});
 const monthlyDraft = row => ({name: row.name, role: row.role, salary: L.formatAmount(row.salary), schedule: row.schedule || '',
   noHik: !!row.no_hikvision, reason: ''});
 function openMonthly(id) {
@@ -370,13 +424,14 @@ function openMonthly(id) {
 }
 function openNew(kind = 'shift', keep = {}) {
   const groups = groupOrder();
-  ui.confirm = false; ui.feedback = ''; ui.fbErr = false; ui.history = null;
+  ui.confirm = false; ui.feedback = ''; ui.fbErr = false; ui.history = null; ui.namesakes = null;
   // Переключение «За смену / Оклад» не стирает уже набранные имя и должность.
   const name = keep.name || '', role = keep.role || '';
   if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name, role, salary: '', schedule: '', noHik: false, reason: ''}; }
   else {
     ui.sel = 'new';
-    ui.draft = {name, role, rate: '', group: L.groupForRole(role) || groups[0] || '', reason: '', manual: false, groupTouched: false};
+    ui.draft = {name, role, rate: '', group: L.groupForRole(role) || groups[0] || '', reason: '', manual: false, groupTouched: false,
+      type: 'shift', from: '', to: ''};
   }
   render(); revealDrawer();
   const nameInput = document.querySelector('.emp-drawer input[name=name]');
@@ -394,7 +449,7 @@ function closeDrawer() {
   const question = 'Есть несохранённые изменения. Закрыть без сохранения?';
   const asked = document.documentElement.lang === 'uz' && globalThis.RetroI18n ? RetroI18n.translate(question) || question : question;
   if (drawerDirty() && !confirm(asked)) return;
-  ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; ui.history = null; render();
+  ui.sel = null; ui.draft = null; ui.confirm = false; ui.feedback = ''; ui.history = null; ui.namesakes = null; render();
 }
 /* Есть ли в открытой карточке несохранённое: новое — любое набранное поле,
    правка — отличие от того, что сейчас в реестре. */
@@ -402,16 +457,21 @@ function drawerDirty() {
   if (ui.sel == null || !ui.draft) return false;
   const d = ui.draft, monthly = String(ui.sel).startsWith('m:');
   if (ui.sel === 'new' || ui.sel === 'm:new') return ['name', 'role', 'rate', 'salary'].some(key => String(d[key] || '').trim());
-  const base = monthly ? salaried().find(p => 'm:' + p.id === ui.sel) : people().find(p => p.employee_id === ui.sel);
+  const base = monthly ? salaried().find(p => 'm:' + p.id === ui.sel) : shiftRow(ui.sel);
   if (!base) return false;
   const origin = monthly ? monthlyDraft(base) : shiftDraft(base);
-  const keys = monthly ? ['name', 'role', 'salary', 'schedule', 'noHik', 'reason'] : ['name', 'role', 'rate', 'group', 'reason', 'manual', 'hikId'];
+  const keys = monthly ? ['name', 'role', 'salary', 'schedule', 'noHik', 'reason']
+    : ['name', 'role', 'rate', 'group', 'reason', 'manual', 'hikId', 'type', 'from', 'to'];
   return keys.some(key => String(d[key] ?? '') !== String(origin[key] ?? ''));
 }
 // «Сохранить» в шапке страницы сохраняет открытую карточку.
 globalThis.RetroSave?.register($('employees-aside'), () => (String(ui.sel).startsWith('m:') ? saveMonthly() : saveDraft()),
   {dirty: drawerDirty});
-function setDraft(key, value) { ui.draft[key] = value; ui.feedback = ''; }
+function setDraft(key, value) {
+  ui.draft[key] = value; ui.feedback = '';
+  // Другое имя — прежний список похожих уже не про него.
+  if (key === 'name' && ui.namesakes) { ui.namesakes = null; render(); }
+}
 
 function fieldLabel(labelText, input) {
   const label = text('label', 'emp-field', null);
@@ -491,13 +551,71 @@ function drawerActions(saveLabel, onSave, disabled) {
   actions.append(save, cancel);
   return actions;
 }
+/* Похожие уже есть в реестре (ТЗ 09.10, М-04): «Это он» открывает его
+   карточку, «Это другой человек» добавляет нового. Сами не объединяем. */
+/* Ставка, которую предложил менеджер (T-453): «Подтвердить» делает её ставкой.
+   Исправить — вписать свою в «Ставка за смену» и сохранить с причиной. */
+function proposalBlock(person) {
+  if (!person || person.rate != null || person.proposed_rate == null) return null;
+  // Неразрывные пробелы: «220 000 сум» не рвётся посередине числа.
+  const amount = (L.formatAmount(person.proposed_rate) + ' сум').replace(/ /g, '\u00a0');
+  const box = text('div', 'emp-namesakes emp-proposal', null);
+  box.append(text('b', 'emp-namesakes-title', 'Ставка ждёт подтверждения'),
+    text('p', 'emp-namesakes-note', 'Предложение менеджера' + (person.proposed_by ? ' ' + person.proposed_by : '')
+      + ': ' + amount + ' за смену. Подтвердите или впишите свою ставку ниже.'));
+  const confirm = el('button', 'emp-btn emp-btn--primary emp-namesakes-new', {type: 'button', textContent: 'Подтвердить ' + amount});
+  confirm.dataset.busyKey = 'emp-confirm-rate';
+  confirm.addEventListener('click', () => { const work = confirmRate(person.employee_id); if (B) B.button(confirm, work); });
+  box.append(confirm);
+  return box;
+}
+async function confirmRate(id) {
+  try {
+    const response = await fetch('/api/accountant/employees/' + encodeURIComponent(id) + '/confirm-rate', {method: 'POST'});
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось подтвердить.');
+    await reloadDay();
+    const fresh = shiftRow(id);
+    if (ui.sel === id && fresh) { ui.draft = shiftDraft(fresh); loadHistory('shift', id); render(); }
+    message('Ставка подтверждена.');
+    flashRow('emp:' + id);
+    return true;
+  } catch (error) { return fail(error.message); }
+}
+function namesakesBlock(onConfirm) {
+  if (!ui.namesakes || !ui.namesakes.length) return null;
+  const box = text('div', 'emp-namesakes', null);
+  box.setAttribute('role', 'alert');
+  box.append(text('b', 'emp-namesakes-title', 'Похожие уже есть в реестре'),
+    text('p', 'emp-namesakes-note', 'Проверьте, не тот же ли это человек: второй карточкой задвоятся смены и выплаты.'));
+  const list = text('div', 'emp-namesakes-list', null);
+  ui.namesakes.forEach(person => {
+    const row = text('div', 'emp-namesake', null);
+    const who = text('span', 'emp-namesake-who', null);
+    const name = text('b', null, person.name);
+    name.dataset.i18n = 'off';
+    who.append(name, text('span', null, L.namesakeLine(person)));
+    const open = el('button', 'emp-btn', {type: 'button', textContent: 'Это он'});
+    open.addEventListener('click', () => {
+      ui.namesakes = null; ui.draft = null;
+      if (person.kind === 'monthly') openMonthly(person.id); else openDrawer(person.id);
+    });
+    row.append(who, open);
+    list.append(row);
+  });
+  const other = el('button', 'emp-btn emp-namesakes-new', {type: 'button', textContent: 'Это другой человек — добавить'});
+  other.dataset.busyKey = 'emp-namesake-new';
+  other.addEventListener('click', () => { const work = onConfirm(); if (B) B.button(other, work); });
+  box.append(list, other);
+  return box;
+}
 function feedbackLine() {
   const feedback = text('p', 'emp-drawer-feedback' + (ui.fbErr ? ' is-error' : ''), ui.feedback);
   return feedback;
 }
 function drawerCard() {
   const isEdit = ui.sel !== 'new';
-  const selP = isEdit ? people().find(p => p.employee_id === ui.sel) : null;
+  const selP = isEdit ? shiftRow(ui.sel) : null;
   const d = ui.draft;
   const card = text('section', 'emp-side-card emp-drawer', null);
   card.append(drawerHead(isEdit ? 'СОТРУДНИК' : 'НОВЫЙ СОТРУДНИК'));
@@ -507,7 +625,13 @@ function drawerCard() {
     const idRow = text('div', 'emp-drawer-id', null);
     idRow.append(text('span', 'emp-avatar is-lg', initials(selP.name)));
     const box = text('div', null, null);
-    box.append(text('div', 'emp-drawer-name', selP.name), text('div', 'emp-drawer-sub', selP.role + ' · ' + selP.group));
+    // Должность, группа и «временный · период» — отдельными узлами для переводчика.
+    const sub = text('div', 'emp-drawer-sub', null);
+    [selP.role, selP.group, L.typeTag(selP)].filter(Boolean).forEach((part, index) => {
+      if (index) sub.append(' · ');
+      sub.append(text('span', null, part));
+    });
+    box.append(text('div', 'emp-drawer-name', selP.name), sub);
     idRow.append(box);
     card.append(idRow);
 
@@ -525,8 +649,10 @@ function drawerCard() {
       unlinked: 'Нет привязки Hikvision — начисление заблокировано. Если турникет ему не нужен, включите «Нет в Hikvision».',
       unavailable: 'Нет данных источника — начисление заблокировано.',
       manual_present: 'Нет в Hikvision — отмечен «был» вручную, ставка начисляется.',
-      manual_absent: 'Нет в Hikvision — отмечен «не был» вручную, начисление 0 сум.'};
-    facts.append(text('p', 'emp-drawer-note', selP.rate == null ? 'Ставка не указана — не начисляется.' : notes[selP.status] || ''));
+      manual_absent: 'Нет в Hikvision — отмечен «не был» вручную, начисление 0 сум.',
+      outside: 'Вне периода работы: в этот день его нет ни в списке, ни в ведомости.'};
+    facts.append(text('p', 'emp-drawer-note', selP.status === 'outside' ? notes.outside
+      : selP.rate == null ? 'Ставка не указана — не начисляется.' : notes[selP.status] || ''));
     card.append(facts);
     const proposal = proposalBlock(selP);
     if (proposal) card.append(proposal);
@@ -561,6 +687,8 @@ function drawerCard() {
 
   form.append(fieldLabel('Ставка за смену, сум', moneyInput('rate', d.rate,
     selP && selP.rate == null && selP.proposed_rate != null ? 'Предложено ' + L.formatAmount(selP.proposed_rate) : 'Не указана')));
+  form.append(typeField(d));
+  if (d.type === 'temporary') form.append(periodField(d));
 
   form.append(manualToggle('Нет в Hikvision · отмечать вручную', d.manual, value => setDraft('manual', value),
     d.manual ? 'Турникет не нужен: по умолчанию «был», в «Финансах дня» можно отметить «не был».'
@@ -583,6 +711,8 @@ function drawerCard() {
     reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
     form.append(fieldLabel('Причина изменения', reasonInput));
   }
+  const sakes = isEdit ? null : namesakesBlock(() => saveDraft(true));
+  if (sakes) form.append(sakes);
   form.append(feedbackLine(), drawerActions('Сохранить', () => saveDraft(), !editable()));
   card.append(form);
 
@@ -591,6 +721,39 @@ function drawerCard() {
   if (isEdit && editable()) card.append(deleteBlock(doDelete));
   if (isEdit) card.append(historyBlock());
   return card;
+}
+/* Сменный или временный (T-434) — тот же переключатель, что «За смену / Оклад
+   в месяц» (.emp-kind). Подпись — как у остальных полей. */
+function typeField(d) {
+  const box = text('div', 'emp-field', null);
+  box.append(text('span', null, 'Тип'));
+  const group = text('div', 'emp-kind', null);
+  group.setAttribute('role', 'group');
+  group.setAttribute('aria-label', 'Тип сотрудника');
+  [['shift', 'Сменный'], ['temporary', 'Временный']].forEach(([key, label]) => {
+    const button = el('button', 'emp-kind-btn' + (d.type === key ? ' is-active' : ''), {type: 'button', textContent: label});
+    button.setAttribute('aria-pressed', String(d.type === key));
+    button.disabled = !editable();
+    button.addEventListener('click', () => { if (d.type !== key) { setDraft('type', key); render(); } });
+    group.append(button);
+  });
+  box.append(group);
+  return box;
+}
+/* Период работы временного: «С» и «По» — родные поля даты, как в остальных
+   окнах бухгалтера; обе даты необязательны. */
+function periodField(d) {
+  const box = text('div', 'emp-field', null);
+  box.append(text('span', null, 'Период работы (необязательно)'));
+  const dates = text('div', 'emp-period', null);
+  [['from', 'С'], ['to', 'По']].forEach(([key, caption]) => {
+    const input = el('input', null, {type: 'date', name: 'work_' + key, value: d[key] || ''});
+    input.disabled = !editable();
+    ['input', 'change'].forEach(kind => input.addEventListener(kind, event => setDraft(key, event.target.value)));
+    dates.append(fieldLabel(caption, input));
+  });
+  box.append(dates, text('p', 'emp-toggle-hint', 'Вне этих дней человека не будет в ведомости, и выплату ему не записать.'));
+  return box;
 }
 // Сумма в поле — текстом: «180 000» и «180 000,50» принимаются как есть
 // (поле number на iPhone такое молча обнуляло), при уходе с поля — разряды.
@@ -663,6 +826,8 @@ function monthlyDrawer() {
     reasonInput.addEventListener('input', event => setDraft('reason', event.target.value));
     form.append(fieldLabel('Причина изменения', reasonInput));
   }
+  const sakes = isEdit ? null : namesakesBlock(() => saveMonthly(true));
+  if (sakes) form.append(sakes);
   form.append(feedbackLine(), drawerActions('Сохранить', () => saveMonthly()));
   card.append(form);
   if (isEdit) card.append(deleteBlock(doDeleteMonthly), historyBlock());
@@ -751,39 +916,18 @@ function historyBlock() {
 // ── Запись ───────────────────────────────────────────────────────────────────
 // false — «не удалось»: так кнопка в busy.js не покажет ✓.
 const fail = value => { ui.feedback = value; ui.fbErr = true; render(); return false; };
-/* Ставка, которую предложил менеджер (T-453): «Подтвердить» делает её ставкой.
-   Исправить — вписать свою в «Ставка за смену» и сохранить с причиной. */
-function proposalBlock(person) {
-  if (!person || person.rate != null || person.proposed_rate == null) return null;
-  // Неразрывные пробелы: «220 000 сум» не рвётся посередине числа.
-  const amount = (L.formatAmount(person.proposed_rate) + ' сум').replace(/ /g, '\u00a0');
-  const box = text('div', 'emp-proposal', null);
-  box.append(text('b', 'emp-proposal-title', 'Ставка ждёт подтверждения'),
-    text('p', 'emp-proposal-note', 'Предложение менеджера' + (person.proposed_by ? ' ' + person.proposed_by : '')
-      + ': ' + amount + ' за смену. Подтвердите или впишите свою ставку ниже.'));
-  const confirm = el('button', 'emp-btn emp-btn--primary emp-proposal-confirm', {type: 'button', textContent: 'Подтвердить ' + amount});
-  confirm.dataset.busyKey = 'emp-confirm-rate';
-  confirm.addEventListener('click', () => { const work = confirmRate(person.employee_id); if (B) B.button(confirm, work); });
-  box.append(confirm);
-  return box;
-}
-async function confirmRate(id) {
-  try {
-    const response = await fetch('/api/accountant/employees/' + encodeURIComponent(id) + '/confirm-rate', {method: 'POST'});
-    const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось подтвердить.');
-    await reloadDay();
-    const fresh = people().find(p => p.employee_id === id);
-    if (ui.sel === id && fresh) { ui.draft = shiftDraft(fresh); loadHistory('shift', id); render(); }
-    message('Ставка подтверждена.');
-    flashRow('emp:' + id);
-    return true;
-  } catch (error) { return fail(error.message); }
-}
 // Сохранённую строку реестра подсвечиваем — видно, что именно изменилось.
 const flashRow = key => B?.flash(document.querySelector('[data-busy-key="' + CSS.escape(key) + '"]'));
 const amountError = {bad: 'Сумма — только цифры, например 180 000.', zero: 'Ставка должна быть больше нуля.'};
-async function saveDraft() {
+// 409 со списком похожих: показываем их в карточке и ждём решения бухгалтера.
+function askNamesakes(response, result) {
+  if (response.status !== 409 || !Array.isArray(result?.matches)) return false;
+  ui.namesakes = result.matches; ui.feedback = ''; ui.fbErr = false;
+  render();
+  document.querySelector('.emp-namesakes')?.scrollIntoView({block: 'nearest', behavior: 'smooth'});
+  return true;
+}
+async function saveDraft(confirmNew = false) {
   const d = ui.draft, name = d.name.trim();
   if (!name) return fail('Укажите имя.');
   if (!d.role.trim()) return fail('Укажите должность.');
@@ -793,12 +937,18 @@ async function saveDraft() {
   // API ждёт ставку строкой (rate: str | None) — число pydantic не принимает.
   const rate = parsed.value;
   const isEdit = ui.sel !== 'new';
+  const periodText = d.type === 'temporary' ? L.periodError(d.from, d.to) : '';
+  if (periodText) return fail(periodText);
+  const period = L.periodPayload(d);
   if (isEdit && !d.reason.trim()) return fail('Укажите причину — она попадёт в историю изменений.');
   try {
     if (isEdit) {
       const id = ui.sel;
-      const before = people().find(p => p.employee_id === id);
+      const before = shiftRow(id);
       const payload = {name, role: d.role.trim(), rate, group: d.group, reason: d.reason.trim()};
+      // Тип и период — только если их поменяли: иначе карточку правят как раньше.
+      if (!before || period.employment_type !== (before.employment_type === 'temporary' ? 'temporary' : 'shift')
+          || period.work_from !== (before.work_from || null) || period.work_to !== (before.work_to || null)) Object.assign(payload, period);
       if (!before || !!before.manual_attendance !== d.manual) payload.manual_attendance = d.manual;
       // Номер Hikvision отправляем, только если его поменяли: пусто — снять привязку.
       const hikId = (d.hikId || '').trim();
@@ -813,19 +963,21 @@ async function saveDraft() {
       await reloadDay();
       // Панель остаётся открытой с новыми данными: причина очищена, история
       // пополнилась — следующая правка не унаследует прежнюю причину.
-      const fresh = people().find(p => p.employee_id === id);
+      const fresh = shiftRow(id);
       if (ui.sel === id && fresh) { ui.draft = shiftDraft(fresh); loadHistory('shift', id); render(); }
       message('Изменение сохранено с сегодняшнего дня.');
       flashRow('emp:' + id);
     } else {
-      const payload = {name, role: d.role.trim(), rate, group: d.group, manual_attendance: d.manual};
+      const payload = {name, role: d.role.trim(), rate, group: d.group, manual_attendance: d.manual, ...period,
+        confirm_new: confirmNew === true};
       // Создание — через RetroFinancialWrite: у сотрудника есть ставка, и повтор
       // после потерянного ответа иначе завёл бы второго человека.
       const response = await RetroFinancialWrite('/api/accountant/employees', {
         method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)});
       const result = await response.json();
+      if (askNamesakes(response, result)) return false;
       if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось добавить.');
-      ui.sel = null; ui.draft = null;
+      ui.sel = null; ui.draft = null; ui.namesakes = null;
       await reloadDay(); message('Новый сотрудник добавлен.');
       const newId = result?.employee?.id;
       if (newId != null) flashRow('emp:' + newId);
@@ -842,7 +994,7 @@ async function doDelete() {
     return true;
   } catch (error) { return fail(error.message); }
 }
-async function saveMonthly() {
+async function saveMonthly(confirmNew = false) {
   const d = ui.draft, name = d.name.trim(), role = d.role.trim();
   if (!name) return fail('Укажите имя.');
   if (!role) return fail('Укажите должность.');
@@ -857,14 +1009,16 @@ async function saveMonthly() {
   const payload = {name, role, salary: parsed.value, schedule: d.schedule.trim(), no_hikvision: !!d.noHik,
     reason: (d.reason || '').trim(),
     card: before.card ?? '0', cash: before.cash ?? '0', advances: before.advances ?? '0', remaining: before.remaining ?? '0'};
+  if (!isEdit) payload.confirm_new = confirmNew === true;
   try {
     const options = {method: isEdit ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)};
     const response = isEdit
       ? await fetch('/api/accountant/monthly-employees/' + encodeURIComponent(id), options)
       : await RetroFinancialWrite('/api/accountant/monthly-employees', options);
     const result = await response.json();
+    if (!isEdit && askNamesakes(response, result)) return false;
     if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось сохранить оклад.');
-    if (!isEdit) { ui.sel = null; ui.draft = null; }
+    if (!isEdit) { ui.sel = null; ui.draft = null; ui.namesakes = null; }
     await reloadDay();
     if (isEdit && ui.sel === 'm:' + id) {
       const fresh = salaried().find(p => p.id === id);

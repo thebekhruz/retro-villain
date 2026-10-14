@@ -26,7 +26,9 @@ PATHS = {'/api/cashier/expenses', '/api/cashier/receipts', '/api/cashier/usd-bal
     '/api/accountant/' + suffix for suffix in (
         'handover', 'incomes', 'expenses', 'reserves', 'cash-opening', 'monthly-plan',
         'salary-payments', 'debts/pay', 'procurement', 'payroll/confirm',
-        'employees', 'monthly-employees', 'monthly-payments', 'supplier-transfers')} | {
+        'employees', 'monthly-employees', 'monthly-payments', 'supplier-transfers',
+        # Доп. выплата «Зарплата · день» (Б-05): повтор после потерянного ответа — не вторая выдача.
+        'salary-day/extra')} | {
     '/api/founder/dividends/weekly', '/api/director/team'}
 
 
