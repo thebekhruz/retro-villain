@@ -455,9 +455,7 @@ function renderRoles() {
 function setType(type) {
   state.form.type = type;
   document.querySelectorAll('.mgr-type [data-type]').forEach(button => {
-    const on = button.dataset.type === type;
-    button.classList.toggle('is-on', on);
-    button.setAttribute('aria-pressed', String(on));
+    button.setAttribute('aria-checked', String(button.dataset.type === type));
   });
   if ($('f-period')) $('f-period').hidden = type !== 'temporary';
 }
@@ -520,7 +518,8 @@ async function saveEmployee(confirm = false) {
     list.push(card);
     list.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     renderList();
-    done('Сотрудник добавлен. Сфотографируйте его: фото уйдёт на терминал.');
+    // Без тоста: на телефоне он закрывал шапку карточки — карточка нового
+    // человека открывается сама, с кнопкой «Сфотографировать».
     openCard(card, {queue: false});
   } catch (error) {
     if (error.status === 409 && Array.isArray(error.payload?.matches)) {
