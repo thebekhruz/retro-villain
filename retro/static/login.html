@@ -8,6 +8,9 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Retro Milliy"><meta name="apple-mobile-web-app-status-bar-style" content="default">
 
   <link rel="stylesheet" href="/static/login.css">
   <script src="/static/busy.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/login-logic.js" defer></script><script src="/static/login.js" defer></script>
@@ -44,6 +47,11 @@
       <button id="other-phone" class="login-link" type="button">Другой номер</button>
     </div>
     <button id="mode-switch" class="login-link" type="button" hidden>Войти по номеру телефона</button>
+    <!-- Панель как приложение (T-451): строку показывает login.js, только на телефоне. -->
+    <div id="install-hint" class="install-hint" hidden>
+      <p id="install-text"></p>
+      <button id="install-button" class="login-link" type="button" hidden>Установить</button>
+    </div>
   </main>
 </body>
 </html>

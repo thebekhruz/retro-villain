@@ -234,6 +234,56 @@ $('other-phone').addEventListener('click', () => {
   caretToEnd(phoneInput);
 });
 
+/* ── Панель на экране телефона (T-451) ─────────────────────────────────
+   Одна тихая строка под формой: как поставить значок. На iPhone — через
+   «Поделиться», на Android — кнопкой, если Chrome готов, иначе через меню.
+   В окне, открытом с иконки, строки нет. */
+const installHint = $('install-hint');
+const installButton = $('install-button');
+let installPrompt = null;
+
+function standalone() {
+  if (navigator.standalone === true) return true;
+  try {
+    return matchMedia('(display-mode: standalone)').matches || matchMedia('(display-mode: fullscreen)').matches;
+  } catch { return false; }
+}
+
+function showInstall() {
+  const kind = Logic.installHint(navigator.userAgent, standalone());
+  installHint.hidden = kind === null;
+  if (kind === null) return;
+  $('install-text').textContent = Logic.installText(kind, installPrompt !== null);
+  installButton.hidden = installPrompt === null;
+}
+
+window.addEventListener('beforeinstallprompt', (event) => {
+  if (Logic.installHint(navigator.userAgent, standalone()) !== 'android') return;
+  // Своя кнопка в карточке вместо всплывающей полосы Chrome внизу экрана.
+  event.preventDefault();
+  installPrompt = event;
+  showInstall();
+});
+
+installButton.addEventListener('click', async () => {
+  const prompt = installPrompt;
+  if (!prompt) return;
+  installPrompt = null;
+  try {
+    await prompt.prompt();
+    const choice = await prompt.userChoice;
+    if (choice && choice.outcome === 'accepted') { installHint.hidden = true; return; }
+  } catch { /* окно установки не открылось — остаётся путь через меню */ }
+  showInstall();
+});
+
+window.addEventListener('appinstalled', () => {
+  installPrompt = null;
+  installHint.hidden = true;
+});
+
+showInstall();
+
 if (phoneLogin && remembered() === 'phone') {
   show('phone');
   phoneInput.focus();
