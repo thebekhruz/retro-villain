@@ -1,7 +1,7 @@
-/* Кабинет менеджера без DOM: поиск и фильтры по списку, статусы фото и
-   Hikvision словами. Сотрудников заводит бухгалтер; менеджер выбирает
-   человека из списка и фотографирует — фото уходит на терминал Hikvision.
-   Тесты — tests/js/manager-logic.test.mjs. */
+/* Кабинет менеджера без DOM: поиск и фильтры по списку, разделы списка
+   (сначала без фото), очередь съёмки, статусы фото и Hikvision словами.
+   Менеджер заводит людей своих разделов (T-450) и фотографирует — фото
+   уходит на терминал Hikvision. Тесты — tests/js/manager-logic.test.mjs. */
 (function(root, factory) {
   const api = factory();
   if (typeof module === 'object' && module.exports) module.exports = api;
@@ -47,6 +47,13 @@
     return {text: 'Ждёт отправки', tone: 'warn'};
   }
 
+  /* Временный (T-434): «временный · 08.10–10.10» — период подписывает сервер.
+     Сменному — пусто. */
+  function typeTag(card) {
+    if (!card || card.employment_type !== 'temporary') return '';
+    return card.work_period ? 'временный · ' + card.work_period : 'временный';
+  }
+
   function matches(card, query) {
     const words = plain(query).split(' ').filter(Boolean);
     const text = plain(card.name) + ' ' + plain(card.role) + ' ' + plain(card.group);
@@ -81,6 +88,56 @@
       roles.set(key, item);
     });
     return [...roles.values()].sort((a, b) => a.label.localeCompare(b.label, 'ru'));
+  }
+
+  /* Разделы списка (T-450): сначала без фото, затем «не на терминале»
+     (ошибка, ждёт отправки, фото не проверено), затем с фото. Порядок внутри —
+     как пришёл с сервера (по алфавиту). Пустые разделы не показываем. */
+  const needsPhoto = card => !card.photo && !card.photo_unknown;
+  function sections(cards) {
+    const nophoto = [], attention = [], done = [];
+    for (const card of cards || []) {
+      if (needsPhoto(card)) nophoto.push(card);
+      else if (!isDone(card)) attention.push(card);
+      else done.push(card);
+    }
+    return [{key: 'nophoto', title: 'Без фото', cards: nophoto},
+      {key: 'attention', title: 'Не на терминале', cards: attention},
+      {key: 'done', title: 'С фото', cards: done}].filter(section => section.cards.length);
+  }
+
+  /* Очередь съёмки: следующий без фото в том же порядке, что и на экране,
+     после текущего; дошли до конца — с начала. Чужих (can_photo=false) и
+     текущего пропускаем. Никого — null. */
+  function nextToShoot(cards, currentId = null) {
+    const queue = (cards || []).filter(card => needsPhoto(card) && card.can_photo !== false);
+    if (!queue.length) return null;
+    const list = cards || [];
+    const at = currentId == null ? -1 : list.findIndex(card => card.id === currentId);
+    const after = queue.find(card => card.id !== currentId && list.indexOf(card) > at);
+    return after || queue.find(card => card.id !== currentId) || null;
+  }
+
+  /* Цель в шапке: у скольких фото уже на терминале (или есть — у тех, кого
+     отмечают вручную). */
+  function goal(cards) {
+    const list = cards || [];
+    const done = list.filter(isDone).length;
+    return {done, total: list.length, percent: list.length ? Math.round(done * 100 / list.length) : 0};
+  }
+
+  /* Должности формы «Новый сотрудник» — с сервера, уже по разделам менеджера. */
+  function roleKeyOf(item) { return plain(item && item.role); }
+
+  /* Форма: что не так, словами. Пусто — можно отправлять. */
+  function formErrors(form) {
+    const errors = {};
+    if (!collapse(form.name)) errors.name = 'Впишите фамилию и имя.';
+    if (!collapse(form.role)) errors.role = 'Выберите должность.';
+    if (form.type === 'temporary' && form.from && form.to && form.to < form.from) {
+      errors.period = 'Последний день раньше первого.';
+    }
+    return errors;
   }
 
   function summary(cards) {
@@ -120,5 +177,5 @@
   }
 
   return {collapse, initials, roleLine, isDone, hasProblem, rowTag, matches, inPlace, filterCards, groupsOf, rolesOf, summary,
-    photoStep, hikvisionStep, faceStep};
+    photoStep, hikvisionStep, faceStep, typeTag, needsPhoto, sections, nextToShoot, goal, roleKeyOf, formErrors};
 });

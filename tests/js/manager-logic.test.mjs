@@ -84,3 +84,44 @@ test('device photos count as ready; an unreachable terminal is not proof of no p
   assert.deepEqual(logic.filterCards([remote, unknown, missing], {status: 'nophoto'}).map(c=>c.id), [3]);
   assert.deepEqual(logic.summary([remote, unknown, missing]), {total:3, withPhoto:1, noPhoto:1, problems:1});
 });
+
+test('T-450: разделы списка — сначала без фото, затем не на терминале, затем с фото', () => {
+  const cards = [
+    card({id: 1, name: 'Алиев Жасур', photo, hikvision: {state: 'sent', face: {state: 'sent'}}}),
+    card({id: 2, name: 'Баходиров Ихтиёр'}),
+    card({id: 3, name: 'Валиева Нигора', photo, hikvision: {state: 'pending', face: {state: 'pending'}}}),
+    card({id: 4, name: 'Гафуров Санжар', photo_unknown: true}),
+    card({id: 5, name: 'Давлатова Мадина'}),
+    card({id: 6, name: 'Ергашев Отабек', photo, hikvision: {state: 'manual', face: {state: 'none'}}}),
+  ];
+  assert.deepEqual(logic.sections(cards).map(s => [s.key, s.cards.map(c => c.id)]),
+    [['nophoto', [2, 5]], ['attention', [3, 4]], ['done', [1, 6]]]);
+  assert.deepEqual(logic.sections([card({id: 9, photo, hikvision: {state: 'sent', face: {state: 'sent'}}})]).map(s => s.key),
+    ['done'], 'пустые разделы не показываем');
+  assert.deepEqual(logic.goal(cards), {done: 2, total: 6, percent: 33});
+  assert.deepEqual(logic.goal([]), {done: 0, total: 0, percent: 0});
+});
+
+test('T-450: очередь съёмки — следующий без фото после текущего, по кругу, без чужих', () => {
+  const cards = [
+    card({id: 1}), card({id: 2, photo, hikvision: {state: 'sent', face: {state: 'sent'}}}),
+    card({id: 3, can_photo: false}), card({id: 4}), card({id: 5, photo_unknown: true}), card({id: 6}),
+  ];
+  assert.equal(logic.nextToShoot(cards).id, 1);
+  assert.equal(logic.nextToShoot(cards, 1).id, 4);
+  assert.equal(logic.nextToShoot(cards, 4).id, 6);
+  assert.equal(logic.nextToShoot(cards, 6).id, 1, 'дошли до конца — с начала');
+  assert.equal(logic.nextToShoot(cards, 2).id, 4, 'после человека с фото — следующий без фото');
+  assert.equal(logic.nextToShoot([card({id: 7})], 7), null, 'текущий — последний без фото');
+  assert.equal(logic.nextToShoot([], null), null);
+});
+
+test('T-450: форма нового сотрудника — что не так, словами', () => {
+  assert.deepEqual(logic.formErrors({name: '  ', role: '', type: 'shift'}),
+    {name: 'Впишите фамилию и имя.', role: 'Выберите должность.'});
+  assert.deepEqual(logic.formErrors({name: 'Каримова Лола', role: 'Хостес', type: 'shift'}), {});
+  assert.deepEqual(logic.formErrors({name: 'Каримова Лола', role: 'Хостес', type: 'temporary', from: '2026-10-20', to: '2026-10-18'}),
+    {period: 'Последний день раньше первого.'});
+  assert.deepEqual(logic.formErrors({name: 'Каримова Лола', role: 'Хостес', type: 'temporary', from: '2026-10-20'}), {});
+  assert.equal(logic.roleKeyOf({role: '  Повар   Миллий '}), 'повар миллий');
+});

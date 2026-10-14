@@ -34,8 +34,8 @@ from retro.modules.accountant.roster import DeviceNamesakes, RosterStore
 from retro.modules.cashier.service import TZ
 from retro.modules.manager.directions import parse_manager_directions
 from retro.modules.manager.photos import NOT_IMAGE, TOO_LARGE, UNREADABLE
-from retro.modules.manager.routes import (FACE_FAILED, FACE_PENDING, FOREIGN, MANUAL_MESSAGE, NO_PHOTO,
-                                          NOT_FOUND, PENDING_MESSAGE)
+from retro.modules.manager.routes import (FACE_FAILED, FACE_PENDING, FOREIGN, FOREIGN_ROLE, MANUAL_MESSAGE, NO_PHOTO,
+                                          NOT_FOUND, PENDING_MESSAGE, SIMILAR, UNKNOWN_ROLE)
 
 USERS = {'cashier': ('secret', 'cashier'), 'accountant': ('secret', 'accountant'),
          'director': ('secret', 'director'), 'founder': ('secret', 'founder'),
@@ -313,7 +313,7 @@ def test_home_lists_shift_staff_of_own_directions_alphabetically_without_money(c
     assert [item['name'] for item in kitchen['employees']] == ['Юсупов Фаррух']
 
     every = home(cabinet)
-    assert set(every) == {'login', 'name', 'role', 'directions', 'hikvision', 'employees', 'photo_message'}
+    assert set(every) == {'login', 'name', 'role', 'directions', 'hikvision', 'employees', 'photo_message', 'roles'}
     assert (every['login'], every['role']) == ('karina', 'manager')
     assert every['directions'] == ['Кухня', 'Зал', 'Уборка']
     assert every['hikvision'] == {'configured': True}
@@ -354,6 +354,75 @@ def test_photo_and_send_rights_follow_directions(cabinet):
         assert (answer.status_code, answer.json()['detail']) == (404, NOT_FOUND)
     answer = push(cabinet, hall)
     assert (answer.status_code, answer.json()['detail']) == (422, NO_PHOTO)
+
+
+# ── Новый сотрудник из кабинета (T-450) ──────────────────────────────────
+
+def add(client, user='karina', **body):
+    return client.post('/api/manager/employees', json={'name': 'Каримова Лола', 'role': 'хостес', **body},
+                       auth=(user, 'secret'))
+
+
+def test_roles_for_the_form_follow_the_managers_directions(cabinet):
+    staff(cabinet, 'Юсупов Фаррух', 'Повар миллий', 'Кухня')
+    staff(cabinet, 'Кая Эмре', 'повар турк', 'Кухня')
+    staff(cabinet, 'Без должности', 'Должность не указана', 'Не распределено')
+    kitchen = home(cabinet, 'kitchen')['roles']
+    # Только кухня: кондитер из реестра и повара, что уже есть (без дублей по регистру).
+    assert kitchen == [{'role': 'Кондитер', 'group': 'Кухня'}, {'role': 'Повар миллий', 'group': 'Кухня'},
+                       {'role': 'Повар турк', 'group': 'Кухня'}]
+    every = {item['role']: item['group'] for item in home(cabinet)['roles']}
+    assert every['Официант'] == 'Обслуживание зала' and every['Техперсонал'] == 'Уборка'
+    assert every['Менеджер'] == 'Управление', 'на весь ресторан — и «Управление»'
+    assert 'Должность не указана' not in every
+
+
+def test_manager_adds_an_employee_without_a_rate_and_photographs_them(cabinet, terminal):
+    answer = add(cabinet, role='Хостес')
+    assert answer.status_code == 201
+    created = answer.json()['employee']
+    assert (created['name'], created['role'], created['group'], created['employment_type']) == (
+        'Каримова Лола', 'Хостес', 'Встреча гостей', 'shift')
+    assert (created['photo'], created['can_photo'], created['hikvision']['state']) == (None, True, 'none')
+    assert 'rate' not in created
+    person = next(item for item in roster(cabinet).list() if item.id == created['id'])
+    # Ставку назначает бухгалтер: в «Сотрудниках» — «Нет ставки». Кто завёл — в истории.
+    assert person.rate is None
+    assert [item['id'] for item in home(cabinet)['employees']] == [created['id']]
+    # Дальше — обычный путь фото: человек и лицо уходят на устройство.
+    sent = upload(cabinet, created['id'], send=True).json()['employee']
+    assert (sent['hikvision']['state'], sent['hikvision']['face']['state']) == ('sent', 'sent')
+
+
+def test_manager_cannot_add_outside_own_directions_or_unknown_roles(cabinet):
+    answer = add(cabinet, 'kitchen', role='официант')
+    assert (answer.status_code, answer.json()['detail']) == (403, FOREIGN_ROLE)
+    answer = add(cabinet, role='водитель')
+    assert (answer.status_code, answer.json()['detail']) == (422, UNKNOWN_ROLE)
+    # Кириллица, как у бухгалтера (М-04): латиницу не пишем.
+    answer = add(cabinet, name='Karimova Lola')
+    assert answer.status_code == 422 and 'латин' in answer.json()['detail'].lower()
+    assert roster(cabinet).list() == []
+    # Остальные роли панели в кабинет менеджера не ходят.
+    assert add(cabinet, 'accountant').status_code == 403
+    assert add(cabinet, 'boss').status_code == 201
+
+
+def test_namesakes_are_shown_before_adding_and_confirmed_by_the_manager(cabinet):
+    mine = staff(cabinet, 'Каримова Лола', 'хостес', 'Встреча гостей')
+    cook = staff(cabinet, 'Лола Каримова', 'Повар миллий', 'Кухня')
+    roster(cabinet).add_monthly(name='Каримова Лола Алишеровна', role='Менеджер', salary='5000000')
+    answer = add(cabinet, 'kitchen', role='кондитер')
+    assert answer.status_code == 409
+    assert answer.json()['detail'] == SIMILAR
+    # Свои можно открыть («Это он»), чужих и окладников только видно.
+    assert [(item['id'], item['group'], item['mine']) for item in answer.json()['matches']] == [
+        (mine, 'Встреча гостей', False), (cook, 'Кухня', True), (None, 'На окладе', False)]
+    assert len(roster(cabinet).list()) == 2
+    confirmed = add(cabinet, 'kitchen', role='кондитер', confirm_new=True)
+    assert confirmed.status_code == 201
+    assert confirmed.json()['employee']['group'] == 'Кухня'
+    assert len(roster(cabinet).list()) == 3
 
 
 # ── Фото ───────────────────────────────────────────────────────────────────
