@@ -14,14 +14,13 @@ from retro.modules.accountant import opening_migration
 
 LEGACY_START = date(2026, 10, 6)
 # Имена, под которыми модули держат границу; другие даты (например DAY теста) не трогаем.
-NAMES = {'ACCOUNTING_START', 'SALARY_SHIFT_START', 'ENTRY_START', 'FIRST_SHIFT', 'CUTOVER'}
-# Имена, под которыми модули держат границу; другие даты (например DAY теста) не трогаем.
-NAMES = {'ACCOUNTING_START', 'SALARY_SHIFT_START', 'ENTRY_START', 'FIRST_SHIFT', 'CUTOVER'}
+NAMES = {'ACCOUNTING_START', 'SALARY_SHIFT_START', 'SALARY_ENTRY_START', 'ENTRY_START', 'FIRST_SHIFT', 'CUTOVER'}
 
 
 @pytest.fixture
 def legacy_boundary(monkeypatch):
     replace = {accounting_period.ACCOUNTING_START: LEGACY_START,
+               accounting_period.SALARY_ENTRY_START: LEGACY_START,
                accounting_period.SALARY_SHIFT_START: LEGACY_START - timedelta(days=1)}
     # Модули (и скрипты из scripts/) импортируют границу по имени — подменяем каждую копию.
     for module in list(sys.modules.values()):

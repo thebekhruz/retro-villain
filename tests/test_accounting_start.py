@@ -110,10 +110,12 @@ def test_period_totals_and_monthly_payroll_exclude_before_cutover(tmp_path):
     archived_shift = OLD - timedelta(days=1)
     store.confirm_payroll(archived_shift, [row], 'Бухгалтер')
     old_id = store.accruals(archived_shift)[0]['id']
+    # Ведомость по людям — со смены 14.10 (NEXT); смена 13.10 оплачена общей строкой.
     store.confirm_payroll(START, [row], 'Бухгалтер')
-    assert [r['work_day'] for r in store.accruals(NEXT)] == [START.isoformat()]
+    store.confirm_payroll(NEXT, [row], 'Бухгалтер')
+    assert [r['work_day'] for r in store.accruals(NEXT)] == [NEXT.isoformat()]
     cells = store.payroll_month(OLD, NEXT)['shift'][0]['cells']
-    assert list(cells) == [START.isoformat()]
+    assert list(cells) == [START.isoformat(), NEXT.isoformat()]  # «Зарплата · месяц» — с начала учёта
     with pytest.raises(LedgerError, match='архив'):
         store.pay_salary(old_id, NEXT, '100')
 

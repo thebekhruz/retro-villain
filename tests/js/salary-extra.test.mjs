@@ -65,9 +65,9 @@ test('проверка ввода — как на сервере: даты, су
   assert.equal(extra.check(ok, data), null);
   assert.match(extra.check({...ok, person: null}, data), /Выберите сотрудника/);
   assert.match(extra.check({...ok, paid: '2026-10-10'}, data), /будущим днём/);
-  assert.match(extra.check({...ok, paid: '2026-10-01', work: '2026-09-30'}, data), /13\.10\.2026/);
+  assert.match(extra.check({...ok, paid: '2026-10-01', work: '2026-09-30'}, data), /15\.10\.2026/);
   assert.match(extra.check({...ok, work: '2026-10-09', paid: '2026-10-08'}, data), /позже дня выплаты/);
-  assert.match(extra.check({...ok, work: '2026-09-30'}, data), /12\.10\.2026/);
+  assert.match(extra.check({...ok, work: '2026-09-30'}, data), /14\.10\.2026/);
   assert.equal(extra.check({...ok, work: '2026-10-05', paid: '2026-10-06'}, data), null);
   assert.match(extra.check({...ok, amount: null}, data), /сумму/);
   assert.match(extra.check({...ok, amount: 0}, data), /сумму/);
