@@ -125,3 +125,17 @@ test('T-450: форма нового сотрудника — что не так
   assert.deepEqual(logic.formErrors({name: 'Каримова Лола', role: 'Хостес', type: 'temporary', from: '2026-10-20'}), {});
   assert.equal(logic.roleKeyOf({role: '  Повар   Миллий '}), 'повар миллий');
 });
+
+test('T-453: ставка в форме — цифры с пробелами, пусто без предложения, иначе ошибка', () => {
+  assert.deepEqual(logic.rateDigits(''), {value: null});
+  assert.deepEqual(logic.rateDigits(' 200 000 '), {value: '200000'});
+  assert.ok(logic.rateDigits('200к').error);
+  assert.ok(logic.rateDigits('0').error);
+  assert.equal(logic.formatRate('2000000'), '2 000 000');
+  assert.equal(logic.formatRate('20a0 0'), '2 000');
+  assert.deepEqual(logic.formErrors({name: 'Каримова Лола', role: 'Хостес', type: 'shift', rate: 'двести'}),
+    {rate: 'Ставка — сумма в сумах цифрами, например 200 000.'});
+  assert.equal(logic.rateLine({rate: {state: 'proposed', proposed: '200000'}}), 'Ставка 200 000 сум ждёт бухгалтера');
+  assert.equal(logic.rateLine({rate: {state: 'set', proposed: null}}), '');
+  assert.equal(logic.rateLine({}), '');
+});

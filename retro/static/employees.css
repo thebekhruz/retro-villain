@@ -123,6 +123,12 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-pill.st-manual_present{background:#f7f3e8;color:#7a6a45}
 .emp-cell-num{font-size:14.5px;font-variant-numeric:tabular-nums;color:#1c302b}
 .emp-cell-num.is-missing{color:#a96039}
+/* Ставка от менеджера (T-453): в строке и блоком в карточке — вид блока «Похожие» из prerelease. */
+.emp-cell-num.is-proposed{color:#8a6a2a}
+.emp-proposal{display:grid;gap:10px;margin-top:12px;padding:14px;border:1px solid #eddfbe;border-radius:12px;background:#fbf7ed}
+.emp-proposal-title{font-size:15px;color:#2f3a33}
+.emp-proposal-note{margin:0;font-size:14px;line-height:1.45;color:#6d6047}
+.emp-proposal-confirm{width:100%;min-height:44px}
 .emp-cell-pay{font-weight:600;color:#1c4c3e}
 .emp-cell-pay.is-none{color:#9da79d;font-weight:400}
 .emp-m-label{display:none}

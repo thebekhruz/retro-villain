@@ -121,6 +121,10 @@
 .mgr-person-name{margin-top:8px;font-size:22px;font-weight:650;letter-spacing:-.4px;color:var(--ink);overflow-wrap:anywhere}
 .mgr-person-role{font-size:14px;color:var(--muted-2)}
 .mgr-hint{margin:0;font-size:13px;line-height:1.45;color:var(--muted-2)}
+/* Ставка, которую менеджер предложил (T-453): ждёт бухгалтера. */
+.mgr-rate-pill{margin-top:4px;padding:6px 12px;border-radius:999px;background:var(--warn-bg);color:var(--warn);
+  font-size:13px;font-weight:600}
+.mgr-rate-note{margin-top:-8px}
 .mgr-done{margin:0;padding:12px 14px;border-radius:14px;background:var(--ok-bg);color:var(--ok);font-size:13px;font-weight:600;line-height:1.45}
 /* Статус: фото → человек в Hikvision → лицо на устройстве. */
 .mgr-status{box-shadow:none}

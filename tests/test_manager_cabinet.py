@@ -323,7 +323,9 @@ def test_home_lists_shift_staff_of_own_directions_alphabetically_without_money(c
         'Абдуллаев Тимур', 'Алиев Жасур', 'Ёқубов Самандар', 'Каримов Жахонгир', 'Юлдашев Дильшод', 'Юсупов Фаррух']
     first = every['employees'][0]
     assert set(first) == {'id', 'name', 'role', 'group', 'employment_type', 'photo', 'hikvision',
-                          'can_photo', 'can_retry', 'photo_unknown'}
+                          'can_photo', 'can_retry', 'photo_unknown', 'rate'}
+    # Ставку бухгалтера менеджер не видит — только что она есть (T-453).
+    assert first['rate'] == {'state': 'set', 'proposed': None}
     assert (first['role'], first['group'], first['employment_type'], first['photo']) == (
         'бармен', 'Бар', 'shift', None)
     assert first['hikvision'] == {'state': 'none', 'employee_no': None, 'message': None,
@@ -384,7 +386,7 @@ def test_manager_adds_an_employee_without_a_rate_and_photographs_them(cabinet, t
     assert (created['name'], created['role'], created['group'], created['employment_type']) == (
         'Каримова Лола', 'Хостес', 'Встреча гостей', 'shift')
     assert (created['photo'], created['can_photo'], created['hikvision']['state']) == (None, True, 'none')
-    assert 'rate' not in created
+    assert created['rate'] == {'state': 'none', 'proposed': None}
     person = next(item for item in roster(cabinet).list() if item.id == created['id'])
     # Ставку назначает бухгалтер: в «Сотрудниках» — «Нет ставки». Кто завёл — в истории.
     assert person.rate is None
@@ -458,6 +460,56 @@ def test_manager_deletes_only_within_own_directions(cabinet):
     upload(cabinet, hall)
     assert cabinet.delete(f'/api/manager/employees/{hall}', auth=('boss', 'secret')).status_code == 204
     assert roster(cabinet).photo(hall) is None
+
+
+def test_manager_proposes_a_rate_and_the_accountant_confirms_it(cabinet):
+    """T-453: ставка менеджера — только предложение. Пока бухгалтер не подтвердил,
+    ставки нет; «Подтвердить» делает её ставкой, а в истории — кто предложил и кто
+    подтвердил."""
+    from retro.modules.cashier.service import today_tashkent
+    today = {'date': today_tashkent().isoformat()}
+    created = add(cabinet, name='Мирзаева Нодира', role='официант', proposed_rate='200000').json()['employee']
+    assert created['rate'] == {'state': 'proposed', 'proposed': '200000'}
+    person = next(item for item in roster(cabinet).list() if item.id == created['id'])
+    assert (person.rate, str(person.proposed_rate), person.proposed_by) == (None, '200000', 'karina')
+    row = next(item for item in cabinet.get('/api/accountant/staff', params=today,
+                                            auth=('accountant', 'secret')).json()['employees']
+               if item['employee_id'] == created['id'])
+    assert (row['rate'], row['proposed_rate'], row['proposed_by'], row['blocker']) == (
+        None, '200000', 'karina', 'missing_rate')
+
+    # Менеджер не подтверждает сам: раздел бухгалтера ему закрыт.
+    assert cabinet.post(f'/api/accountant/employees/{created["id"]}/confirm-rate',
+                        auth=('karina', 'secret')).status_code == 403
+    answer = cabinet.post(f'/api/accountant/employees/{created["id"]}/confirm-rate', auth=('accountant', 'secret'))
+    assert answer.status_code == 200
+    assert (answer.json()['employee']['rate'], answer.json()['employee']['proposed_rate']) == ('200000', None)
+    assert card(cabinet, created['id'])['rate'] == {'state': 'set', 'proposed': None}
+    history = cabinet.get(f'/api/accountant/employees/{created["id"]}/history', auth=('accountant', 'secret')).text
+    assert 'Предложена ставка 200 000 сум' in history and 'предложенная менеджером karina' in history
+    # Второй раз подтверждать нечего.
+    again = cabinet.post(f'/api/accountant/employees/{created["id"]}/confirm-rate', auth=('accountant', 'secret'))
+    assert again.status_code == 409
+
+
+def test_accountant_corrects_the_proposed_rate_with_an_ordinary_edit(cabinet):
+    created = add(cabinet, name='Мирзаева Нодира', role='официант', proposed_rate='200000').json()['employee']
+    answer = cabinet.patch(f'/api/accountant/employees/{created["id"]}', auth=('accountant', 'secret'),
+                           json={'rate': '180000', 'reason': 'Ставка официанта по сетке'})
+    assert answer.status_code == 200
+    assert (answer.json()['employee']['rate'], answer.json()['employee']['proposed_rate']) == ('180000', None)
+    # Менеджер видит только, что ставка назначена, — без суммы бухгалтера.
+    assert card(cabinet, created['id'])['rate'] == {'state': 'set', 'proposed': None}
+    assert '180000' not in cabinet.get('/api/manager/home', auth=('karina', 'secret')).text
+
+
+def test_proposed_rate_is_optional_and_validated(cabinet):
+    plain = add(cabinet, name='Мирзаева Нодира', role='официант').json()['employee']
+    assert plain['rate'] == {'state': 'none', 'proposed': None}
+    for bad in ('-5', 'много', '0'):
+        answer = add(cabinet, name='Хайдаров Отабек', role='ранер', proposed_rate=bad, confirm_new=True)
+        assert answer.status_code == 422, bad
+    assert [item.name for item in roster(cabinet).list()] == ['Мирзаева Нодира']
 
 
 # ── Фото ───────────────────────────────────────────────────────────────────

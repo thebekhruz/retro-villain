@@ -84,6 +84,7 @@ function people() {
   return (current?.employees || []).map(row => ({
     ...row,
     rate: row.rate == null || row.rate === '' ? null : Number(row.rate),
+    proposed_rate: row.proposed_rate == null || row.proposed_rate === '' ? null : Number(row.proposed_rate),
     min: arrivalMinutes(row.first_entry),
     pay: payFor(row)
   }));
@@ -249,8 +250,10 @@ function registryRow(row) {
   const statusCell = text('div', 'emp-cell-status', null);
   statusCell.append(pill(row.status));
   // Ставка
-  const rate = text('div', 'emp-cell-num emp-cell-rate' + (row.rate == null ? ' is-missing' : ''),
-    row.rate == null ? 'Нет ставки' : money(row.rate));
+  // Ставку предложил менеджер (T-453) — ждёт подтверждения бухгалтера.
+  const proposed = row.rate == null && row.proposed_rate != null;
+  const rate = text('div', 'emp-cell-num emp-cell-rate' + (proposed ? ' is-proposed' : row.rate == null ? ' is-missing' : ''),
+    proposed ? 'Предложено ' + money(row.proposed_rate) : row.rate == null ? 'Нет ставки' : money(row.rate));
   // Начислено
   const pay = text('div', 'emp-cell-num emp-cell-pay' + (row.pay ? '' : ' is-none'),
     row.pay == null ? '—' : money(row.pay));
@@ -525,6 +528,8 @@ function drawerCard() {
       manual_absent: 'Нет в Hikvision — отмечен «не был» вручную, начисление 0 сум.'};
     facts.append(text('p', 'emp-drawer-note', selP.rate == null ? 'Ставка не указана — не начисляется.' : notes[selP.status] || ''));
     card.append(facts);
+    const proposal = proposalBlock(selP);
+    if (proposal) card.append(proposal);
   }
 
   const form = text('div', 'emp-drawer-form', null);
@@ -554,7 +559,8 @@ function drawerCard() {
   groupSelect.addEventListener('change', event => { setDraft('group', event.target.value); d.groupTouched = true; });
   form.append(fieldLabel('Группа', groupSelect));
 
-  form.append(fieldLabel('Ставка за смену, сум', moneyInput('rate', d.rate, 'Не указана')));
+  form.append(fieldLabel('Ставка за смену, сум', moneyInput('rate', d.rate,
+    selP && selP.rate == null && selP.proposed_rate != null ? 'Предложено ' + L.formatAmount(selP.proposed_rate) : 'Не указана')));
 
   form.append(manualToggle('Нет в Hikvision · отмечать вручную', d.manual, value => setDraft('manual', value),
     d.manual ? 'Турникет не нужен: по умолчанию «был», в «Финансах дня» можно отметить «не был».'
@@ -745,6 +751,35 @@ function historyBlock() {
 // ── Запись ───────────────────────────────────────────────────────────────────
 // false — «не удалось»: так кнопка в busy.js не покажет ✓.
 const fail = value => { ui.feedback = value; ui.fbErr = true; render(); return false; };
+/* Ставка, которую предложил менеджер (T-453): «Подтвердить» делает её ставкой.
+   Исправить — вписать свою в «Ставка за смену» и сохранить с причиной. */
+function proposalBlock(person) {
+  if (!person || person.rate != null || person.proposed_rate == null) return null;
+  // Неразрывные пробелы: «220 000 сум» не рвётся посередине числа.
+  const amount = (L.formatAmount(person.proposed_rate) + ' сум').replace(/ /g, '\u00a0');
+  const box = text('div', 'emp-proposal', null);
+  box.append(text('b', 'emp-proposal-title', 'Ставка ждёт подтверждения'),
+    text('p', 'emp-proposal-note', 'Предложение менеджера' + (person.proposed_by ? ' ' + person.proposed_by : '')
+      + ': ' + amount + ' за смену. Подтвердите или впишите свою ставку ниже.'));
+  const confirm = el('button', 'emp-btn emp-btn--primary emp-proposal-confirm', {type: 'button', textContent: 'Подтвердить ' + amount});
+  confirm.dataset.busyKey = 'emp-confirm-rate';
+  confirm.addEventListener('click', () => { const work = confirmRate(person.employee_id); if (B) B.button(confirm, work); });
+  box.append(confirm);
+  return box;
+}
+async function confirmRate(id) {
+  try {
+    const response = await fetch('/api/accountant/employees/' + encodeURIComponent(id) + '/confirm-rate', {method: 'POST'});
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось подтвердить.');
+    await reloadDay();
+    const fresh = people().find(p => p.employee_id === id);
+    if (ui.sel === id && fresh) { ui.draft = shiftDraft(fresh); loadHistory('shift', id); render(); }
+    message('Ставка подтверждена.');
+    flashRow('emp:' + id);
+    return true;
+  } catch (error) { return fail(error.message); }
+}
 // Сохранённую строку реестра подсвечиваем — видно, что именно изменилось.
 const flashRow = key => B?.flash(document.querySelector('[data-busy-key="' + CSS.escape(key) + '"]'));
 const amountError = {bad: 'Сумма — только цифры, например 180 000.', zero: 'Ставка должна быть больше нуля.'};

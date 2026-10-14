@@ -59,7 +59,7 @@
         <button id="tile-add" class="mgr-tile is-add" type="button">
           <span class="shokh-plus" aria-hidden="true">+</span>
           <span class="mgr-tile-title">Новый сотрудник</span>
-          <span class="mgr-tile-sub">Ставку назначит бухгалтер</span>
+          <span class="mgr-tile-sub">Ставку подтвердит бухгалтер</span>
         </button>
         <button id="tile-problem" class="mgr-tile is-alert" type="button" hidden>
           <span class="mgr-tile-count"><b id="tile-problem-num" data-i18n="off"></b> <span>не на терминале</span></span>
@@ -103,6 +103,7 @@
           </button>
           <strong id="card-name" class="mgr-person-name" data-i18n="off">—</strong>
           <span id="card-role" class="mgr-person-role"></span>
+          <span id="card-rate" class="mgr-rate-pill" hidden></span>
         </div>
 
         <div id="card-status" class="shokh-save mgr-status" role="status" aria-live="polite">
@@ -158,6 +159,14 @@
         </div>
         <p id="f-role-error" class="mgr-field-error" role="alert" hidden></p>
 
+        <!-- T-453: ставку менеджер только предлагает — подтверждает бухгалтер. -->
+        <label class="shokh-field"><span>Ставка за смену, сум</span>
+          <input id="f-rate" name="rate" type="text" inputmode="numeric" maxlength="13" autocomplete="off"
+                 placeholder="Необязательно" aria-describedby="f-rate-note">
+        </label>
+        <p id="f-rate-note" class="shokh-note mgr-rate-note">Бухгалтер подтвердит эту ставку или поставит свою.</p>
+        <p id="f-rate-error" class="mgr-field-error" role="alert" hidden></p>
+
         <!-- Похожие в реестре: решает менеджер, карточки сами не объединяем. -->
         <article id="similar" class="mgr-similar" hidden>
           <strong class="mgr-similar-title">Похожие уже есть в реестре</strong>
@@ -166,7 +175,7 @@
           <button id="similar-new" class="shokh-dashed mgr-similar-new" type="button">Это другой человек, добавить</button>
         </article>
 
-        <p class="shokh-note mgr-form-note">Ставку назначит бухгалтер. После добавления сфотографируйте человека: фото уйдёт на терминал.</p>
+        <p class="shokh-note mgr-form-note">После добавления сфотографируйте человека: фото уйдёт на терминал.</p>
       </form>
     </div>
     <div class="shokh-flow-nav">
