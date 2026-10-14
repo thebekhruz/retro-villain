@@ -996,24 +996,40 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
    текст в подсказке (nav.js). */
 .side-account{--rm-skel-a:#ffffff1c;--rm-skel-b:#ffffff36}
 .side-status{display:grid;gap:8px;min-width:0}
-.side-account .top-status{display:flex;align-items:flex-start;gap:7px;min-width:0;font-size:12px;line-height:1.4;
+/* .sidebar в селекторе — сильнее правил шапки бухгалтера в mobile.css
+   (серый текст для светлого фона). */
+.sidebar .side-account .top-status{display:flex;align-items:flex-start;gap:7px;min-width:0;font-size:12px;line-height:1.4;
   color:#c5d3c9;overflow-wrap:anywhere;white-space:normal}
 .side-account .top-status:before{flex:none;margin-top:5px}
 .side-account .top-status.rm-status-skel:empty{width:100%;max-width:150px}
 .side-account .rm-demo{justify-self:start;max-width:100%;white-space:normal;background:#ffffff14;border-color:#ffffff26;color:#e9f0e8}
 @media(min-width:901px){
   html.sidebar-collapsed .side-status{justify-items:center}
-  html.sidebar-collapsed .side-account .top-status{font-size:0;gap:0}
+  html.sidebar-collapsed .sidebar .side-account .top-status{font-size:0;gap:0}
   html.sidebar-collapsed .side-account .top-status:before{margin-top:0}
   html.sidebar-collapsed .side-account .rm-demo{padding:4px}
   html.sidebar-collapsed .side-account .rm-demo span{display:none}
 }
 @media(min-width:651px) and (max-width:900px){
   .side-status{justify-items:center}
-  .side-account .top-status{font-size:0;gap:0}
+  .sidebar .side-account .top-status{font-size:0;gap:0}
   .side-account .top-status:before{margin-top:0}
   .side-account .rm-demo{padding:4px}
   .side-account .rm-demo span{display:none}
+}
+/* Бухгалтер на планшете (651–900): меню остаётся подписанным, 195 px
+   (mobile.css), — и низ меню как в широком: язык в ряд, буква и имя, «Выйти»
+   значком, состояние данных текстом. */
+@media(min-width:651px) and (max-width:900px){
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-account{justify-items:stretch}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-status{justify-items:start}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-account .top-status{font-size:12px;gap:7px}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-account .top-status:before{margin-top:5px}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-account .rm-demo span{display:inline}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-lang{flex-direction:row}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-user{flex-direction:row}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-user-name{display:block}
+  :is(.fd-page,.pr-page,.emp-page) .sidebar .side-logout{width:34px;height:34px;margin-left:auto}
 }
 /* Телефон: меню — полоса сверху. Язык и выход — справа от логотипа,
    модули — строкой ниже, состояние данных — под ними. Имя прячем: на 320
