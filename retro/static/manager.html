@@ -167,6 +167,17 @@
         <p id="f-rate-note" class="shokh-note mgr-rate-note">Бухгалтер подтвердит эту ставку или поставит свою.</p>
         <p id="f-rate-error" class="mgr-field-error" role="alert" hidden></p>
 
+        <div class="shokh-field"><span id="type-label">Тип</span>
+          <div class="shokh-switch mgr-type" role="group" aria-labelledby="type-label">
+            <button type="button" class="shokh-switch-btn is-on" data-type="shift" aria-pressed="true">Сменный</button><button type="button" class="shokh-switch-btn" data-type="temporary" aria-pressed="false">Временный</button>
+          </div>
+        </div>
+        <div id="f-period" class="mgr-period" hidden>
+          <label class="shokh-field"><span>Первый день</span><input id="f-from" type="date"></label>
+          <label class="shokh-field"><span>Последний день</span><input id="f-to" type="date"></label>
+          <p class="shokh-note mgr-period-note">Даты можно не указывать.</p>
+        </div>
+
         <!-- Похожие в реестре: решает менеджер, карточки сами не объединяем. -->
         <article id="similar" class="mgr-similar" hidden>
           <strong class="mgr-similar-title">Похожие уже есть в реестре</strong>

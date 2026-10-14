@@ -53,3 +53,50 @@ test('«Не начисляется»: все причины сразу', () => 
   assert.deepEqual(logic.attentionReasons({rate: null, status: 'manual_present'}), ['Нет ставки']);
   assert.deepEqual(logic.attentionReasons({rate: '1', status: 'on_time'}), []);
 });
+
+/* T-429 (ТЗ 09.10, Б-06): под выбранной группой — её должности из реестра. */
+test('должности внутри группы: из реестра, без дублей по регистру и пробелам', () => {
+  const rows = [
+    {group: 'Кухня', role: 'Повар миллий'}, {group: 'Кухня', role: 'повар  миллий'}, {group: 'Кухня', role: 'Повар тандыр'},
+    {group: 'Кухня', role: 'кондитер'}, {group: 'Кухня', role: ''}, {group: 'Бар', role: 'бармен'}, {group: 'Бар', role: 'Бармен'}];
+  assert.deepEqual(logic.groupRoles(rows, 'Кухня'), [
+    {key: 'кондитер', label: 'Кондитер', count: 1},
+    {key: 'повар миллий', label: 'Повар миллий', count: 2},
+    {key: 'повар тандыр', label: 'Повар тандыр', count: 1}]);
+  assert.deepEqual(logic.groupRoles(rows, 'Бар'), [], 'одна должность в группе — выбирать не из чего');
+  assert.deepEqual(logic.groupRoles(rows, 'Охрана'), []);
+  assert.deepEqual(logic.groupRoles(null, 'Кухня'), []);
+  assert.ok(logic.matchesRole('', 'Кондитер'), 'пустой фильтр — все должности');
+  assert.ok(logic.matchesRole('повар миллий', ' ПОВАР  Миллий '));
+  assert.ok(logic.matchesRole('повар елка', 'Повар ёлка'));
+  assert.ok(!logic.matchesRole('повар миллий', 'Повар тандыр'));
+  assert.ok(!logic.matchesRole('повар миллий', null));
+});
+
+/* T-434: временный сотрудник — пометка с периодом, проверка дат и то, что
+   уходит на сервер. Пример ТЗ: хостес Карамат с 08.10 по 10.10. */
+test('временный: пометка «временный · период», проверка «по» не раньше «с», поля для сервера', () => {
+  assert.equal(logic.typeTag({employment_type: 'temporary', work_period: '08.10–10.10'}), 'временный · 08.10–10.10');
+  assert.equal(logic.typeTag({employment_type: 'temporary', work_period: 'с 08.10'}), 'временный · с 08.10');
+  assert.equal(logic.typeTag({employment_type: 'temporary', work_period: null}), 'временный');
+  assert.equal(logic.typeTag({employment_type: 'shift', work_period: null}), '');
+  assert.equal(logic.typeTag({}), '', 'старые строки без типа — сменные');
+  assert.equal(logic.periodError('2026-10-10', '2026-10-08'), 'Период работы: «по» (08.10) раньше, чем «с» (10.10).');
+  assert.equal(logic.periodError('2026-10-08', '2026-10-08'), '', 'один день — можно');
+  assert.equal(logic.periodError('2026-10-08', ''), '', 'только начало — можно');
+  assert.equal(logic.periodError('', '2026-10-10'), '', 'только конец — можно');
+  assert.deepEqual(logic.periodPayload({type: 'temporary', from: '2026-10-08', to: '2026-10-10'}),
+    {employment_type: 'temporary', work_from: '2026-10-08', work_to: '2026-10-10'});
+  assert.deepEqual(logic.periodPayload({type: 'temporary', from: '', to: ''}),
+    {employment_type: 'temporary', work_from: null, work_to: null}, 'период необязателен');
+  // Вернули в сменные — даты, оставшиеся в полях, не уходят.
+  assert.deepEqual(logic.periodPayload({type: 'shift', from: '2026-10-08', to: '2026-10-10'}),
+    {employment_type: 'shift', work_from: null, work_to: null});
+});
+
+test('тёзка в реестре одной строкой: должность, группа, временный с периодом', () => {
+  assert.equal(logic.namesakeLine({role: 'хостес', group: 'Встреча гостей', temporary: true, work_period: '08.10–10.10'}),
+    'Хостес · Встреча гостей · временный · 08.10–10.10');
+  assert.equal(logic.namesakeLine({role: 'Менеджер', group: 'На окладе', temporary: false}), 'Менеджер · На окладе');
+  assert.equal(logic.namesakeLine({role: '', group: 'Кухня', temporary: true, work_period: null}), 'Кухня · временный');
+});

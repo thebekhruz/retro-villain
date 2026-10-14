@@ -316,7 +316,7 @@ def test_repeating_employee_creation_with_one_key_does_not_add_a_second_person(t
 
 
 def test_two_real_namesakes_can_both_be_added(tmp_path):
-    """Однофамильцы — не дубли: под своим ключом добавляется каждый.
+    """Тёзки — не дубли: после подтверждения бухгалтера добавляется каждый.
 
     Поэтому уникальность имени в базе не вводим: она запретила бы законный
     случай, а от повтора защищает ключ операции.
@@ -327,7 +327,11 @@ def test_two_real_namesakes_can_both_be_added(tmp_path):
                 'group': 'Обслуживание зала'}
         assert c.post('/api/accountant/employees', json=body,
                       headers={'Idempotency-Key': str(uuid4())}).status_code == 201
+        # Второй с тем же именем — сначала вопрос о тёзке (ТЗ 09.10, М-04),
+        # после «это другой человек» добавляется.
         assert c.post('/api/accountant/employees', json=body,
+                      headers={'Idempotency-Key': str(uuid4())}).status_code == 409
+        assert c.post('/api/accountant/employees', json={**body, 'confirm_new': True},
                       headers={'Idempotency-Key': str(uuid4())}).status_code == 201
         staff = c.get('/api/accountant/staff', params={'date': DAY.isoformat()}).json()['employees']
         assert sum(row['name'] == 'Жасур Алиев' for row in staff) == 2

@@ -7,16 +7,19 @@ from itertools import groupby
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.request_reads import call as cached_call
 
+from .expense_catalog import EXTRA_SALARY_ITEM
 from .ledger import LedgerError, amount_value, ensure_open, now_stamp, required_text
 from .audit import record_audit
 
-SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover'}
+# Доп. выплаты сменным (salary_extra_payout) — тоже не оклад: фонд окладов они не тратят.
+SHIFT_SALARY_CODES = {'salary_cashier', 'salary_staff', 'salary_technical', 'salary_carryover', 'salary_extra_payout'}
 
 
 def is_monthly_salary(item_code):
+    # Доп. зарплата временным — не оклад: план выплат месяца она не уменьшает.
     return item_code == 'salary_monthly' or (
         isinstance(item_code, str) and item_code.startswith('salary_')
-        and item_code not in SHIFT_SALARY_CODES)
+        and item_code not in SHIFT_SALARY_CODES and item_code != EXTRA_SALARY_ITEM)
 
 
 # День «до начала учёта» для подразумеваемого нулевого остатка Шоха.
@@ -96,7 +99,7 @@ def _balance(rows):
 def add_reserve_entry(store, day, account, kind, amount, note, cashier_amount, *, existing_connection=None,
                       place=None):
     if kind == 'opening' and day > ACCOUNTING_START:
-        raise LedgerError('Начальный остаток нужно указать на 02.10.2026 — первый день учёта.')
+        raise LedgerError(f'Начальный остаток нужно указать на {ACCOUNTING_START:%d.%m.%Y} — первый день учёта.')
     allowed = {'dividends': {'opening', 'transfer', 'withdrawal'},
                'usd': {'opening', 'deposit', 'withdrawal'}, 'shoh': {'opening', 'withdrawal'}}
     if account not in allowed or kind not in allowed[account]:
