@@ -129,9 +129,32 @@
   /* Должности формы «Новый сотрудник» — с сервера, уже по разделам менеджера. */
   function roleKeyOf(item) { return plain(item && item.role); }
 
+  /* Ставка в форме (T-453): только цифры, пусто — без предложения.
+     «200 000» → '200000'; что-то кроме цифр и пробелов — ошибка. */
+  function rateDigits(value) {
+    const text = collapse(value).replace(/\s/g, '');
+    if (!text) return {value: null};
+    if (!/^\d{1,10}$/.test(text) || Number(text) <= 0) return {error: 'Ставка — сумма в сумах цифрами, например 200 000.'};
+    return {value: String(Number(text))};
+  }
+  function formatRate(value) {
+    const digits = String(value == null ? '' : value).replace(/\D/g, '').replace(/^0+(?=\d)/, '');
+    return digits.replace(/\B(?=(\d{3})+(?!\d))/g, ' ');
+  }
+  /* Ставка глазами менеджера: что показать в карточке. */
+  function rateLine(card) {
+    const rate = card && card.rate;
+    if (!rate || rate.state !== 'proposed' || !rate.proposed) return '';
+    return 'Ставка ' + formatRate(rate.proposed) + ' сум ждёт бухгалтера';
+  }
+
   /* Форма: что не так, словами. Пусто — можно отправлять. */
   function formErrors(form) {
     const errors = {};
+    if (form.rate !== undefined) {
+      const rate = rateDigits(form.rate);
+      if (rate.error) errors.rate = rate.error;
+    }
     if (!collapse(form.name)) errors.name = 'Впишите фамилию и имя.';
     if (!collapse(form.role)) errors.role = 'Выберите должность.';
     if (form.type === 'temporary' && form.from && form.to && form.to < form.from) {
@@ -177,5 +200,6 @@
   }
 
   return {collapse, initials, roleLine, isDone, hasProblem, rowTag, matches, inPlace, filterCards, groupsOf, rolesOf, summary,
-    photoStep, hikvisionStep, faceStep, typeTag, needsPhoto, sections, nextToShoot, goal, roleKeyOf, formErrors};
+    photoStep, hikvisionStep, faceStep, typeTag, needsPhoto, sections, nextToShoot, goal, roleKeyOf, formErrors,
+    rateDigits, formatRate, rateLine};
 });

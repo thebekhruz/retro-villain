@@ -88,6 +88,11 @@ def group_for(role: str) -> str:
     return GROUPS[normalized]
 
 
+def format_rate(value: Decimal) -> str:
+    """«200 000 сум» — для истории карточки."""
+    return format(value.normalize(), ',f').replace(',', ' ') + ' сум'
+
+
 def parse_rate(value) -> Decimal | None:
     if value is None or value == '':
         return None
@@ -157,6 +162,10 @@ class Employee:
     # ведомости, и записать ему ничего нельзя. У сменных — пусто.
     work_from: date | None = None
     work_to: date | None = None
+    # Ставка, которую предложил менеджер при добавлении (T-453). Пока
+    # бухгалтер не подтвердил или не задал свою, ставки нет (rate=None).
+    proposed_rate: Decimal | None = None
+    proposed_by: str | None = None
 
     def works_on(self, day: date) -> bool:
         return work_period.in_period(day, self.work_from, self.work_to)
@@ -178,6 +187,8 @@ class Employee:
                     created_by=self.created_by,
                     work_from=self.work_from.isoformat() if self.work_from else None,
                     work_to=self.work_to.isoformat() if self.work_to else None,
+                    proposed_rate=str(self.proposed_rate) if self.proposed_rate is not None else None,
+                    proposed_by=self.proposed_by,
                     work_period=self.period_label)
 
 
@@ -280,7 +291,9 @@ class RosterStore:
                     ('face_synced_at', 'TEXT'),
                     # Период работы временного (T-434): ISO-даты дней смен,
                     # пусто — без границы. Тип — та же employment_type.
-                    ('work_from', 'TEXT'), ('work_to', 'TEXT')):
+                    ('work_from', 'TEXT'), ('work_to', 'TEXT'),
+                    # Ставка, предложенная менеджером (T-453): ждёт бухгалтера.
+                    ('proposed_rate', 'TEXT'), ('proposed_by', 'TEXT'), ('proposed_at', 'TEXT')):
                 if column not in employee_columns:
                     connection.execute(f'ALTER TABLE accountant_employees ADD COLUMN {column} {declaration}')
             # Фото сотрудника — своей таблицей, чтобы списки реестра не тащили
@@ -475,7 +488,7 @@ class RosterStore:
             if day is None:
                 rows = connection.execute('SELECT id, source_row, name, role, group_name, rate, hikvision_id, '
                                           'manual_attendance, manual_since, employment_type, direction, '
-                                          'created_by, work_from, work_to '
+                                          'created_by, work_from, work_to, proposed_rate, proposed_by '
                                           'FROM accountant_employees ORDER BY source_row').fetchall()
             else:
                 rows = connection.execute('''
@@ -491,7 +504,9 @@ class RosterStore:
                         (SELECT e.employment_type FROM accountant_employees e WHERE e.id=v.employee_id),
                         (SELECT e.direction FROM accountant_employees e WHERE e.id=v.employee_id),
                         (SELECT e.created_by FROM accountant_employees e WHERE e.id=v.employee_id),
-                        v.work_from, v.work_to
+                        v.work_from, v.work_to,
+                        (SELECT e.proposed_rate FROM accountant_employees e WHERE e.id=v.employee_id),
+                        (SELECT e.proposed_by FROM accountant_employees e WHERE e.id=v.employee_id)
                     FROM accountant_employee_versions v WHERE deleted=0 AND effective_day=(
                         SELECT MAX(effective_day) FROM accountant_employee_versions h
                         WHERE h.employee_id=v.employee_id AND h.effective_day<=?)
@@ -503,7 +518,8 @@ class RosterStore:
                            None if row[7] else row[6], bool(row[7]),
                            date.fromisoformat(row[8]) if row[7] and row[8] else None,
                            row[9] or 'shift', row[10], row[11],
-                           work_period.as_day(row[12]), work_period.as_day(row[13])) for row in rows]
+                           work_period.as_day(row[12]), work_period.as_day(row[13]),
+                           Decimal(row[14]) if row[14] is not None else None, row[15]) for row in rows]
         return people if day is None else [person for person in people if person.works_on(day)]
 
     def set_manual_attendance(self, employee_id: int, manual: bool, *, by: str | None = None) -> Employee:
@@ -849,7 +865,7 @@ class RosterStore:
 
     def add(self, *, name: str, role: str, rate: str | None, group_name: str,
             by: str | None = None, cyrillic: bool = False, employment_type: str = 'shift',
-            work_from=None, work_to=None) -> Employee:
+            work_from=None, work_to=None, proposed_rate: str | None = None) -> Employee:
         """cyrillic=True — ввод с экрана: имя и должность только кириллицей
         (ТЗ 09.10, М-04). Импорт и обслуживание пишут как есть.
 
@@ -868,15 +884,21 @@ class RosterStore:
         if group_name not in set(GROUPS.values()) | {'Кухня', UNASSIGNED_GROUP}:
             raise ValueError('Неизвестная группа.')
         parsed_rate = parse_rate(rate)
+        # Предложение менеджера (T-453) — только пока своей ставки нет.
+        proposed = parse_rate(proposed_rate) if parsed_rate is None else None
         with closing(self._open()) as connection, connection:
             source_row = connection.execute('SELECT COALESCE(MAX(source_row), 0) + 1 '
                                             'FROM accountant_employees').fetchone()[0]
             employee_id = connection.execute(
                 'INSERT INTO accountant_employees (source_row, name, role, group_name, rate, '
-                'employment_type, work_from, work_to) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
+                'employment_type, work_from, work_to, proposed_rate, proposed_by, proposed_at) '
+                'VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
                 (source_row, name, role, group_name,
                  str(parsed_rate) if parsed_rate is not None else None, kind,
-                 start.isoformat() if start else None, end.isoformat() if end else None)).lastrowid
+                 start.isoformat() if start else None, end.isoformat() if end else None,
+                 str(proposed) if proposed is not None else None,
+                 by if proposed is not None else None,
+                 datetime.now(TZ).isoformat(timespec='seconds') if proposed is not None else None)).lastrowid
             # Новый сотрудник действует с начала времён: иначе прошлые дни его
             # не увидят, а начисления за них уже закрыты. У временного с
             # периодом дни вне периода отсекает сам период.
@@ -885,9 +907,27 @@ class RosterStore:
             if kind == work_period.TEMPORARY:
                 period = work_period.label(start, end)
                 details = 'Временный' + (f' · {period}' if period else '')
+            if proposed is not None:
+                note = f'Предложена ставка {format_rate(proposed)} — ждёт бухгалтера'
+                details = f'{details}; {note}' if details else note
             self._audit(connection, employee_id, action='create', by=by, reason='Добавлен в реестр',
                         new_rate=parsed_rate, new_group=group_name, details=details)
         return next(person for person in self.list() if person.id == employee_id)
+
+    def confirm_proposed_rate(self, employee_id: int, *, by: str | None = None) -> Employee:
+        """Бухгалтер подтверждает ставку, которую предложил менеджер (T-453):
+        та же правка карточки, что «Ставка за смену» в «Сотрудниках», — первая
+        ставка действует и на прошлые дни без ставки, причина в истории."""
+        with closing(self._open()) as connection:
+            row = connection.execute('SELECT proposed_rate, proposed_by, rate, group_name FROM accountant_employees '
+                                     'WHERE id = ?', (employee_id,)).fetchone()
+        if row is None:
+            raise ValueError('Сотрудник не найден.')
+        if row[0] is None:
+            raise ValueError('Предложенной ставки нет — её уже подтвердили или исправили.')
+        who = f' менеджером {row[1]}' if row[1] else ' менеджером'
+        return self.update(employee_id, rate=row[0], group_name=row[3], by=by,
+                           reason=f'Подтверждена ставка, предложенная{who}')
 
     def delete(self, employee_id: int, *, by: str | None = None):
         """Удаление = архив: в сегодняшних и будущих списках сотрудника нет,
@@ -992,6 +1032,11 @@ class RosterStore:
                                        (start.isoformat() if start else None, end.isoformat() if end else None,
                                         employee_id))
                 self._stamp_version(connection, employee_id)
+                if parsed_rate is not None:
+                    # Бухгалтер задал ставку — предложение менеджера (T-453)
+                    # больше не ждёт: принято как есть или исправлено.
+                    connection.execute('UPDATE accountant_employees SET proposed_rate = NULL, proposed_by = NULL, '
+                                       'proposed_at = NULL WHERE id = ?', (employee_id,))
                 if old[2] is None and parsed_rate is not None:
                     # Ставки не было — её впервые задали. Дни без ставки ждали её,
                     # поэтому она действует и на них: пустая ставка в истории
@@ -1103,7 +1148,7 @@ class RosterStore:
         query = ('SELECT e.id, e.name, e.role, e.group_name, e.hikvision_id, e.manual_attendance, '
                  'e.employment_type, e.hikvision_employee_no, e.hikvision_state, e.hikvision_error, '
                  'e.hikvision_synced_at, e.face_state, e.face_error, e.face_synced_at, p.updated_at, '
-                 'e.work_from, e.work_to '
+                 'e.work_from, e.work_to, e.rate IS NOT NULL, e.proposed_rate '
                  'FROM accountant_employees e LEFT JOIN accountant_employee_photos p ON p.employee_id = e.id')
         params = ()
         if employee_id is not None:
@@ -1117,7 +1162,10 @@ class RosterStore:
                      hikvision_synced_at=row[10], face_state=row[11], face_error=row[12],
                      face_synced_at=row[13], photo_updated_at=row[14],
                      # Период временного (T-434): закончившегося кабинет не показывает.
-                     work_from=work_period.as_day(row[15]), work_to=work_period.as_day(row[16]))
+                     work_from=work_period.as_day(row[15]), work_to=work_period.as_day(row[16]),
+                     # Ставка (T-453): сумму менеджер не видит — только есть ли она
+                     # и что он сам предложил, пока бухгалтер не подтвердил.
+                     has_rate=bool(row[17]), proposed_rate=row[18])
                 for row in rows]
 
     def set_photo(self, employee_id: int, mime: str, content: bytes, *, by: str | None = None) -> str:

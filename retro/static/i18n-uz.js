@@ -3735,3 +3735,24 @@ globalThis.RetroTemplatesUz.push(
   [/^Сотрудник удалён: (.+)\.$/, "Xodim o'chirildi: $1."],
 );
 /* ── /T-452 ── */
+
+/* ── T-453 Ставку предлагает менеджер, подтверждает бухгалтер ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Необязательно": "Majburiy emas",
+  "Бухгалтер подтвердит эту ставку или поставит свою.": "Buxgalter bu stavkani tasdiqlaydi yoki o'zinikini qo'yadi.",
+  "После добавления сфотографируйте человека: фото уйдёт на терминал.": "Qo'shgandan so'ng odamni suratga oling: surat terminalga yuboriladi.",
+  "Ставку подтвердит бухгалтер": "Stavkani buxgalter tasdiqlaydi",
+  "Ставка — сумма в сумах цифрами, например 200 000.": "Stavka — so'mdagi summa raqamlarda, masalan 200 000.",
+  "Ставка ждёт подтверждения": "Stavka tasdiqlashni kutmoqda",
+  "Ставка подтверждена.": "Stavka tasdiqlandi.",
+  "Предложенной ставки нет — её уже подтвердили или исправили.": "Taklif qilingan stavka yo'q — u allaqachon tasdiqlangan yoki tuzatilgan.",
+  "Не удалось подтвердить.": "Tasdiqlab bo'lmadi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Ставка ([\d ]+) сум ждёт бухгалтера$/, "$1 so'mlik stavka buxgalterni kutmoqda"],
+  [/^Предложено ([\d ]+)$/, "Taklif: $1"],
+  [/^Подтвердить ([\d\s]+)\sсум$/, "$1 so'mni tasdiqlash"],
+  [/^Предложение менеджера( .+)?: ([\d\s]+)\sсум за смену\. Подтвердите или впишите свою ставку ниже\.$/,
+    "Menejer$1 taklifi: smena uchun $2 so'm. Tasdiqlang yoki quyida o'z stavkangizni yozing."],
+);
+/* ── /T-453 ── */

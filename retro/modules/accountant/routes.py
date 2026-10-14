@@ -201,9 +201,16 @@ def shift_rows_json(rows, accrued: dict[int, int], closed: bool, roster=()) -> l
         if employee is not None:
             item.update(manual_attendance=employee.manual_attendance,
                         hikvision_registered=employee.hikvision_id is not None,
-                        hikvision_id=employee.hikvision_id, **employment_json(employee))
+                        hikvision_id=employee.hikvision_id, **employment_json(employee),
+                        **proposal_json(employee))
         result.append(item)
     return result
+
+
+def proposal_json(employee) -> dict:
+    """Ставка, которую предложил менеджер (T-453): ждёт подтверждения."""
+    return dict(proposed_rate=str(employee.proposed_rate) if employee.proposed_rate is not None else None,
+                proposed_by=employee.proposed_by)
 
 
 def employment_json(employee) -> dict:
@@ -224,7 +231,7 @@ def outside_period_json(request, day: date, roster) -> list[dict]:
                  first_entry=None, payable=None, exception=False, demo=False, accrued=False, accrual_id=None,
                  blocker=None, manual_attendance=employee.manual_attendance,
                  hikvision_registered=employee.hikvision_id is not None, hikvision_id=employee.hikvision_id,
-                 **employment_json(employee))
+                 **employment_json(employee), **proposal_json(employee))
             for employee in request.app.state.accountant_roster.list()
             if employee.id not in present and not employee.works_on(day)]
 
@@ -863,6 +870,19 @@ def delete_employee(request: Request, employee_id: int):
         request.app.state.accountant_roster.delete(employee_id, by=changed_by(request))
     except ValueError as error:
         raise HTTPException(404, str(error)) from None
+
+
+@router.post('/employees/{employee_id}/confirm-rate')
+def confirm_rate(request: Request, employee_id: int):
+    """«Подтвердить» ставку, которую предложил менеджер (T-453). Исправить —
+    обычной правкой карточки: своя ставка снимает предложение."""
+    roster = request.app.state.accountant_roster
+    try:
+        employee = roster.confirm_proposed_rate(employee_id, by=changed_by(request))
+    except ValueError as error:
+        status = 404 if 'не найден' in str(error) else 409
+        raise HTTPException(status, str(error)) from None
+    return dict(employee=employee.json())
 
 
 @router.get('/employees/{employee_id}/history')
