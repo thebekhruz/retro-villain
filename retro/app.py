@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
-from fastapi.responses import HTMLResponse, JSONResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from starlette.middleware.gzip import GZipMiddleware
 from pydantic import BaseModel
@@ -68,7 +68,11 @@ PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js
                 '/static/i18n.js', '/static/i18n-uz.js', '/static/busy.js', '/static/favicon.svg',
                 '/static/favicon-32.png', '/static/apple-touch-icon.png',
                 # Вход по номеру телефона и SMS-коду (ТЗ 09.10, М-05)
-                '/api/session/phone/code', '/api/session/phone/verify', '/static/login-logic.js'}
+                '/api/session/phone/code', '/api/session/phone/verify', '/static/login-logic.js',
+                # Значок на экране телефона (T-451): манифест и его иконки браузер
+                # запрашивает без кук, поэтому они открыты. Больше ничего.
+                '/manifest.webmanifest', '/static/icon-192.png', '/static/icon-512.png',
+                '/static/icon-maskable-192.png', '/static/icon-maskable-512.png'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
@@ -428,6 +432,13 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # Вход по номеру настроен — экран показывает его сразу, без запроса.
         return HTMLResponse(app.state.pages.html('login.html').replace(
             'data-phone-login="off"', 'data-phone-login="on"', 1))
+
+    @app.get('/manifest.webmanifest')
+    def web_manifest():
+        # Панель как приложение на телефоне (T-451). Адрес вне /static/: страницы
+        # не дописывают ему ?v=<хэш>, и у установленного значка он не меняется.
+        # Тип — явно, чтобы не зависеть от таблицы mimetypes на сервере.
+        return FileResponse(STATIC / 'manifest.webmanifest', media_type='application/manifest+json')
 
     @app.post('/api/session')
     def login(request: Request, body: LoginInput):
