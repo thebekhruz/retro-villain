@@ -4,7 +4,7 @@ from contextlib import closing
 from datetime import date, timedelta
 from decimal import Decimal
 
-from retro.accounting_period import ACCOUNTING_START, SALARY_SHIFT_START
+from retro.accounting_period import SALARY_ENTRY_START, SALARY_SHIFT_START
 from retro.db import table_columns
 from retro.modules.cashier.service import TZ, today_tashkent
 
@@ -12,10 +12,10 @@ from . import work_period
 from .audit import record_audit
 from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_day, now_stamp, plain
 
-# Прошедшие дни месяца отмечаются, как в «Зарплате · месяц»: с начала рабочего учёта
-# (на 13.10 стоит начальный остаток кассы). Дни, где зарплату уже провели по-старому —
+# Прошедшие дни месяца отмечаются с первой выдачи по ведомости (15.10 за смену 14.10);
+# смены раньше оплачены общими строками в «Финансах дня». Дни, где зарплату уже провели по-старому —
 # общей суммой или подтверждённой сменой, — остаются закрытыми: двойной выплаты нет.
-ENTRY_START = ACCOUNTING_START
+ENTRY_START = SALARY_ENTRY_START
 MANUAL_STATUS = 'manual_salary'
 # Посещаемость смены в клетке выплаты (ТЗ 09.10, Б-04) — статус страницы
 # «Сотрудники», сведённый к пяти состояниям клетки. «Не пришёл» — только по

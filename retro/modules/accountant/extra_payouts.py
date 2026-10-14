@@ -24,7 +24,7 @@ from datetime import date
 from decimal import Decimal
 from uuid import uuid4
 
-from retro.accounting_period import ACCOUNTING_START, SALARY_SHIFT_START
+from retro.accounting_period import SALARY_ENTRY_START, SALARY_SHIFT_START
 from retro.db import table_columns
 from retro.modules.cashier.service import today_tashkent
 
@@ -35,8 +35,8 @@ from .ledger import LedgerError, amount_value, ensure_open, lock_day, now_stamp,
 
 # Ссылка расхода на доп. выплату: `extra:<сотрудник>:<ключ>`.
 EXTRA_REFERENCE = 'extra:'
-# Выдачи с начала учёта; первая смена — предыдущий день.
-ENTRY_START = ACCOUNTING_START
+# Выдачи — с первой выдачи по ведомости; первая смена — предыдущий день.
+ENTRY_START = SALARY_ENTRY_START
 FIRST_SHIFT = SALARY_SHIFT_START
 TEMPORARY = 'temporary'
 
@@ -78,7 +78,7 @@ def create_tables(connection) -> None:
 
 def check_days(work_day: date, paid_day: date) -> None:
     if paid_day < ENTRY_START:
-        raise LedgerError(f'Доп. выплаты вводятся с {ACCOUNTING_START:%d.%m.%Y} — с начала рабочего учёта.')
+        raise LedgerError(f'Доп. выплаты вводятся с {ENTRY_START:%d.%m.%Y} — с начала ведомости.')
     if paid_day > today_tashkent():
         raise LedgerError('Нельзя записать выплату будущим днём.')
     if work_day > paid_day:

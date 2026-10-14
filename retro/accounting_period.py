@@ -8,8 +8,10 @@
 from datetime import date, timedelta
 
 ACCOUNTING_START = date(2026, 10, 13)
-# Первая выдача 13 октября относится к предыдущей смене.
-SALARY_SHIFT_START = ACCOUNTING_START - timedelta(days=1)
+# Зарплатная ведомость по людям — со смены 14 октября (первая выдача 15-го).
+# Смены 12–13 октября оплачены общими строками «ЗП персонал» 13 и 14 октября.
+SALARY_SHIFT_START = date(2026, 10, 14)
+SALARY_ENTRY_START = SALARY_SHIFT_START + timedelta(days=1)
 
 
 def period_start(through: date) -> date:
@@ -22,6 +24,10 @@ def salary_period_start(through: date) -> date:
 
 def accounting_range_start(first: date, last: date) -> date:
     return max(first, period_start(last))
+
+
+def salary_entry_range_start(first: date, last: date) -> date:
+    return max(first, SALARY_ENTRY_START) if last >= ACCOUNTING_START else first
 
 
 def cash_opening_table(day: date) -> str:
