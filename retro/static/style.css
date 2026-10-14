@@ -995,11 +995,39 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
   .side-user-name,.side-logout [data-logout-text]{display:none}
   .side-logout{width:44px;height:40px;margin:0;padding:0}
 }
+/* Состояние данных внизу меню (T-455): «Данные за …», «Обновлено …», «ДЕМО» —
+   то, что раньше стояло в верхней строке. В полосе значков — только точка,
+   текст в подсказке (nav.js). */
+.side-account{--rm-skel-a:#ffffff1c;--rm-skel-b:#ffffff36}
+.side-status{display:grid;gap:8px;min-width:0}
+.side-account .top-status{display:flex;align-items:flex-start;gap:7px;min-width:0;font-size:12px;line-height:1.4;
+  color:#c5d3c9;overflow-wrap:anywhere;white-space:normal}
+.side-account .top-status:before{flex:none;margin-top:5px}
+.side-account .top-status.rm-status-skel:empty{width:100%;max-width:150px}
+.side-account .rm-demo{justify-self:start;max-width:100%;white-space:normal;background:#ffffff14;border-color:#ffffff26;color:#e9f0e8}
+@media(min-width:901px){
+  html.sidebar-collapsed .side-status{justify-items:center}
+  html.sidebar-collapsed .side-account .top-status{font-size:0;gap:0}
+  html.sidebar-collapsed .side-account .top-status:before{margin-top:0}
+  html.sidebar-collapsed .side-account .rm-demo{padding:4px}
+  html.sidebar-collapsed .side-account .rm-demo span{display:none}
+}
+@media(min-width:651px) and (max-width:900px){
+  .side-status{justify-items:center}
+  .side-account .top-status{font-size:0;gap:0}
+  .side-account .top-status:before{margin-top:0}
+  .side-account .rm-demo{padding:4px}
+  .side-account .rm-demo span{display:none}
+}
 /* Телефон: меню — полоса сверху. Язык и выход — справа от логотипа,
-   модули — строкой ниже. Имя прячем: на 320 точках ему нет места. */
+   модули — строкой ниже, состояние данных — под ними. Имя прячем: на 320
+   точках ему нет места. */
 @media(max-width:650px){
-  .sidebar .side-account{order:1;display:flex;align-items:center;gap:8px;margin:0 0 0 auto;padding:0;border:0}
+  .sidebar .side-account{display:contents}
+  .sidebar .side-lang{order:1;margin-left:auto}
+  .sidebar .side-user{order:1}
   .sidebar:has(.side-account) nav{order:2}
+  .sidebar .side-status{order:3;flex:1 1 100%}
   .side-user-mark,.side-user-name,.side-logout [data-logout-text]{display:none}
   .side-logout{width:44px;height:44px;padding:0}
 }
