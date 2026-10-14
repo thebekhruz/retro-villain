@@ -24,6 +24,9 @@ from retro.config import Settings
 from retro.integrations.hikvision import HikvisionEvent
 from retro.modules.accountant.hikvision import AttendanceStore
 from retro.modules.cashier.service import TZ, today_tashkent
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 POSTGRES_URL = os.getenv('RETRO_TEST_POSTGRES_URL', '')
 DATABASES = ['sqlite', pytest.param('postgres', marks=pytest.mark.skipif(

@@ -11,6 +11,9 @@ from retro.modules.accountant import routes, salary_day
 from retro.modules.accountant.ledger import FinanceStore, LedgerError
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.salary_day import SalaryCellChanged
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 PAID = date(2026, 10, 7)
 WORK = date(2026, 10, 6)

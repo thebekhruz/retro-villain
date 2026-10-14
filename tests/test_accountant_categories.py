@@ -27,6 +27,9 @@ from retro.modules.accountant.reclassify import candidates, reclassify
 from retro.modules.accountant.reserves import is_monthly_salary
 from retro.modules.cashier.till import give_shokh, shokh_gives
 from scripts import reclassify_expenses
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 POSTGRES_URL = os.getenv('RETRO_TEST_POSTGRES_URL', '')
 DATABASES = ['sqlite', pytest.param('postgres', marks=pytest.mark.skipif(

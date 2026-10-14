@@ -19,6 +19,9 @@ from retro.modules.accountant import routes, salary_day
 from retro.modules.accountant.hikvision import AttendanceService, AttendanceStore
 from retro.modules.accountant.roster import Employee
 from retro.modules.cashier.service import TZ
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 TODAY = date(2026, 10, 9)
 SOURCE = 'retro-main-entry'

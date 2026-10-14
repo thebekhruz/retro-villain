@@ -5,10 +5,14 @@ from datetime import date
 from decimal import Decimal
 from io import BytesIO
 
+import pytest
 from openpyxl import load_workbook
 
 from test_salary_payout_dates import (c, seed, oct_, cash_days, shift_cell, shift_sheet,
                                       cell, day_json, spent_on, table)  # noqa: F401
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 
 def test_several_checks_for_one_employee_spend_today_once_and_export_actual_date(c):

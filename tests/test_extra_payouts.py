@@ -32,9 +32,9 @@ from retro.modules.accountant.ledger import FinanceStore, LedgerError
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.salary_day_export import matches_query
 
-TODAY = date(2026, 10, 10)
-PAID = date(2026, 10, 9)
-SHIFT = date(2026, 10, 8)
+TODAY = date(2026, 10, 17)
+PAID = date(2026, 10, 16)
+SHIFT = date(2026, 10, 15)
 POSTGRES_URL = os.getenv('RETRO_TEST_POSTGRES_URL', '')
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -84,8 +84,8 @@ def stores(database):
     roster = RosterStore(database)
     finance = FinanceStore(database)
     for offset in range(9):
-        finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 6), '2000000', 'Начало')
+        finance.record_handover(date(2026, 10, 12) + timedelta(days=offset), Decimal(0))
+    finance.set_cash_opening(date(2026, 10, 13), '2000000', 'Начало')
     return finance, roster, staff(roster, finance)
 
 
@@ -104,14 +104,14 @@ def test_karamat_payout_is_one_expense_on_the_payout_day_and_reaches_every_total
     item = add(finance, people['karamat'])
     assert (item['name'], item['role'], item['temporary']) == ('Карамат', 'Хостес', True)
     assert (item['work_day'], item['paid_day'], item['amount'], item['created_by']) == (
-        '2026-10-08', '2026-10-09', '150000', 'buh')
+        '2026-10-15', '2026-10-16', '150000', 'buh')
     # Ведомость: запись периода, человек помечен временным; клетка своей суммы не меняет.
-    data = finance.salary_day_month(date(2026, 10, 5), date(2026, 10, 31))
+    data = finance.salary_day_month(date(2026, 10, 12), date(2026, 10, 31))
     assert [(x['employee_id'], x['amount'], x['editable']) for x in data['extras']] == [
         (people['karamat'].id, '150000', True)]
     karamat = next(p for p in data['people'] if p['id'] == people['karamat'].id)
     assert karamat['temporary'] is True and karamat['cells'][PAID.isoformat()]['amount'] == '0'
-    # Журнал и касса 09.10: один расход статьи «Доп. выплаты»; 08.10 не тронут.
+    # Журнал и касса 16.10: один расход статьи «Доп. выплаты»; 15.10 не тронут.
     summary = finance.daily_summary(PAID, None)
     extra_rows = [m for m in summary['movements'] if m.get('item_code') == 'salary_extra_payout']
     assert [(m['type'], m['amount']) for m in extra_rows] == [('other_expense', '150000')]
@@ -131,12 +131,12 @@ def test_cell_payment_the_same_day_asks_for_confirmation_and_nothing_is_written(
     finance, _, people = stores
     finance.set_salary_day_cell(PAID, people['ihtiyor'].id, '360000', '0')
     before = (count(finance, 'accountant_movements'), count(finance, 'accountant_finance_audit'))
-    with pytest.raises(ExtraPayoutConfirm, match='уже отмечена выплата в клетке: 09.10 — 360 000 сум'):
+    with pytest.raises(ExtraPayoutConfirm, match='уже отмечена выплата в клетке: 16.10 — 360 000 сум'):
         add(finance, people['ihtiyor'], '50000', 'Премия за банкет')
     assert (count(finance, 'accountant_movements'), count(finance, 'accountant_finance_audit')) == before
     add(finance, people['ihtiyor'], '50000', 'Премия за банкет', confirm=True)
-    # Ведомость: 360 000 в клетке + 50 000 доп. — 410 000 за 09.10.
-    data = finance.salary_day_month(date(2026, 10, 5), date(2026, 10, 31))
+    # Ведомость: 360 000 в клетке + 50 000 доп. — 410 000 за 16.10.
+    data = finance.salary_day_month(date(2026, 10, 12), date(2026, 10, 31))
     ihtiyor = next(p for p in data['people'] if p['id'] == people['ihtiyor'].id)
     assert ihtiyor['cells'][PAID.isoformat()]['amount'] == '360000'
     assert sum(Decimal(x['amount']) for x in data['extras'] if x['employee_id'] == ihtiyor['id']) == 50000
@@ -153,7 +153,7 @@ def test_cell_payment_the_same_day_asks_for_confirmation_and_nothing_is_written(
 def test_same_shift_paid_in_the_cell_on_another_day_also_warns(stores):
     finance, _, people = stores
     finance.set_salary_day_cell(SHIFT + timedelta(days=1), people['jahongir'].id, '360000', '0')
-    with pytest.raises(ExtraPayoutConfirm, match='смена 08.10'):
+    with pytest.raises(ExtraPayoutConfirm, match='смена 15.10'):
         add(finance, people['jahongir'], '20000', 'Такси', paid_day=TODAY)
 
 
@@ -164,17 +164,17 @@ def test_edit_and_delete_keep_audit_and_history_survives_archive(stores):
         finance.update_extra_payout(item['id'], amount='200000', work_day=SHIFT, note='x', expected_amount='1')
     unchanged = finance.update_extra_payout(item['id'], amount='150000', work_day=SHIFT, note='Подмена хостес')
     assert unchanged['changed'] is False
-    edited = finance.update_extra_payout(item['id'], amount='200000', work_day=date(2026, 10, 7),
+    edited = finance.update_extra_payout(item['id'], amount='200000', work_day=date(2026, 10, 14),
                                          note='Две подмены', expected_amount='150000', by='buh2')
     assert (edited['amount'], edited['work_day'], edited['note'], edited['updated_by']) == (
-        '200000', '2026-10-07', 'Две подмены', 'buh2')
+        '200000', '2026-10-14', 'Две подмены', 'buh2')
     assert edited['paid_day'] == PAID.isoformat()
     assert finance.day_flow(PAID)['salary'] == Decimal('200000')
     movement = next(m for m in finance.daily_summary(PAID, None)['movements'] if m.get('item_code') == 'salary_extra_payout')
-    assert movement['description'] == 'Доп. выплата · Карамат · смена 07.10 · Две подмены'
+    assert movement['description'] == 'Доп. выплата · Карамат · смена 14.10 · Две подмены'
     # Временная ушла: запись и строка в ведомости остаются по имени.
     roster.delete(people['karamat'].id)
-    data = finance.salary_day_month(date(2026, 10, 5), date(2026, 10, 31))
+    data = finance.salary_day_month(date(2026, 10, 12), date(2026, 10, 31))
     gone = next(p for p in data['people'] if p['id'] == people['karamat'].id)
     assert (gone['name'], gone['archived'], gone['temporary']) == ('Карамат', True, True)
     assert data['extras'][0]['editable'] is True
@@ -193,13 +193,13 @@ def test_days_cash_and_closed_month_are_checked_like_the_cell(database):
     finance = FinanceStore(database)
     people = staff(roster, finance)
     for offset in range(9):
-        finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal(0))
-    finance.set_cash_opening(date(2026, 10, 6), '100000', 'Начало')
+        finance.record_handover(date(2026, 10, 12) + timedelta(days=offset), Decimal(0))
+    finance.set_cash_opening(date(2026, 10, 13), '100000', 'Начало')
     karamat = people['karamat']
     for values, text in [(dict(paid_day=TODAY + timedelta(days=1)), 'будущим днём'),
-                         (dict(paid_day=date(2026, 10, 1), work_day=date(2026, 9, 30)), '06.10.2026'),
+                         (dict(paid_day=date(2026, 10, 8), work_day=date(2026, 9, 30)), '13.10.2026'),
                          (dict(work_day=TODAY), 'позже дня выплаты'),
-                         (dict(work_day=date(2026, 9, 30)), '05.10.2026'),
+                         (dict(work_day=date(2026, 9, 30)), '12.10.2026'),
                          (dict(), 'недостаточно')]:
         with pytest.raises(LedgerError, match=text):
             add(finance, karamat, **values)
@@ -246,9 +246,9 @@ def client(tmp_path):
     app = create_app(Settings(data_dir=tmp_path, manual_handover_only=True))
     with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as test_client:
         finance = test_client.app.state.accountant_finance
-        # Нулевой начальный остаток 05.10 приложение ставит само (opening_migration).
+        # Начальный остаток на 13.10 приложение ставит само (opening_migration).
         for offset in range(9):
-            finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal('500000'))
+            finance.record_handover(date(2026, 10, 12) + timedelta(days=offset), Decimal('500000'))
         test_client.people = staff(test_client.app.state.accountant_roster, finance)
         yield test_client
 
@@ -299,7 +299,7 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     people = client.people
     put = lambda person, day, amount: client.put('/api/accountant/salary-day/cell', json=dict(
         date=day.isoformat(), employee_id=person.id, amount=amount, expected_amount='0'))
-    put(people['ihtiyor'], date(2026, 10, 8), '360000')
+    put(people['ihtiyor'], date(2026, 10, 15), '360000')
     put(people['ihtiyor'], PAID, '360000')
     put(people['jahongir'], PAID, '300000')
     assert post(client, people['karamat']).status_code == 201
@@ -311,10 +311,10 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     sheet = book['Ведомость']
     rows = sheet_values(sheet)
     assert rows[0][0] == 'RETRO MILLIY · Зарплата · день · октябрь 2026'
-    assert 'Вся ведомость, 4 сотрудника.' in rows[1][0] and '06.10.2026 – 10.10.2026' in rows[1][0]
+    assert 'Вся ведомость, 4 сотрудника.' in rows[1][0] and '13.10.2026 – 17.10.2026' in rows[1][0]
     head = rows[3]
     assert head[:4] == ['№', 'Сотрудник', 'Должность', 'Ставка']
-    assert head[4] == 'Выплата 06.10\nза смену 05.10' and head[7] == 'Выплата 09.10\nза смену 08.10'
+    assert head[4] == 'Выплата 13.10\nза смену 12.10' and head[7] == 'Выплата 16.10\nза смену 15.10'
     assert head[-2:] == ['Доп. выплаты', 'Итого'] and len(head) == 4 + 5 + 2
     body = {row[1]: row for row in rows[4:8]}
     assert body['Баходиров Ихтиер'][2] == 'Менеджер' and body['Баходиров Ихтиер'][3] == 360000
@@ -337,7 +337,7 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     assert sheet.print_title_rows == '$1:$4' and sheet.freeze_panes == 'E5'
     extras = sheet_values(book['Доп. выплаты'])
     assert extras[3][:7] == ['№', 'Дата выплаты', 'Дата смены', 'Сотрудник', 'Должность', 'Временный', 'Сумма']
-    assert extras[4][:8] == [1, '09.10.2026', '08.10.2026', 'Карамат', 'Хостес', 'да', 150000, 'Подмена хостес']
+    assert extras[4][:8] == [1, '16.10.2026', '15.10.2026', 'Карамат', 'Хостес', 'да', 150000, 'Подмена хостес']
     assert extras[5][1] == 'Итого' and extras[5][6] == 150000
 
 

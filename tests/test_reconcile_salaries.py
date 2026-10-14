@@ -10,6 +10,7 @@ import hashlib
 import importlib.util
 import json
 import os
+import sys
 import sqlite3
 from contextlib import closing
 from datetime import date, datetime
@@ -27,6 +28,9 @@ from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.accountant.payroll import PayrollRow
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.cashier.service import TZ
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 POSTGRES_URL = os.getenv('RETRO_TEST_POSTGRES_URL', '')
 SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'reconcile_salaries.py'
@@ -35,6 +39,7 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'scripts' / 'reconcile_salaries.p
 def load_script():
     spec = importlib.util.spec_from_file_location('reconcile_salaries', SCRIPT)
     module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module  # legacy_boundary подменяет и границу скрипта
     spec.loader.exec_module(module)
     return module
 

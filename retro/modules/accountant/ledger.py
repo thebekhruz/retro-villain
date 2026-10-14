@@ -923,7 +923,7 @@ class FinanceStore:
 
     @once
     def accounting_start(self, through: date = ACCOUNTING_START) -> date | None:
-        """Рабочий учёт — с 6 октября; архив — со своей первой записи."""
+        """Рабочий учёт — с 13 октября; архив — со своей первой записи."""
         if through >= ACCOUNTING_START:
             return ACCOUNTING_START
         with closing(self._open()) as connection:

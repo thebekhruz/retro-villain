@@ -412,10 +412,10 @@
   function cashLines(data,cash,opts){
     const o=opts||{}, l=data.ledger||{}, flow=l.day_flow||{}, cf=l.cash_flow||{};
     const state=cf.handover_status||'none', counted=state==='confirmed'||state==='accountant';
-    // «06.10 в 15:07» не разрывается: на узкой колонке переносится целиком.
+    // «13.10 в 15:07» не разрывается: на узкой колонке переносится целиком.
     const when=iso=>iso?' '+dm(iso.slice(0,10))+'\u00a0в\u00a0'+iso.slice(11,16):'';
     const shown=cash.cashier!==null?cash.cashier:cash.expected;
-    // Исторический день подписан своей датой: «Остаток на начало 06.10».
+    // Исторический день подписан своей датой: «Остаток на начало 13.10».
     const of=data.date===o.today?'дня':dm(data.date);
     const lines=[{key:'opening',label:'Остаток на начало '+of,value:cash.opening,sign:1}];
     lines.push({key:'handover',label:'+ Касса за '+dm(data.cashier_date||shiftIso(data.date,-1)),

@@ -13,7 +13,7 @@ from .audit import record_audit
 from .ledger import LedgerError, amount_value, closure_row, ensure_open, lock_day, now_stamp, plain
 
 # Прошедшие дни месяца отмечаются, как в «Зарплате · месяц»: с начала рабочего учёта
-# (на 06.10 стоит начальный остаток кассы). Дни, где зарплату уже провели по-старому —
+# (на 13.10 стоит начальный остаток кассы). Дни, где зарплату уже провели по-старому —
 # общей суммой или подтверждённой сменой, — остаются закрытыми: двойной выплаты нет.
 ENTRY_START = ACCOUNTING_START
 MANUAL_STATUS = 'manual_salary'
