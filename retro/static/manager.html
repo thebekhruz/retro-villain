@@ -116,6 +116,8 @@
         <p id="card-hint" class="mgr-hint">Лицо прямо, без очков и кепки, на светлом фоне. Держите лицо по центру: фото обрезается до квадрата 1:1 без растягивания.</p>
         <p id="card-done" class="mgr-done" hidden>Готово. Терминал будет узнавать человека на входе.</p>
         <button id="card-retry" class="shokh-secondary mgr-retry" type="button" hidden>Отправить ещё раз</button>
+        <!-- T-452: удаление — тихая кнопка в конце карточки, с подтверждением. -->
+        <button id="card-delete" class="mgr-delete" type="button">Удалить сотрудника</button>
       </div>
     </div>
     <div class="shokh-flow-nav mgr-photo-actions">
@@ -183,6 +185,15 @@
     </div>
   </section>
 </div>
+
+<!-- ── Удалить сотрудника (T-452): то же удаление, что у бухгалтера ── -->
+<dialog id="delete-sheet" class="mgr-sheet" aria-labelledby="delete-title">
+  <strong id="delete-title" class="mgr-sheet-title">Удалить сотрудника?</strong>
+  <p id="delete-name" class="mgr-sheet-name" data-i18n="off"></p>
+  <p class="shokh-note">Он пропадёт из кабинета и у бухгалтера в «Сотрудниках». Прошлые смены и выплаты сохранятся.</p>
+  <button id="delete-confirm" class="shokh-primary is-flat mgr-delete-confirm" type="button">Удалить</button>
+  <button id="delete-cancel" class="shokh-secondary" type="button">Отмена</button>
+</dialog>
 
 <!-- ── Учётная запись: кто вошёл, язык, вся панель (администратору), выход ── -->
 <dialog id="account-sheet" class="mgr-sheet" aria-labelledby="account-name">

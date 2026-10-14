@@ -128,6 +128,14 @@
 .mgr-status.is-waiting .shokh-save-bar{display:block}
 .mgr-status .shokh-save-step[hidden]{display:none}
 .mgr-retry{width:100%}
+/* Удалить (T-452): тихо, в конце карточки — не соседствует с «Сфотографировать». */
+.mgr-delete{justify-self:center;min-height:44px;margin-top:8px;padding:0 14px;border:0;border-radius:12px;background:none;
+  color:#8d3548;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+.mgr-delete:hover:not(:disabled){filter:none;background:var(--late-bg)}
+.mgr-sheet-title{font-size:18px;font-weight:650}
+.mgr-sheet-name{margin:-4px 0 0;font-size:15px;font-weight:600;color:var(--ink-2);overflow-wrap:anywhere}
+.mgr-sheet .shokh-secondary{width:100%}
+.shokh-primary.mgr-delete-confirm{background:#8d3548}
 .mgr-photo-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
 .mgr-photo-actions.has-next{grid-template-columns:repeat(2,minmax(0,1fr))}
 .mgr-photo-actions.has-next .mgr-next{grid-column:1 / -1}
