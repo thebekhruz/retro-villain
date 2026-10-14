@@ -30,6 +30,9 @@ from retro.modules.accountant.payroll import PayrollRow, draft_payroll
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.work_period import label, normalize, outside_text
 from retro.modules.cashier.service import TZ
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 TODAY = date(2026, 10, 12)
 FROM, TO = date(2026, 10, 8), date(2026, 10, 10)

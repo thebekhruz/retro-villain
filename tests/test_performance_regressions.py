@@ -252,8 +252,8 @@ def week_app(tmp_path, recorder):
     app.state.iiko = FakeIiko()
     finance, roster = app.state.accountant_finance, app.state.accountant_roster
     for offset in range(12):
-        finance.record_handover(date(2026, 10, 5) + timedelta(days=offset), Decimal('1000000'))
-    finance.set_cash_opening(date(2026, 10, 5), '5000000', 'начальный остаток')
+        finance.record_handover(date(2026, 10, 12) + timedelta(days=offset), Decimal('1000000'))
+    finance.set_cash_opening(date(2026, 10, 12), '5000000', 'начальный остаток')
     for index in range(3):
         roster.add_monthly(name=f'Окладник {index}', role='Менеджер', salary='3000000')
     db_module.Database.connect = traced
@@ -269,13 +269,13 @@ def test_week_reads_each_shared_table_once_not_once_per_day(tmp_path):
     seen = Counter()
     app, restore = week_app(tmp_path, seen)
     try:
-        with patch('retro.modules.founder.cabinet.today_tashkent', return_value=date(2026, 10, 13)), \
-                patch('retro.modules.founder.routes.today_tashkent', return_value=date(2026, 10, 13)), \
-                patch('retro.modules.accountant.routes.today_tashkent', return_value=date(2026, 10, 13)), \
+        with patch('retro.modules.founder.cabinet.today_tashkent', return_value=date(2026, 10, 20)), \
+                patch('retro.modules.founder.routes.today_tashkent', return_value=date(2026, 10, 20)), \
+                patch('retro.modules.accountant.routes.today_tashkent', return_value=date(2026, 10, 20)), \
                 TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
-            client.get('/api/founder/week?date=2026-10-08')  # прогрев кэша iiko
+            client.get('/api/founder/week?date=2026-10-15')  # прогрев кэша iiko
             seen.clear()
-            response = client.get('/api/founder/week?date=2026-10-08')
+            response = client.get('/api/founder/week?date=2026-10-15')
     finally:
         restore()
 
@@ -294,7 +294,7 @@ def test_week_reads_each_shared_table_once_not_once_per_day(tmp_path):
                  ('finance_migration', 'handover_receipt_day_v1')) == 1
     # На первой неделе учёта архивная история дивидендов не запрашивается.
     assert times('FROM accountant_handover_days WHERE day >= ? AND day <= ?',
-                 ('2026-10-06', '2026-10-05')) == 0
+                 ('2026-10-13', '2026-10-12')) == 0
     # Повторов в ответе осталось меньше четверти: остальное — работа по дню.
     repeated = sum(count - 1 for count in seen.values())
     assert repeated * 4 < sum(seen.values())
@@ -317,7 +317,7 @@ def test_read_cache_covers_only_safe_methods(tmp_path):
                      founder_db_path=tmp_path / 'founder.sqlite3')
     with patch.object(app_module.request_reads, 'begin', spy), \
             TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
-        client.get('/api/accountant/day?date=2026-10-08')
+        client.get('/api/accountant/day?date=2026-10-15')
         assert methods == ['begin']
         client.post('/api/accountant/no-such-endpoint', json={})
         assert methods == ['begin']

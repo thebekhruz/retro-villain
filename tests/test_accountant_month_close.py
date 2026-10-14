@@ -15,6 +15,9 @@ from legacy_app import create_app
 from retro.config import Settings
 from retro.modules.accountant import closing
 from retro.modules.accountant.ledger import FinanceStore, LedgerError
+from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
+
+pytestmark = pytest.mark.usefixtures('legacy_boundary')
 
 SEP_29, SEP_30, OCT_1 = date(2026, 9, 29), date(2026, 9, 30), date(2026, 10, 1)
 POSTGRES_URL = os.getenv('RETRO_TEST_POSTGRES_URL', '')
