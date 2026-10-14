@@ -742,10 +742,23 @@ function renderGroups() {
       total: view.unassignedTotal, advances: view.unassigned, percent}, ADVANCE_COLOR);
     advances.id = 'received-payment-row';
     advances.classList.add('is-advance');
+    advances.querySelector('.payment-name').append(paymentHint(PREPAY_METHOD_HINT));
     parts.push({name: 'Предоплаты · способ не указан', total: view.unassignedTotal || 0, percent, color: ADVANCE_COLOR, translate: true});
     list.append(advances);
   }
   renderBar(parts);
+}
+/* Почему у предоплаты нет способа оплаты: iiko отдаёт его только после
+   закрытия кассовой смены. Подсказка — по наведению и по нажатию (телефон);
+   внутри <summary> нажатие на «?» строку не раскрывает. */
+const PREPAY_METHOD_HINT = 'iiko сообщает способ оплаты предоплаты только после закрытия кассовой смены. '
+  + 'Когда кассир закроет смену, эти суммы перейдут в «Оплата наличными» или «Банковские карты».';
+function paymentHint(text) {
+  const hint = document.createElement('span');
+  hint.className = 'pay-hint'; hint.tabIndex = 0; hint.setAttribute('role', 'img');
+  hint.setAttribute('aria-label', text); hint.textContent = '?';
+  hint.addEventListener('click', event => { event.preventDefault(); event.stopPropagation(); hint.focus(); });
+  return hint;
 }
 function typeRow(type, color) {
   const row = document.createElement('div'); row.className = 'payment-row pay-type'; row.style.setProperty('--color', color);
