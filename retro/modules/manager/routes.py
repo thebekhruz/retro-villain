@@ -3,10 +3,11 @@
 Менеджер видит сменных сотрудников своих направлений, фотографирует человека,
 и система отправляет в Hikvision его самого (если его там ещё нет) и его
 лицо. С T-450 менеджер и заводит новых людей своих разделов: имя, должность,
-сменный или временный; с T-452 — и удаляет их. Ставку назначает бухгалтер —
-в «Сотрудниках» такой человек виден как «Нет ставки». Похожие имена в реестре показываем, как
-бухгалтеру: решает человек, карточки сами не объединяем. Ставок, выплат и
-денег в ответах нет: это работа бухгалтера, и его разделы менеджеру закрыты.
+сменный или временный; с T-452 — и удаляет их. Ставку менеджер может только
+предложить (T-453): она ждёт бухгалтера, который подтверждает её или ставит
+свою. Похожие имена в реестре показываем, как бухгалтеру: решает человек,
+карточки сами не объединяем. Самих ставок, выплат и денег в ответах нет —
+только то, что менеджер предложил сам: разделы бухгалтера ему закрыты.
 """
 
 import asyncio
@@ -80,9 +81,11 @@ class PhotoInput(BaseModel):
 
 
 class EmployeeInput(BaseModel):
-    """Новый сотрудник из кабинета (T-450): без ставки — её назначает бухгалтер."""
+    """Новый сотрудник из кабинета (T-450). Ставку менеджер только предлагает
+    (T-453): до подтверждения бухгалтером её нет."""
     name: str
     role: str
+    proposed_rate: str | None = None
     # Временный (T-434): период «с — по», обе границы необязательны.
     employment_type: str = 'shift'
     work_from: date | None = None
@@ -171,7 +174,19 @@ def card_json(row: dict, account: ManagerAccount) -> dict:
                 work_period=work_period.label(row.get('work_from'), row.get('work_to')),
                 photo=photo_json(row), hikvision=hikvision,
                 photo_unknown=bool(row.get('photo_unknown')),
+                rate=rate_json(row),
                 can_photo=allowed, can_retry=allowed and bool(row['photo_updated_at']) and due)
+
+
+def rate_json(row: dict) -> dict:
+    """Ставка глазами менеджера (T-453): set — бухгалтер назначил (сумму не
+    показываем), proposed — ждёт бухгалтера (видна своя предложенная сумма),
+    none — ставки нет."""
+    if row.get('has_rate'):
+        return dict(state='set', proposed=None)
+    if row.get('proposed_rate'):
+        return dict(state='proposed', proposed=row['proposed_rate'])
+    return dict(state='none', proposed=None)
 
 
 def _card_or_404(request: Request, employee_id: int) -> dict:
@@ -277,7 +292,7 @@ async def create_employee(request: Request, body: EmployeeInput):
         employee = await asyncio.to_thread(
             request.app.state.accountant_roster.add, name=body.name, role=body.role, rate=None,
             group_name=group, by=account.login, cyrillic=True, employment_type=body.employment_type,
-            work_from=body.work_from, work_to=body.work_to)
+            work_from=body.work_from, work_to=body.work_to, proposed_rate=body.proposed_rate or None)
     except ValueError as error:
         raise HTTPException(422, str(error)) from None
     row = await asyncio.to_thread(_card_or_404, request, employee.id)

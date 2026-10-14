@@ -268,6 +268,9 @@ function renderCard() {
   $('card-avatar').classList.toggle('has-photo', !!src);
   $('card-name').textContent = card.name;
   $('card-role').textContent = L().roleLine(card);
+  const rateText = L().rateLine(card);
+  $('card-rate').textContent = rateText;
+  $('card-rate').hidden = !rateText;
   paintStep('step-photo', L().photoStep(card, state.uploading));
   if (state.preparing) paintStep('step-photo', {step: 'active', title: 'Подготавливаем фото…'});
   else if (state.uploading && card.hikvision.state !== 'manual') {
@@ -465,6 +468,7 @@ function openForm() {
   $('employee-form').reset();
   fieldError('f-name-error', '');
   fieldError('f-role-error', '');
+  fieldError('f-rate-error', '');
   $('similar').hidden = true;
   setType('shift');
   renderRoles();
@@ -495,10 +499,11 @@ function similarRow(match) {
 async function saveEmployee(confirm = false) {
   if (state.saving) return;
   const form = {name: $('f-name').value, role: state.form.role, type: state.form.type,
-    from: $('f-from')?.value || '', to: $('f-to')?.value || ''};
+    from: $('f-from')?.value || '', to: $('f-to')?.value || '', rate: $('f-rate').value};
   const errors = L().formErrors(form);
   fieldError('f-name-error', errors.name);
   fieldError('f-role-error', errors.role || errors.period);
+  fieldError('f-rate-error', errors.rate);
   if (Object.keys(errors).length) {
     (errors.name ? $('f-name') : $('f-roles')).scrollIntoView({block: 'center', behavior: 'smooth'});
     return;
@@ -509,7 +514,7 @@ async function saveEmployee(confirm = false) {
     const {data} = await api('/employees', {method: 'POST', body: JSON.stringify({
       name: form.name, role: form.role, employment_type: form.type,
       work_from: temporary && form.from ? form.from : null, work_to: temporary && form.to ? form.to : null,
-      confirm_new: confirm})});
+      proposed_rate: L().rateDigits(form.rate).value, confirm_new: confirm})});
     const card = data.employee;
     const list = state.home.employees;
     list.push(card);
@@ -526,6 +531,7 @@ async function saveEmployee(confirm = false) {
     }
     // Имя или должность не прошли проверку кириллицы — подпись у поля.
     if (error.status === 422 && /имен|ФИО|фамил/i.test(error.message)) fieldError('f-name-error', error.message);
+    else if (error.status === 422 && /ставк/i.test(error.message)) fieldError('f-rate-error', error.message);
     else if (error.status === 422 || error.status === 403) fieldError('f-role-error', error.message);
     else message(error.message, true);
   } finally {
@@ -595,6 +601,13 @@ $('form-save').addEventListener('click', () => Busy.button($('form-save'), saveE
 $('similar-new').addEventListener('click', () => Busy.button($('similar-new'), saveEmployee(true), {done: false}));
 $('employee-form').addEventListener('submit', event => { event.preventDefault(); $('form-save').click(); });
 $('f-name').addEventListener('input', () => { fieldError('f-name-error', ''); $('similar').hidden = true; });
+// Ставка: «200000» → «200 000» по ходу ввода (T-453).
+$('f-rate').addEventListener('input', event => {
+  fieldError('f-rate-error', '');
+  const input = event.currentTarget;
+  const formatted = L().formatRate(input.value);
+  if (formatted !== input.value) input.value = formatted;
+});
 document.querySelectorAll('.mgr-type [data-type]').forEach(button => {
   button.addEventListener('click', () => setType(button.dataset.type));
 });

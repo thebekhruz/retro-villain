@@ -85,6 +85,7 @@ function people() {
   return (current?.employees || []).map(row => ({
     ...row,
     rate: row.rate == null || row.rate === '' ? null : Number(row.rate),
+    proposed_rate: row.proposed_rate == null || row.proposed_rate === '' ? null : Number(row.proposed_rate),
     min: arrivalMinutes(row.first_entry),
     pay: payFor(row)
   }));
@@ -96,6 +97,7 @@ function outsiders() {
   return (current?.outside_period || []).map(row => ({
     ...row,
     rate: row.rate == null || row.rate === '' ? null : Number(row.rate),
+    proposed_rate: row.proposed_rate == null || row.proposed_rate === '' ? null : Number(row.proposed_rate),
     min: null,
     pay: null
   }));
@@ -285,8 +287,10 @@ function registryRow(row) {
   const statusCell = text('div', 'emp-cell-status', null);
   statusCell.append(pill(row.status));
   // Ставка
-  const rate = text('div', 'emp-cell-num emp-cell-rate' + (row.rate == null ? ' is-missing' : ''),
-    row.rate == null ? 'Нет ставки' : money(row.rate));
+  // Ставку предложил менеджер (T-453) — ждёт подтверждения бухгалтера.
+  const proposed = row.rate == null && row.proposed_rate != null;
+  const rate = text('div', 'emp-cell-num emp-cell-rate' + (proposed ? ' is-proposed' : row.rate == null ? ' is-missing' : ''),
+    proposed ? 'Предложено ' + money(row.proposed_rate) : row.rate == null ? 'Нет ставки' : money(row.rate));
   // Начислено
   const pay = text('div', 'emp-cell-num emp-cell-pay' + (row.pay ? '' : ' is-none'),
     row.pay == null ? '—' : money(row.pay));
@@ -549,6 +553,35 @@ function drawerActions(saveLabel, onSave, disabled) {
 }
 /* Похожие уже есть в реестре (ТЗ 09.10, М-04): «Это он» открывает его
    карточку, «Это другой человек» добавляет нового. Сами не объединяем. */
+/* Ставка, которую предложил менеджер (T-453): «Подтвердить» делает её ставкой.
+   Исправить — вписать свою в «Ставка за смену» и сохранить с причиной. */
+function proposalBlock(person) {
+  if (!person || person.rate != null || person.proposed_rate == null) return null;
+  // Неразрывные пробелы: «220 000 сум» не рвётся посередине числа.
+  const amount = (L.formatAmount(person.proposed_rate) + ' сум').replace(/ /g, '\u00a0');
+  const box = text('div', 'emp-namesakes emp-proposal', null);
+  box.append(text('b', 'emp-namesakes-title', 'Ставка ждёт подтверждения'),
+    text('p', 'emp-namesakes-note', 'Предложение менеджера' + (person.proposed_by ? ' ' + person.proposed_by : '')
+      + ': ' + amount + ' за смену. Подтвердите или впишите свою ставку ниже.'));
+  const confirm = el('button', 'emp-btn emp-btn--primary emp-namesakes-new', {type: 'button', textContent: 'Подтвердить ' + amount});
+  confirm.dataset.busyKey = 'emp-confirm-rate';
+  confirm.addEventListener('click', () => { const work = confirmRate(person.employee_id); if (B) B.button(confirm, work); });
+  box.append(confirm);
+  return box;
+}
+async function confirmRate(id) {
+  try {
+    const response = await fetch('/api/accountant/employees/' + encodeURIComponent(id) + '/confirm-rate', {method: 'POST'});
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(typeof result.detail === 'string' ? result.detail : 'Не удалось подтвердить.');
+    await reloadDay();
+    const fresh = shiftRow(id);
+    if (ui.sel === id && fresh) { ui.draft = shiftDraft(fresh); loadHistory('shift', id); render(); }
+    message('Ставка подтверждена.');
+    flashRow('emp:' + id);
+    return true;
+  } catch (error) { return fail(error.message); }
+}
 function namesakesBlock(onConfirm) {
   if (!ui.namesakes || !ui.namesakes.length) return null;
   const box = text('div', 'emp-namesakes', null);
@@ -621,6 +654,8 @@ function drawerCard() {
     facts.append(text('p', 'emp-drawer-note', selP.status === 'outside' ? notes.outside
       : selP.rate == null ? 'Ставка не указана — не начисляется.' : notes[selP.status] || ''));
     card.append(facts);
+    const proposal = proposalBlock(selP);
+    if (proposal) card.append(proposal);
   }
 
   const form = text('div', 'emp-drawer-form', null);
@@ -650,7 +685,8 @@ function drawerCard() {
   groupSelect.addEventListener('change', event => { setDraft('group', event.target.value); d.groupTouched = true; });
   form.append(fieldLabel('Группа', groupSelect));
 
-  form.append(fieldLabel('Ставка за смену, сум', moneyInput('rate', d.rate, 'Не указана')));
+  form.append(fieldLabel('Ставка за смену, сум', moneyInput('rate', d.rate,
+    selP && selP.rate == null && selP.proposed_rate != null ? 'Предложено ' + L.formatAmount(selP.proposed_rate) : 'Не указана')));
   form.append(typeField(d));
   if (d.type === 'temporary') form.append(periodField(d));
 

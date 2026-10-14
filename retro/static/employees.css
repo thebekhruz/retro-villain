@@ -219,6 +219,9 @@ button.emp-stat--attention:hover{background:#f8f1e0}
 .emp-namesake-who span{font-size:14px;color:#728476;overflow-wrap:anywhere}
 .emp-namesake .emp-btn{flex:none;min-height:40px;padding:8px 14px}
 .emp-namesakes-new{width:100%;min-height:44px}
+/* Ставка от менеджера (T-453): тот же блок, что «Похожие», — в карточке и в строке. */
+.emp-proposal{margin-top:12px}
+.emp-cell-num.is-proposed{color:#8a6a2a}
 .emp-drawer-actions{display:flex;gap:8px}
 .emp-drawer-actions .emp-btn{flex:0 0 auto;min-height:44px;border-radius:9px}
 .emp-drawer-actions .emp-btn--primary{flex:1 1 auto}
