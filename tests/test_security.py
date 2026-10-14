@@ -126,7 +126,8 @@ def test_each_dashboard_page_exposes_logout_control(tmp_path):
     for page in pages:
         assert page.status_code == 200
         assert 'id="logout"' in page.text
-        assert '>Выйти</button>' in page.text
+        # У кассира «Выйти» внизу меню — значок и подпись (T-449).
+        assert '>Выйти</button>' in page.text or '>Выйти</span></button>' in page.text
         assert 'src="/static/logout.js?v=' in page.text
 
 

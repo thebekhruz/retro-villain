@@ -927,21 +927,25 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
 @media(max-width:650px){.top-user{max-width:96px;font-size:12px}}
 
 
-/* ── Свёрнутое меню слева (T-442) ─────────────────────────────────────────
-   Кнопка в шапке сворачивает меню в полосу значков — ту же, что на
-   планшете, — и рабочая область получает всю ширину. Включается страницей
-   (<aside class="sidebar" data-collapsible>); состояние читает sidebar-state.js
-   до первого кадра. На ≤900 меню и так узкое — кнопки там нет. */
+/* ── Свёрнутое меню слева (T-442, T-449) ───────────────────────────────────
+   Круглая стрелка на правом краю меню сворачивает его в полосу значков —
+   ту же, что на планшете, — и рабочая область получает всю ширину. При
+   наведении на меню стрелка подрастает. Включается страницей
+   (<aside class="sidebar" data-collapsible>); состояние читает
+   sidebar-state.js до первого кадра. На ≤900 меню и так узкое — стрелки нет. */
+.sidebar[data-collapsible]{z-index:30}
 .sidebar-toggle{display:none}
 @media(min-width:901px){
-  .sidebar-toggle{display:grid;place-items:center;flex:none;width:36px;height:36px;margin:0 12px 0 -10px;padding:0;
-    border:1px solid transparent;border-radius:9px;background:transparent;color:#53675c;cursor:pointer}
-  .sidebar-toggle:hover{background:#eef2ea;border-color:var(--border)}
-  .sidebar-toggle svg{width:20px;height:20px;fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}
-  .sidebar-toggle-arrow{transform-origin:14.25px 12px}
+  .sidebar-toggle{position:absolute;top:50%;right:-15px;display:grid;place-items:center;width:30px;height:30px;
+    margin-top:-15px;padding:0;border:1px solid var(--border);border-radius:50%;background:#fff;color:var(--green);
+    box-shadow:0 2px 8px #143e3524;cursor:pointer;transition:transform .15s ease-out,box-shadow .15s ease-out}
+  .sidebar-toggle::after{content:"";position:absolute;inset:-8px;border-radius:50%}
+  .sidebar:hover .sidebar-toggle,.sidebar-toggle:focus-visible{transform:scale(1.15);box-shadow:0 4px 14px #143e3538}
+  .sidebar-toggle:focus-visible{outline-offset:3px}
+  .sidebar-toggle svg{width:16px;height:16px;fill:none;stroke:currentColor;stroke-width:2.1;stroke-linecap:round;stroke-linejoin:round}
+  .sidebar-toggle-arrow{transform-origin:12px 12px}
   .sidebar-animate .sidebar-toggle-arrow{transition:transform .22s ease-out}
   .sidebar-collapsed .sidebar-toggle-arrow{transform:rotate(180deg)}
-  .sidebar-toggle+.breadcrumb{margin-right:auto}
   .sidebar-animate .sidebar{transition:width .22s ease-out,padding .22s ease-out}
   .sidebar-animate main{transition:margin-left .22s ease-out,width .22s ease-out}
   html.sidebar-collapsed .sidebar{width:80px;align-items:center;padding:26px 12px}
@@ -954,7 +958,52 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
   html.sidebar-collapsed .sidebar :is(.nav-dot,.rm-subnav){display:none}
   html.sidebar-collapsed main{margin-left:80px;width:calc(100% - 80px)}
 }
-@media(prefers-reduced-motion:reduce){.sidebar-animate :is(.sidebar,main,.sidebar-toggle-arrow){transition:none}}
+@media(prefers-reduced-motion:reduce){.sidebar-animate :is(.sidebar,main,.sidebar-toggle-arrow),.sidebar-toggle{transition:none}}
+
+/* ── Внизу меню: язык, кто вошёл, «Выйти» (T-449) ─────────────────────────
+   Верхней строки у кассира нет: всё, что относится к учётной записи, — здесь.
+   Широкое меню: переключатель языка во всю ширину, под ним буква и имя,
+   справа «Выйти». Полоса значков: языки столбиком, буква, значок выхода. */
+.side-account{margin-top:auto;display:grid;gap:14px;padding-top:20px;border-top:1px solid #ffffff1a;min-width:0}
+.side-lang{border-color:#ffffff1f;background:#ffffff0a;border-radius:10px}
+.side-lang .lang-button{flex:1;min-height:34px;color:#a9bfb1}
+.side-lang .lang-button:hover{background:#ffffff12;color:#e9f0e8}
+.side-lang .lang-button.is-active{background:#ffffff1f;color:#fff}
+.side-user{display:flex;align-items:center;gap:10px;min-width:0}
+.side-user-mark{display:grid;place-items:center;width:34px;height:34px;flex:none;border-radius:50%;
+  background:#ffffff14;color:var(--gold);font:15px/1 Georgia,serif}
+.side-user-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px;font-weight:600;color:#e9f0e8}
+.side-user :is(.side-user-mark,.side-user-name):empty{display:none}
+.side-logout{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:none;min-height:34px;margin-left:auto;padding:0 10px;
+  border:1px solid #ffffff26;border-radius:9px;background:transparent;color:#c5d3c9;font-size:12px;font-weight:600}
+.side-logout:hover:not(:disabled){background:#ffffff12;color:#fff;filter:none}
+.side-logout .ri{width:16px;height:16px}
+/* Меню 195 px (≤1180): «Выйти» — значком, иначе имя режется до буквы. */
+@media(max-width:1180px){.side-account{gap:12px}.side-user-name{font-size:12.5px}
+  .side-logout{width:34px;padding:0}.side-logout [data-logout-text]{display:none}}
+@media(min-width:901px){
+  html.sidebar-collapsed .side-account{width:100%;justify-items:center;gap:10px;padding-top:16px}
+  html.sidebar-collapsed .side-lang{flex-direction:column;width:100%}
+  html.sidebar-collapsed .side-user{flex-direction:column;gap:10px}
+  html.sidebar-collapsed .side-user-name,html.sidebar-collapsed .side-logout [data-logout-text]{display:none}
+  html.sidebar-collapsed .side-logout{width:44px;height:40px;margin:0;padding:0}
+}
+@media(min-width:651px) and (max-width:900px){
+  .side-account{width:100%;justify-items:center;gap:10px;padding-top:16px}
+  .side-lang{flex-direction:column;width:100%}
+  .side-user{flex-direction:column;gap:10px}
+  .side-user-name,.side-logout [data-logout-text]{display:none}
+  .side-logout{width:44px;height:40px;margin:0;padding:0}
+}
+/* Телефон: меню — полоса сверху. Язык и выход — справа от логотипа,
+   модули — строкой ниже. Имя прячем: на 320 точках ему нет места. */
+@media(max-width:650px){
+  .sidebar .side-account{order:1;display:flex;align-items:center;gap:8px;margin:0 0 0 auto;padding:0;border:0}
+  .sidebar:has(.side-account) nav{order:2}
+  .side-user-mark,.side-user-name,.side-logout [data-logout-text]{display:none}
+  .side-logout{width:44px;height:44px;padding:0}
+}
+
 /* ── Векторные иконки (T-448) ─────────────────────────────────────────────
    icons.js заменяет символы-иконки (▤ ◫ ↻ ✎ × ‹ ›…) на SVG одного рисунка:
    размер — 1em от шрифта элемента, цвет — от текста. */
