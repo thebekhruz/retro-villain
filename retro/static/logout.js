@@ -5,20 +5,24 @@
     navigate('/login');
   }
 
+  /* Выход — #logout и любая кнопка [data-logout]: у кабинета учредителя и
+     телефона директора своя шапка на телефоне и «Выйти» в меню на компьютере
+     (T-455). */
   function bind() {
-    const button = root.document?.getElementById('logout');
-    if (!button) return;
-    button.addEventListener('click', async () => {
-      button.disabled = true;
-      try {
-        await logout();
-      } catch (error) {
-        button.disabled = false;
-        // В меню кассира у кнопки значок и подпись — меняем только подпись.
-        (button.querySelector('[data-logout-text]') || button).textContent = 'Повторить выход';
-        button.title = error.message;
-      }
-    });
+    const buttons = root.document?.querySelectorAll('#logout, [data-logout]') || [];
+    for (const button of buttons) {
+      button.addEventListener('click', async () => {
+        button.disabled = true;
+        try {
+          await logout();
+        } catch (error) {
+          button.disabled = false;
+          // В меню у кнопки значок и подпись — меняем только подпись.
+          (button.querySelector('[data-logout-text]') || button).textContent = 'Повторить выход';
+          button.title = error.message;
+        }
+      });
+    }
   }
 
   /* Кто вошёл (T-446): имя из учётной записи рядом с «Выйти»; без имени —
@@ -28,7 +32,8 @@
   async function showUser() {
     const button = root.document?.getElementById('logout');
     const slot = root.document?.querySelector('.side-user-name');
-    if (!button || (!slot && button.parentElement?.querySelector('.top-user'))) return;
+    if (!button && !slot) return;
+    if (!slot && button.parentElement?.querySelector('.top-user')) return;
     let config = null;
     try {
       config = await (root.RetroConfig || root.fetch('/api/config', {headers: {accept: 'application/json'}})
@@ -43,7 +48,9 @@
       if (mark) mark.textContent = (Array.from(name.trim())[0] || '').toUpperCase();
       // В свёрнутом меню видна только буква — имя остаётся в подсказке.
       slot.closest('.side-user')?.setAttribute('title', name);
-      return;
+      // «Выйти» в меню — имя уже рядом. Своя шапка телефона (кабинет
+      // учредителя, телефон директора) получает имя как раньше.
+      if (!button || button.closest('.sidebar') || button.parentElement?.querySelector('.top-user')) return;
     }
     const chip = root.document.createElement('span');
     chip.className = 'top-user';
