@@ -1058,3 +1058,10 @@ input.rm-field-start:is(.rm-field-dirty,.rm-field-saving,.rm-field-ok,.rm-field-
    пробел у текста — отступ у иконки задаём сами. */
 :is(.dir-back,.fo-back,.shokh-back)>.has-ri{margin-right:.3em}
 .dir-report-link>.has-ri{margin-left:.3em}
+
+/* «?» у предоплат без способа оплаты: подсказка из aria-label (её же переводит i18n). */
+.pay-hint{position:relative;display:inline-flex;align-items:center;justify-content:center;width:18px;height:18px;margin-left:8px;border:1px solid #c9d3c5;border-radius:50%;font-size:11px;font-weight:700;line-height:1;color:#6b7a6d;background:#fff;vertical-align:middle;cursor:help}
+.pay-hint:hover,.pay-hint:focus-visible{color:var(--green);border-color:var(--green2)}
+.pay-hint::after{content:attr(aria-label);position:absolute;z-index:20;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:max-content;max-width:min(300px,80vw);padding:10px 12px;border-radius:9px;background:#1f3a32;color:#f3f6f1;font-size:12px;font-weight:400;line-height:1.5;text-align:left;white-space:normal;box-shadow:0 6px 18px rgba(0,0,0,.18);opacity:0;visibility:hidden;pointer-events:none;transition:opacity .12s}
+.pay-hint:hover::after,.pay-hint:focus::after{opacity:1;visibility:visible}
+@media(max-width:700px){.pay-hint::after{left:auto;right:-40px;transform:none}}
