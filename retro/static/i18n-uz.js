@@ -3670,3 +3670,50 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Полный отчёт': "To'liq hisobot",
 });
 /* ── /T-448 ── */
+
+/* ── T-450 Кабинет менеджера: новый сотрудник, разделы списка, плитки ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "на терминале с фото": "terminalda surati bilan",
+  "Все на терминале с фото": "Hammasi terminalda surati bilan",
+  "В ваших разделах пока никого нет": "Bo'limlaringizda hali hech kim yo'q",
+  "без фото": "suratsiz",
+  "Фото есть у всех": "Hammaning surati bor",
+  "Имя или должность": "Ism yoki lavozim",
+  "Снимать по очереди": "Navbat bilan suratga olish",
+  "Новых снимайте сразу после добавления": "Yangilarni qo'shgandan so'ng darhol suratga oling",
+  "Ставку назначит бухгалтер": "Stavkani buxgalter belgilaydi",
+  "не на терминале": "terminalda emas",
+  "Не на терминале": "Terminalda emas",
+  "С фото": "Surati bor",
+  "вручную": "qo'lda",
+  "Учётная запись": "Hisob",
+  "Язык": "Til",
+  "Вся панель": "Butun panel",
+  "Дальше": "Keyingisi",
+  "Из галереи": "Galereyadan",
+  "последний без фото": "suratsizlarning oxirgisi",
+  "Готово. Терминал будет узнавать человека на входе.": "Tayyor. Terminal odamni kirishda taniydi.",
+  "Фамилия и имя кириллицей": "Familiya va ism kirillchada",
+  "Например, Каримова Лола": "Masalan, Каримова Лола",
+  "Первый день": "Birinchi kun",
+  "Последний день": "Oxirgi kun",
+  "Даты можно не указывать.": "Sanalarni ko'rsatmasa ham bo'ladi.",
+  "Это он? Откройте карточку. Если это другой человек, добавьте нового.": "Bu o'shami? Kartasini oching. Agar boshqa odam bo'lsa, yangisini qo'shing.",
+  "Это другой человек, добавить": "Bu boshqa odam, qo'shish",
+  "Ставку назначит бухгалтер. После добавления сфотографируйте человека: фото уйдёт на терминал.": "Stavkani buxgalter belgilaydi. Qo'shgandan so'ng odamni suratga oling: surat terminalga yuboriladi.",
+  "Впишите фамилию и имя.": "Familiya va ismni yozing.",
+  "Выберите должность.": "Lavozimni tanlang.",
+  "Последний день раньше первого.": "Oxirgi kun birinchisidan oldin.",
+  "Сотрудник добавлен. Сфотографируйте его: фото уйдёт на терминал.": "Xodim qo'shildi. Uni suratga oling: surat terminalga yuboriladi.",
+  "Сотрудников ваших разделов пока нет. Добавьте первого: «Новый сотрудник».": "Bo'limlaringizda hali xodimlar yo'q. Birinchisini qo'shing: «Yangi xodim».",
+  "Такой должности нет в реестре. Выберите из списка.": "Reyestrda bunday lavozim yo'q. Ro'yxatdan tanlang.",
+  "Эта должность — не из ваших разделов.": "Bu lavozim sizning bo'limlaringizdan emas.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^из (\d+)$/, "/ $1"],
+  [/^ещё без фото: (\d+)$/, "yana suratsiz: $1"],
+  [/^Раздел: (.+)$/, "Bo'lim: $1"],
+  [/^Никого не нашли по «(.+)»\. Если человека нет в списке, добавьте его: «Новый сотрудник»\.$/,
+    "«$1» bo'yicha hech kim topilmadi. Agar odam ro'yxatda bo'lmasa, uni qo'shing: «Yangi xodim»."],
+);
+/* ── /T-450 ── */
