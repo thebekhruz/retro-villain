@@ -762,7 +762,10 @@ function renderDebts() {
     .filter(e => e.left > 0) : [];
   const [year, month] = data.date.split('-').map(Number);
   const nextFirst = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);
-  $('all-debt-total').textContent = money(shiftDebt + salaryDebt + expDebt);
+  const total = shiftDebt + salaryDebt + expDebt;
+  // Долгов нет — карточку не показываем вовсе.
+  $('debt-card').hidden = !total;
+  $('all-debt-total').textContent = money(total);
   const group = (key, label, value, cls, rows) => {
     const has = rows && rows.length > 0, open = has && debtOpen.has(key);
     const head = has

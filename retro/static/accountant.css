@@ -715,6 +715,7 @@ button.fd-pill:hover{filter:brightness(.97)}
 .fd-check-sub{display:block;font-size:13px;color:#7d8881;margin-top:2px}
 .fd-check-more{width:100%;padding:10px 0 0;border:0;border-top:1px solid #edf1e9;background:none;text-align:left;font-size:14px;font-weight:600;color:#315e4c}
 .fd-debts{background:#fff5ee;border-color:#efdccc}
+.fd-debts[hidden]{display:none}
 .fd-debts .fd-kicker{color:#a96039;margin:0 0 10px}
 .fd-debts>strong{display:block;font-size:24px;font-weight:600;color:#a96039;font-variant-numeric:tabular-nums;margin-bottom:8px}
 .fd-debt-line{display:flex;justify-content:space-between;gap:12px;padding:9px 0;border-top:1px solid #efdccc;font-size:13px;color:#7b6257}

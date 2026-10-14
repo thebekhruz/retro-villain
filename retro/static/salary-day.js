@@ -160,13 +160,6 @@
     renderTabs();applyFilter();
     selectDay(selectedDay);
     const entry=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(current.shift_start+'T12:00:00Z')).replace(/\.$/,'');
-    // Общая зарплата без сотрудников в «Финансах дня» — клетки работают, но те же деньги
-    // по людям посчитаются второй раз: говорим, за какие дни и сколько.
-    const aggregate=(current.aggregate_days||[]).filter(item=>Number(item.amount));
-    $('aggregate-note').hidden=!aggregate.length;
-    $('aggregate-note').textContent=aggregate.length?'В «Финансах дня» есть общая зарплата без сотрудников: '
-      +aggregate.map(item=>dm(item.day)+' — '+fmt(Number(item.amount))).join(', ')
-      +'. Если вводите эти дни по людям, удалите общую строку, иначе выплата посчитается дважды.':'';
     $('entry-note').textContent=current.closed?'Месяц закрыт — только для чтения':'В столбце — дата смены. Ставите галочку сейчас — расход записывается сегодня, '+dm(today)+'. Можно отметить несколько смен. Под галочкой — фактическая дата выдачи. Правка суммы сохраняет эту дату. Смены с '+entry+'.';
   }
   /* Одна клетка — один PUT с абсолютной суммой и ожидаемой прежней (сервер

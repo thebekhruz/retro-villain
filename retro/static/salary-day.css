@@ -25,8 +25,6 @@
 .salary-day-page .pr-row[hidden]{display:none}
 .sd-nothing{margin:0;padding:22px 18px;font-size:14px;color:#7d8881;text-align:center;border-top:1px solid #e7ece3}
 .sd-nothing[hidden]{display:none}
-.salary-day-page .sd-aggregate{margin:0 0 14px;background:#fdeee9;border-color:#f0cfc3;color:#7d3620}
-.salary-day-page .sd-aggregate::before{content:"!";background:#e8bcab;color:#73301b}
 .salary-day-page #sheet-empty{padding:26px 18px}
 
 /* Клетки — те же .pr-m, что в «Зарплате · месяц»; обёртка role=cell не участвует в сетке. */
