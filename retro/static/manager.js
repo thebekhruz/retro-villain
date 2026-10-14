@@ -1,20 +1,19 @@
-/* Кабинет менеджера: сотрудники своих разделов (кухня, зал, уборка).
-   Главная (T-450): цель «на терминале N из M», плитки — кого ещё снять,
-   новый сотрудник, кто не дошёл до терминала, — и список: сначала без фото,
-   потом остальные. Менеджер заводит человека (ставку назначит бухгалтер),
-   фотографирует — фото сохраняется в карточке и уходит на терминал
-   Hikvision. Логика без DOM — в manager-logic.js. */
+/* Кабинет менеджера — телефонное приложение по образцу телефона директора
+   (T-459): вкладки внизу — «Сегодня», «Съёмка», «Добавить», «Команда» — и
+   карточка сотрудника поверх них. Менеджер заводит людей своих разделов
+   (ставку только предлагает — T-453), фотографирует (фото уходит на терминал
+   Hikvision) и удаляет (T-452). Логика без DOM — в manager-logic.js. */
 const $ = id => document.getElementById(id);
 const L = () => globalThis.ManagerLogic;
 const NETWORK = 'Нет связи с панелью. Проверьте интернет и повторите.';
-const CAMERA = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>';
 
 /* Отклик и ожидание (busy.js): нажатие отвечает сразу, повторное не проходит. */
 const passthrough = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
 const Busy = globalThis.RetroBusy || {button: passthrough, silent: fn => fn()};
 
-const state = {home: null, group: '', role: '', card: null, queue: false, preview: null,
-  preparing: false, uploading: false, sending: false, saving: false,
+const TABS = ['home', 'shoot', 'add', 'team', 'card'];
+const state = {home: null, tab: 'home', back: 'home', group: '', filter: 'all', card: null, queue: false,
+  preview: null, preparing: false, uploading: false, sending: false, saving: false,
   form: {role: '', type: 'shift'}};
 const photoBusy = () => state.preparing || state.uploading || state.sending;
 
@@ -25,23 +24,18 @@ function node(tag, cls, text) {
   return element;
 }
 
-function message(text, error = false) {
-  const box = $('mgr-message');
-  box.textContent = text; box.hidden = !text;
-  box.classList.toggle('is-error', error);
-  box.setAttribute('role', error ? 'alert' : 'status');
-  if (text) globalThis.RetroToast?.show(text, error ? 'error' : 'ok');
+/* Ошибка — строкой под шапкой (как у директора), успех — зелёной строкой. */
+let flashTimer = 0;
+function message(text, error = true) {
+  $('state').hidden = !text;
+  $('state').textContent = text || '';
+  $('state').classList.toggle('is-error', Boolean(text) && error);
 }
-
-/* Успех — только тостом: строка сверху сдвигала бы экран. */
-function done(text) {
-  message('');
-  globalThis.RetroToast?.show(text, 'ok');
-}
-
-function show(screen) {
-  for (const name of ['home', 'card', 'form']) $('screen-' + name).hidden = name !== screen;
-  window.scrollTo(0, 0);
+function flash(text) {
+  clearTimeout(flashTimer);
+  $('flash').textContent = text;
+  $('flash').hidden = false;
+  flashTimer = setTimeout(() => { $('flash').hidden = true; }, 4500);
 }
 
 async function api(path, options = {}) {
@@ -66,7 +60,32 @@ async function api(path, options = {}) {
   return {status: response.status, data: payload};
 }
 
-/* ── Список ────────────────────────────────────────────────────────────── */
+/* ── Вкладки ───────────────────────────────────────────────────────────── */
+function greeting() {
+  const name = L().collapse(state.home?.name || '');
+  return name ? 'Салом, ' + name[0].toUpperCase() + name.slice(1) : 'Кабинет менеджера';
+}
+const TITLES = {shoot: 'Съёмка', add: 'Новый сотрудник', team: 'Команда', card: 'Сотрудник'};
+
+function openTab(tab) {
+  if (photoBusy()) return;
+  if (tab !== 'card') { state.tab = tab; state.queue = false; }
+  TABS.forEach(name => { $('tab-' + name).hidden = name !== tab; });
+  // Карточка — поверх вкладок: внизу подсвечена та, откуда пришли.
+  document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
+    const active = button.dataset.tab === state.tab;
+    button.classList.toggle('is-active', active);
+    button.setAttribute('aria-selected', String(active));
+  });
+  // Приветствие — только на «Сегодня» (как у директора, director-app.css).
+  document.body.dataset.dirTab = tab;
+  $('screen-title').textContent = tab === 'home' ? greeting() : TITLES[tab];
+  if (tab === 'add') resetForm();
+  message('');
+  window.scrollTo({top: 0});
+}
+
+/* ── Строки людей ──────────────────────────────────────────────────────── */
 function thumb(card) {
   const box = node('span', card.photo ? 'shokh-thumb mgr-thumb' : 'shokh-thumb is-empty', card.photo ? undefined : L().initials(card.name));
   box.setAttribute('aria-hidden', 'true');
@@ -80,162 +99,152 @@ function thumb(card) {
   return box;
 }
 
-function nameLine(card) {
-  const title = node('span', 'shokh-purchase-title');
-  const name = node('span', '', card.name);
-  name.dataset.i18n = 'off';
-  title.append(name);
-  // «временный · 08.10–10.10» (T-434): период — с сервера.
-  const kind = L().typeTag(card);
-  if (kind) title.append(node('span', 'shokh-flag', kind));
-  return title;
-}
-
-/* Человек без фото — плитка: инициалы, имя, должность, значок камеры. */
-function personTile(card) {
-  const tile = node('button', 'mgr-person-tile');
-  tile.type = 'button';
-  const initials = node('span', 'mgr-initials', L().initials(card.name));
-  initials.dataset.i18n = 'off';
-  initials.setAttribute('aria-hidden', 'true');
-  const name = node('span', 'mgr-person-tile-name', card.name);
-  name.dataset.i18n = 'off';
-  const cam = node('span', 'mgr-cam');
-  cam.innerHTML = CAMERA;
-  tile.append(initials, name, node('span', 'mgr-person-tile-role', L().roleLine(card)), cam);
-  const kind = L().typeTag(card);
-  if (kind) tile.append(node('span', 'shokh-flag', kind));
-  if (card.can_photo === false) tile.disabled = true;
-  tile.addEventListener('click', () => openCard(card));
-  return tile;
-}
-
-/* С фото или «не на терминале» — строка: фото, имя, должность; метка только
-   там, где она что-то говорит (ошибка, ждёт отправки, ручная отметка). */
-function personRow(card) {
-  const row = node('button', 'shokh-purchase mgr-row');
+/* Метка состояния — плашкой директора (.dir-pill): зелёная «Готово»,
+   песочная «Нет фото / Ждёт отправки», красная «Ошибка». */
+const PILL = {ok: 'on_time', warn: 'unlinked', error: 'late', idle: 'manual'};
+// В строке плашка короче: длинная («Фото не проверено») сжимала имя до разрыва слова.
+const SHORT = {'Фото не проверено': 'Не проверено', 'Ждёт отправки': 'Не отправлено', 'Фото есть': 'вручную'};
+function personRow(card, {pill = true} = {}) {
+  const row = node('button', 'dir-person');
   row.type = 'button';
-  const body = node('span', 'shokh-purchase-body');
-  body.append(nameLine(card), node('span', 'shokh-note', L().roleLine(card)));
-  row.append(thumb(card), body);
+  row.dataset.busyKey = 'mgr:' + card.id;
+  const main = node('span', 'dir-person-main');
+  const name = node('span', 'dir-person-name');
+  const strong = node('strong', '', card.name);
+  strong.dataset.i18n = 'off';
+  name.append(strong);
+  const kind = L().typeTag(card);
+  if (kind) name.append(node('span', 'dir-waiter-tag is-top', kind));
+  main.append(name, node('small', '', L().roleLine(card)));
   const tag = L().rowTag(card);
-  if (!L().isDone(card) || tag.tone === 'idle') {
-    const tone = {ok: 'shokh-ok', warn: 'shokh-flag', error: 'shokh-flag is-error', idle: 'shokh-flag is-idle'}[tag.tone];
-    row.append(node('span', 'mgr-tag ' + tone, tag.tone === 'idle' ? 'вручную' : tag.text));
-  }
+  row.append(thumb(card), main);
+  if (pill) row.append(node('span', 'dir-pill ' + PILL[tag.tone], SHORT[tag.text] || tag.text));
+  row.append(node('span', 'dir-chevron', '›'));
+  if (card.can_photo === false) row.disabled = true;
   row.addEventListener('click', () => openCard(card));
   return row;
 }
 
-function chip(label, count, on, pick) {
-  const button = node('button', 'mgr-filter' + (on ? ' is-on' : ''));
-  button.type = 'button';
-  button.setAttribute('aria-pressed', String(on));
-  button.append(label + ' ', node('b', '', String(count)));
-  button.addEventListener('click', () => { pick(); renderList(); });
-  return button;
+function fillList(id, cards, empty, options) {
+  const list = $(id);
+  list.removeAttribute('aria-busy');
+  list.replaceChildren(...(cards.length ? cards.map(card => personRow(card, options)) : [node('p', 'dir-empty', empty)]));
 }
 
-/* Чипы разделов и должностей: строятся из списка, со счётом людей. */
-function renderPlaces(cards) {
-  const groups = L().groupsOf(cards);
-  if (state.group && !groups.some(item => item.key === state.group)) { state.group = ''; state.role = ''; }
-  $('groups').hidden = groups.length < 2;
-  $('groups').replaceChildren(chip('Все разделы', cards.length, !state.group, () => { state.group = ''; state.role = ''; }),
-    ...groups.map(item => chip(item.label, item.count, state.group === item.key, () => { state.group = item.key; state.role = ''; })));
-  const roles = state.group ? L().rolesOf(cards, state.group) : [];
-  if (state.role && !roles.some(item => item.key === state.role)) state.role = '';
-  $('roles').hidden = roles.length < 2;
-  $('roles').replaceChildren(...(roles.length < 2 ? [] : [
-    chip('Все должности', roles.reduce((sum, item) => sum + item.count, 0), !state.role, () => { state.role = ''; }),
-    ...roles.map(item => chip(item.label, item.count, state.role === item.key, () => { state.role = item.key; }))]));
-  // Выбранный чип в длинной строке — в поле зрения, страницу не двигаем.
-  for (const id of ['groups', 'roles']) {
-    const row = $(id), on = row.querySelector('.is-on');
-    if (on && (on.offsetLeft < row.scrollLeft || on.offsetLeft + on.offsetWidth > row.scrollLeft + row.clientWidth)) {
-      row.scrollLeft = Math.max(0, on.offsetLeft - 16);
-    }
-  }
-}
-
-/* Кто сейчас на экране: раздел, должность, поиск. Очередь съёмки идёт по нему же. */
-function shownCards() {
-  return L().filterCards(state.home?.employees || [], {group: state.group, role: state.role}, $('search').value);
-}
-
-function renderGoal(cards) {
+/* ── Сегодня ───────────────────────────────────────────────────────────── */
+function renderHome() {
+  const cards = state.home?.employees || [];
   const goal = L().goal(cards);
-  $('goal-done').textContent = goal.total ? String(goal.done) : '0';
+  $('goal-done').textContent = String(goal.done);
   $('goal-total').textContent = goal.total ? `из ${goal.total}` : '';
   $('goal-text').textContent = !goal.total ? 'В ваших разделах пока никого нет'
     : goal.done === goal.total ? 'Все на терминале с фото' : 'на терминале с фото';
   $('progress-bar').style.width = goal.percent + '%';
+  const counts = L().summary(cards);
+  const attention = cards.filter(card => !L().needsPhoto(card) && !L().isDone(card)).length;
+  $('kpi-nophoto-n').textContent = String(counts.noPhoto);
+  $('kpi-attention-n').textContent = String(attention);
+  $('kpi-attention').classList.toggle('is-bad', attention > 0);
+  $('shoot-next').textContent = counts.noPhoto
+    ? `Снимать по очереди · ${counts.noPhoto} без фото →` : 'Фото есть у всех. Новых снимайте сразу после добавления';
+  $('shoot-next').disabled = !counts.noPhoto;
+  // Предложенные ставки, которые ждут бухгалтера (T-453).
+  const pending = cards.filter(card => card.rate?.state === 'proposed');
+  $('proposals').hidden = !pending.length;
+  $('proposals-badge').textContent = String(pending.length);
+  $('proposals-list').replaceChildren(...pending.map(card => {
+    const line = node('div');
+    const text = node('span');
+    const strong = node('strong', '', card.name);
+    strong.dataset.i18n = 'off';
+    text.append(strong, node('small', '', L().rateLine(card)));
+    line.append(node('i'), text);
+    return line;
+  }));
+  // Разделы — плитками «Команда сегодня» директора: нажатие открывает команду.
+  $('sections').replaceChildren(...L().groupsOf(cards).map(group => {
+    const button = node('button', 'dir-count');
+    button.type = 'button';
+    const missing = cards.filter(card => card.group === group.key && L().needsPhoto(card)).length;
+    if (missing) button.classList.add('is-nohik');
+    button.append(node('strong', '', String(group.count)), node('span', '', group.label));
+    if (missing) button.append(node('small', 'dir-count-sub', `без фото: ${missing}`));
+    button.addEventListener('click', () => { state.group = group.key; state.filter = 'all'; openTab('team'); renderTeam(); });
+    return button;
+  }));
 }
 
-function renderTiles(cards) {
-  const counts = L().summary(cards.filter(card => L().inPlace(card, state)));
-  const left = counts.noPhoto;
-  const main = $('tile-shoot');
-  main.classList.toggle('is-calm', !left);
-  main.disabled = !left;
-  $('tile-shoot-num').textContent = left ? String(left) : '';
-  $('tile-shoot-label').textContent = left ? 'без фото' : 'Фото есть у всех';
-  $('tile-shoot-go').textContent = left ? (left > 1 ? 'Снимать по очереди' : 'Сфотографировать') : 'Новых снимайте сразу после добавления';
-  const attention = cards.filter(card => L().inPlace(card, state) && !L().needsPhoto(card) && !L().isDone(card)).length;
-  $('tile-problem').hidden = !attention;
-  $('tile-problem-num').textContent = String(attention);
-  document.querySelector('.mgr-bento').classList.toggle('no-alert', !attention);
+/* ── Съёмка ────────────────────────────────────────────────────────────── */
+function renderShoot() {
+  const cards = state.home?.employees || [];
+  const nophoto = cards.filter(L().needsPhoto);
+  const attention = cards.filter(card => !L().needsPhoto(card) && !L().isDone(card));
+  $('shoot-badge').textContent = String(nophoto.length);
+  $('shoot-badge').classList.toggle('is-ok', !nophoto.length);
+  // В «Без фото» плашка «Нет фото» у каждого — лишняя: раздел уже так называется.
+  fillList('shoot-list', nophoto, 'Фото есть у всех.', {pill: false});
+  $('attention-card').hidden = !attention.length;
+  $('attention-badge').textContent = String(attention.length);
+  fillList('attention-list', attention, '');
+  $('shoot-start').hidden = !nophoto.length;
+}
+
+/* ── Команда ───────────────────────────────────────────────────────────── */
+const FILTERS = [['all', 'Все'], ['nophoto', 'Без фото'], ['attention', 'Не на терминале'], ['done', 'С фото']];
+function inFilter(card, filter) {
+  if (filter === 'nophoto') return L().needsPhoto(card);
+  if (filter === 'attention') return !L().needsPhoto(card) && !L().isDone(card);
+  if (filter === 'done') return L().isDone(card);
+  return true;
+}
+function chipRow(id, items, current, pick) {
+  $(id).replaceChildren(...items.map(([key, label]) => {
+    const button = node('button', key === current ? 'is-active' : '', label);
+    button.type = 'button';
+    button.setAttribute('aria-pressed', String(key === current));
+    button.addEventListener('click', () => { pick(key); renderTeam(); });
+    return button;
+  }));
+  const on = $(id).querySelector('.is-active');
+  if (on && (on.offsetLeft < $(id).scrollLeft || on.offsetLeft + on.offsetWidth > $(id).scrollLeft + $(id).clientWidth)) {
+    $(id).scrollLeft = Math.max(0, on.offsetLeft - 16);
+  }
+}
+function renderTeam() {
+  const cards = state.home?.employees || [];
+  const groups = L().groupsOf(cards);
+  if (state.group && !groups.some(group => group.key === state.group)) state.group = '';
+  const inGroup = cards.filter(card => !state.group || card.group === state.group);
+  chipRow('team-filters', FILTERS.map(([key, label]) => [key, `${label} ${inGroup.filter(card => inFilter(card, key)).length}`]),
+    state.filter, key => { state.filter = key; });
+  $('groups').hidden = groups.length < 2;
+  chipRow('groups', [['', 'Все разделы'], ...groups.map(group => [group.key, group.label])], state.group,
+    key => { state.group = key; });
+  const query = $('search').value;
+  const shown = L().filterCards(inGroup, {}, query).filter(card => inFilter(card, state.filter));
+  const empty = !cards.length ? 'В ваших разделах пока никого нет. Добавьте первого: «+ Добавить».'
+    : L().collapse(query) ? `Никого не нашли по «${L().collapse(query)}». Если человека нет в списке, добавьте его: «+ Добавить».`
+      : 'Никого в этом списке.';
+  fillList('team-list', shown, empty);
 }
 
 function renderList() {
-  const cards = state.home?.employees || [];
-  renderPlaces(cards);
-  renderGoal(cards);
-  renderTiles(cards);
-  const query = $('search').value;
-  const shown = shownCards();
-  const list = $('list');
-  list.removeAttribute('aria-busy');
-  list.replaceChildren(...L().sections(shown).map(section => {
-    const box = node('section', 'mgr-section is-' + section.key);
-    box.id = 'section-' + section.key;
-    const head = node('h3', 'mgr-section-head');
-    head.append(node('span', '', section.title), node('b', '', String(section.cards.length)));
-    const body = node('div', section.key === 'nophoto' ? 'mgr-grid' : 'shokh-purchases mgr-rows');
-    body.append(...section.cards.map(section.key === 'nophoto' ? personTile : personRow));
-    box.append(head, body);
-    return box;
-  }));
-  const note = $('list-note');
-  let text = '';
-  if (!cards.length) text = 'Сотрудников ваших разделов пока нет. Добавьте первого: «Новый сотрудник».';
-  else if (!shown.length && L().collapse(query)) text = `Никого не нашли по «${L().collapse(query)}». Если человека нет в списке, добавьте его: «Новый сотрудник».`;
-  note.textContent = text;
-  note.hidden = !text;
-}
-
-function renderHome(data) {
-  state.home = data;
-  $('device-photo-note').textContent = data.photo_message || '';
-  $('device-photo-note').hidden = !data.photo_message;
-  $('home-sub').textContent = data.directions.join(' · ');
-  const name = data.name || data.login || '';
-  const mark = (Array.from(name.trim())[0] || '').toUpperCase();
-  $('account-mark').textContent = mark;
-  $('sheet-mark').textContent = mark;
-  $('account-name').textContent = name;
-  $('account-dirs').textContent = data.directions.join(' · ');
-  renderList();
+  renderHome();
+  renderShoot();
+  renderTeam();
+  if (state.tab === 'home' && !$('tab-home').hidden) $('screen-title').textContent = greeting();
 }
 
 async function loadHome() {
   try {
     const {data} = await api('/home');
-    renderHome(data);
+    state.home = data;
+    $('device-photo-note').textContent = data.photo_message || '';
+    $('device-photo-note').hidden = !data.photo_message;
+    renderList();
   } catch (error) {
-    $('list').removeAttribute('aria-busy');
-    $('list').replaceChildren(node('p', 'shokh-note', 'Не удалось загрузить список. Обновите страницу.'));
-    message(error.message, true);
+    $('team-list').removeAttribute('aria-busy');
+    message(error.message);
   }
 }
 
@@ -248,9 +257,9 @@ function paintStep(id, view) {
   $(id + '-title').textContent = view.title;
 }
 
-/* Следующий без фото — в том же порядке, что на главной. */
+/* Следующий без фото — по порядку реестра (как в «Съёмке»). */
 function nextCard() {
-  return state.card ? L().nextToShoot(shownCards(), state.card.id) : null;
+  return state.card ? L().nextToShoot(state.home?.employees || [], state.card.id) : null;
 }
 
 function renderCard() {
@@ -265,7 +274,6 @@ function renderCard() {
   };
   if (src) $('card-photo').src = src; else $('card-photo').removeAttribute('src');
   $('card-initials').textContent = src ? '' : L().initials(card.name);
-  $('card-avatar').classList.toggle('has-photo', !!src);
   $('card-name').textContent = card.name;
   $('card-role').textContent = L().roleLine(card);
   const rateText = L().rateLine(card);
@@ -288,37 +296,53 @@ function renderCard() {
   const finished = !busy && L().isDone(card);
   $('card-status').classList.toggle('is-waiting', busy);
   $('card-status').classList.toggle('is-error', person.step === 'error' || face?.step === 'error');
-  $('card-retry').hidden = busy || !card.can_retry;
   $('card-hint').hidden = finished;
   $('card-done').hidden = !finished || card.hikvision.state === 'manual';
-  // Очередь: сколько ещё без фото среди тех, что на экране.
-  const left = shownCards().filter(item => L().needsPhoto(item) && item.id !== card.id).length;
+  // Очередь: сколько ещё без фото.
+  const left = (state.home?.employees || []).filter(item => L().needsPhoto(item) && item.id !== card.id).length;
   $('card-queue').hidden = !state.queue;
   $('card-queue').textContent = left ? `ещё без фото: ${left}` : 'последний без фото';
   // Фото уже есть и дальше есть кого снимать — главная кнопка «Дальше».
   const next = !busy && card.photo ? nextCard() : null;
   $('card-next').hidden = !next;
   $('card-next-name').textContent = next ? next.name : '';
-  document.querySelector('.mgr-photo-actions').classList.toggle('has-next', !!next);
-  $('card-gallery').textContent = next ? 'Из галереи' : 'Выбрать из галереи';
+  $('card-shoot').hidden = !!next;
+  $('card-reshoot').hidden = !next;
   $('card-shoot-label').textContent = card.photo || state.preview ? 'Переснять фото' : 'Сфотографировать';
-  $('card-shoot').disabled = busy || card.can_photo === false;
-  $('card-gallery').disabled = busy || card.can_photo === false;
-  $('card-avatar').disabled = busy || card.can_photo === false;
+  $('card-retry').hidden = busy || !card.can_retry;
+  const locked = busy || card.can_photo === false;
+  for (const id of ['card-shoot', 'card-reshoot', 'card-gallery', 'card-avatar']) $(id).disabled = locked;
   $('card-close').disabled = busy;
-  $('card-delete').hidden = card.can_photo === false;
+  $('delete-zone').hidden = card.can_photo === false;
   $('card-delete').disabled = busy;
 }
 
-function openCard(card, {queue = state.queue} = {}) {
+function openCard(card, {queue = false} = {}) {
   if (photoBusy()) return;
   state.card = card;
   state.queue = queue;
   state.preview = null;
   state.uploading = false;
   state.sending = false;
+  $('delete-confirm').hidden = true;
+  $('delete-note').hidden = true;
+  $('card-delete').hidden = false;
   renderCard();
-  show('card');
+  openTab('card');
+}
+
+function closeCard() {
+  if (photoBusy()) return;
+  const back = state.tab;
+  state.card = null;
+  state.queue = false;
+  openTab(back);
+  renderList();
+}
+
+function startQueue() {
+  const first = L().nextToShoot(state.home?.employees || []);
+  if (first) openCard(first, {queue: true});
 }
 
 function replaceCard(card) {
@@ -370,7 +394,7 @@ async function sendToHikvision() {
   } catch (error) {
     message(error.network
       ? 'Нет связи с панелью — не знаем, дошло ли до Hikvision. Нажмите «Отправить ещё раз»: второго человека не будет.'
-      : error.message, true);
+      : error.message);
     return false;
   } finally {
     state.sending = false;
@@ -393,7 +417,7 @@ async function uploadPhoto(card, photo) {
     // Ответ мог потеряться после сохранения: обновляем карточку, не обещая,
     // что запись не произошла, и не отправляем запрос для другого сотрудника.
     try { replaceCard((await api(`/employees/${card.id}`)).data.employee); } catch {}
-    message(error.network ? 'Связь прервалась — результат отправки неизвестен. Откройте карточку снова и проверьте статус фото.' : error.message, true);
+    message(error.network ? 'Связь прервалась — результат отправки неизвестен. Откройте карточку снова и проверьте статус фото.' : error.message);
     return false;
   } finally {
     state.uploading = false;
@@ -418,33 +442,39 @@ async function photoTaken(event) {
     await Busy.button($(input.id === 'gallery-input' ? 'card-gallery' : 'card-shoot'),
       uploadPhoto(card, photo), {done: false});
   } catch {
-    message('Не удалось открыть фото. Выберите другой снимок или сфотографируйте ещё раз.', true);
+    message('Не удалось открыть фото. Выберите другой снимок или сфотографируйте ещё раз.');
   } finally {
     state.preparing = false;
     if (state.card?.id === card.id) renderCard();
   }
 }
 
-/* ── Новый сотрудник ───────────────────────────────────────────────────── */
-function fieldError(id, text) {
-  $(id).textContent = text || '';
-  $(id).hidden = !text;
+/* Удаление (T-452) — как в редакторе директора: «Удалить сотрудника», под ним
+   «Оставить / Да, удалить». Сервер стирает человека и из реестра бухгалтера. */
+async function deleteEmployee() {
+  const card = state.card;
+  if (!card) return;
+  try {
+    await api(`/employees/${card.id}`, {method: 'DELETE'});
+  } catch (error) {
+    if (error.status !== 404) { message(error.message); return; }
+  }
+  if (state.home) state.home.employees = state.home.employees.filter(item => item.id !== card.id);
+  closeCard();
+  flash(`Сотрудник удалён: ${card.name}.`);
 }
 
+/* ── Новый сотрудник ───────────────────────────────────────────────────── */
 function renderRoles() {
   const roles = state.home?.roles || [];
   const picked = L().collapse(state.form.role).toLowerCase();
   $('f-roles').replaceChildren(...roles.map(item => {
-    const button = node('button', 'mgr-role', item.role);
+    const on = L().roleKeyOf(item) === picked;
+    const button = node('button', on ? 'is-active' : '', item.role);
     button.type = 'button';
     button.setAttribute('role', 'radio');
-    const on = L().roleKeyOf(item) === picked;
     button.setAttribute('aria-checked', String(on));
-    button.addEventListener('click', () => {
-      state.form.role = item.role;
-      fieldError('f-role-error', '');
-      renderRoles();
-    });
+    button.addEventListener('click', () => { state.form.role = item.role; $('form-error').textContent = ''; renderRoles(); });
     return button;
   }));
   const chosen = roles.find(item => L().roleKeyOf(item) === picked);
@@ -454,43 +484,34 @@ function renderRoles() {
 
 function setType(type) {
   state.form.type = type;
-  document.querySelectorAll('.mgr-type [data-type]').forEach(button => {
-    button.setAttribute('aria-checked', String(button.dataset.type === type));
+  document.querySelectorAll('#type-seg [data-type]').forEach(button => {
+    const on = button.dataset.type === type;
+    button.classList.toggle('is-active', on);
+    button.setAttribute('aria-pressed', String(on));
   });
   if ($('f-period')) $('f-period').hidden = type !== 'temporary';
 }
 
-function openForm() {
-  if (photoBusy()) return;
+function resetForm() {
   state.form = {role: '', type: 'shift'};
   $('employee-form').reset();
-  fieldError('f-name-error', '');
-  fieldError('f-role-error', '');
-  fieldError('f-rate-error', '');
+  $('form-error').textContent = '';
   $('similar').hidden = true;
   setType('shift');
   renderRoles();
-  show('form');
-  $('f-name').focus({preventScroll: true});
 }
 
 function similarRow(match) {
   const card = (state.home?.employees || []).find(item => item.id === match.id);
-  const row = node('button', 'shokh-purchase mgr-row');
-  row.type = 'button';
-  const body = node('span', 'shokh-purchase-body');
-  const name = node('span', 'shokh-purchase-title');
-  const text = node('span', '', match.name);
-  text.dataset.i18n = 'off';
-  name.append(text);
-  body.append(name, node('span', 'shokh-note', [match.role, match.group].filter(Boolean).join(' · ')));
-  row.append(card ? thumb(card) : node('span', 'shokh-thumb is-empty', L().initials(match.name)), body);
-  if (card) {
-    row.append(node('span', 'mgr-tag shokh-ok', 'Это он'));
-    row.addEventListener('click', () => { show('home'); openCard(card, {queue: false}); });
-  } else {
-    row.disabled = true;
-  }
+  if (card) return personRow(card);
+  const row = node('div', 'dir-person');
+  const main = node('span', 'dir-person-main');
+  const strong = node('strong', '', match.name);
+  strong.dataset.i18n = 'off';
+  const name = node('span', 'dir-person-name');
+  name.append(strong);
+  main.append(name, node('small', '', [match.role, match.group].filter(Boolean).join(' · ')));
+  row.append(node('span', 'shokh-thumb is-empty', L().initials(match.name)), main);
   return row;
 }
 
@@ -499,13 +520,9 @@ async function saveEmployee(confirm = false) {
   const form = {name: $('f-name').value, role: state.form.role, type: state.form.type,
     from: $('f-from')?.value || '', to: $('f-to')?.value || '', rate: $('f-rate').value};
   const errors = L().formErrors(form);
-  fieldError('f-name-error', errors.name);
-  fieldError('f-role-error', errors.role || errors.period);
-  fieldError('f-rate-error', errors.rate);
-  if (Object.keys(errors).length) {
-    (errors.name ? $('f-name') : $('f-roles')).scrollIntoView({block: 'center', behavior: 'smooth'});
-    return;
-  }
+  const first = errors.name || errors.role || errors.rate || errors.period || '';
+  $('form-error').textContent = first;
+  if (first) return;
   state.saving = true;
   try {
     const temporary = form.type === 'temporary';
@@ -514,13 +531,12 @@ async function saveEmployee(confirm = false) {
       work_from: temporary && form.from ? form.from : null, work_to: temporary && form.to ? form.to : null,
       proposed_rate: L().rateDigits(form.rate).value, confirm_new: confirm})});
     const card = data.employee;
-    const list = state.home.employees;
-    list.push(card);
-    list.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
+    state.home.employees.push(card);
+    state.home.employees.sort((a, b) => a.name.localeCompare(b.name, 'ru'));
     renderList();
-    // Без тоста: на телефоне он закрывал шапку карточки — карточка нового
-    // человека открывается сама, с кнопкой «Сфотографировать».
-    openCard(card, {queue: false});
+    // Карточка нового человека открывается сразу — с «Сфотографировать».
+    state.tab = 'team';
+    openCard(card);
   } catch (error) {
     if (error.status === 409 && Array.isArray(error.payload?.matches)) {
       $('similar-list').replaceChildren(...error.payload.matches.map(similarRow));
@@ -528,106 +544,64 @@ async function saveEmployee(confirm = false) {
       $('similar').scrollIntoView({block: 'nearest', behavior: 'smooth'});
       return;
     }
-    // Имя или должность не прошли проверку кириллицы — подпись у поля.
-    if (error.status === 422 && /имен|ФИО|фамил/i.test(error.message)) fieldError('f-name-error', error.message);
-    else if (error.status === 422 && /ставк/i.test(error.message)) fieldError('f-rate-error', error.message);
-    else if (error.status === 422 || error.status === 403) fieldError('f-role-error', error.message);
-    else message(error.message, true);
+    $('form-error').textContent = error.message;
   } finally {
     state.saving = false;
   }
 }
 
-/* ── Удалить сотрудника (T-452) ────────────────────────────────────────── */
-function openSheet(id) {
-  const sheet = $(id);
-  if (typeof sheet.showModal === 'function') sheet.showModal(); else sheet.setAttribute('open', '');
-}
-function closeSheet(id) {
-  const sheet = $(id);
-  if (typeof sheet.close === 'function') sheet.close(); else sheet.removeAttribute('open');
-}
-
-function askDelete() {
-  if (!state.card || photoBusy()) return;
-  $('delete-name').textContent = state.card.name;
-  openSheet('delete-sheet');
-}
-
-/* Удаляем у всех сразу: сервер стирает человека из реестра бухгалтера.
-   Уже удалён (404) — тоже убираем из списка. */
-async function deleteEmployee() {
-  const card = state.card;
-  if (!card) return;
-  try {
-    await api(`/employees/${card.id}`, {method: 'DELETE'});
-  } catch (error) {
-    if (error.status !== 404) { message(error.message, true); return; }
-  }
-  closeSheet('delete-sheet');
-  if (state.home) state.home.employees = state.home.employees.filter(item => item.id !== card.id);
-  state.card = null;
-  state.queue = false;
-  show('home');
-  renderList();
-  done(`Сотрудник удалён: ${card.name}.`);
-}
-
-/* ── Учётная запись ────────────────────────────────────────────────────── */
-const openAccount = () => openSheet('account-sheet');
-const closeAccount = () => closeSheet('account-sheet');
-
 /* ── События ───────────────────────────────────────────────────────────── */
-$('search').addEventListener('input', renderList);
-$('tile-shoot').addEventListener('click', () => {
-  const first = L().nextToShoot(shownCards());
-  if (first) openCard(first, {queue: true});
+document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
+  button.addEventListener('click', () => { if (!photoBusy()) { state.card = null; openTab(button.dataset.tab); renderList(); } });
 });
-$('tile-add').addEventListener('click', openForm);
-$('tile-problem').addEventListener('click', () => {
-  $('section-attention')?.scrollIntoView({block: 'start', behavior: 'smooth'});
-});
-$('card-close').addEventListener('click', () => { if (!photoBusy()) { state.queue = false; show('home'); renderList(); } });
+$('shoot-next').addEventListener('click', startQueue);
+$('shoot-start').addEventListener('click', startQueue);
+$('kpi-nophoto').addEventListener('click', () => openTab('shoot'));
+$('kpi-attention').addEventListener('click', () => { state.filter = 'attention'; state.group = ''; openTab('team'); renderTeam(); });
+$('team-add').addEventListener('click', () => openTab('add'));
+$('form-close').addEventListener('click', () => openTab('home'));
+$('search').addEventListener('input', renderTeam);
+$('card-close').addEventListener('click', closeCard);
 $('card-next').addEventListener('click', () => { const next = nextCard(); if (next) openCard(next, {queue: true}); });
-$('card-shoot').addEventListener('click', () => $('photo-input').click());
-$('card-avatar').addEventListener('click', () => $('photo-input').click());
+for (const id of ['card-shoot', 'card-reshoot', 'card-avatar']) $(id).addEventListener('click', () => $('photo-input').click());
 $('card-gallery').addEventListener('click', () => $('gallery-input').click());
 $('photo-input').addEventListener('change', photoTaken);
 $('gallery-input').addEventListener('change', photoTaken);
 $('card-retry').addEventListener('click', () => Busy.button($('card-retry'), sendToHikvision(), {done: false}));
-$('form-close').addEventListener('click', () => { show('home'); renderList(); });
-$('form-save').addEventListener('click', () => Busy.button($('form-save'), saveEmployee(false), {done: false}));
+$('card-delete').addEventListener('click', () => {
+  $('card-delete').hidden = true; $('delete-confirm').hidden = false; $('delete-note').hidden = false;
+});
+$('delete-cancel').addEventListener('click', () => {
+  $('card-delete').hidden = false; $('delete-confirm').hidden = true; $('delete-note').hidden = true;
+});
+$('delete-yes').addEventListener('click', () => Busy.button($('delete-yes'), deleteEmployee(), {done: false}));
+$('employee-form').addEventListener('submit', event => {
+  event.preventDefault();
+  Busy.button($('form-save'), saveEmployee(false), {done: false});
+});
 $('similar-new').addEventListener('click', () => Busy.button($('similar-new'), saveEmployee(true), {done: false}));
-$('employee-form').addEventListener('submit', event => { event.preventDefault(); $('form-save').click(); });
-$('f-name').addEventListener('input', () => { fieldError('f-name-error', ''); $('similar').hidden = true; });
+$('f-name').addEventListener('input', () => { $('form-error').textContent = ''; $('similar').hidden = true; });
+document.querySelectorAll('#type-seg [data-type]').forEach(button => {
+  button.addEventListener('click', () => setType(button.dataset.type));
+});
 // Ставка: «200000» → «200 000» по ходу ввода (T-453).
 $('f-rate').addEventListener('input', event => {
-  fieldError('f-rate-error', '');
+  $('form-error').textContent = '';
   const input = event.currentTarget;
   const formatted = L().formatRate(input.value);
   if (formatted !== input.value) input.value = formatted;
 });
-document.querySelectorAll('.mgr-type [data-type]').forEach(button => {
-  button.addEventListener('click', () => setType(button.dataset.type));
-});
-$('account-open').addEventListener('click', openAccount);
-$('account-close').addEventListener('click', closeAccount);
-$('card-delete').addEventListener('click', askDelete);
-$('delete-cancel').addEventListener('click', () => closeSheet('delete-sheet'));
-$('delete-confirm').addEventListener('click', () => Busy.button($('delete-confirm'), deleteEmployee(), {done: false}));
-// Нажатие на затемнение вокруг листа закрывает его (по самому листу — нет).
-for (const id of ['account-sheet', 'delete-sheet']) {
-  $(id).addEventListener('click', event => {
-    if (event.target !== event.currentTarget) return;
-    const box = event.currentTarget.getBoundingClientRect();
-    const inside = event.clientX >= box.left && event.clientX <= box.right && event.clientY >= box.top && event.clientY <= box.bottom;
-    if (!inside) closeSheet(id);
-  });
-}
+
+// Дата под шапкой — как у директора: «Среда, 14 октября».
+try {
+  const today = new Intl.DateTimeFormat('ru-RU', {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'Asia/Tashkent'})
+    .format(new Date());
+  $('today-label').textContent = today[0].toUpperCase() + today.slice(1);
+} catch {}
 
 loadHome();
 
-// «Вся панель» — только тем, кому открыт ещё какой-то модуль (администратору).
+// «‹ Панель» — только тем, кому открыт ещё какой-то модуль (администратору).
 fetch('/api/config', {headers: {accept: 'application/json'}, retroBusy: false})
   .then(response => (response.ok ? response.json() : null))
   .then(config => {
