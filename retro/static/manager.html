@@ -7,6 +7,9 @@
   <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
   <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
   <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Retro Milliy"><meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="/static/style.css">
   <!-- Телефонный каркас — тот же, что у закупа (3a): те же классы и вид. -->
   <link rel="stylesheet" href="/static/shokh.css">
@@ -15,50 +18,66 @@
   <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/manager-logic.js" defer></script><script src="/static/manager.js" defer></script>
 </head>
 <body class="shokh-body mgr-body">
-<div class="rm-phone">
+<div class="rm-phone mgr-app">
   <p id="mgr-message" class="shokh-message" role="status" aria-live="polite" hidden></p>
 
-  <!-- ── Главная: сотрудники своих разделов. Заводит их бухгалтер, менеджер —
-       выбирает человека и фотографирует. ─────────────────────────────── -->
+  <!-- ── Главная (T-450): цель «фото у N из M», плитки, затем люди — сначала
+       без фото, потом те, у кого фото не дошло до терминала, потом готовые. ── -->
   <section id="screen-home" class="shokh-screen">
-    <header class="shokh-hero rm-phone-hero">
+    <header class="shokh-hero rm-phone-hero mgr-hero">
       <div class="shokh-hero-top">
         <span class="shokh-mark" aria-hidden="true">М</span>
         <div class="shokh-hello">
           <strong>Кабинет менеджера</strong>
           <span id="home-sub">&nbsp;</span>
         </div>
+        <!-- Язык, «Вся панель» и «Выйти» — в листе учётной записи: шапка не шумит. -->
+        <button id="account-open" class="mgr-account" type="button" aria-haspopup="dialog" aria-controls="account-sheet" aria-label="Учётная запись">
+          <span id="account-mark" data-i18n="off"></span>
+        </button>
       </div>
-      <div class="shokh-hero-actions">
-        <!-- Администратор заходит сюда из меню панели — ему нужна дорога назад. -->
-        <a id="mgr-back" class="logout-button shokh-logout shokh-back" href="/login" hidden><span aria-hidden="true">‹</span> Панель</a>
-        <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
-        <button id="logout" class="logout-button shokh-logout" type="button">Выйти</button>
-      </div>
-      <div class="mgr-progress" aria-live="polite">
-        <span id="progress-text" class="mgr-progress-text">&nbsp;</span>
+      <div class="mgr-goal" aria-live="polite">
+        <p class="mgr-goal-line"><strong id="goal-done">&nbsp;</strong><span id="goal-total"></span></p>
+        <span id="goal-text" class="mgr-goal-text">&nbsp;</span>
         <span class="mgr-progress-bar" aria-hidden="true"><i id="progress-bar"></i></span>
       </div>
     </header>
 
-    <div class="shokh-body-scroll">
+    <div class="shokh-body-scroll mgr-scroll">
+      <p id="device-photo-note" class="shokh-note mgr-device-note" role="status" hidden></p>
+
+      <!-- Плитки: одна главная — кого ещё снять; рядом «Новый сотрудник»
+           и, если есть, «Не на терминале». -->
+      <div class="mgr-bento">
+        <button id="tile-shoot" class="mgr-tile is-main" type="button">
+          <span class="mgr-tile-icon" aria-hidden="true">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
+          </span>
+          <span class="mgr-tile-count"><b id="tile-shoot-num" data-i18n="off"></b> <span id="tile-shoot-label">без фото</span></span>
+          <span id="tile-shoot-go" class="mgr-tile-go">Снимать по очереди</span>
+        </button>
+        <button id="tile-add" class="mgr-tile is-add" type="button">
+          <span class="shokh-plus" aria-hidden="true">+</span>
+          <span class="mgr-tile-title">Новый сотрудник</span>
+          <span class="mgr-tile-sub">Ставку подтвердит бухгалтер</span>
+        </button>
+        <button id="tile-problem" class="mgr-tile is-alert" type="button" hidden>
+          <span class="mgr-tile-count"><b id="tile-problem-num" data-i18n="off"></b> <span>не на терминале</span></span>
+          <span class="mgr-tile-sub">Показать</span>
+        </button>
+      </div>
+
       <article class="rm-phone-card mgr-list-card">
-        <p class="mgr-lead">Выберите сотрудника и добавьте фото с камеры или из галереи — оно отправится на терминал Hikvision. Новых сотрудников заводит бухгалтер.</p>
-        <p id="device-photo-note" class="shokh-note" role="status" hidden></p>
         <input id="search" type="search" class="shokh-search" maxlength="80" autocomplete="off"
-               placeholder="Найти по имени или должности" aria-label="Найти сотрудника">
-        <div class="mgr-filters" role="group" aria-label="Показать">
-          <button type="button" class="mgr-filter is-on" data-filter="all" aria-pressed="true">Все <b id="count-all"></b></button>
-          <button type="button" class="mgr-filter" data-filter="nophoto" aria-pressed="false">Без фото <b id="count-nophoto"></b></button>
-          <button type="button" class="mgr-filter" data-filter="problem" aria-pressed="false">Ошибки <b id="count-problem"></b></button>
-        </div>
+               placeholder="Имя или должность" aria-label="Найти сотрудника">
         <!-- Раздел и должность внутри раздела — как чипы групп в «Сотрудниках». -->
         <div id="groups" class="mgr-filters mgr-filters-sub" role="group" aria-label="Раздел"></div>
         <div id="roles" class="mgr-filters mgr-filters-sub" role="group" aria-label="Должность" hidden></div>
-        <div id="list" class="shokh-purchases" aria-busy="true">
-          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:58%"></span><span class="rm-skel" style="width:36%"></span></span></div>
-          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:44%"></span><span class="rm-skel" style="width:30%"></span></span></div>
-          <div class="shokh-purchase shokh-skel-purchase"><span class="rm-skel shokh-thumb"></span><span class="shokh-purchase-body"><span class="rm-skel is-md" style="width:52%"></span><span class="rm-skel" style="width:34%"></span></span></div>
+        <div id="list" class="mgr-list" aria-busy="true">
+          <div class="mgr-grid">
+            <span class="mgr-person-tile is-skel"><span class="rm-skel mgr-initials"></span><span class="rm-skel is-md" style="width:80%"></span><span class="rm-skel" style="width:56%"></span></span>
+            <span class="mgr-person-tile is-skel"><span class="rm-skel mgr-initials"></span><span class="rm-skel is-md" style="width:70%"></span><span class="rm-skel" style="width:50%"></span></span>
+          </div>
         </div>
         <p id="list-note" class="shokh-note mgr-list-note" hidden></p>
       </article>
@@ -66,10 +85,10 @@
   </section>
 
   <!-- ── Сотрудник: фото и путь на терминал Hikvision ─────────────────── -->
-  <section id="screen-card" class="shokh-screen" hidden>
+  <section id="screen-card" class="shokh-screen mgr-flow" hidden>
     <header class="shokh-flow-head">
       <button id="card-close" class="shokh-round" type="button" aria-label="Назад к списку">‹</button>
-      <div class="shokh-step-label"><b>Сотрудник</b></div>
+      <div class="shokh-step-label"><b>Сотрудник</b><span id="card-queue" class="mgr-queue" hidden></span></div>
       <span class="mgr-head-spacer" aria-hidden="true"></span>
     </header>
     <div class="shokh-flow-body">
@@ -84,6 +103,7 @@
           </button>
           <strong id="card-name" class="mgr-person-name" data-i18n="off">—</strong>
           <span id="card-role" class="mgr-person-role"></span>
+          <span id="card-rate" class="mgr-rate-pill" hidden></span>
         </div>
 
         <div id="card-status" class="shokh-save mgr-status" role="status" aria-live="polite">
@@ -95,10 +115,18 @@
         </div>
 
         <p id="card-hint" class="mgr-hint">Лицо прямо, без очков и кепки, на светлом фоне. Держите лицо по центру: фото обрезается до квадрата 1:1 без растягивания.</p>
+        <p id="card-done" class="mgr-done" hidden>Готово. Терминал будет узнавать человека на входе.</p>
         <button id="card-retry" class="shokh-secondary mgr-retry" type="button" hidden>Отправить ещё раз</button>
+        <!-- T-452: удаление — тихая кнопка в конце карточки, с подтверждением. -->
+        <button id="card-delete" class="mgr-delete" type="button">Удалить сотрудника</button>
       </div>
     </div>
     <div class="shokh-flow-nav mgr-photo-actions">
+      <!-- Фото есть и дальше есть кого снимать — главная кнопка ведёт к следующему. -->
+      <button id="card-next" class="shokh-primary is-flat mgr-next" type="button" hidden>
+        <span><b id="card-next-label">Дальше</b><small id="card-next-name" data-i18n="off"></small></span>
+        <span class="mgr-next-arrow" aria-hidden="true">›</span>
+      </button>
       <button id="card-shoot" class="shokh-primary is-flat mgr-shoot" type="button">
         <svg viewBox="0 0 24 24" width="20" height="20" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg>
         <span id="card-shoot-label">Сфотографировать</span>
@@ -108,6 +136,77 @@
     <input id="photo-input" type="file" accept="image/*" capture="environment" hidden>
     <input id="gallery-input" type="file" accept="image/*" hidden>
   </section>
+
+  <!-- ── Новый сотрудник (T-450): имя, должность, сменный или временный.
+       Ставку назначает бухгалтер; похожих в реестре показываем до записи. ── -->
+  <section id="screen-form" class="shokh-screen mgr-flow" hidden>
+    <header class="shokh-flow-head">
+      <button id="form-close" class="shokh-round" type="button" aria-label="Закрыть">×</button>
+      <div class="shokh-step-label"><b>Новый сотрудник</b></div>
+      <span class="mgr-head-spacer" aria-hidden="true"></span>
+    </header>
+    <div class="shokh-flow-body">
+      <form id="employee-form" class="shokh-step mgr-form" novalidate>
+        <label class="shokh-field"><span>Фамилия и имя кириллицей</span>
+          <input id="f-name" name="name" type="text" maxlength="160" autocomplete="off" autocapitalize="words"
+                 spellcheck="false" placeholder="Например, Каримова Лола" aria-describedby="f-name-error">
+        </label>
+        <p id="f-name-error" class="mgr-field-error" role="alert" hidden></p>
+
+        <div class="shokh-field"><span id="role-label">Должность</span>
+          <div id="f-roles" class="mgr-role-chips" role="radiogroup" aria-labelledby="role-label"></div>
+          <span id="f-role-group" class="mgr-role-group" hidden></span>
+        </div>
+        <p id="f-role-error" class="mgr-field-error" role="alert" hidden></p>
+
+        <!-- T-453: ставку менеджер только предлагает — подтверждает бухгалтер. -->
+        <label class="shokh-field"><span>Ставка за смену, сум</span>
+          <input id="f-rate" name="rate" type="text" inputmode="numeric" maxlength="13" autocomplete="off"
+                 placeholder="Необязательно" aria-describedby="f-rate-note">
+        </label>
+        <p id="f-rate-note" class="shokh-note mgr-rate-note">Бухгалтер подтвердит эту ставку или поставит свою.</p>
+        <p id="f-rate-error" class="mgr-field-error" role="alert" hidden></p>
+
+        <!-- Похожие в реестре: решает менеджер, карточки сами не объединяем. -->
+        <article id="similar" class="mgr-similar" hidden>
+          <strong class="mgr-similar-title">Похожие уже есть в реестре</strong>
+          <p class="shokh-note">Это он? Откройте карточку. Если это другой человек, добавьте нового.</p>
+          <div id="similar-list" class="shokh-purchases"></div>
+          <button id="similar-new" class="shokh-dashed mgr-similar-new" type="button">Это другой человек, добавить</button>
+        </article>
+
+        <p class="shokh-note mgr-form-note">После добавления сфотографируйте человека: фото уйдёт на терминал.</p>
+      </form>
+    </div>
+    <div class="shokh-flow-nav">
+      <button id="form-save" class="shokh-primary is-flat" type="button">Добавить</button>
+    </div>
+  </section>
 </div>
+
+<!-- ── Удалить сотрудника (T-452): то же удаление, что у бухгалтера ── -->
+<dialog id="delete-sheet" class="mgr-sheet" aria-labelledby="delete-title">
+  <strong id="delete-title" class="mgr-sheet-title">Удалить сотрудника?</strong>
+  <p id="delete-name" class="mgr-sheet-name" data-i18n="off"></p>
+  <p class="shokh-note">Он пропадёт из кабинета и у бухгалтера в «Сотрудниках». Прошлые смены и выплаты сохранятся.</p>
+  <button id="delete-confirm" class="shokh-primary is-flat mgr-delete-confirm" type="button">Удалить</button>
+  <button id="delete-cancel" class="shokh-secondary" type="button">Отмена</button>
+</dialog>
+
+<!-- ── Учётная запись: кто вошёл, язык, вся панель (администратору), выход ── -->
+<dialog id="account-sheet" class="mgr-sheet" aria-labelledby="account-name">
+  <div class="mgr-sheet-head">
+    <span id="sheet-mark" class="mgr-sheet-mark" aria-hidden="true" data-i18n="off"></span>
+    <div class="mgr-sheet-who"><strong id="account-name" data-i18n="off"></strong><span id="account-dirs" data-i18n="off"></span></div>
+    <button id="account-close" class="shokh-round" type="button" aria-label="Закрыть">×</button>
+  </div>
+  <div class="mgr-sheet-row">
+    <span>Язык</span>
+    <div class="lang-switch mgr-sheet-lang" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+  </div>
+  <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
+  <a id="mgr-back" class="shokh-secondary mgr-sheet-link" href="/login" hidden>Вся панель</a>
+  <button id="logout" class="shokh-secondary mgr-sheet-logout" type="button">Выйти</button>
+</dialog>
 </body>
 </html>

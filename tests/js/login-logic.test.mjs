@@ -70,3 +70,59 @@ test('подписи входа по номеру переводятся на у
   assert.equal(translate('Этот номер не подключён к панели. Обратитесь к администратору.'),
     'Bu raqam panelga ulanmagan. Administratorga murojaat qiling.');
 });
+
+/* Панель на экране телефона (T-451): подсказка только на телефоне, только в
+   обычном браузере и не в окне, открытом с иконки. */
+const UA = {
+  iphoneSafari: 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1',
+  iphoneChrome: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) CriOS/141.0.7390.41 Mobile/15E148 Safari/604.1',
+  iphoneInApp: 'Mozilla/5.0 (iPhone; CPU iPhone OS 18_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148 Instagram 400.0.0.0',
+  androidChrome: 'Mozilla/5.0 (Linux; Android 15; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Mobile Safari/537.36',
+  androidWebView: 'Mozilla/5.0 (Linux; Android 15; Pixel 9; wv) AppleWebKit/537.36 (KHTML, like Gecko) Version/4.0 Chrome/141.0.0.0 Mobile Safari/537.36',
+  androidTablet: 'Mozilla/5.0 (Linux; Android 15; SM-X710) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+  desktop: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/141.0.0.0 Safari/537.36',
+};
+
+test('подсказка «на экран телефона»: какой телефон и какой браузер', () => {
+  assert.equal(logic.installHint(UA.iphoneSafari, false), 'ios');
+  assert.equal(logic.installHint(UA.iphoneChrome, false), 'ios');
+  assert.equal(logic.installHint(UA.androidChrome, false), 'android');
+  // Во встроенном браузере мессенджера пункта «На экран Домой» нет.
+  assert.equal(logic.installHint(UA.iphoneInApp, false), null);
+  assert.equal(logic.installHint(UA.androidWebView, false), null);
+  // Только телефон.
+  assert.equal(logic.installHint(UA.androidTablet, false), null);
+  assert.equal(logic.installHint(UA.desktop, false), null);
+  assert.equal(logic.installHint('', false), null);
+  assert.equal(logic.installHint(undefined, false), null);
+});
+
+test('с иконки панель открыта как приложение — подсказки нет', () => {
+  assert.equal(logic.installHint(UA.iphoneSafari, true), null);
+  assert.equal(logic.installHint(UA.androidChrome, true), null);
+});
+
+test('текст подсказки: iPhone — через «Поделиться», Android — меню или кнопка', () => {
+  assert.equal(logic.installText('ios', false), 'Добавьте панель на экран телефона: Поделиться → На экран «Домой».');
+  assert.equal(logic.installText('android', false),
+    'Добавьте панель на экран телефона: меню ⋮ → «Добавить на главный экран».');
+  assert.equal(logic.installText('android', true), 'Добавьте панель на экран телефона.');
+  assert.equal(logic.installText(null, false), '');
+  for (const text of [logic.installText('ios'), logic.installText('android'), logic.installText('android', true)]) {
+    assert.ok(!text.includes('!'), text);
+    assert.ok(!text.includes('—'), text);
+  }
+});
+
+test('подсказка «на экран телефона» переводится на узбекский', async () => {
+  globalThis.document = {readyState: 'loading', addEventListener() {}};
+  await import('../../retro/static/i18n-uz.js');
+  await import('../../retro/static/i18n.js');
+  const {translate} = globalThis.RetroI18n;
+  for (const text of [logic.installText('ios'), logic.installText('android'), logic.installText('android', true),
+    'Установить']) {
+    const uz = translate(text);
+    assert.ok(uz && !/[А-Яа-яЁё]/.test(uz), text + ' → ' + uz);
+  }
+  assert.equal(translate('Установить'), "O'rnatish");
+});

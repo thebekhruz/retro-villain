@@ -3457,9 +3457,95 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 /* ── /T-447 ── */
 
+/* ── T-451: панель на экране телефона (подсказка на экране входа) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Добавьте панель на экран телефона: Поделиться → На экран «Домой».': "Panelni telefon ekraniga qo'shing: Ulashish → «Bosh ekranga».",
+  'Добавьте панель на экран телефона: меню ⋮ → «Добавить на главный экран».': "Panelni telefon ekraniga qo'shing: menyu ⋮ → «Bosh ekranga qo'shish».",
+  'Добавьте панель на экран телефона.': "Panelni telefon ekraniga qo'shing.",
+  'Установить': "O'rnatish",
+});
+/* ── /T-451 ── */
+
 /* ── T-448: стрелка в «‹ Панель» и «Полный отчёт →» стала иконкой, текст — отдельно ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Панель': "Panel",
   'Полный отчёт': "To'liq hisobot",
 });
 /* ── /T-448 ── */
+
+/* ── T-450 Кабинет менеджера: новый сотрудник, разделы списка, плитки ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "на терминале с фото": "terminalda surati bilan",
+  "Все на терминале с фото": "Hammasi terminalda surati bilan",
+  "В ваших разделах пока никого нет": "Bo'limlaringizda hali hech kim yo'q",
+  "без фото": "suratsiz",
+  "Фото есть у всех": "Hammaning surati bor",
+  "Имя или должность": "Ism yoki lavozim",
+  "Снимать по очереди": "Navbat bilan suratga olish",
+  "Новых снимайте сразу после добавления": "Yangilarni qo'shgandan so'ng darhol suratga oling",
+  "Ставку назначит бухгалтер": "Stavkani buxgalter belgilaydi",
+  "не на терминале": "terminalda emas",
+  "Не на терминале": "Terminalda emas",
+  "С фото": "Surati bor",
+  "вручную": "qo'lda",
+  "Учётная запись": "Hisob",
+  "Язык": "Til",
+  "Вся панель": "Butun panel",
+  "Дальше": "Keyingisi",
+  "Из галереи": "Galereyadan",
+  "последний без фото": "suratsizlarning oxirgisi",
+  "Готово. Терминал будет узнавать человека на входе.": "Tayyor. Terminal odamni kirishda taniydi.",
+  "Фамилия и имя кириллицей": "Familiya va ism kirillchada",
+  "Например, Каримова Лола": "Masalan, Каримова Лола",
+  "Первый день": "Birinchi kun",
+  "Последний день": "Oxirgi kun",
+  "Даты можно не указывать.": "Sanalarni ko'rsatmasa ham bo'ladi.",
+  "Это он? Откройте карточку. Если это другой человек, добавьте нового.": "Bu o'shami? Kartasini oching. Agar boshqa odam bo'lsa, yangisini qo'shing.",
+  "Это другой человек, добавить": "Bu boshqa odam, qo'shish",
+  "Ставку назначит бухгалтер. После добавления сфотографируйте человека: фото уйдёт на терминал.": "Stavkani buxgalter belgilaydi. Qo'shgandan so'ng odamni suratga oling: surat terminalga yuboriladi.",
+  "Впишите фамилию и имя.": "Familiya va ismni yozing.",
+  "Выберите должность.": "Lavozimni tanlang.",
+  "Последний день раньше первого.": "Oxirgi kun birinchisidan oldin.",
+  "Сотрудник добавлен. Сфотографируйте его: фото уйдёт на терминал.": "Xodim qo'shildi. Uni suratga oling: surat terminalga yuboriladi.",
+  "Сотрудников ваших разделов пока нет. Добавьте первого: «Новый сотрудник».": "Bo'limlaringizda hali xodimlar yo'q. Birinchisini qo'shing: «Yangi xodim».",
+  "Такой должности нет в реестре. Выберите из списка.": "Reyestrda bunday lavozim yo'q. Ro'yxatdan tanlang.",
+  "Эта должность — не из ваших разделов.": "Bu lavozim sizning bo'limlaringizdan emas.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^из (\d+)$/, "/ $1"],
+  [/^ещё без фото: (\d+)$/, "yana suratsiz: $1"],
+  [/^Раздел: (.+)$/, "Bo'lim: $1"],
+  [/^Никого не нашли по «(.+)»\. Если человека нет в списке, добавьте его: «Новый сотрудник»\.$/,
+    "«$1» bo'yicha hech kim topilmadi. Agar odam ro'yxatda bo'lmasa, uni qo'shing: «Yangi xodim»."],
+);
+/* ── /T-450 ── */
+
+/* ── T-452 Кабинет менеджера: удалить сотрудника ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Он пропадёт из кабинета и у бухгалтера в «Сотрудниках». Прошлые смены и выплаты сохранятся.": "U kabinetdan va buxgalterning «Xodimlar» bo'limidan yo'qoladi. Oldingi smenalar va to'lovlar saqlanadi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Сотрудник удалён: (.+)\.$/, "Xodim o'chirildi: $1."],
+);
+/* ── /T-452 ── */
+
+/* ── T-453 Ставку предлагает менеджер, подтверждает бухгалтер ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Необязательно": "Majburiy emas",
+  "Бухгалтер подтвердит эту ставку или поставит свою.": "Buxgalter bu stavkani tasdiqlaydi yoki o'zinikini qo'yadi.",
+  "После добавления сфотографируйте человека: фото уйдёт на терминал.": "Qo'shgandan so'ng odamni suratga oling: surat terminalga yuboriladi.",
+  "Ставку подтвердит бухгалтер": "Stavkani buxgalter tasdiqlaydi",
+  "Ставка — сумма в сумах цифрами, например 200 000.": "Stavka — so'mdagi summa raqamlarda, masalan 200 000.",
+  "Ставка ждёт подтверждения": "Stavka tasdiqlashni kutmoqda",
+  "Ставка подтверждена.": "Stavka tasdiqlandi.",
+  "Предложенной ставки нет — её уже подтвердили или исправили.": "Taklif qilingan stavka yo'q — u allaqachon tasdiqlangan yoki tuzatilgan.",
+  "Не удалось подтвердить.": "Tasdiqlab bo'lmadi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Ставка ([\d ]+) сум ждёт бухгалтера$/, "$1 so'mlik stavka buxgalterni kutmoqda"],
+  [/^Предложено ([\d ]+)$/, "Taklif: $1"],
+  [/^Подтвердить ([\d\s]+)\sсум$/, "$1 so'mni tasdiqlash"],
+  [/^Предложение менеджера( .+)?: ([\d\s]+)\sсум за смену\. Подтвердите или впишите свою ставку ниже\.$/,
+    "Menejer$1 taklifi: smena uchun $2 so'm. Tasdiqlang yoki quyida o'z stavkangizni yozing."],
+);
+/* ── /T-453 ── */

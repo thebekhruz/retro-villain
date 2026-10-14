@@ -57,6 +57,11 @@ button:disabled { cursor: wait; opacity: .65; }
 .login-link:disabled { cursor: default; opacity: 1; color: #b9c9c3; text-decoration: none; }
 .login-links { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 0 16px; margin-top: 4px; }
 #mode-switch { display: block; margin-top: 4px; }
+/* Подсказка «на экран телефона» (T-451): тихая строка под формой, отделена
+   линией, чтобы не читалась как часть входа. */
+.install-hint { margin-top: 18px; padding-top: 14px; border-top: 1px solid rgba(233,204,138,.16); }
+.install-hint p { margin: 0; color: #b9c9c3; font-size: 13px; line-height: 1.55; }
+.install-hint .login-link { display: block; margin-top: 2px; }
 @media (max-width: 520px) {
   .login-card { padding: 30px 24px; }
   .lang-switch { top: 16px; right: 16px; }

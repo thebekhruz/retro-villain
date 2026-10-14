@@ -51,5 +51,27 @@
     return seconds > 0 ? 'Отправить ещё раз через ' + countdown(seconds) : 'Отправить код ещё раз';
   }
 
-  return {localDigits, normalizePhone, formatPhone, codeDigits, countdown, resendLabel, CODE_LENGTH, PREFIX};
+  /* Панель на экране телефона (T-451). Подсказка — только на телефоне, только
+     в обычном браузере и не в окне, открытом с иконки. Во встроенных
+     браузерах мессенджеров пункта «На экран Домой» нет: у них в адресе
+     браузера нет «Safari/» (iOS) или стоит «; wv)» (Android). */
+  function installHint(userAgent, standalone) {
+    const agent = String(userAgent == null ? '' : userAgent);
+    if (standalone) return null;
+    if (/iPhone|iPod/.test(agent)) return /Safari\//.test(agent) ? 'ios' : null;
+    if (/Android/.test(agent) && /Mobile/.test(agent) && !/; wv\)/.test(agent)) return 'android';
+    return null;
+  }
+
+  /* Строка подсказки. Когда Chrome готов поставить значок сам (событие
+     beforeinstallprompt), путь через меню не нужен: рядом встаёт кнопка. */
+  function installText(kind, canPrompt) {
+    if (kind === 'ios') return 'Добавьте панель на экран телефона: Поделиться → На экран «Домой».';
+    if (kind !== 'android') return '';
+    return canPrompt ? 'Добавьте панель на экран телефона.'
+      : 'Добавьте панель на экран телефона: меню ⋮ → «Добавить на главный экран».';
+  }
+
+  return {localDigits, normalizePhone, formatPhone, codeDigits, countdown, resendLabel, installHint, installText,
+    CODE_LENGTH, PREFIX};
 });
