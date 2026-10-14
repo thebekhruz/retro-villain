@@ -1,19 +1,25 @@
-"""API кабинета менеджера (ТЗ 09.10, М-01…М-03).
+"""API кабинета менеджера (ТЗ 09.10, М-01…М-03; T-450).
 
-Карточки сотрудников заводит только бухгалтер. Менеджер видит сменных
-сотрудников своих направлений, фотографирует человека, и система отправляет
-в Hikvision его самого (если его там ещё нет) и его лицо. Ставок, выплат и
+Менеджер видит сменных сотрудников своих направлений, фотографирует человека,
+и система отправляет в Hikvision его самого (если его там ещё нет) и его
+лицо. С T-450 менеджер и заводит новых людей своих разделов: имя, должность,
+сменный или временный. Ставку назначает бухгалтер — в «Сотрудниках» такой
+человек виден как «Нет ставки». Похожие имена в реестре показываем, как
+бухгалтеру: решает человек, карточки сами не объединяем. Ставок, выплат и
 денег в ответах нет: это работа бухгалтера, и его разделы менеджеру закрыты.
 """
 
 import asyncio
+from datetime import date
 from urllib.parse import quote
 
 from fastapi import APIRouter, HTTPException, Request
-from fastapi.responses import Response
+from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel
 
 from retro.modules.accountant import work_period
+from retro.modules.accountant.names import person_name, similar_names
+from retro.modules.accountant.roster import GROUPS, group_for
 from retro.integrations.hikvision import HikvisionError
 from retro.modules.cashier.service import today_tashkent
 from retro.static_assets import VERSIONED_PRIVATE
@@ -63,11 +69,26 @@ FACE_PENDING = 'Фото ждёт отправки в Hikvision.'
 NOT_FOUND = 'Сотрудника нет в реестре — возможно, бухгалтер его удалил.'
 FOREIGN = 'Этот сотрудник — из другого направления.'
 NO_PHOTO = 'Сначала сфотографируйте сотрудника.'
+UNKNOWN_ROLE = 'Такой должности нет в реестре. Выберите из списка.'
+FOREIGN_ROLE = 'Эта должность — не из ваших разделов.'
+SIMILAR = 'Похожие уже есть в реестре. Это тот же человек?'
 
 
 class PhotoInput(BaseModel):
     # data:image/jpeg;base64,… — экран заранее ужимает снимок.
     image: str
+
+
+class EmployeeInput(BaseModel):
+    """Новый сотрудник из кабинета (T-450): без ставки — её назначает бухгалтер."""
+    name: str
+    role: str
+    # Временный (T-434): период «с — по», обе границы необязательны.
+    employment_type: str = 'shift'
+    work_from: date | None = None
+    work_to: date | None = None
+    # «Это другой человек»: менеджер видел похожих в реестре и подтвердил.
+    confirm_new: bool = False
 
 
 def current_account(request: Request) -> ManagerAccount:
@@ -172,6 +193,49 @@ def ended(row: dict) -> bool:
     return bool(row.get('work_to')) and row['work_to'] < today_tashkent()
 
 
+def capitalized(text: str) -> str:
+    text = ' '.join(text.split())
+    return text[:1].upper() + text[1:]
+
+
+def role_options(rows: list[dict], account: ManagerAccount) -> list[dict]:
+    """Должности для формы «Новый сотрудник»: базовые из реестра и те, что уже
+    есть у людей, — только группы разделов менеджера. Повар — общий «Повар»,
+    если на кухне ещё нет ни одного повара с цехом."""
+    seen: dict[str, dict] = {}
+    names = [*GROUPS, 'кондитер', *(row['role'] for row in rows)]
+    if not any(name.casefold().startswith('повар') for name in names):
+        names.append('повар')
+    for name in names:
+        try:
+            group = group_for(name)
+        except ValueError:
+            continue
+        key = ' '.join(name.casefold().split())
+        if account.sees(group) and key not in seen:
+            seen[key] = dict(role=capitalized(name), group=group)
+    order = {group: index for index, group in enumerate(
+        group for name in account.directions for group in DIRECTIONS[name])}
+    return sorted(seen.values(), key=lambda item: (order.get(item['group'], len(order)),
+                                                   item['role'].casefold()))
+
+
+def similar_people(request: Request, name: str, account: ManagerAccount) -> list[dict]:
+    """Похожие имена в реестре — как у бухгалтера (М-04). Своих (разделы
+    менеджера) можно открыть — «Это он»; чужих и окладников только показываем."""
+    try:
+        clean = person_name(name)
+    except ValueError:
+        return []
+    roster = request.app.state.accountant_roster
+    found = [dict(id=person.id, name=person.name, role=person.role, group=person.group_name,
+                  mine=account.sees(person.group_name))
+             for person in roster.list() if similar_names(clean, person.name)]
+    found += [dict(id=None, name=person.name, role=person.role, group='На окладе', mine=False)
+              for person in roster.list_monthly() if similar_names(clean, person.name)]
+    return found
+
+
 @router.get('/home')
 async def home(request: Request):
     """Сменные сотрудники направлений менеджера по алфавиту. Окладники — не
@@ -189,7 +253,35 @@ async def home(request: Request):
                 role=account.role, directions=list(account.directions),
                 hikvision=dict(configured=request.app.state.hikvision_writer is not None),
                 photo_message=photo_message,
+                roles=role_options(cards, account),
                 employees=[card_json(row, account) for row in rows])
+
+
+@router.post('/employees', status_code=201)
+async def create_employee(request: Request, body: EmployeeInput):
+    """Новый сотрудник раздела менеджера (T-450). Группа — по должности, как у
+    бухгалтера; чужой раздел отклоняется до записи. Ставки нет: её назначает
+    бухгалтер. Имя и должность — кириллицей (М-04)."""
+    account = current_account(request)
+    try:
+        group = group_for(body.role)
+    except ValueError:
+        raise HTTPException(422, UNKNOWN_ROLE) from None
+    if not account.sees(group):
+        raise HTTPException(403, FOREIGN_ROLE)
+    if not body.confirm_new:
+        matches = await asyncio.to_thread(similar_people, request, body.name, account)
+        if matches:
+            return JSONResponse(dict(detail=SIMILAR, matches=matches), 409)
+    try:
+        employee = await asyncio.to_thread(
+            request.app.state.accountant_roster.add, name=body.name, role=body.role, rate=None,
+            group_name=group, by=account.login, cyrillic=True, employment_type=body.employment_type,
+            work_from=body.work_from, work_to=body.work_to)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from None
+    row = await asyncio.to_thread(_card_or_404, request, employee.id)
+    return dict(employee=card_json(row, account))
 
 
 @router.get('/employees/{employee_id}')
