@@ -356,3 +356,7 @@
   .fo-dr-row>span:nth-child(2),.fo-dr-row>span:nth-child(3){display:none}
   .fo-dr-row>.fo-dr-who{grid-column:1 / -1}
 }
+
+/* T-455: на компьютере язык, имя, «Выйти» и время данных — внизу меню слева,
+   верхней строки нет. На телефоне (≤900) меню скрыто — шапка остаётся. */
+@media(min-width:901px){.founder-cabinet .topbar{display:none}}
