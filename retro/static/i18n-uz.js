@@ -854,6 +854,7 @@ globalThis.RetroDictionaryUz = {
   'Расхождение': "Tafovut",
   'iiko не отдал оплаты счетов': "iiko hisob to'lovlarini bermadi",
   'Предоплаты · способ не указан': "Oldindan to'lovlar · usuli ko'rsatilmagan",
+  'iiko сообщает способ оплаты предоплаты только после закрытия кассовой смены. Когда кассир закроет смену, эти суммы перейдут в «Оплата наличными» или «Банковские карты».': "iiko oldindan to'lov usulini faqat kassa smenasi yopilgandan keyin beradi. Kassir smenani yopganda bu summalar «Naqd to'lov» yoki «Bank kartalari»ga o'tadi.",
   'Другие способы оплаты': "Boshqa to'lov usullari",
   'За этот день оплат и новых предоплат нет': "Bu kunda to'lovlar va yangi oldindan to'lovlar yo'q",
   'Предоплаты за день недоступны — итоговая выручка требует проверки. Обновите день.': "Kunlik oldindan to'lovlar mavjud emas — jami tushumni tekshirish kerak. Kunni yangilang.",
