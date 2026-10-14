@@ -54,6 +54,29 @@
     sidebar.append(toggle);
   }
 
+  /* Состояние данных внизу меню (T-455): в полосе значков видна только точка —
+     текст уходит в подсказку. Кабинет учредителя показывает в меню копию
+     строки из своей телефонной шапки (data-status-of). */
+  if (sidebar) {
+    const watch = (source, target) => {
+      const copy = () => {
+        if (target !== source) {
+          target.textContent = source.textContent;
+          target.className = source.className;
+        }
+        target.title = target.textContent.trim();
+      };
+      copy();
+      new MutationObserver(copy).observe(source, {childList: true, characterData: true, subtree: true,
+        attributes: true, attributeFilter: ['class']});
+    };
+    sidebar.querySelectorAll('.side-status .top-status').forEach(status => {
+      const id = status.dataset.statusOf;
+      const source = id ? document.getElementById(id) : status;
+      if (source) watch(source, status);
+    });
+  }
+
   function link(module) {
     const anchor = document.createElement('a');
     anchor.href = module.path;

@@ -14,15 +14,20 @@
   <link rel="stylesheet" href="/static/director-app.css">
   <link rel="stylesheet" href="/static/founder-cabinet.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
 </head>
 <body class="founder-cabinet">
-<aside class="sidebar">
+<aside class="sidebar" data-collapsible>
   <a href="/founder" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
   <div class="side-rule"></div>
-  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
   <nav aria-label="Модули"><a href="/founder" class="nav-active" aria-current="page"><span class="nav-icon">⌁</span> Учредитель <span class="nav-dot"></span></a><div class="rm-subnav fo-subnav"><a href="#fo-week" class="is-current">Деньги недели</a><a href="#fo-acc">Проверка бухгалтера</a><a href="#fo-reports">Отчёты бухгалтера</a><a href="#fo-exp">Расходы и закуп</a><a href="#fo-menu">Прогноз и блюда</a><a href="/founder/analytics">Аналитика iiko · брони · рассылки</a></div></nav>
-  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro · Retro Oxbridge · Бехруз<small>Ташкент · UZS</small></div></div>
+  <!-- T-455: язык, кто вошёл и «Выйти» — внизу меню, верхней строки нет.
+       Кнопку сворачивания nav.js ставит на край меню. -->
+  <div class="side-account">
+    <div class="side-status"><span class="top-status" data-status-of="updated"></span></div>
+    <div class="lang-switch side-lang" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+    <div class="side-user"><span class="side-user-mark" aria-hidden="true" data-i18n="off"></span><span class="side-user-name" data-i18n="off"></span><button data-logout class="side-logout" type="button" title="Выйти" aria-label="Выйти"><svg class="ri" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg><span data-logout-text>Выйти</span></button></div>
+  </div>
 </aside>
 <main class="fo-main">
   <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Учредитель</strong></span><div class="topbar-actions"><a id="fo-back" class="logout-button fo-back" href="/login" hidden><span aria-hidden="true">‹</span> Панель</a><span class="top-status rm-status-skel" id="updated"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>

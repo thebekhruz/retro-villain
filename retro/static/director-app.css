@@ -341,3 +341,8 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 /* Редактор сотрудника, пока идёт запись: поля не меняются, кнопка крутится. */
 .dir-editor.is-saving .dir-field,.dir-editor.is-saving .dir-check,.dir-editor.is-saving .dir-segment{opacity:.6;pointer-events:none;transition:opacity .2s}
 .dir-kpi strong .rm-skel.is-val{width:72%;height:14px}
+
+/* T-455: пока меню слева видно (>650), язык, имя и «Выйти» — внизу меню; в шапке
+   телефона директора остаётся только «Полный отчёт». На телефоне меню скрыто —
+   всё снова в шапке. */
+@media(min-width:651px){.dir-head-actions :is(.lang-switch,#logout,.top-user,.dir-back){display:none}}
