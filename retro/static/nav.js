@@ -20,19 +20,18 @@
   if (!nav) return;
 
   /* Меню сворачивается в полосу значков, и рабочей области достаётся вся
-     ширина (T-442). Выбор помнит браузер; на планшете и телефоне меню и так
-     узкое, кнопку там прячет style.css. */
+     ширина (T-442). Кнопка — круглая стрелка на правом краю меню (T-449):
+     «‹» свернуть, «›» развернуть. Выбор помнит браузер; на планшете и
+     телефоне меню и так узкое, кнопку там прячет style.css. */
   const sidebar = document.querySelector('.sidebar[data-collapsible]');
-  const topbar = document.querySelector('.topbar');
-  if (sidebar && topbar) {
+  if (sidebar) {
     const root = document.documentElement;
     sidebar.id = sidebar.id || 'sidebar';
     const toggle = document.createElement('button');
     toggle.type = 'button';
     toggle.className = 'sidebar-toggle';
     toggle.setAttribute('aria-controls', sidebar.id);
-    toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/>'
-      + '<path d="M9.5 4.5v15"/><path class="sidebar-toggle-arrow" d="M15.5 9.5 13 12l2.5 2.5"/></svg>';
+    toggle.innerHTML = '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="sidebar-toggle-arrow" d="M14 7l-5 5 5 5"/></svg>';
     const sync = () => {
       const collapsed = root.classList.contains('sidebar-collapsed');
       const text = collapsed ? 'Развернуть меню' : 'Свернуть меню';
@@ -52,7 +51,7 @@
       sync();
     });
     sync();
-    topbar.prepend(toggle);
+    sidebar.append(toggle);
   }
 
   function link(module) {

@@ -16,13 +16,19 @@
 <aside class="sidebar" data-collapsible>
   <a href="/" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
   <div class="side-rule"></div>
-  <p class="nav-label">РАБОЧЕЕ ПРОСТРАНСТВО</p>
   <nav aria-label="Модули"><a href="/" class="nav-active" aria-current="page" title="Кассир"><span class="nav-icon">▤</span> Кассир <span class="nav-dot"></span></a></nav>
-  <div class="sidebar-bottom"><span class="location-icon">⌖</span><div>Retro Milliy<small>Только ресторан · Ташкент</small></div></div>
+  <!-- T-449: язык, кто вошёл и «Выйти» — внизу меню; верхней строки у кассира нет.
+       Кнопку сворачивания nav.js ставит на край меню. -->
+  <div class="side-account">
+    <div class="lang-switch side-lang" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+    <div class="side-user"><span class="side-user-mark" aria-hidden="true" data-i18n="off"></span><span class="side-user-name" data-i18n="off"></span><button id="logout" class="side-logout" type="button" title="Выйти" aria-label="Выйти"><svg class="ri" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg><span data-logout-text>Выйти</span></button></div>
+  </div>
 </aside>
 <main>
-  <!-- T-449: «Рабочее пространство / Кассир» убраны — где мы, показывает пункт меню слева. -->
-  <header class="topbar"><div class="topbar-actions"><span class="top-status rm-status-skel" id="connection"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <!-- T-449: верхней строки нет. Где мы, показывает пункт меню слева; язык и
+       выход — внизу меню. Подпись связи с iiko живёт в строке под датой,
+       #connection остаётся для app.js скрытым. -->
+  <span class="top-status" id="connection" hidden></span>
   <!-- is-booting: до первого кадра скрипта все цифры — скелет (T-393). -->
   <div class="workspace cashier-workspace is-booting">
     <!-- T-447: заголовок экрана — сам день. Под ним одна строка состояния:
