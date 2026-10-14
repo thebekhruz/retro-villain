@@ -3664,13 +3664,6 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 /* ── /T-447 ── */
 
-/* ── T-448: стрелка в «‹ Панель» и «Полный отчёт →» стала иконкой, текст — отдельно ── */
-Object.assign(globalThis.RetroDictionaryUz, {
-  'Панель': "Panel",
-  'Полный отчёт': "To'liq hisobot",
-});
-/* ── /T-448 ── */
-
 /* ── T-451: панель на экране телефона (подсказка на экране входа) ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Добавьте панель на экран телефона: Поделиться → На экран «Домой».': "Panelni telefon ekraniga qo'shing: Ulashish → «Bosh ekranga».",
@@ -3679,3 +3672,10 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Установить': "O'rnatish",
 });
 /* ── /T-451 ── */
+
+/* ── T-448: стрелка в «‹ Панель» и «Полный отчёт →» стала иконкой, текст — отдельно ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Панель': "Panel",
+  'Полный отчёт': "To'liq hisobot",
+});
+/* ── /T-448 ── */
