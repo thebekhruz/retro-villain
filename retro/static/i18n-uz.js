@@ -3457,6 +3457,15 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 /* ── /T-447 ── */
 
+/* ── T-451: панель на экране телефона (подсказка на экране входа) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Добавьте панель на экран телефона: Поделиться → На экран «Домой».': "Panelni telefon ekraniga qo'shing: Ulashish → «Bosh ekranga».",
+  'Добавьте панель на экран телефона: меню ⋮ → «Добавить на главный экран».': "Panelni telefon ekraniga qo'shing: menyu ⋮ → «Bosh ekranga qo'shish».",
+  'Добавьте панель на экран телефона.': "Panelni telefon ekraniga qo'shing.",
+  'Установить': "O'rnatish",
+});
+/* ── /T-451 ── */
+
 /* ── T-448: стрелка в «‹ Панель» и «Полный отчёт →» стала иконкой, текст — отдельно ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Панель': "Panel",
