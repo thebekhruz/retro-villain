@@ -13,7 +13,7 @@ from fastapi.testclient import TestClient
 
 from retro.app import create_app
 from retro.config import Settings
-from retro.modules.accountant.ledger import FinanceStore
+from retro.modules.accountant.ledger import FinanceStore, LedgerError
 from retro.modules.accountant.opening_migration import CASH_OPENING, RESERVE_OPENINGS, apply_october_opening
 from retro.modules.accountant.shoh_balance import shoh_view
 from retro.modules.shokh.store import pocket_position
@@ -107,7 +107,8 @@ def test_old_saved_report_and_pdf_are_hidden(client):
 def test_salary_month_has_no_pre_accounting_days(client):
     response = client.get('/api/accountant/salary-day/month?month=2026-10')
     assert response.status_code == 200, response.text
-    assert response.json()['days'][0] == '2026-10-13'
+    # Ведомость по людям — с первой выдачи 15.10 (за смену 14.10).
+    assert response.json()['days'][0] == '2026-10-15'
 
 
 def test_default_director_period_is_clipped(monkeypatch):
@@ -236,8 +237,8 @@ def test_shift_five_pays_today_and_earlier_shifts_are_blocked(client, monkeypatc
     for number in range(12, 18):
         finance.record_handover(date(2026, 10, number), Decimal('1000'))
     sheet = client.get('/api/accountant/salary-day/month?month=2026-10&basis=shift').json()
-    assert sheet['first'] == sheet['days'][0] == sheet['shift_start'] == '2026-10-12'
-    for shift in range(12, 15):
+    assert sheet['first'] == sheet['days'][0] == sheet['shift_start'] == '2026-10-14'
+    for shift in range(14, 17):
         body = dict(work_day=f'2026-10-{shift:02d}', employee_id=person.id, amount='100', expected_amount='0')
         response = client.put('/api/accountant/salary-day/shift-cell', json=body)
         assert response.status_code == 200, response.text
@@ -246,16 +247,19 @@ def test_shift_five_pays_today_and_earlier_shifts_are_blocked(client, monkeypatc
     assert finance.daily_summary(date(2026, 10, 17), None)['salary_paid_on_day'] == Decimal('300')
     for paid in range(13, 17):
         assert finance.daily_summary(date(2026, 10, paid), None)['salary_paid_on_day'] == Decimal('0')
-    assert client.put('/api/accountant/salary-day/shift-cell', json=dict(body, work_day='2026-10-11')).status_code == 422
-    assert client.put('/api/accountant/salary-day/cell', json=dict(date='2026-10-12', employee_id=person.id, amount='100', expected_amount='0')).status_code == 422
-    assert client.post('/api/accountant/salary-day/extra', json=dict(body, work_day='2026-10-11', paid_day='2026-10-13', note='Old')).status_code == 422
+    # Смены 12–13.10 оплачены общими строками: в ведомость их не взять.
+    assert client.put('/api/accountant/salary-day/shift-cell', json=dict(body, work_day='2026-10-13')).status_code == 422
+    assert client.put('/api/accountant/salary-day/cell', json=dict(date='2026-10-14', employee_id=person.id, amount='100', expected_amount='0')).status_code == 422
+    assert client.post('/api/accountant/salary-day/extra', json=dict(body, work_day='2026-10-13', paid_day='2026-10-15', note='Old')).status_code == 422
 
 
 def test_only_salary_and_cashier_source_shift_may_precede_accounting():
     from fastapi import HTTPException
     from retro.accounting_access import check_dates
     check_dates([('date', '2026-10-13'), ('cashier_date', '2026-10-12')])
-    check_dates([('work_day', '2026-10-12')], salary=True)
+    check_dates([('work_day', '2026-10-14')], salary=True)
+    with pytest.raises(HTTPException):
+        check_dates([('work_day', '2026-10-13')], salary=True)
     with pytest.raises(HTTPException):
         check_dates([('work_day', '2026-10-12')])
     with pytest.raises(HTTPException):
@@ -289,37 +293,38 @@ def test_upgrade_from_five_preserves_payout_six_and_excludes_money_five(database
     assert summary['cash_flow']['opening_balance'] == CASH_OPENING
     assert summary['salary_paid_on_day'] == Decimal('310')
     assert summary['cash_balance'] == Decimal(CASH_OPENING) + 590  # 1000 received - 100 expense - 310 salary.
-    assert [item['work_day'] for item in summary['accruals']] == ['2026-10-12']
+    # Выплата 13.10 за смену 12.10 остаётся расходом дня, но ведомость по людям — с 14.10.
+    assert summary['accruals'] == []
     assert summary['salary_debt'] == 0
     with closing(finance._open()) as conn:
         assert _debts_at(conn, START)['salary'] == '0'
     sheet = finance.salary_day_month(START, date(2026, 10, 31))
-    cell = next(p for p in sheet['people'] if p['id'] == person.id)['cells']['2026-10-13']
-    assert cell['amount'] == '310' and cell['work_day'] == '2026-10-12' and cell['editable']
-    assert sheet['entry_start'] == '2026-10-13' and sheet['shift_start'] == '2026-10-12'
-    sheet.update(month='2026-10', first='2026-10-13', last='2026-10-31')
+    assert next(p for p in sheet['people'] if p['id'] == person.id)['cells']['2026-10-13']['editable'] is False
+    assert sheet['entry_start'] == '2026-10-15' and sheet['shift_start'] == '2026-10-14'
+    sheet = finance.salary_day_month(date(2026, 10, 15), date(2026, 10, 31))  # как API: с первой выдачи
+    sheet.update(month='2026-10', first='2026-10-15', last='2026-10-31')
     workbook = load_workbook(BytesIO(salary_day_workbook(sheet)))
     text = [str(c.value) for ws in workbook for row in ws for c in row if c.value is not None]
-    assert any('Выплата 13.10' in value and '12.10' in value for value in text)
-    assert not any('Выплата 12.10' in value for value in text)
-    changed = finance.set_salary_day_cell(START, person.id, '300', '310')
-    assert changed['work_day'] == '2026-10-12'
-    assert finance.daily_summary(START, None)['cash_balance'] == Decimal(CASH_OPENING) + 600
+    assert any('Выплата 15.10' in value and '14.10' in value for value in text)
+    assert not any('Выплата 13.10' in value for value in text)
+    with pytest.raises(LedgerError):
+        finance.set_salary_day_cell(START, person.id, '300', '310')
 
 
 def test_first_payment_day_allows_extra_for_previous_shift_only(client, monkeypatch):
     for module in ('routes', 'salary_day', 'extra_payouts'):
         monkeypatch.setattr(f'retro.modules.accountant.{module}.today_tashkent', lambda: date(2026, 10, 17))
     person = client.app.state.accountant_roster.add(name='Доплата тест', role='Повар', rate='310', group_name='Кухня')
-    client.app.state.accountant_finance.record_handover(START, Decimal('1000'))
-    body = dict(employee_id=person.id, work_day='2026-10-12', paid_day='2026-10-13', amount='40', note='Доплата за смену')
+    for number in (13, 14, 15):
+        client.app.state.accountant_finance.record_handover(date(2026, 10, number), Decimal('1000'))
+    body = dict(employee_id=person.id, work_day='2026-10-14', paid_day='2026-10-15', amount='40', note='Доплата за смену')
     response = client.post('/api/accountant/salary-day/extra', json=body)
     assert response.status_code == 201, response.text
-    assert client.post('/api/accountant/salary-day/extra', json=dict(body, paid_day='2026-10-12')).status_code == 422
-    assert client.post('/api/accountant/salary-day/extra', json=dict(body, work_day='2026-10-11')).status_code == 422
-    data = client.get('/api/accountant/day?date=2026-10-13').json()
-    assert data['ledger']['cash_balance'] == str(Decimal(CASH_OPENING) + 960)
+    assert client.post('/api/accountant/salary-day/extra', json=dict(body, paid_day='2026-10-14')).status_code == 422
+    assert client.post('/api/accountant/salary-day/extra', json=dict(body, work_day='2026-10-13')).status_code == 422
+    data = client.get('/api/accountant/day?date=2026-10-15').json()
+    assert data['ledger']['cash_balance'] == str(Decimal(CASH_OPENING) + 2960)
     assert data['ledger']['day_flow']['salary'] == '40'
     sheet = client.get('/api/accountant/salary-day/month?month=2026-10').json()
-    assert sheet['first'] == sheet['days'][0] == sheet['entry_start'] == '2026-10-13'
-    assert sheet['shift_start'] == '2026-10-12'
+    assert sheet['first'] == sheet['days'][0] == sheet['entry_start'] == '2026-10-15'
+    assert sheet['shift_start'] == '2026-10-14'
