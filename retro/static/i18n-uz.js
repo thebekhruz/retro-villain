@@ -3519,3 +3519,12 @@ globalThis.RetroTemplatesUz.push(
     "«$1» bo'yicha hech kim topilmadi. Agar odam ro'yxatda bo'lmasa, uni qo'shing: «Yangi xodim»."],
 );
 /* ── /T-450 ── */
+
+/* ── T-452 Кабинет менеджера: удалить сотрудника ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Он пропадёт из кабинета и у бухгалтера в «Сотрудниках». Прошлые смены и выплаты сохранятся.": "U kabinetdan va buxgalterning «Xodimlar» bo'limidan yo'qoladi. Oldingi smenalar va to'lovlar saqlanadi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Сотрудник удалён: (.+)\.$/, "Xodim o'chirildi: $1."],
+);
+/* ── /T-452 ── */

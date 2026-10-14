@@ -425,6 +425,41 @@ def test_namesakes_are_shown_before_adding_and_confirmed_by_the_manager(cabinet)
     assert len(roster(cabinet).list()) == 3
 
 
+def test_accountant_sees_who_the_manager_added_and_loses_who_the_manager_deleted(cabinet):
+    """T-452: реестр один. Новый человек менеджера сразу в «Сотрудниках» бухгалтера
+    (без ставки); удалённый менеджером пропадает и у бухгалтера, кто удалил — в истории."""
+    from retro.modules.cashier.service import today_tashkent
+    today = {'date': today_tashkent().isoformat()}
+    created = add(cabinet, name='Мирзаева Нодира', role='официант').json()['employee']
+    staff_page = cabinet.get('/api/accountant/staff', params=today, auth=('accountant', 'secret'))
+    assert staff_page.status_code == 200 and 'Мирзаева Нодира' in staff_page.text
+    assert next(item for item in roster(cabinet).list() if item.id == created['id']).rate is None
+
+    assert cabinet.delete(f'/api/manager/employees/{created["id"]}', auth=('karina', 'secret')).status_code == 204
+    assert [item.id for item in roster(cabinet).list()] == []
+    # С сегодняшнего дня его нет; прошлые дни (версии реестра) — как были.
+    assert 'Мирзаева Нодира' not in cabinet.get('/api/accountant/staff', params=today,
+                                                auth=('accountant', 'secret')).text
+    assert home(cabinet)['employees'] == []
+    history = cabinet.get(f'/api/accountant/employees/{created["id"]}/history', auth=('accountant', 'secret'))
+    assert history.status_code == 200 and 'karina' in history.text
+    # Второй раз — уже нет.
+    answer = cabinet.delete(f'/api/manager/employees/{created["id"]}', auth=('karina', 'secret'))
+    assert (answer.status_code, answer.json()['detail']) == (404, NOT_FOUND)
+
+
+def test_manager_deletes_only_within_own_directions(cabinet):
+    hall = staff(cabinet)
+    answer = cabinet.delete(f'/api/manager/employees/{hall}', auth=('kitchen', 'secret'))
+    assert (answer.status_code, answer.json()['detail']) == (403, FOREIGN)
+    assert cabinet.delete(f'/api/manager/employees/{hall}', auth=('accountant', 'secret')).status_code == 403
+    assert [item.id for item in roster(cabinet).list()] == [hall]
+    # Фото удалённого тоже уходит вместе с карточкой.
+    upload(cabinet, hall)
+    assert cabinet.delete(f'/api/manager/employees/{hall}', auth=('boss', 'secret')).status_code == 204
+    assert roster(cabinet).photo(hall) is None
+
+
 # ── Фото ───────────────────────────────────────────────────────────────────
 
 def test_existing_device_photo_is_visible_without_a_local_upload(cabinet, terminal):

@@ -2,8 +2,8 @@
 
 Менеджер видит сменных сотрудников своих направлений, фотографирует человека,
 и система отправляет в Hikvision его самого (если его там ещё нет) и его
-лицо. С T-450 менеджер и заводит новых людей своих разделов: имя и должность.
-Ставку назначает бухгалтер — в «Сотрудниках» такой
+лицо. С T-450 менеджер и заводит новых людей своих разделов: имя и должность;
+с T-452 — и удаляет их. Ставку назначает бухгалтер — в «Сотрудниках» такой
 человек виден как «Нет ставки». Похожие имена в реестре показываем, как
 бухгалтеру: решает человек, карточки сами не объединяем. Ставок, выплат и
 денег в ответах нет: это работа бухгалтера, и его разделы менеджеру закрыты.
@@ -272,6 +272,22 @@ async def employee(request: Request, employee_id: int):
     row = await asyncio.to_thread(_card_or_404, request, employee_id)
     rows, _ = await request.app.state.manager_device_photos.enrich([row], request.app.state.hikvision_writer)
     return dict(employee=card_json(rows[0], current_account(request)))
+
+
+@router.delete('/employees/{employee_id}', status_code=204)
+async def delete_employee(request: Request, employee_id: int):
+    """Удалить сотрудника своего раздела (T-452) — то же удаление, что у
+    бухгалтера в «Сотрудниках»: с сегодняшнего дня человека нет ни в кабинете,
+    ни у бухгалтера, прошлые смены и выплаты остаются. Кто удалил — в истории
+    карточки. На терминале Hikvision человек остаётся, как и при удалении
+    бухгалтером."""
+    account = current_account(request)
+    await asyncio.to_thread(_photo_card, request, employee_id, account)
+    try:
+        await asyncio.to_thread(request.app.state.accountant_roster.delete, employee_id, by=account.login)
+    except ValueError:
+        raise HTTPException(404, NOT_FOUND) from None
+    return Response(status_code=204)
 
 
 @router.put('/employees/{employee_id}/photo')
