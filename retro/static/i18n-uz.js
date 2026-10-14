@@ -3755,3 +3755,32 @@ globalThis.RetroTemplatesUz.push(
     "Menejer$1 taklifi: smena uchun $2 so'm. Tasdiqlang yoki quyida o'z stavkangizni yozing."],
 );
 /* ── /T-453 ── */
+
+/* ── T-459 Кабинет менеджера — телефонное приложение (вкладки) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Не проверено": "Tekshirilmagan",
+  "Не отправлено": "Yuborilmagan",
+  "Съёмка": "Suratga olish",
+  "ФОТО НА ТЕРМИНАЛЕ": "TERMINALDAGI SURATLAR",
+  "По очереди": "Navbat bilan",
+  "Ставки ждут бухгалтера": "Stavkalar buxgalterni kutmoqda",
+  "Разделы": "Bo'limlar",
+  "Нажмите раздел — откроется его команда.": "Bo'limni bosing — uning jamoasi ochiladi.",
+  "сфотографировать": "suratga olish",
+  "ошибка или ждёт отправки": "xato yoki yuborilishini kutmoqda",
+  "Лицо прямо, без очков и кепки, на светлом фоне. Фото уходит на терминал Hikvision сразу.": "Yuz to'g'ri, ko'zoynak va kepkasiz, och fonda. Surat darhol Hikvision terminaliga yuboriladi.",
+  "Держите лицо по центру: фото обрезается до квадрата 1:1 без растягивания.": "Yuzni markazda tuting: surat cho'zilmasdan 1:1 kvadrat shaklida kesiladi.",
+  "Новые и удалённые видны бухгалтеру сразу: это тот же реестр, что в «Сотрудниках».": "Yangi va o'chirilganlar buxgalterga darhol ko'rinadi: bu «Xodimlar»dagi o'sha reyestr.",
+  "Фото есть у всех.": "Hammaning surati bor.",
+  "Фото есть у всех. Новых снимайте сразу после добавления": "Hammaning surati bor. Yangilarni qo'shgandan so'ng darhol suratga oling",
+  "В ваших разделах пока никого нет. Добавьте первого: «+ Добавить».": "Bo'limlaringizda hali hech kim yo'q. Birinchisini qo'shing: «+ Qo'shish».",
+  "необязательно": "majburiy emas",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Снимать по очереди · (\d+) без фото →$/, "Navbat bilan suratga olish · $1 ta suratsiz →"],
+  [/^без фото: (\d+)$/, "suratsiz: $1"],
+  [/^Салом, (.+)$/, "Salom, $1"],
+  [/^Никого не нашли по «(.+)»\. Если человека нет в списке, добавьте его: «\+ Добавить»\.$/,
+    "«$1» bo'yicha hech kim topilmadi. Agar odam ro'yxatda bo'lmasa, uni qo'shing: «+ Qo'shish»."],
+);
+/* ── /T-459 ── */
