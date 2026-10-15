@@ -181,8 +181,11 @@ def test_day_before_the_sync_started_can_be_filled_by_hand(tmp_path):
     now = datetime(2026, 9, 23, 9, tzinfo=TZ)
 
     assert service.manual_markable(DAY, person, now=now) is True
-    # Без привязки человека переводят на ручную отметку целиком, а не по дню.
-    assert service.manual_markable(DAY, unlinked, now=now) is False
+    # Нет в Hikvision (T-471): устройство за него не скажет — день отмечает бухгалтер.
+    assert service.manual_markable(DAY, unlinked, now=now) is True
+    assert service.snapshot(DAY, [unlinked], now=now).rows[0].status == 'unlinked'
+    store.set_manual_mark(unlinked.id, DAY, False, 'Бухгалтер')
+    assert service.snapshot(DAY, [unlinked], now=now).rows[0].status == 'manual_absent'
     assert service.snapshot(DAY, [person], now=now).rows[0].status == 'unavailable'
 
     store.set_manual_mark(person.id, DAY, True, 'Бухгалтер')

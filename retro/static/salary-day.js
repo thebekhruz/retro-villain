@@ -154,6 +154,7 @@
       // а строка переносится между ними, а не посреди «08.10–10.10».
       const role=node('span','pr-role');[person.role,...L.typeTag(person).split(' · '),person.archived?'архив':''].filter(Boolean).forEach((part,index)=>{if(index)role.append(' · ');role.append(node('span','',part));});
       who.append(node('span','pr-name',person.name),role);
+      if(person.no_hikvision)who.append(cameTag(person));
       const rate=person.rate==null||!Number(person.rate)?node('div','pr-c pr-c-sum is-norate','нет ставки'):node('div','pr-c pr-c-sum rm-num',fmt(Number(person.rate)));
       rate.setAttribute('role','cell');row.append(who,rate);
       summary.cells.forEach(cell=>{const wrap=node('div','sd-cell');wrap.setAttribute('role','cell');wrap.append(makeCell(person,cell.day));row.append(wrap);});
@@ -404,6 +405,7 @@
       // Новый человек должен быть виден: его группа раскрыта, поиск сброшен.
       collapsed.delete(result.employee.group||'Без группы');filter.q='';$('sd-search').value='';
       await loadMonth(current.month);
+      loadPhotos();
       const row=$('sd-row-'+result.employee.id);
       if(row){row.classList.add('is-focus');row.scrollIntoView({block:'center',behavior:'smooth'});setTimeout(()=>row.classList.remove('is-focus'),2400);}
       done('Добавлен: '+who+'.');
@@ -411,11 +413,85 @@
     }catch(error){if(adding){adding.saving=false;adding.error=error.message;paintAddHint();}return false;}
   }
 
+  /* ── «Нет в Hikvision» (T-471): приход за сегодня отмечает бухгалтер ──────
+     Жёлтая метка у имени и галочка «пришёл». Отметка пишется сразу и видна в
+     клетке сегодняшнего дня: «был» или «нет». Денег не хватило сегодня — завтра
+     выдают по этой отметке. Отметку не изменить, когда начисление за день уже
+     подтверждено (сервер скажет почему). */
+  const canMark=person=>!!current&&!current.closed&&!person.archived&&current.days.includes(today);
+  function cameTag(person){
+    const tag=node('span','sd-nohik');tag.append(node('span','sd-nohik-text','Нет в Hikvision'));
+    if(canMark(person)){
+      const button=node('button','sd-came');button.type='button';button.dataset.person=String(person.id);
+      paintCame(button,person);tag.append(button);
+    }
+    return tag;
+  }
+  function paintCame(button,person){
+    const came=person.today_mark===true;
+    button.classList.toggle('is-on',came);button.classList.toggle('is-off',person.today_mark===false);
+    button.setAttribute('aria-pressed',String(came));
+    button.replaceChildren(node('span','sd-came-box',came?'✓':''),node('span','',person.today_mark===false?'не пришёл':'пришёл'));
+    button.title=came?'Отмечено: пришёл сегодня, '+dm(today)+'. Нажмите, чтобы снять.':'Отметить: пришёл сегодня, '+dm(today);
+    button.setAttribute('aria-label',person.name+' · '+button.title);
+  }
+  const marking=new Set();
+  async function markCame(person,button){
+    if(marking.has(person.id))return;
+    const present=person.today_mark!==true, data=current;
+    marking.add(person.id);
+    const work=(async()=>{
+      const response=await fetch('/api/accountant/manual-attendance',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({date:today,employee_id:person.id,present})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Не удалось отметить приход.');
+    })();
+    globalThis.RetroSave?.track(work);
+    if(B)B.button(button,work,{done:false}).catch(()=>{});
+    try{
+      await work;
+      if(current!==data)return;
+      person.today_mark=present;
+      const cell=person.cells?.[today];
+      if(cell)cell.attendance={status:present?'manual':'absent',time:null,source:present?'manual_present':'manual_absent'};
+      paintCell(person,today);
+      const fresh=$('sheet-grid').querySelector('.sd-came[data-person="'+person.id+'"]');if(fresh)paintCame(fresh,person);
+      done(person.name+(present?' — пришёл сегодня.':' — не пришёл сегодня.'));
+    }catch(error){message(error.message,true);}
+    finally{marking.delete(person.id);}
+  }
+
+  /* ── Фото при наведении на имя (T-471) — те же снимки, что в «Сотрудниках» ── */
+  let photos={};
+  async function loadPhotos(){
+    try{
+      const response=await fetch('/api/accountant/photos',{cache:'no-store'});
+      const data=response.ok?await response.json():null;
+      if(data&&data.photos&&typeof data.photos==='object')photos=data.photos;
+    }catch{/* без фото — просто без всплывающего снимка */}
+  }
+  let photoPop=null;
+  function showPhoto(nameCell){
+    const id=nameCell.closest('.pr-row')?.id?.replace('sd-row-',''), url=id&&photos[id];
+    if(!url)return hidePhoto();
+    if(!photoPop){photoPop=node('div','sd-photo-pop');photoPop.setAttribute('aria-hidden','true');photoPop.append(node('img'));document.body.append(photoPop);}
+    const image=photoPop.firstChild;
+    if(image.getAttribute('src')!==url){image.src=url;image.alt='';}
+    image.onerror=()=>hidePhoto();
+    const r=nameCell.getBoundingClientRect(), size=168;
+    const top=Math.min(Math.max(8,r.top+r.height/2-size/2),innerHeight-size-8);
+    photoPop.style.top=top+'px';photoPop.style.left=Math.min(r.right+10,innerWidth-size-8)+'px';
+    photoPop.hidden=false;
+  }
+  function hidePhoto(){if(photoPop)photoPop.hidden=true;}
+
   /* ── Клетки: мышь, палец, клавиатура ─────────────────────────────────── */
   const grid=$('sheet-grid');
   const cellOf=target=>target.closest?.('button.sd-m');
   const targetOf=el=>{const person=personOf(Number(el.dataset.person));return person?{person,day:el.dataset.day}:null;};
   grid.addEventListener('click',event=>{
+    const came=event.target.closest?.('.sd-came');
+    if(came){const person=personOf(Number(came.dataset.person));if(person)markCame(person,came);return;}
     const el=cellOf(event.target);if(!el)return;
     const t=targetOf(el);if(!t)return;
     const v=view(t.person,t.day);if(!v.editable)return;
@@ -424,6 +500,16 @@
     if(!v.amount&&v.rate)write(t.person,t.day,v.rate);
     else startEdit(t.person,t.day,el);
   });
+  grid.addEventListener('mouseover',event=>{
+    const cell=event.target.closest?.('.pr-row.is-monthly>.pr-c-name');
+    if(cell&&!cell.contains(event.relatedTarget))showPhoto(cell);
+  });
+  grid.addEventListener('mouseout',event=>{
+    const cell=event.target.closest?.('.pr-row.is-monthly>.pr-c-name');
+    if(cell&&!cell.contains(event.relatedTarget))hidePhoto();
+  });
+  $('sheet-scroll').addEventListener('scroll',hidePhoto,{passive:true});
+  window.addEventListener('scroll',hidePhoto,{passive:true});
   function move(el,dx,dy){
     const ids=current.people.map(p=>p.id), days=current.days;
     let row=ids.indexOf(Number(el.dataset.person)), col=days.indexOf(el.dataset.day);
@@ -476,5 +562,5 @@
   window.addEventListener('focus',()=>refreshDate(true));
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDate(true);});
   setInterval(()=>refreshDate(),30000);
-  (async()=>{try{today=(await globalThis.RetroConfig).today;const params=new URLSearchParams(location.search);selectedDay=params.get('date');const requested=params.get('month')||selectedDay?.slice(0,7);const month=requested&&requested>='2026-10'&&requested<=today.slice(0,7)?requested:today.slice(0,7);$('month-input').value=month;await loadMonth(month);}catch(error){$('salary-loading').hidden=true;message(error.message,true);}})();
+  (async()=>{try{today=(await globalThis.RetroConfig).today;const params=new URLSearchParams(location.search);selectedDay=params.get('date');const requested=params.get('month')||selectedDay?.slice(0,7);const month=requested&&requested>='2026-10'&&requested<=today.slice(0,7)?requested:today.slice(0,7);$('month-input').value=month;loadPhotos();await loadMonth(month);}catch(error){$('salary-loading').hidden=true;message(error.message,true);}})();
 })();

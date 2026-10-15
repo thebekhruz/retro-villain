@@ -3948,3 +3948,18 @@ globalThis.RetroTemplatesUz.push(
   [/^(.+) сум — входит в «Выдано» и в Excel$/, "$1 so‘m — «Berildi» va Excel’ga kiradi"],
 );
 /* ── /T-470 ── */
+
+/* ── T-471: «Нет в Hikvision» — приход за сегодня отмечает бухгалтер ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Нет в Hikvision': "Hikvision'da yo‘q",
+  'пришёл': "keldi",
+  'не пришёл': "kelmadi",
+  'Не удалось отметить приход.': "Kelganini belgilab bo‘lmadi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Отмечено: пришёл сегодня, (\d\d\.\d\d)\. Нажмите, чтобы снять\.$/, "Belgilangan: bugun keldi, $1. Olib tashlash uchun bosing."],
+  [/^Отметить: пришёл сегодня, (\d\d\.\d\d)$/, "Belgilash: bugun keldi, $1"],
+  [/^(.+) — пришёл сегодня\.$/, "$1 — bugun keldi."],
+  [/^(.+) — не пришёл сегодня\.$/, "$1 — bugun kelmadi."],
+);
+/* ── /T-471 ── */
