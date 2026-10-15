@@ -33,6 +33,29 @@ function arrivalMinutes(value) {
   return hour * 60 + minute;
 }
 const initials = name => name.trim().split(/\s+/).map(word => word[0] || '').slice(0, 2).join('').toUpperCase();
+/* Фото сотрудников (T-462): те же снимки, что видит менеджер, — свои из карточки
+   и лица с терминала. {id: адрес}; нет снимка — буквы, как раньше. */
+let photos = {};
+function avatar(cls, id, name) {
+  const url = id == null ? null : photos[String(id)];
+  const box = text('span', cls + (url ? ' has-photo' : ''), url ? null : initials(name));
+  if (url) {
+    const image = el('img', null, {src: url, alt: '', loading: 'lazy'});
+    image.addEventListener('error', () => { box.classList.remove('has-photo'); box.replaceChildren(initials(name)); }, {once: true});
+    box.append(image);
+  }
+  return box;
+}
+async function fetchPhotos() {
+  try {
+    const response = await fetch('/api/accountant/photos', {cache: 'no-store'});
+    if (!response.ok) return;
+    const data = await response.json();
+    const next = data && typeof data.photos === 'object' && data.photos ? data.photos : {};
+    // Перерисовка — только если снимки поменялись: иначе мигали бы аватары.
+    if (JSON.stringify(next) !== JSON.stringify(photos)) { photos = next; if (current) render(); }
+  } catch { /* без фото — буквы, как раньше */ }
+}
 function plural(count, forms) {
   const tail = Math.abs(count) % 100, unit = tail % 10;
   if (tail > 10 && tail < 20) return forms[2];
@@ -245,9 +268,9 @@ function matches(row) {
   if (ui.filter === 'attention') return needsAttention(row);
   return true;
 }
-function whoCell(name, role, warn, noHik, kind) {
+function whoCell(name, role, warn, noHik, kind, id) {
   const who = text('div', 'emp-cell-who', null);
-  who.append(text('span', 'emp-avatar' + (warn ? ' is-warn' : ''), initials(name)));
+  who.append(avatar('emp-avatar' + (warn ? ' is-warn' : ''), id, name));
   const idBox = text('div', 'emp-who-text', null);
   const nameLine = text('div', 'emp-who-name', null);
   nameLine.append(text('span', null, name));
@@ -299,7 +322,7 @@ function registryRow(row) {
   const meta = text('div', 'emp-cell-meta', null);
   meta.append(entry, statusCell);
   if (row.rate != null) rate.prepend(text('span', 'emp-m-label', 'ставка '));
-  line.append(whoCell(row.name, row.role, false, row.manual_attendance, L.typeTag(row)), meta, rate, pay);
+  line.append(whoCell(row.name, row.role, false, row.manual_attendance, L.typeTag(row), row.employee_id), meta, rate, pay);
   return line;
 }
 // «Вне периода» — те же фильтры, что у строк дня, кроме карточек-счётчиков.
@@ -492,7 +515,7 @@ function attentionCard(attention) {
   attention.forEach(row => {
     const item = el('button', 'emp-side-row', {type: 'button'});
     item.addEventListener('click', () => openDrawer(row.employee_id));
-    item.append(text('span', 'emp-avatar is-warn is-sm', initials(row.name)));
+    item.append(avatar('emp-avatar is-warn is-sm', row.employee_id, row.name));
     const info = text('span', 'emp-side-info', null);
     // Все причины сразу: «Нет ставки · нет привязки Hikvision».
     info.append(text('span', 'emp-side-name', row.name), text('span', 'emp-side-reason', L.attentionReasons(row).join(' · ')));
@@ -623,7 +646,7 @@ function drawerCard() {
 
   if (selP) {
     const idRow = text('div', 'emp-drawer-id', null);
-    idRow.append(text('span', 'emp-avatar is-lg', initials(selP.name)));
+    idRow.append(avatar('emp-avatar is-lg', selP.employee_id, selP.name));
     const box = text('div', null, null);
     // Должность, группа и «временный · период» — отдельными узлами для переводчика.
     const sub = text('div', 'emp-drawer-sub', null);
@@ -1088,6 +1111,8 @@ async function fetchDay() {
     current = data; monthPaid = paid;
     if (data.date !== today && ui.sel != null && !String(ui.sel).startsWith('m:')) closeDrawer();
     render();
+    // Фото — отдельным запросом и без ожидания: список не ждёт терминал.
+    fetchPhotos();
     $('employees-message').hidden = true;
     // Как у «Финансов дня»: в шапке — за какой день данные. Состояние Hikvision
     // добавляем, только когда с ним что-то не так; демо-режим назван плашкой.
