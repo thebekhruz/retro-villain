@@ -77,7 +77,7 @@ ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
 FULL_ACCESS_ROLES = {'admin', 'all'}
-SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс Шохруха».'
+SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс закупа».'
 
 
 class LoginInput(BaseModel):
@@ -117,8 +117,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'salary-day.html': {'accountant'}, 'shoh-balance.html': {'accountant'},
         'salary-day.js': {'accountant'}, 'salary-day-logic.js': {'accountant'},
         'salary-day.css': {'accountant'},
-        # ТЗ 09.10, Б-05: доп. выплаты под ведомостью «Зарплата · день»
-        'salary-extra.js': {'accountant'}, 'salary-extra-logic.js': {'accountant'},
+        # T-470: «Баланс на сегодня» на зарплатных страницах
+        'cash-today.js': {'accountant'},
         'shoh-balance.js': {'accountant'}, 'save.js': {'accountant'},
         # Расчёты бухгалтерии читают экраны директора и учредителя
         'accountant-logic.js': {'accountant', 'director', 'founder'},

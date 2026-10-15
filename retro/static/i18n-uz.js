@@ -3791,3 +3791,44 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "Профиль": "Profil",
 });
 /* ── /T-461 ── */
+
+/* ── T-470: «Баланс на сегодня», «Баланс закупа», группы и новый сотрудник в «Зарплате · день» ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Баланс на сегодня': "Bugungi balans",
+  'из «Финансов дня»': "«Kun moliyasi»dan",
+  'Нет данных из Финансов дня': "«Kun moliyasi»dan ma'lumot yo'q",
+  'Баланс закупа': "Xarid balansi",
+  'Баланс закупа · Retro Milliy': "Xarid balansi · Retro Milliy",
+  'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс закупа».': "Xarid moduli o'chirilgan: Shoh xarajatlarini buxgalter «Xarid balansi» sahifasida yuritadi.",
+  'Выдано за месяц': "Oy davomida berildi",
+  'Свернуть все': "Hammasini yig'ish",
+  'Развернуть все': "Hammasini ochish",
+  'Как отмечать': "Qanday belgilash",
+  'Клик — выдано по ставке. Второй клик — ввести сумму. Третий клик — убрать.\nВ столбце — дата смены, расход — в день отметки; под галочкой — дата выдачи.':
+    "Bosish — stavka bo‘yicha berildi. Ikkinchi bosish — summani kiriting. Uchinchi bosish — olib tashlash.\nUstunda — smena sanasi, xarajat — belgilangan kunda; belgi ostida — berilgan sana.",
+  'Никого не нашли. Сбросьте поиск.': "Hech kim topilmadi. Qidiruvni tozalang.",
+  'За смену · по поиску': "Smena uchun · qidiruv bo‘yicha",
+  'Без группы': "Guruhsiz",
+  '＋ Добавить сотрудника': "＋ Xodim qo‘shish",
+  'Имя и фамилия': "Ism va familiya",
+  'Имя нового сотрудника': "Yangi xodimning ismi",
+  'Ставка за смену': "Smena stavkasi",
+  'Ставка за смену, сум': "Smena stavkasi, so‘m",
+  'Добавить': "Qo‘shish",
+  'Это другой человек — добавить': "Bu boshqa odam — qo‘shish",
+  'Появится в ведомости сразу. Hikvision и подробности карточки — в «Сотрудниках».': "Vedomostda darhol paydo bo‘ladi. Hikvision va karta tafsilotlari — «Xodimlar»da.",
+  'Введите имя сотрудника.': "Xodimning ismini kiriting.",
+  'Введите должность.': "Lavozimni kiriting.",
+  'Выберите группу.': "Guruhni tanlang.",
+  'Ставку введите цифрами.': "Stavkani raqamlar bilan kiriting.",
+  'Не удалось добавить сотрудника.': "Xodimni qo‘shib bo‘lmadi.",
+  'Похожие уже есть в реестре: ': "Reyestrda o‘xshashlari bor: ",
+  '. Если это тот же человек — нажмите «Отмена».': ". Agar bu o‘sha odam bo‘lsa — «Bekor qilish»ni bosing.",
+  'Сменных сотрудников пока нет — добавьте первого строкой ниже.': "Smenali xodimlar hali yo‘q — birinchisini quyidagi qatorda qo‘shing.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^найдено (\d+) из (\d+)$/, "$2 dan $1 topildi"],
+  [/^Добавлен: (.+)\.$/, "Qo‘shildi: $1."],
+  [/^(.+) сум — входит в «Выдано» и в Excel$/, "$1 so‘m — «Berildi» va Excel’ga kiradi"],
+);
+/* ── /T-470 ── */

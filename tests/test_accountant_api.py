@@ -84,6 +84,22 @@ def test_manual_cashier_income_is_used_without_iiko(tmp_path):
         assert data['ledger']['cash_balance'] == '750000'
 
 
+def test_cash_today_matches_day_finance_balance(tmp_path, monkeypatch):
+    """T-470: «Баланс на сегодня» на зарплатных страницах — остаток «Финансов дня»
+    за сегодня, тем же расчётом; без подтверждённого прихода — нет данных."""
+    import retro.modules.accountant.routes as routes
+    monkeypatch.setattr(routes, 'today_tashkent', lambda: DAY)
+    with demo_client(tmp_path) as client:
+        client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
+        assert client.get('/api/accountant/cash-today').json() == {'date': DAY.isoformat(), 'cash_balance': None}
+        assert client.post('/api/accountant/handover', json={
+            'date': DAY.isoformat(), 'amount': '750000', 'note': 'Передано кассиром'}).status_code == 201
+        day = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
+        today = client.get('/api/accountant/cash-today').json()
+        assert today == {'date': DAY.isoformat(), 'cash_balance': day['ledger']['cash_balance']} == {
+            'date': DAY.isoformat(), 'cash_balance': '750000'}
+
+
 def test_manual_cashier_income_can_be_updated_and_deleted(tmp_path):
     with demo_client(tmp_path) as client:
         client.app.state.settings = replace(client.app.state.settings, manual_handover_only=True)
