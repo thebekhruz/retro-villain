@@ -12,8 +12,9 @@
   <meta name="apple-mobile-web-app-title" content="Retro Milliy"><meta name="apple-mobile-web-app-status-bar-style" content="default">
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/director-app.css">
+  <link rel="stylesheet" href="/static/kpi.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/period.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/director-app.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/period.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/kpi-logic.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/director-app.js" defer></script>
 </head>
 <body class="director-app">
 <aside class="sidebar" data-collapsible>
@@ -135,6 +136,17 @@
           <div id="editor-confirm" class="dir-confirm" hidden><button id="editor-keep" type="button">Оставить</button><button id="editor-delete-yes" class="is-danger" type="button">Да, удалить</button></div>
         </div>
       </form>
+      <!-- KPI официантов: сводка периода; настройка и закрытие — в листе ниже. -->
+      <article id="kpi-card" class="rm-phone-card">
+        <div class="dir-card-head"><strong>KPI официантов · <b id="kpi-card-period" data-i18n="off"></b></strong><span id="kpi-card-badge" class="dir-badge" hidden></span></div>
+        <div class="kpi-dir-grid">
+          <div><span>Прирост маржи</span><strong id="kpi-card-uplift" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
+          <div><span>Фонд премии</span><strong id="kpi-card-fund" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
+          <div><span>Чистый эффект</span><strong id="kpi-card-net" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
+        </div>
+        <p id="kpi-card-note" class="dir-note kpi-card-note"></p>
+        <div class="dir-confirm"><button id="kpi-settings-open" type="button">Настроить период</button><button id="kpi-export" type="button">Excel бухгалтеру</button></div>
+      </article>
       <article class="rm-phone-card">
         <div class="dir-card-head"><strong>Официанты Retro · 7 дней</strong><span class="dir-muted">по выручке</span></div>
         <div id="waiters" class="dir-waiters"></div>
@@ -162,6 +174,43 @@
     <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
     <a id="dir-back" class="dir-primary app-secondary app-sheet-link" href="/login" hidden>Вся панель</a>
     <button id="logout" class="dir-primary app-secondary" type="button">Выйти</button>
+  </dialog>
+  <!-- KPI официантов: настройка периода (директор задаёт, менеджер видит), закрытие и передача бухгалтеру. -->
+  <dialog id="kpi-sheet" class="app-sheet kpi-sheet" aria-labelledby="kpi-sheet-title">
+    <div class="app-sheet-head">
+      <span class="app-sheet-mark" aria-hidden="true">✦</span>
+      <div class="app-sheet-who"><strong id="kpi-sheet-title">Настройка периода</strong><span id="kpi-sheet-sub" data-i18n="off"></span></div>
+      <button id="kpi-sheet-close" class="dir-close" type="button" aria-label="Закрыть">×</button>
+    </div>
+    <form id="kpi-form" class="rm-phone-card dir-editor" novalidate>
+      <div id="kpi-kind" class="dir-segment" role="group" aria-label="Длина периода"><button type="button" data-kind="week" class="is-active">Неделя</button><button type="button" data-kind="month">Месяц</button></div>
+      <div class="dir-pair kpi-dates"><label class="dir-field">Начало<input id="kpi-start" type="date"></label><label class="dir-field">Конец<input id="kpi-end" type="date"></label></div>
+      <label class="dir-field">Целевые позиции<input id="kpi-search" class="dir-search" type="search" maxlength="60" placeholder="Найти карточку iiko: «лимонад», «кунафе»…" autocomplete="off"></label>
+      <div id="kpi-found" class="kpi-found" hidden></div>
+      <div id="kpi-target-list"></div>
+      <p class="dir-note">Цель — порций на 100 чеков зала. Маржа на порцию подставляется из iiko за 8 недель до периода; пустая ячейка значит «взять из iiko».</p>
+      <div class="dir-pair"><label class="dir-field">Доля прироста в фонд, %<input id="kpi-share" inputmode="numeric" maxlength="3"></label><label class="dir-field">Потолок, тыс сум на человека в неделю<input id="kpi-cap" inputmode="numeric" maxlength="7"></label></div>
+      <div class="dir-pair"><label class="dir-field">Лично, % (остальное — команде)<input id="kpi-personal" inputmode="numeric" maxlength="3"></label><label class="dir-field">База, недель<input id="kpi-baseline" inputmode="numeric" maxlength="2"></label></div>
+      <div class="dir-pair"><label class="dir-field">Минимум чеков<input id="kpi-min-checks" inputmode="numeric" maxlength="4"></label><label class="dir-field">Минимум смен<input id="kpi-min-shifts" inputmode="numeric" maxlength="3"></label></div>
+      <button id="kpi-netting" class="dir-check" type="button" aria-pressed="true"><span class="dir-check-box" aria-hidden="true"></span>Нетто по позициям: минус одной гасит плюс другой</button>
+      <p id="kpi-form-error" class="dir-error" role="alert"></p>
+      <button id="kpi-save" class="dir-primary" type="submit">Сохранить настройки</button>
+    </form>
+    <article class="rm-phone-card">
+      <strong class="dir-card-title">Логины iiko → сотрудники</strong>
+      <div id="kpi-links"></div>
+      <p class="dir-note">В KPI идут только логины с отметкой «официант зала»; отметка переходит на следующий период. Сотрудник из реестра нужен для фото в рейтинге и премии у бухгалтера.</p>
+    </article>
+    <article class="rm-phone-card">
+      <strong class="dir-card-title">Закрытие периода</strong>
+      <p class="dir-note">Фиксирует цифры, открывает следующий период с теми же настройками. Потом «Передать бухгалтеру» заведёт премии как доп. выплаты.</p>
+      <button id="kpi-close-period" class="dir-primary app-secondary" type="button">Закрыть период</button>
+      <div id="kpi-close-confirm" class="dir-confirm" hidden><button id="kpi-close-no" type="button">Отмена</button><button id="kpi-close-yes" class="is-danger" type="button">Да, закрыть</button></div>
+      <button id="kpi-payouts" class="dir-primary app-secondary" type="button" hidden>Передать бухгалтеру</button>
+      <div id="kpi-payouts-confirm" class="dir-confirm" hidden><button id="kpi-payouts-no" type="button">Отмена</button><button id="kpi-payouts-yes" class="is-danger" type="button">Да, передать</button></div>
+      <div id="kpi-payouts-list" class="kpi-payout-list"></div>
+      <p id="kpi-sheet-error" class="dir-error" role="alert"></p>
+    </article>
   </dialog>
   <nav class="rm-tabs dir-tabs" role="tablist" aria-label="Разделы директора">
     <button type="button" class="rm-tab is-active" role="tab" aria-selected="true" data-tab="home"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span>Сегодня</button>
