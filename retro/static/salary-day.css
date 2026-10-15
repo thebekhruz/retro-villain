@@ -131,3 +131,12 @@
   box-shadow:0 10px 30px rgba(20,62,53,.22);pointer-events:none}
 .sd-photo-pop[hidden]{display:none}
 .sd-photo-pop img{display:block;width:100%;height:100%;object-fit:cover;border-radius:10px;background:#e9f0e6}
+
+/* Ставка за смену (T-472): клик — поле в ячейке. */
+.salary-day-page .sd-rate-cell{padding:0 4px}
+.sd-rate{width:100%;height:100%;min-height:34px;border:0;border-radius:6px;background:none;padding:0 6px;font:inherit;font-size:14px;
+  color:inherit;text-align:right;cursor:pointer;font-variant-numeric:tabular-nums}
+.sd-rate:hover{background:#f3f5f0;text-decoration:underline dotted;text-underline-offset:3px}
+.sd-rate:focus-visible{outline:2px solid #d2af59;outline-offset:-2px}
+.sd-rate-input{width:100%;height:34px;border:0;border-radius:6px;box-shadow:inset 0 0 0 2px #d2af59;background:#fff;padding:0 6px;
+  font:inherit;font-size:14px;color:#1c4c3e;text-align:right;outline:0;font-variant-numeric:tabular-nums}

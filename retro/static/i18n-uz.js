@@ -3963,3 +3963,14 @@ globalThis.RetroTemplatesUz.push(
   [/^(.+) — не пришёл сегодня\.$/, "$1 — bugun kelmadi."],
 );
 /* ── /T-471 ── */
+
+/* ── T-472: ставка за смену правится в «Зарплате · день» ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Изменить ставку за смену': "Smena stavkasini o‘zgartirish",
+  'Ставку введите цифрами, больше нуля.': "Stavkani noldan katta raqam bilan kiriting.",
+  'Не удалось изменить ставку.': "Stavkani o‘zgartirib bo‘lmadi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^(.+): ставка ([\d\s  ]+) сум\.$/, "$1: stavka $2 so‘m."],
+);
+/* ── /T-472 ── */
