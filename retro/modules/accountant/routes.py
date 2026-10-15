@@ -385,9 +385,13 @@ def month_close_hint(request, day: date) -> dict:
 
 
 def monthly_left(request, last: date):
-    """Сколько окладов осталось выдать за месяц: фонд − выдано с 1-го по `last`."""
+    """Сколько окладов осталось выдать за месяц: фонд − на карту − выдано с 1-го по `last`.
+
+    Часть оклада на карту (реестр, поле card) из кассы не выдаётся."""
     paid = Decimal(request.app.state.accountant_finance.reserves(last)['monthly']['paid'])
-    return max(Decimal(0), request.app.state.accountant_roster.monthly_total() - paid)
+    roster = request.app.state.accountant_roster
+    card = sum((min(person.salary, person.card) for person in roster.list_monthly()), Decimal(0))
+    return max(Decimal(0), roster.monthly_total() - card - paid)
 
 
 def cashier_handover_json(request, day: date, current=None) -> dict:
@@ -703,10 +707,14 @@ def payroll_month(request: Request, month: str):
         cells[row['day']] = str(Decimal(cells.get(row['day'], '0')) + Decimal(row['amount']))
         monthly_cell_ops.setdefault(str(row['employee_id']), {}).setdefault(row['day'], []).append(
             dict(id=row['id'], amount=row['amount']))
+    # Колонки дней — с первой смены ведомости (14.10): 13.10, день переноса
+    # авансов до начала учёта, на экране не показываем. Его выплаты остаются
+    # в monthly_cells и входят в «Выдано» и «Осталось» человека.
+    shown = max(first, salary_period_start(last))
     return dict(demo=False, month=month, first=first.isoformat(), last=last.isoformat(),
                 monthly_cells=monthly_cells, monthly_cell_ops=monthly_cell_ops,
-                days=[(first + timedelta(days=offset)).isoformat()
-                      for offset in range((last - first).days + 1)],
+                days=[(shown + timedelta(days=offset)).isoformat()
+                      for offset in range((last - shown).days + 1)],
                 monthly=[row.json() for row in roster.list_monthly()],
                 # Окладники в архиве, у кого есть выплаты этого месяца: ведомость
                 # показывает их по имени, а не «Сотрудник удалён · №».

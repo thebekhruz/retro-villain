@@ -311,6 +311,12 @@ function monthlyRow(person) {
   line.dataset.busyKey = cellKey('row', key, '');
   const sum = node('div', 'pr-c pr-c-sum rm-num', fmt(person.salary));
   if (person.gone) { sum.textContent = '—'; sum.title = 'Сотрудника нет в реестре — выплаты за месяц сохранены'; }
+  // Часть на карту из кассы не выдаётся — подписана под окладом и не входит в «Осталось».
+  else if (person.card) {
+    sum.classList.add('has-card');
+    sum.append(node('small', 'pr-c-card', 'на карту ' + fmt(person.card)));
+    sum.title = 'Оклад ' + money(person.salary) + ', из них на карту ' + money(person.card) + ' — наличными ' + money(person.salary - person.card);
+  }
   line.append(whoCell(person.name, person.role, person.noHik), sum);
   person.cells.forEach(cell => {
     const cls = 'pr-m' + (cell.over ? ' is-over' : cell.amount ? ' is-filled' : '') +
@@ -402,7 +408,10 @@ function renderSheet(data) {
   // Подпись занимает колонку имени, а колонка суммы пустая: так на телефоне,
   // где закреплено только имя, подпись строки остаётся на месте при прокрутке.
   foot.append(node('div', 'pr-c pr-c-label', 'Выдано окладов за день'), node('div', 'pr-c pr-c-sum pr-c-sumfoot'));
-  let grand = 0;
+  // Итог — как «Выдано»: вместе с выплатами до первой колонки (13.10).
+  const first = (data.days || [])[0];
+  let grand = Object.values(data.monthly_cells || {}).reduce((total, own) => total
+    + Object.entries(own).reduce((s, [day, v]) => s + (first && day < first ? Number(v || 0) : 0), 0), 0);
   L.dayTotals({...data, paid_per_day: {}}).forEach(item => {
     grand += item.amount;
     foot.append(node('div', 'pr-t rm-num' + (item.day === today ? ' is-today' : ''), item.amount ? fmt(item.amount) : ''));
@@ -422,6 +431,7 @@ let roles = {}, noHik = {};
 function renderTotals(data, checks) {
   const t = L.totals(data);
   $('kpi-fund').textContent = fmt(t.monthlyFund);
+  $('kpi-mcard').textContent = fmt(t.monthlyCard);
   $('kpi-mpaid').textContent = fmt(t.monthlyPaid);
   $('kpi-mrest').textContent = fmt(t.monthlyRest);
   // Переплата не прячется в «осталось»: отдельной красной строкой.
@@ -658,7 +668,8 @@ function renderClosed() {
 function monthlyPeople() {
   const paid = id => Object.values((current.monthly_cells || {})[String(id)] || {}).reduce((s, v) => s + Number(v || 0), 0);
   return (current.monthly || []).map(e => ({id: e.id, name: e.name, role: e.role, salary: Number(e.salary || 0),
-    paid: paid(e.id), left: Number(e.salary || 0) - paid(e.id)}));
+    // Часть на карту из кассы не выдаётся: осталось — от наличной части.
+    paid: paid(e.id), left: Number(e.salary || 0) - Math.min(Number(e.salary || 0), Number(e.card || 0)) - paid(e.id)}));
 }
 function renderSalary() {
   const section = $('salary-section');
