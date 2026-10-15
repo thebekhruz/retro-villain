@@ -123,7 +123,7 @@
     totals();
   }
   function render(){
-    editing=null;
+    editing=null;rateEdit=null;
     const grid=$('sheet-grid'), view=L.matrix(current);grid.replaceChildren();
     grid.style.setProperty('--days',String(current.days.length));
     // Пустая ведомость — шапка и строка «＋ Добавить сотрудника» всё равно видны.
@@ -155,8 +155,7 @@
       const role=node('span','pr-role');[person.role,...L.typeTag(person).split(' · '),person.archived?'архив':''].filter(Boolean).forEach((part,index)=>{if(index)role.append(' · ');role.append(node('span','',part));});
       who.append(node('span','pr-name',person.name),role);
       if(person.no_hikvision)who.append(cameTag(person));
-      const rate=person.rate==null||!Number(person.rate)?node('div','pr-c pr-c-sum is-norate','нет ставки'):node('div','pr-c pr-c-sum rm-num',fmt(Number(person.rate)));
-      rate.setAttribute('role','cell');row.append(who,rate);
+      const rate=rateCell(person);rate.setAttribute('role','cell');row.append(who,rate);
       summary.cells.forEach(cell=>{const wrap=node('div','sd-cell');wrap.setAttribute('role','cell');wrap.append(makeCell(person,cell.day));row.append(wrap);});
       const paid=node('div','pr-c pr-c-paid rm-num',fmt(summary.paid));paid.id='sd-person-'+person.id;paid.setAttribute('role','cell');row.append(paid);grid.append(row);
     });
@@ -206,7 +205,7 @@
       const response=await fetch('/api/accountant/salary-day/month?month='+encodeURIComponent(month)+'&basis=shift',{signal:controller.signal,cache:'no-store'});
       const data=await response.json();if(!response.ok)throw new Error(data.detail||'Не удалось загрузить ведомость.');
       if(token!==sequence)return false;
-      if(preserveDraft&&(editing||writes||addBusy()||globalThis.RetroSave?.pending().length))return false;
+      if(preserveDraft&&(editing||rateEdit||writes||addBusy()||globalThis.RetroSave?.pending().length))return false;
       groups=L.groupPeople(data.people,GROUP_ORDER,groupOf);data.people=groups.flatMap(group=>group.people);
       current=data;today=data.today;calendarDay=requestedOn;
       const latest=today;
@@ -233,7 +232,7 @@
      Дату подтверждает сервер; часы устройства только подсказывают, когда проверить.
      Начатую сумму, нового сотрудника и запись в пути не трогаем. Исторический день не переключаем. */
   function dateRefreshBlocked(){
-    return !current||document.hidden||loading||writes>0||!!editing||addBusy()
+    return !current||document.hidden||loading||writes>0||!!editing||!!rateEdit||addBusy()
       ||!!globalThis.RetroSave?.pending().length;
   }
   async function refreshDate(force=false){
@@ -413,6 +412,68 @@
     }catch(error){if(adding){adding.saving=false;adding.error=error.message;paintAddHint();}return false;}
   }
 
+  /* ── Ставка за смену (T-472): клик по ставке — поле прямо в ячейке ────────
+     Enter или уход из поля — запись в реестр (та же карточка, что в «Сотрудниках»);
+     Esc — отмена. Новая ставка действует с сегодняшней смены, прошлые клетки
+     остаются по ставке своего дня. */
+  const rateEditable=person=>!!current&&!current.closed&&!person.archived;
+  function rateCell(person){
+    const has=person.rate!=null&&!!Number(person.rate), text=has?fmt(Number(person.rate)):'нет ставки';
+    if(!rateEditable(person))return node('div','pr-c pr-c-sum'+(has?' rm-num':' is-norate'),text);
+    const cell=node('div','pr-c pr-c-sum sd-rate-cell'+(has?' rm-num':' is-norate'));
+    const button=node('button','sd-rate',text);button.type='button';button.dataset.rate=String(person.id);
+    button.title='Изменить ставку за смену';button.setAttribute('aria-label',person.name+' · ставка за смену '+text+' · изменить');
+    cell.append(button);
+    return cell;
+  }
+  let rateEdit=null;
+  function startRate(person,cell){
+    if(rateEdit||!rateEditable(person))return;
+    const input=node('input','sd-rate-input');input.inputMode='decimal';input.autocomplete='off';input.dataset.moneyHint='off';
+    input.value=person.rate&&Number(person.rate)?String(Number(person.rate)):'';
+    input.setAttribute('aria-label',person.name+' · ставка за смену, сум');
+    cell.replaceChildren(input);
+    rateEdit={person,cell,input,saving:false};
+    input.focus();input.select();
+    input.addEventListener('keydown',event=>{
+      if(event.key==='Enter'){event.preventDefault();saveRate();}
+      else if(event.key==='Escape'){event.preventDefault();closeRate(true);}
+    });
+    input.addEventListener('blur',()=>{if(rateEdit&&rateEdit.input===input&&!rateEdit.saving)saveRate();});
+  }
+  function closeRate(refocus){
+    if(!rateEdit)return;
+    const {person,cell}=rateEdit;rateEdit=null;
+    const fresh=rateCell(person);fresh.setAttribute('role','cell');cell.replaceWith(fresh);
+    if(refocus)fresh.querySelector('button')?.focus({preventScroll:true});
+  }
+  async function saveRate(){
+    if(!rateEdit||rateEdit.saving)return true;
+    const {person,input}=rateEdit, amount=L.parseAmount(input.value), before=person.rate&&Number(person.rate)?Number(person.rate):null;
+    if(!input.value.trim()||amount===before){closeRate(false);return true;}
+    if(!amount){message('Ставку введите цифрами, больше нуля.',true);input.focus();return false;}
+    rateEdit.saving=true;input.disabled=true;
+    const work=(async()=>{
+      const response=await fetch('/api/accountant/employees/'+encodeURIComponent(person.id),{method:'PATCH',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({rate:String(amount),group:person.group||null,reason:'Изменено в «Зарплате · день»'})});
+      const result=await response.json().catch(()=>({}));
+      if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Не удалось изменить ставку.');
+    })();
+    globalThis.RetroSave?.track(work);
+    try{
+      await work;
+      rateEdit=null;
+      // Ставки клеток — по версии реестра на день смены: месяц перечитываем целиком.
+      await loadMonth(current.month);
+      done(person.name+': ставка '+fmt(amount)+' сум.');
+      return true;
+    }catch(error){
+      message(error.message,true);
+      if(rateEdit){rateEdit.saving=false;input.disabled=false;input.focus();}
+      return false;
+    }
+  }
+
   /* ── «Нет в Hikvision» (T-471): приход за сегодня отмечает бухгалтер ──────
      Жёлтая метка у имени и галочка «пришёл». Отметка пишется сразу и видна в
      клетке сегодняшнего дня: «был» или «нет». Денег не хватило сегодня — завтра
@@ -490,6 +551,8 @@
   const cellOf=target=>target.closest?.('button.sd-m');
   const targetOf=el=>{const person=personOf(Number(el.dataset.person));return person?{person,day:el.dataset.day}:null;};
   grid.addEventListener('click',event=>{
+    const rateButton=event.target.closest?.('.sd-rate');
+    if(rateButton){const person=personOf(Number(rateButton.dataset.rate));if(person)startRate(person,rateButton.parentElement);return;}
     const came=event.target.closest?.('.sd-came');
     if(came){const person=personOf(Number(came.dataset.person));if(person)markCame(person,came);return;}
     const el=cellOf(event.target);if(!el)return;
@@ -557,6 +620,8 @@
   // «Сохранить» дописывает сумму, набранную в клетке; галочки уже записаны.
   globalThis.RetroSave?.register(grid,async()=>editing?await finishEdit(true):true,
     {dirty:()=>!!editing&&L.parseAmount(editing.input.value)!==editing.clean});
+  // Ставка в поле: «Сохранить» записывает её.
+  globalThis.RetroSave?.register(grid,()=>saveRate(),{dirty:()=>!!rateEdit&&!rateEdit.saving});
   // Набранный новый сотрудник: «Сохранить» добавляет его, уход со страницы — переспрашивает.
   globalThis.RetroSave?.register(grid,()=>submitAdd(),{dirty:()=>addBusy()&&!adding.saving});
   window.addEventListener('focus',()=>refreshDate(true));
