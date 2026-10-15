@@ -1,5 +1,6 @@
 import asyncio
 import base64
+import logging
 import binascii
 import posixpath
 import secrets
@@ -210,6 +211,19 @@ def dashboard_identity(
     return None
 
 
+async def keep_device_photos_warm(state, every: float = 600):
+    """После старта и раз в 10 минут — докачать лица с терминала для всего
+    реестра (T-473): кабинет менеджера открывается уже с фото."""
+    from retro.modules.manager.routes import warm_device_photos
+    while True:
+        try:
+            rows = await asyncio.to_thread(state.accountant_roster.manager_cards)
+            warm_device_photos(state, rows)
+        except Exception:
+            logging.getLogger(__name__).exception('device photo warmup schedule failed')
+        await asyncio.sleep(every)
+
+
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
                broadcast_transport=None, hikvision_client=None, hikvision_poller=None,
@@ -226,11 +240,15 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             application.state.cashier_days.start()
         if application.state.menu_sync is not None:
             application.state.menu_sync.start()
+        photos = (asyncio.create_task(keep_device_photos_warm(application.state))
+                  if application.state.device_photo_warmup else None)
         if application.state.drive_backup is not None:
             application.state.drive_backup.start()
         try:
             yield
         finally:
+            if photos is not None:
+                photos.cancel()
             if poller is not None:
                 await poller.stop()
             writer = application.state.hikvision_writer
@@ -321,6 +339,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.manager_push_locks = {}
     from retro.modules.manager.device_photos import DevicePhotos
     app.state.manager_device_photos = DevicePhotos()
+    # Фоновая докачка лиц с терминала (T-473) — только с устройством из настроек:
+    # подставной клиент в тестах сам решает, когда и что отвечать.
+    app.state.device_photo_warmup = hikvision_writer is None and app.state.hikvision_writer is not None
     director_path = director_db_path or shared or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
     # Меню — справочник, а не отчёт: лежит у нас и обновляется раз в неделю.
