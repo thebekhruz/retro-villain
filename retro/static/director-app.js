@@ -765,7 +765,6 @@
       if ($('kpi-sheet').open) renderLinks();
     } catch (error) {
       $('kpi-card-note').textContent = error.message;
-      for (const id of ['kpi-card-uplift', 'kpi-card-fund', 'kpi-card-net']) $(id).textContent = '—';
     }
   }
   function renderCard() {
@@ -775,14 +774,10 @@
     $('kpi-card-badge').hidden = false;
     $('kpi-card-badge').textContent = period.status === 'closed' ? 'закрыт' : period.days_passed ? 'идёт' : 'не начался';
     $('kpi-card-badge').className = 'dir-badge' + (period.status === 'open' && period.days_passed ? ' is-ok' : '');
-    $('kpi-card-uplift').textContent = K().signed(view.totals.team_uplift);
-    $('kpi-card-fund').textContent = K().thousands(view.totals.fund);
-    $('kpi-card-net').textContent = K().signed(view.totals.restaurant_net);
-    const leader = K().ranking(view.rows).find(row => row.eligible && row.uplift > 0);
-    const parts = [`${view.totals.participants} ${K().plural(view.totals.participants, 'участник', 'участника', 'участников')}`];
-    if (leader) parts.push(`лидер ${leader.employee_name || leader.waiter} ${K().signed(leader.uplift)}`);
-    parts.push(K().dayLabel(period).toLowerCase());
-    $('kpi-card-note').textContent = parts.join(' · ');
+    const marked = (view.logins || []).filter(item => item.active).length;
+    $('kpi-card-note').textContent = marked
+      ? `Отмечено официантов: ${marked} · фонд премии сейчас ${K().thousands(view.totals.fund)}. Рейтинг и кольцо — на главной менеджера.`
+      : 'Отметьте логины официантов в настройке периода: без отметки рейтинг у менеджера пуст.';
     $('kpi-payouts').hidden = period.status !== 'closed';
     $('kpi-close-period').hidden = period.status === 'closed';
   }

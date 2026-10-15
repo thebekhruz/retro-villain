@@ -136,15 +136,11 @@
           <div id="editor-confirm" class="dir-confirm" hidden><button id="editor-keep" type="button">Оставить</button><button id="editor-delete-yes" class="is-danger" type="button">Да, удалить</button></div>
         </div>
       </form>
-      <!-- KPI официантов: сводка периода; настройка и закрытие — в листе ниже. -->
+      <!-- KPI официантов (T-466): точка входа в настройку периода; витрина — у менеджера. -->
       <article id="kpi-card" class="rm-phone-card">
         <div class="dir-card-head"><strong>KPI официантов · <b id="kpi-card-period" data-i18n="off"></b></strong><span id="kpi-card-badge" class="dir-badge" hidden></span></div>
-        <div class="kpi-dir-grid">
-          <div><span>Прирост маржи</span><strong id="kpi-card-uplift" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
-          <div><span>Фонд премии</span><strong id="kpi-card-fund" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
-          <div><span>Чистый эффект</span><strong id="kpi-card-net" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
-        </div>
-        <p id="kpi-card-note" class="dir-note kpi-card-note"></p>
+        <!-- Витрина KPI живёт у менеджера; здесь только вход в настройку, закрытие и Excel. -->
+        <p id="kpi-card-note" class="dir-note kpi-card-note">Период, целевые позиции и логины официантов задаёте здесь; рейтинг и кольцо — на главной менеджера.</p>
         <div class="dir-confirm"><button id="kpi-settings-open" type="button">Настроить период</button><button id="kpi-export" type="button">Excel бухгалтеру</button></div>
       </article>
       <article class="rm-phone-card">
