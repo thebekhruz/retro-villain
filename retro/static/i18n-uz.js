@@ -3957,8 +3957,10 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Не удалось отметить приход.': "Kelganini belgilab bo‘lmadi.",
 });
 globalThis.RetroTemplatesUz.push(
-  [/^Отмечено: пришёл сегодня, (\d\d\.\d\d)\. Нажмите, чтобы снять\.$/, "Belgilangan: bugun keldi, $1. Olib tashlash uchun bosing."],
-  [/^Отметить: пришёл сегодня, (\d\d\.\d\d)$/, "Belgilash: bugun keldi, $1"],
+  [/^Отмечено: пришёл (\d\d\.\d\d)\. Нажмите — «не пришёл»\.$/, "Belgilangan: keldi, $1. Bosing — «kelmadi»."],
+  [/^Отмечено: не пришёл (\d\d\.\d\d)\. Нажмите — снять отметку\.$/, "Belgilangan: kelmadi, $1. Bosing — belgini olib tashlash."],
+  [/^Не отмечено (\d\d\.\d\d)\. Нажмите — «пришёл»\.$/, "Belgilanmagan, $1. Bosing — «keldi»."],
+  [/^(.+) — отметка снята\.$/, "$1 — belgi olib tashlandi."],
   [/^(.+) — пришёл сегодня\.$/, "$1 — bugun keldi."],
   [/^(.+) — не пришёл сегодня\.$/, "$1 — bugun kelmadi."],
 );
