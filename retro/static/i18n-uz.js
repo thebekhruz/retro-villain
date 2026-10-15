@@ -3785,3 +3785,9 @@ globalThis.RetroTemplatesUz.push(
     "«$1» bo'yicha hech kim topilmadi. Agar odam ro'yxatda bo'lmasa, uni qo'shing: «+ Qo'shish»."],
 );
 /* ── /T-459 ── */
+
+/* ── T-461 Профиль менеджера ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Профиль": "Profil",
+});
+/* ── /T-461 ── */
