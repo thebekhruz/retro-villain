@@ -154,7 +154,9 @@
         baseline_weeks: number(form.baseline_weeks ?? 4, 'база'), netting: Boolean(form.netting)},
       targets: (form.targets || []).map((t, index) => ({
         key: t.key || `t${index + 1}`, title: t.title, group: t.group || 'блюдо',
-        target100: number(t.target100, 'цель'), margin: t.margin ? number(t.margin, 'маржа') : null,
+        // Ручная цель хранится, только если директор её задал; иначе цель считает правило «база + 30 %».
+        target100: t.manual ? number(t.target100, 'цель') : null, manual: Boolean(t.manual),
+        margin: t.margin ? number(t.margin, 'маржа') : null,
         dishes: (t.dishes || []).map(d => [d.id ?? d[0], d.name ?? d[1]]),
       })),
     };
@@ -176,7 +178,7 @@
   /* Подпись темпа: цель взята / идём в темпе / отстаём на N к сегодняшнему дню. Темп — по прошедшим дням. */
   function paceState(totals, period) {
     const goal = Number(totals?.goal_qty) || 0, sold = Number(totals?.sold) || 0;
-    if (!period || !period.days_passed) return {state: 'start', text: 'Цель появится после первой смены', lag: 0};
+    if (!period || !period.days_passed) return {state: 'start', text: 'Продажи засчитываются с первого дня периода', lag: 0};
     const monthly = period.days_total > 10;
     if (goal && sold >= goal) return {state: 'done', text: monthly ? 'Цель месяца взята' : 'Цель недели взята', lag: 0};
     const expected = goal * Math.min(period.days_passed, period.days_total) / period.days_total;
@@ -194,7 +196,43 @@
     const name = DAYS[(new Date(Date.UTC(year, month - 1, date)).getUTCDay() + 6) % 7];
     return {day, qty, text: `${name}, ${qty} ${plural(qty, 'порция', 'порции', 'порций')}`};
   }
-  return {thousands, signed, rate, percent, periodLabel, dayLabel, fetchedLabel, goalProgress, personProgress,
+  const DAYS_FROM = ['понедельника', 'вторника', 'среды', 'четверга', 'пятницы', 'субботы', 'воскресенья'];
+  /* «19 октября» по ISO-дате. */
+  function dayMonth(iso) {
+    return `${Number(iso.slice(8, 10))} ${MONTHS[Number(iso.slice(5, 7)) - 1]}`;
+  }
+  /* Пустое состояние вкладки KPI (T-469): до старта периода и когда участников нет. Участники — официанты
+     реестра и отмеченные директором (logins[].active). */
+  function emptyState(data) {
+    const period = data?.period;
+    if (!period) return null;
+    const marked = (data.logins || []).filter(item => item.active).length;
+    const [year, month, date] = period.start.split('-').map(Number);
+    const weekday = DAYS_FROM[(new Date(Date.UTC(year, month - 1, date)).getUTCDay() + 6) % 7];
+    const none = 'Официантов зала нет ни в реестре, ни в отметках директора. Отметить их можно в настройке периода.';
+    if (!period.days_passed) {
+      return {state: 'before', title: `${period.pilot ? 'Пилот' : 'Период'} стартует ${dayMonth(period.start)}`,
+        text: marked ? `Участвуют официанты: ${marked}. Продажи засчитываются с ${weekday}, ${dayMonth(period.start)}; цели ниже посчитаны по базе зала за прошлые недели.`
+          : none};
+    }
+    if (!marked) return {state: 'unmarked', title: 'Официанты не отмечены', text: none};
+    return null;
+  }
+  /* Процент выполнения цели команды без потолка: «112 %» тоже показываем. */
+  function goalPercent(sold, goal) {
+    if (!goal || goal <= 0) return 0;
+    return Math.round((Number(sold) || 0) / goal * 100);
+  }
+  /* Подпись участия логина в листе директора (T-469). */
+  function sourceLabel(item) {
+    return {registry: 'из реестра', manual: 'отмечен вручную', manual_off: 'не считать, вручную',
+      unmatched: 'не сопоставлен'}[item?.source] || '';
+  }
+  /* Откуда цель позиции (T-469): по правилу «база + 30 %» или ручная цель директора. */
+  function targetSource(item) {
+    return item?.target_source === 'manual' ? 'цель вручную' : 'цель: база + 30 %';
+  }
+  return {emptyState, goalPercent, sourceLabel, targetSource, dayMonth, thousands, signed, rate, percent, periodLabel, dayLabel, fetchedLabel, goalProgress, personProgress,
     personLine, plural, baseLabel, itemTone, itemProgress, sparkPath, ranking, initials, settingsFromForm,
     ringPercent, ringDash, remaining, paceState, bestDay};
 });
