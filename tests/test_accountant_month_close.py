@@ -264,7 +264,7 @@ def test_shokh_module_is_gone_entirely(tmp_path, monkeypatch):
                      expense_db_path=tmp_path / 'cashier.sqlite3', accountant_db_path=tmp_path / 'accountant.sqlite3')
     with TestClient(app, base_url='http://dashboard.example.com', client=('203.0.113.10', 50000)) as c:
         refused = c.post('/api/session', json={'username': 'shokh', 'password': 'pw'})
-        assert refused.status_code == 403 and 'Баланс Шохруха' in refused.json()['detail']
+        assert refused.status_code == 403 and 'Баланс закупа' in refused.json()['detail']
         assert c.post('/api/session', json={'username': 'boss', 'password': 'pw'}).status_code == 200
         assert 'shokh' not in [row['id'] for row in c.get('/api/config').json()['modules']]
         assert c.get('/shokh').status_code == 404

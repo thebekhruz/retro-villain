@@ -9,6 +9,8 @@ const money = value => fmt(value) + ' сум';
 const L = globalThis.PayrollLogic;
 let today, current, pending = null, requestNo = 0, saving = false;
 let shownMonth = null, focus = null, checksOpen = false;
+// Ссылка из «Финансов дня» (?employee=) — подсветить строку окладника в ведомости.
+let wantedEmployee = new URLSearchParams(location.search).get('employee');
 // Отклик (busy.js): ячейка, которую нажали, крутится сама; ведомость при
 // перечитывании гаснет, а не пропадает. Ключи — с месяцем: в другом месяце
 // те же id означают другие ячейки.
@@ -584,7 +586,6 @@ async function loadMonth() {
     renderTotals(data, checks);
     renderSheet(data);
     renderChecks(checks);
-    renderSalary();
     renderClosed();
     $('payroll-body').hidden = false;
     $('payroll-skeleton').hidden = true;
@@ -593,6 +594,12 @@ async function loadMonth() {
       scrollToDay(days.includes(today) ? today : days[days.length - 1], false);
     } else $('sheet-scroll').scrollLeft = keep;
     shownMonth = month;
+    // Выплаты из ведомости меняют кассу — «Баланс на сегодня» перечитывается вместе с ней.
+    globalThis.RetroCashToday?.refresh();
+    if (wantedEmployee) {
+      const row = 'm' + wantedEmployee; wantedEmployee = null;
+      if ((data.monthly || []).some(e => 'm' + e.id === row)) focusOn({row, day: (data.days || []).includes(today) ? today : undefined});
+    }
     // Месяц — в адресе: F5 и ссылка открывают тот же месяц.
     try {
       const url = new URL(location.href);
@@ -661,97 +668,8 @@ function renderClosed() {
     box.append(chip);
   }
   box.hidden = !closed;
-  document.querySelectorAll('#salary-payment-form :is(input,select,button)').forEach(el => { el.disabled = !!closed; });
 }
 
-/* ── «Оклады, выданные сегодня» (раньше — в «Финансах дня») ───────────── */
-function monthlyPeople() {
-  const paid = id => Object.values((current.monthly_cells || {})[String(id)] || {}).reduce((s, v) => s + Number(v || 0), 0);
-  return (current.monthly || []).map(e => ({id: e.id, name: e.name, role: e.role, salary: Number(e.salary || 0),
-    // Часть на карту из кассы не выдаётся: осталось — от наличной части.
-    paid: paid(e.id), left: Number(e.salary || 0) - Math.min(Number(e.salary || 0), Number(e.card || 0)) - paid(e.id)}));
-}
-function renderSalary() {
-  const section = $('salary-section');
-  // Выплата пишется сегодняшним днём — блок живёт в текущем месяце.
-  const own = current && current.month === today.slice(0, 7);
-  section.hidden = !own;
-  if (!own) return;
-  const people = monthlyPeople(), byId = new Map(people.map(p => [String(p.id), p]));
-  const box = $('salary-today'); box.replaceChildren();
-  let count = 0, sum = 0;
-  Object.entries(current.monthly_cell_ops || {}).forEach(([id, days]) => (days[today] || []).forEach(op => {
-    const person = byId.get(id) || {name: 'Сотрудник удалён', role: '', left: 0};
-    count += 1; sum += Number(op.amount);
-    const line = node('div', 'fd-mo-row' + (person.left < 0 ? ' is-over' : ''));
-    const who = node('div', 'fd-mo-who');
-    who.append(node('div', 'fd-who-name', person.name), node('div', 'fd-who-role', person.role));
-    const left = person.left < 0 ? 'переплата ' + fmt(-person.left) : person.left === 0 ? 'оклад закрыт' : 'осталось ' + fmt(person.left);
-    const x = node('button', 'fd-x', '×');
-    x.type = 'button'; x.title = 'Удалить выплату'; x.setAttribute('aria-label', 'Удалить выплату оклада');
-    x.disabled = !!current.closed;
-    x.addEventListener('click', async () => {
-      if (!await confirmAt(x, 'Удалить выплату оклада ' + person.name + ' · ' + money(op.amount) + '?')) return;
-      const work = send('/api/accountant/operations/movement/' + encodeURIComponent(op.id) + '?date=' + encodeURIComponent(today), 'DELETE');
-      globalThis.RetroSave?.track(work);
-      try { await (B ? B.button(x, work) : work); await load(); message('Выплата оклада удалена.'); }
-      catch (error) { message(error.message, true); }
-    });
-    line.append(who, node('strong', 'num', fmt(op.amount)), node('span', 'num fd-mo-left' + (person.left < 0 ? ' is-over' : person.left === 0 ? ' is-closed' : ''), left), x);
-    box.append(line);
-  }));
-  if (!count) box.append(node('div', 'fd-mo-empty', 'Сегодня оклады не выдавались.'));
-  $('salary-sum').textContent = count ? count + ' · ' + money(sum) : 'не выдавались';
-  const select = $('salary-employee'), keep = select.value;
-  select.replaceChildren(new Option('Кому выдаём оклад', ''));
-  people.forEach(p => select.add(new Option(p.name + ' · ' + (p.left < 0 ? 'переплата ' + fmt(-p.left) : 'осталось ' + fmt(p.left)), String(p.id))));
-  if (keep) select.value = keep;
-  const wanted = new URLSearchParams(location.search).get('employee');
-  if (wanted && !keep && byId.has(wanted)) select.value = wanted;
-  salaryHint();
-}
-let salaryConfirm = false;
-function salaryHint() {
-  if (!current) return;
-  const person = monthlyPeople().find(p => String(p.id) === $('salary-employee').value);
-  const amount = parse($('salary-amount').value) || 0, hint = $('salary-hint'), button = $('salary-submit');
-  hint.className = 'fd-mo-hint'; button.classList.remove('is-danger'); button.textContent = 'Записать выплату';
-  $('salary-amount').classList.remove('is-bad');
-  button.disabled = saving || !!current.closed;
-  if (!person) { hint.textContent = 'Выберите сотрудника — покажем, сколько осталось по окладу.'; return; }
-  const left = Math.max(0, person.left);
-  hint.textContent = 'Оклад ' + fmt(person.salary) + ' · выдано ' + fmt(person.paid) + ' · осталось ' + fmt(left);
-  hint.classList.add('is-info');
-  if (amount > left) {
-    hint.textContent += ' — сумма больше остатка на ' + fmt(amount - left);
-    hint.classList.add('is-bad'); $('salary-amount').classList.add('is-bad');
-    if (salaryConfirm) { button.textContent = 'Всё равно записать'; button.classList.add('is-danger'); }
-  }
-}
-['salary-employee', 'salary-amount'].forEach(id => $(id).addEventListener('input', () => { salaryConfirm = false; salaryHint(); }));
-async function submitSalary() {
-  const person = monthlyPeople().find(p => String(p.id) === $('salary-employee').value);
-  const amount = parse($('salary-amount').value) || 0;
-  if (!person || !amount) { message('Выберите сотрудника и сумму.', true); return false; }
-  if (amount > Math.max(0, person.left) && !salaryConfirm) { salaryConfirm = true; salaryHint(); $('salary-amount').focus(); return false; }
-  salaryConfirm = false;
-  if (saving) return false;
-  saving = true;
-  const work = postJson('/api/accountant/monthly-payments', {date: today, employee_id: person.id, amount: String(amount)}, true);
-  globalThis.RetroSave?.track(work);
-  try {
-    await (B ? B.button($('salary-submit'), work) : work);
-    $('salary-employee').value = ''; $('salary-amount').value = '';
-    saving = false;
-    await load();
-    message('Записано: ' + person.name + ', ' + money(amount) + '. Выплата попала в «Операции за день» и уменьшила кассу.');
-    return true;
-  } catch (error) { message(error.message, true); return false; }
-  finally { saving = false; salaryHint(); }
-}
-$('salary-payment-form').addEventListener('submit', event => { event.preventDefault(); submitSalary(); });
-globalThis.RetroSave?.register($('salary-payment-form'), () => submitSalary(),
-  {dirty: () => !!$('salary-amount').value.trim()});
 document.addEventListener('change', event => {
   const input = event.target;
   if (!(input instanceof HTMLInputElement) || !input.classList.contains('fd-money')) return;
