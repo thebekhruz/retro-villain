@@ -148,3 +148,24 @@ def test_period_helpers():
     assert next_bounds('week', date(2026, 10, 25)) == (date(2026, 10, 26), date(2026, 11, 1))
     assert next_bounds('month', date(2026, 10, 31)) == (date(2026, 11, 1), date(2026, 11, 30))
     assert baseline_window(date(2026, 10, 19), 4) == (date(2026, 9, 21), date(2026, 10, 18))
+
+
+def test_store_renames_reserved_end_column_in_old_databases(tmp_path):
+    """База, созданная до переименования (колонки start/end), открывается и данные остаются на месте."""
+    import sqlite3
+    from retro.modules.kpi.store import KpiStore
+    path = tmp_path / 'director.sqlite3'
+    with sqlite3.connect(path) as old:
+        old.execute('''CREATE TABLE kpi_periods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL,
+            status TEXT NOT NULL, settings_json TEXT NOT NULL, snapshot_json TEXT, created_at TEXT NOT NULL,
+            created_by TEXT, closed_at TEXT, closed_by TEXT, payouts_json TEXT)''')
+        old.execute("INSERT INTO kpi_periods (kind, start, end, status, settings_json, created_at) "
+                    "VALUES ('week', '2026-10-19', '2026-10-25', 'open', '{}', 'x')")
+    store = KpiStore(path)
+    period = store.list()[0]
+    assert period['start'] == '2026-10-19' and period['end'] == '2026-10-25' and period['settings'] == {}
+    with sqlite3.connect(path) as new:
+        columns = {row[1] for row in new.execute('PRAGMA table_info("kpi_periods")')}
+    assert {'start_day', 'end_day'} <= columns and not {'start', 'end'} & columns
+    assert KpiStore(path).list()[0]['id'] == period['id'], 'повторное открытие не ломает мигрированную базу'

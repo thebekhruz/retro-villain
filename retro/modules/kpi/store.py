@@ -3,13 +3,16 @@ import json
 from contextlib import closing
 from datetime import date, datetime
 
-from retro.db import as_database
+from retro.db import as_database, table_columns
 from retro.modules.cashier.service import TZ
 
 from .rules import KpiError, PILOT_START, default_settings, month_bounds, next_bounds, week_bounds
 
+# Ключи словаря периода — как в API («start», «end»); в SQL даты зовутся start_day/end_day,
+# потому что `end` — зарезервированное слово Postgres (в SQLite проходило, CI на Postgres падал).
 COLUMNS = ('id', 'kind', 'start', 'end', 'status', 'settings_json', 'snapshot_json', 'created_at', 'created_by',
            'closed_at', 'closed_by', 'payouts_json')
+SQL_COLUMNS = tuple({'start': 'start_day', 'end': 'end_day'}.get(name, name) for name in COLUMNS)
 
 
 def now_text():
@@ -21,10 +24,14 @@ class KpiStore:
         self.db = as_database(path)
         with closing(self._open()) as connection, connection:
             connection.execute('''CREATE TABLE IF NOT EXISTS kpi_periods (
-                id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, start TEXT NOT NULL, end TEXT NOT NULL,
+                id INTEGER PRIMARY KEY AUTOINCREMENT, kind TEXT NOT NULL, start_day TEXT NOT NULL, end_day TEXT NOT NULL,
                 status TEXT NOT NULL, settings_json TEXT NOT NULL, snapshot_json TEXT, created_at TEXT NOT NULL,
                 created_by TEXT, closed_at TEXT, closed_by TEXT, payouts_json TEXT)''')
-            connection.execute('CREATE INDEX IF NOT EXISTS kpi_periods_start ON kpi_periods(start, id)')
+            if 'end' in table_columns(connection, 'kpi_periods'):
+                # Базы, созданные до переименования (локальные SQLite): колонки start/end → start_day/end_day.
+                connection.execute('ALTER TABLE kpi_periods RENAME COLUMN "start" TO start_day')
+                connection.execute('ALTER TABLE kpi_periods RENAME COLUMN "end" TO end_day')
+            connection.execute('CREATE INDEX IF NOT EXISTS kpi_periods_start ON kpi_periods(start_day, id)')
             connection.execute('''CREATE TABLE IF NOT EXISTS kpi_waiters (
                 waiter TEXT PRIMARY KEY, employee_id INTEGER, active INTEGER NOT NULL DEFAULT 1,
                 updated_at TEXT NOT NULL)''')
@@ -43,12 +50,12 @@ class KpiStore:
 
     def list(self):
         with closing(self._open()) as connection:
-            rows = connection.execute('SELECT ' + ', '.join(COLUMNS) + ' FROM kpi_periods ORDER BY start DESC, id DESC').fetchall()
+            rows = connection.execute('SELECT ' + ', '.join(SQL_COLUMNS) + ' FROM kpi_periods ORDER BY start_day DESC, id DESC').fetchall()
         return [self._row(row) for row in rows]
 
     def get(self, period_id):
         with closing(self._open()) as connection:
-            row = connection.execute('SELECT ' + ', '.join(COLUMNS) + ' FROM kpi_periods WHERE id = ?', (period_id,)).fetchone()
+            row = connection.execute('SELECT ' + ', '.join(SQL_COLUMNS) + ' FROM kpi_periods WHERE id = ?', (period_id,)).fetchone()
         return self._row(row) if row else None
 
     def create(self, kind, start: date, end: date, settings, *, by=None):
@@ -59,12 +66,12 @@ class KpiStore:
         with closing(self._open()) as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
             clash = connection.execute(
-                "SELECT id FROM kpi_periods WHERE status = 'open' AND NOT (end < ? OR start > ?)",
+                "SELECT id FROM kpi_periods WHERE status = 'open' AND NOT (end_day < ? OR start_day > ?)",
                 (start.isoformat(), end.isoformat())).fetchone()
             if clash:
                 raise KpiError('На эти даты уже есть открытый период.')
             cursor = connection.execute(
-                'INSERT INTO kpi_periods (kind, start, end, status, settings_json, created_at, created_by) '
+                'INSERT INTO kpi_periods (kind, start_day, end_day, status, settings_json, created_at, created_by) '
                 'VALUES (?,?,?,?,?,?,?)',
                 (kind, start.isoformat(), end.isoformat(), 'open',
                  json.dumps(settings, ensure_ascii=False, sort_keys=True), now_text(), by))
@@ -94,7 +101,7 @@ class KpiStore:
     def update_settings(self, period_id, settings, *, by=None, kind=None, start=None, end=None):
         with closing(self._open()) as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
-            row = connection.execute('SELECT status, kind, start, end FROM kpi_periods WHERE id = ?', (period_id,)).fetchone()
+            row = connection.execute('SELECT status, kind, start_day, end_day FROM kpi_periods WHERE id = ?', (period_id,)).fetchone()
             if row is None:
                 raise KpiError('Период не найден.')
             if row[0] != 'open':
@@ -105,11 +112,11 @@ class KpiStore:
             if end < start:
                 raise KpiError('Конец периода раньше начала.')
             clash = connection.execute(
-                "SELECT id FROM kpi_periods WHERE status = 'open' AND id <> ? AND NOT (end < ? OR start > ?)",
+                "SELECT id FROM kpi_periods WHERE status = 'open' AND id <> ? AND NOT (end_day < ? OR start_day > ?)",
                 (period_id, start, end)).fetchone()
             if clash:
                 raise KpiError('На эти даты уже есть другой открытый период.')
-            connection.execute('UPDATE kpi_periods SET settings_json = ?, kind = ?, start = ?, end = ? WHERE id = ?',
+            connection.execute('UPDATE kpi_periods SET settings_json = ?, kind = ?, start_day = ?, end_day = ? WHERE id = ?',
                                (json.dumps(settings, ensure_ascii=False, sort_keys=True), kind, start, end, period_id))
         return self.get(period_id)
 
@@ -117,7 +124,7 @@ class KpiStore:
         """Снимок фиксируется, следующий период той же длины открывается с теми же настройками."""
         with closing(self._open()) as connection, connection:
             connection.execute('BEGIN IMMEDIATE')
-            row = connection.execute('SELECT status, kind, end, settings_json FROM kpi_periods WHERE id = ?',
+            row = connection.execute('SELECT status, kind, end_day, settings_json FROM kpi_periods WHERE id = ?',
                                      (period_id,)).fetchone()
             if row is None:
                 raise KpiError('Период не найден.')
@@ -126,11 +133,11 @@ class KpiStore:
             connection.execute('UPDATE kpi_periods SET status = ?, snapshot_json = ?, closed_at = ?, closed_by = ? WHERE id = ?',
                                ('closed', json.dumps(snapshot, ensure_ascii=False, sort_keys=True), now_text(), by, period_id))
             start, end = next_bounds(row[1], date.fromisoformat(row[2]))
-            exists = connection.execute("SELECT id FROM kpi_periods WHERE status = 'open' AND NOT (end < ? OR start > ?)",
+            exists = connection.execute("SELECT id FROM kpi_periods WHERE status = 'open' AND NOT (end_day < ? OR start_day > ?)",
                                         (start.isoformat(), end.isoformat())).fetchone()
             if not exists:
                 connection.execute(
-                    'INSERT INTO kpi_periods (kind, start, end, status, settings_json, created_at, created_by) '
+                    'INSERT INTO kpi_periods (kind, start_day, end_day, status, settings_json, created_at, created_by) '
                     'VALUES (?,?,?,?,?,?,?)', (row[1], start.isoformat(), end.isoformat(), 'open', row[3], now_text(), by))
         return self.get(period_id)
 
