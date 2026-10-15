@@ -38,6 +38,8 @@
   line-height:1.2;white-space:nowrap}
 .pr-card-sub{margin-top:4px;font-size:13px;font-weight:600;color:#ab445e}
 .pr-card-sub[hidden]{display:none}
+.pr-c-sum.has-card{flex-direction:column;align-items:flex-end;justify-content:center;gap:1px}
+.pr-c-card{font-size:11px;font-weight:500;color:#748376;white-space:nowrap}
 .pr-day.is-focus{box-shadow:inset 0 0 0 2px #d2af59}
 .pr-m.is-gone{color:#9da79d}
 .pr-card--issues{background:#fff8f7;border-color:#f0dddd;cursor:pointer}
