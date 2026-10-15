@@ -11,8 +11,7 @@ from retro.modules.kpi.rules import (
 TEA, SOUP, COLA = 'tea-id', 'soup-id', 'cola-id'
 TARGETS = [dict(key='tea', title='Фирменные чаи', group='напиток', target100=5.0, margin=36000, dishes=[(TEA, 'ЧАЙ Фруктовый')]),
            dict(key='soup', title='Эзогелин', group='блюдо', target100=4.0, margin=32000, dishes=[(SOUP, 'Суп Эзогелин')])]
-SCHEME = dict(share=0.25, personal=0.7, team=0.3, cap=1_000_000, min_checks=2, min_shifts=1,
-              baseline_weeks=4, baseline_min_checks=2, netting=True)
+SCHEME = dict(share=0.25, cap=1_000_000, min_checks=2, min_shifts=1, baseline_weeks=4, netting=True)
 
 
 def order(waiter='Алина', day=date(2026, 10, 19), items=(), **over):
@@ -71,46 +70,61 @@ def stats(checks, days, **qty):
     return item
 
 
-def test_compute_pays_share_of_uplift_over_own_base_with_team_pool():
-    # База: Алина 2 чая на 100 чеков, Нурик 10 (своя). Зал: чай 6, суп 1.
-    base = {'Алина': stats(100, [1], tea=2, soup=2), 'Нурик': stats(100, [1], tea=10, soup=0), HALL: stats(200, [1, 2], tea=12, soup=2)}
-    # Неделя: Алина 10 чеков, 1 чай (10 на 100: +8 → 0.8 порции × 36 000 = 28 800), суп 0 (−2 на 100 → −0.2 × 32 000 = −6 400).
+def test_compute_team_fund_is_shared_by_checks():
+    # База зала: чай 12 на 200 чеков = 6 на 100, суп 2 на 200 = 1 на 100. Период: 30 чеков, чай 2 (6,67), суп 1 (3,33).
+    base = {HALL: stats(200, [1, 2], tea=12, soup=2)}
     now = {'Алина': stats(10, [1, 2], tea=1, soup=0), 'Нурик': stats(10, [1], tea=0, soup=0),
-           'Новичок': stats(10, [1], tea=1, soup=1), HALL: stats(30, [1, 2], tea=2, soup=1)}
-    result = compute(now, base, TARGETS, SCHEME, days_total=7)
+           'Новичок': stats(10, [1], tea=1, soup=1), 'Султан': stats(1, [1], tea=0, soup=0),
+           HALL: stats(31, [1, 2], tea=2, soup=1)}
+    result = compute(now, base, TARGETS, SCHEME, days_total=7, days_passed=2)
+    # Прирост зала: чай (2/31 − 6/100) × 31 × 36 000 = 5 040; суп (1/31 − 1/100) × 31 × 32 000 = 22 080.
+    assert result['team_uplift'] == 27120 and result['net_uplift'] == result['team_uplift']
+    assert result['fund_total'] == round(0.25 * 27120)
     rows = {row['waiter']: row for row in result['rows']}
-    assert rows['Алина']['uplift'] == 22400 and rows['Алина']['own_base'] and rows['Алина']['eligible']
-    assert rows['Нурик']['uplift'] == -36000 and rows['Нурик']['uplift_positive'] == 0
-    # Новичку база зала: чай 6→10 (+0.4 × 36 000 = 14 400), суп 1→10 (+0.9 × 32 000 = 28 800).
-    assert not rows['Новичок']['own_base'] and rows['Новичок']['uplift'] == 43200
-    team_uplift = 22400 + 43200
-    assert result['team_uplift'] == team_uplift and result['net_uplift'] == 22400 - 36000 + 43200
-    # Фонд 25 %: 70 % лично от своего прироста, 30 % — пул по чекам (у всех по 10 чеков из 30).
-    assert rows['Алина']['personal'] == round(0.25 * 0.7 * 22400)
-    assert rows['Алина']['team'] == round(0.25 * 0.3 * team_uplift * 10 / 30)
-    assert rows['Нурик']['premium'] == rows['Нурик']['team'] > 0
-    assert result['fund'] == sum(row['premium'] for row in result['rows'])
-    assert result['restaurant_net'] == result['net_uplift'] - result['fund']
-    assert result['participants'] == 3 and result['rows'][0]['waiter'] == 'Новичок'
-    assert result['hall']['rates']['tea'] == dict(base=6.0, now=6.67, target=5.0)
-    assert result['goal'] > 0
-    # Цель в штуках для кольца: ожидаемые чеки 200 / 2 дня × 7 = 700; цели 5 + 4 на 100 → 63 порции; продано 3.
+    # Участники с 2 чеков и 1 смены: трое по 10 чеков, Султан с одним чеком вне фонда.
+    assert result['participants'] == 3 and result['team_checks'] == 30 and not rows['Султан']['eligible']
+    assert rows['Алина']['share'] == rows['Нурик']['share'] == round(10 / 30, 4)
+    assert rows['Алина']['premium'] == rows['Нурик']['premium'] == round(0.25 * 27120 * 10 / 30)
+    assert rows['Султан']['premium'] == 0 and rows['Султан']['share'] == 0
+    assert result['fund'] == 3 * rows['Алина']['premium'] and result['restaurant_net'] == result['team_uplift'] - result['fund']
+    assert 'uplift' not in rows['Алина'] and 'own_base' not in rows['Алина']
+    # Позиции у человека — против базы зала.
+    assert rows['Алина']['items'][0] == dict(key='tea', title='Фирменные чаи', group='напиток', base=6.0, now=10.0, target=5.0,
+                                              quantity=1, margin=36000, by_day={})
+    assert rows['Новичок']['sold'] == 2 and result['rows'][0]['waiter'] == 'Новичок', 'при равной премии выше тот, кто продал больше'
+    # Цель периода в штуках: ожидаемые чеки 200 / 2 × 7 = 700; цели 5 + 4 → 63; продано 3.
     assert result['expected_checks'] == 700 and result['goal_qty'] == 63 and result['sold'] == 3
-    assert rows['Алина']['sold'] == 1 and rows['Алина']['goal_qty'] == 63.0, 'своя база 100 чеков за 1 день × 7'
-    assert rows['Новичок']['goal_qty'] == 6.3, 'без своей базы — по текущему темпу: 10 чеков за день × 7'
+    progress = {item['key']: item for item in result['targets_progress']}
+    assert progress['tea'] == dict(key='tea', title='Фирменные чаи', group='напиток', margin=36000, base=6.0, now=6.45, target=5.0,
+                                   sold=2, goal_qty=35.0, remaining=33, lag=8.0, uplift=5040, push=True)
+    assert progress['soup']['lag'] == 7.0 and progress['soup']['push'] is True
+    assert [item['key'] for item in result['targets_progress']] == ['tea', 'soup'], 'сначала большее отставание'
+    assert result['hall']['rates']['tea'] == dict(base=6.0, now=6.45, target=5.0)
 
 
-def test_compute_without_netting_counts_only_gains_and_applies_cap():
-    base = {'Алина': stats(100, [1], tea=2, soup=2), HALL: stats(100, [1], tea=2, soup=2)}
-    now = {'Алина': stats(100, [1, 2, 3], tea=100, soup=0), HALL: stats(100, [1], tea=100, soup=0)}
+def test_negative_team_uplift_pays_nothing_and_netting_toggle():
+    base = {HALL: stats(100, [1], tea=10, soup=10)}
+    now = {'Алина': stats(100, [1, 2, 3], tea=20, soup=0), HALL: stats(100, [1, 2, 3], tea=20, soup=0)}
     netted = compute(now, base, TARGETS, SCHEME)
+    assert netted['team_uplift'] == 10 * 36000 - 10 * 32000 and netted['fund'] == round(0.25 * 40000)
     gross = compute(now, base, TARGETS, dict(SCHEME, netting=False))
-    assert netted['rows'][0]['uplift'] == 98 * 36000 - 2 * 32000
-    assert gross['rows'][0]['uplift'] == 98 * 36000
-    capped = compute(now, base, TARGETS, dict(SCHEME, cap=100000))
-    assert capped['rows'][0]['premium'] == 100000
-    monthly = compute(now, base, TARGETS, dict(SCHEME, cap=100000), days_total=30)
-    assert monthly['cap'] == 400000
+    assert gross['team_uplift'] == 10 * 36000
+    worse = compute({'Алина': stats(100, [1, 2, 3], tea=0, soup=0), HALL: stats(100, [1, 2, 3], tea=0, soup=0)}, base, TARGETS, SCHEME)
+    assert worse['team_uplift'] < 0 and worse['fund'] == 0 and worse['rows'][0]['premium'] == 0
+    capped = compute(now, base, TARGETS, dict(SCHEME, cap=5000))
+    assert capped['rows'][0]['premium'] == 5000
+    monthly = compute(now, base, TARGETS, dict(SCHEME, cap=5000), days_total=30)
+    assert monthly['cap'] == 20000
+
+
+def test_push_marks_at_most_three_lagging_targets():
+    many = [dict(key=f't{i}', title=f'П{i}', group='блюдо', target100=10.0, margin=1000, dishes=[(f'd{i}', 'x')]) for i in range(5)]
+    base = {HALL: stats(100, [1], **{f't{i}': 0 for i in range(5)})}
+    now = {HALL: stats(10, [1], t0=0, t1=0, t2=0, t3=0, t4=9), 'Алина': stats(10, [1], t4=9)}
+    result = compute(now, base, many, SCHEME, days_total=7, days_passed=7)
+    assert [item['push'] for item in result['targets_progress']] == [True, True, True, False, False]
+    # Цель каждой: 10 на 100 × 700 ожидаемых чеков = 70; у t4 продано 9 → отставание 61, у остальных 70.
+    assert result['targets_progress'][-1]['key'] == 't4' and result['targets_progress'][-1]['lag'] == 61.0
 
 
 def test_threshold_excludes_small_weeks_from_the_fund():
@@ -118,16 +132,16 @@ def test_threshold_excludes_small_weeks_from_the_fund():
     now = {'Алина': stats(1, [1], tea=1, soup=0), HALL: stats(1, [1], tea=1, soup=0)}
     result = compute(now, base, TARGETS, SCHEME)
     row = result['rows'][0]
-    assert not row['eligible'] and row['premium'] == 0 and row['uplift'] > 0 and result['fund'] == 0
+    assert not row['eligible'] and row['premium'] == 0 and result['team_uplift'] > 0 and result['fund'] == 0
 
 
 def test_scheme_and_targets_validation():
     assert normalize_scheme({})['share'] == 0.25
     assert normalize_scheme(dict(share='0.3', netting=False))['netting'] is False
+    # Старые поля схемы (лично/команда, своя база) читаются и отбрасываются.
+    assert 'personal' not in normalize_scheme(dict(personal=0.7, team=0.3, baseline_min_checks=40))
     with pytest.raises(KpiError):
         normalize_scheme(dict(share=0.6))
-    with pytest.raises(KpiError):
-        normalize_scheme(dict(personal=0.5, team=0.3))
     with pytest.raises(KpiError):
         normalize_scheme(dict(cap=-1))
     targets = normalize_targets([dict(title='Чай', group='напиток', target100='5', dishes=[dict(id=TEA, name='Чай')])])

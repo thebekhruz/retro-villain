@@ -23,8 +23,7 @@ START = TODAY - timedelta(days=TODAY.weekday() + 7)
 END = START + timedelta(days=6)
 TARGETS = [dict(key='tea', title='Фирменные чаи', group='напиток', target100=5.0, margin=36000, dishes=[[TEA, 'ЧАЙ Фруктовый']]),
            dict(key='soup', title='Эзогелин', group='блюдо', target100=4.0, margin=32000, dishes=[[SOUP, 'Суп Эзогелин']])]
-SCHEME = dict(share=0.25, personal=0.7, team=0.3, cap=1_000_000, min_checks=2, min_shifts=1,
-              baseline_weeks=4, baseline_min_checks=2, netting=True)
+SCHEME = dict(share=0.25, cap=1_000_000, min_checks=2, min_shifts=1, baseline_weeks=4, netting=True)
 
 
 class FakeSource:
@@ -116,19 +115,26 @@ def test_default_period_is_the_pilot_week_and_roles_are_separated(client):
     assert director(client).get('/api/director/kpi').status_code == 200
 
 
-def test_rating_counts_uplift_over_own_base(client):
+def test_rating_shares_the_team_fund_by_checks(client):
     configure(client)
     view = manager(client).get('/api/manager/kpi').json()
     assert view['period']['start'] == START.isoformat() and view['period']['days_passed'] == 7
     rows = {row['waiter']: row for row in view['rows']}
-    alina = rows['Алина']
-    # База: 1 чай на 4 чека = 25 на 100; неделя: 3 из 4 = 75 → +50 на 100 × 16 чеков × 36 000 = 288 000.
-    assert alina['checks'] == 16 and alina['shifts'] == 4 and alina['own_base'] and alina['eligible']
-    assert alina['items'][0]['base'] == 25 and alina['items'][0]['now'] == 75 and alina['uplift'] == 288000
+    alina, nurik = rows['Алина'], rows['Нурик']
+    # База зала: чай у Алины 1 из 4 чеков, у Нурика 0 → 4 чая на 32 чека = 12,5 на 100; период: 12 на 32 = 37,5.
+    # Прирост зала = +25 на 100 × 32 чека × 36 000 = 288 000; суп без изменений (4 на 32 в обе недели).
+    assert view['totals']['team_uplift'] == 288000 and view['totals']['fund_total'] == 72000
+    assert alina['checks'] == nurik['checks'] == 16 and alina['share'] == nurik['share'] == 0.5
+    assert alina['premium'] == nurik['premium'] == 36000 and view['totals']['fund'] == 72000
+    assert view['totals']['restaurant_net'] == 288000 - 72000
+    assert alina['items'][0]['base'] == 12.5 and alina['items'][0]['now'] == 75 and alina['sold'] == 12
     assert alina['initials'] == 'А' and alina['photo'] is None
-    assert rows['Нурик']['uplift'] == 0 and rows['Нурик']['premium'] == rows['Нурик']['team']
-    assert view['totals']['team_uplift'] == 288000 and view['totals']['fund'] == alina['premium'] + rows['Нурик']['premium']
-    assert view['totals']['restaurant_net'] == 288000 - view['totals']['fund']
+    progress = {item['key']: item for item in view['targets_progress']}
+    # Ожидаемые чеки: 128 за 16 дней базы × 7 = 56; цель чая 5 на 100 → 2,8 порции, супа 4 → 2,24.
+    assert progress['tea']['goal_qty'] == 2.8 and progress['tea']['sold'] == 12 and progress['tea']['remaining'] == 0
+    assert progress['soup']['sold'] == 4 and progress['soup']['lag'] < 0
+    assert not any(item['push'] for item in view['targets_progress']), 'обе впереди темпа: толкать нечего'
+    assert view['totals']['goal_qty'] == 5.0 and view['totals']['sold'] == 16
     assert view['hall']['rates']['tea']['target'] == 5.0 and view['fetched_at']
     # Повтор идёт из кэша, «Обновить» читает iiko заново.
     calls = len(client.app.state.kpi_source.calls)
@@ -190,7 +196,7 @@ def test_close_creates_snapshot_next_period_excel_and_payouts(client):
     assert book.sheetnames == ['Премии', 'Позиции', 'Настройки']
     rows = list(book['Премии'].iter_rows(values_only=True))
     alina_row = next(row for row in rows if row[0] == 'Алина')
-    assert alina_row[1] == 'Каримова Алина' and alina_row[10] == 10000 and alina_row[11] == alina_row[9] - 10000
+    assert alina_row[1] == 'Каримова Алина' and alina_row[8] == 10000 and alina_row[9] == alina_row[7] - 10000
     # Премии → доп. выплаты бухгалтера: привязанному заводится, непривязанный остаётся в списке.
     paid = director(client).post(f'/api/director/kpi/payouts?period={closed["period"]["id"]}', json={}).json()
     by_waiter = {item['waiter']: item for item in paid['results']}
