@@ -351,4 +351,5 @@ def test_late_shift_marks_the_payout_cell_with_entry_time(stores):
                                      )['people'][0]['cells']
     assert cells['2026-10-06']['attendance'] == dict(status='late', time='10:25', source='late')  # смена 05.10
     assert cells['2026-10-07']['attendance']['status'] == 'on_time'   # смена 06.10 — вовремя
-    assert 'attendance' not in cells['2026-10-11']                   # смена 10.10 — сегодня, ещё не смотрим
+    # Смена 10.10 — сегодня (T-474): проход уже был — видно время.
+    assert cells['2026-10-11']['attendance'] == dict(status='late', time='11:00', source='late')
