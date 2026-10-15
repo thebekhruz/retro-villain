@@ -4,7 +4,9 @@
    страницы его не считают, а берут /api/accountant/cash-today. Карточка
    [data-cash-today] стоит первой в ряду итогов. Когда при прокрутке длинной
    ведомости она уходит вверх, внизу справа остаётся плашка с той же суммой.
-   Выплата из ведомости уменьшает кассу — страница зовёт refresh() после записи. */
+   Выплата из ведомости уменьшает кассу — страница зовёт refresh() после записи.
+   Плашку можно перетащить мышью или пальцем (T-475): место запоминается в этом
+   браузере, двойной клик возвращает её в угол. */
 (() => {
   const number = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 2});
   const NO_DATA = 'Нет данных из Финансов дня';
@@ -26,6 +28,7 @@
       pill.querySelector('strong').textContent = text(value);
       pill.classList.toggle('is-negative', value !== null && value < 0);
       pill.hidden = !away;
+      place();
     }
   }
 
@@ -56,13 +59,62 @@
     pill.setAttribute('aria-hidden', 'true');
     pill.append(document.createElement('span'), document.createElement('strong'));
     pill.firstChild.textContent = 'Баланс на сегодня';
+    pill.title = 'Перетащите, чтобы подвинуть. Двойной клик — обратно в угол.';
     document.body.append(pill);
+    drag(pill);
     new IntersectionObserver(([entry]) => {
       // Скрытая карточка (ведомость ещё грузится) — не «ушла вверх».
       away = !entry.isIntersecting && entry.boundingClientRect.bottom < 0 && entry.boundingClientRect.height > 0;
       paint();
       if (pill.hidden !== !away) pill.hidden = !away;
+      place();
     }).observe(card);
+  }
+
+  /* ── Перетаскивание (T-475) ──────────────────────────────────────────────
+     Место — доля ширины и высоты окна: на другом размере окна плашка остаётся
+     примерно там же и не выходит за край. */
+  const SPOT = 'retro.cashPill.spot';
+  let spot = null;
+  try { const saved = JSON.parse(localStorage.getItem(SPOT) || 'null'); if (saved && Number.isFinite(saved.x) && Number.isFinite(saved.y)) spot = saved; } catch { /* без памяти — угол */ }
+  const clamp = (value, max) => Math.min(Math.max(8, value), Math.max(8, max - 8));
+  function move(left, top) {
+    pill.style.left = clamp(left, innerWidth - pill.offsetWidth) + 'px';
+    pill.style.top = clamp(top, innerHeight - pill.offsetHeight) + 'px';
+    pill.style.right = pill.style.bottom = 'auto';
+  }
+  function place() {
+    if (!pill || pill.hidden) return;
+    if (!spot) { pill.style.left = pill.style.top = pill.style.right = pill.style.bottom = ''; return; }
+    move(spot.x * innerWidth, spot.y * innerHeight);
+  }
+  function drag(el) {
+    let from = null;
+    el.addEventListener('pointerdown', event => {
+      if (event.button !== 0) return;
+      const box = el.getBoundingClientRect();
+      from = {dx: event.clientX - box.left, dy: event.clientY - box.top};
+      el.setPointerCapture(event.pointerId);
+      el.classList.add('is-dragging');
+      event.preventDefault();
+    });
+    el.addEventListener('pointermove', event => { if (from) move(event.clientX - from.dx, event.clientY - from.dy); });
+    const drop = () => {
+      if (!from) return;
+      from = null;
+      el.classList.remove('is-dragging');
+      const box = el.getBoundingClientRect();
+      spot = {x: box.left / innerWidth, y: box.top / innerHeight};
+      try { localStorage.setItem(SPOT, JSON.stringify(spot)); } catch { /* не запомнили — не страшно */ }
+    };
+    el.addEventListener('pointerup', drop);
+    el.addEventListener('pointercancel', drop);
+    el.addEventListener('dblclick', () => {
+      spot = null;
+      try { localStorage.removeItem(SPOT); } catch { /* ничего */ }
+      place();
+    });
+    window.addEventListener('resize', place);
   }
 
   function start() {
