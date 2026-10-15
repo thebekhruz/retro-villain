@@ -203,6 +203,20 @@ def _photo_card(request: Request, employee_id: int, account: ManagerAccount) -> 
     return row
 
 
+async def photo_versions(request: Request, url: str) -> dict[str, str]:
+    """Адреса снимков всех сотрудников реестра: {id: url?v=версия}. Свой снимок —
+    по его версии, лицо с терминала — по времени проверки устройства. Без
+    снимка — человека в ответе нет. Для «Сотрудников» бухгалтера (T-462)."""
+    rows = await asyncio.to_thread(request.app.state.accountant_roster.manager_cards)
+    rows, _ = await request.app.state.manager_device_photos.enrich(rows, request.app.state.hikvision_writer)
+    result = {}
+    for row in rows:
+        version = row['photo_updated_at'] or (('hik-' + row['device_photo']['checked_at']) if row.get('device_photo') else None)
+        if version:
+            result[str(row['id'])] = url.format(id=row['id']) + '?v=' + quote(version, safe='')
+    return result
+
+
 def ended(row: dict) -> bool:
     """Временный, чей период уже закончился (T-434): в списке менеджера его нет."""
     return bool(row.get('work_to')) and row['work_to'] < today_tashkent()
@@ -346,6 +360,12 @@ async def upload_photo(request: Request, employee_id: int, body: PhotoInput, sen
 
 @router.get('/employees/{employee_id}/photo')
 async def photo(request: Request, employee_id: int):
+    return await photo_response(request, employee_id)
+
+
+async def photo_response(request: Request, employee_id: int) -> Response:
+    """Снимок сотрудника: свой из карточки, иначе — лицо с терминала Hikvision.
+    Тот же ответ отдаёт бухгалтеру /api/accountant/employees/{id}/photo (T-462)."""
     found = await asyncio.to_thread(request.app.state.accountant_roster.photo, employee_id)
     if found is None:
         row = await asyncio.to_thread(_card_or_404, request, employee_id)

@@ -530,6 +530,30 @@ def test_proposed_rate_is_optional_and_validated(cabinet):
     assert [item.name for item in roster(cabinet).list()] == ['Мирзаева Нодира']
 
 
+def test_accountant_sees_the_same_photos_as_the_manager(cabinet, terminal):
+    """T-462: «Сотрудники» бухгалтера показывают те же снимки, что кабинет
+    менеджера: свой из карточки и лицо с терминала. Менеджеру раздел закрыт."""
+    with_photo = staff(cabinet)
+    on_device = staff(cabinet, 'Алиев Жасур', 'официант', 'Обслуживание зала')
+    roster(cabinet).set_hikvision_id(on_device, '301')
+    terminal.people['301'] = 'Алиев Жасур'
+    terminal.faces['301'] = JPEG
+    staff(cabinet, 'Без Фото', 'официант', 'Обслуживание зала')
+    upload(cabinet, with_photo)
+
+    answer = cabinet.get('/api/accountant/photos', auth=('accountant', 'secret'))
+    assert answer.status_code == 200
+    photos = answer.json()['photos']
+    assert set(photos) == {str(with_photo), str(on_device)}
+    assert photos[str(with_photo)].startswith(f'/api/accountant/employees/{with_photo}/photo?v=')
+    assert photos[str(on_device)].startswith(f'/api/accountant/employees/{on_device}/photo?v=hik-')
+    own = cabinet.get(photos[str(with_photo)], auth=('accountant', 'secret'))
+    assert (own.status_code, own.headers['content-type'], own.content) == (200, 'image/jpeg', JPEG)
+    device = cabinet.get(photos[str(on_device)], auth=('accountant', 'secret'))
+    assert (device.status_code, device.content) == (200, JPEG)
+    assert cabinet.get('/api/accountant/photos', auth=('karina', 'secret')).status_code == 403
+
+
 # ── Фото ───────────────────────────────────────────────────────────────────
 
 def test_existing_device_photo_is_visible_without_a_local_upload(cabinet, terminal):
