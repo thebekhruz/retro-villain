@@ -239,6 +239,13 @@ async function loadHome() {
   try {
     const {data} = await api('/home');
     state.home = data;
+    // Профиль (T-461): буква, имя и разделы — в кружке шапки и в листе.
+    const name = data.name || data.login || '';
+    const mark = (Array.from(name.trim())[0] || '').toUpperCase();
+    $('profile-mark').textContent = mark;
+    $('profile-sheet-mark').textContent = mark;
+    $('profile-name').textContent = name;
+    $('profile-dirs').textContent = [data.role === 'manager' ? 'Менеджер' : 'Администратор', ...data.directions].join(' · ');
     $('device-photo-note').textContent = data.photo_message || '';
     $('device-photo-note').hidden = !data.photo_message;
     renderList();
@@ -550,9 +557,27 @@ async function saveEmployee(confirm = false) {
   }
 }
 
+/* ── Профиль ───────────────────────────────────────────────────────────── */
+function openProfile() {
+  const sheet = $('profile-sheet');
+  if (typeof sheet.showModal === 'function') sheet.showModal(); else sheet.setAttribute('open', '');
+}
+function closeProfile() {
+  const sheet = $('profile-sheet');
+  if (typeof sheet.close === 'function') sheet.close(); else sheet.removeAttribute('open');
+}
+
 /* ── События ───────────────────────────────────────────────────────────── */
 document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
   button.addEventListener('click', () => { if (!photoBusy()) { state.card = null; openTab(button.dataset.tab); renderList(); } });
+});
+$('profile-open').addEventListener('click', openProfile);
+$('profile-close').addEventListener('click', closeProfile);
+// Нажатие на затемнение вокруг листа закрывает его (по самому листу — нет).
+$('profile-sheet').addEventListener('click', event => {
+  if (event.target !== event.currentTarget) return;
+  const box = event.currentTarget.getBoundingClientRect();
+  if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeProfile();
 });
 $('shoot-next').addEventListener('click', startQueue);
 $('shoot-start').addEventListener('click', startQueue);

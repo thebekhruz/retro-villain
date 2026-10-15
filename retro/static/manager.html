@@ -38,12 +38,11 @@
     <header class="dir-head">
       <span class="rm-phone-mark" aria-hidden="true">М</span>
       <div class="dir-hello"><span id="today-label">Сегодня</span><strong id="screen-title">Кабинет менеджера</strong></div>
-      <div class="dir-head-actions">
-        <!-- Тем, кому открыт ещё какой-то модуль (администратор), нужна дорога назад. -->
-        <a id="mgr-back" class="logout-button dir-logout dir-back" href="/login" hidden><span aria-hidden="true">‹</span> Панель</a>
-        <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
-        <button id="logout" class="logout-button dir-logout" type="button">Выйти</button>
-      </div>
+      <!-- T-461: строки «‹ Панель · РУ/UZ · имя · Выйти» над приветствием нет —
+           всё это в профиле по кружку справа. На компьютере — внизу меню слева. -->
+      <button id="profile-open" class="mgr-profile" type="button" aria-haspopup="dialog" aria-controls="profile-sheet" aria-label="Профиль">
+        <span id="profile-mark" data-i18n="off"></span>
+      </button>
     </header>
     <p id="state" class="dir-state" role="status" aria-live="polite" hidden></p>
     <!-- Успех — строкой под шапкой, как «Сохранено» в команде директора. -->
@@ -187,6 +186,21 @@
       <input id="gallery-input" type="file" accept="image/*" hidden>
     </section>
   </div>
+  <!-- Профиль: кто вошёл, язык, вся панель (администратору), выход. -->
+  <dialog id="profile-sheet" class="mgr-sheet" aria-labelledby="profile-name">
+    <div class="mgr-sheet-head">
+      <span id="profile-sheet-mark" class="mgr-sheet-mark" aria-hidden="true" data-i18n="off"></span>
+      <div class="mgr-sheet-who"><strong id="profile-name" data-i18n="off"></strong><span id="profile-dirs" data-i18n="off"></span></div>
+      <button id="profile-close" class="dir-close" type="button" aria-label="Закрыть">×</button>
+    </div>
+    <div class="mgr-sheet-row">
+      <span>Язык</span>
+      <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+    </div>
+    <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
+    <a id="mgr-back" class="dir-primary mgr-secondary mgr-sheet-link" href="/login" hidden>Вся панель</a>
+    <button id="logout" class="dir-primary mgr-secondary" type="button">Выйти</button>
+  </dialog>
   <nav class="rm-tabs dir-tabs" role="tablist" aria-label="Разделы менеджера">
     <button type="button" class="rm-tab is-active" role="tab" aria-selected="true" data-tab="home"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span>Сегодня</button>
     <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="shoot"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></span>Съёмка</button>
