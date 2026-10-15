@@ -46,6 +46,9 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.modules.manager.routes import router as manager_router
+from retro.modules.kpi.routes import director_router as kpi_director_router, manager_router as kpi_manager_router
+from retro.modules.kpi.source import KpiSource
+from retro.modules.kpi.store import KpiStore
 from retro.modules.users.routes import router as users_router
 from retro.modules.founder.chat import FounderChatStore
 from retro.modules.founder.dividends import DividendTargetStore
@@ -146,6 +149,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         # Менеджер (ТЗ 09.10, М-01): регистрация сотрудников с телефона
         'manager.html': {'manager'}, 'manager.js': {'manager'}, 'manager-logic.js': {'manager'},
         'manager.css': {'manager'},
+        # KPI официантов: вкладка «Неделя» у менеджера, карточка и настройка периода у директора
+        'kpi-logic.js': {'manager', 'director'}, 'kpi.css': {'manager', 'director'},
         # Пользователи (T-445): только администратор; каркас — из accountant.css
         'users.html': {'users'}, 'users.js': {'users'}, 'users.css': {'users'},
     }.items()
@@ -358,6 +363,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.device_photo_warmup = hikvision_writer is None and app.state.hikvision_writer is not None
     director_path = director_db_path or shared or settings.data_dir / 'director.sqlite3'
     app.state.director_store = DirectorReportStore(director_path)
+    # KPI официантов: периоды и привязки логинов — в базе директора, чеки — из того же iiko.
+    app.state.kpi_store = KpiStore(director_path)
+    app.state.kpi_source = KpiSource(app.state.iiko)
     # Меню — справочник, а не отчёт: лежит у нас и обновляется раз в неделю.
     # Без настроенного iiko брать его неоткуда, поэтому планировщик не заводим,
     # а сохранённое меню (если оно есть) всё равно читается.
@@ -649,6 +657,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(director_router)
     app.include_router(founder_router)
     app.include_router(manager_router)
+    app.include_router(kpi_manager_router)
+    app.include_router(kpi_director_router)
     app.include_router(users_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app

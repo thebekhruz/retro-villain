@@ -3866,3 +3866,88 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Перетащите, чтобы подвинуть. Двойной клик — обратно в угол.': "Surish uchun torting. Ikki marta bosish — burchakka qaytarish.",
 });
 /* ── /T-475 ── */
+
+/* ── KPI официантов: вкладка «Неделя» у менеджера, карточка и настройка периода у директора ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  "Неделя": "Hafta", "Официант": "Ofitsiant", "KPI официантов": "Ofitsiantlar KPI",
+  "Маржа сверх базы": "Bazadan ortiq marja", "Фонд премии сейчас": "Hozirgi mukofot jamg‘armasi",
+  "Фонд премии": "Mukofot jamg‘armasi", "Прирост маржи": "Marja o‘sishi", "Чистый эффект": "Sof natija",
+  "Обновить": "Yangilash", "Участвуют": "Ishtirok etmoqda", "Ресторану сверх премии": "Mukofotdan tashqari restoranga",
+  "остаётся после всех премий": "barcha mukofotlardan keyin qoladi", "Рейтинг": "Reyting", "Позиции": "Pozitsiyalar",
+  "Правила": "Qoidalar", "Целевые позиции · зал на 100 чеков": "Maqsadli pozitsiyalar · zal, 100 chekka",
+  "Как считается премия": "Mukofot qanday hisoblanadi", "лидер": "yetakchi", "закрыт": "yopilgan", "идёт": "davom etmoqda",
+  "не начался": "boshlanmagan", "по дням": "kunlar bo‘yicha", "Позиции на 100 чеков": "100 chekka pozitsiyalar",
+  "Премия сейчас": "Hozirgi mukofot", "база": "baza", "сейчас": "hozir", "цель": "maqsad",
+  "нетто по всем позициям": "barcha pozitsiyalar bo‘yicha sof", "по позициям в плюсе": "plyusdagi pozitsiyalar bo‘yicha",
+  "Чеков зала за период пока нет.": "Davr uchun zal cheklari hali yo‘q.",
+  "Период ещё не начался: рейтинг появится после первой смены.": "Davr hali boshlanmadi: reyting birinchi smenadan keyin chiqadi.",
+  "Цель периода появится после первой смены": "Davr maqsadi birinchi smenadan keyin chiqadi",
+  "Прирост считается к собственной базе человека за прошлые недели. Нижние строки без красного: у них пока меньше чеков.":
+    "O‘sish har kimning o‘tgan haftalardagi o‘z bazasiga nisbatan hisoblanadi. Pastki qatorlar qizil emas: ularda hozircha cheklar kamroq.",
+  "«База» — обычная частота человека за прошлые недели. Премия копится только с того, что выше базы.":
+    "«Baza» — odamning o‘tgan haftalardagi odatiy chastotasi. Mukofot faqat bazadan yuqorisidan yig‘iladi.",
+  "Настроить период": "Davrni sozlash", "Excel бухгалтеру": "Buxgalterga Excel", "Настройка периода": "Davr sozlamalari",
+  "Длина периода": "Davr uzunligi", "Месяц": "Oy", "Начало": "Boshlanishi", "Конец": "Tugashi",
+  "Целевые позиции": "Maqsadli pozitsiyalar", "Найти карточку iiko: «лимонад», «кунафе»…": "iiko kartasini toping: «limonad», «kunafa»…",
+  "Цель — порций на 100 чеков зала. Маржа на порцию подставляется из iiko за 8 недель до периода; пустая ячейка значит «взять из iiko».":
+    "Maqsad — zalning 100 chekiga porsiyalar. Porsiya marjasi davrdan oldingi 8 hafta uchun iiko dan olinadi; bo‘sh katak «iiko dan olinsin» degani.",
+  "Доля прироста в фонд, %": "O‘sishning jamg‘armaga ulushi, %", "Потолок, тыс сум на человека в неделю": "Chegara, haftasiga odam boshiga ming so‘m",
+  "Лично, % (остальное — команде)": "Shaxsan, % (qolgani jamoaga)", "База, недель": "Baza, hafta",
+  "Минимум чеков": "Minimal cheklar", "Минимум смен": "Minimal smenalar",
+  "Нетто по позициям: минус одной гасит плюс другой": "Pozitsiyalar bo‘yicha sof: birining minusi boshqasining plyusini yopadi",
+  "Сохранить настройки": "Sozlamalarni saqlash", "Логины iiko → сотрудники": "iiko loginlari → xodimlar",
+  "Нужно для фото в рейтинге и для премий у бухгалтера. Логин без сотрудника премию не получит.":
+    "Reytingdagi surat va buxgalterdagi mukofotlar uchun kerak. Xodimsiz login mukofot olmaydi.",
+  "— сотрудник из реестра —": "— reyestrdagi xodim —", "Логины появятся после первых чеков зала.": "Loginlar zalning birinchi cheklaridan keyin chiqadi.",
+  "официант зала": "zal ofitsianti", "не считать": "hisoblanmasin", "чеков пока нет": "cheklar hali yo‘q",
+  "В KPI идут только логины с отметкой «официант зала»; отметка переходит на следующий период. Сотрудник из реестра нужен для фото в рейтинге и премии у бухгалтера.":
+    "KPI ga faqat «zal ofitsianti» belgisi bor loginlar kiradi; belgi keyingi davrga o‘tadi. Reyestrdagi xodim reytingdagi surat va buxgalterdagi mukofot uchun kerak.",
+  "Закрытие периода": "Davrni yopish",
+  "Фиксирует цифры, открывает следующий период с теми же настройками. Потом «Передать бухгалтеру» заведёт премии как доп. выплаты.":
+    "Raqamlarni qayd etadi, keyingi davrni shu sozlamalar bilan ochadi. So‘ng «Buxgalterga topshirish» mukofotlarni qo‘shimcha to‘lov sifatida kiritadi.",
+  "Закрыть период": "Davrni yopish", "Да, закрыть": "Ha, yopish", "Передать бухгалтеру": "Buxgalterga topshirish", "Да, передать": "Ha, topshirish",
+  "Убрать позицию": "Pozitsiyani olib tashlash", "Убрать карточку": "Kartani olib tashlash", "Цель на 100 чеков": "100 chekka maqsad",
+  "записано бухгалтеру": "buxgalterga yozildi", "Логин не привязан к сотруднику реестра.": "Login reyestrdagi xodimga bog‘lanmagan.",
+  "участник": "ishtirokchi", "участника": "ishtirokchi", "участников": "ishtirokchi", "база своя": "o‘z bazasi", "база зала": "zal bazasi",
+  "Период завершён": "Davr tugadi", "до старта": "startgacha", "продано": "sotildi", "цель считается": "maqsad hisoblanmoqda",
+  "фонд премии сейчас": "hozirgi mukofot jamg‘armasi", "Идём в темпе": "Sur’atdamiz", "Цель недели взята": "Hafta maqsadi bajarildi",
+  "Цель месяца взята": "Oy maqsadi bajarildi", "Цель появится после первой смены": "Maqsad birinchi smenadan keyin chiqadi",
+  "Люди": "Odamlar", "Продано из цели": "Maqsaddan sotildi", "Обновить данные iiko": "iiko ma’lumotlarini yangilash",
+  "KPI официантов: открыть список": "Ofitsiantlar KPI: ro‘yxatni ochish",
+  "Чеков зала за период пока нет. Директор отмечает официантов в настройке периода.": "Davr uchun zal cheklari hali yo‘q. Direktor davr sozlamalarida ofitsiantlarni belgilaydi.",
+  "Период ещё не начался: список появится после первой смены.": "Davr hali boshlanmadi: ro‘yxat birinchi smenadan keyin chiqadi.",
+  "Кольцо у человека — его продажи целевых позиций против его личной цели. Премия копится только с того, что выше его базы за прошлые недели.":
+    "Odamdagi halqa — uning maqsadli pozitsiyalar savdosi shaxsiy maqsadiga nisbatan. Mukofot faqat o‘tgan haftalardagi bazasidan yuqorisidan yig‘iladi.",
+  "Период, целевые позиции и логины официантов задаёте здесь; рейтинг и кольцо — на главной менеджера.": "Davr, maqsadli pozitsiyalar va ofitsiant loginlari shu yerda beriladi; reyting va halqa — menejer bosh sahifasida.",
+  "Отметьте логины официантов в настройке периода: без отметки рейтинг у менеджера пуст.": "Davr sozlamalarida ofitsiant loginlarini belgilang: belgisiz menejerdagi reyting bo‘sh.", "блюдо": "taom", "напиток": "ichimlik", "десерт": "desert", "новинка": "yangilik",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Цель периода (.+) · пройдено (\d+) %$/, "Davr maqsadi $1 · $2 % o‘tildi"],
+  [/^от (\d+) чеков и (\d+) смен$/, "$1 chek va $2 smenadan"],
+  [/^данные iiko на (.+)$/, "iiko ma’lumotlari $1 holatiga"],
+  [/^данных iiko ещё нет$/, "iiko ma’lumotlari hali yo‘q"],
+  [/^Старт: (.+)$/, "Start: $1"],
+  [/^(Понедельник|Вторник|Среда|Четверг|Пятница|Суббота|Воскресенье), (\d+)-й день из (\d+)$/, "$1, $3 kundan $2-kuni"],
+  [/^прирост (.+) · (\d+) (чек|чека|чеков)$/, "o‘sish $1 · $2 chek"],
+  [/^(\d+) (чек|чека|чеков) · (\d+) (смена|смены|смен) · ещё (\d+) (чек|чека|чеков) и (\d+) (смена|смены|смен)$/, "$1 chek · $3 smena · yana $5 chek va $7 smena"],
+  [/^(\d+) (чек|чека|чеков) · (\d+) (смена|смены|смен) · ещё (\d+) (чек|чека|чеков|смена|смены|смен)$/, "$1 chek · $3 smena · yana $5"],
+  [/^(\d+) (чек|чека|чеков) · (\d+) (смена|смены|смен)$/, "$1 chek · $3 smena"],
+  [/^(.+) · маржа (.+) на порцию( · .+)?$/, "$1 · porsiya marjasi $2$3"],
+  [/^лично (.+) \+ команда (.+)$/, "shaxsan $1 + jamoa $2"],
+  [/^день (\d+)$/, "$1-kun"],
+  [/^(\d+) (участник|участника|участников)$/, "$1 ishtirokchi"],
+  [/^(\d+) (чек|чека|чеков) за период$/, "davr uchun $1 chek"],
+  [/^(\d+) (чек|чека|чеков) в базе$/, "bazada $1 chek"],
+  [/^лидер (.+)$/, "yetakchi $1"],
+  [/^осталось (\d+) до цели$/, "maqsadgacha $1 qoldi"],
+  [/^Отстаём на (\d+) (порцию|порции|порций) к сегодняшнему дню$/, "Bugungi kunga $1 porsiya orqadamiz"],
+  [/^лучший день: (.+), (\d+) (порция|порции|порций)$/, "eng yaxshi kun: $1, $2 porsiya"],
+  [/^лидер недели: $/, "hafta yetakchisi: "],
+  [/^продано (\d+) · осталось (\d+) · премия $/, "sotildi $1 · qoldi $2 · mukofot "],
+  [/^до участия: (.+)$/, "ishtirokgacha: $1"],
+  [/^Отмечено официантов: (\d+) · фонд премии сейчас (.+)\. Рейтинг и кольцо — на главной менеджера\.$/, "Belgilangan ofitsiantlar: $1 · hozirgi mukofot jamg‘armasi $2. Reyting va halqa — menejer bosh sahifasida."],
+  [/^Цель периода — (\d+) порций целевых позиций: (.+)$/, "Davr maqsadi — $1 porsiya maqsadli pozitsiya: $2"],
+  [/^Участие от (\d+) чеков и (\d+) смен · (\d+) из (\d+)$/, "Ishtirok $1 chek va $2 smenadan · $4 dan $3"],
+  [/^фонд премии (.+) · ресторану (.+)$/, "mukofot jamg‘armasi $1 · restoranga $2"],
+);
+/* ── /KPI официантов ── */
