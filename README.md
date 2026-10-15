@@ -196,6 +196,7 @@ PYTHONPATH=. python scripts/migrate_to_postgres.py --target "$DATABASE_URL" \
 | `DASHBOARD_PHONE_USERS` | вход менеджера или админа по номеру и SMS-коду: `+998901234567=логин;…` |
 | `SMS_PROVIDER`, `ESKIZ_EMAIL`, `ESKIZ_PASSWORD`, `ESKIZ_FROM`, `SMS_TEMPLATE` | SMS с кодом входа через Eskiz |
 | `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | общий вход, если роли не нужны |
+| `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN` | резерв отчётов в Google Drive (см. «Резерв в Google Drive») |
 | `DATABASE_URL` | Postgres для рабочих данных; на Railway появляется сам |
 | `RETRO_DATA_DIR` | каталог на подключённом диске, если вместо Postgres выбран диск |
 | `TRUSTED_PROXY_NETWORK` | подсеть обратного прокси хостинга |
@@ -729,6 +730,33 @@ manifest, SHA-256 и целостность каждой базы. Перед р
 python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
   "$RETRO_DATA_DIR"/*.sqlite3
 ```
+
+### Резерв в Google Drive
+
+Каждое утро после 06:30 по Ташкенту приложение выгружает за прошедший день те
+же файлы, что скачиваются из кабинетов: «Касса» (отчёт кассира) и «Бухгалтер»
+(«Финансы дня» с закупом Шоха). После последнего дня месяца добавляются
+«Зарплата · месяц», «Зарплата · день» и «Сверка». Файлы становятся Google
+Таблицами в папке `GOOGLE_DRIVE_FOLDER_NAME / ГГГГ-ММ`. Каждый файл
+выгружается один раз и потом не перезаписывается. Пропуски из-за сбоя
+iiko или Google догоняются сами: повтор через 30 минут, не больше четырёх
+файлов за проход. Что уже выгружено, записано в таблице `drive_backup_files`.
+
+Как подключить:
+
+1. Google Cloud Console → APIs & Services: включить **Google Drive API**.
+2. OAuth consent screen: тип External, право `drive.file`, статус
+   **In production**. В статусе Testing Google отзывает токен через 7 дней.
+3. Credentials → OAuth client ID, тип **Desktop app** → client ID и secret.
+4. Локально:
+   `GOOGLE_DRIVE_CLIENT_ID=… GOOGLE_DRIVE_CLIENT_SECRET=… python -m retro.drive_backup_auth`.
+   Войти в аккаунт, на диске которого будет резерв, и забрать напечатанный
+   `GOOGLE_DRIVE_REFRESH_TOKEN`.
+5. Три переменные положить на Railway. Сменить аккаунт = выпустить новый токен
+   и очистить таблицы `drive_backup_folders` и `drive_backup_files`.
+
+Право `drive.file` даёт приложению доступ только к папкам и файлам, которые
+оно создало само. Остальное содержимое диска ему не видно.
 
 ## Переменные окружения
 
