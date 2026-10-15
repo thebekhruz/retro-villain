@@ -189,7 +189,7 @@ function calendarHarness({today='2026-10-09',selected=today,sheetMonth=selected.
     $:element,monthTitle:value=>value,message:(...args)=>messages.push(args),controls(){},render(){},
     fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve})),
   });
-  vm.runInContext("globalThis.RetroSave={pending:()=>dirty};const addBusy=()=>addDraft,GROUP_ORDER=[],groupOf=p=>p.group||'Без группы';let groups=[];"+calendarCode,context);
+  vm.runInContext("globalThis.RetroSave={pending:()=>dirty};let rateEdit=null;const addBusy=()=>addDraft,GROUP_ORDER=[],groupOf=p=>p.group||'Без группы';let groups=[];"+calendarCode,context);
   const reply=(index,data,ok=true)=>requests[index].resolve({ok,json:async()=>data});
   const sheet=(day,which=day.slice(0,7))=>month({basis:'shift',month:which,today:day,entry_start:'2026-10-02',
     days:which==='2026-10'?['2026-10-08','2026-10-09','2026-10-10','2026-10-31']:[which+'-01',which+'-02']});
