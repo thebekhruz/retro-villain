@@ -18,7 +18,7 @@
   <link rel="stylesheet" href="/static/shokh.css">
   <link rel="stylesheet" href="/static/manager.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/manager-logic.js" defer></script><script src="/static/manager.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/manager-logic.js" defer></script><script src="/static/manager.js" defer></script>
 </head>
 <body class="director-app mgr-page" data-dir-tab="home">
 <aside class="sidebar" data-collapsible>
@@ -40,8 +40,8 @@
       <div class="dir-hello"><span id="today-label">Сегодня</span><strong id="screen-title">Кабинет менеджера</strong></div>
       <!-- T-461: строки «‹ Панель · РУ/UZ · имя · Выйти» над приветствием нет —
            всё это в профиле по кружку справа. На компьютере — внизу меню слева. -->
-      <button id="profile-open" class="mgr-profile" type="button" aria-haspopup="dialog" aria-controls="profile-sheet" aria-label="Профиль">
-        <span id="profile-mark" data-i18n="off"></span>
+      <button id="profile-open" class="app-profile" type="button" aria-haspopup="dialog" aria-controls="profile-sheet" aria-label="Профиль">
+        <span id="profile-mark" data-profile-mark data-i18n="off"></span>
       </button>
     </header>
     <p id="state" class="dir-state" role="status" aria-live="polite" hidden></p>
@@ -187,19 +187,19 @@
     </section>
   </div>
   <!-- Профиль: кто вошёл, язык, вся панель (администратору), выход. -->
-  <dialog id="profile-sheet" class="mgr-sheet" aria-labelledby="profile-name">
-    <div class="mgr-sheet-head">
-      <span id="profile-sheet-mark" class="mgr-sheet-mark" aria-hidden="true" data-i18n="off"></span>
-      <div class="mgr-sheet-who"><strong id="profile-name" data-i18n="off"></strong><span id="profile-dirs" data-i18n="off"></span></div>
+  <dialog id="profile-sheet" class="app-sheet" aria-labelledby="profile-name">
+    <div class="app-sheet-head">
+      <span id="profile-sheet-mark" class="app-sheet-mark" aria-hidden="true" data-i18n="off"></span>
+      <div class="app-sheet-who"><strong id="profile-name" data-i18n="off"></strong><span id="profile-dirs" data-i18n="off"></span></div>
       <button id="profile-close" class="dir-close" type="button" aria-label="Закрыть">×</button>
     </div>
-    <div class="mgr-sheet-row">
+    <div class="app-sheet-row">
       <span>Язык</span>
       <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
     </div>
     <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
-    <a id="mgr-back" class="dir-primary mgr-secondary mgr-sheet-link" href="/login" hidden>Вся панель</a>
-    <button id="logout" class="dir-primary mgr-secondary" type="button">Выйти</button>
+    <a id="mgr-back" class="dir-primary app-secondary app-sheet-link" href="/login" hidden>Вся панель</a>
+    <button id="logout" class="dir-primary app-secondary" type="button">Выйти</button>
   </dialog>
   <nav class="rm-tabs dir-tabs" role="tablist" aria-label="Разделы менеджера">
     <button type="button" class="rm-tab is-active" role="tab" aria-selected="true" data-tab="home"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span>Сегодня</button>

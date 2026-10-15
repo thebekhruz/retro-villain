@@ -78,33 +78,5 @@
    телефоне вылезала к краю экрана (T-458). Только у менеджера. */
 .mgr-page :is(.dir-search,.dir-field input):focus-visible{outline:0;border-color:var(--green2);
   box-shadow:0 0 0 3px rgba(35,87,74,.14)}
-/* ── Шапка и профиль (T-461) ───────────────────────────────────────────────
-   Над приветствием больше нет строки «‹ Панель · язык · имя · Выйти» — всё это
-   в профиле по кружку справа. Шапка — только на «Сегодня»: у остальных
-   вкладок свой заголовок. На компьютере профиль — внизу меню слева. */
-.mgr-page .dir-head{flex-wrap:nowrap}
-.mgr-page[data-dir-tab]:not([data-dir-tab=home]) .dir-head{display:none}
-.mgr-profile{display:grid;place-items:center;width:44px;height:44px;flex:none;padding:0;border:1px solid #dbe3d8;
-  border-radius:50%;background:#fff;color:var(--green);font:600 16px/1 Georgia,serif;cursor:pointer}
-.mgr-profile:hover:not(:disabled){filter:none;background:#f5f7f1}
-.mgr-profile span:empty::before{content:"·"}
-@media(min-width:651px){.mgr-profile{display:none}}
-.mgr-sheet{width:min(420px,100vw);max-width:100vw;margin:auto auto 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
-  border:0;border-radius:24px 24px 0 0;background:var(--phone-bg);color:var(--ink);box-shadow:0 -8px 32px #0f1f1a33}
-.mgr-sheet[open]{display:grid;gap:12px}
-.mgr-sheet::backdrop{background:#0f1f1a66}
-.mgr-sheet-head{display:flex;align-items:center;gap:12px}
-.mgr-sheet-mark{display:grid;place-items:center;width:48px;height:48px;flex:none;border-radius:50%;background:var(--green);
-  color:var(--gold);font:19px/1 Georgia,serif}
-.mgr-sheet-who{flex:1;min-width:0}
-.mgr-sheet-who strong{display:block;font-size:17px;font-weight:650;overflow-wrap:anywhere}
-.mgr-sheet-who span{display:block;margin-top:2px;font-size:13px;color:var(--muted-2)}
-.mgr-sheet-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:16px;
-  background:#fff;font-size:15px;font-weight:600}
-.mgr-sheet .lang-button{min-width:52px;min-height:40px;font-size:13px}
-.mgr-sheet .dir-primary{margin-top:0}
-.mgr-sheet-link{display:grid;place-items:center;text-decoration:none}
-.mgr-sheet-link[hidden]{display:none}
-.mgr-sheet .top-user{display:none}
-@media(min-width:600px){.mgr-sheet{margin:auto;border-radius:24px}}
+/* Профиль (кружок в шапке и лист) — общий для телефонных экранов: director-app.css. */
 @media(prefers-reduced-motion:reduce){.mgr-goal-bar>span{transition:none}}
