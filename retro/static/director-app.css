@@ -346,3 +346,37 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
    телефона директора остаётся только «Полный отчёт». На телефоне меню скрыто —
    всё снова в шапке. */
 @media(min-width:651px){.dir-head-actions :is(.lang-switch,#logout,.top-user,.dir-back){display:none}}
+
+/* ══ Профиль телефонных экранов (T-461, T-463) ═════════════════════════════
+   Над приветствием нет строки «‹ Панель · язык · имя · Выйти»: справа в шапке —
+   кружок с буквой, по нему лист профиля (кто вошёл, язык, ссылки, «Выйти»).
+   Общий для телефона директора, кабинета учредителя и менеджера. Шапка с
+   приветствием — только на «Сегодня»: у остальных вкладок свой заголовок.
+   Где видно меню слева (компьютер), кружка нет — профиль внизу меню. */
+.dir-head:has(.app-profile){flex-wrap:nowrap}
+[data-dir-tab]:not([data-dir-tab=home]) .dir-head:has(.app-profile){display:none}
+.app-profile{display:grid;place-items:center;width:44px;height:44px;flex:none;margin-left:auto;padding:0;border:1px solid #dbe3d8;
+  border-radius:50%;background:#fff;color:var(--green);font:600 16px/1 Georgia,serif;cursor:pointer}
+.app-profile:hover:not(:disabled){filter:none;background:#f5f7f1}
+.app-profile span:empty::before{content:"·"}
+@media(min-width:651px){.director-app .app-profile{display:none}}
+.app-sheet{width:min(420px,100vw);max-width:100vw;margin:auto auto 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
+  border:0;border-radius:24px 24px 0 0;background:var(--phone-bg);color:var(--ink);box-shadow:0 -8px 32px #0f1f1a33}
+.app-sheet[open]{display:grid;gap:12px}
+.app-sheet::backdrop{background:#0f1f1a66}
+.app-sheet-head{display:flex;align-items:center;gap:12px}
+.app-sheet-mark{display:grid;place-items:center;width:48px;height:48px;flex:none;border-radius:50%;background:var(--green);
+  color:var(--gold);font:19px/1 Georgia,serif}
+.app-sheet-who{flex:1;min-width:0}
+.app-sheet-who strong{display:block;font-size:17px;font-weight:650;overflow-wrap:anywhere}
+.app-sheet-who span{display:block;margin-top:2px;font-size:13px;color:var(--muted-2)}
+.app-sheet-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:16px;
+  background:#fff;font-size:15px;font-weight:600}
+.app-sheet .lang-switch{margin:0}
+.app-sheet .lang-button{min-width:52px;min-height:40px;font-size:13px}
+.app-sheet .dir-primary{margin-top:0}
+.app-sheet .dir-primary.app-secondary{background:#fff;border:1px solid #dbe3d8;color:#35624e}
+.app-sheet-link{display:grid;place-items:center;text-decoration:none}
+.app-sheet-link[hidden]{display:none!important}
+.app-sheet .top-user{display:none}
+@media(min-width:600px){.app-sheet{margin:auto;border-radius:24px}}

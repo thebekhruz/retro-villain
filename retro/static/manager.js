@@ -557,27 +557,9 @@ async function saveEmployee(confirm = false) {
   }
 }
 
-/* ── Профиль ───────────────────────────────────────────────────────────── */
-function openProfile() {
-  const sheet = $('profile-sheet');
-  if (typeof sheet.showModal === 'function') sheet.showModal(); else sheet.setAttribute('open', '');
-}
-function closeProfile() {
-  const sheet = $('profile-sheet');
-  if (typeof sheet.close === 'function') sheet.close(); else sheet.removeAttribute('open');
-}
-
 /* ── События ───────────────────────────────────────────────────────────── */
 document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
   button.addEventListener('click', () => { if (!photoBusy()) { state.card = null; openTab(button.dataset.tab); renderList(); } });
-});
-$('profile-open').addEventListener('click', openProfile);
-$('profile-close').addEventListener('click', closeProfile);
-// Нажатие на затемнение вокруг листа закрывает его (по самому листу — нет).
-$('profile-sheet').addEventListener('click', event => {
-  if (event.target !== event.currentTarget) return;
-  const box = event.currentTarget.getBoundingClientRect();
-  if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeProfile();
 });
 $('shoot-next').addEventListener('click', startQueue);
 $('shoot-start').addEventListener('click', startQueue);

@@ -360,3 +360,20 @@
 /* T-455: на компьютере язык, имя, «Выйти» и время данных — внизу меню слева,
    верхней строки нет. На телефоне (≤900) меню скрыто — шапка остаётся. */
 @media(min-width:901px){.founder-cabinet .topbar{display:none}}
+
+/* ── Телефон учредителя как приложение (T-463) ──────────────────────────────
+   Шапка как у телефона директора: знак, дата и заголовок, кружок профиля;
+   под ней время данных. Внизу — вкладки директора (dir-tabs): «Сегодня»,
+   «Отчёт» (Excel), «AI», «Аналитика». Верхней строки нет ни на одной ширине. */
+.founder-cabinet .topbar{display:none}
+.fo-phone-head{justify-content:flex-start;gap:12px}
+.fo-phone-head>div{flex:1;min-width:0}
+.fo-phone-status{margin:-2px 2px 0}
+.fo-phone-status .top-status{font-size:11px;color:var(--muted-2)}
+.fo-phone-status .top-status.rm-status-skel:empty{width:140px}
+.fo-tabs{margin-top:auto}
+.fo-tabs .rm-tab{text-decoration:none;cursor:pointer}
+@media(max-width:900px){
+  .fo-phone{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh}
+  .fo-phone .rm-phone-body{flex:1}
+}
