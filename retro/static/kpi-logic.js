@@ -160,6 +160,42 @@
       })),
     };
   }
+  /* ── Кольцо прогресса (главная менеджера): продано целевых позиций против цели периода в штуках. ── */
+  function ringPercent(sold, goal) {
+    if (!goal || goal <= 0) return 0;
+    return Math.max(0, Math.min(100, Math.round((Number(sold) || 0) / goal * 100)));
+  }
+  /* Длина дуги для stroke-dasharray/-dashoffset: окружность и смещение под процент. */
+  function ringDash(percent, radius) {
+    const circumference = 2 * Math.PI * radius;
+    const share = Math.max(0, Math.min(100, Number(percent) || 0)) / 100;
+    return {circumference: Math.round(circumference * 100) / 100, offset: Math.round(circumference * (1 - share) * 100) / 100};
+  }
+  function remaining(sold, goal) {
+    return Math.max(0, Math.ceil((Number(goal) || 0) - (Number(sold) || 0)));
+  }
+  /* Подпись темпа: цель взята / идём в темпе / отстаём на N к сегодняшнему дню. Темп — по прошедшим дням. */
+  function paceState(totals, period) {
+    const goal = Number(totals?.goal_qty) || 0, sold = Number(totals?.sold) || 0;
+    if (!period || !period.days_passed) return {state: 'start', text: 'Цель появится после первой смены', lag: 0};
+    const monthly = period.days_total > 10;
+    if (goal && sold >= goal) return {state: 'done', text: monthly ? 'Цель месяца взята' : 'Цель недели взята', lag: 0};
+    const expected = goal * Math.min(period.days_passed, period.days_total) / period.days_total;
+    if (sold >= expected) return {state: 'on_pace', text: 'Идём в темпе', lag: 0};
+    const lag = Math.ceil(expected - sold);
+    return {state: 'behind', text: `Отстаём на ${lag} ${plural(lag, 'порцию', 'порции', 'порций')} к сегодняшнему дню`, lag};
+  }
+  /* «Лучший день: четверг, 31 порция» по продажам целевых позиций по дням зала. */
+  function bestDay(soldByDay) {
+    const entries = Object.entries(soldByDay || {}).filter(([, qty]) => qty > 0);
+    if (!entries.length) return null;
+    entries.sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]));
+    const [day, qty] = entries[0];
+    const [year, month, date] = day.split('-').map(Number);
+    const name = DAYS[(new Date(Date.UTC(year, month - 1, date)).getUTCDay() + 6) % 7];
+    return {day, qty, text: `${name}, ${qty} ${plural(qty, 'порция', 'порции', 'порций')}`};
+  }
   return {thousands, signed, rate, percent, periodLabel, dayLabel, fetchedLabel, goalProgress, personProgress,
-    personLine, plural, baseLabel, itemTone, itemProgress, sparkPath, ranking, initials, settingsFromForm};
+    personLine, plural, baseLabel, itemTone, itemProgress, sparkPath, ranking, initials, settingsFromForm,
+    ringPercent, ringDash, remaining, paceState, bestDay};
 });

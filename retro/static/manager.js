@@ -11,9 +11,9 @@ const NETWORK = 'Нет связи с панелью. Проверьте инт�
 const passthrough = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
 const Busy = globalThis.RetroBusy || {button: passthrough, silent: fn => fn()};
 
-const TABS = ['home', 'kpi', 'kpi-person', 'shoot', 'add', 'team', 'card'];
+const TABS = ['home', 'kpi', 'shoot', 'add', 'team', 'card'];
 const state = {home: null, tab: 'home', back: 'home', group: '', filter: 'all', card: null, queue: false,
-  kpi: null, kpiLoading: false, kpiView: 'rating', kpiPerson: null,
+  kpi: null, kpiLoading: false, kpiView: 'rating', kpiOpen: '',
   preview: null, preparing: false, uploading: false, sending: false, saving: false,
   form: {role: '', type: 'shift'}};
 const photoBusy = () => state.preparing || state.uploading || state.sending;
@@ -66,11 +66,12 @@ function greeting() {
   const name = L().collapse(state.home?.name || '');
   return name ? 'Салом, ' + name[0].toUpperCase() + name.slice(1) : 'Кабинет менеджера';
 }
-const TITLES = {kpi: 'Неделя', 'kpi-person': 'Официант', shoot: 'Съёмка', add: 'Новый сотрудник', team: 'Команда', card: 'Сотрудник'};
+const TITLES = {kpi: 'Неделя', shoot: 'Съёмка', add: 'Новый сотрудник', team: 'Команда', card: 'Сотрудник'};
 
 function openTab(tab) {
   if (photoBusy()) return;
-  if (tab !== 'card' && tab !== 'kpi-person') { state.tab = tab; state.queue = false; }
+  // Карточка и «Неделя» — поверх вкладок: внизу подсвечена та, откуда пришли.
+  if (tab !== 'card' && tab !== 'kpi') { state.tab = tab; state.queue = false; }
   if (tab === 'kpi' && !state.kpi && !state.kpiLoading) loadKpi(false);
   TABS.forEach(name => { $('tab-' + name).hidden = name !== tab; });
   // Карточка — поверх вкладок: внизу подсвечена та, откуда пришли.
@@ -251,6 +252,7 @@ async function loadHome() {
     $('device-photo-note').textContent = data.photo_message || '';
     $('device-photo-note').hidden = !data.photo_message;
     renderList();
+    loadKpi(false);
   } catch (error) {
     $('team-list').removeAttribute('aria-busy');
     message(error.message);
@@ -560,8 +562,9 @@ async function saveEmployee(confirm = false) {
 }
 
 
-/* ── Неделя: KPI официантов ─────────────────────────────────────────────── */
+/* ── KPI официантов: кольцо на главной и список людей (T-465) ────────────── */
 const K = () => globalThis.KpiLogic;
+const SVG = 'http://www.w3.org/2000/svg';
 
 async function loadKpi(refresh) {
   state.kpiLoading = true;
@@ -569,20 +572,55 @@ async function loadKpi(refresh) {
   try {
     const {data} = await api('/kpi' + (refresh ? '?refresh=true' : ''));
     state.kpi = data;
-    message('');
+    $('kpi-home-note').hidden = true;
     renderKpi();
-    if (state.kpiPerson) {
-      const fresh = data.rows.find(row => row.waiter === state.kpiPerson.waiter);
-      if (fresh) { state.kpiPerson = fresh; renderKpiPerson(); }
-    }
   } catch (error) {
     $('kpi-rating').removeAttribute('aria-busy');
-    if (!state.kpi) $('kpi-rating').replaceChildren(node('p', 'dir-empty', error.message));
-    message(error.message);
+    if (!state.kpi) {
+      $('kpi-rating').replaceChildren(node('p', 'dir-empty', error.message));
+      $('kpi-home-note').textContent = error.message;
+      $('kpi-home-note').hidden = false;
+      $('kpi-home-pace').textContent = '';
+    }
+    if (!$('tab-kpi').hidden) message(error.message);
   } finally {
     state.kpiLoading = false;
     $('kpi-refresh').disabled = false;
   }
+}
+
+/* Кольцо: SVG с дорожкой, дугой заполнения и отметками 50 % и 100 %. Заполнение
+   анимируется от нуля при первом рисовании (stroke-dashoffset, kpi.css). */
+function ringNode(box, percent, inner, {size = 'lg'} = {}) {
+  const large = size === 'lg';
+  const radius = large ? 80 : 18, width = large ? 12 : 5, side = (radius + width) * 2, center = radius + width;
+  const dash = K().ringDash(percent, radius);
+  box.className = 'kpi-ring' + (large ? '' : ' is-sm') + (percent >= 100 ? ' is-full' : '');
+  const svg = document.createElementNS(SVG, 'svg');
+  svg.setAttribute('viewBox', `0 0 ${side} ${side}`);
+  for (const cls of ['is-track', 'is-fill']) {
+    const circle = document.createElementNS(SVG, 'circle');
+    circle.setAttribute('class', cls);
+    circle.setAttribute('cx', center); circle.setAttribute('cy', center); circle.setAttribute('r', radius);
+    if (cls === 'is-fill') {
+      circle.setAttribute('stroke-dasharray', String(dash.circumference));
+      circle.setAttribute('stroke-dashoffset', String(dash.circumference));
+      requestAnimationFrame(() => requestAnimationFrame(() => circle.setAttribute('stroke-dashoffset', String(dash.offset))));
+    }
+    svg.append(circle);
+  }
+  if (large) {
+    // Отметки 50 % (снизу) и 100 % (сверху): короткие штрихи поперёк дорожки.
+    for (const x of [center + radius, center - radius]) {
+      const tick = document.createElementNS(SVG, 'line');
+      tick.setAttribute('class', 'is-tick');
+      tick.setAttribute('x1', x); tick.setAttribute('x2', x);
+      tick.setAttribute('y1', center - width); tick.setAttribute('y2', center + width);
+      svg.append(tick);
+    }
+  }
+  box.replaceChildren(svg, inner);
+  return box;
 }
 
 function kpiAvatar(row, cls) {
@@ -598,86 +636,128 @@ function kpiAvatar(row, cls) {
   return box;
 }
 
-function kpiPersonRow(row, rows) {
-  const button = node('button', 'dir-person kpi-person');
+function renderKpiHome() {
+  const data = state.kpi;
+  const period = data.period, totals = data.totals;
+  $('kpi-home-day').textContent = K().periodLabel(period.start, period.end) + (period.days_passed ? ` · день ${period.days_passed} из ${period.days_total}` : ' · до старта');
+  const percent = K().ringPercent(totals.sold, totals.goal_qty);
+  const inner = node('div', 'kpi-ring-inner');
+  inner.append(node('span', '', 'продано'), node('strong', '', String(totals.sold)),
+    node('small', '', totals.goal_qty ? `осталось ${K().remaining(totals.sold, totals.goal_qty)} до цели` : 'цель считается'));
+  inner.querySelector('strong').dataset.i18n = 'off';
+  ringNode($('kpi-home-ring'), percent, inner);
+  const pace = K().paceState(totals, period);
+  $('kpi-home-pace').textContent = pace.text;
+  $('kpi-home-pace').classList.toggle('is-done', pace.state === 'done');
+  $('kpi-home-fund').textContent = K().thousands(totals.fund);
+  const meta = [];
+  const best = K().bestDay(data.hall.sold_by_day);
+  if (best) meta.push(node('span', '', 'лучший день: ' + best.text));
+  const leader = K().ranking(data.rows).find(row => row.eligible && row.uplift > 0);
+  if (leader) {
+    const item = node('span', '', 'лидер недели: ');
+    item.append(kpiAvatar(leader, leader.photo ? 'shokh-thumb mgr-thumb' : 'shokh-thumb is-empty'));
+    const name = node('b', '', leader.employee_name || leader.waiter);
+    name.dataset.i18n = 'off';
+    item.append(name);
+    meta.push(item);
+  }
+  $('kpi-home-meta').replaceChildren(...meta);
+}
+
+function kpiPersonRow(row) {
+  const button = node('button', 'dir-person kpi-person' + (state.kpiOpen === row.waiter ? ' is-open' : ''));
   button.type = 'button';
+  button.setAttribute('aria-expanded', String(state.kpiOpen === row.waiter));
   const main = node('span', 'dir-person-main');
   const name = node('span', 'dir-person-name');
   const strong = node('strong', '', row.employee_name || row.waiter);
   strong.dataset.i18n = 'off';
   name.append(strong);
-  if (row.eligible && rows.indexOf(row) === 0 && row.uplift > 0) name.append(node('span', 'dir-waiter-tag is-top', 'лидер'));
-  const line = node('small', '', K().personLine(row, state.kpi.scheme));
-  const bar = node('span', 'rm-bar' + (row.eligible ? '' : ' is-idle'));
-  const fill = node('span');
-  fill.style.width = K().personProgress(row, rows, state.kpi.scheme) + '%';
-  bar.append(fill);
-  main.append(name, line, bar);
-  // Справа — что человек получит: премия; прирост — строкой под именем.
-  const sum = node('b', 'kpi-sum' + (row.eligible && row.premium > 0 ? '' : ' is-idle'), row.eligible && row.premium > 0 ? K().thousands(row.premium) : '—');
-  sum.dataset.i18n = 'off';
-  button.append(kpiAvatar(row, row.photo ? 'shokh-thumb mgr-thumb' : 'shokh-thumb is-empty'), main, sum, node('span', 'dir-chevron', '›'));
-  button.addEventListener('click', () => openKpiPerson(row));
+  if (!row.eligible) name.append(node('span', 'dir-waiter-tag', `до участия: ${K().personLine(row, state.kpi.scheme).replace(/^.*?ещё /, '') || 'смен не хватает'}`));
+  const left = K().remaining(row.sold, row.goal_qty);
+  const line = node('small');
+  line.append(`продано ${row.sold} · осталось ${left}`, ' · премия ', node('b', '', K().thousands(row.premium)));
+  line.querySelector('b').dataset.i18n = 'off';
+  main.append(name, line);
+  const inner = node('span', 'kpi-ring-inner');
+  inner.append(node('b', '', String(row.sold)));
+  const ring = ringNode(node('span'), K().ringPercent(row.sold, row.goal_qty), inner, {size: 'sm'});
+  ring.setAttribute('aria-hidden', 'true');
+  button.append(kpiAvatar(row, row.photo ? 'shokh-thumb mgr-thumb' : 'shokh-thumb is-empty'), main, ring, node('span', 'dir-chevron', '›'));
+  const items = node('div', 'kpi-items');
+  items.hidden = state.kpiOpen !== row.waiter;
+  for (const item of row.items.slice().sort((a, b) => b.uplift - a.uplift)) items.append(kpiItemNode(item, row));
+  button.append(items);
+  button.addEventListener('click', () => {
+    state.kpiOpen = state.kpiOpen === row.waiter ? '' : row.waiter;
+    renderKpiList();
+  });
   return button;
+}
+
+function kpiItemNode(item, row) {
+  const box = node('div', 'kpi-item');
+  const line = node('div', 'kpi-item-line');
+  const name = node('span', 'kpi-item-name');
+  const title = node('strong', '', item.title);
+  title.dataset.i18n = 'off';
+  name.append(title, node('small', '', `${item.group} · маржа ${K().thousands(item.margin)} на порцию · ${K().signed(item.uplift)}`));
+  line.append(name);
+  const path = row ? K().sparkPath(item, row, state.kpi.period) : '';
+  if (path) {
+    const svg = document.createElementNS(SVG, 'svg');
+    svg.setAttribute('class', 'kpi-spark'); svg.setAttribute('viewBox', '0 0 60 24'); svg.setAttribute('aria-hidden', 'true');
+    const stroke = document.createElementNS(SVG, 'path');
+    stroke.setAttribute('d', path);
+    svg.append(stroke);
+    line.append(svg);
+  }
+  const triplet = node('div', 'kpi-triplet');
+  for (const [label, value, cls] of [['база', item.base, ''], ['сейчас', item.now, K().itemTone(item)], ['цель', item.target, '']]) {
+    const cell = node('span', cls, label);
+    cell.append(node('b', '', K().rate(value)));
+    triplet.append(cell);
+  }
+  const bar = node('span', 'rm-bar');
+  const fill = node('span');
+  fill.style.width = K().itemProgress(item) + '%';
+  bar.append(fill);
+  box.append(line, triplet, bar);
+  return box;
+}
+
+function renderKpiList() {
+  const data = state.kpi;
+  const rows = K().ranking(data.rows);
+  const list = $('kpi-rating');
+  list.removeAttribute('aria-busy');
+  list.replaceChildren(...(rows.length ? rows.map(kpiPersonRow)
+    : [node('p', 'dir-empty', data.period.days_passed ? 'Чеков зала за период пока нет. Директор отмечает официантов в настройке периода.'
+      : 'Период ещё не начался: список появится после первой смены.')]));
 }
 
 function renderKpi() {
   const data = state.kpi;
   if (!data) return;
   const period = data.period, totals = data.totals, scheme = data.scheme;
-  $('kpi-period-label').textContent = K().periodLabel(period.start, period.end);
-  $('kpi-uplift').textContent = K().signed(totals.team_uplift);
-  $('kpi-fund').textContent = K().thousands(totals.fund);
-  const progress = K().goalProgress(totals);
-  $('kpi-goal-text').textContent = totals.goal
-    ? `Цель периода ${K().thousands(totals.goal)} · пройдено ${progress} %` : 'Цель периода появится после первой смены';
-  $('kpi-goal-bar').style.width = progress + '%';
-  const days = [];
-  for (let i = 1; i <= period.days_total; i += 1) {
-    const cell = node('i');
-    if (i < period.days_passed) cell.className = 'is-done';
-    else if (i === period.days_passed) cell.className = 'is-today';
-    days.push(cell);
-  }
-  $('kpi-days').replaceChildren(...(period.days_total <= 31 ? days : []));
+  renderKpiHome();
+  $('kpi-badge').textContent = period.status === 'closed' ? 'закрыт' : K().periodLabel(period.start, period.end);
+  $('kpi-sold').replaceChildren(String(totals.sold), node('small', '', ' из ' + Math.ceil(totals.goal_qty)));
   $('kpi-stamp').textContent = K().dayLabel(period) + ' · ' + K().fetchedLabel(data.fetched_at, period.today);
-  $('kpi-badge').textContent = period.status === 'closed' ? 'закрыт' : '';
-  $('kpi-badge').hidden = period.status !== 'closed';
-  $('kpi-participants').replaceChildren(String(totals.participants), node('small', '', ' из ' + totals.waiters));
-  $('kpi-threshold').textContent = `от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен`;
-  $('kpi-net').textContent = K().signed(totals.restaurant_net);
-  const rows = K().ranking(data.rows);
-  const list = $('kpi-rating');
-  list.removeAttribute('aria-busy');
-  list.replaceChildren(...(rows.length ? rows.map(row => kpiPersonRow(row, rows))
-    : [node('p', 'dir-empty', period.days_passed ? 'Чеков зала за период пока нет.' : 'Период ещё не начался: рейтинг появится после первой смены.')]));
-  // Позиции: зал на 100 чеков — база, сейчас, цель.
+  $('kpi-uplift').textContent = K().signed(totals.team_uplift);
+  $('kpi-fund-line').textContent = `фонд премии ${K().thousands(totals.fund)} · ресторану ${K().signed(totals.restaurant_net)}`;
+  $('kpi-threshold').textContent = `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен · ${totals.participants} из ${totals.waiters}`;
+  renderKpiList();
   $('kpi-targets-list').replaceChildren(...data.targets.map(target => {
     const rate = data.hall.rates[target.key] || {base: 0, now: 0, target: target.target100};
-    const item = node('div', 'kpi-item');
-    const line = node('div', 'kpi-item-line');
-    const name = node('span', 'kpi-item-name');
-    const title = node('strong', '', target.title);
-    title.dataset.i18n = 'off';
-    name.append(title, node('small', '', `${target.group} · маржа ${K().thousands(target.margin)} на порцию`));
-    line.append(name);
-    const triplet = node('div', 'kpi-triplet');
-    for (const [label, value, cls] of [['база', rate.base, ''], ['сейчас', rate.now, K().itemTone(rate)], ['цель', rate.target, '']]) {
-      const cell = node('span', cls, label);
-      cell.append(node('b', '', K().rate(value)));
-      triplet.append(cell);
-    }
-    const bar = node('span', 'rm-bar');
-    const fill = node('span');
-    fill.style.width = K().itemProgress(rate) + '%';
-    bar.append(fill);
-    item.append(line, triplet, bar);
-    return item;
+    return kpiItemNode({title: target.title, group: target.group, margin: target.margin, uplift: 0,
+      base: rate.base, now: rate.now, target: rate.target}, null);
   }));
   $('kpi-rules-list').replaceChildren(...[
-    `Период ${K().periodLabel(period.start, period.end)}. База каждого — его частота целевых позиций на 100 чеков за ${scheme.baseline_weeks} прошлые недели (новичкам средняя по залу).`,
+    `Цель периода — ${Math.ceil(totals.goal_qty)} порций целевых позиций: цели на 100 чеков × ожидаемые чеки (средние за ${scheme.baseline_weeks} прошлые недели).`,
     'Считается чек зала под своим логином: оплаченный, без удалений, без ручной льготы, без «Счет Шефа» и переносов между официантами.',
-    `Фонд премии ${K().percent(scheme.share)} от прироста маржи сверх базы: ${K().percent(scheme.personal)} лично, ${K().percent(scheme.team)} в командный пул по числу чеков.`,
+    `Премия — ${K().percent(scheme.share)} от прироста маржи сверх своей базы за ${scheme.baseline_weeks} недели: ${K().percent(scheme.personal)} лично, ${K().percent(scheme.team)} в командный пул по числу чеков.`,
     `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен. Потолок ${K().thousands(totals.cap)} на человека за период. Выплата через бухгалтера после закрытия периода.`,
   ].map(text => node('li', '', text)));
   renderKpiView();
@@ -693,64 +773,13 @@ function renderKpiView() {
   });
 }
 
-function openKpiPerson(row) {
-  state.kpiPerson = row;
-  renderKpiPerson();
-  openTab('kpi-person');
-}
-
-function renderKpiPerson() {
-  const row = state.kpiPerson, data = state.kpi;
-  if (!row || !data) return;
-  const period = data.period;
-  $('kpi-person-badge').textContent = `${K().periodLabel(period.start, period.end)} · ${period.days_passed ? 'день ' + period.days_passed : 'до старта'}`;
-  $('kpi-person-avatar').replaceChildren(...(row.photo ? [] : [row.initials || K().initials(row.waiter)]));
-  if (row.photo) { const image = node('img'); image.src = row.photo.url; image.alt = ''; $('kpi-person-avatar').append(image); }
-  $('kpi-person-name').textContent = row.employee_name || row.waiter;
-  $('kpi-person-sub').textContent = `${row.checks} ${K().plural(row.checks, 'чек', 'чека', 'чеков')} · ${row.shifts} ${K().plural(row.shifts, 'смена', 'смены', 'смен')} · ${K().baseLabel(row)}`;
-  $('kpi-person-uplift').textContent = K().signed(row.uplift);
-  $('kpi-person-uplift-note').textContent = row.eligible ? (data.scheme.netting ? 'нетто по всем позициям' : 'по позициям в плюсе') : K().personLine(row, data.scheme).replace(/^.*?· /, '');
-  $('kpi-person-premium').textContent = K().thousands(row.premium);
-  $('kpi-person-premium-note').textContent = row.eligible ? `лично ${K().thousands(row.personal)} + команда ${K().thousands(row.team)}` : '';
-  const items = row.items.slice().sort((a, b) => b.uplift - a.uplift);
-  $('kpi-person-items').replaceChildren(...items.map(item => {
-    const box = node('div', 'kpi-item');
-    const line = node('div', 'kpi-item-line');
-    const name = node('span', 'kpi-item-name');
-    const title = node('strong', '', item.title);
-    title.dataset.i18n = 'off';
-    name.append(title, node('small', '', `${item.group} · маржа ${K().thousands(item.margin)} на порцию · ${K().signed(item.uplift)}`));
-    line.append(name);
-    const path = K().sparkPath(item, row, period);
-    if (path) {
-      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-      svg.setAttribute('class', 'kpi-spark'); svg.setAttribute('viewBox', '0 0 60 24'); svg.setAttribute('aria-hidden', 'true');
-      const stroke = document.createElementNS('http://www.w3.org/2000/svg', 'path');
-      stroke.setAttribute('d', path);
-      svg.append(stroke);
-      line.append(svg);
-    }
-    const triplet = node('div', 'kpi-triplet');
-    for (const [label, value, cls] of [['база', item.base, ''], ['сейчас', item.now, K().itemTone(item)], ['цель', item.target, '']]) {
-      const cell = node('span', cls, label);
-      cell.append(node('b', '', K().rate(value)));
-      triplet.append(cell);
-    }
-    const bar = node('span', 'rm-bar');
-    const fill = node('span');
-    fill.style.width = K().itemProgress(item) + '%';
-    bar.append(fill);
-    box.append(line, triplet, bar);
-    return box;
-  }));
-}
-
 /* ── События ───────────────────────────────────────────────────────────── */
 document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
   button.addEventListener('click', () => { if (!photoBusy()) { state.card = null; openTab(button.dataset.tab); renderList(); } });
 });
 $('kpi-refresh').addEventListener('click', () => loadKpi(true));
-$('kpi-back').addEventListener('click', () => { state.kpiPerson = null; openTab('kpi'); });
+$('kpi-home').addEventListener('click', () => openTab('kpi'));
+$('kpi-back').addEventListener('click', () => openTab(state.tab));
 document.querySelectorAll('#kpi-views [data-kpi-view]').forEach(button => {
   button.addEventListener('click', () => { state.kpiView = button.dataset.kpiView; renderKpiView(); });
 });

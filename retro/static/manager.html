@@ -51,6 +51,16 @@
 
     <!-- ── Сегодня ─────────────────────────────────────────────────────── -->
     <section id="tab-home" class="dir-screen" aria-label="Сегодня">
+      <!-- KPI официантов (T-465): кольцо «продано / осталось до цели периода» в штуках, темп,
+           фонд, лучший день и лидер. Тап ведёт в список людей (экран «Неделя»). -->
+      <button id="kpi-home" class="rm-phone-card kpi-home" type="button" aria-label="KPI официантов: открыть список">
+        <div class="kpi-home-head"><strong>KPI официантов</strong><span id="kpi-home-day" class="dir-badge" data-i18n="off"></span></div>
+        <div id="kpi-home-ring" class="kpi-ring" aria-hidden="true"></div>
+        <span id="kpi-home-pace" class="kpi-home-pace">&nbsp;</span>
+        <span class="kpi-home-fund">фонд премии сейчас<b id="kpi-home-fund" class="rm-num" data-i18n="off">—</b></span>
+        <div id="kpi-home-meta" class="kpi-home-meta"></div>
+        <span id="kpi-home-note" class="kpi-home-empty" hidden></span>
+      </button>
       <!-- Главное — тёмной карточкой, как совет AI у директора: сколько людей уже
            на терминале и кого ещё снять. -->
       <article class="rm-phone-hero dir-tips mgr-goal">
@@ -78,29 +88,18 @@
     </section>
 
 
-    <!-- ── Неделя: KPI официантов (пилот 19–25.10.2026). Три уровня: период,
-         рейтинг, разворот по человеку. Считает сервер из iiko (/api/manager/kpi). ── -->
+    <!-- ── Неделя: список официантов поверх главной (T-465). Малое кольцо — личный
+         прогресс к личной цели в штуках; тап по строке раскрывает позиции. ── -->
     <section id="tab-kpi" class="dir-screen" aria-label="Неделя" hidden>
-      <div class="kpi-top"><h1 id="kpi-title" class="dir-h1">Неделя</h1><span id="kpi-badge" class="dir-badge" data-i18n="off" hidden></span></div>
-      <article class="rm-phone-hero">
-        <div class="dir-tips-head"><span class="dir-spark" aria-hidden="true">✦</span><span>KPI официантов · <b id="kpi-period-label" data-i18n="off"></b></span></div>
-        <div class="kpi-hero-grid">
-          <div><span>Маржа сверх базы</span><strong id="kpi-uplift" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
-          <div><span>Фонд премии сейчас</span><strong id="kpi-fund" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong></div>
-        </div>
-        <span id="kpi-goal-text" class="mgr-goal-text">&nbsp;</span>
-        <span class="rm-bar mgr-goal-bar" aria-hidden="true"><span id="kpi-goal-bar"></span></span>
-        <div id="kpi-days" class="kpi-days" aria-hidden="true"></div>
-        <div class="kpi-stamp"><span id="kpi-stamp"></span><button id="kpi-refresh" type="button">Обновить</button></div>
-      </article>
+      <div class="kpi-top"><button id="kpi-back" class="dir-close" type="button" aria-label="Назад">‹</button><h1 class="dir-h1">Неделя</h1><span id="kpi-badge" class="dir-badge" data-i18n="off"></span></div>
       <div class="dir-pair">
-        <div class="rm-phone-card dir-kpi"><span>Участвуют</span><strong id="kpi-participants" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-threshold"></small></div>
-        <div class="rm-phone-card dir-kpi"><span>Ресторану сверх премии</span><strong id="kpi-net" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small>остаётся после всех премий</small></div>
+        <div class="rm-phone-card dir-kpi"><span>Продано из цели</span><strong id="kpi-sold" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-stamp"></small></div>
+        <div class="rm-phone-card dir-kpi"><span>Маржа сверх базы</span><strong id="kpi-uplift" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-fund-line"></small></div>
       </div>
       <div id="kpi-views" class="dir-chips" role="group" aria-label="Показать">
-        <button type="button" data-kpi-view="rating" class="is-active">Рейтинг</button><button type="button" data-kpi-view="targets">Позиции</button><button type="button" data-kpi-view="rules">Правила</button>
+        <button type="button" data-kpi-view="rating" class="is-active">Люди</button><button type="button" data-kpi-view="targets">Позиции</button><button type="button" data-kpi-view="rules">Правила</button>
       </div>
-      <div id="kpi-rating" class="rm-phone-card dir-team-list mgr-list" aria-busy="true">
+      <div id="kpi-rating" class="rm-phone-card dir-team-list mgr-list kpi-people" aria-busy="true">
         <div class="dir-skel-list" aria-hidden="true"><div class="dir-skel-line"><span class="rm-skel is-dot"></span><span><span class="rm-skel"></span><span class="rm-skel"></span></span></div><div class="dir-skel-line"><span class="rm-skel is-dot"></span><span><span class="rm-skel"></span><span class="rm-skel"></span></span></div></div>
       </div>
       <article id="kpi-targets" class="rm-phone-card" hidden>
@@ -111,26 +110,8 @@
         <strong class="dir-card-title">Как считается премия</strong>
         <ul id="kpi-rules-list" class="kpi-rules"></ul>
       </article>
-      <p class="dir-note">Прирост считается к собственной базе человека за прошлые недели. Нижние строки без красного: у них пока меньше чеков.</p>
-    </section>
-
-    <!-- ── Официант: разворот по позициям поверх вкладки «Неделя» ─────────── -->
-    <section id="tab-kpi-person" class="dir-screen" aria-label="Официант" hidden>
-      <div class="kpi-top"><button id="kpi-back" class="dir-close" type="button" aria-label="Назад">‹</button><span id="kpi-person-badge" class="dir-badge" data-i18n="off"></span></div>
-      <div class="kpi-head">
-        <span id="kpi-person-avatar" class="kpi-avatar" data-i18n="off"></span>
-        <strong id="kpi-person-name" data-i18n="off"></strong>
-        <span id="kpi-person-sub"></span>
-      </div>
-      <div class="dir-pair">
-        <div class="rm-phone-card dir-kpi"><span>Маржа сверх базы</span><strong id="kpi-person-uplift" class="rm-num" data-i18n="off"></strong><small id="kpi-person-uplift-note"></small></div>
-        <div class="rm-phone-card dir-kpi"><span>Премия сейчас</span><strong id="kpi-person-premium" class="rm-num" data-i18n="off"></strong><small id="kpi-person-premium-note" data-i18n="off"></small></div>
-      </div>
-      <article class="rm-phone-card">
-        <div class="dir-card-head"><strong>Позиции на 100 чеков</strong><span class="dir-badge">по дням</span></div>
-        <div id="kpi-person-items" class="kpi-items"></div>
-      </article>
-      <p class="dir-note">«База» — обычная частота человека за прошлые недели. Премия копится только с того, что выше базы.</p>
+      <div class="kpi-stamp-row"><span id="kpi-threshold" class="dir-note"></span><button id="kpi-refresh" class="dir-link" type="button">Обновить данные iiko</button></div>
+      <p class="dir-note">Кольцо у человека — его продажи целевых позиций против его личной цели. Премия копится только с того, что выше его базы за прошлые недели.</p>
     </section>
 
     <!-- ── Съёмка ──────────────────────────────────────────────────────── -->
@@ -260,7 +241,6 @@
   </dialog>
   <nav class="rm-tabs dir-tabs" role="tablist" aria-label="Разделы менеджера">
     <button type="button" class="rm-tab is-active" role="tab" aria-selected="true" data-tab="home"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span>Сегодня</button>
-    <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="kpi"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 19h16M7 15l3-4 3 2 4-6"/></svg></span>Неделя</button>
     <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="shoot"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></span>Съёмка</button>
     <button type="button" class="rm-tab rm-tab--ai" role="tab" aria-selected="false" data-tab="add"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>Добавить</button>
     <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="team"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 11a3 3 0 100-6 3 3 0 000 6zM3 20c0-3.3 2.7-5 6-5s6 1.7 6 5M16 11a3 3 0 100-6M18 20c0-2.3-1-3.8-3-4.6"/></svg></span>Команда</button>

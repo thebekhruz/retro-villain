@@ -132,7 +132,8 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
                             closed_at=period.get('closed_at')),
                 scheme=scheme, targets=targets, fetched_at=fetched_at, logins=logins,
                 totals={key: result[key] for key in ('team_uplift', 'net_uplift', 'fund', 'restaurant_net',
-                                                      'participants', 'waiters', 'goal', 'cap')},
+                                                      'participants', 'waiters', 'goal', 'cap', 'sold', 'goal_qty',
+                                                      'expected_checks')},
                 hall=result['hall'], rows=rows)
 
 

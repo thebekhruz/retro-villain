@@ -280,6 +280,15 @@ def compute(now: dict, base: dict, targets, scheme, *, days_total=7) -> dict:
     hall_now = now.get(HALL, Stats())
     cap = scheme['cap'] * max(1, round(days_total / 7))
     margins = {target['key']: float(target.get('margin') or 0) for target in targets}
+    # Цель периода в штуках (главная менеджера, кольцо): Σ «цель на 100 чеков» × ожидаемые чеки,
+    # ожидаемые чеки — средние за базовые недели, приведённые к длине периода.
+    base_days = max(len(hall_base.days), 1)
+    expected_checks = hall_base.checks / base_days * days_total if hall_base.checks else hall_now.checks
+    goal_qty = sum(target['target100'] / 100 * expected_checks for target in targets)
+    sold = sum(hall_now.quantity[target['key']] for target in targets)
+    by_day = {}
+    for day, counter in hall_now.by_day.items():
+        by_day[day] = sum(counter[target['key']] for target in targets)
     rows = []
     for waiter, stats in now.items():
         if waiter == HALL:
@@ -288,6 +297,14 @@ def compute(now: dict, base: dict, targets, scheme, *, days_total=7) -> dict:
         own_base = own is not None and own.checks >= scheme['baseline_min_checks']
         source = own if own_base else hall_base
         eligible = stats.checks >= scheme['min_checks'] and len(stats.days) >= scheme['min_shifts']
+        # Личная цель в штуках: те же цели на 100 чеков × его ожидаемые чеки за период
+        # (своя база за неделю, иначе текущий темп по прошедшим дням).
+        if own_base:
+            own_expected = own.checks / max(len(own.days), 1) * days_total
+        else:
+            own_expected = stats.checks / max(len(stats.days), 1) * days_total
+        personal_goal = sum(target['target100'] / 100 * own_expected for target in targets)
+        personal_sold = sum(stats.quantity[target['key']] for target in targets)
         items, uplift = [], 0.0
         for target in targets:
             key = target['key']
@@ -301,6 +318,7 @@ def compute(now: dict, base: dict, targets, scheme, *, days_total=7) -> dict:
         rows.append(dict(waiter=waiter, checks=stats.checks, shifts=len(stats.days), eligible=eligible,
                          own_base=own_base, base_checks=own.checks if own else 0,
                          uplift=round(uplift), uplift_positive=round(max(uplift, 0.0)), items=items,
+                         sold=round(personal_sold), goal_qty=round(personal_goal, 1),
                          checks_by_day=dict(stats.checks_by_day)))
     eligible_rows = [row for row in rows if row['eligible']]
     team_uplift = sum(row['uplift_positive'] for row in eligible_rows)
@@ -315,14 +333,14 @@ def compute(now: dict, base: dict, targets, scheme, *, days_total=7) -> dict:
     rows.sort(key=lambda row: (not row['eligible'], -row['uplift'], row['waiter']))
     net_uplift = sum(row['uplift'] for row in eligible_rows)
     fund = sum(row['premium'] for row in rows)
-    # Цель периода: сколько маржи даст зал, если выйдет на все цели при том же числе чеков в день.
-    base_days = max(len(hall_base.days), 1)
-    expected_checks = hall_base.checks / base_days * days_total if hall_base.checks else hall_now.checks
+    # Цель периода в марже: сколько даст зал, если выйдет на все цели при том же числе чеков в день.
     goal = sum(max(target['target100'] - hall_base.rate(target['key']), 0) / 100 * expected_checks
                * margins[target['key']] for target in targets)
     return dict(rows=rows, team_uplift=round(team_uplift), net_uplift=round(net_uplift), fund=round(fund),
                 restaurant_net=round(net_uplift - fund), participants=len(eligible_rows), waiters=len(rows),
+                sold=round(sold), goal_qty=round(goal_qty, 1), expected_checks=round(expected_checks, 1),
                 hall=dict(checks=hall_now.checks, base_checks=hall_base.checks, days=len(hall_now.days),
+                          sold_by_day={day: round(value) for day, value in sorted(by_day.items())},
                           rates={t['key']: dict(base=round(hall_base.rate(t['key']), 2), now=round(hall_now.rate(t['key']), 2),
                                                 target=t['target100']) for t in targets}),
                 goal=round(goal), cap=cap)

@@ -72,3 +72,30 @@ test('настройки из формы: проценты в доли, тыся
   assert.deepEqual(body.targets[0], {key: 't1', title: 'Чай', group: 'напиток', target100: 5, margin: 36000, dishes: [['a', 'ЧАЙ']]});
   assert.throws(() => logic.settingsFromForm({share: 'x', personal: '70', cap: '1'}), /доля прироста/);
 });
+
+test('кольцо: процент, дуга, остаток', () => {
+  assert.equal(logic.ringPercent(31, 63), 49);
+  assert.equal(logic.ringPercent(70, 63), 100, 'выше цели — кольцо полное');
+  assert.equal(logic.ringPercent(5, 0), 0);
+  const dash = logic.ringDash(50, 80);
+  assert.equal(dash.circumference, 502.65);
+  assert.equal(dash.offset, 251.33);
+  assert.equal(logic.ringDash(0, 80).offset, 502.65);
+  assert.equal(logic.remaining(31, 63.4), 33);
+  assert.equal(logic.remaining(70, 63), 0);
+});
+
+test('темп: до старта, в темпе, отстаём, цель взята', () => {
+  const week = {days_total: 7, days_passed: 4};
+  assert.equal(logic.paceState({goal_qty: 63, sold: 0}, {...week, days_passed: 0}).state, 'start');
+  assert.deepEqual(logic.paceState({goal_qty: 63, sold: 36}, week), {state: 'on_pace', text: 'Идём в темпе', lag: 0});
+  assert.deepEqual(logic.paceState({goal_qty: 63, sold: 31}, week), {state: 'behind', text: 'Отстаём на 5 порций к сегодняшнему дню', lag: 5});
+  assert.equal(logic.paceState({goal_qty: 63, sold: 35}, week).text, 'Отстаём на 1 порцию к сегодняшнему дню');
+  assert.deepEqual(logic.paceState({goal_qty: 63, sold: 63}, week), {state: 'done', text: 'Цель недели взята', lag: 0});
+  assert.equal(logic.paceState({goal_qty: 200, sold: 200}, {days_total: 31, days_passed: 10}).text, 'Цель месяца взята');
+});
+
+test('лучший день недели', () => {
+  assert.equal(logic.bestDay({'2026-10-19': 12, '2026-10-22': 31, '2026-10-21': 31}).text, 'среда, 31 порция');
+  assert.equal(logic.bestDay({}), null);
+});

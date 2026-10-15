@@ -3834,7 +3834,17 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "Убрать позицию": "Pozitsiyani olib tashlash", "Убрать карточку": "Kartani olib tashlash", "Цель на 100 чеков": "100 chekka maqsad",
   "записано бухгалтеру": "buxgalterga yozildi", "Логин не привязан к сотруднику реестра.": "Login reyestrdagi xodimga bog‘lanmagan.",
   "участник": "ishtirokchi", "участника": "ishtirokchi", "участников": "ishtirokchi", "база своя": "o‘z bazasi", "база зала": "zal bazasi",
-  "Период завершён": "Davr tugadi", "до старта": "startgacha", "блюдо": "taom", "напиток": "ichimlik", "десерт": "desert", "новинка": "yangilik",
+  "Период завершён": "Davr tugadi", "до старта": "startgacha", "продано": "sotildi", "цель считается": "maqsad hisoblanmoqda",
+  "фонд премии сейчас": "hozirgi mukofot jamg‘armasi", "Идём в темпе": "Sur’atdamiz", "Цель недели взята": "Hafta maqsadi bajarildi",
+  "Цель месяца взята": "Oy maqsadi bajarildi", "Цель появится после первой смены": "Maqsad birinchi smenadan keyin chiqadi",
+  "Люди": "Odamlar", "Продано из цели": "Maqsaddan sotildi", "Обновить данные iiko": "iiko ma’lumotlarini yangilash",
+  "KPI официантов: открыть список": "Ofitsiantlar KPI: ro‘yxatni ochish",
+  "Чеков зала за период пока нет. Директор отмечает официантов в настройке периода.": "Davr uchun zal cheklari hali yo‘q. Direktor davr sozlamalarida ofitsiantlarni belgilaydi.",
+  "Период ещё не начался: список появится после первой смены.": "Davr hali boshlanmadi: ro‘yxat birinchi smenadan keyin chiqadi.",
+  "Кольцо у человека — его продажи целевых позиций против его личной цели. Премия копится только с того, что выше его базы за прошлые недели.":
+    "Odamdagi halqa — uning maqsadli pozitsiyalar savdosi shaxsiy maqsadiga nisbatan. Mukofot faqat o‘tgan haftalardagi bazasidan yuqorisidan yig‘iladi.",
+  "Период, целевые позиции и логины официантов задаёте здесь; рейтинг и кольцо — на главной менеджера.": "Davr, maqsadli pozitsiyalar va ofitsiant loginlari shu yerda beriladi; reyting va halqa — menejer bosh sahifasida.",
+  "Отметьте логины официантов в настройке периода: без отметки рейтинг у менеджера пуст.": "Davr sozlamalarida ofitsiant loginlarini belgilang: belgisiz menejerdagi reyting bo‘sh.", "блюдо": "taom", "напиток": "ichimlik", "десерт": "desert", "новинка": "yangilik",
 });
 globalThis.RetroTemplatesUz.push(
   [/^Цель периода (.+) · пройдено (\d+) %$/, "Davr maqsadi $1 · $2 % o‘tildi"],
@@ -3854,5 +3864,15 @@ globalThis.RetroTemplatesUz.push(
   [/^(\d+) (чек|чека|чеков) за период$/, "davr uchun $1 chek"],
   [/^(\d+) (чек|чека|чеков) в базе$/, "bazada $1 chek"],
   [/^лидер (.+)$/, "yetakchi $1"],
+  [/^осталось (\d+) до цели$/, "maqsadgacha $1 qoldi"],
+  [/^Отстаём на (\d+) (порцию|порции|порций) к сегодняшнему дню$/, "Bugungi kunga $1 porsiya orqadamiz"],
+  [/^лучший день: (.+), (\d+) (порция|порции|порций)$/, "eng yaxshi kun: $1, $2 porsiya"],
+  [/^лидер недели: $/, "hafta yetakchisi: "],
+  [/^продано (\d+) · осталось (\d+) · премия $/, "sotildi $1 · qoldi $2 · mukofot "],
+  [/^до участия: (.+)$/, "ishtirokgacha: $1"],
+  [/^Отмечено официантов: (\d+) · фонд премии сейчас (.+)\. Рейтинг и кольцо — на главной менеджера\.$/, "Belgilangan ofitsiantlar: $1 · hozirgi mukofot jamg‘armasi $2. Reyting va halqa — menejer bosh sahifasida."],
+  [/^Цель периода — (\d+) порций целевых позиций: (.+)$/, "Davr maqsadi — $1 porsiya maqsadli pozitsiya: $2"],
+  [/^Участие от (\d+) чеков и (\d+) смен · (\d+) из (\d+)$/, "Ishtirok $1 chek va $2 smenadan · $4 dan $3"],
+  [/^фонд премии (.+) · ресторану (.+)$/, "mukofot jamg‘armasi $1 · restoranga $2"],
 );
 /* ── /KPI официантов ── */

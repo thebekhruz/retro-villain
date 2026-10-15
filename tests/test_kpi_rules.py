@@ -94,6 +94,10 @@ def test_compute_pays_share_of_uplift_over_own_base_with_team_pool():
     assert result['participants'] == 3 and result['rows'][0]['waiter'] == 'Новичок'
     assert result['hall']['rates']['tea'] == dict(base=6.0, now=6.67, target=5.0)
     assert result['goal'] > 0
+    # Цель в штуках для кольца: ожидаемые чеки 200 / 2 дня × 7 = 700; цели 5 + 4 на 100 → 63 порции; продано 3.
+    assert result['expected_checks'] == 700 and result['goal_qty'] == 63 and result['sold'] == 3
+    assert rows['Алина']['sold'] == 1 and rows['Алина']['goal_qty'] == 63.0, 'своя база 100 чеков за 1 день × 7'
+    assert rows['Новичок']['goal_qty'] == 6.3, 'без своей базы — по текущему темпу: 10 чеков за день × 7'
 
 
 def test_compute_without_netting_counts_only_gains_and_applies_cap():
