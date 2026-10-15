@@ -478,8 +478,10 @@
      Жёлтая метка у имени и галочка «пришёл». Отметка пишется сразу и видна в
      клетке сегодняшнего дня: «был» или «нет». Денег не хватило сегодня — завтра
      выдают по этой отметке. Отметку не изменить, когда начисление за день уже
-     подтверждено (сервер скажет почему). */
+     подтверждено (сервер скажет почему).
+     Клик идёт по кругу: не отмечен → пришёл → не пришёл → снова не отмечен. */
   const canMark=person=>!!current&&!current.closed&&!person.archived&&current.days.includes(today);
+  const nextMark=mark=>mark===true?false:mark===false?null:true;
   function cameTag(person){
     const tag=node('span','sd-nohik');tag.append(node('span','sd-nohik-text','Нет в Hikvision'));
     if(canMark(person)){
@@ -489,17 +491,23 @@
     return tag;
   }
   function paintCame(button,person){
-    const came=person.today_mark===true;
-    button.classList.toggle('is-on',came);button.classList.toggle('is-off',person.today_mark===false);
-    button.setAttribute('aria-pressed',String(came));
-    button.replaceChildren(node('span','sd-came-box',came?'✓':''),node('span','',person.today_mark===false?'не пришёл':'пришёл'));
-    button.title=came?'Отмечено: пришёл сегодня, '+dm(today)+'. Нажмите, чтобы снять.':'Отметить: пришёл сегодня, '+dm(today);
+    const mark=person.today_mark, came=mark===true, absent=mark===false;
+    button.classList.toggle('is-on',came);button.classList.toggle('is-off',absent);
+    button.setAttribute('aria-pressed',came?'true':absent?'mixed':'false');
+    // Обе подписи лежат в одной клетке, видна одна: ширина кнопки не меняется
+    // от «пришёл» к «не пришёл», и она не перескакивает на новую строку.
+    const label=node('span','sd-came-label');
+    label.append(node('span',absent?'is-hidden':'','пришёл'),node('span',absent?'':'is-hidden','не пришёл'));
+    button.replaceChildren(node('span','sd-came-box',came?'✓':absent?'✕':''),label);
+    const next=nextMark(mark);
+    button.title=(came?'Отмечено: пришёл ':absent?'Отмечено: не пришёл ':'Не отмечено ')+dm(today)+'. Нажмите — '
+      +(next===true?'«пришёл»':next===false?'«не пришёл»':'снять отметку')+'.';
     button.setAttribute('aria-label',person.name+' · '+button.title);
   }
   const marking=new Set();
   async function markCame(person,button){
     if(marking.has(person.id))return;
-    const present=person.today_mark!==true, data=current;
+    const present=nextMark(person.today_mark), data=current;
     marking.add(person.id);
     const work=(async()=>{
       const response=await fetch('/api/accountant/manual-attendance',{method:'POST',headers:{'Content-Type':'application/json'},
@@ -514,10 +522,12 @@
       if(current!==data)return;
       person.today_mark=present;
       const cell=person.cells?.[today];
-      if(cell)cell.attendance={status:present?'manual':'absent',time:null,source:present?'manual_present':'manual_absent'};
+      // Сняли отметку — клетка сегодня снова пустая, как до неё.
+      if(cell&&present===null)delete cell.attendance;
+      else if(cell)cell.attendance={status:present?'manual':'absent',time:null,source:present?'manual_present':'manual_absent'};
       paintCell(person,today);
       const fresh=$('sheet-grid').querySelector('.sd-came[data-person="'+person.id+'"]');if(fresh)paintCame(fresh,person);
-      done(person.name+(present?' — пришёл сегодня.':' — не пришёл сегодня.'));
+      done(person.name+(present===null?' — отметка снята.':present?' — пришёл сегодня.':' — не пришёл сегодня.'));
     }catch(error){message(error.message,true);}
     finally{marking.delete(person.id);}
   }

@@ -99,6 +99,11 @@ def write_manual_mark(connection, employee_id: int, day: date, present: bool, ap
          datetime.now(TZ).isoformat(timespec='seconds')))
 
 
+def delete_manual_mark(connection, employee_id: int, day: date) -> None:
+    connection.execute('DELETE FROM hikvision_manual_absences WHERE work_day = ? AND employee_id = ?',
+                       (day.isoformat(), employee_id))
+
+
 class AttendanceStore:
     def __init__(self, path: Path):
         self.db = as_database(path)

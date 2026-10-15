@@ -218,6 +218,26 @@ def test_employee_without_hikvision_is_marked_by_accountant(tmp_path):
         assert staff_row(c, DAY, person.id) == ('manual_absent', '0')
 
 
+def test_manual_attendance_mark_can_be_cleared(tmp_path):
+    """T-477: отметку можно снять — present=null возвращает день в «не отмечен»,
+    снятие пишется в аудит, повторное снятие ничего не делает."""
+    with client(tmp_path) as c:
+        person = c.app.state.accountant_roster.add(name='Сарвар', role='официант', rate='180000',
+                                                   group_name='Обслуживание зала')
+        body = {'date': DAY.isoformat(), 'employee_id': person.id}
+        assert c.post('/api/accountant/manual-attendance', json={**body, 'present': False}).status_code == 200
+        assert staff_row(c, DAY, person.id) == ('manual_absent', '0')
+        cleared = c.post('/api/accountant/manual-attendance', json={**body, 'present': None})
+        assert cleared.status_code == 200, cleared.text
+        assert staff_row(c, DAY, person.id)[0] == 'unlinked'
+        assert c.app.state.attendance_store.manual_marks(DAY) == {}
+        assert c.post('/api/accountant/manual-attendance', json={**body, 'present': None}).status_code == 200
+        with closing(c.app.state.accountant_finance._open()) as connection:
+            actions = [row[0] for row in connection.execute(
+                "SELECT action FROM accountant_finance_audit WHERE entity_type='manual_attendance' ORDER BY id")]
+        assert actions == ['create', 'delete']
+
+
 def test_manual_attendance_is_an_accountant_action(tmp_path):
     users = {'buh': ('pw', 'accountant'), 'kassa': ('pw', 'cashier'), 'shokh': ('pw', 'shokh')}
     with client(tmp_path, dashboard_panel_users=users, shokh_module=True) as c:
