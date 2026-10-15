@@ -531,9 +531,32 @@ def salary_day_month(request: Request, month: str, basis: Literal['payment', 'sh
     # Посещаемость смены в клетке — тем же расчётом, что «Сотрудники» за день смены:
     # реестр на этот день, входы Hikvision и ручные отметки, без отметки выплаты.
     roster, attendance = request.app.state.accountant_roster, request.app.state.attendance
+    data = finance.salary_day_month(first, last, lambda days: attendance.rows_by_day(days, roster.list), basis=basis)
+    mark_today_without_hikvision(request, data)
     return dict(month=month, first=first.isoformat(), last=last.isoformat(),
-                closed=month_closing.closed_state(finance, last),
-                **finance.salary_day_month(first, last, lambda days: attendance.rows_by_day(days, roster.list), basis=basis))
+                closed=month_closing.closed_state(finance, last), **data)
+
+
+def mark_today_without_hikvision(request: Request, data: dict):
+    """Кого нет в Hikvision (T-471): метка у имени и отметка «пришёл» за сегодня.
+
+    Сегодняшнюю смену ведомость не размечает — люди ещё приходят. Для тех, кого
+    нет в Hikvision, бухгалтер отмечает приход сам; отметка сразу видна в клетке
+    сегодняшнего дня («был» / «нет»), чтобы завтра выдать по ней зарплату."""
+    today = today_tashkent()
+    roster = {employee.id: employee for employee in request.app.state.accountant_roster.list(today)}
+    marks = request.app.state.attendance_store.manual_marks(today)
+    for person in data['people']:
+        employee = roster.get(person['id'])
+        person['no_hikvision'] = bool(employee and (employee.hikvision_id is None or employee.manual_attendance))
+        if not person['no_hikvision']:
+            continue
+        mark = marks.get(person['id'])
+        person['today_mark'] = mark
+        cell = person['cells'].get(today.isoformat()) if data.get('basis') == 'shift' else None
+        if cell is not None and mark is not None:
+            cell['attendance'] = dict(status='manual' if mark else 'absent', time=None,
+                                      source='manual_present' if mark else 'manual_absent')
 
 
 @router.put('/salary-day/cell')
