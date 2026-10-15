@@ -1133,12 +1133,14 @@ class SalaryPaymentInput(BaseModel):
 class ManualAttendanceInput(BaseModel):
     date: date
     employee_id: int
-    present: bool
+    # None — снять отметку: день снова «не отмечен».
+    present: bool | None
 
 
 @router.post('/manual-attendance')
 def mark_manual_attendance(request: Request, body: ManualAttendanceInput):
-    """«Был / не был» по одному дню: без Hikvision или когда день вне выгрузки."""
+    """«Был / не был» по одному дню: без Hikvision или когда день вне выгрузки.
+    present=null снимает отметку."""
     day = selected_day(body.date)
     employee = next((item for item in request.app.state.accountant_roster.list(day)
                      if item.id == body.employee_id), None)

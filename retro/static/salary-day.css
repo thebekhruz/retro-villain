@@ -121,9 +121,14 @@
 .sd-came-box{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;border:1.5px solid #c9b27a;
   border-radius:4px;background:#fff;font-size:11px;font-weight:700;line-height:1;color:#fff}
 .sd-came:hover .sd-came-box{border-color:#a8873a}
-.sd-came.is-on{color:#2f6a3f;font-weight:600}
+.sd-came.is-on{color:#2f6a3f}
 .sd-came.is-on .sd-came-box{background:#4a8056;border-color:#4a8056}
 .sd-came.is-off{color:#9b4b5a}
+.sd-came.is-off .sd-came-box{background:#9b4b5a;border-color:#9b4b5a}
+/* Обе подписи в одной клетке сетки — ширина всегда по «не пришёл». */
+.sd-came-label{display:inline-grid;text-align:left}
+.sd-came-label>span{grid-area:1/1}
+.sd-came-label>.is-hidden{visibility:hidden}
 .sd-came:focus-visible{outline:2px solid #d2af59;outline-offset:2px;border-radius:4px}
 @media(max-width:900px){.sd-came{min-height:32px}}
 /* Фото при наведении на имя — те же снимки, что в «Сотрудниках». */
