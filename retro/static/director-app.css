@@ -253,11 +253,15 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 .dir-chat-form{margin-top:auto}
 .dir-chat .rm-msg.is-ai{border:0;max-width:88%}
 /* Нижние вкладки: подсветка — плашка под значком, а не вся кнопка. */
-.dir-tabs{display:grid;grid-template-columns:repeat(4,1fr);gap:0;align-items:center;
+/* Колонки — по числу кнопок (T-469): у директора и учредителя четыре, у менеджера пять. Сетка бара
+   задаётся только здесь; модули своих правил колонок не добавляют. */
+.dir-tabs{display:grid;grid-auto-flow:column;grid-auto-columns:minmax(0,1fr);gap:0;align-items:center;
   padding:8px 8px calc(8px + env(safe-area-inset-bottom));background:#ffffffee}
 .dir-tabs .rm-tab,.dir-tabs .rm-tab.is-active,.dir-tabs .rm-tab--ai,.dir-tabs .rm-tab--ai:not(.is-active){
-  min-height:54px;border-radius:0;background:none;color:#8a978b;gap:4px;font-weight:500}
-.dir-tabs .rm-tab-icon{display:grid;place-items:center;width:52px;height:30px;border-radius:15px}
+  min-height:54px;border-radius:0;background:none;color:#8a978b;gap:4px;font-weight:500;min-width:0;white-space:nowrap}
+.dir-tabs .rm-tab-icon{display:grid;place-items:center;width:min(52px,100%);height:30px;border-radius:15px}
+/* Пять вкладок на 320–360: подписи на строку не переносятся, на самых узких экранах — мельче. */
+@media(max-width:360px){.dir-tabs .rm-tab{font-size:9px;letter-spacing:-.1px}}
 .dir-tabs .rm-tab.is-active{color:var(--green);font-weight:650}
 .dir-tabs .rm-tab.is-active .rm-tab-icon{background:#edf2e9}
 .dir-tabs .rm-tab--ai .rm-tab-icon{background:#1f4f43;color:var(--gold)}

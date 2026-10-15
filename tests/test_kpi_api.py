@@ -106,6 +106,7 @@ def configure(client, waiters=('Алина', 'Нурик')):
 def test_default_period_is_the_pilot_week_and_roles_are_separated(client):
     view = manager(client).get('/api/manager/kpi').json()
     assert view['period']['status'] == 'open' and view['period']['kind'] == 'week'
+    assert view['period']['pilot'] is (view['period']['start'] == '2026-10-19')
     assert date.fromisoformat(view['period']['start']).weekday() == 0
     assert date.fromisoformat(view['period']['start']) >= date(2026, 10, 19)
     assert len(view['targets']) == 12 and view['scheme']['share'] == 0.25
@@ -131,11 +132,13 @@ def test_rating_shares_the_team_fund_by_checks(client):
     assert alina['initials'] == 'А' and alina['photo'] is None
     progress = {item['key']: item for item in view['targets_progress']}
     # Ожидаемые чеки: 128 за 16 дней базы × 7 = 56; цель чая 5 на 100 → 2,8 порции, супа 4 → 2,24.
-    assert progress['tea']['goal_qty'] == 2.8 and progress['tea']['sold'] == 12 and progress['tea']['remaining'] == 0
-    assert progress['soup']['sold'] == 4 and progress['soup']['lag'] < 0
-    assert not any(item['push'] for item in view['targets_progress']), 'обе впереди темпа: толкать нечего'
-    assert view['totals']['goal_qty'] == 5.0 and view['totals']['sold'] == 16
-    assert view['hall']['rates']['tea']['target'] == 5.0 and view['fetched_at']
+    # Цели по правилу: база 12,5 у обеих → 16,25 → 16,5 на 100; ожидаемые чеки 56 → 9,24 порции.
+    assert progress['tea']['target'] == 16.5 and progress['tea']['target_source'] == 'base'
+    assert progress['tea']['goal_qty'] == 9.2 and progress['tea']['sold'] == 12 and progress['tea']['remaining'] == 0
+    assert progress['soup']['sold'] == 4 and progress['soup']['lag'] > 0 and progress['soup']['push'] is True
+    assert view['totals']['goal_qty'] == 18.4 and view['totals']['sold'] == 16
+    assert view['hall']['rates']['tea']['target'] == 16.5 and view['fetched_at']
+    assert {t['key']: t['target_source'] for t in view['targets']} == {'tea': 'base', 'soup': 'base'}
     # Повтор идёт из кэша, «Обновить» читает iiko заново.
     calls = len(client.app.state.kpi_source.calls)
     manager(client).get('/api/manager/kpi')
@@ -160,6 +163,34 @@ def test_unmarked_logins_stay_out_of_kpi_but_show_in_login_cards(client):
     assert page['links'] == {'Алина': {'employee_id': None, 'active': True}, 'Нурик': {'employee_id': None, 'active': False}}
     snapshot = director(client).get(f'/api/director/kpi?period={closed["period"]["id"]}').json()
     assert {item['waiter'] for item in snapshot['logins']} == {'Алина', 'Нурик'}
+
+
+def test_registry_waiters_take_part_by_default_and_manual_marks_win(client):
+    """T-469: официанты реестра участвуют без отметок; «не считать» исключает, «официант зала» добавляет."""
+    director(client).put('/api/director/kpi/settings', json=dict(
+        scheme=SCHEME, targets=TARGETS, kind='week', start=START.isoformat(), end=END.isoformat()))
+    roster = client.app.state.accountant_roster
+    alina = roster.add(name='Каримова Алина', role='официантка', rate='150000', group_name='Обслуживание зала')
+    roster.add(name='Юсупов Нурбек', role='ранер', rate='120000', group_name='Обслуживание зала')
+    view = manager(client).get('/api/manager/kpi').json()
+    logins = {item['waiter']: item for item in view['logins']}
+    assert logins['Алина']['source'] == 'registry' and logins['Алина']['active'] and logins['Алина']['employee_id'] == alina.id
+    assert logins['Нурик']['source'] == 'unmatched' and not logins['Нурик']['active'], 'ранер в реестре официантом не считается'
+    assert [row['waiter'] for row in view['rows']] == ['Алина'] and view['rows'][0]['employee_name'] == 'Каримова Алина'
+    assert view['registry'] == dict(waiters=1, matched=1, manual=0, unmatched=1)
+    # Ручные отметки сильнее реестра.
+    director(client).put('/api/director/kpi/links', json=dict(waiter='Алина', active=False))
+    director(client).put('/api/director/kpi/links', json=dict(waiter='Нурик', active=True))
+    view = director(client).get('/api/director/kpi?refresh=true').json()
+    logins = {item['waiter']: item for item in view['logins']}
+    assert logins['Алина']['source'] == 'manual_off' and not logins['Алина']['active']
+    assert logins['Нурик']['source'] == 'manual' and logins['Нурик']['active']
+    assert [row['waiter'] for row in view['rows']] == ['Нурик']
+    # Снять ручную отметку — снова решает реестр.
+    assert director(client).delete('/api/director/kpi/links', params={'waiter': 'Алина'}).status_code == 200
+    view = director(client).get('/api/director/kpi').json()
+    assert {item['waiter']: item['source'] for item in view['logins']}['Алина'] == 'registry'
+    assert manager(client).delete('/api/director/kpi/links', params={'waiter': 'Нурик'}).status_code == 403
 
 
 def test_settings_validation_and_margin_fill(client):

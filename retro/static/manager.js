@@ -66,12 +66,12 @@ function greeting() {
   const name = L().collapse(state.home?.name || '');
   return name ? 'Салом, ' + name[0].toUpperCase() + name.slice(1) : 'Кабинет менеджера';
 }
-const TITLES = {kpi: 'Неделя', shoot: 'Съёмка', add: 'Новый сотрудник', team: 'Команда', card: 'Сотрудник'};
+const TITLES = {kpi: 'KPI', shoot: 'Съёмка', add: 'Новый сотрудник', team: 'Команда', card: 'Сотрудник'};
 
 function openTab(tab) {
   if (photoBusy()) return;
-  // Карточка и «Неделя» — поверх вкладок: внизу подсвечена та, откуда пришли.
-  if (tab !== 'card' && tab !== 'kpi') { state.tab = tab; state.queue = false; }
+  // Карточка — поверх вкладок: внизу подсвечена та, откуда пришли. KPI — обычная вкладка (T-469).
+  if (tab !== 'card') { state.tab = tab; state.queue = false; }
   if (tab === 'kpi' && !state.kpi && !state.kpiLoading) loadKpi(false);
   TABS.forEach(name => { $('tab-' + name).hidden = name !== tab; });
   // Карточка — поверх вкладок: внизу подсвечена та, откуда пришли.
@@ -252,7 +252,6 @@ async function loadHome() {
     $('device-photo-note').textContent = data.photo_message || '';
     $('device-photo-note').hidden = !data.photo_message;
     renderList();
-    loadKpi(false);
   } catch (error) {
     $('team-list').removeAttribute('aria-busy');
     message(error.message);
@@ -605,7 +604,10 @@ function ringNode(box, percent, inner, {size = 'lg'} = {}) {
     if (cls === 'is-fill') {
       circle.setAttribute('stroke-dasharray', String(dash.circumference));
       circle.setAttribute('stroke-dashoffset', String(dash.circumference));
-      requestAnimationFrame(() => requestAnimationFrame(() => circle.setAttribute('stroke-dashoffset', String(dash.offset))));
+      // Заполнение анимируется со второго кадра; таймер — запасной путь, если кадров нет (фоновая вкладка).
+      const fill = () => circle.setAttribute('stroke-dashoffset', String(dash.offset));
+      requestAnimationFrame(() => requestAnimationFrame(fill));
+      setTimeout(fill, 80);
     }
     svg.append(circle);
   }
@@ -639,12 +641,17 @@ function kpiAvatar(row, cls) {
 function renderKpiHome() {
   const data = state.kpi;
   const period = data.period, totals = data.totals;
-  $('kpi-home-day').textContent = K().periodLabel(period.start, period.end) + (period.days_passed ? ` · день ${period.days_passed} из ${period.days_total}` : ' · до старта');
+  // До старта дата уже в карточке «Пилот стартует …»: в бейдже коротко, чтобы заголовок не переносился на 320.
+  $('kpi-home-day').textContent = period.days_passed
+    ? `${K().periodLabel(period.start, period.end)} · день ${period.days_passed} из ${period.days_total}` : 'до старта';
   const percent = K().ringPercent(totals.sold, totals.goal_qty);
+  // В центре кольца — процент цели команды (T-469), под ним продано из цели и остаток.
   const inner = node('div', 'kpi-ring-inner');
-  inner.append(node('span', '', 'продано'), node('strong', '', String(totals.sold)),
-    node('small', '', totals.goal_qty ? `осталось ${K().remaining(totals.sold, totals.goal_qty)} до цели` : 'цель считается'));
-  inner.querySelector('strong').dataset.i18n = 'off';
+  const left = K().remaining(totals.sold, totals.goal_qty);
+  const big = node('strong', '', `${K().goalPercent(totals.sold, totals.goal_qty)}\u00a0%`);
+  big.dataset.i18n = 'off';
+  inner.append(big, node('span', '', `продано ${totals.sold} из ${Math.ceil(totals.goal_qty)}`),
+    node('small', '', totals.goal_qty ? (left ? `осталось ${left}` : 'цель взята') : 'цель считается'));
   ringNode($('kpi-home-ring'), percent, inner);
   const pace = K().paceState(totals, period);
   $('kpi-home-pace').textContent = pace.text;
@@ -665,7 +672,8 @@ function renderKpiHome() {
   $('kpi-home-meta').replaceChildren(...meta);
   const progress = data.targets_progress || [];
   $('kpi-home-targets').hidden = !progress.length;
-  $('kpi-home-targets-badge').textContent = `${totals.sold} из ${Math.ceil(totals.goal_qty)}`;
+  $('kpi-home-targets-badge').textContent = !totals.goal_qty ? `${progress.length} позиций`
+    : period.days_passed ? `${totals.sold} из ${Math.ceil(totals.goal_qty)}` : `цель ${Math.ceil(totals.goal_qty)}`;
   $('kpi-home-targets-list').replaceChildren(...progress.map(kpiTargetRow));
 }
 
@@ -698,25 +706,42 @@ function kpiPersonRow(row) {
   return button;
 }
 
-/* Позиции периода на главной: отставание от темпа сверху, «толкать сегодня» у 2–3 самых отстающих. */
+/* Позиции периода: отставание от темпа сверху, «в приоритете сегодня» у 2–3 самых отстающих. */
 function kpiTargetRow(item) {
   const row = node('div', 'kpi-target-row' + (item.push ? ' is-push' : ''));
   const head = node('div', 'kpi-target-head');
   const name = node('span', 'kpi-target-name');
   const title = node('strong', '', item.title);
   title.dataset.i18n = 'off';
-  name.append(title, node('small', '', item.group));
-  if (item.push) name.append(node('span', 'dir-waiter-tag is-top', 'толкать сегодня'));
+  // Источник цели (T-469): общий — подписью под заголовком блока, у строки помечаем только ручную цель.
+  name.append(title, node('small', '', item.target_source === 'manual' ? `${item.group} · цель вручную` : item.group));
+  if (item.push) name.append(node('span', 'dir-waiter-tag is-top', 'в приоритете сегодня'));
   const nums = node('span', 'kpi-target-nums');
   const sold = node('b', '', String(item.sold));
   sold.dataset.i18n = 'off';
-  nums.append(sold, node('span', '', ` из ${Math.ceil(item.goal_qty)}`), node('small', '', item.remaining ? `осталось ${item.remaining}` : 'цель взята'));
+  const started = Boolean(state.kpi?.period?.days_passed);
+  if (item.goal_qty > 0 && started) {
+    nums.append(sold, node('span', '', ` из ${Math.ceil(item.goal_qty)}`), node('small', '', item.remaining ? `осталось ${item.remaining}` : 'цель взята'));
+  } else if (item.goal_qty > 0) {
+    // До старта (T-469): цель периода в штуках и база зала, продаж ещё нет.
+    const goal = node('b', '', String(Math.ceil(item.goal_qty)));
+    goal.dataset.i18n = 'off';
+    nums.append(goal, node('small', '', state.kpi.period.days_total > 10 ? 'цель месяца' : 'цель недели'),
+      node('small', '', `база ${K().rate(item.base)} на 100 чеков`));
+  } else {
+    // Цель в штуках не посчитана (нет чеков базы): показываем цель на 100 чеков.
+    const goal = node('b', '', K().rate(item.target));
+    goal.dataset.i18n = 'off';
+    nums.append(goal, node('small', '', 'на 100 чеков'));
+  }
   head.append(name, nums);
-  const bar = node('span', 'rm-bar' + (item.remaining ? '' : ' is-done'));
+  const bar = node('span', 'rm-bar' + (item.goal_qty > 0 && !item.remaining ? ' is-done' : ''));
   const fill = node('span');
   fill.style.width = K().ringPercent(item.sold, item.goal_qty) + '%';
   bar.append(fill);
-  row.append(head, bar);
+  // До старта продаж нет: полоска без смысла, оставляем только строку.
+  row.append(head);
+  if (item.goal_qty > 0 && started) row.append(bar);
   return row;
 }
 
@@ -726,7 +751,8 @@ function kpiItemNode(item, row) {
   const name = node('span', 'kpi-item-name');
   const title = node('strong', '', item.title);
   title.dataset.i18n = 'off';
-  name.append(title, node('small', '', `${item.group} · маржа ${K().thousands(item.margin)} на порцию` + (item.uplift !== undefined ? ` · ${K().signed(item.uplift)}` : '')));
+  name.append(title, node('small', '', `${item.group} · маржа ${K().thousands(item.margin)} на порцию` + (item.uplift !== undefined ? ` · ${K().signed(item.uplift)}` : '')
+    + (item.target_source ? ` · ${K().targetSource(item)}` : '')));
   line.append(name);
   const path = row ? K().sparkPath(item, row, state.kpi.period) : '';
   if (path) {
@@ -766,17 +792,26 @@ function renderKpi() {
   if (!data) return;
   const period = data.period, totals = data.totals, scheme = data.scheme;
   renderKpiHome();
+  // Пустое состояние (T-469): до старта периода или без отмеченных официантов кольцо и плитки прячем.
+  const empty = K().emptyState(data);
+  $('kpi-empty').hidden = !empty;
+  $('kpi-empty-title').textContent = empty ? empty.title : '';
+  $('kpi-empty-text').textContent = empty ? empty.text : '';
+  // До старта с участниками кольцо видно: цель уже посчитана по базе, продажи пойдут со старта (T-469).
+  $('kpi-team').hidden = Boolean(empty) && !(empty.state === 'before' && totals.goal_qty > 0);
+  $('kpi-stats').hidden = Boolean(empty);
   $('kpi-badge').textContent = period.status === 'closed' ? 'закрыт' : K().periodLabel(period.start, period.end);
-  $('kpi-sold').replaceChildren(String(totals.sold), node('small', '', ' из ' + Math.ceil(totals.goal_qty)));
+  $('kpi-sold').replaceChildren(String(totals.participants), node('small', '', ' из ' + totals.waiters));
   $('kpi-stamp').textContent = K().dayLabel(period) + ' · ' + K().fetchedLabel(data.fetched_at, period.today);
   $('kpi-uplift').textContent = K().signed(totals.team_uplift);
   $('kpi-fund-line').textContent = `фонд премии ${K().thousands(totals.fund)} · ресторану ${K().signed(totals.restaurant_net)}`;
   $('kpi-threshold').textContent = `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен · ${totals.participants} из ${totals.waiters}`;
   renderKpiList();
   $('kpi-targets-list').replaceChildren(...(data.targets_progress || []).map(item => kpiItemNode({title: item.title, group: item.group,
-    margin: item.margin, uplift: item.uplift, base: item.base, now: item.now, target: item.target}, null)));
+    margin: item.margin, uplift: item.uplift, base: item.base, now: item.now, target: item.target, target_source: item.target_source}, null)));
   $('kpi-rules-list').replaceChildren(...[
     `Цель периода — ${Math.ceil(totals.goal_qty)} порций целевых позиций: цели на 100 чеков × ожидаемые чеки (средние за ${scheme.baseline_weeks} прошлые недели).`,
+    'Цель позиции на 100 чеков — база зала плюс 30 %, но не меньше базы плюс полпорции, с округлением вверх до 0,5. Директор может поставить цель выше вручную.',
     'Считается чек зала под своим логином: оплаченный, без удалений, без ручной льготы, без «Счет Шефа» и переносов между официантами.',
     `Премия командная: ${K().percent(scheme.share)} от прироста маржи зала по целевым позициям против базы зала за ${scheme.baseline_weeks} недели; фонд делится между участниками по числу чеков.`,
     `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен. Потолок ${K().thousands(totals.cap)} на человека за период. Выплата через бухгалтера после закрытия периода.`,
@@ -799,8 +834,6 @@ document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
   button.addEventListener('click', () => { if (!photoBusy()) { state.card = null; openTab(button.dataset.tab); renderList(); } });
 });
 $('kpi-refresh').addEventListener('click', () => loadKpi(true));
-$('kpi-home').addEventListener('click', () => openTab('kpi'));
-$('kpi-back').addEventListener('click', () => openTab(state.tab));
 document.querySelectorAll('#kpi-views [data-kpi-view]').forEach(button => {
   button.addEventListener('click', () => { state.kpiView = button.dataset.kpiView; renderKpiView(); });
 });

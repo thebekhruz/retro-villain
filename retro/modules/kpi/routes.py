@@ -160,6 +160,13 @@ def save_link(request: Request, body: LinkInput):
     return dict(links=request.app.state.kpi_store.links())
 
 
+@director_router.delete('/links')
+def delete_link(request: Request, waiter: str):
+    """Вернуть логин к реестру: ручная отметка снимается, участие снова по должности в реестре."""
+    request.app.state.kpi_store.delete_link(waiter)
+    return dict(links=request.app.state.kpi_store.links())
+
+
 @director_router.post('/close')
 async def close_period(request: Request, body: CloseInput, period: int | None = None):
     current = _period_or_404(request, period)
