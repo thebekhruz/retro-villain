@@ -127,7 +127,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'director.js': {'director'}, 'director-app.js': {'director'},
         'director.css': {'director'}, 'ai-chat.css': {'director'}, 'period.js': {'director'},
         # Общее у директора и учредителя: телефонный каркас, чат, разметка ответов
-        'director-app.css': {'director', 'founder'}, 'director-logic.js': {'director', 'founder'},
+        'director-app.css': {'director', 'founder', 'manager'}, 'director-logic.js': {'director', 'founder'},
         'ai-chat.js': {'director', 'founder'}, 'founder-chat.js': {'director', 'founder'},
         'founder-markdown.js': {'director', 'founder'},
         # Учредитель

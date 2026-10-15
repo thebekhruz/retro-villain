@@ -1,188 +1,94 @@
-/* Кабинет менеджера (ТЗ 09.10; T-450) — телефон в первую очередь. Каркас,
-   кнопки, строки и шаги статуса — из закупа (shokh.css), те же классы.
-   Здесь только своё: цель «фото у N из M», плитки-бенто, список по
-   разделам (сначала без фото), форма нового сотрудника, лист учётной записи.
-   На широком экране (≥720) — те же блоки шире: плитки в ряд, люди сеткой. */
+/* Кабинет менеджера (T-459) — телефонное приложение по образцу телефона
+   директора: шапка, карточки, вкладки внизу и редактор — классы и вид
+   director-app.css. Здесь только то, чего у директора нет: цель «фото на
+   терминале», строки людей с фото, карточка сотрудника с камерой и шаги
+   отправки на терминал (блок хода сохранения закупа, shokh.css). */
 
-/* ── Шапка: кто и сколько сделано ─────────────────────────────────────── */
-.mgr-account{position:relative;display:grid;place-items:center;width:44px;height:44px;flex:none;padding:0;
-  border:1px solid #ffffff2e;border-radius:50%;background:#ffffff14;color:var(--gold);
-  font:17px/1 Georgia,serif;cursor:pointer}
-.mgr-account:hover:not(:disabled){background:#ffffff22;filter:none}
-.mgr-account:empty::before,.mgr-account span:empty::before{content:"·"}
-.mgr-goal{display:grid;gap:6px;margin-top:20px}
-.mgr-goal-line{margin:0;display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}
-.mgr-goal-line strong{font-size:clamp(34px,10vw,42px);font-weight:650;letter-spacing:-1.4px;line-height:1}
-.mgr-goal-line span{font-size:17px;color:#a9bfb1}
-.mgr-goal-text{font-size:13px;color:#c5d3c9}
-.mgr-progress-bar{display:block;height:6px;margin-top:6px;border-radius:999px;background:#ffffff26;overflow:hidden}
-.mgr-progress-bar i{display:block;height:100%;width:0;border-radius:inherit;background:var(--gold);transition:width .4s ease-out}
-.mgr-device-note{padding:0 4px}
+/* ── Сегодня: цель в тёмной карточке ──────────────────────────────────── */
+.mgr-goal-line{margin:14px 0 0;display:flex;align-items:baseline;gap:6px;font-variant-numeric:tabular-nums}
+.mgr-goal-line strong{font-size:40px;font-weight:650;letter-spacing:-1.4px;line-height:1;color:#fff}
+.mgr-goal-line span{font-size:16px;color:#a9bfb1}
+.mgr-goal-text{display:block;margin-top:6px;font-size:12px;color:#c5d3c9}
+.mgr-goal-bar{display:block;height:6px;margin-top:12px;border-radius:999px;background:#ffffff26;overflow:hidden}
+.mgr-goal-bar>span{display:block;height:100%;width:0;border-radius:inherit;background:var(--gold);transition:width .4s ease-out}
+.mgr-goal .dir-tips-ask:disabled{opacity:1;border-color:#ffffff26;color:#a9bfb1;cursor:default}
+/* KPI директора — здесь это кнопки: ведут в «Съёмку» и в команду. */
+.mgr-kpi{border:0;text-align:left;color:var(--ink);font:inherit;cursor:pointer}
+.mgr-kpi:hover:not(:disabled){filter:none;background:#fafbf7}
+.mgr-kpi.is-bad strong{color:var(--late)}
+.mgr-sections .dir-count{cursor:pointer}
+.mgr-sections-note{margin-top:10px}
+/* Разделов бывает больше трёх — сетка «Команды сегодня» переносит строки. */
+.mgr-sections{grid-template-columns:repeat(auto-fill,minmax(96px,1fr))}
 
-/* ── Плитки (бенто) ───────────────────────────────────────────────────────
-   Главная — тёмная, во всю ширину: сколько людей ещё без фото и «Снимать
-   по очереди». Под ней «Новый сотрудник» и, если есть, «Не на терминале». */
-.mgr-bento{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.mgr-tile{position:relative;display:grid;align-content:start;justify-items:start;gap:6px;min-height:104px;padding:14px;
-  border:1px solid #e3e9df;border-radius:20px;background:#fff;color:var(--ink);font:inherit;text-align:left;cursor:pointer}
-.mgr-tile:hover:not(:disabled){filter:none;border-color:#cfdccc}
-.mgr-tile b{font-size:28px;font-weight:650;letter-spacing:-.8px;line-height:1;font-variant-numeric:tabular-nums}
-.mgr-tile-count{display:flex;align-items:baseline;flex-wrap:wrap;gap:6px;font-size:14px;font-weight:600}
-.mgr-tile-title{font-size:15px;font-weight:650;line-height:1.25}
-.mgr-tile-sub{font-size:12px;line-height:1.35;color:var(--muted-2)}
-.mgr-tile.is-main{grid-column:1 / -1;grid-template-columns:auto minmax(0,1fr);align-items:center;column-gap:14px;
-  min-height:0;padding:16px;border-color:var(--green);background:var(--green);color:#fff}
-.mgr-tile.is-main .mgr-tile-count{font-size:15px;color:#e8efe9}
-.mgr-tile.is-main b{font-size:34px;color:#fff}
-.mgr-tile-icon{grid-row:span 2;display:grid;place-items:center;width:52px;height:52px;border-radius:16px;
-  background:var(--gold);color:var(--green)}
-.mgr-tile-icon svg{width:26px;height:26px}
-.mgr-tile-go{display:inline-flex;align-items:center;gap:6px;font-size:13px;font-weight:600;color:var(--gold)}
-.mgr-tile-go::after{content:"›";font-size:18px;line-height:1}
-/* Все с фото — тихая отметка вместо призыва: смотреть больше не на что. */
-.mgr-tile.is-main.is-calm{border-color:#dfe8db;background:#edf3e9;color:var(--green);cursor:default}
-.mgr-tile.is-main.is-calm:disabled{opacity:1}
-.mgr-tile.is-main.is-calm .mgr-tile-icon{background:#fff;color:#3f7a50}
-.mgr-tile.is-main.is-calm .mgr-tile-count,.mgr-tile.is-main.is-calm b{color:var(--green)}
-.mgr-tile.is-main.is-calm .mgr-tile-go{color:#53675c}
-.mgr-tile.is-main.is-calm .mgr-tile-go::after{content:none}
-/* Малые плитки: значок 32 px, заголовок, подпись — одинаково у обеих. */
-.mgr-tile-mark{display:grid;place-items:center;width:32px;height:32px;border-radius:50%;margin-bottom:2px;
-  background:var(--gold);color:var(--green);font-size:20px;font-weight:700;line-height:1}
-.mgr-tile-title b{font-size:inherit;letter-spacing:0;line-height:inherit;font-weight:700}
-.mgr-bento.no-alert .is-add{grid-column:1 / -1}
-.mgr-tile.is-alert{border-color:#f0d5db;background:#fff7f8}
-.mgr-tile.is-alert .mgr-tile-mark{background:#f7e3e7;color:var(--late);font-size:18px}
-.mgr-tile.is-alert .mgr-tile-title{color:#8d3548}
-
-/* ── Список: поиск, разделы, люди ─────────────────────────────────────── */
-.mgr-list-card{display:grid;gap:12px}
-.mgr-filters{display:flex;flex-wrap:wrap;gap:6px}
-.mgr-filter{display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:0 12px;border:1.5px solid #dfe5dc;
-  border-radius:999px;background:#fff;color:var(--ink-2);font:inherit;font-size:14px;font-weight:600;cursor:pointer}
-.mgr-filter b{font-weight:700;color:var(--muted-2)}
-.mgr-filter[hidden],.mgr-filters[hidden]{display:none}
-/* Раздел и должность: одна строка, листается пальцем вбок. */
-.mgr-filters-sub{flex-wrap:nowrap;margin:0 -16px;padding:2px 16px;
-  overflow-x:auto;scrollbar-width:none;-webkit-overflow-scrolling:touch;scroll-padding:0 16px}
-.mgr-filters-sub::-webkit-scrollbar{display:none}
-/* Строка листается вбок — у правого края она тает, видно продолжение. */
-@media(max-width:719px){.mgr-filters-sub{mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent);
-  -webkit-mask-image:linear-gradient(90deg,#000 calc(100% - 28px),transparent)}}
-/* Фокус в поле — рамкой самого поля, как у дат панели: общая золотая обводка
-   с отступом на телефоне вылезала к краю экрана. */
-.mgr-app :is(.shokh-search,.shokh-field input):focus-visible{outline:0;border-color:var(--green2);
-  box-shadow:0 0 0 3px rgba(35,87,74,.14)}
-.mgr-filters-sub .mgr-filter{flex:none;min-height:36px;border-width:1px;font-size:14px}
-.mgr-filters-sub .mgr-filter.is-on{border-color:#cfe0cf;background:#e3ebdf;color:#285140}
-.mgr-filters-sub .mgr-filter.is-on b{color:#285140}
-.mgr-list-note{margin:0}
-.mgr-list{display:grid;gap:18px}
-.mgr-section{display:grid;gap:10px}
-.mgr-section-head{display:flex;align-items:baseline;gap:8px;margin:0;padding-top:14px;border-top:1px solid var(--line-soft);
-  font-size:12px;font-weight:650;letter-spacing:.6px;text-transform:uppercase;color:var(--muted-2)}
-.mgr-section:first-child .mgr-section-head{padding-top:4px;border-top:0}
-.mgr-section-head b{font-weight:700;color:var(--ink-2)}
-.mgr-section.is-nophoto .mgr-section-head{color:#7a5b22}
-.mgr-section.is-attention .mgr-section-head{color:#8d3548}
-
-/* Без фото — плитки по два в ряд: крупная цель для пальца, видно всех сразу. */
-.mgr-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
-.mgr-person-tile{position:relative;display:grid;align-content:start;gap:4px;min-height:132px;padding:12px;
-  border:1.5px dashed #d9cba6;border-radius:16px;background:#fdfaf2;color:inherit;font:inherit;text-align:left;cursor:pointer}
-.mgr-person-tile:hover:not(:disabled){filter:none;border-color:#c5b07a}
-.mgr-person-tile.is-skel{border-style:solid;border-color:#eef1ea;background:#fff;cursor:default}
-.mgr-initials{display:grid;place-items:center;width:44px;height:44px;margin-bottom:6px;border-radius:50%;
-  background:#efe6cf;color:#7a5b22;font-weight:700;font-size:15px}
-.mgr-person-tile-name{font-size:14px;font-weight:600;line-height:1.3;overflow-wrap:anywhere}
-.mgr-person-tile-role{font-size:11.5px;line-height:1.35;color:var(--muted-2);overflow-wrap:anywhere}
-.mgr-person-tile .shokh-flag{justify-self:start;margin-top:2px}
-.mgr-cam{position:absolute;top:12px;right:12px;display:grid;place-items:center;width:32px;height:32px;border-radius:50%;
-  background:var(--green);color:var(--gold)}
-.mgr-cam svg{width:17px;height:17px}
-
-/* Остальные — строки, как в закупе: фото, имя, должность, метка. */
-.mgr-rows{display:grid}
-.mgr-row{width:100%;border:0;border-top:1px solid #eef1ea;background:none;color:inherit;font:inherit;
-  text-align:left;cursor:pointer}
-.mgr-row:first-child{border-top:0}
-.mgr-row:hover:not(:disabled){filter:none;background:#fafbf7}
-.mgr-row .shokh-purchase-title{overflow-wrap:anywhere}
-.mgr-row .shokh-note{display:block}
-.mgr-row>.mgr-tag{flex:none;align-self:center}
+/* ── Строки людей: строка команды директора + фото ─────────────────────── */
+.mgr-list .dir-person{cursor:pointer}
+.mgr-list .dir-person:disabled{cursor:default;opacity:.55}
+.mgr-list .shokh-thumb{width:40px;height:40px;border-radius:12px}
 .mgr-thumb{padding:0;overflow:hidden}
 .mgr-thumb img{display:block;width:100%;height:100%;object-fit:cover;border-radius:inherit}
-.shokh-flag.is-error{background:var(--late-bg);color:var(--late)}
-.shokh-flag.is-idle{background:var(--idle-bg);color:var(--idle)}
+.mgr-list .dir-pill{align-self:center}
+.mgr-list .dir-waiter-tag{white-space:nowrap}
+.mgr-list .dir-empty{margin:0}
 
-/* ── Карточка сотрудника ──────────────────────────────────────────────── */
-.mgr-head-spacer{width:40px;height:40px;flex:none}
-.mgr-queue{display:block;margin-top:2px;font-size:12px;color:var(--muted-2)}
-.mgr-person{display:grid;justify-items:center;gap:6px;padding:8px 0 4px;text-align:center}
-.mgr-avatar{position:relative;display:grid;place-items:center;width:152px;height:152px;padding:0;
+/* ── Сотрудник ─────────────────────────────────────────────────────────── */
+.mgr-card-top{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.mgr-card-top .dir-close{font-size:22px;line-height:1}
+.mgr-person{display:grid;justify-items:center;gap:6px;padding:4px 0;text-align:center}
+.mgr-avatar{position:relative;display:grid;place-items:center;width:144px;height:144px;padding:0;
   border:3px solid #fff;border-radius:50%;background:var(--green);color:var(--gold);
-  font-family:Georgia,serif;font-size:44px;box-shadow:0 8px 24px #143e3526;cursor:pointer}
+  font-family:Georgia,serif;font-size:42px;box-shadow:0 8px 24px #143e3526;cursor:pointer}
 .mgr-avatar img{position:absolute;inset:0;width:100%;height:100%;border-radius:50%;object-fit:cover}
 .mgr-avatar b{font-weight:400}
 .mgr-avatar-cam{position:absolute;right:4px;bottom:4px;display:grid;place-items:center;width:40px;height:40px;
   border:3px solid #fff;border-radius:50%;background:var(--gold);color:var(--green)}
-.mgr-avatar:disabled{cursor:default}
-.mgr-avatar:focus-visible{outline:3px solid var(--gold);outline-offset:3px}
-.mgr-person-name{margin-top:8px;font-size:22px;font-weight:650;letter-spacing:-.4px;color:var(--ink);overflow-wrap:anywhere}
-.mgr-person-role{font-size:14px;color:var(--muted-2)}
-.mgr-hint{margin:0;font-size:13px;line-height:1.45;color:var(--muted-2)}
-/* Ставка, которую менеджер предложил (T-453): ждёт бухгалтера. */
-.mgr-rate-pill{margin-top:4px;padding:6px 12px;border-radius:999px;background:var(--warn-bg);color:var(--warn);
-  font-size:13px;font-weight:600}
-.mgr-rate-note{margin-top:-8px}
-.mgr-done{margin:0;padding:12px 14px;border-radius:14px;background:var(--ok-bg);color:var(--ok);font-size:13px;font-weight:600;line-height:1.45}
-/* Статус: фото → человек в Hikvision → лицо на устройстве. */
+.mgr-avatar:disabled{cursor:default;opacity:1}
+.mgr-person-name{margin-top:6px;font-size:21px;font-weight:650;letter-spacing:-.4px;color:var(--ink);overflow-wrap:anywhere}
+.mgr-person-role{font-size:13px;color:var(--muted-2)}
+.mgr-person .dir-pill{margin-top:2px;font-size:11px;padding:5px 10px}
+/* Шаги: фото → человек в Hikvision → лицо на устройстве. Карточкой директора. */
 .mgr-status{box-shadow:none}
 .mgr-status .shokh-save-bar{display:none}
 .mgr-status.is-waiting .shokh-save-bar{display:block}
 .mgr-status .shokh-save-step[hidden]{display:none}
-.mgr-retry{width:100%}
-/* Удалить (T-452): тихо, в конце карточки — не соседствует с «Сфотографировать». */
-.mgr-delete{justify-self:center;min-height:44px;margin-top:8px;padding:0 14px;border:0;border-radius:12px;background:none;
-  color:#8d3548;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
-.mgr-delete:hover:not(:disabled){filter:none;background:var(--late-bg)}
-.mgr-sheet-title{font-size:18px;font-weight:650}
-.mgr-sheet-name{margin:-4px 0 0;font-size:15px;font-weight:600;color:var(--ink-2);overflow-wrap:anywhere}
-.mgr-sheet .shokh-secondary{width:100%}
-.shokh-primary.mgr-delete-confirm{background:#8d3548}
-.mgr-photo-actions{display:grid;grid-template-columns:minmax(0,1fr);gap:8px}
-.mgr-photo-actions.has-next{grid-template-columns:repeat(2,minmax(0,1fr))}
-.mgr-photo-actions.has-next .mgr-next{grid-column:1 / -1}
-.mgr-photo-actions.has-next .shokh-primary.mgr-shoot{border:1px solid #dbe3d8;background:#fff;color:#35624e;font-size:15px;font-weight:600}
-.mgr-photo-actions.has-next .mgr-shoot svg{width:18px;height:18px}
-.mgr-shoot{display:inline-flex;align-items:center;justify-content:center;gap:10px}
-.mgr-next{justify-content:space-between;padding:0 20px;text-align:left}
-.mgr-next b{font-size:16px;font-weight:650}
-.mgr-next small{display:block;margin-top:2px;font-size:12px;color:#c5d3c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dir-primary.mgr-shoot,.dir-primary.mgr-next{display:flex;align-items:center;justify-content:center;gap:10px}
+.dir-primary.mgr-next{justify-content:space-between;padding:0 18px;text-align:left;min-height:56px}
+.mgr-next b{display:block;font-size:15px;font-weight:650}
+.mgr-next small{display:block;margin-top:2px;font-size:11px;font-weight:500;color:#c5d3c9;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .mgr-next>span:first-child{min-width:0}
-.mgr-next-arrow{font-size:26px;line-height:1;color:var(--gold)}
+.mgr-next-arrow{font-size:24px;line-height:1;color:var(--gold)}
+.mgr-card-actions{margin-top:0}
+.mgr-card-actions button[hidden]{display:none}
 
-/* ── Новый сотрудник ──────────────────────────────────────────────────── */
-.mgr-form{gap:16px}
-.mgr-field-error{margin:-8px 0 0;font-size:12.5px;line-height:1.4;color:#8d3548}
-.mgr-role-chips{display:flex;flex-wrap:wrap;gap:8px}
-.mgr-role{min-height:44px;padding:0 14px;border:1px solid #dbe3d8;border-radius:999px;background:#fff;
-  color:var(--ink-2);font:inherit;font-size:15px;font-weight:600;cursor:pointer}
-.mgr-role:hover:not(:disabled){filter:none;border-color:#b9c9b8}
-.mgr-role[aria-checked=true]{border-color:var(--green);background:var(--green);color:#fff}
-.mgr-role-group{font-size:12px;color:var(--muted-2)}
-.mgr-period{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
-.mgr-period input[type=date]{max-width:none;height:52px;border-radius:16px;font-size:16px}
-.mgr-period-note{grid-column:1 / -1;margin-top:-4px}
-.mgr-form-note{margin-top:2px}
-.mgr-similar{display:grid;gap:10px;padding:14px;border:1px solid #eddfbe;border-radius:18px;background:#fffaf0}
-.mgr-similar-title{font-size:15px;font-weight:650}
-.mgr-similar .mgr-row{cursor:pointer}
-.mgr-similar .mgr-tag{padding:6px 10px;border-radius:999px;font-size:12px}
-.mgr-similar .mgr-row:disabled{cursor:default;opacity:1}
-.mgr-similar-new{width:100%;color:#35624e;font-weight:600}
+/* ── Новый сотрудник: редактор директора ───────────────────────────────── */
+/* Должности — чипами директора, переносятся по строкам: их выбирают пальцем. */
+.dir-chips.mgr-roles{flex-wrap:wrap;overflow:visible;padding-bottom:0}
+.mgr-roles button{min-height:40px;font-size:13px}
+.mgr-rate-note{margin-top:6px}
+/* Подсказка в крупном поле суммы — обычным размером, а не цифрами 22 px. */
+.dir-field input.is-big::placeholder{font-size:16px;font-weight:400}
+.mgr-period{margin-top:0}
+.mgr-period .dir-field input{width:100%}
+.mgr-similar{display:grid;gap:8px;margin-top:14px;padding:12px;border:1px solid #eddfbe;border-radius:14px;background:#fffaf0}
+.mgr-similar .dir-card-title{margin:0}
+.dir-primary.mgr-secondary{background:#fff;border:1px solid #dbe3d8;color:#35624e}
+.mgr-form-note{margin-top:10px;text-align:center}
 
-/* ── Лист учётной записи ──────────────────────────────────────────────── */
+/* Фокус в поле — рамкой самого поля: общая золотая обводка с отступом на
+   телефоне вылезала к краю экрана (T-458). Только у менеджера. */
+.mgr-page :is(.dir-search,.dir-field input):focus-visible{outline:0;border-color:var(--green2);
+  box-shadow:0 0 0 3px rgba(35,87,74,.14)}
+/* ── Шапка и профиль (T-461) ───────────────────────────────────────────────
+   Над приветствием больше нет строки «‹ Панель · язык · имя · Выйти» — всё это
+   в профиле по кружку справа. Шапка — только на «Сегодня»: у остальных
+   вкладок свой заголовок. На компьютере профиль — внизу меню слева. */
+.mgr-page .dir-head{flex-wrap:nowrap}
+.mgr-page[data-dir-tab]:not([data-dir-tab=home]) .dir-head{display:none}
+.mgr-profile{display:grid;place-items:center;width:44px;height:44px;flex:none;padding:0;border:1px solid #dbe3d8;
+  border-radius:50%;background:#fff;color:var(--green);font:600 16px/1 Georgia,serif;cursor:pointer}
+.mgr-profile:hover:not(:disabled){filter:none;background:#f5f7f1}
+.mgr-profile span:empty::before{content:"·"}
+@media(min-width:651px){.mgr-profile{display:none}}
 .mgr-sheet{width:min(420px,100vw);max-width:100vw;margin:auto auto 0;padding:18px 16px calc(18px + env(safe-area-inset-bottom));
   border:0;border-radius:24px 24px 0 0;background:var(--phone-bg);color:var(--ink);box-shadow:0 -8px 32px #0f1f1a33}
 .mgr-sheet[open]{display:grid;gap:12px}
@@ -195,33 +101,10 @@
 .mgr-sheet-who span{display:block;margin-top:2px;font-size:13px;color:var(--muted-2)}
 .mgr-sheet-row{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:12px 14px;border-radius:16px;
   background:#fff;font-size:15px;font-weight:600}
-.mgr-sheet-lang .lang-button{min-width:52px;min-height:40px;font-size:13px}
-.mgr-sheet-link,.mgr-sheet-logout{display:grid;place-items:center;width:100%;min-height:54px;text-decoration:none}
+.mgr-sheet .lang-button{min-width:52px;min-height:40px;font-size:13px}
+.mgr-sheet .dir-primary{margin-top:0}
+.mgr-sheet-link{display:grid;place-items:center;text-decoration:none}
+.mgr-sheet-link[hidden]{display:none}
 .mgr-sheet .top-user{display:none}
 @media(min-width:600px){.mgr-sheet{margin:auto;border-radius:24px}}
-
-/* ── Широкий экран ────────────────────────────────────────────────────────
-   Планшет и компьютер (администратор): колонка шире, плитки в ряд,
-   люди без фото — сеткой по ширине. Карточка и форма — прежней колонкой. */
-@media(min-width:720px){
-  .mgr-body .rm-phone.mgr-app{max-width:1120px}
-  /* Шапка — такая же карточка, как плитки и список: те же поля по краям. */
-  .mgr-hero{margin:20px 24px 0;border-radius:28px;padding:28px 32px 26px}
-  .mgr-scroll{padding:16px 24px 32px;gap:16px}
-  .mgr-tile{min-height:120px;padding:18px}
-  .mgr-list-card{padding:20px 24px}
-  .mgr-filters-sub{margin:0 -24px;padding:2px 24px;scroll-padding:0 24px}
-  .mgr-grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px}
-  .mgr-rows{grid-template-columns:repeat(2,minmax(0,1fr));column-gap:28px}
-  .mgr-rows .mgr-row:nth-child(2){border-top:0}
-  .mgr-flow .shokh-flow-head,.mgr-flow .shokh-flow-body,.mgr-flow .shokh-flow-nav{width:100%;max-width:560px;margin-inline:auto}
-}
-/* Три плитки в ряд — только когда малым хватает ширины на подписи в одну-две
-   строки; на планшете главная плитка вытягивалась под соседей пустым полем. */
-@media(min-width:960px){
-  .mgr-bento{grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr))}
-  .mgr-tile.is-main{grid-column:auto;grid-row:span 1}
-  .mgr-bento.no-alert .is-add{grid-column:span 2}
-}
-.mgr-tile.is-main{align-content:center}
-@media(prefers-reduced-motion:reduce){.mgr-progress-bar i{transition:none}}
+@media(prefers-reduced-motion:reduce){.mgr-goal-bar>span{transition:none}}
