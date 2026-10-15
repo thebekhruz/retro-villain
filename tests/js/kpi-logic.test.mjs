@@ -1,0 +1,74 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+
+import logic from '../../retro/static/kpi-logic.js';
+
+const period = {start: '2026-10-19', end: '2026-10-25', days_total: 7, days_passed: 4, today: '2026-10-22'};
+
+test('суммы: тысячи, миллионы, знак', () => {
+  assert.equal(logic.thousands(2884000), '2 884 тыс');
+  assert.equal(logic.thousands(12_400_000), '12,4 млн');
+  assert.equal(logic.thousands(10_000_000), '10 млн');
+  assert.equal(logic.thousands(0), '0');
+  assert.equal(logic.signed(997000), '+997 тыс');
+  assert.equal(logic.signed(-72000), '−72 тыс');
+  assert.equal(logic.rate(4.16), '4,2');
+  assert.equal(logic.percent(0.25), '25 %');
+});
+
+test('подписи периода и дня', () => {
+  assert.equal(logic.periodLabel('2026-10-19', '2026-10-25'), '19–25 октября');
+  assert.equal(logic.periodLabel('2026-10-26', '2026-11-01'), '26 октября – 1 ноября');
+  assert.equal(logic.dayLabel(period), 'Четверг, 4-й день из 7');
+  assert.equal(logic.dayLabel({...period, today: '2026-10-16', days_passed: 0}), 'Старт: понедельник, 19 октября');
+  assert.equal(logic.dayLabel({...period, today: '2026-10-27', days_passed: 7}), 'Период завершён');
+  assert.equal(logic.fetchedLabel('2026-10-22T14:32:10+05:00', '2026-10-22'), 'данные iiko на 14:32');
+  assert.equal(logic.fetchedLabel('2026-10-21T23:50:00+05:00', '2026-10-22'), 'данные iiko на 21.10, 23:50');
+  assert.equal(logic.fetchedLabel(null), 'данных iiko ещё нет');
+});
+
+test('прогресс зала и человека, строка под именем', () => {
+  assert.equal(logic.goalProgress({goal: 3_200_000, team_uplift: 1_472_000}), 46);
+  assert.equal(logic.goalProgress({goal: 0, team_uplift: 10}), 0);
+  const rows = [
+    {waiter: 'Валентина', eligible: true, uplift: 997000, premium: 255000, checks: 63, shifts: 6},
+    {waiter: 'Баходир', eligible: true, uplift: 448000, premium: 113000, checks: 26, shifts: 6},
+    {waiter: 'Нурик', eligible: false, uplift: 158000, premium: 0, checks: 15, shifts: 4},
+    {waiter: 'Султан', eligible: false, uplift: -29000, premium: 0, checks: 3, shifts: 2},
+  ];
+  const scheme = {min_checks: 20, min_shifts: 3};
+  assert.equal(logic.personProgress(rows[0], rows, scheme), 100);
+  assert.equal(logic.personProgress(rows[1], rows, scheme), 45);
+  assert.equal(logic.personProgress(rows[2], rows, scheme), 75, 'до порога: 15 из 20 чеков');
+  assert.equal(logic.personProgress(rows[3], rows, scheme), 15);
+  assert.equal(logic.personLine(rows[0], scheme), 'прирост +997 тыс · 63 чека');
+  assert.equal(logic.personLine(rows[2], scheme), '15 чеков · 4 смены · ещё 5 чеков');
+  assert.equal(logic.personLine(rows[3], scheme), '3 чека · 2 смены · ещё 17 чеков и 1 смена');
+  assert.deepEqual(logic.ranking(rows.slice().reverse()).map(r => r.waiter), ['Валентина', 'Баходир', 'Нурик', 'Султан']);
+  assert.equal(logic.initials('Малика млад'), 'ММ');
+});
+
+test('позиции: тон, прогресс к цели, спарклайн по дням', () => {
+  const item = {base: 2.5, now: 4.4, target: 4, by_day: {'2026-10-19': 2, '2026-10-20': 1, '2026-10-22': 3}};
+  const row = {checks_by_day: {'2026-10-19': 10, '2026-10-20': 12, '2026-10-21': 9, '2026-10-22': 10}};
+  assert.equal(logic.itemTone(item), 'is-up');
+  assert.equal(logic.itemTone({base: 3, now: 1}), 'is-down');
+  assert.equal(logic.itemProgress(item), 100);
+  assert.equal(logic.itemProgress({now: 1.5, target: 3}), 50);
+  const path = logic.sparkPath(item, row, period);
+  assert.match(path, /^M0\.0,/);
+  assert.equal(path.split(' ').length, 4, 'четыре дня с чеками, три остальных пропущены');
+  assert.equal(logic.sparkPath(item, {checks_by_day: {'2026-10-19': 10}}, period), '', 'одна точка — линии нет');
+});
+
+test('настройки из формы: проценты в доли, тысячи в сумы, команда = остаток', () => {
+  const body = logic.settingsFromForm({kind: 'week', start: '2026-10-19', end: '2026-10-25', share: '30', personal: '70',
+    cap: '1 000', min_checks: '20', min_shifts: '3', netting: false,
+    targets: [{title: 'Чай', group: 'напиток', target100: '5,0', margin: '36 000', dishes: [{id: 'a', name: 'ЧАЙ'}]}]});
+  assert.equal(body.scheme.share, 0.3);
+  assert.equal(body.scheme.team, 0.3);
+  assert.equal(body.scheme.cap, 1_000_000);
+  assert.equal(body.scheme.netting, false);
+  assert.deepEqual(body.targets[0], {key: 't1', title: 'Чай', group: 'напиток', target100: 5, margin: 36000, dishes: [['a', 'ЧАЙ']]});
+  assert.throws(() => logic.settingsFromForm({share: 'x', personal: '70', cap: '1'}), /доля прироста/);
+});

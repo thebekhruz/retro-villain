@@ -11,8 +11,9 @@ const NETWORK = 'Нет связи с панелью. Проверьте инт�
 const passthrough = (el, work) => Promise.resolve(typeof work === 'function' ? work() : work);
 const Busy = globalThis.RetroBusy || {button: passthrough, silent: fn => fn()};
 
-const TABS = ['home', 'shoot', 'add', 'team', 'card'];
+const TABS = ['home', 'kpi', 'kpi-person', 'shoot', 'add', 'team', 'card'];
 const state = {home: null, tab: 'home', back: 'home', group: '', filter: 'all', card: null, queue: false,
+  kpi: null, kpiLoading: false, kpiView: 'rating', kpiPerson: null,
   preview: null, preparing: false, uploading: false, sending: false, saving: false,
   form: {role: '', type: 'shift'}};
 const photoBusy = () => state.preparing || state.uploading || state.sending;
@@ -65,11 +66,12 @@ function greeting() {
   const name = L().collapse(state.home?.name || '');
   return name ? 'Салом, ' + name[0].toUpperCase() + name.slice(1) : 'Кабинет менеджера';
 }
-const TITLES = {shoot: 'Съёмка', add: 'Новый сотрудник', team: 'Команда', card: 'Сотрудник'};
+const TITLES = {kpi: 'Неделя', 'kpi-person': 'Официант', shoot: 'Съёмка', add: 'Новый сотрудник', team: 'Команда', card: 'Сотрудник'};
 
 function openTab(tab) {
   if (photoBusy()) return;
-  if (tab !== 'card') { state.tab = tab; state.queue = false; }
+  if (tab !== 'card' && tab !== 'kpi-person') { state.tab = tab; state.queue = false; }
+  if (tab === 'kpi' && !state.kpi && !state.kpiLoading) loadKpi(false);
   TABS.forEach(name => { $('tab-' + name).hidden = name !== tab; });
   // Карточка — поверх вкладок: внизу подсвечена та, откуда пришли.
   document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
@@ -557,9 +559,200 @@ async function saveEmployee(confirm = false) {
   }
 }
 
+
+/* ── Неделя: KPI официантов ─────────────────────────────────────────────── */
+const K = () => globalThis.KpiLogic;
+
+async function loadKpi(refresh) {
+  state.kpiLoading = true;
+  $('kpi-refresh').disabled = true;
+  try {
+    const {data} = await api('/kpi' + (refresh ? '?refresh=true' : ''));
+    state.kpi = data;
+    message('');
+    renderKpi();
+    if (state.kpiPerson) {
+      const fresh = data.rows.find(row => row.waiter === state.kpiPerson.waiter);
+      if (fresh) { state.kpiPerson = fresh; renderKpiPerson(); }
+    }
+  } catch (error) {
+    $('kpi-rating').removeAttribute('aria-busy');
+    if (!state.kpi) $('kpi-rating').replaceChildren(node('p', 'dir-empty', error.message));
+    message(error.message);
+  } finally {
+    state.kpiLoading = false;
+    $('kpi-refresh').disabled = false;
+  }
+}
+
+function kpiAvatar(row, cls) {
+  const box = node('span', cls, row.photo ? undefined : row.initials || K().initials(row.waiter));
+  box.setAttribute('aria-hidden', 'true');
+  box.dataset.i18n = 'off';
+  if (row.photo) {
+    const image = node('img');
+    image.src = row.photo.url; image.alt = ''; image.loading = 'lazy';
+    image.onerror = () => { box.replaceChildren(row.initials || K().initials(row.waiter)); box.classList.add('is-empty'); };
+    box.append(image);
+  }
+  return box;
+}
+
+function kpiPersonRow(row, rows) {
+  const button = node('button', 'dir-person kpi-person');
+  button.type = 'button';
+  const main = node('span', 'dir-person-main');
+  const name = node('span', 'dir-person-name');
+  const strong = node('strong', '', row.employee_name || row.waiter);
+  strong.dataset.i18n = 'off';
+  name.append(strong);
+  if (row.eligible && rows.indexOf(row) === 0 && row.uplift > 0) name.append(node('span', 'dir-waiter-tag is-top', 'лидер'));
+  const line = node('small', '', K().personLine(row, state.kpi.scheme));
+  const bar = node('span', 'rm-bar' + (row.eligible ? '' : ' is-idle'));
+  const fill = node('span');
+  fill.style.width = K().personProgress(row, rows, state.kpi.scheme) + '%';
+  bar.append(fill);
+  main.append(name, line, bar);
+  // Справа — что человек получит: премия; прирост — строкой под именем.
+  const sum = node('b', 'kpi-sum' + (row.eligible && row.premium > 0 ? '' : ' is-idle'), row.eligible && row.premium > 0 ? K().thousands(row.premium) : '—');
+  sum.dataset.i18n = 'off';
+  button.append(kpiAvatar(row, row.photo ? 'shokh-thumb mgr-thumb' : 'shokh-thumb is-empty'), main, sum, node('span', 'dir-chevron', '›'));
+  button.addEventListener('click', () => openKpiPerson(row));
+  return button;
+}
+
+function renderKpi() {
+  const data = state.kpi;
+  if (!data) return;
+  const period = data.period, totals = data.totals, scheme = data.scheme;
+  $('kpi-period-label').textContent = K().periodLabel(period.start, period.end);
+  $('kpi-uplift').textContent = K().signed(totals.team_uplift);
+  $('kpi-fund').textContent = K().thousands(totals.fund);
+  const progress = K().goalProgress(totals);
+  $('kpi-goal-text').textContent = totals.goal
+    ? `Цель периода ${K().thousands(totals.goal)} · пройдено ${progress} %` : 'Цель периода появится после первой смены';
+  $('kpi-goal-bar').style.width = progress + '%';
+  const days = [];
+  for (let i = 1; i <= period.days_total; i += 1) {
+    const cell = node('i');
+    if (i < period.days_passed) cell.className = 'is-done';
+    else if (i === period.days_passed) cell.className = 'is-today';
+    days.push(cell);
+  }
+  $('kpi-days').replaceChildren(...(period.days_total <= 31 ? days : []));
+  $('kpi-stamp').textContent = K().dayLabel(period) + ' · ' + K().fetchedLabel(data.fetched_at, period.today);
+  $('kpi-badge').textContent = period.status === 'closed' ? 'закрыт' : '';
+  $('kpi-badge').hidden = period.status !== 'closed';
+  $('kpi-participants').replaceChildren(String(totals.participants), node('small', '', ' из ' + totals.waiters));
+  $('kpi-threshold').textContent = `от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен`;
+  $('kpi-net').textContent = K().signed(totals.restaurant_net);
+  const rows = K().ranking(data.rows);
+  const list = $('kpi-rating');
+  list.removeAttribute('aria-busy');
+  list.replaceChildren(...(rows.length ? rows.map(row => kpiPersonRow(row, rows))
+    : [node('p', 'dir-empty', period.days_passed ? 'Чеков зала за период пока нет.' : 'Период ещё не начался: рейтинг появится после первой смены.')]));
+  // Позиции: зал на 100 чеков — база, сейчас, цель.
+  $('kpi-targets-list').replaceChildren(...data.targets.map(target => {
+    const rate = data.hall.rates[target.key] || {base: 0, now: 0, target: target.target100};
+    const item = node('div', 'kpi-item');
+    const line = node('div', 'kpi-item-line');
+    const name = node('span', 'kpi-item-name');
+    const title = node('strong', '', target.title);
+    title.dataset.i18n = 'off';
+    name.append(title, node('small', '', `${target.group} · маржа ${K().thousands(target.margin)} на порцию`));
+    line.append(name);
+    const triplet = node('div', 'kpi-triplet');
+    for (const [label, value, cls] of [['база', rate.base, ''], ['сейчас', rate.now, K().itemTone(rate)], ['цель', rate.target, '']]) {
+      const cell = node('span', cls, label);
+      cell.append(node('b', '', K().rate(value)));
+      triplet.append(cell);
+    }
+    const bar = node('span', 'rm-bar');
+    const fill = node('span');
+    fill.style.width = K().itemProgress(rate) + '%';
+    bar.append(fill);
+    item.append(line, triplet, bar);
+    return item;
+  }));
+  $('kpi-rules-list').replaceChildren(...[
+    `Период ${K().periodLabel(period.start, period.end)}. База каждого — его частота целевых позиций на 100 чеков за ${scheme.baseline_weeks} прошлые недели (новичкам средняя по залу).`,
+    'Считается чек зала под своим логином: оплаченный, без удалений, без ручной льготы, без «Счет Шефа» и переносов между официантами.',
+    `Фонд премии ${K().percent(scheme.share)} от прироста маржи сверх базы: ${K().percent(scheme.personal)} лично, ${K().percent(scheme.team)} в командный пул по числу чеков.`,
+    `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен. Потолок ${K().thousands(totals.cap)} на человека за период. Выплата через бухгалтера после закрытия периода.`,
+  ].map(text => node('li', '', text)));
+  renderKpiView();
+}
+
+function renderKpiView() {
+  const view = state.kpiView;
+  $('kpi-rating').hidden = view !== 'rating';
+  $('kpi-targets').hidden = view !== 'targets';
+  $('kpi-rules').hidden = view !== 'rules';
+  document.querySelectorAll('#kpi-views [data-kpi-view]').forEach(button => {
+    button.classList.toggle('is-active', button.dataset.kpiView === view);
+  });
+}
+
+function openKpiPerson(row) {
+  state.kpiPerson = row;
+  renderKpiPerson();
+  openTab('kpi-person');
+}
+
+function renderKpiPerson() {
+  const row = state.kpiPerson, data = state.kpi;
+  if (!row || !data) return;
+  const period = data.period;
+  $('kpi-person-badge').textContent = `${K().periodLabel(period.start, period.end)} · ${period.days_passed ? 'день ' + period.days_passed : 'до старта'}`;
+  $('kpi-person-avatar').replaceChildren(...(row.photo ? [] : [row.initials || K().initials(row.waiter)]));
+  if (row.photo) { const image = node('img'); image.src = row.photo.url; image.alt = ''; $('kpi-person-avatar').append(image); }
+  $('kpi-person-name').textContent = row.employee_name || row.waiter;
+  $('kpi-person-sub').textContent = `${row.checks} ${K().plural(row.checks, 'чек', 'чека', 'чеков')} · ${row.shifts} ${K().plural(row.shifts, 'смена', 'смены', 'смен')} · ${K().baseLabel(row)}`;
+  $('kpi-person-uplift').textContent = K().signed(row.uplift);
+  $('kpi-person-uplift-note').textContent = row.eligible ? (data.scheme.netting ? 'нетто по всем позициям' : 'по позициям в плюсе') : K().personLine(row, data.scheme).replace(/^.*?· /, '');
+  $('kpi-person-premium').textContent = K().thousands(row.premium);
+  $('kpi-person-premium-note').textContent = row.eligible ? `лично ${K().thousands(row.personal)} + команда ${K().thousands(row.team)}` : '';
+  const items = row.items.slice().sort((a, b) => b.uplift - a.uplift);
+  $('kpi-person-items').replaceChildren(...items.map(item => {
+    const box = node('div', 'kpi-item');
+    const line = node('div', 'kpi-item-line');
+    const name = node('span', 'kpi-item-name');
+    const title = node('strong', '', item.title);
+    title.dataset.i18n = 'off';
+    name.append(title, node('small', '', `${item.group} · маржа ${K().thousands(item.margin)} на порцию · ${K().signed(item.uplift)}`));
+    line.append(name);
+    const path = K().sparkPath(item, row, period);
+    if (path) {
+      const svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+      svg.setAttribute('class', 'kpi-spark'); svg.setAttribute('viewBox', '0 0 60 24'); svg.setAttribute('aria-hidden', 'true');
+      const stroke = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      stroke.setAttribute('d', path);
+      svg.append(stroke);
+      line.append(svg);
+    }
+    const triplet = node('div', 'kpi-triplet');
+    for (const [label, value, cls] of [['база', item.base, ''], ['сейчас', item.now, K().itemTone(item)], ['цель', item.target, '']]) {
+      const cell = node('span', cls, label);
+      cell.append(node('b', '', K().rate(value)));
+      triplet.append(cell);
+    }
+    const bar = node('span', 'rm-bar');
+    const fill = node('span');
+    fill.style.width = K().itemProgress(item) + '%';
+    bar.append(fill);
+    box.append(line, triplet, bar);
+    return box;
+  }));
+}
+
 /* ── События ───────────────────────────────────────────────────────────── */
 document.querySelectorAll('.dir-tabs .rm-tab').forEach(button => {
   button.addEventListener('click', () => { if (!photoBusy()) { state.card = null; openTab(button.dataset.tab); renderList(); } });
+});
+$('kpi-refresh').addEventListener('click', () => loadKpi(true));
+$('kpi-back').addEventListener('click', () => { state.kpiPerson = null; openTab('kpi'); });
+document.querySelectorAll('#kpi-views [data-kpi-view]').forEach(button => {
+  button.addEventListener('click', () => { state.kpiView = button.dataset.kpiView; renderKpiView(); });
 });
 $('shoot-next').addEventListener('click', startQueue);
 $('shoot-start').addEventListener('click', startQueue);
