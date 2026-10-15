@@ -356,3 +356,34 @@ test('«⊘ Hik» у окладника из реестра и проверка 
   assert.equal(minus.sub.replace(/\s/g, ' '), 'На конец дня −150 000 сум');
   assert.equal(list[list.length - 1].lvl, 'todo');
 });
+
+/* 13.10 — день переноса авансов до начала учёта: колонки нет (сетка с 14.10),
+   но выплата остаётся выданной — «Выдано» и «Осталось» её учитывают. */
+test('выплата до первой колонки входит в выдано без своей колонки', () => {
+  const [boss] = logic.monthlyRows({
+    days: ['2026-10-14', '2026-10-15'],
+    monthly: [{id: 1, name: 'Директор', role: 'директор', salary: '13500000'}],
+    monthly_cells: {'1': {'2026-10-13': '9000000', '2026-10-15': '2000000'}},
+  }, {today: '2026-10-15'});
+  assert.deepEqual(boss.cells.map(cell => cell.day), ['2026-10-14', '2026-10-15']);
+  assert.equal(boss.paid, 11000000);
+  assert.equal(boss.rest, 2500000);
+});
+
+/* Часть оклада на карту (card) переводят банком: из кассы её не выдают, и
+   «Осталось» считается от наличной части. Плитка «На карту» — сумма карт. */
+test('на карту не входит в остаток наличными', () => {
+  const data = {
+    days: ['2026-10-14', '2026-10-15'],
+    monthly: [{id: 2, name: 'Бухгалтер', role: 'бухгалтер', salary: '16000000', card: '2000000'},
+              {id: 10, name: 'Без авансов', role: 'бухгалтер', salary: '5000000', card: '2000000'}],
+    monthly_cells: {'2': {'2026-10-13': '10000000'}},
+  };
+  const [lena, zero] = logic.monthlyRows(data, {today: '2026-10-15'});
+  assert.equal(lena.card, 2000000);
+  assert.equal(lena.rest, 4000000);
+  assert.equal(zero.rest, 3000000);
+  const totals = logic.totals(data);
+  assert.equal(totals.monthlyCard, 4000000);
+  assert.equal(totals.monthlyRest, 7000000);
+});

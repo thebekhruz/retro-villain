@@ -130,7 +130,9 @@ const shiftRow = id => people().find(p => p.employee_id === id) || outsiders().f
 function salaried() {
   return (current?.monthly_employees || []).slice().sort((a, b) => Number(a.id) - Number(b.id)).map(row => {
     const salary = Number(row.salary || 0), paid = Number(monthPaid[String(row.id)] || 0);
-    return {...row, salary, paid, rest: salary - paid};
+    // На карту из кассы не выдают: осталось — от наличной части.
+    const card = Math.min(salary, Number(row.card || 0));
+    return {...row, salary, card, paid, rest: salary - card - paid};
   });
 }
 function groupOrder() {
@@ -435,7 +437,8 @@ function openDrawer(id) {
 const shiftDraft = row => ({name: row.name, role: row.role, rate: L.formatAmount(row.rate), group: row.group, reason: '',
   manual: !!row.manual_attendance, hikId: row.hikvision_id || '', groupTouched: false,
   type: row.employment_type === 'temporary' ? 'temporary' : 'shift', from: row.work_from || '', to: row.work_to || ''});
-const monthlyDraft = row => ({name: row.name, role: row.role, salary: L.formatAmount(row.salary), schedule: row.schedule || '',
+const monthlyDraft = row => ({name: row.name, role: row.role, salary: L.formatAmount(row.salary),
+  card: Number(row.card || 0) ? L.formatAmount(row.card) : '', schedule: row.schedule || '',
   noHik: !!row.no_hikvision, reason: ''});
 function openMonthly(id) {
   const row = salaried().find(p => p.id === id);
@@ -450,7 +453,7 @@ function openNew(kind = 'shift', keep = {}) {
   ui.confirm = false; ui.feedback = ''; ui.fbErr = false; ui.history = null; ui.namesakes = null;
   // Переключение «За смену / Оклад» не стирает уже набранные имя и должность.
   const name = keep.name || '', role = keep.role || '';
-  if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name, role, salary: '', schedule: '', noHik: false, reason: ''}; }
+  if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name, role, salary: '', card: '', schedule: '', noHik: false, reason: ''}; }
   else {
     ui.sel = 'new';
     ui.draft = {name, role, rate: '', group: L.groupForRole(role) || groups[0] || '', reason: '', manual: false, groupTouched: false,
@@ -483,7 +486,7 @@ function drawerDirty() {
   const base = monthly ? salaried().find(p => 'm:' + p.id === ui.sel) : shiftRow(ui.sel);
   if (!base) return false;
   const origin = monthly ? monthlyDraft(base) : shiftDraft(base);
-  const keys = monthly ? ['name', 'role', 'salary', 'schedule', 'noHik', 'reason']
+  const keys = monthly ? ['name', 'role', 'salary', 'card', 'schedule', 'noHik', 'reason']
     : ['name', 'role', 'rate', 'group', 'reason', 'manual', 'hikId', 'type', 'from', 'to'];
   return keys.some(key => String(d[key] ?? '') !== String(origin[key] ?? ''));
 }
@@ -822,9 +825,10 @@ function monthlyDrawer() {
     idRow.append(box);
     card.append(idRow);
     const facts = text('div', 'emp-drawer-facts', null);
-    [['Оклад в месяц', sum(row.salary)], [$('monthly-paid-head').textContent, sum(row.paid)],
-      [row.rest < 0 ? 'Переплата' : 'Осталось выдать', sum(Math.abs(row.rest))]].forEach(([label, value], index) => {
-      const line = text('div', 'emp-drawer-line' + (index === 2 && row.rest < 0 ? ' is-over' : ''), null);
+    [['Оклад в месяц', sum(row.salary)], ...(row.card ? [['Из них на карту', sum(row.card)]] : []),
+      [$('monthly-paid-head').textContent, sum(row.paid)],
+      [row.rest < 0 ? 'Переплата' : 'Осталось выдать', sum(Math.abs(row.rest))]].forEach(([label, value], index, all) => {
+      const line = text('div', 'emp-drawer-line' + (index === all.length - 1 && row.rest < 0 ? ' is-over' : ''), null);
       line.append(text('span', null, label), text('strong', null, value));
       facts.append(line);
     });
@@ -840,6 +844,7 @@ function monthlyDrawer() {
   scheduleInput.addEventListener('input', event => setDraft('schedule', event.target.value));
   form.append(fieldLabel('Имя', nameInput), fieldLabel('Должность', roleInput),
     fieldLabel('Оклад в месяц, сум', moneyInput('salary', d.salary, 'Например, 6 000 000')),
+    fieldLabel('Из них на карту, сум (необязательно)', moneyInput('card', d.card || '', 'Например, 2 000 000')),
     fieldLabel('График (необязательно)', scheduleInput),
     manualToggle('Нет в Hikvision', d.noHik, value => setDraft('noHik', value),
       'Пометка «⊘ Hik» в реестре и ведомости. На оклад не влияет.'));
@@ -1024,14 +1029,18 @@ async function saveMonthly(confirmNew = false) {
   const parsed = L.parseAmount(d.salary);
   if (parsed.error === 'bad') return fail('Оклад — только цифры, например 6 000 000.');
   if (!parsed.value) return fail('Оклад должен быть больше нуля.');
+  // На карту — часть оклада, которую переводят банком: из кассы не выдаётся.
+  const card = String(d.card || '').trim() ? L.parseAmount(d.card) : {value: 0};
+  if (card.error === 'bad') return fail('На карту — только цифры, например 2 000 000.');
+  if (Number(card.value || 0) > Number(parsed.value)) return fail('На карту не может быть больше оклада.');
   const isEdit = ui.sel !== 'm:new';
   const id = isEdit ? Number(String(ui.sel).slice(2)) : null;
-  // Поля ручного реестра (карта, наличные, авансы, остаток) на экране не
+  // Остальные поля ручного реестра (наличные, авансы, остаток) на экране не
   // показываем — при правке отправляем их как были, у нового — нули.
   const before = isEdit ? (current.monthly_employees || []).find(p => p.id === id) || {} : {};
   const payload = {name, role, salary: parsed.value, schedule: d.schedule.trim(), no_hikvision: !!d.noHik,
     reason: (d.reason || '').trim(),
-    card: before.card ?? '0', cash: before.cash ?? '0', advances: before.advances ?? '0', remaining: before.remaining ?? '0'};
+    card: String(card.value || 0), cash: before.cash ?? '0', advances: before.advances ?? '0', remaining: before.remaining ?? '0'};
   if (!isEdit) payload.confirm_new = confirmNew === true;
   try {
     const options = {method: isEdit ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)};
