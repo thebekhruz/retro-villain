@@ -3858,3 +3858,9 @@ globalThis.RetroTemplatesUz.push(
   [/^(.+): ставка ([\d\s  ]+) сум\.$/, "$1: stavka $2 so‘m."],
 );
 /* ── /T-472 ── */
+
+/* ── T-475: плашку «Баланс на сегодня» можно перетащить ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Перетащите, чтобы подвинуть. Двойной клик — обратно в угол.': "Surish uchun torting. Ikki marta bosish — burchakka qaytarish.",
+});
+/* ── /T-475 ── */
