@@ -1242,13 +1242,18 @@ async def download_day_with_checks(request: Request, body: DayExportInput):
     return await _day_export(request, selected_day(body.date), checks)
 
 
-async def _day_export(request: Request, day: date, checks):
+async def day_export_bytes(request, day: date, checks=None) -> bytes:
+    """«Финансы дня» в Excel — для кнопки и для резерва в Google (T-476)."""
     from .sheets_export import day_workbook
     data = await day_view(request, day)
     staff = await asyncio.to_thread(_day_data, request, day - timedelta(days=1), None, None,
                                     staff_only=True)
     purchases = await asyncio.to_thread(request.app.state.shokh.purchases, day)
-    body = await asyncio.to_thread(day_workbook, data, staff, purchases=purchases, checks=checks)
+    return await asyncio.to_thread(day_workbook, data, staff, purchases=purchases, checks=checks)
+
+
+async def _day_export(request: Request, day: date, checks):
+    body = await day_export_bytes(request, day, checks)
     return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="Retro-finance-{day.isoformat()}.xlsx"'})
 

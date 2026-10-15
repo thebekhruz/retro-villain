@@ -2,6 +2,7 @@ import os
 import re
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from dataclasses import dataclass, field
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -28,6 +29,16 @@ class SmsConfig:
     sender: str = '4546'
     template: str = SMS_TEMPLATE
     timeout_seconds: int = 10
+
+
+@dataclass(frozen=True)
+class DriveBackupConfig:
+    """Резерв отчётов в Google Drive (T-476): OAuth-клиент и токен владельца диска."""
+    client_id: str
+    client_secret: str = field(repr=False)
+    refresh_token: str = field(repr=False)
+    folder_name: str = 'Retro Milliy · резерв отчётов'
+    start: date | None = None
 
 
 @dataclass(frozen=True)
@@ -80,6 +91,7 @@ class Settings:
     website_booking_api_url: str = ''
     website_booking_api_token: str = field(default='', repr=False)
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
+    drive_backup: DriveBackupConfig | None = field(default=None, repr=False)
     data_dir: Path = ROOT / 'build'
     # Строка подключения Postgres. Пустая — работаем на файловом SQLite
     # (локальная разработка и тесты). На Railway диска нет, поэтому в
@@ -171,6 +183,7 @@ class Settings:
         if not retention_value.isdigit() or not 1 <= int(retention_value) <= 1000:
             raise ValueError('DIRECTOR_REPORT_RETENTION должен быть числом от 1 до 1000.')
         hikvision = parse_hikvision_config(os.environ)
+        drive_backup = parse_drive_backup_config(os.environ)
         return cls(
             base_url=base,
             login=os.getenv('IIKO_LOGIN', ''),
@@ -197,10 +210,27 @@ class Settings:
             website_booking_api_url=website_booking_url,
             website_booking_api_token=website_booking_token,
             hikvision=hikvision,
+            drive_backup=drive_backup,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
             database_url=database_url,
             report_retention=int(retention_value),
         )
+
+
+def parse_drive_backup_config(environ) -> DriveBackupConfig | None:
+    names = ('GOOGLE_DRIVE_CLIENT_ID', 'GOOGLE_DRIVE_CLIENT_SECRET', 'GOOGLE_DRIVE_REFRESH_TOKEN')
+    values = [environ.get(name, '').strip() for name in names]
+    if not any(values):
+        return None
+    if not all(values):
+        raise ValueError('Для резерва в Google Drive задайте ' + ', '.join(names) + ' вместе.')
+    folder = environ.get('GOOGLE_DRIVE_FOLDER_NAME', '').strip() or DriveBackupConfig.folder_name
+    start_value = environ.get('GOOGLE_BACKUP_START', '').strip()
+    try:
+        start = date.fromisoformat(start_value) if start_value else None
+    except ValueError:
+        raise ValueError('GOOGLE_BACKUP_START — дата вида 2026-10-14.') from None
+    return DriveBackupConfig(*values, folder_name=folder, start=start)
 
 
 def parse_hikvision_config(environ) -> HikvisionConfig | None:

@@ -249,6 +249,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             application.state.menu_sync.start()
         photos = (asyncio.create_task(keep_device_photos_warm(application.state))
                   if application.state.device_photo_warmup else None)
+        if application.state.drive_backup is not None:
+            application.state.drive_backup.start()
         try:
             yield
         finally:
@@ -265,6 +267,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await application.state.cashier_days.close()
             if application.state.menu_sync is not None:
                 await application.state.menu_sync.close()
+            if application.state.drive_backup is not None:
+                await application.state.drive_backup.close()
             await application.state.reports.close()
             await application.state.phone_login.close()
             # Клиенты держат свои пулы соединений всё время жизни приложения;
@@ -370,6 +374,15 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.phone_login = PhoneLogin(
         PhoneLoginStore(shared or settings.data_dir / 'phone-login.sqlite3'), settings,
         sms_client if sms_client is not None else sms_sender(settings.sms), accounts=app.state.accounts)
+
+    # Резерв отчётов в Google Drive (T-476): только когда задан токен диска.
+    app.state.drive_backup = None
+    if settings.drive_backup is not None:
+        from retro.drive_backup import BackupStore, DriveBackup
+        from retro.integrations.google_drive import GoogleDrive
+        app.state.drive_backup = DriveBackup(
+            app, GoogleDrive(settings.drive_backup),
+            BackupStore(shared or settings.data_dir / 'drive-backup.sqlite3'), settings.drive_backup)
 
     app.state.financial_requests = FinancialRequests(
         shared or Path(accountant_db_path or settings.data_dir / 'accountant.sqlite3')
