@@ -423,6 +423,21 @@ def till_expense_rows(day, gives):
                     Decimal(give['amount'])) for give in gives]
 
 
+def export_bytes(state, day, snapshot, expenses=None, receipts=None, gives=None):
+    """Файл «Отчёт кассы» — тот же, что кнопка «Скачать» и резерв в Google (T-476)."""
+    if expenses is None:
+        expenses = [] if snapshot.demo else state.expenses.list(day)
+    if receipts is None:
+        receipts = [] if snapshot.demo else state.expenses.list_receipts(day)
+    if gives is None:
+        gives = [] if snapshot.demo else shokh_gives(state.accountant_finance, day)
+    totals = None if snapshot.demo else till_totals(state, day)
+    return export_report(snapshot, [*expenses, *till_expense_rows(day, gives)], receipts,
+                         usd_total=totals.usd_total if totals else Decimal(0),
+                         usd_rate=totals.usd_rate if totals else None,
+                         usd_deduction=totals.usd_deduction if totals else Decimal(0))
+
+
 @router.get('/export')
 def download_report(request: Request, date: date,
                     snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$'),
@@ -444,11 +459,7 @@ def download_report(request: Request, date: date,
             or (shokh_revision is not None and shokh_revision != gives_revision(gives))
             or (usd_revision is not None and usd_revision != gives_revision(deposits))):
         raise HTTPException(409, 'Расходы, поступления или доллары изменились. Обновите день перед скачиванием.')
-    totals = None if snapshot.demo else till_totals(request.app.state, day)
-    data = export_report(snapshot, [*expenses, *till_expense_rows(day, gives)], receipts,
-                         usd_total=totals.usd_total if totals else Decimal(0),
-                         usd_rate=totals.usd_rate if totals else None,
-                         usd_deduction=totals.usd_deduction if totals else Decimal(0))
+    data = export_bytes(request.app.state, day, snapshot, expenses, receipts, gives)
     prefix = 'DEMO-' if snapshot.demo else ''
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{prefix}Retro-{day.isoformat()}.xlsx"'})
