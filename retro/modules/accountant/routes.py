@@ -177,6 +177,15 @@ async def day_view(request: Request, date: date | None = None):
     return await asyncio.to_thread(_day_data, request, day, cashier_amount, cashier_error, current=current)
 
 
+@router.get('/cash-today')
+def cash_today(request: Request):
+    """«Баланс на сегодня» на зарплатных страницах: остаток кассы на конец
+    сегодняшнего дня — тот же расчёт, что в «Финансах дня», без запроса в iiko."""
+    day = today_tashkent()
+    balance = request.app.state.accountant_finance.day_flow(day, carry_start_for(request, day))['closing']
+    return dict(date=day.isoformat(), cash_balance=str(balance) if balance is not None else None)
+
+
 @router.get('/staff')
 def staff_view(request: Request, date: date | None = None):
     return _day_data(request, selected_day(date), None, None, staff_only=True)

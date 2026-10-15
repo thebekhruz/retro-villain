@@ -1,27 +1,59 @@
 .salary-day-page .pr-grid{--cols:var(--name-w) var(--sum-w) repeat(var(--days),var(--day-w)) var(--tot-w)}
 .salary-day-page .pr-c-paid{right:0}
 .salary-day-page .pr-c-grand{grid-column:span 1}
-.salary-day-page .pr-cards{grid-template-columns:repeat(3,minmax(0,1fr))}
+.salary-day-page .pr-cards{grid-template-columns:repeat(4,minmax(0,1fr))}
 .salary-day-page .sd-note{font-size:14px;line-height:1.6;color:#607368;margin:0 0 18px}
 .salary-day-page .sd-header-cell>.pr-day{width:100%;height:100%}
 .salary-day-page .sd-paid-date{font-size:9px;font-weight:500;white-space:nowrap;line-height:1.3}
 .salary-day-page .pr-day.is-selected:not(.is-today){box-shadow:inset 0 0 0 2px #d2af59}
 .salary-day-page #salary-message{margin:0 0 14px}
-/* Группы и поиск — значения из «Сотрудников» (employees.css: .emp-tabs, .emp-registry-tools input). */
-.sd-tools{display:flex;align-items:flex-start;justify-content:space-between;gap:12px;padding:16px 18px 0}
-.sd-tabs{display:flex;flex-wrap:wrap;gap:4px;min-width:0;margin-left:-4px}
-/* Должности выбранной группы — второй ряд тех же чипов, под тонкой линией: видно, что это внутри группы. */
-.sd-filters{display:grid;gap:4px;min-width:0}
-.sd-filters #sd-roles{border-top:1px solid #eef1ea;padding-top:6px;margin-top:2px}
-.sd-tabs[hidden]{display:none}
-.salary-day-page .sd-tab{border:0;border-radius:7px;padding:8px 10px;font-size:14px;display:inline-flex;gap:6px;align-items:baseline;
-  background:transparent;color:#718075;min-height:0;cursor:pointer}
-.salary-day-page .sd-tab:hover{background:#f3f5f0}
-.salary-day-page .sd-tab.is-active{background:#edf2e9;color:#143e35;font-weight:600}
-.salary-day-page .sd-tab small{font-size:12px;opacity:.7}
-#sd-search{flex:none;width:290px;max-width:100%;height:38px;border:1px solid #e3e7df;border-radius:9px;background:#fcfdf9;
+/* Поиск — главный инструмент (T-470): не уже 380 px и тянется на свободное место;
+   рядом — «Свернуть все». Поле — значения из «Сотрудников» (.emp-registry-tools input). */
+.sd-tools{display:flex;align-items:center;gap:12px;padding:16px 18px 0}
+#sd-search{flex:1 1 380px;min-width:380px;max-width:720px;height:40px;border:1px solid #e3e7df;border-radius:9px;background:#fcfdf9;
   padding:0 12px;font-size:14px;color:#1c302b;outline:none}
 #sd-search:focus{border-color:#b8cdbb}
+.sd-fold-all{flex:none;margin-left:auto;border:0;border-radius:7px;padding:8px 10px;background:transparent;color:#5f7166;
+  font-size:14px;cursor:pointer}
+.sd-fold-all:hover{background:#f3f5f0;color:#143e35}
+.sd-fold-all[hidden]{display:none}
+/* Правила клика — в «?» у легенды, а не текстом над таблицей. */
+.sd-help{flex:none;display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;
+  border:1px solid #d6ddd2;color:#71827d;font-size:13px;font-weight:650;cursor:help}
+.sd-help:focus-visible{outline:2px solid #d2af59;outline-offset:2px}
+/* Заголовок группы — строка во всю ширину, подпись прилипает к левому краю при прокрутке дней. */
+.salary-day-page .sd-group{padding:0;border-top:1px solid #e7ece3;background:#f9faf6}
+.salary-day-page .sd-group[hidden]{display:none}
+.sd-group-cell{position:sticky;left:0;display:inline-block}
+.sd-group-btn{display:inline-flex;align-items:center;gap:8px;border:0;background:none;padding:10px 14px;font:inherit;
+  font-size:14px;font-weight:650;color:#285140;cursor:pointer}
+.sd-group-btn:hover:not(:disabled){color:#143e35}
+.sd-group-label{display:inline-flex;align-items:baseline;gap:8px}
+.sd-group-count{font-size:13px;font-weight:500;color:#7d8881}
+.sd-group-btn:disabled{cursor:default;opacity:1}
+.sd-group-caret{width:0;height:0;border-left:5px solid currentColor;border-top:4px solid transparent;border-bottom:4px solid transparent;
+  transition:transform .15s}
+.sd-group-btn[aria-expanded="true"] .sd-group-caret{transform:rotate(90deg)}
+.salary-day-page .sd-group+.pr-row{border-top:0}
+/* «＋ Добавить сотрудника» — после последнего сотрудника, до итогов. */
+.salary-day-page .sd-add{padding:0;border-top:1px solid #e7ece3;background:#fff}
+.sd-add-box{position:sticky;left:0;display:block;width:min(100%,calc(100vw - 48px));max-width:1100px;padding:10px 14px}
+.sd-add-open{border:1px dashed #c9d5c6;border-radius:8px;background:#fbfcf9;padding:8px 14px;font:inherit;font-size:14px;
+  font-weight:600;color:#285140;cursor:pointer}
+.sd-add-open:hover:not(:disabled){background:#f1f5ee;border-color:#a9bea9}
+.sd-add-open:disabled{opacity:.5;cursor:default}
+.sd-add-form{display:grid;grid-template-columns:minmax(160px,1.4fr) minmax(130px,1fr) 170px 150px auto auto;gap:8px;align-items:center}
+.sd-add-form :is(input,select){height:38px;min-width:0;width:100%;border:1px solid #dbe3d8;border-radius:7px;padding:0 10px;
+  background:#fff;color:#203d33;font:inherit;font-size:14px;outline:0}
+.sd-add-form :is(input,select):focus{border-color:#8fae98;box-shadow:0 0 0 3px #23574a1f}
+.sd-add-submit,.sd-add-cancel{height:38px;border-radius:7px;padding:0 14px;font:inherit;font-size:14px;font-weight:600;cursor:pointer;white-space:nowrap}
+.sd-add-submit{border:0;background:#143e35;color:#fff}
+.sd-add-submit.is-danger{background:#ab445e}
+.sd-add-submit:disabled{opacity:.6;cursor:default}
+.sd-add-cancel{border:1px solid #dbe3d8;background:#fff;color:#5f7166}
+.sd-add-hint{margin-top:6px;font-size:14px;color:#7d8881;line-height:1.45}
+.sd-add-hint:empty{display:none}
+.sd-add-hint.is-bad{color:#ab445e}
 .salary-day-page .pr-row[hidden]{display:none}
 .sd-nothing{margin:0;padding:22px 18px;font-size:14px;color:#7d8881;text-align:center;border-top:1px solid #e7ece3}
 .sd-nothing[hidden]{display:none}
@@ -57,83 +89,26 @@
 .salary-day-page .pr-key.is-unknown{color:#906c2b}
 /* Второй клик — поле суммы в клетке, как ячейка «Зарплаты · месяц». */
 .salary-day-page input.sd-m{outline:0;box-shadow:inset 0 0 0 2px #d2af59;background:#fff;color:#1c4c3e;font-size:14px}
-/* Три карточки на планшете не вмещают «3 160 000 сум» — итог месяца во всю ширину. */
+/* Четыре карточки на планшете не вмещают «3 160 000 сум» — два ряда по две, баланс первым. */
 @media(max-width:1024px){
   .salary-day-page .pr-cards{grid-template-columns:repeat(2,minmax(0,1fr))}
-  .salary-day-page .pr-cards>.pr-card:first-child{grid-column:1/-1}
+  .salary-day-page .pr-card--cash{grid-column:auto}
 }
-@media(max-width:900px){.salary-day-page .sd-tab{min-height:40px;align-items:center}#sd-search{height:44px}}
-/* Планшет и телефон: поиск сверху во всю ширину, чипы групп и должностей — под ним во всю ширину,
-   как в «Сотрудниках»; рядом с полем поиска они складывались в узкий столбец. */
-@media(max-width:900px){.sd-tools{flex-direction:column-reverse;align-items:stretch}#sd-search{width:100%;font-size:15px}}
+/* Планшет и телефон: поиск во всю ширину, кнопки — под палец. */
+@media(max-width:900px){
+  .sd-tools{flex-wrap:wrap}
+  #sd-search{flex:1 1 100%;min-width:0;max-width:none;height:44px;font-size:15px}
+  .sd-fold-all,.sd-group-btn,.sd-add-open{min-height:44px}
+  .sd-add-form{grid-template-columns:minmax(0,1fr) minmax(0,1fr)}
+  .sd-add-form :is(input,select),.sd-add-submit,.sd-add-cancel{height:44px}
+}
+@media(max-width:480px){.sd-add-form{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:650px){.salary-day-page .pr-cards{grid-template-columns:1fr}.salary-day-page .pr-card-value{margin-top:8px}}
 
-/* ── Доп. выплаты под ведомостью (ТЗ 09.10, Б-05) ───────────────────────────
-   Блок — «Оклады, выданные сегодня» из «Зарплаты · месяц» (.pr-today, .fd-mo-row,
-   .fd-mo-form): те же строки и та же строка ввода, только полей больше. */
 /* Доп. выплата в клетку не входит: «+» в углу клетки, сумма — в «Выдано». */
 .salary-day-page .sd-m.has-extra{position:relative}
 .salary-day-page .sd-m.has-extra::after{content:"+";position:absolute;top:3px;right:5px;font-size:14px;font-weight:700;
   line-height:1;color:#906c2b}
-.salary-day-page .sd-extra .fd-sec-sum{display:block}
-.salary-day-page .sd-extra .fd-mo-row{grid-template-columns:minmax(0,1fr) 130px minmax(0,1.3fr) 30px}
-.salary-day-page .sd-extra .fd-mo-row>.num{text-align:right}
-.salary-day-page .sd-extra .fd-mo-left{font-size:14px;overflow-wrap:anywhere}
-.salary-day-page .sd-extra-amount{border:0;background:none;padding:4px 0;font:inherit;font-size:14.5px;font-weight:600;
-  color:#1c302b;cursor:pointer;text-underline-offset:3px;justify-self:end}
-.salary-day-page .sd-extra-amount:hover{text-decoration:underline dotted;filter:none}
-.salary-day-page .sd-extra .fd-mo-hint .fd-link-btn{padding:0;font-size:14px;text-decoration:underline;cursor:pointer}
-/* Окно бухгалтера: подписи не мельче 14 точек. */
-.salary-day-page .sd-extra :is(.fd-mo-hint,.fd-who-role,.fd-mo-empty){font-size:14px}
-/* Строка ввода: две строки полей — кто и даты, затем сумма, назначение и кнопка. */
-.salary-day-page .sd-extra-form{grid-template-columns:150px minmax(0,1fr) 200px 200px;
-  grid-template-areas:"who who work paid" "sum note note btn"}
-.sd-extra-form>.sd-extra-who{grid-area:who}
-.sd-extra-form>.sd-extra-date:first-of-type{grid-area:work}
-.sd-extra-form>.sd-extra-date:last-of-type{grid-area:paid}
-.sd-extra-form>.sd-extra-sum{grid-area:sum}
-.sd-extra-form>.sd-extra-note{grid-area:note;text-align:left}
-.sd-extra-form>.fd-btn-give{grid-area:btn}
-.salary-day-page .sd-extra-form input.sd-extra-who{text-align:left}
-/* Дата с подписью внутри рамки поля: «Смена 08.10.2026». */
-.sd-extra-date{display:flex;align-items:center;gap:8px;min-width:0;height:38px;border:1px solid #dbe3d8;border-radius:7px;
-  background:#fff;padding:0 4px 0 10px}
-.sd-extra-date>span{flex:none;font-size:14px;color:#809084}
-.salary-day-page .sd-extra-form .sd-extra-date>input{flex:1;min-width:0;height:100%;border:0;padding:0;background:none;
-  text-align:left;box-shadow:none}
-.sd-extra-date:focus-within{border-color:#8fae98;box-shadow:0 0 0 3px #23574a1f}
-.salary-day-page .sd-extra-form>input:focus{border-color:#8fae98;box-shadow:0 0 0 3px #23574a1f}
-.salary-day-page .sd-extra-form :disabled{opacity:.55}
-@media(min-width:1500px){
-  .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1.3fr) 190px 200px 140px minmax(0,1fr) auto;
-    grid-template-areas:"who work paid sum note btn"}
-}
-@media(max-width:1024px){
-  .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1fr) minmax(0,1fr);
-    grid-template-areas:"who who" "work paid" "sum note" "btn btn"}
-  .sd-extra-form>.fd-btn-give{justify-self:end}
-}
-/* Планшет и телефон — строки как у окладов на телефоне (accountant.css), но пояснение
-   длинное: имя и сумма в первой строке, «выплата · смена · назначение» — под ними. */
-@media(max-width:900px){
-  .salary-day-page .sd-extra .fd-mo-row{grid-template-columns:minmax(0,1fr) auto 40px;
-    grid-template-areas:"who amt x" "left left x";row-gap:4px}
-  .salary-day-page .sd-extra .fd-mo-row>.fd-mo-who{grid-area:who}
-  .salary-day-page .sd-extra .fd-mo-row>.num{grid-area:amt;align-self:start}
-  .salary-day-page .sd-extra .fd-mo-row>.fd-mo-left{grid-area:left}
-  .salary-day-page .sd-extra .fd-mo-row>.fd-x{grid-area:x;align-self:center}
-}
-@media(max-width:650px){
-  .salary-day-page .sd-extra-form{grid-template-areas:"who who" "work paid" "sum sum" "note note" "btn btn"}
-  .sd-extra-form>.fd-btn-give{justify-self:stretch}
-  .sd-extra-date{height:44px}
-  .salary-day-page .sd-extra-amount{min-height:40px}
-}
-@media(max-width:480px){
-  .salary-day-page .sd-extra-form{grid-template-columns:minmax(0,1fr);
-    grid-template-areas:"who" "work" "paid" "sum" "note" "btn"}
-}
-
 /* Дата реального расхода остаётся видна рядом с галочкой за смену. */
 .sd-m .sd-payout-date{display:block;font-size:9px;font-weight:500;line-height:1.25;color:#285249;margin-top:2px;white-space:normal}
 .sd-m:has(.sd-payout-date){flex-direction:column;line-height:1.15}

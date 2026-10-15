@@ -12,14 +12,15 @@
   let current=null, today=null, selectedDay=null, sequence=0, controller=null, writes=0, queue=Promise.resolve();
   let editing=null;
   let loading=false, calendarDay=null, dateCheck=null;
-  // Группы и поиск — как в «Сотрудниках»; порядок групп тот же, незнакомые — в конце.
-  // В выбранной группе — её должности (в «Кухне» — повара по цехам), общая логика EmployeesLogic.
+  // Группы — как в «Сотрудниках»; порядок тот же, незнакомые — в конце. T-470: группы —
+  // сворачиваемые заголовки в самой таблице (сначала раскрыты все), поиск — по всем группам.
   const GROUP_ORDER=['Управление','Встреча гостей','Кухня','Обслуживание зала','Бар','Присмотр за детьми','Уборка','Охрана'];
-  const filter={tab:'all',role:'',q:''}, E=globalThis.EmployeesLogic;
+  const filter={q:''}, collapsed=new Set(), heads=new Map(), E=globalThis.EmployeesLogic;
+  let groups=[];
   const groupOf=person=>person.group||'Без группы';
-  const visible=person=>(filter.tab==='all'||groupOf(person)===filter.tab)
-    &&(!E||(E.matchesRole(filter.role,person.role)&&E.matchesQuery(filter.q,person.name,person.role)));
-  const isFiltered=()=>filter.tab!=='all'||!!filter.role||!!filter.q.trim();
+  // Свёрнутая группа — не фильтр: её люди входят в итоги, фильтрует только поиск.
+  const visible=person=>!E||E.matchesQuery(filter.q,person.name,person.role);
+  const isFiltered=()=>!!filter.q.trim();
   const inflight=new Map();
   const monthTitle=month=>new Intl.DateTimeFormat('ru-RU',{month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(month+'-01T12:00:00Z'));
   function message(text,error=false){
@@ -54,9 +55,9 @@
       +(day===today?' is-today':'')+(day>today||v.outside?' is-future':'')+(v.editable?'':' is-locked')+(v.extra?' has-extra':'')+keep;
     el.textContent=v.state==='on'?'✓':v.state==='odd'?fmt(v.amount):mark;
     if(v.amount&&cell.paid_days?.length)el.append(node('small','sd-payout-date','выдано '+cell.paid_days.map(dm).join(', ')));
-    // Доп. выплата в клетку не входит — «+» в углу и подсказка, сумма — в «Выдано» и в списке под таблицей.
+    // Доп. выплата (записанная до T-470) в клетку не входит — «+» в углу и подсказка, сумма — в «Выдано».
     const dates='Смена '+dm(day)+' · '+(v.amount?'выдано '+(cell.paid_days||[cell.paid_day]).filter(Boolean).map(dm).join(', '):'новая выплата — расход '+dm(today));
-    const title=[dates,v.outside?L.outsideTitle(person):'',L.shiftTitle(day,shift,v.amount,'shift'),v.rate?'Ставка за смену: '+fmt(v.rate)+' сум':'',v.extra?'Доп. выплата '+fmt(v.extra)+' сум — в списке под таблицей':'']
+    const title=[dates,v.outside?L.outsideTitle(person):'',L.shiftTitle(day,shift,v.amount,'shift'),v.rate?'Ставка за смену: '+fmt(v.rate)+' сум':'',v.extra?'Доп. выплата '+fmt(v.extra)+' сум — входит в «Выдано» и в Excel':'']
       .filter(Boolean).join('\n');
     if(title)el.title=title;else el.removeAttribute('title');
     if(v.editable){
@@ -73,33 +74,31 @@
     paintCell(person,day,el);
     return el;
   }
-  function chip(label,count,active,pick){
-    const button=node('button','sd-tab'+(active?' is-active':''));button.type='button';button.setAttribute('role','tab');
-    button.setAttribute('aria-selected',String(active));
-    button.append(node('span','',label),node('small','',String(count)));
-    button.addEventListener('click',()=>{pick();renderTabs();applyFilter();});
-    return button;
-  }
-  function renderTabs(){
-    const counts=new Map();current.people.forEach(p=>counts.set(groupOf(p),(counts.get(groupOf(p))||0)+1));
-    if(filter.tab!=='all'&&!counts.has(filter.tab))filter.tab='all';
-    const names=[...GROUP_ORDER.filter(name=>counts.has(name)),...[...counts.keys()].filter(name=>!GROUP_ORDER.includes(name))];
-    const tabs=[{key:'all',label:'Все',count:current.people.length},...names.map(name=>({key:name,label:name,count:counts.get(name)}))];
-    $('sd-tabs').replaceChildren(...tabs.map(tab=>chip(tab.label,tab.count,filter.tab===tab.key,()=>{filter.tab=tab.key;filter.role='';})));
-    // Должности выбранной группы — вторым рядом тех же чипов (две и больше должности).
-    const roles=E&&filter.tab!=='all'?E.groupRoles(current.people.map(p=>({group:groupOf(p),role:p.role})),filter.tab):[];
-    if(!roles.some(role=>role.key===filter.role))filter.role='';
-    $('sd-roles').hidden=!roles.length;
-    $('sd-roles').replaceChildren(...(roles.length?[chip('Все должности',counts.get(filter.tab),!filter.role,()=>{filter.role='';}),
-      ...roles.map(role=>chip(role.label,role.count,filter.role===role.key,()=>{filter.role=role.key;}))]:[]));
+  /* Заголовок группы: «Кухня · 12», по клику — свернуть или раскрыть. */
+  function groupHead(group){
+    const row=node('div','pr-section sd-group');row.setAttribute('role','row');
+    const cell=node('div','sd-group-cell');cell.setAttribute('role','rowheader');
+    const button=node('button','sd-group-btn');button.type='button';
+    const label=node('span','sd-group-label');button.append(node('span','sd-group-caret'),label);
+    button.addEventListener('click',()=>{if(collapsed.has(group.name))collapsed.delete(group.name);else collapsed.add(group.name);applyFilter();});
+    cell.append(button);row.append(cell);
+    heads.set(group.name,{row,button,label});
+    return row;
   }
   /* Отфильтрованные строки прячутся; итог по дням внизу — по видимым. */
   function applyFilter(){
-    let shown=0;
-    current.people.forEach(person=>{const row=$('sd-row-'+person.id);if(!row)return;const ok=visible(person);row.hidden=!ok;if(ok)shown++;});
+    const query=filter.q.trim();let shown=0;
+    groups.forEach(group=>{
+      const state=L.groupState(group,query,collapsed,visible), head=heads.get(group.name);
+      if(head){head.row.hidden=state.hidden;head.button.setAttribute('aria-expanded',String(state.open));head.label.replaceChildren(node('span','',group.name),node('small','sd-group-count',state.count));
+        // С поиском группы раскрывает он сам; свернуть вручную — после сброса поиска.
+        head.button.disabled=!!query;}
+      group.people.forEach(person=>{const row=$('sd-row-'+person.id);if(!row)return;const ok=visible(person);row.hidden=!ok||!state.open;if(ok)shown++;});
+    });
     $('sd-nothing').hidden=shown>0||!current.people.length;
+    const fold=$('sd-fold-all');fold.hidden=groups.length<2||!!query;
+    fold.textContent=groups.length&&groups.every(group=>collapsed.has(group.name))?'Развернуть все':'Свернуть все';
     totals();
-    extra?.render();
   }
   function totals(){
     const view=L.matrix(current);
@@ -114,11 +113,12 @@
     // Итог столбца — обычные и дополнительные выплаты за эту смену.
     current.days.forEach((day,col)=>{const el=$('sd-total-'+day);if(!el)return;
       const sum=shown.reduce((total,person)=>total+Math.round((person.cells[col].amount+person.cells[col].extra)*100),0)/100;el.textContent=sum?fmt(sum):'';});
-    if($('sd-grand'))$('sd-grand').textContent=fmt(shown.reduce((total,person)=>total+Math.round(person.paid*100),0)/100)+' сум';
-    if($('sd-foot-label'))$('sd-foot-label').textContent=filtered?'За смену · по фильтру':'Выдано за смену';
+    // Итог месяца уже в карточке сверху; внизу он нужен только по найденным.
+    if($('sd-grand'))$('sd-grand').textContent=filtered?fmt(shown.reduce((total,person)=>total+Math.round(person.paid*100),0)/100)+' сум':'';
+    if($('sd-foot-label'))$('sd-foot-label').textContent=filtered?'За смену · по поиску':'Выдано за смену';
   }
   function selectDay(day){
-    selectedDay=day;extra?.day(day);
+    selectedDay=day;
     $('sheet-grid').querySelectorAll('.pr-day').forEach(el=>{el.classList.toggle('is-selected',el.dataset.day===day);el.setAttribute('aria-pressed',String(el.dataset.day===day));});
     totals();
   }
@@ -126,7 +126,8 @@
     editing=null;
     const grid=$('sheet-grid'), view=L.matrix(current);grid.replaceChildren();
     grid.style.setProperty('--days',String(current.days.length));
-    $('sheet-empty').hidden=!!view.people.length;$('sheet-scroll').hidden=!view.people.length;
+    // Пустая ведомость — шапка и строка «＋ Добавить сотрудника» всё равно видны.
+    $('sheet-empty').hidden=!!view.people.length;
     // Шапка — как у «Зарплаты · месяц»: число и день недели, «сегодня», вчера светло-зелёным.
     const head=node('div','pr-row is-head');head.setAttribute('role','row');
     for(const [cls,title] of [['pr-c pr-c-name','Сотрудник'],['pr-c pr-c-sum','Ставка']]){const el=node('div',cls,title);el.setAttribute('role','columnheader');head.append(el);}
@@ -141,8 +142,13 @@
     });
     const paidHead=node('div','pr-c pr-c-paid','Выдано');paidHead.setAttribute('role','columnheader');head.append(paidHead);grid.append(head);
     // В матрице клетки — массив для подсчёта; рисуем и пишем по исходным данным.
+    // current.people уже разложен по группам (loadMonth) — строки идут под своими заголовками.
+    heads.clear();
+    const firstOf=new Map(groups.map(group=>[group.people[0]?.id,group]));
     view.people.forEach((summary,index)=>{
-      const person=current.people[index], row=node('div','pr-row is-monthly');row.setAttribute('role','row');row.id='sd-row-'+person.id;
+      const person=current.people[index];
+      if(firstOf.has(person.id))grid.append(groupHead(firstOf.get(person.id)));
+      const row=node('div','pr-row is-monthly');row.setAttribute('role','row');row.id='sd-row-'+person.id;row.dataset.group=groupOf(person);
       const who=node('div','pr-c pr-c-name');who.setAttribute('role','rowheader');
       // Должность, «временный», период и «архив» — отдельными узлами: переводчик берёт их по одному,
       // а строка переносится между ними, а не посреди «08.10–10.10».
@@ -153,14 +159,16 @@
       summary.cells.forEach(cell=>{const wrap=node('div','sd-cell');wrap.setAttribute('role','cell');wrap.append(makeCell(person,cell.day));row.append(wrap);});
       const paid=node('div','pr-c pr-c-paid rm-num',fmt(summary.paid));paid.id='sd-person-'+person.id;paid.setAttribute('role','cell');row.append(paid);grid.append(row);
     });
+    grid.append(addRow());
     const foot=node('div','pr-row is-foot');foot.setAttribute('role','row');
     const title=node('div','pr-c pr-c-label','Выдано за смену');title.id='sd-foot-label';title.setAttribute('role','rowheader');foot.append(title,node('div','pr-c pr-c-sum pr-c-sumfoot'));
     current.days.forEach(day=>{const el=node('div','pr-t rm-num'+(day===today?' is-today':''));el.id='sd-total-'+day;el.setAttribute('role','cell');foot.append(el);});
     const grand=node('div','pr-c pr-c-grand rm-num');grand.id='sd-grand';grand.setAttribute('role','cell');foot.append(grand);grid.append(foot);
-    renderTabs();applyFilter();
+    applyFilter();paintAddHint();
     selectDay(selectedDay);
-    const entry=new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'long',year:'numeric',timeZone:'UTC'}).format(new Date(current.shift_start+'T12:00:00Z')).replace(/\.$/,'');
-    $('entry-note').textContent=current.closed?'Месяц закрыт — только для чтения':'В столбце — дата смены. Ставите галочку сейчас — расход записывается сегодня, '+dm(today)+'. Можно отметить несколько смен. Под галочкой — фактическая дата выдачи. Правка суммы сохраняет эту дату. Смены с '+entry+'.';
+    // Правила клика и дат — в «?» у легенды (T-470); над таблицей — только «месяц закрыт».
+    $('entry-note').textContent=current.closed?'Месяц закрыт — только для чтения':'';
+    $('entry-note').hidden=!current.closed;
   }
   /* Одна клетка — один PUT с абсолютной суммой и ожидаемой прежней (сервер
      сверяет её и не задвоит выплату). Клетка перекрашивается сразу; если
@@ -179,6 +187,7 @@
         const result=await response.json();if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Не удалось сохранить выплату.');
         const confirmed=result.amount==null?null:L.parseAmount(result.amount);if(confirmed===null)throw new Error('Не удалось проверить сохранённую сумму. Обновите ведомость.');
         if(current===data)person.cells[day]={...cell,amount:String(confirmed),work_day:result.work_day,paid_days:confirmed?[result.date]:[],paid_day:confirmed?result.date:today,editable:result.editable!==false};
+        globalThis.RetroCashToday?.refresh();
         return true;
       } catch(error){if(current===data){person.cells[day]=cell;message(error.message,true);}return false;}
       finally{writes--;inflight.delete(key);controls();if(current===data){paintCell(person,day);totals();}}
@@ -196,12 +205,13 @@
       const response=await fetch('/api/accountant/salary-day/month?month='+encodeURIComponent(month)+'&basis=shift',{signal:controller.signal,cache:'no-store'});
       const data=await response.json();if(!response.ok)throw new Error(data.detail||'Не удалось загрузить ведомость.');
       if(token!==sequence)return false;
-      if(preserveDraft&&(editing||writes||extra?.busy()||globalThis.RetroSave?.pending().length))return false;
+      if(preserveDraft&&(editing||writes||addBusy()||globalThis.RetroSave?.pending().length))return false;
+      groups=L.groupPeople(data.people,GROUP_ORDER,groupOf);data.people=groups.flatMap(group=>group.people);
       current=data;today=data.today;calendarDay=requestedOn;
       const latest=today;
       selectedDay=followLatest&&data.days.includes(latest)?latest:data.days.includes(selectedDay)?selectedDay:data.days.includes(latest)?latest:data.days.at(-1);
       $('month-input').value=data.month;$('month-input').max=today.slice(0,7);$('month-label').textContent=monthTitle(month);$('crumb-month').textContent='Зарплата · день';
-      render();$('salary-body').hidden=false;message('');$('connection').classList.remove('rm-status-skel');$('connection').textContent='Ручная ведомость · '+monthTitle(month);controls();
+      render();$('salary-body').hidden=false;message('');globalThis.RetroCashToday?.refresh();$('connection').classList.remove('rm-status-skel');$('connection').textContent='Ручная ведомость · '+monthTitle(month);controls();
       const scrollDay=today<data.entry_start&&data.days.includes(data.entry_start)?data.entry_start:selectedDay;
       const focus=$('sheet-grid').querySelector('.pr-day[data-day="'+scrollDay+'"]');
       if(focus){
@@ -220,9 +230,9 @@
 
   /* Оставленная на ночь ведомость обновляет сегодняшнюю дату расхода и смены.
      Дату подтверждает сервер; часы устройства только подсказывают, когда проверить.
-     Начатую сумму/доп. выплату и запись в пути не трогаем. Исторический день не переключаем. */
+     Начатую сумму, нового сотрудника и запись в пути не трогаем. Исторический день не переключаем. */
   function dateRefreshBlocked(){
-    return !current||document.hidden||loading||writes>0||!!editing||extra?.busy()
+    return !current||document.hidden||loading||writes>0||!!editing||addBusy()
       ||!!globalThis.RetroSave?.pending().length;
   }
   async function refreshDate(force=false){
@@ -303,6 +313,104 @@
     return amount===v.amount?true:write(person,day,amount);
   }
 
+  /* ── «＋ Добавить сотрудника» (T-470): строка после последнего сотрудника ──
+     Имя, должность, группа и ставка вписываются прямо в таблицу. Тот же POST,
+     что в «Сотрудниках»; похожие в реестре — тот же вопрос «Это другой человек?».
+     После записи ведомость перечитывается — новый человек сразу в своей группе. */
+  let adding=null;
+  const addBusy=()=>!!adding&&(adding.saving||!!(adding.name+adding.role+adding.rate).trim());
+  const groupChoices=()=>[...new Set([...GROUP_ORDER,...groups.map(group=>group.name)])].filter(name=>name!=='Без группы');
+  function addRow(){
+    const row=node('div','pr-section sd-add');row.setAttribute('role','row');
+    const box=node('div','sd-add-box');box.setAttribute('role','cell');row.append(box);
+    if(!adding){
+      const open=node('button','sd-add-open','＋ Добавить сотрудника');open.type='button';open.disabled=!!current.closed;
+      open.addEventListener('click',()=>{adding={name:'',role:'',group:'',rate:'',groupTouched:false,confirm:false,matches:null,error:'',saving:false};redrawAdd(true);});
+      box.append(open);return row;
+    }
+    const form=node('form','sd-add-form');form.noValidate=true;
+    const group=node('select','sd-add-group');group.setAttribute('aria-label','Группа');
+    group.append(new Option('Группа',''),...groupChoices().map(name=>new Option(name,name)));group.value=adding.group;
+    group.addEventListener('change',()=>{adding.group=group.value;adding.groupTouched=true;adding.error='';paintAddHint();});
+    const field=(key,placeholder,label)=>{
+      const input=node('input','sd-add-'+key);input.value=adding[key];input.placeholder=placeholder;input.autocomplete='off';
+      input.setAttribute('aria-label',label);
+      input.addEventListener('input',()=>{
+        adding[key]=input.value;adding.confirm=false;adding.matches=null;adding.error='';
+        // Группа подсказывается по должности, пока её не выбрали руками — как в «Сотрудниках».
+        if(key==='role'&&!adding.groupTouched){const guess=E?.groupForRole(input.value);if(guess){adding.group=guess;group.value=guess;}}
+        paintAddHint();
+      });
+      return input;
+    };
+    const name=field('name','Имя и фамилия','Имя нового сотрудника'), role=field('role','Должность','Должность');
+    const roles=node('datalist');roles.id='sd-add-roles';role.setAttribute('list',roles.id);
+    [...new Set(current.people.map(person=>person.role).filter(Boolean))].sort((a,b)=>a.localeCompare(b,'ru')).forEach(text=>roles.append(new Option(text,text)));
+    const rate=field('rate','Ставка за смену','Ставка за смену, сум');rate.inputMode='decimal';rate.dataset.moneyHint='off';
+    const submit=node('button','sd-add-submit','Добавить');submit.type='submit';
+    const cancel=node('button','sd-add-cancel','Отмена');cancel.type='button';
+    cancel.addEventListener('click',()=>{adding=null;redrawAdd();});
+    form.append(name,role,roles,group,rate,submit,cancel);
+    form.addEventListener('submit',event=>{event.preventDefault();submitAdd();});
+    form.addEventListener('keydown',event=>{if(event.key==='Escape'&&!adding?.saving){event.preventDefault();adding=null;redrawAdd();}});
+    const hint=node('div','sd-add-hint');hint.id='sd-add-hint';hint.setAttribute('aria-live','polite');
+    box.append(form,hint);
+    return row;
+  }
+  function redrawAdd(focus=false){
+    const old=$('sheet-grid').querySelector('.sd-add');if(!old||!current)return;
+    const row=addRow();old.replaceWith(row);paintAddHint();
+    if(focus)row.querySelector('.sd-add-name')?.focus();
+    else if(!adding)row.querySelector('.sd-add-open')?.focus({preventScroll:true});
+  }
+  /* Под строкой: ошибка, похожие в реестре или подсказка, что будет. */
+  function paintAddHint(){
+    const box=$('sd-add-hint');if(!box||!adding)return;
+    box.replaceChildren();box.className='sd-add-hint';
+    const submit=$('sheet-grid').querySelector('.sd-add-submit');
+    if(submit){submit.disabled=adding.saving;submit.textContent=adding.matches?'Это другой человек — добавить':'Добавить';submit.classList.toggle('is-danger',!!adding.matches);}
+    if(adding.error){box.textContent=adding.error;box.classList.add('is-bad');return;}
+    if(adding.matches){
+      box.classList.add('is-bad');
+      box.append(node('span','','Похожие уже есть в реестре: '),
+        ...adding.matches.map((person,index)=>node('span','',(index?'; ':'')+person.name+(E?.namesakeLine?' ('+E.namesakeLine(person)+')':''))),
+        node('span','','. Если это тот же человек — нажмите «Отмена».'));
+      return;
+    }
+    box.textContent='Появится в ведомости сразу. Hikvision и подробности карточки — в «Сотрудниках».';
+  }
+  async function submitAdd(){
+    if(!adding)return true;
+    if(adding.saving)return false;
+    const draft=L.newPerson(adding);
+    if(draft.error){adding.error=draft.error;paintAddHint();return false;}
+    if(adding.matches)adding.confirm=true;
+    adding.saving=true;paintAddHint();
+    const button=$('sheet-grid').querySelector('.sd-add-submit');
+    const work=(async()=>{
+      const response=await fetch('/api/accountant/employees',{method:'POST',headers:{'Content-Type':'application/json'},
+        body:JSON.stringify({...draft.body,confirm_new:adding.confirm})});
+      const result=await response.json().catch(()=>({}));
+      if(response.status===409&&Array.isArray(result.matches))return {matches:result.matches};
+      if(!response.ok)throw new Error(typeof result.detail==='string'?result.detail:'Не удалось добавить сотрудника.');
+      return {employee:result.employee};
+    })();
+    globalThis.RetroSave?.track(work);
+    if(B&&button)B.button(button,work,{done:false}).catch(()=>{});
+    try{
+      const result=await work;
+      if(result.matches){adding.saving=false;adding.matches=result.matches;paintAddHint();return false;}
+      const who=draft.body.name;adding=null;
+      // Новый человек должен быть виден: его группа раскрыта, поиск сброшен.
+      collapsed.delete(result.employee.group||'Без группы');filter.q='';$('sd-search').value='';
+      await loadMonth(current.month);
+      const row=$('sd-row-'+result.employee.id);
+      if(row){row.classList.add('is-focus');row.scrollIntoView({block:'center',behavior:'smooth'});setTimeout(()=>row.classList.remove('is-focus'),2400);}
+      done('Добавлен: '+who+'.');
+      return true;
+    }catch(error){if(adding){adding.saving=false;adding.error=error.message;paintAddHint();}return false;}
+  }
+
   /* ── Клетки: мышь, палец, клавиатура ─────────────────────────────────── */
   const grid=$('sheet-grid');
   const cellOf=target=>target.closest?.('button.sd-m');
@@ -334,12 +442,10 @@
     else if((event.key==='Delete'||event.key==='Backspace')&&view(t.person,t.day).amount){event.preventDefault();write(t.person,t.day,0);}
   });
 
-  /* «Скачать Excel» (Б-07): вся ведомость или то, что сейчас выбрано группой, должностью и поиском. */
+  /* «Скачать Excel» (Б-07): вся ведомость или то, что сейчас найдено поиском. */
   async function download(){
     if(!current)return false;
     const params=new URLSearchParams({month:current.month,basis:'shift'});
-    if(filter.tab!=='all')params.set('group',filter.tab);
-    if(filter.role)params.set('role',filter.role);
     if(filter.q.trim())params.set('q',filter.q.trim());
     try{
       const response=await fetch('/api/accountant/salary-day/export?'+params,{cache:'no-store'});
@@ -352,9 +458,10 @@
     }catch(error){message(error.message,true);return false;}
   }
   $('salary-download').addEventListener('click',()=>{const work=download();if(B)B.button($('salary-download'),work).catch(()=>{});});
-  // Доп. выплаты под ведомостью (Б-05): после записи месяц перечитывается целиком.
-  const extra=globalThis.SalaryExtra?.mount({data:()=>current,visible,filtered:isFiltered,selectedDay:()=>selectedDay,
-    reload:()=>loadMonth(current.month),message:(text,error)=>error?message(text,true):done(text)});
+  $('sd-fold-all').addEventListener('click',()=>{
+    if(groups.every(group=>collapsed.has(group.name)))collapsed.clear();else groups.forEach(group=>collapsed.add(group.name));
+    applyFilter();
+  });
   function navigate(month){if(current&&globalThis.RetroSave?.confirmLeave()===false){$('month-input').value=current.month;return;}const work=loadMonth(month);if(B&&!$('salary-body').hidden)B.section($('salary-body'),work);}
   $('sd-search').addEventListener('input',event=>{filter.q=event.target.value;if(current)applyFilter();});
   $('month-prev').addEventListener('click',()=>navigate(L.shiftMonth($('month-input').value,-1)));
@@ -364,6 +471,8 @@
   // «Сохранить» дописывает сумму, набранную в клетке; галочки уже записаны.
   globalThis.RetroSave?.register(grid,async()=>editing?await finishEdit(true):true,
     {dirty:()=>!!editing&&L.parseAmount(editing.input.value)!==editing.clean});
+  // Набранный новый сотрудник: «Сохранить» добавляет его, уход со страницы — переспрашивает.
+  globalThis.RetroSave?.register(grid,()=>submitAdd(),{dirty:()=>addBusy()&&!adding.saving});
   window.addEventListener('focus',()=>refreshDate(true));
   document.addEventListener('visibilitychange',()=>{if(!document.hidden)refreshDate(true);});
   setInterval(()=>refreshDate(),30000);
