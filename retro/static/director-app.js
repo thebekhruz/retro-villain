@@ -808,7 +808,6 @@
     $('kpi-start').value = data.period.start;
     $('kpi-end').value = data.period.end;
     $('kpi-share').value = Math.round(scheme.share * 100);
-    $('kpi-personal').value = Math.round(scheme.personal * 100);
     $('kpi-cap').value = Math.round(scheme.cap / 1000);
     $('kpi-baseline').value = scheme.baseline_weeks;
     $('kpi-min-checks').value = scheme.min_checks;
@@ -937,9 +936,9 @@
     let body;
     try {
       body = K().settingsFromForm({kind: state.kind, start: $('kpi-start').value, end: $('kpi-end').value,
-        share: $('kpi-share').value, personal: $('kpi-personal').value, cap: $('kpi-cap').value,
+        share: $('kpi-share').value, cap: $('kpi-cap').value,
         min_checks: $('kpi-min-checks').value, min_shifts: $('kpi-min-shifts').value, baseline_weeks: $('kpi-baseline').value,
-        baseline_min_checks: state.settings.settings.scheme.baseline_min_checks, netting: state.netting, targets: state.targets});
+        netting: state.netting, targets: state.targets});
     } catch (error) { $('kpi-form-error').textContent = error.message; return; }
     $('kpi-save').disabled = true;
     try {

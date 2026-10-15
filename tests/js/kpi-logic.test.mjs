@@ -31,20 +31,21 @@ test('прогресс зала и человека, строка под име�
   assert.equal(logic.goalProgress({goal: 3_200_000, team_uplift: 1_472_000}), 46);
   assert.equal(logic.goalProgress({goal: 0, team_uplift: 10}), 0);
   const rows = [
-    {waiter: 'Валентина', eligible: true, uplift: 997000, premium: 255000, checks: 63, shifts: 6},
-    {waiter: 'Баходир', eligible: true, uplift: 448000, premium: 113000, checks: 26, shifts: 6},
-    {waiter: 'Нурик', eligible: false, uplift: 158000, premium: 0, checks: 15, shifts: 4},
-    {waiter: 'Султан', eligible: false, uplift: -29000, premium: 0, checks: 3, shifts: 2},
+    {waiter: 'Валентина', eligible: true, premium: 255000, sold: 31, checks: 63, shifts: 6},
+    {waiter: 'Баходир', eligible: true, premium: 113000, sold: 12, checks: 26, shifts: 6},
+    {waiter: 'Нурик', eligible: false, premium: 0, sold: 3, checks: 15, shifts: 4},
+    {waiter: 'Султан', eligible: false, premium: 0, sold: 0, checks: 3, shifts: 2},
   ];
   const scheme = {min_checks: 20, min_shifts: 3};
   assert.equal(logic.personProgress(rows[0], rows, scheme), 100);
-  assert.equal(logic.personProgress(rows[1], rows, scheme), 45);
+  assert.equal(logic.personProgress(rows[1], rows, scheme), 44);
   assert.equal(logic.personProgress(rows[2], rows, scheme), 75, 'до порога: 15 из 20 чеков');
   assert.equal(logic.personProgress(rows[3], rows, scheme), 15);
-  assert.equal(logic.personLine(rows[0], scheme), 'прирост +997 тыс · 63 чека');
+  assert.equal(logic.personLine(rows[0], scheme), '63 чека · премия 255 тыс');
   assert.equal(logic.personLine(rows[2], scheme), '15 чеков · 4 смены · ещё 5 чеков');
   assert.equal(logic.personLine(rows[3], scheme), '3 чека · 2 смены · ещё 17 чеков и 1 смена');
   assert.deepEqual(logic.ranking(rows.slice().reverse()).map(r => r.waiter), ['Валентина', 'Баходир', 'Нурик', 'Султан']);
+  assert.deepEqual(logic.ranking([{waiter: 'А', eligible: true, premium: 10, sold: 1}, {waiter: 'Б', eligible: true, premium: 10, sold: 4}]).map(r => r.waiter), ['Б', 'А'], 'при равной премии выше тот, кто продал больше');
   assert.equal(logic.initials('Малика млад'), 'ММ');
 });
 
@@ -61,16 +62,16 @@ test('позиции: тон, прогресс к цели, спарклайн �
   assert.equal(logic.sparkPath(item, {checks_by_day: {'2026-10-19': 10}}, period), '', 'одна точка — линии нет');
 });
 
-test('настройки из формы: проценты в доли, тысячи в сумы, команда = остаток', () => {
-  const body = logic.settingsFromForm({kind: 'week', start: '2026-10-19', end: '2026-10-25', share: '30', personal: '70',
+test('настройки из формы: проценты в доли, тысячи в сумы', () => {
+  const body = logic.settingsFromForm({kind: 'week', start: '2026-10-19', end: '2026-10-25', share: '30',
     cap: '1 000', min_checks: '20', min_shifts: '3', netting: false,
     targets: [{title: 'Чай', group: 'напиток', target100: '5,0', margin: '36 000', dishes: [{id: 'a', name: 'ЧАЙ'}]}]});
   assert.equal(body.scheme.share, 0.3);
-  assert.equal(body.scheme.team, 0.3);
+  assert.equal(body.scheme.personal, undefined, 'личной части больше нет');
   assert.equal(body.scheme.cap, 1_000_000);
   assert.equal(body.scheme.netting, false);
   assert.deepEqual(body.targets[0], {key: 't1', title: 'Чай', group: 'напиток', target100: 5, margin: 36000, dishes: [['a', 'ЧАЙ']]});
-  assert.throws(() => logic.settingsFromForm({share: 'x', personal: '70', cap: '1'}), /доля прироста/);
+  assert.throws(() => logic.settingsFromForm({share: 'x', cap: '1'}), /доля прироста/);
 });
 
 test('кольцо: процент, дуга, остаток', () => {

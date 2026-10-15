@@ -63,9 +63,8 @@
 .kpi-link-row select{max-width:55%;height:40px;border:1px solid #dbe3d8;border-radius:10px;background:#fff;color:var(--ink);font-size:13px;padding:0 8px}
 .kpi-payout-list{display:grid;gap:6px;margin-top:8px;font-size:12px}
 .kpi-payout-list .is-error{color:var(--late)}.kpi-payout-list .is-ok{color:var(--ok)}
-/* Пять вкладок внизу у менеджера: сетка на пять колонок, подписи те же 10 px. */
-.mgr-page .dir-tabs{grid-template-columns:repeat(5,1fr)}
-@media(max-width:360px){.mgr-page .dir-tabs .rm-tab-icon{width:44px}}
+/* Нижний бар менеджера — ровно как у директора (director-app.css .dir-tabs): четыре вкладки,
+   своих правил сетки здесь нет (T-468: пятая колонка от убранной вкладки «Неделя» сдвигала бар влево). */
 @media(max-width:400px){.kpi-hero-grid strong{font-size:22px}.kpi-dir-grid strong{font-size:15px}}
 /* Лист настройки у директора длиннее экрана: прокрутка внутри листа. */
 .kpi-sheet{max-height:92vh;overflow:auto}
@@ -133,3 +132,21 @@
 .kpi-stamp-row{display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap}
 .kpi-stamp-row .dir-link{margin-top:0;min-height:36px}
 .kpi-top .dir-h1{flex:1}
+
+/* Позиции периода на главной (T-468): строка — название, группа, продано из цели, остаток, полоска. */
+.kpi-targets{padding-bottom:8px}
+.kpi-target-row{padding:9px 0;border-top:1px solid #eef1ea}
+.kpi-target-row:first-child{border-top:0}
+.kpi-target-head{display:flex;align-items:flex-start;justify-content:space-between;gap:10px}
+.kpi-target-head .kpi-target-name{flex:1;min-width:0}
+.kpi-target-head .kpi-target-name strong{display:inline;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.kpi-target-head .kpi-target-name small{display:inline;font-size:10px;color:var(--muted-3);margin-left:6px}
+.kpi-target-head .dir-waiter-tag{display:inline-block;margin-left:6px;vertical-align:middle}
+.kpi-target-nums{flex:none;text-align:right;font-size:12px;color:var(--muted-2);white-space:nowrap}
+.kpi-target-nums b{font-size:15px;font-weight:650;color:var(--ink)}
+.kpi-target-nums small{display:block;font-size:10px;color:var(--muted-3)}
+.kpi-target-row .rm-bar{display:block;margin-top:6px}
+.kpi-target-row.is-push .rm-bar>span{background:#c5a359}
+.kpi-target-row .rm-bar.is-done>span{background:var(--gold)}
+.kpi-target-rows+.dir-note{margin-top:8px}
+.kpi-nowrap{white-space:nowrap}
