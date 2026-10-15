@@ -4,6 +4,7 @@ from datetime import date
 import pytest
 
 from retro.modules.kpi.rules import (
+    auto_target, effective_targets,
     HALL, KpiError, Line, Order, Stats, aggregate, baseline_window, compute, default_settings, exclusion_reasons,
     login_counts, month_bounds, next_bounds, normalize_scheme, normalize_targets, week_bounds,
 )
@@ -89,17 +90,19 @@ def test_compute_team_fund_is_shared_by_checks():
     assert result['fund'] == 3 * rows['Алина']['premium'] and result['restaurant_net'] == result['team_uplift'] - result['fund']
     assert 'uplift' not in rows['Алина'] and 'own_base' not in rows['Алина']
     # Позиции у человека — против базы зала.
-    assert rows['Алина']['items'][0] == dict(key='tea', title='Фирменные чаи', group='напиток', base=6.0, now=10.0, target=5.0,
+    assert rows['Алина']['items'][0] == dict(key='tea', title='Фирменные чаи', group='напиток', base=6.0, now=10.0, target=8.0,
                                               quantity=1, margin=36000, by_day={})
     assert rows['Новичок']['sold'] == 2 and result['rows'][0]['waiter'] == 'Новичок', 'при равной премии выше тот, кто продал больше'
     # Цель периода в штуках: ожидаемые чеки 200 / 2 × 7 = 700; цели 5 + 4 → 63; продано 3.
-    assert result['expected_checks'] == 700 and result['goal_qty'] == 63 and result['sold'] == 3
+    # Цели по правилу «база + 30 %»: чай 6,0 → 7,8 → 8,0; суп 1,0 → max(1,3; 1,5) → 1,5. Ожидаемые чеки 700.
+    assert result['expected_checks'] == 700 and result['goal_qty'] == 66.5 and result['sold'] == 3
     progress = {item['key']: item for item in result['targets_progress']}
-    assert progress['tea'] == dict(key='tea', title='Фирменные чаи', group='напиток', margin=36000, base=6.0, now=6.45, target=5.0,
-                                   sold=2, goal_qty=35.0, remaining=33, lag=8.0, uplift=5040, push=True)
-    assert progress['soup']['lag'] == 7.0 and progress['soup']['push'] is True
+    assert progress['tea'] == dict(key='tea', title='Фирменные чаи', group='напиток', margin=36000, base=6.0, now=6.45, target=8.0,
+                                   target_source='base', target_auto=8.0,
+                                   sold=2, goal_qty=56.0, remaining=54, lag=14.0, uplift=5040, push=True)
+    assert progress['soup']['target'] == 1.5 and progress['soup']['lag'] == 2.0 and progress['soup']['push'] is True
     assert [item['key'] for item in result['targets_progress']] == ['tea', 'soup'], 'сначала большее отставание'
-    assert result['hall']['rates']['tea'] == dict(base=6.0, now=6.45, target=5.0)
+    assert result['hall']['rates']['tea'] == dict(base=6.0, now=6.45, target=8.0)
 
 
 def test_negative_team_uplift_pays_nothing_and_netting_toggle():
@@ -118,7 +121,8 @@ def test_negative_team_uplift_pays_nothing_and_netting_toggle():
 
 
 def test_push_marks_at_most_three_lagging_targets():
-    many = [dict(key=f't{i}', title=f'П{i}', group='блюдо', target100=10.0, margin=1000, dishes=[(f'd{i}', 'x')]) for i in range(5)]
+    # Ручные цели 10 на 100 выше правила (база 0 → 0,5), поэтому действуют они.
+    many = [dict(key=f't{i}', title=f'П{i}', group='блюдо', target100=10.0, manual=True, margin=1000, dishes=[(f'd{i}', 'x')]) for i in range(5)]
     base = {HALL: stats(100, [1], **{f't{i}': 0 for i in range(5)})}
     now = {HALL: stats(10, [1], t0=0, t1=0, t2=0, t3=0, t4=9), 'Алина': stats(10, [1], t4=9)}
     result = compute(now, base, many, SCHEME, days_total=7, days_passed=7)
@@ -148,7 +152,7 @@ def test_scheme_and_targets_validation():
     assert targets[0]['dishes'] == [(TEA, 'Чай')] and targets[0]['margin'] is None and targets[0]['key'] == 't1'
     for bad in ([], [dict(title='', dishes=[(TEA, 'x')])], [dict(title='a', group='x', dishes=[(TEA, 'x')])],
                 [dict(title='a', dishes=[])], [dict(title='a', dishes=[(TEA, 'x')]), dict(title='b', dishes=[(TEA, 'y')])],
-                [dict(title='a', dishes=[(TEA, 'x')], target100=200)], [dict(title='a', dishes=[(TEA, 'x')], margin=0)]):
+                [dict(title='a', dishes=[(TEA, 'x')], target100=200, manual=True)], [dict(title='a', dishes=[(TEA, 'x')], margin=0)]):
         with pytest.raises(KpiError):
             normalize_targets(bad)
     defaults = default_settings()
@@ -183,3 +187,28 @@ def test_store_renames_reserved_end_column_in_old_databases(tmp_path):
         columns = {row[1] for row in new.execute('PRAGMA table_info("kpi_periods")')}
     assert {'start_day', 'end_day'} <= columns and not {'start', 'end'} & columns
     assert KpiStore(path).list()[0]['id'] == period['id'], 'повторное открытие не ломает мигрированную базу'
+
+
+def test_auto_target_is_base_plus_30_percent_rounded_up_to_half():
+    """T-469, решение Amir: цель = max(база × 1,3; база + 0,5), вверх до 0,5."""
+    assert auto_target(0) == 0.5, 'база 0 — цель полпорции на 100 чеков'
+    assert auto_target(0.9) == 1.5, '0,9 + 0,5 = 1,4 больше 1,17 → 1,5'
+    assert auto_target(1.0) == 1.5
+    assert auto_target(1.7) == 2.5, '1,7 × 1,3 = 2,21 → 2,5'
+    assert auto_target(4.2) == 5.5, 'Эзогелин: 4,2 × 1,3 = 5,46 → 5,5'
+    assert auto_target(4.34) == 6.0, 'Грибной суп: 5,64 → 6,0'
+    assert auto_target(5.0) == 6.5, 'ровно 6,5 не округляется вверх ещё раз'
+    assert auto_target(10.0) == 13.0
+
+
+def test_manual_target_wins_only_when_above_the_rule():
+    base = stats(100, [1], tea=4, soup=10)
+    targets = [dict(TARGETS[0], target100=9.0, manual=True), dict(TARGETS[1], target100=5.0, manual=True)]
+    tea, soup = effective_targets(targets, base)
+    assert (tea['target100'], tea['target_source'], tea['target_auto']) == (9.0, 'manual', 5.5)
+    assert (soup['target100'], soup['target_source'], soup['target_auto']) == (13.0, 'base', 13.0), 'ручная ниже правила — правило'
+    plain = effective_targets([dict(TARGETS[0], target100=None, manual=False)], base)[0]
+    assert (plain['target100'], plain['target_source']) == (5.5, 'base')
+    # Нормализация: без флага manual цель не хранится, с флагом — хранится.
+    stored = normalize_targets([dict(title='Чай', dishes=[(TEA, 'x')], target100='7'), dict(title='Суп', dishes=[(SOUP, 'y')], target100='7', manual=True)])
+    assert [(t['target100'], t['manual']) for t in stored] == [(None, False), (7.0, True)]

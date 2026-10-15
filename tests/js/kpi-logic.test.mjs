@@ -70,7 +70,14 @@ test('настройки из формы: проценты в доли, тыся
   assert.equal(body.scheme.personal, undefined, 'личной части больше нет');
   assert.equal(body.scheme.cap, 1_000_000);
   assert.equal(body.scheme.netting, false);
-  assert.deepEqual(body.targets[0], {key: 't1', title: 'Чай', group: 'напиток', target100: 5, margin: 36000, dishes: [['a', 'ЧАЙ']]});
+  assert.deepEqual(body.targets[0], {key: 't1', title: 'Чай', group: 'напиток', target100: null, manual: false, margin: 36000, dishes: [['a', 'ЧАЙ']]},
+    'без ручной отметки цель считает правило');
+  const manual = logic.settingsFromForm({share: '25', cap: '1000', min_checks: '20', min_shifts: '3',
+    targets: [{title: 'Чай', target100: '7,5', manual: true, dishes: [{id: 'a', name: 'ЧАЙ'}]}]});
+  assert.equal(manual.targets[0].target100, 7.5);
+  assert.equal(manual.targets[0].manual, true);
+  assert.equal(logic.targetSource({target_source: 'base'}), 'цель: база + 30 %');
+  assert.equal(logic.targetSource({target_source: 'manual'}), 'цель вручную');
   assert.throws(() => logic.settingsFromForm({share: 'x', cap: '1'}), /доля прироста/);
 });
 
@@ -99,4 +106,30 @@ test('темп: до старта, в темпе, отстаём, цель вз�
 test('лучший день недели', () => {
   assert.equal(logic.bestDay({'2026-10-19': 12, '2026-10-22': 31, '2026-10-21': 31}).text, 'среда, 31 порция');
   assert.equal(logic.bestDay({}), null);
+});
+
+test('пустое состояние вкладки KPI: до старта, без участников, с данными', () => {
+  const period = {start: '2026-10-19', end: '2026-10-25', days_passed: 0, days_total: 7, pilot: true};
+  const none = 'Официантов зала нет ни в реестре, ни в отметках директора. Отметить их можно в настройке периода.';
+  assert.deepEqual(logic.emptyState({period, logins: []}), {state: 'before', title: 'Пилот стартует 19 октября', text: none});
+  assert.equal(logic.emptyState({period, logins: [{waiter: 'Алина', active: true, source: 'registry'}, {waiter: 'Любовь', active: false}]}).text,
+    'Участвуют официанты: 1. Продажи засчитываются с понедельника, 19 октября; цели ниже посчитаны по базе зала за прошлые недели.');
+  assert.equal(logic.emptyState({period: {...period, pilot: false, start: '2026-10-26'}, logins: []}).title, 'Период стартует 26 октября');
+  const running = {...period, days_passed: 3};
+  assert.deepEqual(logic.emptyState({period: running, logins: [{waiter: 'Алина', active: false}]}), {state: 'unmarked', title: 'Официанты не отмечены', text: none});
+  assert.equal(logic.emptyState({period: running, logins: [{waiter: 'Алина', active: true}]}), null);
+  assert.equal(logic.emptyState({}), null);
+});
+
+test('процент цели в кольце без потолка и подпись участия', () => {
+  assert.equal(logic.goalPercent(0, 140), 0);
+  assert.equal(logic.goalPercent(64, 140), 46);
+  assert.equal(logic.goalPercent(157, 140), 112, 'перевыполнение показываем как есть');
+  assert.equal(logic.goalPercent(5, 0), 0);
+  assert.equal(logic.ringPercent(157, 140), 100, 'дуга кольца при этом полная');
+  assert.equal(logic.sourceLabel({source: 'registry'}), 'из реестра');
+  assert.equal(logic.sourceLabel({source: 'manual'}), 'отмечен вручную');
+  assert.equal(logic.sourceLabel({source: 'manual_off'}), 'не считать, вручную');
+  assert.equal(logic.sourceLabel({source: 'unmatched'}), 'не сопоставлен');
+  assert.equal(logic.dayMonth('2026-11-01'), '1 ноября');
 });

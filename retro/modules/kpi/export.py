@@ -53,10 +53,11 @@ def kpi_workbook(view: dict, *, withheld=None) -> bytes:
     for target in view['targets']:
         rate = rates.get(target['key'], {})
         items.append([target['title'], target['group'], target['margin'], rate.get('base'), rate.get('now'), target['target100'],
+                      'вручную' if target.get('target_source') == 'manual' else 'база + 30 %',
                       '; '.join(name for _id, name in target['dishes'])])
     _sheet(workbook, 'Позиции', ['Позиция', 'Группа', 'Маржа на порцию, сум', 'База зала на 100 чеков',
-                                 'Период на 100 чеков', 'Цель на 100 чеков', 'Карточки iiko'], items,
-           [34, 10, 16, 14, 14, 14, 60])
+                                 'Период на 100 чеков', 'Цель на 100 чеков', 'Откуда цель', 'Карточки iiko'], items,
+           [34, 10, 16, 14, 14, 14, 14, 60])
     scheme = view['scheme']
     _sheet(workbook, 'Настройки', ['Параметр', 'Значение'], [
         ['Период', label], ['Доля прироста зала в фонд', scheme['share']], ['Делится', 'между участниками по числу чеков'],

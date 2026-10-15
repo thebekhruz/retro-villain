@@ -161,3 +161,8 @@ class KpiStore:
             connection.execute('DELETE FROM kpi_waiters WHERE waiter = ?', (waiter,))
             connection.execute('INSERT INTO kpi_waiters (waiter, employee_id, active, updated_at) VALUES (?,?,?,?)',
                                (waiter, employee_id, 1 if active else 0, now_text()))
+
+    def delete_link(self, waiter: str):
+        """Снять ручную отметку: логин снова решает реестр официантов (T-469)."""
+        with closing(self._open()) as connection, connection:
+            connection.execute('DELETE FROM kpi_waiters WHERE waiter = ?', ((waiter or '').strip(),))

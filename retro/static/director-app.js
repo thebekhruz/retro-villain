@@ -849,11 +849,24 @@
         dishes.append(chip);
       }
       name.append(title, node('small', '', `${target.group}${target.margin ? ' · маржа ' + K().thousands(target.margin) : ''}`), dishes);
+      // Цель (T-469): по правилу «база + 30 %», ручная — только если выше правила. Пустое поле — снова правило.
+      const eff = (state.view?.targets || []).find(item => item.key === target.key);
+      const auto = eff?.target_auto;
       const goal = node('label', 'kpi-goal', 'цель');
       const input = node('input');
-      input.inputMode = 'decimal'; input.value = K().rate(target.target100); input.setAttribute('aria-label', 'Цель на 100 чеков');
-      input.addEventListener('input', () => { target.target100 = input.value; });
-      goal.append(input);
+      input.inputMode = 'decimal'; input.setAttribute('aria-label', 'Цель на 100 чеков');
+      input.value = target.manual ? K().rate(target.target100) : '';
+      input.placeholder = auto !== undefined ? K().rate(auto) : '';
+      const source = node('small', 'kpi-goal-source', '');
+      const paint = () => {
+        const manual = input.value.trim() !== '';
+        const value = Number(input.value.replace(',', '.'));
+        source.textContent = !manual ? 'база + 30 %'
+          : auto !== undefined && value <= auto ? `ниже правила, действует ${K().rate(auto)}` : 'вручную';
+      };
+      input.addEventListener('input', () => { target.target100 = input.value; target.manual = input.value.trim() !== ''; paint(); });
+      paint();
+      goal.append(input, source);
       const remove = node('button', 'dir-close', '×');
       remove.type = 'button'; remove.setAttribute('aria-label', 'Убрать позицию');
       remove.addEventListener('click', () => { state.targets.splice(index, 1); renderTargets(); });
@@ -871,7 +884,7 @@
       button.append(name, node('small', '', item.group || ''));
       button.addEventListener('click', () => {
         if (state.targets.some(target => target.dishes.some(dish => dish.id === item.id))) return;
-        state.targets.push({key: 'n' + Date.now().toString(36), title: item.name, group: 'блюдо', target100: 1, margin: null,
+        state.targets.push({key: 'n' + Date.now().toString(36), title: item.name, group: 'блюдо', target100: null, manual: false, margin: null,
           dishes: [{id: item.id, name: item.name}]});
         $('kpi-search').value = '';
         renderFound([]);
@@ -887,9 +900,12 @@
     for (const waiter of Object.keys(state.links)) {
       if (!logins.some(item => item.waiter === waiter)) logins.push({waiter, checks: 0, base_checks: 0});
     }
+    const registry = state.view?.registry;
+    $('kpi-registry').textContent = registry
+      ? `Официантов в реестре: ${registry.waiters} · сопоставлено логинов: ${registry.matched} · вручную: ${registry.manual} · не сопоставлено: ${registry.unmatched}` : '';
     $('kpi-links').replaceChildren(...(logins.length ? logins.map(item => {
       const link = state.links[item.waiter] || {};
-      const active = Boolean(link.active);
+      const active = item.active !== undefined ? Boolean(item.active) : Boolean(link.active);
       const row = node('div', 'kpi-login' + (active ? ' is-active' : ''));
       const head = node('div', 'kpi-login-head');
       const name = node('span', 'kpi-login-name');
@@ -897,7 +913,10 @@
       strong.dataset.i18n = 'off';
       const checks = item.checks ? `${item.checks} ${K().plural(item.checks, 'чек', 'чека', 'чеков')} за период`
         : item.base_checks ? `${item.base_checks} ${K().plural(item.base_checks, 'чек', 'чека', 'чеков')} в базе` : 'чеков пока нет';
-      name.append(strong, node('small', '', checks));
+      // Откуда участие (T-469): из реестра, отмечен вручную, «не считать» вручную, не сопоставлен.
+      const source = K().sourceLabel(item);
+      const who = item.source === 'registry' && item.employee_name ? ` · ${item.employee_name}` : '';
+      name.append(strong, node('small', '', checks), node('small', 'kpi-login-source is-' + (item.source || 'none'), source + who));
       const segment = node('div', 'dir-segment is-compact kpi-login-seg');
       segment.setAttribute('role', 'group');
       for (const [value, label] of [[true, 'официант зала'], [false, 'не считать']]) {
@@ -909,7 +928,13 @@
       }
       head.append(name, segment);
       row.append(head);
-      if (active) {
+      if (state.links[item.waiter]) {
+        const reset = node('button', 'dir-link kpi-login-reset', 'вернуть как в реестре');
+        reset.type = 'button';
+        reset.addEventListener('click', () => resetLink(item.waiter));
+        row.append(reset);
+      }
+      if (active && item.source !== 'registry') {
         const select = node('select');
         select.setAttribute('aria-label', 'Сотрудник для ' + item.waiter);
         select.append(new Option('— сотрудник из реестра —', ''));
@@ -921,13 +946,20 @@
       return row;
     }) : [node('p', 'dir-note', 'Логины появятся после первых чеков зала.')]));
   }
+  async function resetLink(waiter) {
+    try {
+      const data = await call('/links?waiter=' + encodeURIComponent(waiter), {method: 'DELETE'});
+      state.links = data.links;
+      await loadCard(true);
+      renderLinks();
+    } catch (error) { $('kpi-sheet-error').textContent = error.message; }
+  }
   async function saveLink(waiter, employeeId, active) {
     try {
       const data = await call('/links', {method: 'PUT', body: JSON.stringify({waiter, employee_id: employeeId, active})});
       state.links = data.links;
-      state.loadedAt = 0;
+      await loadCard(true);
       renderLinks();
-      loadCard(true);
     } catch (error) { $('kpi-sheet-error').textContent = error.message; }
   }
   async function save(event) {

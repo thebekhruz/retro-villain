@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from retro.modules.cashier.service import TZ, today_tashkent
 
-from .rules import HALL, KpiError, aggregate, baseline_window, compute, login_counts
+from .rules import HALL, PILOT_START, KpiError, aggregate, baseline_window, compute, login_counts
 from .source import margin_per_unit
 
 OPEN_TTL, OPEN_STALE = 15 * 60, 60 * 60          # окно с сегодняшним днём: раз в 15 минут, «Обновить» — сразу
@@ -38,6 +38,40 @@ def match_employee(waiter: str, cards: list, links: dict):
     words = key.split(' ')
     partial = [card for card in cards if words and all(word in _norm(card['name']).split(' ') for word in words)]
     return partial[0] if len(partial) == 1 else None
+
+
+def is_waiter_role(role: str) -> bool:
+    """Официант в реестре бухгалтера (T-469): должность «официант» / «официантка». Ранер и хостес
+    сидят в той же группе «Обслуживание зала», но в KPI не участвуют."""
+    return _norm(role).startswith('официант')
+
+
+def registry_waiters(cards: list, today: date) -> list:
+    """Официанты из реестра, кроме временных, у которых период работы уже закончился."""
+    return [card for card in cards if is_waiter_role(card.get('role') or '')
+            and not (card.get('work_to') and card['work_to'] < today)]
+
+
+def participation(logins, cards: list, waiters: list, links: dict) -> dict:
+    """Кто из логинов iiko идёт в KPI и почему (T-469, решение Amir 15.10).
+
+    По умолчанию — официанты реестра: логин сопоставляется с сотрудником по имени (match_employee
+    только среди официантов). Ручная отметка директора сильнее: «не считать» исключает, «официант
+    зала» добавляет того, кого в реестре официантом нет. Логин без пары в KPI не идёт."""
+    out = {}
+    for login in logins:
+        link = links.get(login)
+        if link is not None and not link.get('active'):
+            out[login] = dict(active=False, source='manual_off', employee=None)
+        elif link is not None:
+            employee = (next((card for card in cards if card['id'] == link.get('employee_id')), None)
+                        if link.get('employee_id') else match_employee(login, cards, {}))
+            out[login] = dict(active=True, source='manual', employee=employee)
+        else:
+            employee = match_employee(login, waiters, {})
+            out[login] = dict(active=employee is not None, source='registry' if employee else 'unmatched',
+                              employee=employee)
+    return out
 
 
 async def cached_orders(state, start: date, end: date, *, refresh=False):
@@ -93,34 +127,40 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
     targets = await fill_margins(state, [dict(t) for t in settings['targets']], start, refresh=refresh)
     scheme = settings['scheme']
     links = state.kpi_store.links()
-    # Опт-ин (T-466): в KPI идут только логины, которые директор отметил как официантов зала.
-    marked = {waiter for waiter, link in links.items() if link.get('active')}
+    cards = state.accountant_roster.manager_cards() if not by_name_only else []
+    waiters = registry_waiters(cards, today)
     logins = []
     if period['status'] == 'closed' and period.get('snapshot'):
         result = period['snapshot']['result']
         fetched_at = period['snapshot'].get('fetched_at')
         logins = period['snapshot'].get('logins') or []
+        part = {item['waiter']: dict(active=item.get('active', False), source=item.get('source', 'manual'),
+                                     employee=next((card for card in cards if card['id'] == item.get('employee_id')), None))
+                for item in logins}
     else:
         base_start, base_end = baseline_window(start, scheme['baseline_weeks'])
         current = await cached_orders(state, start, min(end, today), refresh=refresh)
         base = await cached_orders(state, base_start, base_end, refresh=refresh)
+        now_counts, base_counts = login_counts(current['orders']), login_counts(base['orders'])
+        seen = sorted(set(now_counts) | set(base_counts), key=lambda w: (-now_counts.get(w, 0), -base_counts.get(w, 0), w))
+        # Участники (T-469): официанты реестра по умолчанию, ручные отметки директора сильнее.
+        part = participation(seen, cards, waiters, links)
+        marked = {waiter for waiter, item in part.items() if item['active']}
         result = compute(aggregate(current['orders'], targets, marked), aggregate(base['orders'], targets, marked),
                          targets, scheme, days_total=total, days_passed=passed)
         fetched_at = current['fetched_at'] or base['fetched_at']
-        # Карточки логинов: все, кто пробивал чеки зала в периоде или в базовом окне, с числом чеков периода.
-        now_counts, base_counts = login_counts(current['orders']), login_counts(base['orders'])
-        logins = [dict(waiter=waiter, checks=now_counts.get(waiter, 0), base_checks=base_counts.get(waiter, 0))
-                  for waiter in sorted(set(now_counts) | set(base_counts), key=lambda w: (-now_counts.get(w, 0), w))]
-    cards = state.accountant_roster.manager_cards() if not by_name_only else []
-    for item in logins:
-        link = links.get(item['waiter'])
-        employee = match_employee(item['waiter'], cards, links) if link and link.get('active') else None
-        item.update(active=bool(link and link.get('active')), linked=link is not None,
-                    employee_id=(link or {}).get('employee_id'),
-                    employee_name=employee['name'] if employee else None)
+        logins = [dict(waiter=waiter, checks=now_counts.get(waiter, 0), base_checks=base_counts.get(waiter, 0),
+                       active=part[waiter]['active'], source=part[waiter]['source'], linked=waiter in links,
+                       employee_id=part[waiter]['employee']['id'] if part[waiter]['employee'] else None,
+                       employee_name=part[waiter]['employee']['name'] if part[waiter]['employee'] else None)
+                  for waiter in seen]
+    registry = dict(waiters=len(waiters), matched=sum(1 for item in logins if item.get('source') == 'registry'),
+                    manual=sum(1 for item in logins if item.get('source') == 'manual'),
+                    unmatched=sum(1 for item in logins if item.get('source') == 'unmatched'))
     rows = []
     for row in result['rows']:
-        employee = match_employee(row['waiter'], cards, links)
+        known = part.get(row['waiter'])
+        employee = known['employee'] if known and known.get('employee') else match_employee(row['waiter'], cards, links)
         photo = None
         if employee and employee.get('photo_updated_at') and photo_url:
             photo = dict(url=photo_url(employee), updated_at=employee['photo_updated_at'])
@@ -129,8 +169,9 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
                          linked=row['waiter'] in links))
     return dict(period=dict(id=period['id'], kind=period['kind'], start=period['start'], end=period['end'],
                             status=period['status'], days_total=total, days_passed=passed, today=today.isoformat(),
+                            pilot=period['start'] == PILOT_START.isoformat(),
                             closed_at=period.get('closed_at')),
-                scheme=scheme, targets=targets, fetched_at=fetched_at, logins=logins,
+                scheme=scheme, targets=result.get('targets') or targets, fetched_at=fetched_at, logins=logins, registry=registry,
                 totals={key: result[key] for key in ('team_uplift', 'net_uplift', 'fund', 'fund_total', 'restaurant_net',
                                                       'participants', 'waiters', 'team_checks', 'goal', 'cap', 'sold',
                                                       'goal_qty', 'expected_checks')},
@@ -139,6 +180,7 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
 
 
 def snapshot_for_close(view: dict) -> dict:
-    return dict(result=dict(rows=view['rows'], hall=view['hall'], targets_progress=view['targets_progress'], **view['totals']),
+    return dict(result=dict(rows=view['rows'], hall=view['hall'], targets_progress=view['targets_progress'], targets=view['targets'],
+                            **view['totals']),
                 fetched_at=view['fetched_at'],
                 targets=view['targets'], scheme=view['scheme'], period=view['period'], logins=view['logins'])

@@ -63,8 +63,7 @@
 .kpi-link-row select{max-width:55%;height:40px;border:1px solid #dbe3d8;border-radius:10px;background:#fff;color:var(--ink);font-size:13px;padding:0 8px}
 .kpi-payout-list{display:grid;gap:6px;margin-top:8px;font-size:12px}
 .kpi-payout-list .is-error{color:var(--late)}.kpi-payout-list .is-ok{color:var(--ok)}
-/* Нижний бар менеджера — ровно как у директора (director-app.css .dir-tabs): четыре вкладки,
-   своих правил сетки здесь нет (T-468: пятая колонка от убранной вкладки «Неделя» сдвигала бар влево). */
+/* Нижний бар менеджера — тот же, что у директора: колонки по числу кнопок задаёт director-app.css (T-469). */
 @media(max-width:400px){.kpi-hero-grid strong{font-size:22px}.kpi-dir-grid strong{font-size:15px}}
 /* Лист настройки у директора длиннее экрана: прокрутка внутри листа. */
 .kpi-sheet{max-height:92vh;overflow:auto}
@@ -102,14 +101,14 @@
 .kpi-ring.is-sm .is-tick{display:none}
 .kpi-ring-inner{position:relative;text-align:center;display:grid;gap:2px}
 .kpi-ring-inner span{font-size:11px;color:var(--muted-2)}
-.kpi-ring-inner strong{font-size:40px;font-weight:650;letter-spacing:-1.4px;line-height:1;color:var(--ink)}
+.kpi-ring-inner strong{font-size:40px;font-weight:650;letter-spacing:-1.4px;line-height:1;color:var(--ink);white-space:nowrap}
+.kpi-ring-inner span{white-space:nowrap}
 .kpi-ring-inner small{font-size:12px;color:var(--muted-2)}
 .kpi-ring.is-sm .kpi-ring-inner b{font-size:11px;font-weight:650;color:var(--ink)}
 @media(prefers-reduced-motion:reduce){.kpi-ring .is-fill{transition:none}}
 
 /* Блок на главной: кольцо, подписи темпа, фонд, лучший день и лидер. Весь блок — кнопка в список людей. */
-.kpi-home{width:100%;display:grid;justify-items:center;gap:8px;padding:18px 16px 16px;border:0;text-align:center;color:var(--ink);font:inherit;cursor:pointer}
-.kpi-home:hover:not(:disabled){filter:none;background:#fafbf7}
+.kpi-home{width:100%;display:grid;justify-items:center;gap:8px;padding:18px 16px 16px;border:0;text-align:center;color:var(--ink);font:inherit}
 .kpi-home-head{width:100%;display:flex;justify-content:space-between;align-items:center;gap:8px}
 .kpi-home-head strong{font-size:15px;font-weight:600}
 .kpi-home-pace{font-size:13px;font-weight:600;color:#315e4c;margin-top:2px}
@@ -150,3 +149,15 @@
 .kpi-target-row .rm-bar.is-done>span{background:var(--gold)}
 .kpi-target-rows+.dir-note{margin-top:8px}
 .kpi-nowrap{white-space:nowrap}
+/* Пустое состояние вкладки KPI (T-469). */
+.kpi-empty{display:flex;gap:12px;align-items:flex-start;border:1px solid #eddfbe;background:#fffaf0}
+.kpi-empty strong{display:block;font-size:16px;font-weight:650}
+.kpi-empty p{margin:4px 0 0;font-size:12px;line-height:1.5;color:var(--muted-2)}
+.kpi-empty .dir-spark{flex:none}
+.kpi-login-source{display:block;font-size:10px;margin-top:1px;color:var(--muted-3)}
+.kpi-login-source.is-registry{color:#3f7a50}.kpi-login-source.is-manual{color:#906c2b}
+.kpi-login-reset{margin-top:0;min-height:32px;font-size:11px;justify-self:start}
+.kpi-registry{margin:0 0 6px}
+.kpi-goal-source{display:block;max-width:76px;font-size:9px;line-height:1.2;color:var(--muted-3);white-space:normal}
+.kpi-goal input::placeholder{color:#9aa69b;font-weight:500}
+.kpi-targets-rule{margin:4px 0 2px}
