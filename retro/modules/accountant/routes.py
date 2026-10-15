@@ -885,6 +885,20 @@ def confirm_rate(request: Request, employee_id: int):
     return dict(employee=employee.json())
 
 
+@router.get('/photos')
+async def employee_photos(request: Request):
+    """Фото сотрудников для «Сотрудников» (T-462): те же снимки, что видит
+    менеджер, — свои из карточки и лица с терминала."""
+    from retro.modules.manager.routes import photo_versions
+    return dict(photos=await photo_versions(request, '/api/accountant/employees/{id}/photo'))
+
+
+@router.get('/employees/{employee_id}/photo')
+async def employee_photo(request: Request, employee_id: int):
+    from retro.modules.manager.routes import photo_response
+    return await photo_response(request, employee_id)
+
+
 @router.get('/employees/{employee_id}/history')
 def employee_history(request: Request, employee_id: int):
     """История сменного: ставка, группа, «без Hikvision», добавление и архив."""
