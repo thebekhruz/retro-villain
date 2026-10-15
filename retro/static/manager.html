@@ -61,6 +61,11 @@
         <div id="kpi-home-meta" class="kpi-home-meta"></div>
         <span id="kpi-home-note" class="kpi-home-empty" hidden></span>
       </button>
+      <!-- Позиции периода без тапа (T-468): что, сколько продано, цель, остаток; сверху те, где отставание от темпа больше. -->
+      <article id="kpi-home-targets" class="rm-phone-card kpi-targets" hidden>
+        <div class="dir-card-head"><strong>Что толкать</strong><span id="kpi-home-targets-badge" class="dir-badge" data-i18n="off"></span></div>
+        <div id="kpi-home-targets-list" class="kpi-target-rows"></div>
+      </article>
       <!-- Главное — тёмной карточкой, как совет AI у директора: сколько людей уже
            на терминале и кого ещё снять. -->
       <article class="rm-phone-hero dir-tips mgr-goal">
@@ -94,7 +99,7 @@
       <div class="kpi-top"><button id="kpi-back" class="dir-close" type="button" aria-label="Назад">‹</button><h1 class="dir-h1">Неделя</h1><span id="kpi-badge" class="dir-badge" data-i18n="off"></span></div>
       <div class="dir-pair">
         <div class="rm-phone-card dir-kpi"><span>Продано из цели</span><strong id="kpi-sold" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-stamp"></small></div>
-        <div class="rm-phone-card dir-kpi"><span>Маржа сверх базы</span><strong id="kpi-uplift" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-fund-line"></small></div>
+        <div class="rm-phone-card dir-kpi"><span>Прирост маржи зала</span><strong id="kpi-uplift" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-fund-line"></small></div>
       </div>
       <div id="kpi-views" class="dir-chips" role="group" aria-label="Показать">
         <button type="button" data-kpi-view="rating" class="is-active">Люди</button><button type="button" data-kpi-view="targets">Позиции</button><button type="button" data-kpi-view="rules">Правила</button>
@@ -111,7 +116,7 @@
         <ul id="kpi-rules-list" class="kpi-rules"></ul>
       </article>
       <div class="kpi-stamp-row"><span id="kpi-threshold" class="dir-note"></span><button id="kpi-refresh" class="dir-link" type="button">Обновить данные iiko</button></div>
-      <p class="dir-note">Кольцо у человека — его продажи целевых позиций против его личной цели. Премия копится только с того, что выше его базы за прошлые недели.</p>
+      <p class="dir-note">Премия командная: фонд делится между участниками по числу чеков за период. У человека показаны его продажи целевых позиций против базы зала.</p>
     </section>
 
     <!-- ── Съёмка ──────────────────────────────────────────────────────── -->

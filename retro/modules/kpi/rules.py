@@ -6,6 +6,7 @@
 Считается только чек зала, оплаченный, без удалений, без ручной льготы, без
 безналичных «Счет Шефа / Дегустация / Комплимент» и целиком на одном официанте.
 """
+import math
 import re
 from collections import Counter, defaultdict
 from dataclasses import dataclass, field
@@ -61,8 +62,9 @@ DEFAULT_TARGETS = [
     dict(key='sudak', title='Судак жареный (0,5 кг или 1 кг)', group='новинка', target100=2.0, margin=80364,
          dishes=[('05acdae3-bdb2-4042-8cc0-a6f7434cdce3', 'Судак жареный филе 0,5'), ('622fad41-351a-4912-96f5-1bfdc1d62496', 'Судак жареный филе 1 кг')]),
 ]
-DEFAULT_SCHEME = dict(share=0.25, personal=0.7, team=0.3, cap=1_000_000, min_checks=20, min_shifts=3,
-                      baseline_weeks=4, baseline_min_checks=40, netting=True)
+DEFAULT_SCHEME = dict(share=0.25, cap=1_000_000, min_checks=20, min_shifts=3, baseline_weeks=4, netting=True)
+# Прежние поля схемы (личная часть 70 %, своя база от N чеков) — читаются из старых настроек и отбрасываются (T-468).
+LEGACY_SCHEME_KEYS = ('personal', 'team', 'baseline_min_checks')
 MAX_TARGETS = 20
 
 
@@ -197,20 +199,16 @@ def normalize_scheme(raw) -> dict:
     if not isinstance(raw, dict):
         raise KpiError('Настройки схемы должны быть объектом.')
     scheme = dict(DEFAULT_SCHEME)
-    for name in ('share', 'personal', 'team'):
-        value = raw.get(name, scheme[name])
-        try:
-            value = float(value)
-        except (TypeError, ValueError):
-            raise KpiError(f'Поле {name}: нужно число.') from None
-        if not 0 <= value <= 1:
-            raise KpiError(f'Поле {name}: доля от 0 до 1.')
-        scheme[name] = value
-    if scheme['share'] > 0.5:
+    try:
+        share = float(raw.get('share', scheme['share']))
+    except (TypeError, ValueError):
+        raise KpiError('Поле share: нужно число.') from None
+    if not 0 <= share <= 1:
+        raise KpiError('Поле share: доля от 0 до 1.')
+    if share > 0.5:
         raise KpiError('Доля фонда больше половины прироста: ресторан перестаёт выигрывать.')
-    if abs(scheme['personal'] + scheme['team'] - 1) > 1e-6:
-        raise KpiError('Личная и командная части вместе должны давать 100 %.')
-    for name in ('cap', 'min_checks', 'min_shifts', 'baseline_weeks', 'baseline_min_checks'):
+    scheme['share'] = share
+    for name in ('cap', 'min_checks', 'min_shifts', 'baseline_weeks'):
         value = raw.get(name, scheme[name])
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or int(value) != value:
             raise KpiError(f'Поле {name}: целое число не меньше нуля.')
@@ -271,79 +269,78 @@ def default_settings() -> dict:
                 targets=[dict(item, dishes=[tuple(dish) for dish in item['dishes']]) for item in DEFAULT_TARGETS])
 
 
-def compute(now: dict, base: dict, targets, scheme, *, days_total=7) -> dict:
-    """Рейтинг периода: прирост маржи, участие, премия на человека, итоги зала.
+def compute(now: dict, base: dict, targets, scheme, *, days_total=7, days_passed=None) -> dict:
+    """Период целиком: командный прирост, фонд и доли (T-468, решение Amir 15.10).
 
-    `now`/`base` — результат aggregate() за период и за базовое окно. Потолок
-    премии задан на неделю; на более длинном периоде он растёт пропорционально."""
+    Прирост считается по залу: его частота каждой целевой позиции на 100 чеков за период против средней
+    частоты зала за базовые недели, умноженная на чеки периода и опорную маржу. Фонд = доля прироста,
+    делится между участниками (порог чеков и смен) пропорционально числу их чеков; потолок задан на
+    неделю и растёт с длиной периода. Личных баз нет: позиции у человека показываются против базы зала."""
     hall_base = base.get(HALL, Stats())
     hall_now = now.get(HALL, Stats())
     cap = scheme['cap'] * max(1, round(days_total / 7))
     margins = {target['key']: float(target.get('margin') or 0) for target in targets}
-    # Цель периода в штуках (главная менеджера, кольцо): Σ «цель на 100 чеков» × ожидаемые чеки,
-    # ожидаемые чеки — средние за базовые недели, приведённые к длине периода.
+    # Ожидаемые чеки и цель периода в штуках: средние чеки базовых недель, приведённые к длине периода.
     base_days = max(len(hall_base.days), 1)
     expected_checks = hall_base.checks / base_days * days_total if hall_base.checks else hall_now.checks
-    goal_qty = sum(target['target100'] / 100 * expected_checks for target in targets)
-    sold = sum(hall_now.quantity[target['key']] for target in targets)
-    by_day = {}
-    for day, counter in hall_now.by_day.items():
-        by_day[day] = sum(counter[target['key']] for target in targets)
+    passed = days_total if days_passed is None else max(0, min(days_passed, days_total))
+    progress, team_uplift = [], 0.0
+    for target in targets:
+        key = target['key']
+        before, current = hall_base.rate(key), hall_now.rate(key)
+        gain = (current - before) / 100 * hall_now.checks * margins[key]
+        team_uplift += gain if scheme['netting'] else max(gain, 0.0)
+        goal = target['target100'] / 100 * expected_checks
+        sold_qty = hall_now.quantity[key]
+        expected_today = goal * passed / days_total if days_total else goal
+        progress.append(dict(key=key, title=target['title'], group=target['group'], margin=margins[key],
+                             base=round(before, 2), now=round(current, 2), target=target['target100'],
+                             sold=round(sold_qty), goal_qty=round(goal, 1), remaining=max(0, math.ceil(goal - sold_qty)),
+                             lag=round(expected_today - sold_qty, 1), uplift=round(gain)))
+    # «Толкать сегодня»: 2–3 позиции с самым большим отставанием от темпа.
+    progress.sort(key=lambda item: (-item['lag'], -item['remaining'], item['title']))
+    behind = [item for item in progress if item['lag'] > 0]
+    for index, item in enumerate(progress):
+        item['push'] = item['lag'] > 0 and index < (3 if len(behind) >= 3 else len(behind))
+    team_uplift_positive = max(team_uplift, 0.0)
+    fund_total = scheme['share'] * team_uplift_positive
     rows = []
     for waiter, stats in now.items():
         if waiter == HALL:
             continue
-        own = base.get(waiter)
-        own_base = own is not None and own.checks >= scheme['baseline_min_checks']
-        source = own if own_base else hall_base
         eligible = stats.checks >= scheme['min_checks'] and len(stats.days) >= scheme['min_shifts']
-        # Личная цель в штуках: те же цели на 100 чеков × его ожидаемые чеки за период
-        # (своя база за неделю, иначе текущий темп по прошедшим дням).
-        if own_base:
-            own_expected = own.checks / max(len(own.days), 1) * days_total
-        else:
-            own_expected = stats.checks / max(len(stats.days), 1) * days_total
-        personal_goal = sum(target['target100'] / 100 * own_expected for target in targets)
-        personal_sold = sum(stats.quantity[target['key']] for target in targets)
-        items, uplift = [], 0.0
+        items = []
         for target in targets:
             key = target['key']
-            before, current = source.rate(key), stats.rate(key)
-            gain = (current - before) / 100 * stats.checks * margins[key]
-            uplift += gain if scheme['netting'] else max(gain, 0.0)
-            items.append(dict(key=key, title=target['title'], group=target['group'], base=round(before, 2),
-                              now=round(current, 2), target=target['target100'], quantity=stats.quantity[key],
-                              uplift=round(gain), margin=margins[key],
+            items.append(dict(key=key, title=target['title'], group=target['group'], base=round(hall_base.rate(key), 2),
+                              now=round(stats.rate(key), 2), target=target['target100'], quantity=stats.quantity[key],
+                              margin=margins[key],
                               by_day={day: counter[key] for day, counter in stats.by_day.items() if counter[key]}))
-        rows.append(dict(waiter=waiter, checks=stats.checks, shifts=len(stats.days), eligible=eligible,
-                         own_base=own_base, base_checks=own.checks if own else 0,
-                         uplift=round(uplift), uplift_positive=round(max(uplift, 0.0)), items=items,
-                         sold=round(personal_sold), goal_qty=round(personal_goal, 1),
+        rows.append(dict(waiter=waiter, checks=stats.checks, shifts=len(stats.days), eligible=eligible, items=items,
+                         sold=round(sum(stats.quantity[target['key']] for target in targets)),
                          checks_by_day=dict(stats.checks_by_day)))
     eligible_rows = [row for row in rows if row['eligible']]
-    team_uplift = sum(row['uplift_positive'] for row in eligible_rows)
     team_checks = sum(row['checks'] for row in eligible_rows)
     for row in rows:
-        if not row['eligible']:
-            row.update(personal=0, team=0, premium=0)
+        if not row['eligible'] or not team_checks:
+            row.update(share=0.0, premium=0)
             continue
-        personal = scheme['share'] * scheme['personal'] * row['uplift_positive']
-        team = scheme['share'] * scheme['team'] * team_uplift * row['checks'] / team_checks if team_checks else 0.0
-        row.update(personal=round(personal), team=round(team), premium=round(min(personal + team, cap)))
-    rows.sort(key=lambda row: (not row['eligible'], -row['uplift'], row['waiter']))
-    net_uplift = sum(row['uplift'] for row in eligible_rows)
+        share = row['checks'] / team_checks
+        row.update(share=round(share, 4), premium=round(min(fund_total * share, cap)))
+    rows.sort(key=lambda row: (not row['eligible'], -row['premium'], -row['sold'], -row['checks'], row['waiter']))
     fund = sum(row['premium'] for row in rows)
-    # Цель периода в марже: сколько даст зал, если выйдет на все цели при том же числе чеков в день.
-    goal = sum(max(target['target100'] - hall_base.rate(target['key']), 0) / 100 * expected_checks
-               * margins[target['key']] for target in targets)
-    return dict(rows=rows, team_uplift=round(team_uplift), net_uplift=round(net_uplift), fund=round(fund),
-                restaurant_net=round(net_uplift - fund), participants=len(eligible_rows), waiters=len(rows),
-                sold=round(sold), goal_qty=round(goal_qty, 1), expected_checks=round(expected_checks, 1),
+    goal_margin = sum(max(target['target100'] - hall_base.rate(target['key']), 0) / 100 * expected_checks
+                      * margins[target['key']] for target in targets)
+    return dict(rows=rows, team_uplift=round(team_uplift), net_uplift=round(team_uplift), fund=round(fund),
+                fund_total=round(fund_total), restaurant_net=round(team_uplift - fund), participants=len(eligible_rows),
+                waiters=len(rows), team_checks=team_checks,
+                sold=round(sum(item['sold'] for item in progress)), goal_qty=round(sum(item['goal_qty'] for item in progress), 1),
+                expected_checks=round(expected_checks, 1), targets_progress=progress,
                 hall=dict(checks=hall_now.checks, base_checks=hall_base.checks, days=len(hall_now.days),
-                          sold_by_day={day: round(value) for day, value in sorted(by_day.items())},
+                          sold_by_day={day: round(sum(counter[t['key']] for t in targets)) for day, counter in sorted(hall_now.by_day.items())},
                           rates={t['key']: dict(base=round(hall_base.rate(t['key']), 2), now=round(hall_now.rate(t['key']), 2),
                                                 target=t['target100']) for t in targets}),
-                goal=round(goal), cap=cap)
+                goal=round(goal_margin), cap=cap)
 
 
 def week_bounds(day: date):

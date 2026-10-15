@@ -33,18 +33,19 @@ def kpi_workbook(view: dict, *, withheld=None) -> bytes:
     for row in view['rows']:
         hold = int(withheld.get(row['waiter'], 0) or 0)
         people.append([row['waiter'], row.get('employee_name') or '', row['checks'], row['shifts'],
-                       'да' if row['eligible'] else 'нет', 'своя' if row['own_base'] else 'зал', row['uplift'],
-                       row['personal'], row['team'], row['premium'], hold, max(row['premium'] - hold, 0)])
+                       'да' if row['eligible'] else 'нет', row.get('sold', 0), row.get('share', 0.0),
+                       row['premium'], hold, max(row['premium'] - hold, 0)])
     _sheet(workbook, 'Премии',
-           ['Логин iiko', 'Сотрудник', 'Чеков', 'Смен', 'Участвует', 'База', 'Прирост маржи, сум', 'Лично, сум',
-            'Команда, сум', 'Премия, сум', 'Удержано, сум', 'К выплате, сум'], people,
-           [18, 26, 8, 7, 10, 8, 18, 14, 14, 14, 14, 14])
+           ['Логин iiko', 'Сотрудник', 'Чеков', 'Смен', 'Участвует', 'Продано целевых, порций', 'Доля фонда',
+            'Премия, сум', 'Удержано, сум', 'К выплате, сум'], people,
+           [18, 26, 8, 7, 10, 14, 10, 14, 14, 14])
     totals = view['totals']
     summary = workbook['Премии']
     summary.append([])
     summary.append(['Период', label])
-    summary.append(['Прирост маржи участников, сум', totals['net_uplift']])
-    summary.append(['Фонд премии, сум', totals['fund']])
+    summary.append(['Прирост маржи зала по целевым позициям, сум', totals['team_uplift']])
+    summary.append(['Фонд премии (доля прироста), сум', totals.get('fund_total', totals['fund'])])
+    summary.append(['Выплачено с учётом потолка, сум', totals['fund']])
     summary.append(['Ресторану сверх премии, сум', totals['restaurant_net']])
     summary.append(['Данные iiko на', view.get('fetched_at') or ''])
     items = []
@@ -58,11 +59,11 @@ def kpi_workbook(view: dict, *, withheld=None) -> bytes:
            [34, 10, 16, 14, 14, 14, 60])
     scheme = view['scheme']
     _sheet(workbook, 'Настройки', ['Параметр', 'Значение'], [
-        ['Период', label], ['Доля прироста в фонд', scheme['share']], ['Лично', scheme['personal']],
-        ['Команда', scheme['team']], ['Потолок на человека в неделю, сум', scheme['cap']],
+        ['Период', label], ['Доля прироста зала в фонд', scheme['share']], ['Делится', 'между участниками по числу чеков'],
+        ['Потолок на человека в неделю, сум', scheme['cap']],
         ['Минимум чеков', scheme['min_checks']], ['Минимум смен', scheme['min_shifts']],
-        ['База, недель', scheme['baseline_weeks']], ['База своя от, чеков', scheme['baseline_min_checks']],
-        ['Нетто по позициям', 'да' if scheme['netting'] else 'нет']], [34, 20])
+        ['База зала, недель', scheme['baseline_weeks']],
+        ['Нетто по позициям', 'да' if scheme['netting'] else 'нет']], [34, 34])
     buffer = BytesIO()
     workbook.save(buffer)
     return buffer.getvalue()

@@ -105,7 +105,7 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
         current = await cached_orders(state, start, min(end, today), refresh=refresh)
         base = await cached_orders(state, base_start, base_end, refresh=refresh)
         result = compute(aggregate(current['orders'], targets, marked), aggregate(base['orders'], targets, marked),
-                         targets, scheme, days_total=total)
+                         targets, scheme, days_total=total, days_passed=passed)
         fetched_at = current['fetched_at'] or base['fetched_at']
         # Карточки логинов: все, кто пробивал чеки зала в периоде или в базовом окне, с числом чеков периода.
         now_counts, base_counts = login_counts(current['orders']), login_counts(base['orders'])
@@ -131,12 +131,14 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
                             status=period['status'], days_total=total, days_passed=passed, today=today.isoformat(),
                             closed_at=period.get('closed_at')),
                 scheme=scheme, targets=targets, fetched_at=fetched_at, logins=logins,
-                totals={key: result[key] for key in ('team_uplift', 'net_uplift', 'fund', 'restaurant_net',
-                                                      'participants', 'waiters', 'goal', 'cap', 'sold', 'goal_qty',
-                                                      'expected_checks')},
+                totals={key: result[key] for key in ('team_uplift', 'net_uplift', 'fund', 'fund_total', 'restaurant_net',
+                                                      'participants', 'waiters', 'team_checks', 'goal', 'cap', 'sold',
+                                                      'goal_qty', 'expected_checks')},
+                targets_progress=result['targets_progress'],
                 hall=result['hall'], rows=rows)
 
 
 def snapshot_for_close(view: dict) -> dict:
-    return dict(result=dict(rows=view['rows'], hall=view['hall'], **view['totals']), fetched_at=view['fetched_at'],
+    return dict(result=dict(rows=view['rows'], hall=view['hall'], targets_progress=view['targets_progress'], **view['totals']),
+                fetched_at=view['fetched_at'],
                 targets=view['targets'], scheme=view['scheme'], period=view['period'], logins=view['logins'])

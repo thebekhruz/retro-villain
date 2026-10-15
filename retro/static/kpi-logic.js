@@ -68,14 +68,14 @@
       const shifts = scheme?.min_shifts ? row.shifts / scheme.min_shifts : 1;
       return Math.max(0, Math.min(100, Math.round(Math.min(checks, shifts) * 100)));
     }
-    const top = Math.max(0, ...rows.filter(r => r.eligible).map(r => r.uplift));
-    if (!top || row.uplift <= 0) return 0;
-    return Math.max(4, Math.min(100, Math.round(row.uplift / top * 100)));
+    const top = Math.max(0, ...rows.filter(r => r.eligible).map(r => r.premium || 0));
+    if (!top || !(row.premium > 0)) return 0;
+    return Math.max(4, Math.min(100, Math.round(row.premium / top * 100)));
   }
   /* Подпись под именем: участнику — прирост и чеки, остальным — сколько не хватает до участия. */
   function personLine(row, scheme) {
     const checks = `${row.checks} ${plural(row.checks, 'чек', 'чека', 'чеков')}`;
-    if (row.eligible) return `прирост ${signed(row.uplift)} · ${checks}`;
+    if (row.eligible) return `${checks} · премия ${thousands(row.premium)}`;
     const needChecks = Math.max(0, (scheme?.min_checks || 0) - row.checks);
     const needShifts = Math.max(0, (scheme?.min_shifts || 0) - row.shifts);
     const parts = [];
@@ -127,10 +127,11 @@
     return path.trim();
   }
   /* Сортировка рейтинга: участники по приросту, потом остальные по чекам. Без «красных» отметок. */
+  /* Сортировка списка: участники по премии, потом по проданным порциям; остальные по чекам. Без «красных». */
   function ranking(rows) {
     return rows.slice().sort((a, b) => {
       if (a.eligible !== b.eligible) return a.eligible ? -1 : 1;
-      if (a.eligible) return b.uplift - a.uplift || a.waiter.localeCompare(b.waiter, 'ru');
+      if (a.eligible) return (b.premium - a.premium) || ((b.sold || 0) - (a.sold || 0)) || a.waiter.localeCompare(b.waiter, 'ru');
       return b.checks - a.checks || a.waiter.localeCompare(b.waiter, 'ru');
     });
   }
@@ -145,14 +146,12 @@
       return n;
     };
     const share = number(form.share, 'доля прироста') / 100;
-    const personal = number(form.personal, 'лично') / 100;
     return {
       kind: form.kind === 'month' ? 'month' : 'week',
       start: form.start, end: form.end,
-      scheme: {share, personal, team: Math.round((1 - personal) * 100) / 100, cap: number(form.cap, 'потолок') * 1000,
+      scheme: {share, cap: number(form.cap, 'потолок') * 1000,
         min_checks: number(form.min_checks, 'минимум чеков'), min_shifts: number(form.min_shifts, 'минимум смен'),
-        baseline_weeks: number(form.baseline_weeks ?? 4, 'база'), baseline_min_checks: number(form.baseline_min_checks ?? 40, 'база своя от'),
-        netting: Boolean(form.netting)},
+        baseline_weeks: number(form.baseline_weeks ?? 4, 'база'), netting: Boolean(form.netting)},
       targets: (form.targets || []).map((t, index) => ({
         key: t.key || `t${index + 1}`, title: t.title, group: t.group || 'блюдо',
         target100: number(t.target100, 'цель'), margin: t.margin ? number(t.margin, 'маржа') : null,
