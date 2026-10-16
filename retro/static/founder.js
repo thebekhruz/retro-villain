@@ -3,7 +3,6 @@ const money=new Intl.NumberFormat('ru-RU',{maximumFractionDigits:0});
 const exactMoney=new Intl.NumberFormat('ru-RU',{minimumFractionDigits:2,maximumFractionDigits:2});
 const shortDate=value=>new Intl.DateTimeFormat('ru-RU',{day:'numeric',month:'short',timeZone:'UTC'}).format(new Date(value+'T00:00:00Z'));
 const directionMeta={retro:{label:'Retro',color:'#143e35'},school:{label:'Школа',color:'#52786f'},banquet:{label:'Банкет',color:'#a27445'}};
-const paymentColors=['#143e35','#d8b977','#52786f','#a27445','#769a83','#8c6f98','#ba7b67','#87909a','#b3a676'];
 const bookingMeta={bookings:{label:'Брони',color:'#143e35'},guests:{label:'Гости',color:'#d8b977'},cancelled:{label:'Отмены',color:'#ba7b67'}};
 const gate=FounderLogic.requestGate();let controller=null,lastAnalytics=null,lastBookings=null,lastQuery='';
 
@@ -28,12 +27,12 @@ function paintSkeleton(){
   document.querySelectorAll('.founder-metrics:not(.booking-metrics) article strong').forEach(node=>node.replaceChildren(skel()));
   // Пояснения к выборке приходят почти всегда — место под них держим сразу, иначе вся страница съезжает вниз.
   const message=$('message');message.hidden=false;message.classList.remove('is-error');message.classList.add('is-skel');message.replaceChildren(skel('rm-skel'),skel('rm-skel'),skel('rm-skel'));
-  chartSkeleton($('revenue-chart'),230);chartSkeleton($('payment-chart'),255);cardsSkeleton($('payment-summary'),4);tableSkeleton($('series-table'),5);
+  chartSkeleton($('revenue-chart'),230);tableSkeleton($('series-table'),5);
   bookingSkeleton();
 }
 function bookingSkeleton(){['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).replaceChildren(skel()));chartSkeleton($('booking-chart'),255);cardsSkeleton($('booking-sources'),3);const status=$('booking-status');status.replaceChildren(skel('rm-skel is-val'));status.classList.remove('is-error')}
 /** Аналитика не пришла на первой загрузке — прочерки вместо вечных полос. */
-function settleSkeletons(){document.querySelectorAll('.founder-metrics:not(.booking-metrics) article strong').forEach(node=>{if(node.querySelector('.rm-skel'))node.textContent='—'});['revenue-chart','payment-chart','payment-summary'].forEach(id=>{if($(id).querySelector('.rm-skel'))$(id).replaceChildren()});if($('series-table').querySelector('.rm-skel'))renderSeriesTable()}
+function settleSkeletons(){document.querySelectorAll('.founder-metrics:not(.booking-metrics) article strong').forEach(node=>{if(node.querySelector('.rm-skel'))node.textContent='—'});['revenue-chart'].forEach(id=>{if($(id).querySelector('.rm-skel'))$(id).replaceChildren()});if($('series-table').querySelector('.rm-skel'))renderSeriesTable()}
 function beginLoading(reload,analytics,bookings){
   if(!reload){paintSkeleton();return}
   if(!Busy)return;
@@ -57,16 +56,6 @@ function revenueTooltip(group,directions){
   tooltip.append(period,rows,sum);return tooltip;
 }
 
-function paymentTooltip(group,payments){
-  const tooltip=document.createElement('div');tooltip.className='chart-tooltip payment-tooltip';tooltip.hidden=true;
-  const period=document.createElement('strong');period.textContent=revenuePeriod(group);
-  const rows=document.createElement('div');rows.className='chart-tooltip-rows';
-  let total=0;
-  payments.forEach((payment,index)=>{const value=Number(group.values[payment]||0);total+=value;const row=document.createElement('span');const label=document.createElement('i');label.style.background=paymentColors[index%paymentColors.length];row.append(label,document.createTextNode(`${payment}: ${money.format(value)} сум`));rows.append(row)});
-  const sum=document.createElement('b');sum.textContent=`Всего оплат: ${money.format(total)} сум`;
-  tooltip.append(period,rows,sum);return tooltip;
-}
-
 function renderRevenue(data){
   const target=$('revenue-chart');target.replaceChildren();const directions=data.directions;
   if(!data.revenue_series.length){const empty=document.createElement('div');empty.className='empty-chart';empty.textContent='За период нет временных групп.';target.append(empty);return}
@@ -83,21 +72,6 @@ function renderRevenue(data){
   hoverLayer.addEventListener('pointermove',showTooltip);hoverLayer.addEventListener('pointerdown',showTooltip);hoverLayer.addEventListener('click',showTooltip);hoverLayer.addEventListener('pointerleave',()=>{tooltip.hidden=true;hoverLine.setAttribute('visibility','hidden')});
   target.append(chart,tooltip);
   const legend=$('revenue-legend');legend.replaceChildren();directions.forEach(direction=>{const item=document.createElement('span');const dot=document.createElement('i');dot.className='legend-dot';dot.style.background=directionMeta[direction].color;item.append(dot,document.createTextNode(directionMeta[direction].label));legend.append(item)})
-}
-
-function renderPayments(data){
-  const summary=$('payment-summary');summary.replaceChildren();data.payment_summary.forEach((payment,index)=>{const card=document.createElement('article');const label=document.createElement('span');label.textContent=payment.name;const amount=document.createElement('strong');amount.textContent=money.format(Number(payment.amount))+' сум';const share=document.createElement('small');share.textContent=payment.share_percent===null?'Доля не вычисляется при нулевом итоге':payment.share_percent+'% выборки';card.style.borderTop=`3px solid ${paymentColors[index%paymentColors.length]}`;card.append(label,amount,share);summary.append(card)});
-  if(!data.payment_summary.length){const empty=document.createElement('article');empty.textContent='Оплат за выбранный период нет.';summary.append(empty)}
-  const target=$('payment-chart');target.replaceChildren();if(!data.payment_series.length||!data.payment_summary.length){const empty=document.createElement('div');empty.className='empty-chart';empty.textContent='Нет данных для линейного графика.';target.append(empty);return}
-  const directions=data.directions,payments=data.payment_summary.map(item=>item.name),series=FounderLogic.paymentLineSeries(data.payment_series,directions,payments);const width=Math.max(720,series.length*58),height=255,pad={left:66,right:18,top:12,bottom:40},plotWidth=width-pad.left-pad.right,plotHeight=height-pad.top-pad.bottom;
-  const chart=svg('svg',{viewBox:`0 0 ${width} ${height}`,'aria-hidden':'true'});chart.style.width=width+'px';const all=series.flatMap(group=>payments.map(payment=>Number(group.values[payment]||0)));const max=Math.max(1,...all),min=Math.min(0,...all),span=max-min;
-  for(let step=0;step<=4;step+=1){const y=pad.top+plotHeight*step/4;chart.append(svg('line',{x1:pad.left,y1:y,x2:width-pad.right,y2:y,class:'chart-grid'}));const label=svg('text',{x:pad.left-8,y:y+3,'text-anchor':'end',class:'chart-axis'});label.textContent=money.format(max-span*step/4);chart.append(label)}
-  const paths=FounderLogic.revenuePaths(series,payments,plotWidth,plotHeight);
-  payments.forEach((payment,paymentIndex)=>{const color=paymentColors[paymentIndex%paymentColors.length];const points=paths[payment].split(' ').map(pair=>{const [x,y]=pair.split(',').map(Number);return `${x+pad.left},${y+pad.top}`}).join(' ');chart.append(svg('polyline',{points,class:'payment-line',stroke:color}));series.forEach((group,index)=>{const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1);const value=Number(group.values[payment]||0),y=pad.top+plotHeight-(value-min)*plotHeight/span;const point=svg('circle',{cx:x,cy:y,r:3,fill:color,class:'payment-point'});const title=svg('title');title.textContent=`${payment}: ${money.format(value)} сум · ${revenuePeriod(group)}`;point.append(title);chart.append(point)})});
-  const labelEvery=Math.max(1,Math.ceil(series.length/6));series.forEach((group,index)=>{if(index%labelEvery!==0&&index!==series.length-1)return;const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1);const label=svg('text',{x,y:height-10,'text-anchor':'middle',class:'chart-axis'});label.textContent=shortDate(group.start)+(group.incomplete?' *':'');chart.append(label)});
-  const hoverLine=svg('line',{y1:pad.top,y2:pad.top+plotHeight,class:'chart-hover-line',visibility:'hidden'});chart.append(hoverLine);const hoverLayer=svg('rect',{x:pad.left,y:pad.top,width:plotWidth,height:plotHeight,class:'chart-hover-layer'});chart.append(hoverLayer);const tooltip=paymentTooltip(series[0],payments);
-  const showTooltip=event=>{const bounds=chart.getBoundingClientRect();const chartX=(event.clientX-bounds.left)/bounds.width*width;const index=FounderLogic.nearestRevenueIndex(chartX-pad.left,plotWidth,series.length);const group=series[index];const x=series.length===1?pad.left+plotWidth/2:pad.left+index*plotWidth/(series.length-1);const next=paymentTooltip(group,payments);tooltip.replaceChildren(...next.childNodes);tooltip.hidden=false;tooltip.style.left=x+'px';tooltip.classList.toggle('is-left',x-target.scrollLeft>target.clientWidth*.62);hoverLine.setAttribute('visibility','visible');hoverLine.setAttribute('x1',x);hoverLine.setAttribute('x2',x)};
-  hoverLayer.addEventListener('pointermove',showTooltip);hoverLayer.addEventListener('pointerdown',showTooltip);hoverLayer.addEventListener('click',showTooltip);hoverLayer.addEventListener('pointerleave',()=>{tooltip.hidden=true;hoverLine.setAttribute('visibility','hidden')});target.append(chart,tooltip)
 }
 
 function bookingTooltip(group,keys){
@@ -178,7 +152,8 @@ function render(data){
   $('internal-tasting').textContent=exactMoney.format(Number(data.internal_costs.tasting));
   $('internal-chef').textContent=exactMoney.format(Number(data.internal_costs.chef_account));
   ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`article[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
-  const reconcile=$('reconcile');reconcile.classList.toggle('is-warning',!data.reconciled);reconcile.textContent=data.reconciled?'✓ Распределение продаж сверено · '+exactMoney.format(Math.abs(Number(data.discrepancy)))+' сум':`⚠ Не сверено · ${exactMoney.format(Math.abs(Number(data.discrepancy)))} сум`;renderRevenue(data);renderPayments(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices,!data.reconciled)
+  // «Чем оплачены продажи» убран (ТЗ 4.3): несверка оплат остаётся в предупреждениях ниже.
+  renderRevenue(data);renderSeriesTable();const notices=[...data.warnings];if(data.scope_note)notices.push(data.scope_note);if(data.sales_totals)notices.push("Все продажи выбранных направлений: "+money.format(data.directions.reduce((sum,key)=>sum+Number(data.sales_totals[key]),0))+" сум; вне банкетной выборки: "+money.format(Number(data.scope_excluded_revenue))+" сум.");if(data.includes_current_day)notices.push('Период включает текущий незавершённый день — он отмечен звёздочкой.');setMessage(notices,!data.reconciled)
 }
 
 async function load(options = {}) {
@@ -221,7 +196,7 @@ async function load(options = {}) {
 }
 
 async function start(){paintSkeleton();try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;const period=FounderLogic.quickPeriod('30',config.today);$('start').value=period.start;$('end').value=period.end;await load()}catch(error){setLoading(false);setMessage('Не удалось определить текущую дату сервера.',true)}}
-function clearResults(){['sales-paid','sales-prepaid','sales-other','sales-full'].forEach(id=>$(id).textContent='—');$('sales-other-card').hidden=true;$('sales-bridge-table').replaceChildren();$('sales-bridge-equation').textContent='';$('sales-bridge-scope').textContent='Выбранные направления · даты заказа';lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`article[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';['pnl-sales','pnl-cost','pnl-profit','pnl-net-profit','net-profit-final','pnl-operating-expenses','pnl-other-expenses','pnl-other-income','expense-cashier','expense-accountant','expense-dashboard-total','internal-tasting','internal-chef'].forEach(id=>$(id).textContent='—');$('expense-accountant-detail').textContent='зарплата: — · прочие: —';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();$('payment-summary').replaceChildren();$('payment-chart').replaceChildren();$('reconcile').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
+function clearResults(){['sales-paid','sales-prepaid','sales-other','sales-full'].forEach(id=>$(id).textContent='—');$('sales-other-card').hidden=true;$('sales-bridge-table').replaceChildren();$('sales-bridge-equation').textContent='';$('sales-bridge-scope').textContent='Выбранные направления · даты заказа';lastAnalytics=null;lastBookings=null;['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent='—';document.querySelector(`article[data-direction=${direction}]`).hidden=false});$('total-selected').textContent='—';['pnl-sales','pnl-cost','pnl-profit','pnl-net-profit','net-profit-final','pnl-operating-expenses','pnl-other-expenses','pnl-other-income','expense-cashier','expense-accountant','expense-dashboard-total','internal-tasting','internal-chef'].forEach(id=>$(id).textContent='—');$('expense-accountant-detail').textContent='зарплата: — · прочие: —';$('revenue-legend').replaceChildren();$('revenue-chart').replaceChildren();['booking-total','booking-guests','booking-unknown','booking-cancelled'].forEach(id=>$(id).textContent='—');$('booking-legend').replaceChildren();$('booking-chart').replaceChildren();$('booking-sources').replaceChildren();$('booking-coverage').textContent='';const status=$('booking-status');status.textContent='Ожидает загрузки';status.classList.remove('is-error');renderSeriesTable()}
 function invalidatePending(){controller?.abort();controller=null;gate.invalidate();setLoading(false);clearResults();$('updated').textContent='Фильтры изменены · нажмите «Показать»';setMessage('Фильтры изменены. Нажмите «Показать», чтобы загрузить новую выборку.')}
 ['start','end','granularity'].forEach(id=>$(id).addEventListener('change',invalidatePending));document.querySelectorAll('input[name=direction]').forEach(input=>input.addEventListener('change',invalidatePending));
 // «Показать» крутится, пока iiko считает, и ставит ✓, когда цифры на экране;

@@ -127,25 +127,9 @@
 .empty-chart{height:100%;display:flex;align-items:center;justify-content:center;
   color:var(--muted);font-size:12px}
 
-/* ── Способы оплаты ───────────────────────────────────────────────────── */
-.payment-summary{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px;margin:20px 0}
-.payment-summary article{padding:14px 16px;background:#f7f9f4;border-radius:13px;min-width:0}
-.payment-summary span{display:block;font-size:11px;color:var(--muted)}
-.payment-summary strong{display:block;font-size:17px;font-weight:600;margin-top:7px;
-  letter-spacing:-.3px;font-variant-numeric:tabular-nums}
-.payment-summary small{display:block;color:var(--muted);font-size:11px;margin-top:3px}
-.payment-chart{position:relative;overflow-x:auto;border-top:1px solid #eef1ea;padding-top:18px}
-.payment-chart svg{display:block;height:270px}
-.payment-bar{shape-rendering:geometricPrecision}
-.payment-line{fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
-.payment-point{stroke:#fff;stroke-width:1.5}
-.payment-tooltip{width:min(390px,calc(100vw - 48px));min-width:0}
-.payment-tooltip .chart-tooltip-rows{grid-template-columns:1fr 1fr;column-gap:14px}
-
-/* Плашки состояния: сверка оплат и живость Telegram-источника. */
-.reconcile,.source-status{font-size:10.5px;font-weight:650;letter-spacing:.04em;border-radius:999px;
+/* Плашка состояния: живость Telegram-источника. */
+.source-status{font-size:10.5px;font-weight:650;letter-spacing:.04em;border-radius:999px;
   padding:7px 11px;background:#edf5ea;color:#3f6c53;white-space:nowrap}
-.reconcile.is-warning{background:#fff1dc;color:#8a5a16}
 .source-status.is-error{background:#fff0ed;color:#963f38}
 
 .founder-note{font-size:11px;color:var(--muted);line-height:1.6;margin:14px 0 0}
@@ -203,23 +187,19 @@
    на 280 пикселей; и место он занимает по написанному, а не по будущему
    графику. Разметку не трогаем: блоки заполняет JS, пустыми они остаются
    ровно до первых данных. */
-.chart-shell:empty,.payment-chart:empty,.booking-chart:empty{height:auto;min-height:118px;
+.chart-shell:empty,.booking-chart:empty{height:auto;min-height:118px;
   border:1px dashed #e1e7de;border-radius:13px;background:#fbfcf9}
-.payment-chart:empty{border-top:1px dashed #e1e7de;padding-top:0;margin-top:18px}
-.chart-shell:empty::after,.payment-chart:empty::after,.booking-chart:empty::after,
+.chart-shell:empty::after,.booking-chart:empty::after,
 .booking-sources:empty::after{
   content:"Данные появятся после первой выгрузки iiko";
   display:flex;align-items:center;justify-content:center;height:118px;padding:0 16px;
   color:var(--muted);font-size:12px;text-align:center}
 .booking-chart:empty::after{content:"Динамика появится, когда ответит бот бронирований"}
 .booking-sources:empty::after{content:"Источники появятся вместе с первыми бронями"}
-/* Пустая сводка оплат молчит: под ней уже стоит подпись пустого графика,
-   и две одинаковые плашки подряд читались бы как сбой. */
-.payment-summary:empty{display:none}
 .booking-sources:empty{display:block;min-height:118px;
   border:1px dashed #e1e7de;border-radius:13px;background:#fbfcf9}
 .series-table-wrap:not(:has(table)){text-align:center;padding:26px 10px;color:var(--muted);font-size:12px}
-.reconcile:empty,.source-status:empty{display:none}
+.source-status:empty{display:none}
 
 /* Во время загрузки гаснут только данные: фильтры остаются живыми, чтобы
    можно было передумать, не дожидаясь ответа iiko. */
@@ -250,8 +230,8 @@
   .founder-metrics strong{font-size:23px}
   .founder-panel{padding:18px 15px}
   .chart-shell{height:240px}
-  .payment-summary,.booking-sources{grid-template-columns:1fr 1fr;gap:9px}
-  .payment-summary article,.booking-sources article{padding:12px 13px}
+  .booking-sources{grid-template-columns:1fr 1fr;gap:9px}
+  .booking-sources article{padding:12px 13px}
   .booking-chart,.booking-chart svg{height:230px}
   .series-table{font-size:11.5px}
   .series-table th,.series-table td{padding:9px 11px}
@@ -261,7 +241,7 @@
   .founder-metrics{grid-template-columns:1fr}
   .founder-metrics article{min-height:0}
   .founder-metrics strong{font-size:26px;margin-top:14px}
-  .payment-summary,.booking-sources,.booking-metrics{grid-template-columns:1fr}
+  .booking-sources,.booking-metrics{grid-template-columns:1fr}
   .founder-panel-head p:not(.eyebrow){font-size:11.5px}
 }
 

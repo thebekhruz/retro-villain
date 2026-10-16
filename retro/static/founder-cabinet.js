@@ -11,6 +11,7 @@
   const desk = matchMedia('(min-width: 901px)');
   const DISMISSED_KEY = 'retro:founder-chef-dismissed';
   const MONTHS = ['январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август', 'сентябрь', 'октябрь', 'ноябрь', 'декабрь'];
+  const MONTHS_OF = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня', 'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
 
   const state = {today: null, yesterday: null, data: {}, pending: {}, editor: {open: false, draft: 0, message: '', error: false, saving: false}};
   let chat = null;
@@ -481,8 +482,10 @@
   }
 
   function renderSpending(data) {
-    const month = MONTHS[Number(data.month.slice(5, 7)) - 1].toUpperCase();
-    setText('fo-exp-month', month);
+    const index = Number(data.month.slice(5, 7)) - 1;
+    const month = MONTHS[index].toUpperCase();
+    // ТЗ 3.9: «Расходы октября» вместо «Куда ушли деньги»; месяц — из данных.
+    setText('fo-exp-title', 'РАСХОДЫ ' + MONTHS_OF[index].toUpperCase());
     setText('fo-shokh-month', month);
     setText('fo-exp-total', sum(num(data.expenses.total)) + ' сум');
     const list = $('fo-exp-list');
