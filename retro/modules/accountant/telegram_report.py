@@ -14,7 +14,8 @@ from types import SimpleNamespace
 
 from retro.modules.cashier.service import TZ
 from retro.modules.cashier.telegram_report import MUTED, Sheet, Skip, clock, day_title, font, money
-from .sheets_export import INFLOW, cash_lines, movement_label
+from .expense_catalog import ITEMS
+from .sheets_export import INFLOW, MONTHLY_ITEM, cash_lines, movement_label
 
 
 @dataclass(frozen=True)
@@ -80,17 +81,47 @@ def handover_lines(report: AccountantReport) -> list[tuple[str, Decimal | None]]
     return lines
 
 
+# Статьи зарплаты, как их называют в группе; остальные — по справочнику.
+PAY_LABELS = {'salary_staff': 'ЗП персонал', 'salary_technical': 'ЗП техперсонал',
+              'salary_cashier': 'ЗП кассира', MONTHLY_ITEM: 'Оклады'}
+
+
+def pay_category(item: dict) -> str | None:
+    """Статья зарплаты для выплаты сотруднику; None — операция не про людей."""
+    code = item.get('item_code')
+    if item['type'] not in ('salary_payment', 'other_expense') or code not in ITEMS or ITEMS[code][0] != 'salary':
+        return None
+    return PAY_LABELS.get(code, ITEMS[code][1])
+
+
 def operations(report: AccountantReport) -> list[tuple[str, Decimal, bool]]:
-    """(подпись, сумма, приход ли) — журнал дня без «остатка на начало»."""
-    rows = []
+    """(подпись, сумма, приход ли) — журнал дня без «остатка на начало».
+
+    Людей на картинке нет: выплаты сотрудникам — по строке на статью
+    («ЗП персонал», «ЗП техперсонал»…) с числом выплат. По людям смотрят в
+    кабинете и в Excel."""
+    rows, pay = [], {}
     for item in report.data['ledger'].get('movements') or []:
         if item['type'] == 'opening':
+            continue
+        category = pay_category(item)
+        if category:
+            total, count = pay.get(category, (Decimal(0), 0))
+            pay[category] = (total + Decimal(str(item['amount'])), count + 1)
             continue
         # Описание уже называет операцию («Касса за 15.10», «Шох: закуп»);
         # приход это или расход, видно по знаку суммы.
         rows.append((item.get('description') or movement_label(item), Decimal(str(item['amount'])),
                      item['type'] in INFLOW))
+    for category, (total, count) in pay.items():
+        rows.append((f'{category} · {count} {plural(count, "выплата", "выплаты", "выплат")}', total, False))
     return rows
+
+
+def plural(count: int, one: str, few: str, many: str) -> str:
+    if count % 10 == 1 and count % 100 != 11:
+        return one
+    return few if 2 <= count % 10 <= 4 and not 12 <= count % 100 <= 14 else many
 
 
 def safe_lines(report: AccountantReport) -> list[tuple[str, str]]:
