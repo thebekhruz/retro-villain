@@ -200,3 +200,14 @@ test('«продвигать» тоже по очереди дней из луч
     logic.dayTips(week, {short: short3, long: long30, today}).find(tip => tip.kind === 'promo').dish);
   assert.deepEqual(promos, ['Кебаб', 'Плов', 'Кебаб']);
 });
+
+test('срезы меню: сортировка по выручке, количеству, марже и фильтр категории (ТЗ 2.7)', () => {
+  const snap = {item_groups: {'Плов': 'Горячее', 'Лагман': 'Супы', 'Халим': 'Горячее'}, item_metrics: {retro: {
+    'Плов': metric(10, 900000, 300000), 'Лагман': metric(60, 600000, 500000), 'Халим': metric(30, 300000, 50000)}}};
+  assert.deepEqual(logic.menuSlice(snap, 'retro', 'top').map(r => r.name), ['Плов', 'Лагман', 'Халим']);
+  assert.deepEqual(logic.menuSlice(snap, 'retro', 'top', 5, {sort: 'quantity'}).map(r => r.name), ['Лагман', 'Халим', 'Плов']);
+  assert.deepEqual(logic.menuSlice(snap, 'retro', 'top', 5, {sort: 'margin'}).map(r => r.name), ['Халим', 'Плов', 'Лагман']);
+  const hot = logic.menuSlice(snap, 'retro', 'top', 5, {category: 'Горячее'});
+  assert.deepEqual(hot.map(r => [r.name, r.category]), [['Плов', 'Горячее'], ['Халим', 'Горячее']]);
+  assert.deepEqual(logic.menuCategories(snap, 'retro'), [{name: 'Горячее', count: 2}, {name: 'Супы', count: 1}]);
+});

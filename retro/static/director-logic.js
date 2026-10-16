@@ -205,9 +205,40 @@
    *  блюдо с «45%» на экране попадало в список «ниже 45%». */
   function lowMargin(row) { return row.margin !== null && Math.round(row.margin) < LOW_MARGIN; }
 
+  /** Сортировки срезов меню: сверху — лучшие. Маржа без выручки — в конце. */
+  const SLICE_SORTS = {
+    revenue: function (a, b) { return b.revenue - a.revenue || b.quantity - a.quantity; },
+    quantity: function (a, b) { return b.quantity - a.quantity || b.revenue - a.revenue; },
+    margin: function (a, b) {
+      if (a.margin === null && b.margin === null) return b.revenue - a.revenue;
+      if (a.margin === null) return 1;
+      if (b.margin === null) return -1;
+      return b.margin - a.margin || b.revenue - a.revenue;
+    },
+  };
+
+  /** Категории (группы iiko) проданных блюд заведения — для фильтра меню. */
+  function menuCategories(snapshot, venue) {
+    const metrics = (snapshot && snapshot.item_metrics) || {};
+    const groups = (snapshot && snapshot.item_groups) || {};
+    const dish = menuDish(snapshot);
+    const counts = {};
+    entries(metrics[venue === 'all' || !venue ? 'all' : venue]).forEach(function (row) {
+      const group = groups[row.name];
+      if (row.revenue > 0 && group && dish(row)) counts[group] = (counts[group] || 0) + 1;
+    });
+    return Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] || a.localeCompare(b, 'ru'); })
+      .map(function (name) { return {name: name, count: counts[name]}; });
+  }
+
   /** Четыре среза меню: лидеры, слабые, низкая маржа, нет в Бехрузе.
-   *  `snapshot` — отчёт директора; `venue` — all | retro | oxbridge | banquet. */
-  function menuSlice(snapshot, venue, view, limit) {
+   *  `snapshot` — отчёт директора; `venue` — all | retro | oxbridge | banquet.
+   *  `options.sort` — revenue (по умолчанию) | quantity | margin: популярность
+   *  не по числу дешёвых позиций (ТЗ 2.7); «Слабые» — снизу по тому же
+   *  показателю. `options.category` — группа iiko (DishGroup). */
+  function menuSlice(snapshot, venue, view, limit, options) {
+    const opts = options || {};
+    const sort = SLICE_SORTS[opts.sort] ? opts.sort : 'revenue';
     const metrics = (snapshot && snapshot.item_metrics) || {};
     const groups = (snapshot && snapshot.item_groups) || {};
     const dish = menuDish(snapshot);
@@ -231,21 +262,24 @@
         row.margin = row.revenue > 0 ? row.profit / row.revenue * 100 : null;
         return row;
       }).filter(function (row) { return row.revenue > 0 && dish(row) && !banquet.has(dishKey(row.name)); });
-      rows.sort(SORTS.quantity);
+      rows.sort(SLICE_SORTS[sort]);
     } else {
       const sold = entries(metrics[venue === 'all' ? 'all' : venue])
         .filter(function (row) { return row.revenue > 0 && dish(row); });
       if (view === 'weak') {
         rows = sold.filter(function (row) { return !isDrinkOrBakery(row.name, groups[row.name]); })
-          .sort(function (a, b) { return a.revenue - b.revenue; });
+          .sort(function (a, b) { return SLICE_SORTS[sort](b, a); });
       } else if (view === 'lowm') {
         rows = sold.filter(lowMargin)
-          .sort(SORTS.quantity);
+          .sort(SLICE_SORTS[sort]);
       } else {
-        rows = sold.slice().sort(SORTS.quantity);
+        rows = sold.slice().sort(SLICE_SORTS[sort]);
       }
     }
-    return rows.slice(0, count);
+    if (opts.category) rows = rows.filter(function (row) { return (groups[row.name] || '') === opts.category; });
+    return rows.slice(0, count).map(function (row) {
+      return Object.assign({}, row, {category: groups[row.name] || ''});
+    });
   }
 
   /** Тренд блюда: средние продажи последних трёх дней к среднему за тридцать.
@@ -427,6 +461,7 @@
     retroWaiters: retroWaiters,
     lowMargin: lowMargin,
     menuSlice: menuSlice,
+    menuCategories: menuCategories,
     trend: trend,
     dayTips: dayTips,
     menuDish: menuDish,

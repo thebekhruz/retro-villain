@@ -86,6 +86,11 @@
         <div class="dir-views" role="group" aria-label="Срез">
           <button type="button" data-view="top" class="is-active">Лидеры</button><button type="button" data-view="weak">Слабые</button><button type="button" data-view="lowm">Низкая маржа</button><button type="button" data-view="notb">Нет в Бехрузе</button>
         </div>
+        <div class="dir-sort">
+          <div class="dir-sort-keys" role="group" aria-label="Сортировка"><span>Сортировать:</span><button type="button" data-sort="revenue" class="is-active">выручка</button><button type="button" data-sort="quantity">кол-во</button><button type="button" data-sort="margin">маржа</button></div>
+          <label class="visually-hidden" for="menu-category">Категория меню</label>
+          <select id="menu-category" class="dir-select"><option value="">Все категории</option></select>
+        </div>
         <article class="rm-phone-card dir-menu-card">
           <div class="dir-menu-title"><strong id="view-title">Продаются лучше всего</strong><span id="view-note"></span></div>
           <div id="menu-list" class="dir-menu-list"></div>

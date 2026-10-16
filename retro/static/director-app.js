@@ -20,7 +20,7 @@
   const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 
   const view = {
-    tab: 'home', today: null, menuDays: 7, venue: 'all', slice: 'top', query: '',
+    tab: 'home', today: null, menuDays: 7, venue: 'all', slice: 'top', query: '', sort: 'revenue', category: '',
     reports: {}, loading: {}, team: null, teamDay: 'today', teamFilter: 'all',
     editing: null, editorType: 'shift', manual: false,
   };
@@ -292,12 +292,17 @@
     return Math.round(margin) < logic.LOW_MARGIN ? 'm-low' : margin < 60 ? 'm-mid' : 'm-ok';
   }
 
-  function dishButton(row, index, max) {
+  function dishButton(row, index, max, measure) {
     const button = node('button', 'dir-dish');
     button.type = 'button';
     const line = node('span', 'dir-dish-line');
     const name = node('span', 'dir-dish-name');
     const meta = node('small');
+    if (row.category) {
+      const category = node('span', 'dir-dish-cat', row.category + ' · ');
+      category.dataset.i18n = 'off';
+      meta.append(category);
+    }
     meta.append(document.createTextNode(short(row.revenue) + ' сум · '));
     meta.append(node('span', marginClass(row.margin), row.margin === null ? 'маржа —' : 'маржа ' + Math.round(row.margin) + '%'));
     // Название блюда — данные iiko: переводчик не трогает («Хлеб» → «Non»).
@@ -313,7 +318,7 @@
     line.append(node('span', 'dir-rank', String(index + 1)), name, qty);
     const bar = node('span', 'dir-dish-bar');
     const fill = node('span');
-    fill.style.width = Math.max(4, row.quantity / max * 100) + '%';
+    fill.style.width = Math.max(4, (measure ? measure(row) : row.quantity) / max * 100) + '%';
     bar.append(fill);
     button.append(line, bar);
     button.addEventListener('click', () => ask('Расскажи про «' + row.name + '»: продажи по заведениям, маржа и что с ним делать?'));
@@ -331,10 +336,30 @@
     if (view.query.trim()) return renderSearch(snapshot);
     $('menu-found').hidden = true;
     $('menu-browse').hidden = false;
-    const rows = logic.menuSlice(snapshot, view.venue, view.slice, 5);
+    renderCategories(snapshot);
+    const rows = logic.menuSlice(snapshot, view.venue, view.slice, 5, {sort: view.sort, category: view.category});
     if (!rows.length) { list.append(node('p', 'dir-empty', 'За период в этом срезе нет блюд.')); return; }
-    const max = Math.max(1, ...rows.map(row => row.quantity));
-    rows.forEach((row, index) => list.append(dishButton(row, index, max)));
+    // Полоса — по тому показателю, по которому отсортировано (ТЗ 2.7).
+    const measure = row => view.sort === 'quantity' ? row.quantity : view.sort === 'margin' ? Math.max(0, row.margin || 0) : row.revenue;
+    const max = Math.max(1, ...rows.map(measure));
+    rows.forEach((row, index) => list.append(dishButton(row, index, max, measure)));
+  }
+
+  /** Категории — группы iiko проданных блюд; выбранная держится, пока она есть. */
+  function renderCategories(snapshot) {
+    const select = $('menu-category');
+    const venue = view.slice === 'notb' ? 'all' : view.venue;
+    const categories = logic.menuCategories(snapshot, venue);
+    if (view.category && !categories.some(item => item.name === view.category)) view.category = '';
+    const first = node('option', '', 'Все категории');
+    first.value = '';
+    select.replaceChildren(first, ...categories.map(item => {
+      const option = node('option', '', item.name + ' · ' + item.count);
+      option.value = item.name;
+      option.dataset.i18n = 'off';
+      return option;
+    }));
+    select.value = view.category;
   }
 
   function renderSearch(snapshot) {
@@ -704,6 +729,12 @@
       document.querySelectorAll('[data-view]').forEach(other => other.classList.toggle('is-active', other === button));
       renderMenu();
     }));
+    document.querySelectorAll('[data-sort]').forEach(button => button.addEventListener('click', () => {
+      view.sort = button.dataset.sort;
+      document.querySelectorAll('[data-sort]').forEach(other => other.classList.toggle('is-active', other === button));
+      renderMenu();
+    }));
+    $('menu-category').addEventListener('change', event => { view.category = event.target.value; renderMenu(); });
     $('team-days').querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
       if (view.teamDay === button.dataset.day) return;
       view.teamDay = button.dataset.day;
