@@ -153,7 +153,7 @@ def month_workbook(state, first: date, last: date, orders, orders_error, cashier
     transfers.freeze_panes = 'C5'
 
     categories = workbook.create_sheet('Расходы')
-    text(categories['A1'], f'Куда ушли деньги · {first.strftime("%m.%Y")}')
+    text(categories['A1'], f'Расходы · {first.strftime("%m.%Y")}')
     categories['A1'].font = Font(bold=True, size=13)
     # Как в кабинете: перечисления — своей категорией, выдачи Шоху из кассы —
     # один раз в «Закуп · наличные Шоху». В «По дням» их нет: это не деньги
