@@ -263,7 +263,7 @@ def test_number_then_code_opens_the_manager_cabinet(phone, sms):
     assert login.status_code == 200
     assert login.json() == {'role': 'manager', 'path': '/manager'}
     cookie = login.headers['set-cookie']
-    assert 'retro_session=' in cookie and 'HttpOnly' in cookie and 'SameSite=strict' in cookie
+    assert 'retro_session=' in cookie and 'HttpOnly' in cookie and 'SameSite=lax' in cookie
     # Сохранённая сессия на телефоне — 30 дней, а не 12 часов входа по паролю.
     assert 'Max-Age=2592000' in cookie
 

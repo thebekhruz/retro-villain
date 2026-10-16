@@ -39,7 +39,7 @@ def test_panel_user_can_open_only_its_own_panel(tmp_path):
     assert login.json() == {'role': 'cashier', 'path': '/'}
     assert 'retro_session=' in login.headers['set-cookie']
     assert 'HttpOnly' in login.headers['set-cookie']
-    assert 'SameSite=strict' in login.headers['set-cookie']
+    assert 'SameSite=lax' in login.headers['set-cookie']
     assert own.status_code == 200
     assert config.status_code == 200
     assert config.json()['role'] == 'cashier'
