@@ -58,6 +58,9 @@ def test_snapshot_matches_the_total_sheet(tmp_path):
         assert accountant.RENAMED['− Прочие расходы и сейф'] == '− Прочие расходы'
         # Доллары в сейфе — в долларах.
         assert ('Доллары в сейфе', '$350') in accountant.safe_lines(report)
+        # «На руках у Шоха» = подотчёт по бухгалтерии: строка одна (T-483).
+        labels = [label for label, _ in accountant.safe_lines(report)]
+        assert 'На руках у Шоха на конец дня' in labels and 'Подотчёт Шоха по бухгалтерии' not in labels
 
         text = accountant.caption(report)
         assert text.splitlines()[0] == 'Бухгалтер Retro · Финансы дня · 16.09.2026 · среда'
