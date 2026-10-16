@@ -48,8 +48,13 @@ def test_snapshot_matches_the_total_sheet(tmp_path):
         assert sum(value for _, value, incoming in journal if not incoming) == Decimal('2940000')
         # Оклады — полным списком по именам (T-481).
         assert accountant.monthly_payees(report) == [('Азиз', Decimal('1000000')), ('Лина', Decimal('1000000'))]
-        # Общий приход = на начало дня + касса за вчера (T-481).
-        assert accountant.total_income(report) == (Decimal('1000000'), Decimal('5000000'), Decimal('6000000'))
+        # Общий приход = на начало дня + приход дня (касса за вчера и прочие поступления).
+        assert accountant.total_income(report) == Decimal('1000000') + Decimal('5000000') + Decimal('50000')
+        # Разбивка под «Общим приходом» складывается в него.
+        assert accountant.income_parts(report) == [('На начало дня', Decimal('1000000')),
+                                                   ('Касса за 15.09', Decimal('5000000')),
+                                                   ('Прочие поступления', Decimal('50000'))]
+        assert sum(value for _, value in accountant.income_parts(report)) == accountant.total_income(report)
         assert accountant.RENAMED['− Прочие расходы и сейф'] == '− Прочие расходы'
         # Доллары в сейфе — в долларах.
         assert ('Доллары в сейфе', '$350') in accountant.safe_lines(report)
@@ -83,7 +88,7 @@ def test_empty_day_still_renders(tmp_path):
         assert accountant.operations(report) == []
         assert accountant.monthly_payees(report) == []
         # Кассы за вчера нет — общего прихода тоже нет, а не ноль.
-        assert accountant.total_income(report)[2] is None
+        assert accountant.total_income(report) is None
         assert Image.open(BytesIO(accountant.render(report))).width == 1080
 
 

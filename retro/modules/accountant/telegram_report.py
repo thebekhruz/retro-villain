@@ -13,7 +13,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from retro.modules.cashier.service import TZ
-from retro.modules.cashier.telegram_report import (GREEN, MUTED, PAD, WIDTH, Sheet, Skip, clock, day_title, font,
+from retro.modules.cashier.telegram_report import (MUTED, PAD, WIDTH, Sheet, Skip, clock, day_title, font,
                                                    money)
 from .expense_catalog import ITEMS
 from .sheets_export import INFLOW, MONTHLY_ITEM, cash_lines, movement_label
@@ -132,13 +132,29 @@ def monthly_payees(report: AccountantReport) -> list[tuple[str, Decimal]]:
     return payees
 
 
-def total_income(report: AccountantReport) -> tuple[Decimal | None, Decimal | None, Decimal | None]:
-    """Общий приход дня (T-481): на начало дня + касса за вчера.
-
-    (на начало дня, касса, сумма); нет одного из слагаемых — суммы нет."""
+def total_income(report: AccountantReport) -> Decimal | None:
+    """Общий приход дня (T-481, T-482): остаток на начало дня + «Приход»
+    операций (касса за вчера и прочие поступления). Нет остатка на начало
+    или кассы — суммы нет: «требует проверки», а не ноль."""
     flow = report.data['ledger'].get('cash_flow') or {}
     opening, cashier = amount(flow.get('opening_balance')), amount(flow.get('received_from_cashier'))
-    return opening, cashier, opening + cashier if opening is not None and cashier is not None else None
+    if opening is None or cashier is None:
+        return None
+    return opening + sum((value for _, value, incoming in operations(report) if incoming), Decimal(0))
+
+
+def income_parts(report: AccountantReport) -> list[tuple[str, Decimal | None]]:
+    """Из чего сложен «Общий приход»: на начало дня, касса за вчера и — если
+    были — прочие поступления."""
+    flow = report.data['ledger'].get('cash_flow') or {}
+    cashier_day = report.data.get('cashier_date')
+    parts = [('На начало дня', amount(flow.get('opening_balance'))),
+             (f'Касса за {date.fromisoformat(cashier_day).strftime("%d.%m")}' if cashier_day else 'Касса за вчера',
+              amount(flow.get('received_from_cashier')))]
+    other = amount(flow.get('other_receipts'))
+    if other:
+        parts.append(('Прочие поступления', other))
+    return parts
 
 
 def plural(count: int, one: str, few: str, many: str) -> str:
@@ -243,12 +259,17 @@ def render(report: AccountantReport) -> bytes:
             for name, paid in payees:
                 sheet.row(name, money(paid), left_font=font(25), right_font=font(25), left_fill=MUTED,
                           right_fill=MUTED, x0=PAD + 32, x1=WIDTH - PAD - 150, height=38)
-    inflow = sum((value for _, value, incoming in journal if incoming), Decimal(0))
     outflow = sum((value for _, value, incoming in journal if not incoming), Decimal(0))
     sheet.y += 6
     sheet.rule()
     sheet.y += 14
-    sheet.row('Приход', money(inflow), left_font=group_font, right_font=group_font)
+    # Итог: «Общий приход» с разбивкой (на начало дня, касса за вчера, прочие
+    # поступления) и «Расход» тем же шрифтом. Отдельного «Прихода» нет (T-482).
+    sheet.row('Общий приход', money(total_income(report)), left_font=group_font, right_font=group_font)
+    for label, value in income_parts(report):
+        sheet.row(label, money(value), left_font=font(25), right_font=font(25), left_fill=MUTED,
+                  right_fill=MUTED, x0=PAD + 32, height=38)
+    sheet.y += 8
     sheet.row('Расход', money(outflow), left_font=group_font, right_font=group_font)
     sheet.y += 24
 
@@ -259,21 +280,6 @@ def render(report: AccountantReport) -> bytes:
     if debts:
         listing('Долги', debts)
 
-    # Общий приход: с чем бухгалтер начал день и что пришло из кассы (T-481).
-    opening, cashier, income = total_income(report)
-    cashier_day = report.data.get('cashier_date')
-    cashier_label = (f'+ Касса за {date.fromisoformat(cashier_day).strftime("%d.%m")}' if cashier_day
-                     else '+ Касса за вчера')
-    sheet.heading('Общий приход')
-    sheet.row('На начало дня', money(opening), left_font=item_font, right_font=item_font, left_fill=MUTED,
-              right_fill=MUTED)
-    sheet.row(cashier_label, money(cashier), left_font=item_font, right_font=item_font, left_fill=MUTED,
-              right_fill=MUTED)
-    sheet.y += 4
-    sheet.rule()
-    sheet.y += 14
-    sheet.row('= Общий приход', money(income), left_font=font(32, True), right_font=font(32, True),
-              right_fill=GREEN)
     sheet.y += 6
     sheet.footer('Расчёт как в кабинете бухгалтера · «Финансы дня»')
     return sheet.done()
