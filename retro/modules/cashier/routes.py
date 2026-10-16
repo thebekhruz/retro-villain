@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -274,7 +274,7 @@ def handover_state(request: Request, date: date):
 
 
 @router.post('/handover', status_code=201)
-def hand_over_to_accountant(request: Request, body: HandoverInput):
+def hand_over_to_accountant(request: Request, body: HandoverInput, background: BackgroundTasks):
     """«Передать бухгалтеру»: сумма считается здесь, по формуле бухгалтера.
 
     Повторное нажатие после новых расходов или продаж переписывает сумму дня
@@ -288,7 +288,16 @@ def hand_over_to_accountant(request: Request, body: HandoverInput):
         raise HTTPException(422, str(error)) from None
     except LedgerError as error:  # в том числе HandoverChanged
         raise HTTPException(409, str(error)) from None
+    notify_telegram(request, background, 'cashier', day)
     return dict(date=day.isoformat(), handover=handover)
+
+
+def notify_telegram(request: Request, background: BackgroundTasks, kind: str, day):
+    """Отчёт в Telegram-группу по кнопке (T-484): после ответа экрану, в фоне.
+    Без изменений с прошлой отправки он не уйдёт; бота нет — ничего не делаем."""
+    reporter = getattr(request.app.state, 'telegram_report', None)
+    if reporter is not None:
+        background.add_task(reporter.notify, kind, day)
 
 
 @router.delete('/handover', status_code=204)
@@ -631,27 +640,32 @@ async def telegram_photo(request: Request, kind: str, day):
 
 
 async def telegram_preview(request: Request, kind: str, day):
-    photo, _ = await telegram_photo(request, kind, day)
+    photo, *_ = await telegram_photo(request, kind, day)
     return Response(photo, media_type='image/png', headers={'Cache-Control': 'no-store'})
 
 
 async def telegram_send(request: Request, kind: str, day):
-    """Тестовая отправка: расписание этот день отправленным не считает."""
+    """Отправить сейчас — по тем же правилам, что кнопки (T-484): отчёт без
+    изменений с прошлой отправки второй раз не уходит."""
     require_full_access(request)
     reporter = getattr(request.app.state, 'telegram_report', None)
     if reporter is None:
         raise HTTPException(409, 'Задайте TELEGRAM_BOT_TOKEN и TELEGRAM_REPORT_CHAT_ID.')
     from retro.integrations.telegram import TelegramError
-    from .telegram_report import FILE_NAMES
-    photo, text = await telegram_photo(request, kind, day)
+    from .telegram_report import Skip
     try:
-        message_id = await reporter.bot.send_photo(reporter.config.chat_id, photo, text,
-                                                   filename=f'Retro-{FILE_NAMES[kind]}-{day.isoformat()}.png')
+        status = await reporter.deliver(kind, day)
+    except Skip as reason:
+        raise HTTPException(409, f'Снимок не собран: {reason}.') from None
+    except TimeoutError:
+        raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
+    except DataError as error:
+        raise HTTPException(503, str(error)) from None
     except TelegramError as error:
         log_safe_failure('telegram-report', error, operation=f'manual_send:{kind}',
                          request_id=request.state.request_id)
         raise HTTPException(502, f'Telegram не принял отправку ({error.code}).') from None
-    return {'date': day.isoformat(), 'message_id': message_id}
+    return {'date': day.isoformat(), 'status': status}
 
 
 @router.get('/telegram-report/preview')

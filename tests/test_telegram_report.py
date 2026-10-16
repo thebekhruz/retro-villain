@@ -144,9 +144,10 @@ class FakeBot:
         pass
 
 
-def photo(name):
+def photo(name, marks=None):
+    """Картинка-заглушка; marks — изменяемый отпечаток содержимого (T-484)."""
     async def build(app, day, now):
-        return b'\x89PNG', f'{name} · {day.strftime("%d.%m.%Y")}'
+        return b'\x89PNG', f'{name} · {day.strftime("%d.%m.%Y")}', (marks or {}).get(name, 'v1')
     return build
 
 
@@ -193,7 +194,7 @@ def test_failed_report_retries_alone_and_catches_up_after_midnight(tmp_path):
             if failures:
                 failures.pop()
                 raise TelegramError('network')
-            return b'\x89PNG', name
+            return b'\x89PNG', name, 'v1'
         return build
 
     async def scenario():
@@ -219,6 +220,44 @@ def test_skip_marks_day_without_sending(tmp_path):
         reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now, reports={'cashier': skip})
         assert await reporter.run_once() == []
         assert reporter.store.sent('cashier', DAY) and not bot.sent
+    asyncio.run(scenario())
+
+
+def test_unchanged_report_is_not_sent_twice_and_change_is_marked(tmp_path):
+    async def scenario():
+        bot, now, marks = FakeBot(), [at(DAY, 18, 0)], {}
+        reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now, reports={'cashier': photo('Касса', marks)})
+        assert await reporter.deliver('cashier', DAY) == 'sent'
+        assert await reporter.deliver('cashier', DAY) == 'unchanged'
+        marks['Касса'] = 'v2'  # в кассе что-то поменялось
+        assert await reporter.deliver('cashier', DAY) == 'sent'
+        assert await reporter.deliver('cashier', DAY) == 'unchanged'
+        assert [item[2] for item in bot.sent] == ['Касса · 16.10.2026',
+                                                  'Исправленный отчёт\nКасса · 16.10.2026']
+    asyncio.run(scenario())
+
+
+def test_evening_sends_only_reports_nobody_submitted(tmp_path):
+    async def scenario():
+        bot, now = FakeBot(), [at(DAY, 21, 40)]
+        reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now)
+        # Кассир нажал «Передать бухгалтеру» в 21:40 — касса ушла сразу.
+        await reporter.notify('cashier', DAY)
+        now[0] = at(DAY, 23, 31)
+        # Бухгалтер отчёт не сдал — в 23:30 уходит только он.
+        assert await reporter.run_once() == [('accountant', DAY)]
+        assert [item[1] for item in bot.sent] == ['Retro-kassa-2026-10-16.png', 'Retro-buhgalter-2026-10-16.png']
+    asyncio.run(scenario())
+
+
+def test_failed_notify_does_not_raise_and_evening_catches_up(tmp_path):
+    async def scenario():
+        bot, now = FakeBot(fail=1), [at(DAY, 21, 40)]
+        reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now, reports={'cashier': photo('Касса')})
+        await reporter.notify('cashier', DAY)  # Telegram недоступен — передача кассира не ломается
+        assert not reporter.store.sent('cashier', DAY)
+        now[0] = at(DAY, 23, 31)
+        assert await reporter.run_once() == [('cashier', DAY)]
     asyncio.run(scenario())
 
 
@@ -257,7 +296,7 @@ def test_preview_is_admin_only_png(tmp_path):
     asyncio.run(scenario())
 
 
-def test_manual_send_goes_to_group_without_marking_schedule(tmp_path):
+def test_manual_send_goes_to_group_once_while_unchanged(tmp_path):
     requests = []
 
     def handler(request):
@@ -281,8 +320,28 @@ def test_manual_send_goes_to_group_without_marking_schedule(tmp_path):
             answer = await client.post(f'/api/cashier/telegram-report?date={day}',
                                        headers={'Origin': 'http://127.0.0.1'})
             assert answer.status_code == 200, answer.text
-            assert answer.json() == {'date': day.isoformat(), 'message_id': 5}
+            assert answer.json() == {'date': day.isoformat(), 'status': 'sent'}
+            # Тот же отчёт без изменений второй раз не уходит (T-484).
+            again = await client.post(f'/api/cashier/telegram-report?date={day}',
+                                      headers={'Origin': 'http://127.0.0.1'})
+            assert again.json() == {'date': day.isoformat(), 'status': 'unchanged'}
         assert len(requests) == 1 and b'image/png' in requests[0].content
-        assert not app.state.telegram_report.store.sent('cashier', day)
+        # Отправленный вручную — отправлен: в 23:30 его не повторят.
+        assert app.state.telegram_report.store.sent('cashier', day)
         await app.state.cashier_days.close()
     asyncio.run(scenario())
+
+
+def test_store_adds_fingerprint_to_the_table_created_before_t484(tmp_path):
+    import sqlite3
+    path = tmp_path / 'tg.sqlite3'
+    with sqlite3.connect(path) as connection:
+        connection.execute('''CREATE TABLE telegram_reports (kind TEXT NOT NULL, day TEXT NOT NULL,
+            claimed_at TEXT NOT NULL, sent_at TEXT, message_id TEXT, PRIMARY KEY(kind, day))''')
+        connection.execute("INSERT INTO telegram_reports VALUES ('cashier', '2026-10-16', '', 'x', '1')")
+    store = SentStore(path)
+    # Отправленный до T-484 без отпечатка — отправлен; отпечатка нет.
+    assert store.sent('cashier', DAY) and store.last_fingerprint('cashier', DAY) is None
+    assert store.claim('cashier', DAY, at(DAY, 23, 40))
+    store.finish('cashier', DAY, 2, at(DAY, 23, 40), 'v2')
+    assert store.last_fingerprint('cashier', DAY) == 'v2'
