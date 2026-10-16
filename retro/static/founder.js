@@ -165,14 +165,16 @@ function render(data){
   $('pnl-cost').textContent=exactMoney.format(Number(data.pnl.cost));
   $('pnl-profit').textContent=exactMoney.format(Number(data.pnl.gross_profit));
   $('pnl-net-profit').textContent=exactMoney.format(Number(data.pnl.net_profit));
-  $('net-profit-final').textContent=exactMoney.format(Number(data.net_profit_after_dashboard_expenses));
+  // Период до начала учёта: расходов кассы и бухгалтерии за него нет — «—», не ноль.
+  const expenses=data.dashboard_expenses,exact=value=>value===null||value===undefined?'—':exactMoney.format(Number(value));
+  $('net-profit-final').textContent=exact(data.net_profit_after_dashboard_expenses);
   $('pnl-operating-expenses').textContent=exactMoney.format(Number(data.pnl.operating_expenses));
   $('pnl-other-expenses').textContent=exactMoney.format(Number(data.pnl.other_expenses));
   $('pnl-other-income').textContent=exactMoney.format(Number(data.pnl.other_income));
-  $('expense-cashier').textContent=exactMoney.format(Number(data.dashboard_expenses.cashier));
-  $('expense-accountant').textContent=exactMoney.format(Number(data.dashboard_expenses.accountant));
-  $('expense-accountant-detail').textContent='зарплата: '+exactMoney.format(Number(data.dashboard_expenses.accountant_salary))+' · прочие: '+exactMoney.format(Number(data.dashboard_expenses.accountant_other));
-  $('expense-dashboard-total').textContent=exactMoney.format(Number(data.dashboard_expenses.total));
+  $('expense-cashier').textContent=exact(expenses?.cashier);
+  $('expense-accountant').textContent=exact(expenses?.accountant);
+  $('expense-accountant-detail').textContent='зарплата: '+exact(expenses?.accountant_salary)+' · прочие: '+exact(expenses?.accountant_other);
+  $('expense-dashboard-total').textContent=exact(expenses?.total);
   $('internal-tasting').textContent=exactMoney.format(Number(data.internal_costs.tasting));
   $('internal-chef').textContent=exactMoney.format(Number(data.internal_costs.chef_account));
   ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`article[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
