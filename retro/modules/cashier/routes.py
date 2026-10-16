@@ -605,3 +605,53 @@ def annotate_prepayment(request: Request, order_number: str, body: PrepaymentNot
             by=getattr(request.state, 'dashboard_user', None))
     except DataError as error:
         raise HTTPException(422, str(error)) from None
+
+
+# ── Снимок кассы в Telegram (T-478) ─────────────────────────────────────────
+# Проверка перед расписанием: посмотреть картинку и отправить её в группу
+# вручную. Только полный доступ — кассир группу не трогает.
+
+def require_full_access(request: Request):
+    if getattr(request.state, 'dashboard_role', None) not in ('admin', 'all'):
+        raise HTTPException(403, 'Снимок кассы для Telegram доступен только администратору.')
+
+
+async def telegram_photo(request: Request, day):
+    from .telegram_report import Skip, collect, render
+    try:
+        report = await collect(request.app.state, day)
+    except Skip as reason:
+        raise HTTPException(409, f'Снимок не собран: {reason}.') from None
+    except TimeoutError:
+        raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
+    except DataError as error:
+        raise HTTPException(503, str(error)) from None
+    return report, await asyncio.to_thread(render, report)
+
+
+@router.get('/telegram-report/preview')
+async def telegram_report_preview(request: Request, date: date | None = None):
+    require_full_access(request)
+    _, photo = await telegram_photo(request, selected_day(date))
+    return Response(photo, media_type='image/png', headers={'Cache-Control': 'no-store'})
+
+
+@router.post('/telegram-report')
+async def telegram_report_send(request: Request, date: date | None = None):
+    """Тестовая отправка: расписание этот день отправленным не считает."""
+    require_full_access(request)
+    reporter = getattr(request.app.state, 'telegram_report', None)
+    if reporter is None:
+        raise HTTPException(409, 'Задайте TELEGRAM_BOT_TOKEN и TELEGRAM_REPORT_CHAT_ID.')
+    from retro.integrations.telegram import TelegramError
+    from .telegram_report import caption
+    day = selected_day(date)
+    report, photo = await telegram_photo(request, day)
+    try:
+        message_id = await reporter.bot.send_photo(reporter.config.chat_id, photo, caption(report),
+                                                   filename=f'Retro-kassa-{day.isoformat()}.png')
+    except TelegramError as error:
+        log_safe_failure('telegram-report', error, operation='manual_send',
+                         request_id=request.state.request_id)
+        raise HTTPException(502, f'Telegram не принял отправку ({error.code}).') from None
+    return {'date': day.isoformat(), 'message_id': message_id}

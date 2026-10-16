@@ -8,3 +8,5 @@ python-multipart==0.0.32
 psycopg[binary]==3.3.6
 openpyxl==3.1.5
 reportlab==5.0.1
+# Снимок кассы в Telegram (T-478): картинку рисуем на сервере, без браузера.
+pillow==12.3.0
