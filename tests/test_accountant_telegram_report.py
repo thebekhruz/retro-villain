@@ -9,14 +9,17 @@ from PIL import Image
 from retro.modules.accountant import telegram_report as accountant
 from retro.modules.accountant.sheets_export import cash_lines
 from retro.modules.cashier.service import TZ
-from test_accountant_design_parity import DAY, cash, client, day_json, workbook
+from test_accountant_design_parity import DAY, cash, client, day_json, pay_monthly, workbook
 
 TAKEN = datetime(2026, 9, 16, 23, 30, tzinfo=TZ)
 
 
-def filled_day(c):
+def filled_day(c, staff=True):
     cash(c)
     finance = c.app.state.accountant_finance
+    for name, salary in (('Азиз', '8000000'), ('Лина', '6000000')) if staff else ():
+        person = c.app.state.accountant_roster.add_monthly(name=name, role='менеджер', salary=salary)
+        assert pay_monthly(c, person.id, '1000000').status_code == 201
     finance.give_procurement(DAY, 'Шох', 'закуп за день', '700000', cashier_amount=Decimal('5000000'))
     finance.add_expense(DAY, 'admin_other', 'Канцтовары', '240000', cashier_amount=Decimal('5000000'))
     finance.add_income(DAY, 'income_other', 'Возврат', '50000')
@@ -39,6 +42,10 @@ def test_snapshot_matches_the_total_sheet(tmp_path):
         assert ('Шох: закуп за день', Decimal('700000'), False) in journal
         assert ('Прочие поступления · Возврат', Decimal('50000'), True) in journal
         assert ('Касса за 15.09.2026', Decimal('5000000'), True) in journal
+        # Людей на картинке нет: оклады обоих — одной строкой статьи.
+        assert ('Оклады · 2 выплаты', Decimal('2000000'), False) in journal
+        assert not any('Азиз' in label or 'Лина' in label for label, _, _ in journal)
+        assert sum(value for _, value, incoming in journal if not incoming) == Decimal('2940000')
         # Доллары в сейфе — в долларах.
         assert ('Доллары в сейфе', '$350') in accountant.safe_lines(report)
 
@@ -47,6 +54,22 @@ def test_snapshot_matches_the_total_sheet(tmp_path):
         assert 'Отчёт дня не сдан' in text
         image = Image.open(BytesIO(accountant.render(report)))
         assert image.format == 'PNG' and image.width == 1080
+
+
+def test_salary_payments_group_by_category_without_names():
+    movement = lambda kind, code, amount, name: dict(type=kind, item_code=code, amount=amount,
+                                                    description=f'{name} · за 15.09')
+    data = {'ledger': {'movements': [
+        movement('salary_payment', 'salary_staff', '300000', 'Азиз'),
+        movement('salary_payment', 'salary_staff', '250000', 'Лина'),
+        movement('salary_payment', 'salary_technical', '130000', 'Гульшан'),
+        movement('other_expense', 'admin_other', '40000', 'Канцтовары'),
+    ]}}
+    report = accountant.AccountantReport(DAY, TAKEN, data)
+    assert accountant.operations(report) == [
+        ('Канцтовары · за 15.09', Decimal('40000'), False),
+        ('ЗП персонал · 2 выплаты', Decimal('550000'), False),
+        ('ЗП техперсонал · 1 выплата', Decimal('130000'), False)]
 
 
 def test_empty_day_still_renders(tmp_path):
@@ -59,7 +82,7 @@ def test_empty_day_still_renders(tmp_path):
 def test_preview_route_is_admin_only(tmp_path):
     with client(tmp_path, dashboard_panel_users={'buh': ('secret', 'accountant'),
                                                  'boss': ('secret', 'admin')}) as c:
-        filled_day(c)
+        filled_day(c, staff=False)
         url = f'/api/accountant/telegram-report/preview?date={DAY.isoformat()}'
         assert c.get(url, auth=('buh', 'secret')).status_code == 403
         answer = c.get(url, auth=('boss', 'secret'))
