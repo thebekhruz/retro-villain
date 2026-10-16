@@ -219,6 +219,18 @@ def caption(report: AccountantReport) -> str:
 RENAMED = {'− Прочие расходы и сейф': '− Прочие расходы'}
 
 
+def fingerprint(report: AccountantReport) -> str:
+    """То, что видно на картинке «Финансов дня», без времени снимка (T-484)."""
+    from retro.modules.cashier.telegram_report import content_mark, handover_mark
+    return content_mark(dict(
+        # Сдан ли отчёт — без времени сдачи: «сдать заново» без правок не новый отчёт.
+        day=report.day, submitted=bool(report.data.get('day_report')), warnings=warnings(report),
+        cash=cash_lines(report.data), handover=handover_mark(report.data.get('cashier_handover')),
+        operations=operations(report),
+        payees=monthly_payees(report), income=total_income(report), income_parts=income_parts(report),
+        safe=safe_lines(report), debts=debt_lines(report)))
+
+
 def render(report: AccountantReport) -> bytes:
     sheet = Sheet()
     sheet.header('RETRO MILLIY · БУХГАЛТЕР · ФИНАНСЫ ДНЯ', report.day, report.taken_at, submitted(report))

@@ -18,6 +18,8 @@ modules/accountant/telegram_report.py) — отдельной картинкой
 отметкой об отправке.
 """
 import asyncio
+import hashlib
+import json
 import logging
 from contextlib import closing
 from dataclasses import dataclass
@@ -28,7 +30,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from retro.db import as_database
+from retro.db import as_database, table_columns
 from retro.logging_config import log_safe_failure
 from .expenses import Expense
 from .service import DataError, Snapshot, TZ
@@ -474,21 +476,36 @@ def render(report: DayReport) -> bytes:
 # ── Отправка и расписание ────────────────────────────────────────────────────
 
 class SentStore:
-    """Какой отчёт за какой день уже ушёл в группу: строка-заявка не даёт двум
-    процессам отправить его дважды. Ключ — вид отчёта и день (T-479)."""
+    """Какой отчёт за какой день ушёл в группу и с каким содержимым.
+
+    Ключ — вид отчёта и день (T-479). `fingerprint` — отпечаток того, что было
+    на отправленной картинке (T-484): тот же отчёт без изменений второй раз не
+    уходит. `claimed_at` — заявка на отправку, чтобы два процесса (кнопка и
+    расписание, или два выката) не отправили одно и то же одновременно;
+    пустая строка — заявки нет."""
 
     def __init__(self, database):
         self.db = as_database(database)
         with closing(self.db.connect()) as connection, connection:
             connection.execute('''CREATE TABLE IF NOT EXISTS telegram_reports (
                 kind TEXT NOT NULL, day TEXT NOT NULL, claimed_at TEXT NOT NULL, sent_at TEXT,
-                message_id TEXT, PRIMARY KEY(kind, day))''')
+                message_id TEXT, fingerprint TEXT, PRIMARY KEY(kind, day))''')
+            if 'fingerprint' not in table_columns(connection, 'telegram_reports'):
+                connection.execute('ALTER TABLE telegram_reports ADD COLUMN fingerprint TEXT')
+
+    def _row(self, kind: str, day: date):
+        with closing(self.db.connect()) as connection:
+            return connection.execute('SELECT sent_at, fingerprint FROM telegram_reports WHERE kind = ? AND day = ?',
+                                      (kind, day.isoformat())).fetchone()
 
     def sent(self, kind: str, day: date) -> bool:
-        with closing(self.db.connect()) as connection:
-            row = connection.execute('SELECT sent_at FROM telegram_reports WHERE kind = ? AND day = ?',
-                                     (kind, day.isoformat())).fetchone()
+        row = self._row(kind, day)
         return bool(row and row[0])
+
+    def last_fingerprint(self, kind: str, day: date) -> str | None:
+        """Отпечаток отправленного; None — не отправляли (или до T-484)."""
+        row = self._row(kind, day)
+        return row[1] if row and row[0] else None
 
     def claim(self, kind: str, day: date, now: datetime) -> bool:
         stamp, expired = now.isoformat(), (now - timedelta(minutes=CLAIM_MINUTES)).isoformat()
@@ -499,18 +516,21 @@ class SentStore:
             if inserted:
                 return True
             return connection.execute(
-                'UPDATE telegram_reports SET claimed_at = ? WHERE kind = ? AND day = ? '
-                'AND sent_at IS NULL AND claimed_at < ?', (stamp, kind, day.isoformat(), expired)).rowcount == 1
+                "UPDATE telegram_reports SET claimed_at = ? WHERE kind = ? AND day = ? "
+                "AND (claimed_at = '' OR claimed_at < ?)", (stamp, kind, day.isoformat(), expired)).rowcount == 1
 
     def release(self, kind: str, day: date):
         with closing(self.db.connect()) as connection, connection:
             connection.execute('DELETE FROM telegram_reports WHERE kind = ? AND day = ? AND sent_at IS NULL',
                                (kind, day.isoformat()))
+            connection.execute("UPDATE telegram_reports SET claimed_at = '' WHERE kind = ? AND day = ?",
+                               (kind, day.isoformat()))
 
-    def finish(self, kind: str, day: date, message_id, now: datetime):
+    def finish(self, kind: str, day: date, message_id, now: datetime, fingerprint: str | None = None):
         with closing(self.db.connect()) as connection, connection:
-            connection.execute('UPDATE telegram_reports SET sent_at = ?, message_id = ? WHERE kind = ? AND day = ?',
-                               (now.isoformat(), str(message_id), kind, day.isoformat()))
+            connection.execute("UPDATE telegram_reports SET sent_at = ?, message_id = ?, fingerprint = ?, "
+                               "claimed_at = '' WHERE kind = ? AND day = ?",
+                               (now.isoformat(), str(message_id), fingerprint, kind, day.isoformat()))
 
 
 def due_day(now: datetime, send_at: time) -> date | None:
@@ -524,15 +544,43 @@ def due_day(now: datetime, send_at: time) -> date | None:
     return None
 
 
-async def cashier_photo(app, day: date, now: datetime) -> tuple[bytes, str]:
+def content_mark(content) -> str:
+    """Отпечаток содержимого картинки: время снимка и iiko в него не входят."""
+    return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True,
+                                     default=str).encode()).hexdigest()
+
+
+def fingerprint(report: DayReport) -> str:
+    """То, что видно на картинке кассы, без времени снимка (T-484)."""
+    revenue, receipts, average = revenue_numbers(report.snapshot)
+    return content_mark(dict(
+        day=report.day, shift=shift_text(report), revenue=revenue, receipts=receipts, average=average,
+        payments=payment_sections(report.snapshot), redeemed=report.snapshot.redeemed_total,
+        expenses=[(item.description, item.amount) for item in report.expenses],
+        receipts_list=[(item.description, item.amount) for item in report.receipts],
+        gives=[(item.get('created_at'), item['amount']) for item in report.gives],
+        summary={key: value for key, value in report.summary.items() if key != 'snapshot_id'},
+        # Передача — суммой и состоянием, без времени: повторное «Передать» с
+        # той же суммой — не новый отчёт.
+        handover=handover_mark(report.handover), warnings=warnings(report)))
+
+
+def handover_mark(record: dict | None):
+    if not record or record.get('amount') is None:
+        return None
+    return dict(amount=str(record['amount']), source=record.get('source'),
+                confirmed=bool(record.get('confirmed_at')), expected=record.get('expected_amount'))
+
+
+async def cashier_photo(app, day: date, now: datetime) -> tuple[bytes, str, str]:
     report = await collect(app.state, day, now=now)
-    return await asyncio.to_thread(render, report), caption(report)
+    return await asyncio.to_thread(render, report), caption(report), fingerprint(report)
 
 
-async def accountant_photo(app, day: date, now: datetime) -> tuple[bytes, str]:
+async def accountant_photo(app, day: date, now: datetime) -> tuple[bytes, str, str]:
     from retro.modules.accountant import telegram_report as accountant
     report = await accountant.collect(app, day, now=now)
-    return await asyncio.to_thread(accountant.render, report), accountant.caption(report)
+    return await asyncio.to_thread(accountant.render, report), accountant.caption(report), accountant.fingerprint(report)
 
 
 # Порядок отправки: сначала касса, потом бухгалтер — как идут деньги.
@@ -541,19 +589,60 @@ FILE_NAMES = {'cashier': 'kassa', 'accountant': 'buhgalter'}
 
 
 class TelegramDailyReport:
+    """Когда отчёт уходит в группу (T-484):
+
+    * кассир нажал «Передать бухгалтеру» — снимок кассы за этот день;
+    * бухгалтер нажал «Сохранить и сдать отчёт» — «Финансы дня»;
+    * в 23:30 — тот отчёт дня, который ещё ни разу не уходил.
+
+    Отчёт без изменений второй раз не отправляется: сравниваем отпечаток
+    содержимого с отправленным. Изменился — уходит заново с пометкой
+    «Исправленный отчёт»."""
+
     def __init__(self, app, bot, store, config, *, clock=lambda: datetime.now(TZ), reports=None):
         self.app, self.bot, self.store, self.config = app, bot, store, config
         self.clock, self.reports = clock, reports or REPORTS
         self.retry_after: dict[tuple[str, date], datetime] = {}
         self.worker = None
 
-    async def send(self, kind: str, day: date) -> int:
-        """Отправка отчёта прямо сейчас — и по расписанию, и для проверки."""
-        photo, text = await self.reports[kind](self.app, day, self.clock())
-        return await self.bot.send_photo(self.config.chat_id, photo, text,
-                                         filename=f'Retro-{FILE_NAMES.get(kind, kind)}-{day.isoformat()}.png')
+    async def deliver(self, kind: str, day: date) -> str:
+        """Отправить отчёт, если он новый или изменился.
+
+        'sent' — ушёл; 'unchanged' — такой уже в группе; 'busy' — его прямо
+        сейчас отправляет другой процесс. Skip и сбои — исключениями."""
+        photo, text, mark = await self.reports[kind](self.app, day, self.clock())
+        last = await asyncio.to_thread(self.store.last_fingerprint, kind, day)
+        already = await asyncio.to_thread(self.store.sent, kind, day)
+        if already and last == mark:
+            return 'unchanged'
+        if not await asyncio.to_thread(self.store.claim, kind, day, self.clock()):
+            return 'busy'
+        try:
+            if already:
+                text = 'Исправленный отчёт\n' + text
+            message_id = await self.bot.send_photo(
+                self.config.chat_id, photo, text, filename=f'Retro-{FILE_NAMES.get(kind, kind)}-{day.isoformat()}.png')
+        except BaseException:
+            await asyncio.to_thread(self.store.release, kind, day)
+            raise
+        await asyncio.to_thread(self.store.finish, kind, day, message_id, self.clock(), mark)
+        logger.info('telegram %s report %s sent%s', kind, day, ' (corrected)' if already else '')
+        return 'sent'
+
+    async def notify(self, kind: str, day: date):
+        """По кнопке кассира или бухгалтера — в фоне, после ответа экрану.
+        Сбой не мешает передаче или сдаче отчёта: не ушло — уйдёт в 23:30."""
+        try:
+            await self.deliver(kind, day)
+        except Skip:
+            pass
+        except Exception as error:
+            log_safe_failure('telegram-report', error, operation=f'notify:{kind}:{day.isoformat()}')
+            logger.warning('telegram %s report %s on submit failed: %s', kind, day,
+                           getattr(error, 'code', type(error).__name__))
 
     async def run_once(self) -> list[tuple[str, date]]:
+        """23:30: отчёт дня, которого ещё нет в группе (кнопку не нажали)."""
         now = self.clock()
         day = due_day(now, self.config.send_at)
         if day is None:
@@ -564,24 +653,18 @@ class TelegramDailyReport:
                 continue
             if await asyncio.to_thread(self.store.sent, kind, day):
                 continue
-            if not await asyncio.to_thread(self.store.claim, kind, day, now):
-                continue
             try:
-                message_id = await self.send(kind, day)
+                if await self.deliver(kind, day) == 'sent':
+                    sent.append((kind, day))
+                self.retry_after.pop((kind, day), None)
             except Skip:
-                await asyncio.to_thread(self.store.finish, kind, day, 'skip', now)
-                continue
+                if await asyncio.to_thread(self.store.claim, kind, day, now):
+                    await asyncio.to_thread(self.store.finish, kind, day, 'skip', now, 'skip')
             except Exception as error:
-                await asyncio.to_thread(self.store.release, kind, day)
                 self.retry_after[(kind, day)] = now + timedelta(minutes=RETRY_MINUTES)
                 log_safe_failure('telegram-report', error, operation=f'send:{kind}:{day.isoformat()}')
                 logger.warning('telegram %s report %s failed: %s', kind, day,
                                getattr(error, 'code', type(error).__name__))
-                continue
-            await asyncio.to_thread(self.store.finish, kind, day, message_id, self.clock())
-            self.retry_after.pop((kind, day), None)
-            logger.info('telegram %s report %s sent', kind, day)
-            sent.append((kind, day))
         return sent
 
     def start(self, every: float = 60):

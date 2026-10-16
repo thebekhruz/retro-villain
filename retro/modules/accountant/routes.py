@@ -7,7 +7,7 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
@@ -1493,7 +1493,7 @@ def report_author(request: Request) -> str:
 
 
 @router.post('/day-report')
-def submit_day_report(request: Request, body: DayReportInput):
+def submit_day_report(request: Request, body: DayReportInput, background: BackgroundTasks):
     """«Сохранить и сдать отчёт»: снимок дня уходит учредителю."""
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
@@ -1506,6 +1506,9 @@ def submit_day_report(request: Request, body: DayReportInput):
             shoh_balance=pocket['pocket'], checks=[item.model_dump() for item in body.checks])
     except LedgerError as error:
         finance_error(error)
+    # «Финансы дня» — в Telegram-группу (T-484); без изменений не повторяется.
+    from retro.modules.cashier.routes import notify_telegram
+    notify_telegram(request, background, 'accountant', day)
     return dict(demo=False, date=day.isoformat(), report=report)
 
 
