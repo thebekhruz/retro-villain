@@ -6,9 +6,11 @@ from .pdf import render_report_pdf
 
 
 class DirectorService:
-    def __init__(self, iiko, claude, store, retention=24, *, loader=None):
+    def __init__(self, iiko, claude, store, retention=24, *, loader=None, catalog=None):
         self.iiko, self.claude, self.store, self.retention = iiko, claude, store, retention
         self.loader = loader or iiko.load_director_report
+        # Справочник меню: AI-анализ не предлагает убрать мёд или компонент сета.
+        self.catalog = catalog
 
     async def generate(self, today, *, start=None, end=None):
         snapshot = await self.loader(today, start=start, end=end)
@@ -18,7 +20,11 @@ class DirectorService:
         if existing is not None and existing['snapshot'] == snapshot_json:
             analysis = existing['analysis']
         else:
-            analysis = await self.claude.analyze(snapshot)
+            item_classes = None
+            if self.catalog is not None:
+                catalog = await asyncio.to_thread(self.catalog)
+                item_classes = catalog.exceptions(snapshot_json.get('item_metrics', {}).get('all', {}))
+            analysis = await self.claude.analyze(snapshot, item_classes=item_classes)
         pdf = await asyncio.to_thread(render_report_pdf, snapshot_json, analysis)
         report_id = await asyncio.to_thread(self.store.create_or_replace,
             snapshot_json, analysis, pdf, datetime.now(TZ).isoformat(), self.retention)
