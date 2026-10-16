@@ -202,17 +202,9 @@ def handover_status(report: DayReport) -> tuple[str, str]:
     return f'Передано бухгалтеру{" в " + at if at else ""}', 'ok'
 
 
-def usd_note(summary: dict) -> str:
-    """Подпись под долларами: сколько это в сумах и по какому курсу."""
-    rate, deduction = summary.get('usd_rate'), summary.get('usd_deduction')
-    if rate is None or deduction is None:
-        return 'в сумах — нет курса Retro'
-    return f'= {money(deduction)} сум по курсу {money(rate)}'
-
-
 def handover_rows(summary: dict) -> list[tuple[str, str, bool, str | None]]:
-    """Формула «К передаче» по шагам. Доллары — в долларах, сумы — подписью
-    под строкой: в сейф кладут именно доллары."""
+    """Формула «К передаче» по шагам. Доллары — только в долларах: в сейф
+    кладут именно доллары, пересчёт в сумы на картинке не нужен (T-485)."""
     def step(label, value, sign):
         muted = value is not None and Decimal(value) == 0
         return sign + label, money(value), muted, None
@@ -222,7 +214,7 @@ def handover_rows(summary: dict) -> list[tuple[str, str, bool, str | None]]:
             step('Расходы', summary.get('expenses'), '− '),
             step('На закуп', summary.get('shokh'), '− ')]
     usd = Decimal(summary.get('usd_total') or 0)
-    rows.append(('− Доллары в сейф', f'${money(usd)}', not usd, usd_note(summary) if usd else None))
+    rows.append(('− Доллары в сейф', f'${money(usd)}', not usd, None))
     return rows
 
 
@@ -455,11 +447,8 @@ def render(report: DayReport) -> bytes:
     listing('Поступления', [(item.description, item.amount) for item in report.receipts], 'Поступлений нет')
     usd_total = Decimal(summary.get('usd_total') or 0)
     if usd_total:
-        rate = summary.get('usd_rate')
+        # Только доллары, без пересчёта в сумы (T-485).
         sheet.row('Доллары в сейф', f'${money(usd_total)}', left_font=group_font, right_font=group_amount)
-        sheet.row(f'по курсу Retro {money(rate)}' if rate else 'курс Retro не загружен',
-                  money(summary.get('usd_deduction')), left_font=item_font, right_font=item_amount,
-                  left_fill=MUTED, right_fill=MUTED, x0=PAD + 28)
     sheet.y += 30
 
     # К передаче бухгалтеру — тёмная карточка, как правая колонка кассира.
