@@ -2,6 +2,7 @@ import os
 import re
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from dataclasses import dataclass, field
+from datetime import time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -39,6 +40,16 @@ class HikvisionConfig:
     poll_seconds: int = 30
     timeout_seconds: int = 8
     verify_tls: bool = True
+
+
+@dataclass(frozen=True)
+class TelegramReportConfig:
+    """Снимок кассы в Telegram-группу (T-478): бот, чат и время отправки."""
+    token: str = field(repr=False)
+    chat_id: str
+    send_at: time = time(23, 30)
+    # Выключено — бот шлёт только по кнопке проверки, без расписания.
+    auto: bool = True
 
 
 @dataclass(frozen=True)
@@ -80,6 +91,7 @@ class Settings:
     website_booking_api_url: str = ''
     website_booking_api_token: str = field(default='', repr=False)
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
+    telegram_report: TelegramReportConfig | None = field(default=None, repr=False)
     data_dir: Path = ROOT / 'build'
     # Строка подключения Postgres. Пустая — работаем на файловом SQLite
     # (локальная разработка и тесты). На Railway диска нет, поэтому в
@@ -171,6 +183,7 @@ class Settings:
         if not retention_value.isdigit() or not 1 <= int(retention_value) <= 1000:
             raise ValueError('DIRECTOR_REPORT_RETENTION должен быть числом от 1 до 1000.')
         hikvision = parse_hikvision_config(os.environ)
+        telegram_report = parse_telegram_report_config(os.environ)
         return cls(
             base_url=base,
             login=os.getenv('IIKO_LOGIN', ''),
@@ -197,10 +210,34 @@ class Settings:
             website_booking_api_url=website_booking_url,
             website_booking_api_token=website_booking_token,
             hikvision=hikvision,
+            telegram_report=telegram_report,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
             database_url=database_url,
             report_retention=int(retention_value),
         )
+
+
+def parse_telegram_report_config(environ) -> TelegramReportConfig | None:
+    token = environ.get('TELEGRAM_BOT_TOKEN', '').strip()
+    chat_id = environ.get('TELEGRAM_REPORT_CHAT_ID', '').strip()
+    if not token and not chat_id:
+        return None
+    if not token or not chat_id:
+        raise ValueError('TELEGRAM_BOT_TOKEN и TELEGRAM_REPORT_CHAT_ID задаются вместе.')
+    if not re.fullmatch(r'[0-9]{5,16}:[A-Za-z0-9_-]{30,64}', token):
+        raise ValueError('TELEGRAM_BOT_TOKEN должен быть токеном бота из @BotFather.')
+    if not re.fullmatch(r'-?[0-9]{5,20}|@[A-Za-z][A-Za-z0-9_]{4,31}', chat_id):
+        raise ValueError('TELEGRAM_REPORT_CHAT_ID — числовой id группы (например -1001234567890) или @канал.')
+    raw_time = environ.get('TELEGRAM_REPORT_TIME', '23:30').strip()
+    match = re.fullmatch(r'([01][0-9]|2[0-3]):([0-5][0-9])', raw_time)
+    if not match:
+        raise ValueError('TELEGRAM_REPORT_TIME задаётся как ЧЧ:ММ по Ташкенту, например 23:30.')
+    auto = environ.get('TELEGRAM_REPORT_AUTO', 'true').strip().casefold()
+    if auto not in {'true', 'false', '1', '0', 'yes', 'no'}:
+        raise ValueError('TELEGRAM_REPORT_AUTO должен быть true или false.')
+    return TelegramReportConfig(token=token, chat_id=chat_id,
+                                send_at=time(int(match[1]), int(match[2])),
+                                auto=auto in {'true', '1', 'yes'})
 
 
 def parse_hikvision_config(environ) -> HikvisionConfig | None:

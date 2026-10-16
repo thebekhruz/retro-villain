@@ -730,6 +730,29 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
   "$RETRO_DATA_DIR"/*.sqlite3
 ```
 
+## Снимок кассы в Telegram
+
+Каждый вечер в `TELEGRAM_REPORT_TIME` (23:30 по Ташкенту) сервер сам собирает день
+кассира — свежий снимок iiko, предоплаты, расходы, поступления, выдачи на закуп,
+доллары и «К передаче бухгалтеру» (`till_summary`, та же формула, что на экране) —
+рисует PNG (Pillow, шрифты DejaVu из `retro/assets/`) и отправляет боту в группу.
+Браузер на сервере не нужен. В шапке картинки и в подписи — дата отчёта.
+
+Смену iiko закрывают за полночь, поэтому снимок 23:30 обычно предварительный: пока
+смена открыта, это написано и на картинке, и в подписи. Отправленный день
+помечается в таблице `cashier_telegram_reports` — выкат или второй процесс его не
+повторят. Сбой Telegram или iiko повторяется каждые 5 минут до 06:00 утра.
+
+Подключение: создать бота в @BotFather, добавить его в группу, задать
+`TELEGRAM_BOT_TOKEN` и `TELEGRAM_REPORT_CHAT_ID` (id группы вида `-1001234567890`).
+Проверка перед запуском расписания (только роль `admin` / полный доступ):
+
+- `GET /api/cashier/telegram-report/preview?date=ГГГГ-ММ-ДД` — картинка в браузере, без отправки;
+- `POST /api/cashier/telegram-report?date=ГГГГ-ММ-ДД` — отправить в группу сейчас;
+  расписание этот день отправленным не считает.
+
+На время тестовых отправок можно держать `TELEGRAM_REPORT_AUTO=false`.
+
 ## Переменные окружения
 
 - `IIKO_SERVER_URL`, `IIKO_LOGIN`, `IIKO_PASSWORD`, `IIKO_STORE_ID` — доступ к iiko.
@@ -759,6 +782,8 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
   `X-Forwarded-For` игнорируется; не указывайте там клиентскую подсеть.
 - `BOOKING_ANALYTICS_URL`, `ANALYTICS_API_TOKEN` — агрегированная аналитика бронирований.
 - `BROADCAST_API_TOKEN` — отдельный write-токен рассылок booking-бота.
+- `TELEGRAM_BOT_TOKEN`, `TELEGRAM_REPORT_CHAT_ID` — снимок кассы в Telegram-группу;
+  `TELEGRAM_REPORT_TIME` (по умолчанию `23:30`), `TELEGRAM_REPORT_AUTO` (`false` — только ручная отправка).
 
 `build/.env` должен иметь права `0600`. Секреты не передаются в URL,
 логи, frontend или Git. Полный образец находится в `config.env.example`.

@@ -234,7 +234,7 @@ async def keep_device_photos_warm(state, every: float = 600):
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
                broadcast_transport=None, hikvision_client=None, hikvision_poller=None,
-               hikvision_writer=None, sms_client=None):
+               hikvision_writer=None, sms_client=None, telegram_transport=None):
     configure_logging()
     settings = settings or Settings.from_env()
 
@@ -247,6 +247,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             application.state.cashier_days.start()
         if application.state.menu_sync is not None:
             application.state.menu_sync.start()
+        if application.state.telegram_report is not None:
+            application.state.telegram_report.start()
         photos = (asyncio.create_task(keep_device_photos_warm(application.state))
                   if application.state.device_photo_warmup else None)
         try:
@@ -265,6 +267,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await application.state.cashier_days.close()
             if application.state.menu_sync is not None:
                 await application.state.menu_sync.close()
+            if application.state.telegram_report is not None:
+                await application.state.telegram_report.close()
             await application.state.reports.close()
             await application.state.phone_login.close()
             # Клиенты держат свои пулы соединений всё время жизни приложения;
@@ -299,6 +303,14 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.cashier_days = (CashierDays(CashierArchive(database_path, settings),
         lambda day: app.state.iiko.load(day)) if settings.configured else None)
     app.state.usd_rates = UsdRates(database_path, transport=rate_transport)
+    # Снимок кассы в Telegram-группу в 23:30 (T-478): только с ботом и чатом.
+    app.state.telegram_report = None
+    if settings.telegram_report is not None:
+        from retro.integrations.telegram import TelegramBot
+        from retro.modules.cashier.telegram_report import SentStore, TelegramDailyReport
+        app.state.telegram_report = TelegramDailyReport(
+            app, TelegramBot(settings.telegram_report.token, transport=telegram_transport),
+            SentStore(database_path), settings.telegram_report)
     accountant_path = accountant_db_path or shared or settings.data_dir / 'accountant.sqlite3'
     app.state.accountant_roster = RosterStore(accountant_path)
     app.state.accountant_finance = FinanceStore(
