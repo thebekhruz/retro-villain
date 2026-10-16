@@ -16,7 +16,8 @@ test('экран из редизайна переводится целиком, 
 test('дни недели и месяцы без числа', () => {
   assert.equal(translate('Сб'), 'Sh');
   assert.equal(translate('Суббота, 26 сентября'), 'Shanba, 26 sentabr');
-  assert.equal(translate('КУДА УШЛИ ДЕНЬГИ · СЕНТЯБРЬ'), 'PUL QAYERGA KETDI · SENTABR');
+  assert.equal(translate('РАСХОДЫ ОКТЯБРЯ'), 'OKTABR XARAJATLARI');
+  assert.equal(translate('РАСХОДЫ МЕСЯЦА'), 'OY XARAJATLARI');
   // «Все» начинается с «Вс», но это не воскресенье.
   assert.equal(translate('Всего'), 'Jami');
 });
