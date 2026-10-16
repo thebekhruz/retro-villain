@@ -36,7 +36,11 @@ def test_director_chat_uses_least_privilege_tools_and_separate_history(tmp_path)
         'get_employee_attendance', 'get_saved_director_reports',
         # 6a: касса дня и замечания бухгалтера — тот же контекст, что на экране.
         'get_cashier_day', 'get_accounting_day',
+        # ТЗ 2.3: справочник готовых блюд — AI не советует продавать ингредиенты.
+        'get_menu_catalog',
     }
+    assert 'get_menu_catalog' in seen['body']['system']
+    assert 'не блюда' in seen['body']['system']
     # Ответ по спецификации: по-русски, до 120 слов, без markdown, только по данным.
     assert 'до 120 слов' in seen['body']['system']
     assert 'без markdown' in seen['body']['system']

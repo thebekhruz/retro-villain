@@ -17,6 +17,7 @@ from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.cashier.till import shokh_gives, shokh_total, usd_balance
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
+from retro.modules.menu.catalog import MenuCatalog
 
 
 # manual_present / manual_absent — отметка бухгалтера у сотрудников без
@@ -26,7 +27,27 @@ ATTENDANCE_STATUSES = {
     'manual_present', 'manual_absent',
 }
 
+MENU_CATALOG_TOOL = {
+    'name': 'get_menu_catalog',
+    'description': (
+        'Справочник готовых позиций меню (блюда и напитки, которые продаются гостям) из '
+        'номенклатуры iiko. Вызывай перед любой рекомендацией о блюдах. Ингредиенты и '
+        'сырьё (мёд, листья салата), закупочные товары склада, полуфабрикаты, компоненты '
+        'сетов и услуги — не блюда. query — поиск по части названия.'
+    ),
+    'input_schema': {
+        'type': 'object',
+        'properties': {
+            'query': {'type': 'string', 'maxLength': 80},
+            'limit': {'type': 'integer', 'minimum': 1, 'maximum': 300},
+        },
+        'required': ['limit'],
+        'additionalProperties': False,
+    },
+}
+
 TOOL_DEFINITIONS = (
+    MENU_CATALOG_TOOL,
     {
         'name': 'get_revenue_analytics',
         'description': (
@@ -248,7 +269,13 @@ class FounderChatTools:
     def __init__(self, app):
         self.app = app
 
+    def catalog(self):
+        store = getattr(self.app.state, 'menu_store', None)
+        return MenuCatalog.from_store(store) if store is not None else MenuCatalog([])
+
     async def execute(self, name, arguments):
+        if name == 'get_menu_catalog':
+            return await asyncio.to_thread(self._menu_catalog, arguments)
         if name == 'get_revenue_analytics':
             start, end, granularity, directions = _period(arguments, with_directions=True)
             return await load_iiko(self.app.state, 'load_founder_analytics',
@@ -281,9 +308,12 @@ class FounderChatTools:
                 raise DataError('Выберите от одного до четырёх разрешённых измерений iiko без повторов.')
             if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 200:
                 raise DataError('Лимит строк iiko должен быть от 1 до 200.')
-            return await load_iiko(self.app.state, 'load_sales_details',
-                                   start, end, tuple(dimensions), limit=limit,
-                                   **{key: arguments[key] for key in ('offset', 'revision') if key in arguments})
+            details = await load_iiko(self.app.state, 'load_sales_details',
+                                      start, end, tuple(dimensions), limit=limit,
+                                      **{key: arguments[key] for key in ('offset', 'revision') if key in arguments})
+            if 'DishName' not in dimensions:
+                return details
+            return await asyncio.to_thread(self._with_item_classes, details)
         if name == 'get_cashier_day':
             return await self._cashier_day(arguments)
         if name == 'get_accounting_day':
@@ -293,6 +323,27 @@ class FounderChatTools:
         if name == 'get_founder_cabinet':
             return await self._founder_cabinet(arguments)
         raise DataError('Чат запросил неизвестный инструмент.')
+
+    def _menu_catalog(self, arguments):
+        if not isinstance(arguments, dict) or not {'limit'} <= set(arguments) <= {'limit', 'query'}:
+            raise DataError('Инструмент меню получил неполные параметры.')
+        limit, query = arguments['limit'], arguments.get('query', '')
+        if not isinstance(limit, int) or isinstance(limit, bool) or not 1 <= limit <= 300:
+            raise DataError('Лимит позиций меню должен быть от 1 до 300.')
+        if not isinstance(query, str) or len(query) > 80:
+            raise DataError('Поиск по меню — строка до 80 символов.')
+        return self.catalog().ready(query=query, limit=limit)
+
+    def _with_item_classes(self, details):
+        """Каждой строке — класс позиции: AI не путает добавку или сырьё с блюдом."""
+        catalog = self.catalog()
+        rows = [dict(row, item_class=catalog.classify(row['dimensions']['DishName']))
+                for row in details['rows']]
+        result = dict(details, rows=rows)
+        if not catalog.available:
+            result['warnings'] = [*details.get('warnings', []),
+                                  'Справочник меню не загружен: классы позиций не проверены.']
+        return result
 
     async def _founder_cabinet(self, arguments):
         """Те же числа, что на экранах 7a/7b, без полного дня бухгалтерии в каждой

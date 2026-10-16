@@ -36,6 +36,7 @@ from retro.modules.shokh.store import ShokhStore
 from retro.modules.shokh.iiko import ProcurementIiko
 from retro.modules.shokh.sync import ProcurementSync
 from retro.modules.menu.store import MenuStore
+from retro.modules.menu.catalog import MenuCatalog
 from retro.modules.menu.iiko import MenuIiko
 from retro.modules.menu.sync import MenuSync
 from retro.modules.accountant.roster import RosterStore
@@ -379,7 +380,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.director_service = DirectorService(
         app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention,
         # Сервис передаёт период (start/end): без **kw «Сформировать отчёт» падал с 500.
-        loader=lambda today, **kw: load_iiko(app.state, 'load_director_report', today, timeout=150, **kw))
+        loader=lambda today, **kw: load_iiko(app.state, 'load_director_report', today, timeout=150, **kw),
+        catalog=lambda: MenuCatalog.from_store(app.state.menu_store))
 
     # Вход по номеру (ТЗ 09.10, М-05): коды и лимиты — в общей базе, чтобы
     # пережить выкат; SMS — Eskiz на бою, консоль на стенде.
