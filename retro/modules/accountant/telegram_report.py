@@ -176,12 +176,11 @@ def safe_lines(report: AccountantReport) -> list[tuple[str, str]]:
     gives = data.get('cashier_shokh_gives') or {}
     if gives.get('gives'):
         lines.append(('Шоху из кассы · не из остатка', money(gives.get('total'))))
+    # «На руках у Шоха» и есть подотчёт по бухгалтерии (shokh.store.pocket_position
+    # берёт reserves.shoh.balance) — одной строкой, без повтора (T-483).
     pocket = (data.get('shoh_pocket') or {}).get('pocket')
     if pocket is not None:
         lines.append(('На руках у Шоха на конец дня', money(pocket)))
-    shoh = amount((reserves.get('shoh') or {}).get('balance'))
-    if shoh is not None:
-        lines.append(('Подотчёт Шоха по бухгалтерии', money(shoh)))
     return lines
 
 
