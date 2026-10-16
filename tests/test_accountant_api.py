@@ -350,7 +350,10 @@ def test_confirmed_payroll_becomes_debt_then_partial_payment_reduces_cash(tmp_pa
         assert client.post('/api/accountant/payroll/confirm', json={
             'date': DAY.isoformat(), 'approver': 'Финансы'}).json()['already_confirmed'] is True
         before = client.get('/api/accountant/day', params={'date': DAY.isoformat()}).json()
-        assert before['ledger']['salary_debt'] == before['payroll']['draft_total']
+        # Смену DAY выдают на следующий день: в день DAY она ещё не долг к
+        # оплате, а «завтрашний» долг (T-480).
+        assert before['ledger']['salary_debt'] == '0'
+        assert before['ledger']['salary_debt_ahead'] == before['payroll']['draft_total']
         assert before['ledger']['cash_balance'] is None
 
         received_day = (DAY + timedelta(days=1)).isoformat()
@@ -363,7 +366,7 @@ def test_confirmed_payroll_becomes_debt_then_partial_payment_reduces_cash(tmp_pa
         assert payment.status_code == 201
         after = client.get('/api/accountant/day', params={'date': received_day}).json()
         assert after['ledger']['cash_balance'] == '100000'
-        assert Decimal(after['ledger']['salary_debt']) == Decimal(before['ledger']['salary_debt']) - 100000
+        assert Decimal(after['ledger']['salary_debt']) == Decimal(before['ledger']['salary_debt_ahead']) - 100000
         assert client.get('/api/cashier/expenses', params={'date': received_day}).json()['total'] == '350000'
 
 

@@ -188,7 +188,8 @@ def _shift_sheet(sheet, payday: date, ledger: dict, staff: dict):
         _note(sheet, row, f'Без суммы (нет ставки или данных Hikvision): {unknown} — в итог не вошли.', width)
         row += 1
     other = sorted((item for item in accruals
-                    if item['work_day'] != shift_day.isoformat() and Decimal(item['debt']) > 0),
+                    # Только прошлые смены: смену дня выплаты выдают завтра (T-480).
+                    if item['work_day'] < shift_day.isoformat() and Decimal(item['debt']) > 0),
                    key=lambda item: (item['work_day'], item['name']))
     if other:
         row += 1

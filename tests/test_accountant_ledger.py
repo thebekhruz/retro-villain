@@ -26,7 +26,9 @@ def test_confirmation_creates_debt_but_no_cash_expense_and_is_idempotent(tmp_pat
 
     summary = FinanceStore(tmp_path / 'finance.sqlite3').summary(WORKDAY)
     assert summary['accrued_on_day'] == Decimal('270000')
-    assert summary['salary_debt'] == Decimal('270000')
+    # Долг к оплате — со следующего дня: смену выдают назавтра (T-480).
+    assert summary['salary_debt'] == Decimal(0) and summary['salary_debt_ahead'] == Decimal('270000')
+    assert FinanceStore(tmp_path / 'finance.sqlite3').summary(NEXT_DAY)['salary_debt'] == Decimal('270000')
     assert summary['cash_balance'] == Decimal(0)
     assert summary['salary_paid_on_day'] == Decimal(0)
 
