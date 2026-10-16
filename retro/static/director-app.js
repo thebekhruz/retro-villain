@@ -135,7 +135,7 @@
   function loadReport(days) {
     if (view.reports[days]) return Promise.resolve(view.reports[days]);
     if (view.loading[days]) return view.loading[days];
-    const range = globalThis.RetroPeriod.presetRange(view.today, String(days));
+    const range = globalThis.RetroPeriod.analyticsRange(view.today, String(days));
     view.loading[days] = request('/api/director/report?start=' + range.start + '&end=' + range.end)
       .then(snapshot => { view.reports[days] = snapshot; return snapshot; })
       .finally(() => { delete view.loading[days]; });

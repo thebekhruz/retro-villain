@@ -57,6 +57,10 @@
     return {start: clamp(range.start), end: range.end};
   }
 
+  /** Тот же пресет без границы учёта — для аналитики iiko (меню директора):
+   *  продажи до 13 октября есть в iiko, и «30 дней» должны быть тридцатью. */
+  function analyticsRange(today, preset) { return rawPresetRange(today, preset); }
+
   const SHORT = ['янв', 'фев', 'мар', 'апр', 'мая', 'июн',
     'июл', 'авг', 'сен', 'окт', 'ноя', 'дек'];
 
@@ -306,7 +310,7 @@
   }
 
   return {
-    shift: shift, daysBetween: daysBetween, monthStart: monthStart, presetRange: presetRange,
+    shift: shift, daysBetween: daysBetween, monthStart: monthStart, presetRange: presetRange, analyticsRange: analyticsRange,
     label: label, dayLabel: dayLabel, shortDay: shortDay, check: check, mount: mount, MAX_DAYS: MAX_DAYS,
     PRESETS: PRESETS, START: START,
   };

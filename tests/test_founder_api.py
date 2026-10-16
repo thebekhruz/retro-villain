@@ -82,7 +82,11 @@ def test_founder_api_parses_inclusive_period_granularity_and_directions():
         (date(2026, 9, 1), date(2026, 9, 8), 'week', ('retro', 'banquet'))]
 
 
-def test_founder_api_combines_cashier_and_accountant_expenses_without_mutating_pnl(tmp_path):
+def test_founder_api_combines_cashier_and_accountant_expenses_without_mutating_pnl(tmp_path, monkeypatch):
+    # Формула расходов на архивных сентябрьских данных; граница 13.10 — в
+    # test_founder_api_has_no_dashboard_expenses_before_accounting_start.
+    from retro.modules.founder import routes
+    monkeypatch.setattr(routes, 'ACCOUNTING_START', date(2026, 9, 1))
     source = FounderIiko({'pnl': {'net_profit': '1000'}, 'scope_note': 'iiko.'})
     app = create_app(
         Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
@@ -104,6 +108,30 @@ def test_founder_api_combines_cashier_and_accountant_expenses_without_mutating_p
         'cashier': '125.50', 'accountant_other': '200',
         'accountant_salary': '0', 'accountant': '200', 'total': '325.50'}
     assert response.json()['net_profit_after_dashboard_expenses'] == '674.50'
+
+
+def test_founder_api_has_no_dashboard_expenses_before_accounting_start(tmp_path, monkeypatch):
+    """Период с днями до 13.10: расходов кассы и бухгалтерии за них нет — не 0, а None (T-486)."""
+    from retro.modules.founder import routes
+    monkeypatch.setattr(routes, 'today_tashkent', lambda: date(2026, 10, 16))
+    source = FounderIiko({'pnl': {'net_profit': '1000'}, 'warnings': []})
+    app = create_app(
+        Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
+        accountant_db_path=tmp_path / 'accountant.sqlite3')
+    app.state.iiko = source
+    app.state.expenses.add(date(2026, 10, 14), 'Расход кассы', '125.50')
+
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        response = client.get('/api/founder/analytics', params={
+            'start': '2026-09-16', 'end': '2026-10-15'})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert source.calls[0][:2] == (date(2026, 9, 16), date(2026, 10, 15))
+    assert data['pnl']['net_profit'] == '1000'
+    assert data['dashboard_expenses'] is None
+    assert data['net_profit_after_dashboard_expenses'] is None
+    assert any('13.10.2026' in warning for warning in data['warnings'])
 
 
 def test_founder_api_rejects_future_oversized_and_unknown_filters():
@@ -224,8 +252,12 @@ def test_founder_broadcast_rejects_empty_text_and_reports_parallel_run():
     assert conflict.json() == {'detail': 'Другая рассылка уже выполняется.'}
 
 
-def test_founder_expense_detail_counts_monthly_salaries_as_salary(tmp_path):
+def test_founder_expense_detail_counts_monthly_salaries_as_salary(tmp_path, monkeypatch):
     """Оклады частями — строки «Зарплаты» журнала: в разбивке они «зарплата», а не «прочие»."""
+    # Формула расходов на архивных сентябрьских данных; граница 13.10 — в
+    # test_founder_api_has_no_dashboard_expenses_before_accounting_start.
+    from retro.modules.founder import routes
+    monkeypatch.setattr(routes, 'ACCOUNTING_START', date(2026, 9, 1))
     source = FounderIiko({'pnl': {'net_profit': '5000'}, 'scope_note': ''})
     app = create_app(
         Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
