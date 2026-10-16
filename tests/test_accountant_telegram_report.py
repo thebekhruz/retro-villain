@@ -46,6 +46,11 @@ def test_snapshot_matches_the_total_sheet(tmp_path):
         assert ('Оклады · 2 выплаты', Decimal('2000000'), False) in journal
         assert not any('Азиз' in label or 'Лина' in label for label, _, _ in journal)
         assert sum(value for _, value, incoming in journal if not incoming) == Decimal('2940000')
+        # Оклады — полным списком по именам (T-481).
+        assert accountant.monthly_payees(report) == [('Азиз', Decimal('1000000')), ('Лина', Decimal('1000000'))]
+        # Общий приход = на начало дня + касса за вчера (T-481).
+        assert accountant.total_income(report) == (Decimal('1000000'), Decimal('5000000'), Decimal('6000000'))
+        assert accountant.RENAMED['− Прочие расходы и сейф'] == '− Прочие расходы'
         # Доллары в сейфе — в долларах.
         assert ('Доллары в сейфе', '$350') in accountant.safe_lines(report)
 
@@ -76,6 +81,9 @@ def test_empty_day_still_renders(tmp_path):
     with client(tmp_path) as c:
         report = asyncio.run(accountant.collect(c.app, DAY, now=TAKEN))
         assert accountant.operations(report) == []
+        assert accountant.monthly_payees(report) == []
+        # Кассы за вчера нет — общего прихода тоже нет, а не ноль.
+        assert accountant.total_income(report)[2] is None
         assert Image.open(BytesIO(accountant.render(report))).width == 1080
 
 
