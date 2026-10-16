@@ -303,8 +303,9 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
         item['draft_total'] += row.payable or Decimal(0)
     group_items = [dict(item, shift_cost=str(item['shift_cost']),
                         draft_total=str(item['draft_total'])) for item in groups.values()]
-    # Долг уже начисленных — в salary_debt; к нему добавляются только ещё не начисленные.
-    needed = summary['salary_debt'] + Decimal(state['pending_total'])
+    # Долг уже начисленных — в salary_debt (к выдаче сегодня) и salary_debt_ahead
+    # (смена этого дня, её выдают завтра); к ним — ещё не начисленные.
+    needed = summary['salary_debt'] + summary['salary_debt_ahead'] + Decimal(state['pending_total'])
     shortfall = (max(Decimal(0), needed - summary['cash_balance'])
                  if summary['cash_balance'] is not None and not any(row.payable is None for row in rows) else None)
     scenarios = [dict(group=item['name'], saving=item['shift_cost'],

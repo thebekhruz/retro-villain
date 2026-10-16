@@ -37,7 +37,9 @@ def test_unknown_payroll_cannot_close_day_and_can_be_fixed(store):
     assert not store.summary(DAY)['payroll_confirmed'] and store.accruals(DAY) == []
     assert store.confirm_payroll(DAY, [salary()], 'Тест')
     assert store.summary(DAY)['payroll_confirmed']
-    assert store.summary(DAY)['salary_debt'] == 100
+    # Смену выдают назавтра: в день смены долг ещё «завтрашний» (T-480).
+    assert store.summary(DAY)['salary_debt_ahead'] == 100
+    assert store.summary(DAY + timedelta(days=1))['salary_debt'] == 100
 
 
 def test_empty_payroll_cannot_close_day(store):

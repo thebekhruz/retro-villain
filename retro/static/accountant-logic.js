@@ -204,7 +204,9 @@
       .concat(own.filter(a=>!byId.has(a.employee_id)).map(fromAcc));
     const confirmed=ownRows.length>0&&ownRows.every(r=>r.accrualId);
     const partial=!confirmed&&ownRows.some(r=>r.accrualId);
-    const other=all.filter(a=>a.work_day!==S&&(num(a.debt)>0||pays.has(a.name+'|'+a.work_day)))
+    // Другие смены — только прошлые: смену самого дня выплаты выдают завтра,
+    // её долг сегодня ещё не наступил (T-480). Выплату за неё сегодня всё же видно.
+    const other=all.filter(a=>a.work_day!==S&&((a.work_day<S&&num(a.debt)>0)||pays.has(a.name+'|'+a.work_day)))
       .sort((a,b)=>a.work_day.localeCompare(b.work_day)||a.name.localeCompare(b.name,'ru'))
       .map(a=>{const e=byId.get(a.employee_id)||{};
         return build({key:'a'+a.id,accrualId:a.id,employeeId:a.employee_id,name:a.name,
