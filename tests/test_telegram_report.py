@@ -66,6 +66,13 @@ def test_money_matches_screen_format():
     assert money(None) == 'требует проверки'
 
 
+def test_dollars_stay_in_dollars_without_sum_equivalent():
+    from retro.modules.cashier.telegram_report import handover_rows
+    rows = handover_rows(report().summary)
+    assert rows[-1] == ('− Доллары в сейф', '$100', False, None)
+    assert not any(note for *_, note in rows)
+
+
 def test_render_is_phone_width_png_and_caption_carries_date():
     for item in (report(), report(shift_open=False, handover={'amount': '2995000', 'source': 'cashier',
                                                               'handed_at': '2026-10-16T23:05:00+05:00'}),
