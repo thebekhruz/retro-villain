@@ -177,6 +177,15 @@ async def day_view(request: Request, date: date | None = None):
     return await asyncio.to_thread(_day_data, request, day, cashier_amount, cashier_error, current=current)
 
 
+@router.get('/cash-today')
+def cash_today(request: Request):
+    """«Баланс на сегодня» на зарплатных страницах: остаток кассы на конец
+    сегодняшнего дня — тот же расчёт, что в «Финансах дня», без запроса в iiko."""
+    day = today_tashkent()
+    balance = request.app.state.accountant_finance.day_flow(day, carry_start_for(request, day))['closing']
+    return dict(date=day.isoformat(), cash_balance=str(balance) if balance is not None else None)
+
+
 @router.get('/staff')
 def staff_view(request: Request, date: date | None = None):
     return _day_data(request, selected_day(date), None, None, staff_only=True)
@@ -385,9 +394,13 @@ def month_close_hint(request, day: date) -> dict:
 
 
 def monthly_left(request, last: date):
-    """Сколько окладов осталось выдать за месяц: фонд − выдано с 1-го по `last`."""
+    """Сколько окладов осталось выдать за месяц: фонд − на карту − выдано с 1-го по `last`.
+
+    Часть оклада на карту (реестр, поле card) из кассы не выдаётся."""
     paid = Decimal(request.app.state.accountant_finance.reserves(last)['monthly']['paid'])
-    return max(Decimal(0), request.app.state.accountant_roster.monthly_total() - paid)
+    roster = request.app.state.accountant_roster
+    card = sum((min(person.salary, person.card) for person in roster.list_monthly()), Decimal(0))
+    return max(Decimal(0), roster.monthly_total() - card - paid)
 
 
 def cashier_handover_json(request, day: date, current=None) -> dict:
@@ -518,9 +531,32 @@ def salary_day_month(request: Request, month: str, basis: Literal['payment', 'sh
     # Посещаемость смены в клетке — тем же расчётом, что «Сотрудники» за день смены:
     # реестр на этот день, входы Hikvision и ручные отметки, без отметки выплаты.
     roster, attendance = request.app.state.accountant_roster, request.app.state.attendance
+    data = finance.salary_day_month(first, last, lambda days: attendance.rows_by_day(days, roster.list), basis=basis)
+    mark_today_without_hikvision(request, data)
     return dict(month=month, first=first.isoformat(), last=last.isoformat(),
-                closed=month_closing.closed_state(finance, last),
-                **finance.salary_day_month(first, last, lambda days: attendance.rows_by_day(days, roster.list), basis=basis))
+                closed=month_closing.closed_state(finance, last), **data)
+
+
+def mark_today_without_hikvision(request: Request, data: dict):
+    """Кого нет в Hikvision (T-471): метка у имени и отметка «пришёл» за сегодня.
+
+    Сегодняшнюю смену ведомость не размечает — люди ещё приходят. Для тех, кого
+    нет в Hikvision, бухгалтер отмечает приход сам; отметка сразу видна в клетке
+    сегодняшнего дня («был» / «нет»), чтобы завтра выдать по ней зарплату."""
+    today = today_tashkent()
+    roster = {employee.id: employee for employee in request.app.state.accountant_roster.list(today)}
+    marks = request.app.state.attendance_store.manual_marks(today)
+    for person in data['people']:
+        employee = roster.get(person['id'])
+        person['no_hikvision'] = bool(employee and (employee.hikvision_id is None or employee.manual_attendance))
+        if not person['no_hikvision']:
+            continue
+        mark = marks.get(person['id'])
+        person['today_mark'] = mark
+        cell = person['cells'].get(today.isoformat()) if data.get('basis') == 'shift' else None
+        if cell is not None and mark is not None:
+            cell['attendance'] = dict(status='manual' if mark else 'absent', time=None,
+                                      source='manual_present' if mark else 'manual_absent')
 
 
 @router.put('/salary-day/cell')
@@ -703,10 +739,14 @@ def payroll_month(request: Request, month: str):
         cells[row['day']] = str(Decimal(cells.get(row['day'], '0')) + Decimal(row['amount']))
         monthly_cell_ops.setdefault(str(row['employee_id']), {}).setdefault(row['day'], []).append(
             dict(id=row['id'], amount=row['amount']))
+    # Колонки дней — с первой смены ведомости (14.10): 13.10, день переноса
+    # авансов до начала учёта, на экране не показываем. Его выплаты остаются
+    # в monthly_cells и входят в «Выдано» и «Осталось» человека.
+    shown = max(first, salary_period_start(last))
     return dict(demo=False, month=month, first=first.isoformat(), last=last.isoformat(),
                 monthly_cells=monthly_cells, monthly_cell_ops=monthly_cell_ops,
-                days=[(first + timedelta(days=offset)).isoformat()
-                      for offset in range((last - first).days + 1)],
+                days=[(shown + timedelta(days=offset)).isoformat()
+                      for offset in range((last - shown).days + 1)],
                 monthly=[row.json() for row in roster.list_monthly()],
                 # Окладники в архиве, у кого есть выплаты этого месяца: ведомость
                 # показывает их по имени, а не «Сотрудник удалён · №».
@@ -883,6 +923,20 @@ def confirm_rate(request: Request, employee_id: int):
         status = 404 if 'не найден' in str(error) else 409
         raise HTTPException(status, str(error)) from None
     return dict(employee=employee.json())
+
+
+@router.get('/photos')
+async def employee_photos(request: Request):
+    """Фото сотрудников для «Сотрудников» (T-462): те же снимки, что видит
+    менеджер, — свои из карточки и лица с терминала."""
+    from retro.modules.manager.routes import photo_versions
+    return dict(photos=await photo_versions(request, '/api/accountant/employees/{id}/photo'))
+
+
+@router.get('/employees/{employee_id}/photo')
+async def employee_photo(request: Request, employee_id: int):
+    from retro.modules.manager.routes import photo_response
+    return await photo_response(request, employee_id)
 
 
 @router.get('/employees/{employee_id}/history')
@@ -1079,12 +1133,14 @@ class SalaryPaymentInput(BaseModel):
 class ManualAttendanceInput(BaseModel):
     date: date
     employee_id: int
-    present: bool
+    # None — снять отметку: день снова «не отмечен».
+    present: bool | None
 
 
 @router.post('/manual-attendance')
 def mark_manual_attendance(request: Request, body: ManualAttendanceInput):
-    """«Был / не был» по одному дню: без Hikvision или когда день вне выгрузки."""
+    """«Был / не был» по одному дню: без Hikvision или когда день вне выгрузки.
+    present=null снимает отметку."""
     day = selected_day(body.date)
     employee = next((item for item in request.app.state.accountant_roster.list(day)
                      if item.id == body.employee_id), None)

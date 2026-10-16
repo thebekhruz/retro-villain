@@ -156,7 +156,7 @@ def photo_json(row: dict) -> dict | None:
     if not version:
         remote = row.get('device_photo')
         if remote:
-            return dict(url=f'/api/manager/employees/{row["id"]}/photo?v=hik-{quote(remote["checked_at"], safe="")}',
+            return dict(url=f'/api/manager/employees/{row["id"]}/photo?v={quote(remote["version"], safe="")}',
                         updated_at=remote['checked_at'], source='hikvision')
         return None
     return dict(url=f'/api/manager/employees/{row["id"]}/photo?v={quote(version, safe="")}',
@@ -201,6 +201,29 @@ def _photo_card(request: Request, employee_id: int, account: ManagerAccount) -> 
     if not can_photo(row, account):
         raise HTTPException(403, FOREIGN)
     return row
+
+
+async def photo_versions(request: Request, url: str) -> dict[str, str]:
+    """Адреса снимков всех сотрудников реестра: {id: url?v=версия}. Свой снимок —
+    по его версии, лицо с терминала — по времени проверки устройства. Без
+    снимка — человека в ответе нет. Для «Сотрудников» бухгалтера (T-462)."""
+    rows = await asyncio.to_thread(request.app.state.accountant_roster.manager_cards)
+    warm_device_photos(request.app.state, rows)
+    rows, _ = await request.app.state.manager_device_photos.enrich(rows, request.app.state.hikvision_writer)
+    result = {}
+    for row in rows:
+        version = row['photo_updated_at'] or (row['device_photo']['version'] if row.get('device_photo') else None)
+        if version:
+            result[str(row['id'])] = url.format(id=row['id']) + '?v=' + quote(version, safe='')
+    return result
+
+
+def warm_device_photos(state, rows) -> None:
+    """Фоном докачать лица с терминала для всего реестра (T-473): пока менеджер
+    листает список, недостающие снимки уже едут. Только с настоящим устройством
+    из настроек (state.device_photo_warmup)."""
+    if getattr(state, 'device_photo_warmup', False):
+        state.manager_device_photos.warm(rows, state.hikvision_writer)
 
 
 def ended(row: dict) -> bool:
@@ -260,6 +283,7 @@ async def home(request: Request):
     cards = await asyncio.to_thread(request.app.state.accountant_roster.manager_cards)
     rows = [row for row in cards
             if account.sees(row['group']) and not ended(row)]
+    warm_device_photos(request.app.state, cards)
     rows, photo_message = await request.app.state.manager_device_photos.enrich(
         rows, request.app.state.hikvision_writer)
     rows.sort(key=lambda row: (row['name'].casefold().replace('ё', 'е'), row['id']))
@@ -346,6 +370,12 @@ async def upload_photo(request: Request, employee_id: int, body: PhotoInput, sen
 
 @router.get('/employees/{employee_id}/photo')
 async def photo(request: Request, employee_id: int):
+    return await photo_response(request, employee_id)
+
+
+async def photo_response(request: Request, employee_id: int) -> Response:
+    """Снимок сотрудника: свой из карточки, иначе — лицо с терминала Hikvision.
+    Тот же ответ отдаёт бухгалтеру /api/accountant/employees/{id}/photo (T-462)."""
     found = await asyncio.to_thread(request.app.state.accountant_roster.photo, employee_id)
     if found is None:
         row = await asyncio.to_thread(_card_or_404, request, employee_id)
@@ -357,20 +387,16 @@ async def photo(request: Request, employee_id: int):
         if remote is None:
             raise HTTPException(404, 'У сотрудника нет фото.')
         try:
-            async with request.app.state.manager_device_photos.downloads:
-                url = remote['url']
-                if not url:
-                    face = await client.find_face(row['hikvision_id'])
-                    url = face.get('faceURL') if face else None
-                if not url:
-                    raise HikvisionError('invalid_response')
-                content, mime = await client.read_face_photo(url)
+            # Из памяти, если докачка уже принесла снимок (T-473), иначе — с устройства.
+            content, mime = await request.app.state.manager_device_photos.read(
+                client, row['hikvision_id'], remote['url'])
         except HikvisionError:
             raise HTTPException(503, 'Не удалось загрузить фото из Hikvision. Повторите позже.') from None
         # Новое локальное фото, загруженное за время чтения устройства, приоритетнее.
         found = await asyncio.to_thread(request.app.state.accountant_roster.photo, employee_id)
         if found is None:
-            return Response(content, media_type=mime, headers={'Cache-Control': 'no-store'})
+            # Версия в адресе меняется вместе с лицом — снимок можно держать в кеше браузера.
+            return Response(content, media_type=mime, headers={'Cache-Control': VERSIONED_PRIVATE})
     content, mime, _ = found
     # Адрес с ?v= меняется вместе со снимком: по нему кешируем надолго, но
     # только в браузере сотрудника (private). Без ?v= панель ставит no-store.

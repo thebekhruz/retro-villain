@@ -187,15 +187,55 @@ def test_manual_employee_is_present_by_default_and_absence_is_per_day(tmp_path):
 
 
 def test_hikvision_employee_cannot_be_marked_by_hand(tmp_path):
+    """Проход по турникету сильнее отметки: человека из Hikvision руками не отметить."""
     with client(tmp_path) as c:
-        person = c.app.state.accountant_roster.add(name='Жасур', role='официант', rate='180000',
-                                                   group_name='Обслуживание зала')
+        roster = c.app.state.accountant_roster
+        person = roster.add(name='Жасур', role='официант', rate='180000', group_name='Обслуживание зала')
+        roster.link_hikvision_people((HikvisionPerson('55', 'Жасур'),))
+        c.app.state.attendance_store.ingest(HikvisionEvent(
+            'retro-main-entry', 'e-55', '55', datetime(2026, 9, 16, 9, 5, tzinfo=TZ)), person.id)
         response = c.post('/api/accountant/manual-attendance', json={
             'date': DAY.isoformat(), 'employee_id': person.id, 'present': False})
         assert response.status_code == 422
         missing = c.post('/api/accountant/manual-attendance', json={
             'date': DAY.isoformat(), 'employee_id': 999, 'present': False})
         assert missing.status_code == 404
+
+
+def test_employee_without_hikvision_is_marked_by_accountant(tmp_path):
+    """T-471: кого нет в Hikvision, того «был / не был» отмечает бухгалтер —
+    без отметки «нет привязки», с отметкой — её статус и оплата."""
+    with client(tmp_path) as c:
+        person = c.app.state.accountant_roster.add(name='Жасур', role='официант', rate='180000',
+                                                   group_name='Обслуживание зала')
+        assert staff_row(c, DAY, person.id)[0] == 'unlinked'
+        response = c.post('/api/accountant/manual-attendance', json={
+            'date': DAY.isoformat(), 'employee_id': person.id, 'present': True})
+        assert response.status_code == 200, response.text
+        assert staff_row(c, DAY, person.id) == ('manual_present', '180000')
+        c.post('/api/accountant/manual-attendance', json={
+            'date': DAY.isoformat(), 'employee_id': person.id, 'present': False})
+        assert staff_row(c, DAY, person.id) == ('manual_absent', '0')
+
+
+def test_manual_attendance_mark_can_be_cleared(tmp_path):
+    """T-477: отметку можно снять — present=null возвращает день в «не отмечен»,
+    снятие пишется в аудит, повторное снятие ничего не делает."""
+    with client(tmp_path) as c:
+        person = c.app.state.accountant_roster.add(name='Сарвар', role='официант', rate='180000',
+                                                   group_name='Обслуживание зала')
+        body = {'date': DAY.isoformat(), 'employee_id': person.id}
+        assert c.post('/api/accountant/manual-attendance', json={**body, 'present': False}).status_code == 200
+        assert staff_row(c, DAY, person.id) == ('manual_absent', '0')
+        cleared = c.post('/api/accountant/manual-attendance', json={**body, 'present': None})
+        assert cleared.status_code == 200, cleared.text
+        assert staff_row(c, DAY, person.id)[0] == 'unlinked'
+        assert c.app.state.attendance_store.manual_marks(DAY) == {}
+        assert c.post('/api/accountant/manual-attendance', json={**body, 'present': None}).status_code == 200
+        with closing(c.app.state.accountant_finance._open()) as connection:
+            actions = [row[0] for row in connection.execute(
+                "SELECT action FROM accountant_finance_audit WHERE entity_type='manual_attendance' ORDER BY id")]
+        assert actions == ['create', 'delete']
 
 
 def test_manual_attendance_is_an_accountant_action(tmp_path):

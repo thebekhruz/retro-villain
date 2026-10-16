@@ -33,6 +33,29 @@ function arrivalMinutes(value) {
   return hour * 60 + minute;
 }
 const initials = name => name.trim().split(/\s+/).map(word => word[0] || '').slice(0, 2).join('').toUpperCase();
+/* Фото сотрудников (T-462): те же снимки, что видит менеджер, — свои из карточки
+   и лица с терминала. {id: адрес}; нет снимка — буквы, как раньше. */
+let photos = {};
+function avatar(cls, id, name) {
+  const url = id == null ? null : photos[String(id)];
+  const box = text('span', cls + (url ? ' has-photo' : ''), url ? null : initials(name));
+  if (url) {
+    const image = el('img', null, {src: url, alt: '', loading: 'lazy'});
+    image.addEventListener('error', () => { box.classList.remove('has-photo'); box.replaceChildren(initials(name)); }, {once: true});
+    box.append(image);
+  }
+  return box;
+}
+async function fetchPhotos() {
+  try {
+    const response = await fetch('/api/accountant/photos', {cache: 'no-store'});
+    if (!response.ok) return;
+    const data = await response.json();
+    const next = data && typeof data.photos === 'object' && data.photos ? data.photos : {};
+    // Перерисовка — только если снимки поменялись: иначе мигали бы аватары.
+    if (JSON.stringify(next) !== JSON.stringify(photos)) { photos = next; if (current) render(); }
+  } catch { /* без фото — буквы, как раньше */ }
+}
 function plural(count, forms) {
   const tail = Math.abs(count) % 100, unit = tail % 10;
   if (tail > 10 && tail < 20) return forms[2];
@@ -107,7 +130,9 @@ const shiftRow = id => people().find(p => p.employee_id === id) || outsiders().f
 function salaried() {
   return (current?.monthly_employees || []).slice().sort((a, b) => Number(a.id) - Number(b.id)).map(row => {
     const salary = Number(row.salary || 0), paid = Number(monthPaid[String(row.id)] || 0);
-    return {...row, salary, paid, rest: salary - paid};
+    // На карту из кассы не выдают: осталось — от наличной части.
+    const card = Math.min(salary, Number(row.card || 0));
+    return {...row, salary, card, paid, rest: salary - card - paid};
   });
 }
 function groupOrder() {
@@ -245,9 +270,9 @@ function matches(row) {
   if (ui.filter === 'attention') return needsAttention(row);
   return true;
 }
-function whoCell(name, role, warn, noHik, kind) {
+function whoCell(name, role, warn, noHik, kind, id) {
   const who = text('div', 'emp-cell-who', null);
-  who.append(text('span', 'emp-avatar' + (warn ? ' is-warn' : ''), initials(name)));
+  who.append(avatar('emp-avatar' + (warn ? ' is-warn' : ''), id, name));
   const idBox = text('div', 'emp-who-text', null);
   const nameLine = text('div', 'emp-who-name', null);
   nameLine.append(text('span', null, name));
@@ -299,7 +324,7 @@ function registryRow(row) {
   const meta = text('div', 'emp-cell-meta', null);
   meta.append(entry, statusCell);
   if (row.rate != null) rate.prepend(text('span', 'emp-m-label', 'ставка '));
-  line.append(whoCell(row.name, row.role, false, row.manual_attendance, L.typeTag(row)), meta, rate, pay);
+  line.append(whoCell(row.name, row.role, false, row.manual_attendance, L.typeTag(row), row.employee_id), meta, rate, pay);
   return line;
 }
 // «Вне периода» — те же фильтры, что у строк дня, кроме карточек-счётчиков.
@@ -412,7 +437,8 @@ function openDrawer(id) {
 const shiftDraft = row => ({name: row.name, role: row.role, rate: L.formatAmount(row.rate), group: row.group, reason: '',
   manual: !!row.manual_attendance, hikId: row.hikvision_id || '', groupTouched: false,
   type: row.employment_type === 'temporary' ? 'temporary' : 'shift', from: row.work_from || '', to: row.work_to || ''});
-const monthlyDraft = row => ({name: row.name, role: row.role, salary: L.formatAmount(row.salary), schedule: row.schedule || '',
+const monthlyDraft = row => ({name: row.name, role: row.role, salary: L.formatAmount(row.salary),
+  card: Number(row.card || 0) ? L.formatAmount(row.card) : '', schedule: row.schedule || '',
   noHik: !!row.no_hikvision, reason: ''});
 function openMonthly(id) {
   const row = salaried().find(p => p.id === id);
@@ -427,7 +453,7 @@ function openNew(kind = 'shift', keep = {}) {
   ui.confirm = false; ui.feedback = ''; ui.fbErr = false; ui.history = null; ui.namesakes = null;
   // Переключение «За смену / Оклад» не стирает уже набранные имя и должность.
   const name = keep.name || '', role = keep.role || '';
-  if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name, role, salary: '', schedule: '', noHik: false, reason: ''}; }
+  if (kind === 'salary') { ui.sel = 'm:new'; ui.draft = {name, role, salary: '', card: '', schedule: '', noHik: false, reason: ''}; }
   else {
     ui.sel = 'new';
     ui.draft = {name, role, rate: '', group: L.groupForRole(role) || groups[0] || '', reason: '', manual: false, groupTouched: false,
@@ -460,7 +486,7 @@ function drawerDirty() {
   const base = monthly ? salaried().find(p => 'm:' + p.id === ui.sel) : shiftRow(ui.sel);
   if (!base) return false;
   const origin = monthly ? monthlyDraft(base) : shiftDraft(base);
-  const keys = monthly ? ['name', 'role', 'salary', 'schedule', 'noHik', 'reason']
+  const keys = monthly ? ['name', 'role', 'salary', 'card', 'schedule', 'noHik', 'reason']
     : ['name', 'role', 'rate', 'group', 'reason', 'manual', 'hikId', 'type', 'from', 'to'];
   return keys.some(key => String(d[key] ?? '') !== String(origin[key] ?? ''));
 }
@@ -492,7 +518,7 @@ function attentionCard(attention) {
   attention.forEach(row => {
     const item = el('button', 'emp-side-row', {type: 'button'});
     item.addEventListener('click', () => openDrawer(row.employee_id));
-    item.append(text('span', 'emp-avatar is-warn is-sm', initials(row.name)));
+    item.append(avatar('emp-avatar is-warn is-sm', row.employee_id, row.name));
     const info = text('span', 'emp-side-info', null);
     // Все причины сразу: «Нет ставки · нет привязки Hikvision».
     info.append(text('span', 'emp-side-name', row.name), text('span', 'emp-side-reason', L.attentionReasons(row).join(' · ')));
@@ -623,7 +649,7 @@ function drawerCard() {
 
   if (selP) {
     const idRow = text('div', 'emp-drawer-id', null);
-    idRow.append(text('span', 'emp-avatar is-lg', initials(selP.name)));
+    idRow.append(avatar('emp-avatar is-lg', selP.employee_id, selP.name));
     const box = text('div', null, null);
     // Должность, группа и «временный · период» — отдельными узлами для переводчика.
     const sub = text('div', 'emp-drawer-sub', null);
@@ -799,9 +825,10 @@ function monthlyDrawer() {
     idRow.append(box);
     card.append(idRow);
     const facts = text('div', 'emp-drawer-facts', null);
-    [['Оклад в месяц', sum(row.salary)], [$('monthly-paid-head').textContent, sum(row.paid)],
-      [row.rest < 0 ? 'Переплата' : 'Осталось выдать', sum(Math.abs(row.rest))]].forEach(([label, value], index) => {
-      const line = text('div', 'emp-drawer-line' + (index === 2 && row.rest < 0 ? ' is-over' : ''), null);
+    [['Оклад в месяц', sum(row.salary)], ...(row.card ? [['Из них на карту', sum(row.card)]] : []),
+      [$('monthly-paid-head').textContent, sum(row.paid)],
+      [row.rest < 0 ? 'Переплата' : 'Осталось выдать', sum(Math.abs(row.rest))]].forEach(([label, value], index, all) => {
+      const line = text('div', 'emp-drawer-line' + (index === all.length - 1 && row.rest < 0 ? ' is-over' : ''), null);
       line.append(text('span', null, label), text('strong', null, value));
       facts.append(line);
     });
@@ -817,6 +844,7 @@ function monthlyDrawer() {
   scheduleInput.addEventListener('input', event => setDraft('schedule', event.target.value));
   form.append(fieldLabel('Имя', nameInput), fieldLabel('Должность', roleInput),
     fieldLabel('Оклад в месяц, сум', moneyInput('salary', d.salary, 'Например, 6 000 000')),
+    fieldLabel('Из них на карту, сум (необязательно)', moneyInput('card', d.card || '', 'Например, 2 000 000')),
     fieldLabel('График (необязательно)', scheduleInput),
     manualToggle('Нет в Hikvision', d.noHik, value => setDraft('noHik', value),
       'Пометка «⊘ Hik» в реестре и ведомости. На оклад не влияет.'));
@@ -1001,14 +1029,18 @@ async function saveMonthly(confirmNew = false) {
   const parsed = L.parseAmount(d.salary);
   if (parsed.error === 'bad') return fail('Оклад — только цифры, например 6 000 000.');
   if (!parsed.value) return fail('Оклад должен быть больше нуля.');
+  // На карту — часть оклада, которую переводят банком: из кассы не выдаётся.
+  const card = String(d.card || '').trim() ? L.parseAmount(d.card) : {value: 0};
+  if (card.error === 'bad') return fail('На карту — только цифры, например 2 000 000.');
+  if (Number(card.value || 0) > Number(parsed.value)) return fail('На карту не может быть больше оклада.');
   const isEdit = ui.sel !== 'm:new';
   const id = isEdit ? Number(String(ui.sel).slice(2)) : null;
-  // Поля ручного реестра (карта, наличные, авансы, остаток) на экране не
+  // Остальные поля ручного реестра (наличные, авансы, остаток) на экране не
   // показываем — при правке отправляем их как были, у нового — нули.
   const before = isEdit ? (current.monthly_employees || []).find(p => p.id === id) || {} : {};
   const payload = {name, role, salary: parsed.value, schedule: d.schedule.trim(), no_hikvision: !!d.noHik,
     reason: (d.reason || '').trim(),
-    card: before.card ?? '0', cash: before.cash ?? '0', advances: before.advances ?? '0', remaining: before.remaining ?? '0'};
+    card: String(card.value || 0), cash: before.cash ?? '0', advances: before.advances ?? '0', remaining: before.remaining ?? '0'};
   if (!isEdit) payload.confirm_new = confirmNew === true;
   try {
     const options = {method: isEdit ? 'PATCH' : 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify(payload)};
@@ -1088,6 +1120,8 @@ async function fetchDay() {
     current = data; monthPaid = paid;
     if (data.date !== today && ui.sel != null && !String(ui.sel).startsWith('m:')) closeDrawer();
     render();
+    // Фото — отдельным запросом и без ожидания: список не ждёт терминал.
+    fetchPhotos();
     $('employees-message').hidden = true;
     // Как у «Финансов дня»: в шапке — за какой день данные. Состояние Hikvision
     // добавляем, только когда с ним что-то не так; демо-режим назван плашкой.

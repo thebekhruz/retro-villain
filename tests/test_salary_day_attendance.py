@@ -85,7 +85,8 @@ def test_payout_cell_shows_the_shift_attendance_of_the_employees_page(stand):
         assert cells[UNLINKED][paid_day]['attendance'] == dict(status='unknown', time=None, source='unlinked')
         # Ручное присутствие — без придуманного времени входа.
         assert cells[GUARD][paid_day]['attendance'] == dict(status='manual', time=None, source='manual_present')
-    # Смена 09.10 идёт сегодня — её не размечаем; суммы клеток те же, что и были.
+    # Смена 09.10 идёт сегодня (T-474): проходов ещё нет — «не пришёл» и «нет данных»
+    # не ставим, «был по умолчанию» у ручных тоже; суммы клеток те же, что и были.
     assert all('attendance' not in person['2026-10-10'] for person in cells.values())
     assert cells[IHTIYOR]['2026-10-09']['amount'] == '0'
     # Источник истины — «Сотрудники» за день смены: тот же статус у каждого.
@@ -151,3 +152,20 @@ def test_absent_only_after_a_complete_day_or_a_manual_mark(tmp_path):
     for day in days:
         assert {row.employee_id: row for row in service.snapshot(day, staff, now=now).rows} == rows[day]
     assert service.rows_by_day([], lambda day: staff, now=now) == {}
+
+
+def test_todays_shift_shows_who_already_came_through_the_turnstile(stand):
+    """T-474: за сегодня видно, кто уже прошёл турникет и во сколько; кто ещё
+    не пришёл — пустая клетка, не «нет»."""
+    c, people = stand
+    c.app.state.attendance_store.ingest(HikvisionEvent(
+        SOURCE, '101-today', '101', datetime(2026, 10, 9, 9, 47, tzinfo=TZ)), people[IHTIYOR])
+    c.app.state.attendance_store.ingest(HikvisionEvent(
+        SOURCE, '102-today', '102', datetime(2026, 10, 9, 11, 3, tzinfo=TZ)), people[JAHONGIR])
+    response = c.get('/api/accountant/salary-day/month', params={'month': '2026-10', 'basis': 'shift'})
+    assert response.status_code == 200, response.text
+    cells = {person['id']: person['cells'][TODAY.isoformat()] for person in response.json()['people']}
+    assert cells[people[IHTIYOR]]['attendance'] == dict(status='on_time', time='09:47', source='on_time')
+    assert cells[people[JAHONGIR]]['attendance'] == dict(status='late', time='11:03', source='late')
+    for name in (SELVINA, UNLINKED, GUARD):
+        assert 'attendance' not in cells[people[name]], name

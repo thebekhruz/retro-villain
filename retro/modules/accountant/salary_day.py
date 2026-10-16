@@ -21,6 +21,11 @@ MANUAL_STATUS = 'manual_salary'
 # «Сотрудники», сведённый к пяти состояниям клетки. «Не пришёл» — только по
 # завершённой выгрузке Hikvision или ручной отметке; без привязки или данных —
 # «нет данных», человек не считается отсутствующим.
+# Что о сегодняшней смене уже известно наверняка (T-474): проход по турникету.
+# «Не пришёл» и «нет данных» до конца дня не показываем; ручную отметку за
+# сегодня кладёт маршрут ведомости — только явную галочку бухгалтера (T-471),
+# а не «был по умолчанию» у тех, кто на ручной отметке.
+TODAY_KNOWN = frozenset({'on_time', 'late'})
 CELL_ATTENDANCE = {'on_time': 'on_time', 'late': 'late', 'missing': 'absent', 'manual_absent': 'absent',
                    'manual_present': 'manual', 'unlinked': 'unknown', 'unavailable': 'unknown'}
 
@@ -344,15 +349,20 @@ def month_data(finance, first, last, attendance=None, *, basis='payment'):
         if employee_id not in paid_people and all(cell.get('outside') for cell in person['cells'].values()):
             del people[employee_id]
     if attendance is not None:
-        # Посещаемость — за смену, то есть за день до выплаты; сегодняшнюю и будущие
-        # смены не размечаем. Все смены месяца — одним вызовом, не по клетке.
+        # Посещаемость — за смену, то есть за день до выплаты; будущие смены не
+        # размечаем. Сегодняшняя смена (T-474) — только проход по турникету со
+        # временем. Кто ещё не пришёл — пустая клетка, а не «нет»: день не
+        # закончился. Все смены — одним вызовом.
         shifts = {date.fromisoformat(day) if by_shift else date.fromisoformat(day)-timedelta(days=1): day
                   for day in days}
-        for work, rows in attendance([work for work in shifts if work < today]).items():
+        for work, rows in attendance([work for work in shifts if work <= today]).items():
             for employee_id, row in rows.items():
                 person = people.get(employee_id)
-                if person is not None and work in shifts:
-                    person['cells'][shifts[work]]['attendance'] = cell_attendance(row)
+                if person is None or work not in shifts:
+                    continue
+                if work == today and row.status not in TODAY_KNOWN:
+                    continue
+                person['cells'][shifts[work]]['attendance'] = cell_attendance(row)
     return dict(today=today.isoformat(), entry_start=ENTRY_START.isoformat(),
                 shift_start=SALARY_SHIFT_START.isoformat(), basis=basis, days=days,
                 people=list(people.values()), extras=extras,

@@ -362,3 +362,22 @@ def test_search_in_the_file_is_the_same_as_on_screen():
     result = subprocess.run(['node', '-e', script, str(ROOT / 'retro/static/employees-logic.js'), json.dumps(cases)],
                             check=True, capture_output=True, text=True)
     assert json.loads(result.stdout) == [matches_query(query, field) for query, field in cases]
+
+
+def test_salary_day_marks_today_for_people_without_hikvision(client):
+    """T-471: кого нет в Hikvision — метка в ведомости; приход за сегодня ставит
+    бухгалтер, и отметка сразу видна в клетке сегодняшней смены."""
+    people = client.people
+    nobody = people['ihtiyor']
+    url = '/api/accountant/salary-day/month'
+    month = client.get(url, params={'month': '2026-10', 'basis': 'shift'}).json()
+    row = next(person for person in month['people'] if person['id'] == nobody.id)
+    assert row['no_hikvision'] is True and row['today_mark'] is None
+    assert 'attendance' not in row['cells'][TODAY.isoformat()]
+    response = client.post('/api/accountant/manual-attendance', json={
+        'date': TODAY.isoformat(), 'employee_id': nobody.id, 'present': True})
+    assert response.status_code == 200, response.text
+    month = client.get(url, params={'month': '2026-10', 'basis': 'shift'}).json()
+    row = next(person for person in month['people'] if person['id'] == nobody.id)
+    assert row['today_mark'] is True
+    assert row['cells'][TODAY.isoformat()]['attendance'] == dict(status='manual', time=None, source='manual_present')

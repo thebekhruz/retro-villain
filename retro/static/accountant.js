@@ -758,7 +758,7 @@ function renderDebts() {
   const salaryDebt = prevSalaries && prevSalaries.available ? prevSalaries.remain : 0;
   const prevPaid = ((data.monthly_payments || {}).previous || {}).paid_by_employee || {};
   const salaryRows = prevSalaries && prevSalaries.available ? (data.monthly_employees || []).map(e => ({
-    name: e.name, role: e.role, left: Math.max(0, Number(e.salary) - Number(prevPaid[String(e.id)] || 0))}))
+    name: e.name, role: e.role, left: Math.max(0, Number(e.salary) - Math.min(Number(e.salary), Number(e.card || 0)) - Number(prevPaid[String(e.id)] || 0))}))
     .filter(e => e.left > 0) : [];
   const [year, month] = data.date.split('-').map(Number);
   const nextFirst = new Date(Date.UTC(year, month, 1)).toISOString().slice(0, 10);

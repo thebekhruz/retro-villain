@@ -183,7 +183,9 @@ def export_employees(day: date, rows: list[PayrollRow], scope: str,
         for index, person in enumerate(monthly, 1):
             salary = Decimal(str(person['salary']))
             paid = Decimal(str(person.get('paid') or 0))
-            rest = salary - paid
+            # Часть на карту из кассы не выдаётся: осталось — от наличной части.
+            card = min(salary, Decimal(str(person.get('card') or 0)))
+            rest = salary - card - paid
             _style_row(sheet, line, fill='FFFFFF' if index % 2 else 'F5F7F2', height=27)
             values = (index, person['name'], person.get('role') or '', person.get('schedule') or '',
                       float(salary), 'переплата' if rest < 0 else None,
@@ -200,11 +202,12 @@ def export_employees(day: date, rows: list[PayrollRow], scope: str,
             line += 1
         total_salary = sum(Decimal(str(row['salary'])) for row in monthly)
         total_paid = sum(Decimal(str(row.get('paid') or 0)) for row in monthly)
+        total_card = sum(min(Decimal(str(row['salary'])), Decimal(str(row.get('card') or 0))) for row in monthly)
         _style_row(sheet, line, fill=PALE, bold=True, height=27)
         sheet.cell(line, 2, 'Итого на окладе')
         sheet.cell(line, 5, float(total_salary)).number_format = MONEY
         sheet.cell(line, 8, float(total_paid)).number_format = MONEY
-        sheet.cell(line, 9, float(total_salary - total_paid)).number_format = MONEY
+        sheet.cell(line, 9, float(total_salary - total_card - total_paid)).number_format = MONEY
         line += 1
 
     sheet.print_area = f'A1:I{max(7, line - 1)}'

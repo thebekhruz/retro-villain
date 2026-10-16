@@ -99,6 +99,11 @@ def write_manual_mark(connection, employee_id: int, day: date, present: bool, ap
          datetime.now(TZ).isoformat(timespec='seconds')))
 
 
+def delete_manual_mark(connection, employee_id: int, day: date) -> None:
+    connection.execute('DELETE FROM hikvision_manual_absences WHERE work_day = ? AND employee_id = ?',
+                       (day.isoformat(), employee_id))
+
+
 class AttendanceStore:
     def __init__(self, path: Path):
         self.db = as_database(path)
@@ -357,7 +362,9 @@ class AttendanceService:
         if employee.manual_attendance:
             return True
         if employee.hikvision_id is None:
-            return False
+            # Нет в Hikvision (T-471): устройство за него не скажет никогда —
+            # «был / не был» ставит бухгалтер.
+            return True
         now = (now or datetime.now(TZ)).astimezone(TZ)
         if self.store.first_entries(day).get(employee.id) is not None:
             return False
@@ -414,6 +421,9 @@ class AttendanceService:
         if entry is not None:
             return AttendanceRow(employee.id, _entry_status(entry), entry.occurred_at)
         if employee.hikvision_id is None:
+            # Отметка бухгалтера — единственный источник для того, кого нет в Hikvision (T-471).
+            if mark is not None:
+                return AttendanceRow(employee.id, 'manual_present' if mark else 'manual_absent', None)
             return AttendanceRow(employee.id, 'unlinked', None)
         if mark is not None and not complete:
             # День вне выгрузки: отметка бухгалтера — единственный источник.

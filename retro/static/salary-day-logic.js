@@ -116,6 +116,33 @@
      подсказка — «Работает 08.10–10.10» («с 08.10», «по 10.10»). */
   function isOutside(person,day){return !!person.cells?.[day]?.outside;}
   function outsideTitle(person){return person.work_period?'Работает '+person.work_period:'';}
+  /* Группы ведомости (T-470): сотрудники по группам в порядке «Сотрудников»,
+     незнакомые группы — в конце, в порядке появления; внутри группы — как прислал сервер. */
+  function groupPeople(people,order,groupOf){
+    const byName=new Map();
+    (people||[]).forEach(person=>{const name=groupOf(person);if(!byName.has(name))byName.set(name,[]);byName.get(name).push(person);});
+    const names=[...order.filter(name=>byName.has(name)),...[...byName.keys()].filter(name=>!order.includes(name))];
+    return names.map(name=>({name,people:byName.get(name)}));
+  }
+  /* Заголовок группы. Без поиска группа раскрыта, пока её не свернули. С поиском
+     ищем по всем группам: группа с совпадениями раскрыта сама, без совпадений — скрыта. */
+  function groupState(group,query,collapsed,matches){
+    const total=group.people.length, found=query?group.people.filter(matches).length:total;
+    return {total,found,hidden:!!query&&!found,open:query?found>0:!collapsed.has(group.name),
+      count:query?'найдено '+found+' из '+total:String(total)};
+  }
+  /* Строка «＋ Добавить сотрудника»: что отправить в /api/accountant/employees.
+     Ставка необязательна (пусто — «нет ставки»); ошибка — текстом для строки. */
+  function newPerson(draft){
+    const name=String(draft.name||'').trim().replace(/\s+/g,' '), role=String(draft.role||'').trim().replace(/\s+/g,' ');
+    const group=String(draft.group||'').trim(), rateText=String(draft.rate||'').trim();
+    if(!name)return {error:'Введите имя сотрудника.'};
+    if(!role)return {error:'Введите должность.'};
+    if(!group)return {error:'Выберите группу.'};
+    const rate=rateText?parseAmount(rateText):null;
+    if(rate===null&&rateText)return {error:'Ставку введите цифрами.'};
+    return {body:{name,role,group,rate:rate?String(rate):null}};
+  }
   return {parseAmount,previousDay,nextDay,tashkentDay,shiftMonth,canEdit,rateOf,cellState,displayState,toggleTarget,attendanceOf,shiftMark,shiftText,shiftTitle,matrix,extraOf,
-    typeTag,isOutside,outsideTitle};
+    typeTag,isOutside,outsideTitle,groupPeople,groupState,newPerson};
 });

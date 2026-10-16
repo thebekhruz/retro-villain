@@ -488,20 +488,24 @@ def payroll_workbook(data: dict) -> bytes:
     cells = data.get('monthly_cells') or {}
     roster = data.get('monthly') or []
     known = {str(person['id']) for person in roster}
-    people = [(person['name'], _money(person['salary']), cells.get(str(person['id']), {}))
+    # Часть на карту из кассы не выдаётся: «Осталось» — от наличной части.
+    people = [(person['name'], _money(person['salary']), cells.get(str(person['id']), {}),
+               min(_money(person['salary']) or Decimal(0), _money(person.get('card')) or Decimal(0)))
               for person in roster]
     # Выплаты удалённым из реестра не пропадают из месяца: деньги ушли. Имя
     # удалённого (он в архиве) — из monthly_archived, как на экране 2b.
     archived = {str(person['id']): person['name'] for person in data.get('monthly_archived') or []}
-    people += [(f'{archived[key]} · удалён из реестра' if key in archived else f'Сотрудник удалён · №{key}', None, own)
+    people += [(f'{archived[key]} · удалён из реестра' if key in archived else f'Сотрудник удалён · №{key}', None, own, Decimal(0))
                for key, own in sorted(cells.items(), key=lambda item: int(item[0]) if item[0].isdigit() else 0)
                if key not in known]
     per_day = [Decimal(0)] * len(days)
     paid_total = rest_total = Decimal(0)
-    for name, salary, own in people:
+    for name, salary, own, card in people:
         values = [_money(own.get(day)) for day in days]
-        paid = _sum(values)
-        rest = None if salary is None else salary - paid
+        # Выплаты до первой колонки (13.10 — перенос авансов) без колонки, но в «Выдано».
+        earlier = _sum(_money(value) for day, value in own.items() if days and day < days[0])
+        paid = _sum(values) + earlier
+        rest = None if salary is None else salary - card - paid
         _row(sheet, row, [name, salary] + values + [salary, paid, rest])
         if rest is not None and rest < 0:
             sheet.cell(row, 2 + len(days) + 3).fill = PatternFill('solid', fgColor=PINK)

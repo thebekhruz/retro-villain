@@ -440,15 +440,17 @@
     const staff=data.monthly_employees||[];
     const byId=new Map(staff.map(e=>[e.id,e]));
     const paidTo=id=>num(mp.paid_by_employee[String(id)]);
-    const people=staff.map(e=>({id:e.id,name:e.name,role:e.role,salary:num(e.salary),paid:paidTo(e.id),
-      left:num(e.salary)-paidTo(e.id)}));
+    // Наличная часть оклада: то, что уходит на карту (card), из кассы не выдают.
+    const cashDue=e=>num(e.salary)-Math.min(num(e.salary),num(e.card));
+    const people=staff.map(e=>({id:e.id,name:e.name,role:e.role,salary:cashDue(e),paid:paidTo(e.id),
+      left:cashDue(e)-paidTo(e.id)}));
     const today=(mp.today||[]).map(p=>{const e=byId.get(p.employee_id);
-      const salary=e?num(e.salary):0, left=salary-paidTo(p.employee_id);
+      const salary=e?cashDue(e):0, left=salary-paidTo(p.employee_id);
       return {id:p.id,employeeId:p.employee_id,name:p.name,role:e?e.role:'',amount:num(p.amount),left};});
     // Долг по окладам — за прошлый месяц: текущий месяц ещё не отработан.
     const pm=mp.previous||null;
     const previous=pm&&{month:pm.month,available:!!pm.available,
-      remain:pm.available?staff.reduce((s,e)=>s+Math.max(0,num(e.salary)-num((pm.paid_by_employee||{})[String(e.id)])),0):null};
+      remain:pm.available?staff.reduce((s,e)=>s+Math.max(0,cashDue(e)-num((pm.paid_by_employee||{})[String(e.id)])),0):null};
     return {people,today,remain:people.reduce((s,p)=>s+Math.max(0,p.left),0),
       todaySum:today.reduce((s,p)=>s+p.amount,0),
       overpaid:people.filter(p=>p.paid>p.salary),previous};

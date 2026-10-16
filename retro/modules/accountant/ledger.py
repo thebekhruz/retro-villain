@@ -1217,9 +1217,10 @@ class FinanceStore:
                 connection.rollback()
                 raise
 
-    def mark_manual_attendance(self, employee_id: int, day: date, present: bool,
+    def mark_manual_attendance(self, employee_id: int, day: date, present: bool | None,
                                approver: str) -> bool:
         """Отметка «был / не был» за день — одной транзакцией с проверкой.
+        None снимает отметку: день снова «не отмечен».
 
         Отметку меняют, пока этому сотруднику за день ничего не начислено (и
         смена не закрыта целиком). Проверка и запись идут на одном соединении
@@ -1228,7 +1229,7 @@ class FinanceStore:
         «до» и «после». Повтор той же отметки ничего не пишет.
         Возвращает, изменилось ли что-нибудь.
         """
-        from .hikvision import read_manual_mark, write_manual_mark
+        from .hikvision import delete_manual_mark, read_manual_mark, write_manual_mark
         approver = required_text(approver, 'кто отметил')
         with closing(self._open()) as connection:
             connection.execute('BEGIN IMMEDIATE')
@@ -1243,6 +1244,15 @@ class FinanceStore:
                     raise LedgerError('Начисление этому сотруднику за день уже подтверждено — '
                                       'отметку не изменить.')
                 before = read_manual_mark(connection, employee_id, day)
+                if present is None:
+                    if before is None:
+                        connection.rollback()
+                        return False
+                    delete_manual_mark(connection, employee_id, day)
+                    record_audit(connection, 'manual_attendance', f'{day.isoformat()}:{employee_id}',
+                                 'delete', before, None)
+                    connection.commit()
+                    return True
                 if before is not None and before['present'] == bool(present):
                     connection.rollback()
                     return False

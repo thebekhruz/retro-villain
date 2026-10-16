@@ -134,19 +134,24 @@
       });
     return byId(data.monthly||[],'id').concat(gone).map(person=>{
       const own=cellsById[String(person.id)]||{}, salary=n(person.salary), gone=!!person.gone;
+      // Часть оклада, которая уходит на карту (реестр, поле card), из кассы не
+      // выдаётся: остаток и переплата считаются от наличной части.
+      const card=gone?0:Math.max(0,Math.min(salary,n(person.card))), cash=salary-card;
       const ownOps=opsById?opsById[String(person.id)]||{}:null;
-      let run=0;
+      // Выплаты до первой колонки (13.10 — перенос авансов) колонки не имеют,
+      // но выданы: с них начинается «Выдано».
+      let run=Object.entries(own).reduce((total,[day,value])=>total+(days.length&&day<days[0]?n(value):0),0);
       const cells=days.map(day=>{
         const amount=n(own[day]);
         run+=amount;
-        return {day,amount,over:!gone&&amount>0&&run>salary,future:!!today&&day>today,today:day===today,
+        return {day,amount,over:!gone&&amount>0&&run>cash,future:!!today&&day>today,today:day===today,
           ops:ownOps?(ownOps[day]||[]).map(op=>({id:op.id,amount:n(op.amount)})):null};
       });
-      const paid=run, rest=salary-paid;
-      if(gone)return {id:person.id,name:person.name,role:person.role,salary:null,paid,rest:null,
+      const paid=run, rest=cash-paid;
+      if(gone)return {id:person.id,name:person.name,role:person.role,salary:null,card:0,paid,rest:null,
         over:false,closed:false,none:false,gone:true,noHik:!!person.no_hikvision,cells};
-      return {id:person.id,name:person.name,role:person.role||'',salary,paid,rest,
-        over:rest<0,closed:rest===0&&salary>0,none:paid===0,noHik:!!person.no_hikvision,cells};
+      return {id:person.id,name:person.name,role:person.role||'',salary,card,paid,rest,
+        over:rest<0,closed:rest===0&&cash>0,none:paid===0,noHik:!!person.no_hikvision,cells};
     });
   }
 
@@ -181,12 +186,13 @@
     const monthlyFund=n(data.monthly_total), monthlyPaid=monthlyPaidTotal(data);
     // Осталось выдать — сумма остатков по людям: переплата одному не
     // уменьшает то, что должны другим. Переплата — отдельным числом.
-    let monthlyRest=0, monthlyOver=0;
+    let monthlyRest=0, monthlyOver=0, monthlyCard=0;
     monthlyRows(data).forEach(m=>{
       if(m.gone)return;
+      monthlyCard+=m.card;
       if(m.rest>0)monthlyRest+=m.rest; else monthlyOver+=-m.rest;
     });
-    return {accrued,paid,debt,people,owing,monthlyPaid,monthlyFund,monthlyRest,monthlyOver,
+    return {accrued,paid,debt,people,owing,monthlyPaid,monthlyFund,monthlyCard,monthlyRest,monthlyOver,
       monthlyPeople:(data.monthly||[]).length};
   }
 

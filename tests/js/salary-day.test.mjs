@@ -185,11 +185,11 @@ function calendarHarness({today='2026-10-09',selected=today,sheetMonth=selected.
   const context=vm.createContext({L:logic,Date:ClockDate,AbortController,encodeURIComponent,
     current:month({month:sheetMonth,today}),today,selectedDay:selected,calendarDay:today,
     loading:false,writes:0,editing:null,dateCheck:null,sequence:0,controller:null,
-    document:{hidden:false},dirty:[],extraBusy:false,
+    document:{hidden:false},dirty:[],addDraft:false,
     $:element,monthTitle:value=>value,message:(...args)=>messages.push(args),controls(){},render(){},
     fetch:(url,options)=>new Promise(resolve=>requests.push({url,options,resolve})),
   });
-  vm.runInContext('globalThis.RetroSave={pending:()=>dirty};const extra={busy:()=>extraBusy};'+calendarCode,context);
+  vm.runInContext("globalThis.RetroSave={pending:()=>dirty};let rateEdit=null;const addBusy=()=>addDraft,GROUP_ORDER=[],groupOf=p=>p.group||'Без группы';let groups=[];"+calendarCode,context);
   const reply=(index,data,ok=true)=>requests[index].resolve({ok,json:async()=>data});
   const sheet=(day,which=day.slice(0,7))=>month({basis:'shift',month:which,today:day,entry_start:'2026-10-02',
     days:which==='2026-10'?['2026-10-08','2026-10-09','2026-10-10','2026-10-31']:[which+'-01',which+'-02']});
@@ -236,13 +236,13 @@ test('month follows current shift across month and year boundaries',async()=>{
   }
 });
 
-test('pending payout, amount editor and extra payout draft defer rollover without discarding data',async()=>{
-  for(const state of [{writes:1},{editing:{input:'123000'}},{extraBusy:true},{dirty:['extra-form']},{loading:true}]){
+test('pending payout, amount editor and new employee draft defer rollover without discarding data',async()=>{
+  for(const state of [{writes:1},{editing:{input:'123000'}},{addDraft:true},{dirty:['sheet-grid']},{loading:true}]){
     const h=calendarHarness();Object.assign(h.context,state);
     assert.equal(await h.refresh(true),false);
     assert.equal(h.requests.length,0);
     assert.equal(h.context.selectedDay,'2026-10-09');
-    Object.assign(h.context,{writes:0,editing:null,extraBusy:false,dirty:[],loading:false});
+    Object.assign(h.context,{writes:0,editing:null,addDraft:false,dirty:[],loading:false});
     const work=h.refresh();h.reply(0,{today:'2026-10-10'});await flush();
     h.reply(1,h.sheet('2026-10-10'));assert.equal(await work,true);
     assert.equal(h.context.selectedDay,'2026-10-10');
@@ -254,7 +254,7 @@ test('draft started during the date request or month reload is preserved until t
     const h=calendarHarness(),before=h.context.current,work=h.refresh();
     if(stage==='config')h.context.editing={input:'123000'};
     h.reply(0,{today:'2026-10-10'});await flush();
-    if(stage==='month'){h.context.dirty=['extra-form'];h.reply(1,h.sheet('2026-10-10'));}
+    if(stage==='month'){h.context.dirty=['sheet-grid'];h.reply(1,h.sheet('2026-10-10'));}
     assert.equal(await work,false);
     assert.equal(h.context.current,before);
     assert.equal(h.context.today,'2026-10-09');
@@ -301,4 +301,32 @@ test('shift columns allow past and current shifts and sum extras by actual work 
   assert.equal(logic.nextDay('2028-02-29'),'2028-03-01');
   assert.equal(logic.shiftTitle('2026-10-09',{status:'on_time',time:'09:31'},0,'shift'),
     'Смена 09.10: пришёл 09:31, вовремя');
+});
+
+/* T-470: группы — сворачиваемые заголовки, поиск — по всем группам. */
+test('группы идут в порядке «Сотрудников», незнакомые — в конце, люди внутри — как прислал сервер',()=>{
+  const people=[{id:1,group:'Кухня'},{id:2,group:'Охрана'},{id:3,group:'Склад'},{id:4,group:'Кухня'},{id:5}];
+  const groups=logic.groupPeople(people,['Управление','Кухня','Охрана'],p=>p.group||'Без группы');
+  assert.deepEqual(groups.map(g=>[g.name,g.people.map(p=>p.id)]),[['Кухня',[1,4]],['Охрана',[2]],['Склад',[3]],['Без группы',[5]]]);
+  assert.deepEqual(logic.groupPeople([],['Кухня'],p=>p.group),[]);
+});
+
+test('заголовок группы: без поиска — свёрнута по клику; с поиском — раскрыта при совпадениях, скрыта без них',()=>{
+  const kitchen={name:'Кухня',people:[{name:'Али',role:'Повар'},{name:'Вали',role:'Посудомойщица'}]};
+  const byName=q=>p=>p.name.includes(q);
+  assert.deepEqual(logic.groupState(kitchen,'',new Set(),()=>true),{total:2,found:2,hidden:false,open:true,count:'2'});
+  assert.equal(logic.groupState(kitchen,'',new Set(['Кухня']),()=>true).open,false);
+  // Свёрнутая группа с совпадением раскрывается сама и показывает, сколько нашли.
+  assert.deepEqual(logic.groupState(kitchen,'Али',new Set(['Кухня']),byName('Али')),{total:2,found:1,hidden:false,open:true,count:'найдено 1 из 2'});
+  assert.equal(logic.groupState(kitchen,'Зоя',new Set(),byName('Зоя')).hidden,true);
+});
+
+test('строка «＋ Добавить сотрудника»: имя, должность и группа обязательны, ставка — по желанию',()=>{
+  assert.deepEqual(logic.newPerson({name:'  Али   Валиев ',role:' Повар ',group:'Кухня',rate:'150 000'}),
+    {body:{name:'Али Валиев',role:'Повар',group:'Кухня',rate:'150000'}});
+  assert.deepEqual(logic.newPerson({name:'Али',role:'Повар',group:'Кухня',rate:''}),{body:{name:'Али',role:'Повар',group:'Кухня',rate:null}});
+  assert.equal(logic.newPerson({name:'',role:'Повар',group:'Кухня'}).error,'Введите имя сотрудника.');
+  assert.equal(logic.newPerson({name:'Али',role:'',group:'Кухня'}).error,'Введите должность.');
+  assert.equal(logic.newPerson({name:'Али',role:'Повар',group:''}).error,'Выберите группу.');
+  assert.equal(logic.newPerson({name:'Али',role:'Повар',group:'Кухня',rate:'сто'}).error,'Ставку введите цифрами.');
 });

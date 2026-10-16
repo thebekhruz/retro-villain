@@ -27,7 +27,7 @@ from legacy_app import create_app
 from test_accountant_design_parity import POSTGRES_URL
 from test_hikvision_isapi import CONFIG, JPEG, OK, face_parts
 from retro.config import Settings, parse_dashboard_panel_users
-from retro.integrations.hikvision import HikvisionClient, HikvisionEvent, HikvisionPerson
+from retro.integrations.hikvision import HikvisionClient, HikvisionError, HikvisionEvent, HikvisionPerson
 from retro.modules.accountant.hikvision import AttendanceStore
 from retro.modules.accountant.names import person_name, role_name
 from retro.modules.accountant.roster import DeviceNamesakes, RosterStore
@@ -528,6 +528,30 @@ def test_proposed_rate_is_optional_and_validated(cabinet):
         answer = add(cabinet, name='Хайдаров Отабек', role='ранер', proposed_rate=bad, confirm_new=True)
         assert answer.status_code == 422, bad
     assert [item.name for item in roster(cabinet).list()] == ['Мирзаева Нодира']
+
+
+def test_accountant_sees_the_same_photos_as_the_manager(cabinet, terminal):
+    """T-462: «Сотрудники» бухгалтера показывают те же снимки, что кабинет
+    менеджера: свой из карточки и лицо с терминала. Менеджеру раздел закрыт."""
+    with_photo = staff(cabinet)
+    on_device = staff(cabinet, 'Алиев Жасур', 'официант', 'Обслуживание зала')
+    roster(cabinet).set_hikvision_id(on_device, '301')
+    terminal.people['301'] = 'Алиев Жасур'
+    terminal.faces['301'] = JPEG
+    staff(cabinet, 'Без Фото', 'официант', 'Обслуживание зала')
+    upload(cabinet, with_photo)
+
+    answer = cabinet.get('/api/accountant/photos', auth=('accountant', 'secret'))
+    assert answer.status_code == 200
+    photos = answer.json()['photos']
+    assert set(photos) == {str(with_photo), str(on_device)}
+    assert photos[str(with_photo)].startswith(f'/api/accountant/employees/{with_photo}/photo?v=')
+    assert photos[str(on_device)].startswith(f'/api/accountant/employees/{on_device}/photo?v=hik-')
+    own = cabinet.get(photos[str(with_photo)], auth=('accountant', 'secret'))
+    assert (own.status_code, own.headers['content-type'], own.content) == (200, 'image/jpeg', JPEG)
+    device = cabinet.get(photos[str(on_device)], auth=('accountant', 'secret'))
+    assert (device.status_code, device.content) == (200, JPEG)
+    assert cabinet.get('/api/accountant/photos', auth=('karina', 'secret')).status_code == 403
 
 
 # ── Фото ───────────────────────────────────────────────────────────────────
@@ -1073,3 +1097,68 @@ def test_old_roster_gains_the_new_columns_without_losing_rows(tmp_path):
     row = roster_store.manager_card(person.id)
     assert (row['face_state'], row['photo_updated_at']) == (None, None)
     assert roster_store.photo(person.id) is None
+
+
+# ── T-473: снимки с терминала — из памяти и докачкой заранее ───────────────
+
+def test_device_photo_is_read_from_the_terminal_once_and_kept_in_browser_cache(cabinet, terminal):
+    employee_id = staff(cabinet)
+    roster(cabinet).set_hikvision_id(employee_id, '204')
+    terminal.people['204'] = 'Карамат'
+    terminal.faces['204'] = JPEG
+    time = [100]
+    cabinet.app.state.manager_device_photos._clock = lambda: time[0]
+    url = home(cabinet)['employees'][0]['photo']['url']
+    reads = lambda: sum(1 for method, path in terminal.requests if path.startswith('/LOCALS/pic/'))
+    for _ in range(3):
+        picture = cabinet.get(url, auth=('karina', 'secret'))
+        assert (picture.status_code, picture.content) == (200, JPEG)
+        assert picture.headers['cache-control'] == 'private, max-age=31536000'
+    assert reads() == 1, 'repeat views come from memory, not the device'
+    # Новая проверка списка с тем же лицом — тот же адрес, браузер не качает заново.
+    time[0] += 61
+    assert home(cabinet)['employees'][0]['photo']['url'] == url
+    # Другое лицо (привязали к другому номеру) — новый адрес и новое чтение.
+    terminal.people['205'] = 'Карамат'
+    terminal.faces['205'] = JPEG
+    roster(cabinet).set_hikvision_id(employee_id, '205')
+    time[0] += 61
+    moved = home(cabinet)['employees'][0]['photo']['url']
+    assert moved != url
+    assert cabinet.get(moved, auth=('karina', 'secret')).status_code == 200
+    assert reads() == 2
+
+
+def test_warmup_downloads_every_face_in_the_background(terminal):
+    import asyncio
+    from retro.integrations.hikvision import HikvisionPerson
+    from retro.modules.manager.device_photos import DevicePhotos
+
+    class Client:
+        def __init__(self):
+            self.reads = []
+
+        async def fetch_people(self):
+            return (HikvisionPerson('1', 'А', 1, '/LOCALS/pic/1.jpg'), HikvisionPerson('2', 'Б', 1, '/LOCALS/pic/2.jpg'),
+                    HikvisionPerson('3', 'В', 0, None))
+
+        async def read_face_photo(self, url):
+            self.reads.append(url)
+            if url.endswith('2.jpg'):
+                raise HikvisionError('timeout')
+            return JPEG, 'image/jpeg'
+
+    rows = [dict(hikvision_id=str(n), manual_attendance=False, photo_updated_at=None) for n in (1, 2, 3)]
+    rows.append(dict(hikvision_id='9', manual_attendance=False, photo_updated_at='2026-10-15'))
+
+    async def run():
+        photos, client = DevicePhotos(), Client()
+        await photos.warm(rows, client)
+        assert photos.warm(rows, None) is None
+        assert client.reads == ['/LOCALS/pic/1.jpg', '/LOCALS/pic/2.jpg'], 'a failed face does not stop the rest'
+        assert photos.cached('1', '/LOCALS/pic/1.jpg') == (JPEG, 'image/jpeg')
+        assert photos.cached('2', '/LOCALS/pic/2.jpg') is None
+        await photos.warm(rows, client)
+        assert client.reads.count('/LOCALS/pic/1.jpg') == 1, 'cached faces are not downloaded again'
+        assert await photos.read(client, '1', '/LOCALS/pic/1.jpg') == (JPEG, 'image/jpeg')
+    asyncio.run(run())
