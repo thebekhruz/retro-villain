@@ -182,6 +182,13 @@
   const NOT_DISH = /контейнер|пакет|упаковк|одноразов|аренд|депозит|обслуживан|сервисн|доставк/i;
   const NOT_DISH_GROUP = /контейнер/i;
   function isDish(row, group) { return !NOT_DISH.test(row.name) && !NOT_DISH_GROUP.test(group || ''); }
+  /** Справочник меню (сервер, item_classes): ингредиент, компонент сета или
+   *  услуга — не блюдо, даже если название проходит isDish (ТЗ 2.3: «Мед»). */
+  function menuDish(snapshot) {
+    const groups = (snapshot && snapshot.item_groups) || {};
+    const classes = (snapshot && snapshot.item_classes) || {};
+    return function (row) { return !classes[row.name] && isDish(row, groups[row.name]); };
+  }
 
   /** «Слабые» — без напитков и выпечки (3.11): чай и хлеб всегда продаются
    *  понемногу, и убирать их из меню никто не станет. Группа — DishGroup iiko;
@@ -203,7 +210,7 @@
   function menuSlice(snapshot, venue, view, limit) {
     const metrics = (snapshot && snapshot.item_metrics) || {};
     const groups = (snapshot && snapshot.item_groups) || {};
-    const dish = function (row) { return isDish(row, groups[row.name]); };
+    const dish = menuDish(snapshot);
     const count = limit || 5;
     let rows;
     if (view === 'notb') {
@@ -256,25 +263,101 @@
     return (recent / shortDays) / (month / longDays) - 1;
   }
 
-  /** Три совета на день по данным меню, без обращения к AI.
+  /** Советы дня по данным меню, без обращения к AI (ТЗ 16.10, 3.1).
    *  Модель зовём, только когда директор спрашивает подробнее: совет на
-   *  главном экране должен открываться мгновенно и не стоить запроса. */
-  function dayTips(snapshot) {
-    const metrics = (snapshot && snapshot.item_metrics) || {};
-    const groups = (snapshot && snapshot.item_groups) || {};
-    const sold = entries(metrics.retro).filter(function (row) { return row.revenue > 0 && isDish(row, groups[row.name]); });
+   *  главном экране должен открываться мгновенно и не стоить запроса.
+   *
+   *  `week` — отчёт за 7 дней; `options.short`/`options.long` — за 3 и 30 дней
+   *  (тренд и дни недели), `options.today` — дата ресторана. Каждый совет
+   *  несёт основание и период (ТЗ 2.4). Неделя сдвигается на день, поэтому
+   *  «не акционировать» и «убрать» берутся из трёх первых по очереди дней —
+   *  иначе один и тот же совет висел неделями (ТЗ 2.2). «Просело» и «день
+   *  недели» меняются вместе с данными. */
+  const PROMO_MARGIN = 60;
+  const DROP = -0.35;
+  const WEEKDAY_SHIFT = 0.1;
+  const WEEKDAYS_DATIVE = ['воскресеньям', 'понедельникам', 'вторникам', 'средам', 'четвергам', 'пятницам', 'субботам'];
+
+  function dayNumber(iso) {
+    const time = Date.parse(String(iso || '') + 'T12:00:00Z');
+    return Number.isFinite(time) ? Math.floor(time / 86400000) : 0;
+  }
+
+  function boosted(row) { return row.profit * (1 + Math.max(-0.5, Math.min(1, row.trend || 0))); }
+
+  /** Кандидат «по очереди дней»: из первых трёх, но всегда один и тот же за день. */
+  function rotate(rows, today) {
+    if (!rows.length) return null;
+    return rows[dayNumber(today) % Math.min(3, rows.length)];
+  }
+
+  /** Выручка Retro в этот день недели против среднего дня — по отчёту за 30 дней. */
+  function weekdayShift(long, today) {
+    const days = (long && long.daily_totals) || [];
+    if (!days.length || !today) return null;
+    const weekday = new Date(today + 'T12:00:00Z').getUTCDay();
+    const revenue = function (row) { return amount((row.directions || {}).retro); };
+    const all = days.map(revenue);
+    const same = days.filter(function (row) { return new Date(row.day + 'T12:00:00Z').getUTCDay() === weekday; }).map(revenue);
+    if (same.length < 2) return null;
+    const average = all.reduce(function (sum, value) { return sum + value; }, 0) / all.length;
+    if (!average) return null;
+    const mean = same.reduce(function (sum, value) { return sum + value; }, 0) / same.length;
+    return {weekday: weekday, shift: mean / average - 1, days: same.length};
+  }
+
+  function dayTips(week, options) {
+    const opts = options || {};
+    const metrics = (week && week.item_metrics) || {};
+    const groups = (week && week.item_groups) || {};
+    const short = opts.short || null, long = opts.long || null, today = opts.today || '';
+    const period = week && week.period_start ? {start: week.period_start, end: week.period_end} : null;
+    const withTrend = function (row) {
+      return Object.assign({}, row, {trend: trend(row.name, 'retro', short, long)});
+    };
+    const dish = menuDish(week);
+    const sold = entries(metrics.retro).filter(function (row) { return row.revenue > 0 && dish(row); })
+      .map(withTrend);
     const tips = [];
-    const promo = sold.filter(function (row) { return row.margin !== null && row.margin >= 60; })
-      .sort(function (a, b) { return b.profit - a.profit; })[0];
-    if (promo) tips.push({dish: promo.name, kind: 'promo', margin: promo.margin});
-    const trap = sold.filter(lowMargin)
-      .sort(SORTS.revenue)[0];
-    if (trap) tips.push({dish: trap.name, kind: 'trap', margin: trap.margin});
+    const used = {};
+    const add = function (tip) { if (tip && !used[tip.dish]) { used[tip.dish] = true; tips.push(tip); } };
+
+    const day = weekdayShift(long, today);
+    if (day && Math.abs(day.shift) >= WEEKDAY_SHIFT) {
+      tips.push({kind: 'weekday', weekday: day.weekday, shift: day.shift, days: day.days,
+        weekdayDative: WEEKDAYS_DATIVE[day.weekday],
+        period: long ? {start: long.period_start, end: long.period_end} : null});
+    }
+    // Продвигать: три самых прибыльных с высокой маржой, растущие — выше;
+    // по очереди дней, а не один и тот же лидер неделями.
+    const promo = rotate(sold.filter(function (row) { return row.margin !== null && row.margin >= PROMO_MARGIN; })
+      .sort(function (a, b) { return boosted(b) - boosted(a); }), today);
+    if (promo) add({dish: promo.name, kind: 'promo', margin: promo.margin, quantity: promo.quantity,
+      revenue: promo.revenue, trend: promo.trend, period: period});
+    // Просело: заметное блюдо (в первой двадцатке по количеству) упало к среднему за 30.
+    const popular = sold.slice().sort(SORTS.quantity).slice(0, 20);
+    const drop = popular.filter(function (row) { return row.trend !== null && row.trend <= DROP; })
+      .sort(function (a, b) { return a.trend - b.trend; })[0];
+    if (drop) add({dish: drop.name, kind: 'drop', trend: drop.trend, quantity: drop.quantity, period: period});
+    const trap = rotate(sold.filter(lowMargin).sort(SORTS.revenue)
+      .filter(function (row) { return !used[row.name]; }), today);
+    if (trap) add({dish: trap.name, kind: 'trap', margin: trap.margin, revenue: trap.revenue, period: period});
     // «Убрать из меню» — как срез «Слабые»: без напитков и выпечки.
-    const weak = sold.filter(function (row) { return row.quantity > 0 && !isDrinkOrBakery(row.name, groups[row.name]); })
-      .sort(function (a, b) { return a.quantity - b.quantity || a.revenue - b.revenue; })[0];
-    if (weak && (!promo || weak.name !== promo.name)) tips.push({dish: weak.name, kind: 'weak', quantity: weak.quantity});
-    return tips;
+    const weak = rotate(sold.filter(function (row) { return row.quantity > 0 && !isDrinkOrBakery(row.name, groups[row.name]) && !used[row.name]; })
+      .sort(function (a, b) { return a.quantity - b.quantity || a.revenue - b.revenue; }), today);
+    if (weak) add({dish: weak.name, kind: 'weak', quantity: weak.quantity, period: period});
+    return tips.slice(0, 4);
+  }
+
+  /** Чего не хватает советам дня: директор должен видеть, что они неполные (ТЗ 2.4). */
+  function tipNotes(week, options) {
+    const opts = options || {};
+    const notes = [];
+    if (!opts.short || !opts.long) notes.push('Тренд к 30 дням недоступен — советы только по неделе.');
+    if (week && week.missing_days && week.missing_days.length) {
+      notes.push('В неделе нет данных iiko за ' + week.missing_days.length + ' дн. — цифры неполные.');
+    }
+    return notes;
   }
 
   /** Строки «Команды»: сменные из Hikvision и оклады из реестра бухгалтера.
@@ -346,6 +429,8 @@
     menuSlice: menuSlice,
     trend: trend,
     dayTips: dayTips,
+    menuDish: menuDish,
+    tipNotes: tipNotes,
     teamRows: teamRows,
     teamMatches: teamMatches,
     LOW_MARGIN: LOW_MARGIN,

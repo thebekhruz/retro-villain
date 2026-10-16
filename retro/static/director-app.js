@@ -143,23 +143,58 @@
   }
 
   // ── Сегодня ──────────────────────────────────────────────────────────
-  function renderTips(snapshot) {
+  function pct(value) { return (value > 0 ? '+' : '−') + Math.abs(Math.round(value * 100)) + '%'; }
+
+  /** Совет и его основание (ТЗ 2.4): что сделать — и по каким цифрам, за какой период. */
+  function tipText(tip, weekday) {
+    const period = tip.period ? logic.periodLabel(tip.period.start, tip.period.end) : '';
+    const trendText = tip.trend === null || tip.trend === undefined ? '' : '; последние 3 дня ' + pct(tip.trend) + ' к среднему за 30';
+    if (tip.kind === 'weekday') return {
+      text: 'Сегодня ' + weekday + ': по ' + tip.weekdayDative + ' Retro продаёт ' + (tip.shift > 0 ? 'больше' : 'меньше') +
+        ' обычного дня — ' + (tip.shift > 0 ? 'держите полную смену и запасы.' : 'хороший день для акции.'),
+      basis: 'выручка Retro ' + pct(tip.shift) + ' к среднему дню, ' + tip.days + ' таких дня · ' + period};
+    if (tip.kind === 'promo') return {
+      text: 'Продвигайте «' + tip.dish + '»: на нём Retro зарабатывает больше всего.',
+      basis: 'маржа ' + Math.round(tip.margin) + '%, ' + money.format(Math.round(tip.quantity)) + ' шт и ' + short(tip.revenue) + ' сум' + trendText + ' · ' + period};
+    if (tip.kind === 'drop') return {
+      text: '«' + tip.dish + '» просел — проверьте наличие, качество и стоп-лист.',
+      basis: 'последние 3 дня ' + pct(tip.trend) + ' к среднему за 30; ' + money.format(Math.round(tip.quantity)) + ' шт за 7 дней · ' + period};
+    if (tip.kind === 'trap') return {
+      text: '«' + tip.dish + '» хорошо продаётся, но маржа низкая — не ставьте его в акции.',
+      basis: 'маржа ' + Math.round(tip.margin) + '%, выручка ' + short(tip.revenue) + ' сум · ' + period};
+    return {
+      text: '«' + tip.dish + '» почти не заказывают. Подумайте, убрать ли из меню.',
+      basis: money.format(Math.round(tip.quantity)) + ' шт · ' + period};
+  }
+
+  function renderTips(week, short3, long30) {
     const list = $('tips');
     list.replaceChildren();
     settled(list);
-    const tips = logic.dayTips(snapshot);
+    const options = {short: short3, long: long30, today: view.today};
+    const tips = logic.dayTips(week, options);
     const weekday = WEEKDAYS[new Date(view.today + 'T12:00:00Z').getUTCDay()];
-    const texts = tips.map(tip => {
-      if (tip.kind === 'promo') return 'Сегодня ' + weekday + ': продвигайте «' + tip.dish + '» — маржа ' + Math.round(tip.margin) + '%, на нём Retro зарабатывает больше всего.';
-      if (tip.kind === 'trap') return '«' + tip.dish + '» хорошо продаётся, но маржа ' + Math.round(tip.margin) + '% — не ставьте его в акции.';
-      return '«' + tip.dish + '» почти не заказывают: ' + tip.quantity + ' шт за неделю. Подумайте, убрать ли из меню.';
+    tips.forEach(tip => {
+      const parts = tipText(tip, weekday);
+      const item = node('li');
+      const body = node('div');
+      body.append(node('span', '', parts.text), node('small', 'dir-tip-basis', 'Основание: ' + parts.basis));
+      item.append(body);
+      list.append(item);
     });
-    if (!texts.length) texts.push('За неделю в iiko нет продаж — советовать не из чего.');
-    texts.forEach(text => list.append(node('li', '', text)));
+    if (!tips.length) list.append(node('li', '', 'За неделю в iiko нет продаж — советовать не из чего.'));
+    else logic.tipNotes(week, options).forEach(text => list.append(node('li', 'is-muted', text)));
   }
 
   async function loadHome() {
-    loadReport(7).then(renderTips).catch(error => {
+    loadReport(7).then(week => {
+      renderTips(week);
+      // Тренд и дни недели — ещё два отчёта; грузим вслед, без верхней полосы.
+      let trends;
+      const start = () => { trends = Promise.all([loadReport(3), loadReport(30)]); };
+      if (Busy) Busy.silent(start); else start();
+      return trends.then(([short3, long30]) => renderTips(week, short3, long30)).catch(() => {});
+    }).catch(error => {
       $('tips').replaceChildren(node('li', 'is-muted', 'Меню за неделю недоступно: ' + error.message));
       settled($('tips'));
     });

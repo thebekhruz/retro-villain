@@ -36,8 +36,8 @@ test('шаблоны со своим порядком слов и неразры
 
 test('советы директора переводятся, название блюда остаётся как в iiko', () => {
   assert.equal(
-    translate('«Сет Ретро на 5-6 чел.» хорошо продаётся, но маржа 35% — не ставьте его в акции.'),
-    "«Сет Ретро на 5-6 чел.» yaxshi sotilmoqda, lekin marjasi 35% — uni aksiyaga qo'ymang.");
+    translate('«Сет Ретро на 5-6 чел.» хорошо продаётся, но маржа низкая — не ставьте его в акции.'),
+    "«Сет Ретро на 5-6 чел.» yaxshi sotilmoqda, lekin marjasi past — uni aksiyaga qo'ymang.");
 });
 
 test('вход и отказы сервера переводятся целиком', () => {
@@ -118,4 +118,12 @@ test('T-428: shift and payout dates remain distinct in Uzbek labels', () => {
   assert.equal(translate('Али · Смена 09.10 · выплата 10.10 · выдано 150000 сум'),
     'Али · Smena 09.10 · to‘lov 10.10 · 150000 so‘m berildi');
   assert.equal(translate('Доп. выплаты за смены · октябрь'), 'Smenalar uchun qo‘shimcha to‘lovlar · oktabr');
+});
+
+test('советы дня директора и их основание переводятся целиком (T-489)', () => {
+  assert.equal(translate('Продвигайте «Кебаб»: на нём Retro зарабатывает больше всего.'),
+    "«Кебаб»ni targ'ib qiling: Retro undan eng ko'p ishlaydi.");
+  assert.equal(translate('Основание: маржа 67%, 40 шт и 3 млн сум · 9 — 15 октября 2026'),
+    "Asos: marja 67%, 40 dona va 3 mln so'm · 9 — 15 oktabr 2026");
+  assert.equal(translate('Основание: 2 шт · 9 — 15 октября 2026'), 'Asos: 2 dona · 9 — 15 oktabr 2026');
 });

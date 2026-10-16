@@ -31,6 +31,7 @@
 .dir-tips-list li:before{content:counter(tip);flex:none;color:var(--gold);font-weight:700}
 .dir-tips-list li.is-muted{color:#a9bfb1}
 .dir-tips-list li.is-muted:before{content:none}
+.dir-tip-basis{display:block;margin-top:3px;font-size:11px;line-height:1.4;color:#a9bfb1}
 .dir-tips-ask{width:100%;min-height:44px;margin-top:16px;border:1px solid #d8b97766;border-radius:14px;background:#ffffff0f;
   color:#e8cf95;font-size:13px;font-weight:600}
 
