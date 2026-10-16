@@ -77,6 +77,18 @@ def period_or_422(start: date | None, end: date | None, days: int | None = None)
         raise HTTPException(422, str(error)) from None
 
 
+def iiko_period_or_422(start: date | None, end: date | None, days: int | None = None):
+    """Период для живой аналитики iiko — без границы учёта.
+
+    Продажи, себестоимость и маржа берутся из iiko целиком; граница 13.10
+    относится к кассе, бухгалтерии и сохранённым отчётам. С ней «3, 7 и 30
+    дней» в меню директора были одним и тем же периодом."""
+    try:
+        return resolve_period(today_tashkent(), start, end, days)
+    except DataError as error:
+        raise HTTPException(422, str(error)) from None
+
+
 @router.get('/today')
 async def today(request: Request, refresh: bool = False):
     try:
@@ -94,9 +106,9 @@ async def today(request: Request, refresh: bool = False):
 @router.get('/report')
 async def report_for_period(request: Request, start: date | None = None, end: date | None = None,
                             days: int | None = None, refresh: bool = False):
-    start, end = period_or_422(start, end, days)
+    start, end = iiko_period_or_422(start, end, days)
     try:
-        # period_or_422 пропускает только завершившиеся дни, поэтому период
+        # resolve_period пропускает только завершившиеся дни, поэтому период
         # здесь всегда закрыт и сам по себе в iiko не меняется. Сырые отчёты за
         # месяц весят около 46 MB и в кэш по весу не помещаются — повтор держится
         # на готовом снимке, и пяти минут ему мало: архив и повторные открытия

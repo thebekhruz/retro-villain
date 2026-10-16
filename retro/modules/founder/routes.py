@@ -7,7 +7,7 @@ from fastapi.responses import Response
 from pydantic import BaseModel, Field
 from uuid import UUID
 
-from retro.accounting_period import accounting_range_start
+from retro.accounting_period import ACCOUNTING_START, accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
@@ -62,7 +62,8 @@ def _validated_period(start, end, granularity):
         raise HTTPException(422, 'Период не может быть длиннее 366 дней.')
     if granularity not in GRANULARITIES:
         raise HTTPException(422, 'Неизвестная детализация.')
-    start = accounting_range_start(start, end)
+    # Граница учёта 13.10 сюда не относится: выручка, оплаты и брони берутся
+    # из iiko и API броней целиком. С ней «30 дней» были тремя днями.
     return start, end
 
 
@@ -76,8 +77,7 @@ async def analytics(
         refresh: bool = False,
 ):
     start, end = _validated_period(start, end, granularity)
-    start = accounting_range_start(start, end)
-    selected = tuple(item.strip() for item in directions.split(',') if item.strip())
+    selected =tuple(item.strip() for item in directions.split(',') if item.strip())
     if not selected or len(set(selected)) != len(selected) or any(item not in DIRECTIONS for item in selected):
         raise HTTPException(422, 'Выберите известные направления без повторов.')
     try:
@@ -90,6 +90,18 @@ async def analytics(
                                stale=CLOSED_PERIOD_STALE if end < today_tashkent() else 0)
         if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
             return data
+        if start < ACCOUNTING_START:
+            # Расходы кассы и бухгалтерии ведутся с начала учёта; более ранние
+            # записи в рабочий учёт не входят. Вычесть их за часть периода из
+            # P&L за весь период — значит показать неверную прибыль; ноль вместо
+            # них — тоже. Показываем «нет данных».
+            result = dict(data)
+            result['dashboard_expenses'] = None
+            result['net_profit_after_dashboard_expenses'] = None
+            result['warnings'] = [*data.get('warnings', []), (
+                f'Расходы кассы и бухгалтерии ведутся с {ACCOUNTING_START:%d.%m.%Y}: '
+                'прибыль после записанных расходов считается для периодов с этой даты.')]
+            return result
         # Чистая прибыль iiko уже содержит себестоимость товаров, прошедших через
         # склад iiko. Поэтому закуп через Шоха (его покупки — приходные накладные
         # iiko) не вычитается, а закуп, оплаченный поставщику напрямую, — статьи

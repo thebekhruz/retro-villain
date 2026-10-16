@@ -65,7 +65,6 @@ def client(tmp_path, database):
     '/api/accountant/shoh?date=2026-09-30',
     '/api/founder/export/month?month=2026-09',
     '/api/founder/day?date=2026-09-30',
-    '/api/director/report?start=2026-09-30&end=2026-10-13',
     '/api/cashier/day?date=2026-09-30',
     '/api/shokh/home?date=2026-09-30',
 ])
@@ -328,3 +327,45 @@ def test_first_payment_day_allows_extra_for_previous_shift_only(client, monkeypa
     sheet = client.get('/api/accountant/salary-day/month?month=2026-10').json()
     assert sheet['first'] == sheet['days'][0] == sheet['entry_start'] == '2026-10-15'
     assert sheet['shift_start'] == '2026-10-14'
+
+
+class IikoBeforeAccounting:
+    """iiko-аналитика: отдаёт период как есть, без учётных данных."""
+    def __init__(self):
+        self.calls = []
+
+    async def load_director_report(self, today, *, start=None, end=None, days=None):
+        from retro.modules.director.models import build_snapshot
+        self.calls.append(('director', start, end))
+        return build_snapshot([], {}, start, end)
+
+    async def load_founder_analytics(self, start, end, granularity, directions):
+        self.calls.append(('founder', start, end))
+        return {'period': {'start': start.isoformat(), 'end': end.isoformat()},
+                'pnl': {'net_profit': '1000'}, 'warnings': []}
+
+
+def test_iiko_analytics_is_not_clipped_by_accounting_start(client, monkeypatch):
+    """«30 дней» директора и учредителя — тридцать дней iiko, а не 13–15.10 (T-486)."""
+    from retro.modules.director import routes
+    from retro.modules.founder import routes as founder_routes
+    monkeypatch.setattr(routes, 'today_tashkent', lambda: date(2026, 10, 16))
+    monkeypatch.setattr(founder_routes, 'today_tashkent', lambda: date(2026, 10, 16))
+    source = client.app.state.iiko = IikoBeforeAccounting()
+    report = client.get('/api/director/report?start=2026-09-16&end=2026-10-15')
+    assert report.status_code == 200, report.text
+    analytics = client.get('/api/founder/analytics?start=2026-09-16&end=2026-10-15')
+    assert analytics.status_code == 200, analytics.text
+    assert source.calls == [('director', date(2026, 9, 16), date(2026, 10, 15)),
+                            ('founder', date(2026, 9, 16), date(2026, 10, 15))]
+    # Расходов кассы и бухгалтерии до 13.10 в учёте нет: не ноль, а «нет данных».
+    data = analytics.json()
+    assert data['dashboard_expenses'] is None
+    assert data['net_profit_after_dashboard_expenses'] is None
+    assert any('13.10.2026' in warning for warning in data['warnings'])
+
+
+def test_saved_director_reports_keep_accounting_start(client):
+    response = client.post('/api/director/reports?start=2026-09-30&end=2026-10-13')
+    assert response.status_code == 422
+    assert '13.10.2026' in response.json()['detail']

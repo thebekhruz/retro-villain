@@ -10,7 +10,8 @@ test('период аналитики проверяется до запроса
   assert.equal(logic.periodError('2026-10-13', '2027-10-13'), null);  // 365 дней — можно
 });
 
-test('сентябрь закрыт, быстрый период обрезается до начала учёта', () => {
-  assert.ok(logic.periodError('2026-09-30','2026-10-13'));
-  assert.deepEqual(logic.quickPeriod('30','2026-10-14'),{start:'2026-10-13',end:'2026-10-13'});
+test('аналитика iiko не обрезается началом учёта: 30 дней — тридцать (T-486)', () => {
+  assert.equal(logic.periodError('2026-09-16','2026-10-15'), null);
+  assert.deepEqual(logic.quickPeriod('30','2026-10-16'),{start:'2026-09-16',end:'2026-10-15'});
+  assert.deepEqual(logic.quickPeriod('7','2026-10-16'),{start:'2026-10-09',end:'2026-10-15'});
 });

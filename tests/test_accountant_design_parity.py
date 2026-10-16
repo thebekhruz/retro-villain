@@ -1078,9 +1078,12 @@ class FounderPnl:
         return {'pnl': {'net_profit': '10000000'}, 'scope_note': ''}
 
 
-def test_founder_net_profit_subtracts_transfers_like_direct_procurement(tmp_path):
+def test_founder_net_profit_subtracts_transfers_like_direct_procurement(tmp_path, monkeypatch):
     """Закуп через Шоха — не расход (его накладные уже в себестоимости iiko),
     закуп, оплаченный поставщику напрямую — наличными или переводом, — расход."""
+    # Формула на архивном дне DAY; граница 13.10 для расходов — в test_founder_api.
+    from retro.modules.founder import routes
+    monkeypatch.setattr(routes, 'ACCOUNTING_START', DAY)
     with client(tmp_path) as c:
         c.app.state.iiko = FounderPnl()
         cash(c)

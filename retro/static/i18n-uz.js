@@ -1285,6 +1285,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "ЗАКУП ЗАВЕРШЁН": "XARID YAKUNLANDI",
   "Записано!": "Yozildi!",
   "Записать три покупки": "Uchta xaridni yozish",
+  "Расходы кассы и бухгалтерии ведутся с 13.10.2026: прибыль после записанных расходов считается для периодов с этой даты.": "Kassa va buxgalteriya xarajatlari 13.10.2026 dan yuritiladi: yozilgan xarajatlardan keyingi foyda shu sanadan boshlangan davrlar uchun hisoblanadi.",
   "Каждую покупку с фото": "Har bir xaridni foto bilan",
   "Меньше": "Kamroq",
   "На главную": "Bosh sahifaga",
