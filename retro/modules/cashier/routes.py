@@ -613,45 +613,52 @@ def annotate_prepayment(request: Request, order_number: str, body: PrepaymentNot
 
 def require_full_access(request: Request):
     if getattr(request.state, 'dashboard_role', None) not in ('admin', 'all'):
-        raise HTTPException(403, 'Снимок кассы для Telegram доступен только администратору.')
+        raise HTTPException(403, 'Снимок для Telegram доступен только администратору.')
 
 
-async def telegram_photo(request: Request, day):
-    from .telegram_report import Skip, collect, render
+async def telegram_photo(request: Request, kind: str, day):
+    """Картинка и подпись отчёта `kind` (cashier / accountant) за день."""
+    from .telegram_report import REPORTS, Skip
+    require_full_access(request)
     try:
-        report = await collect(request.app.state, day)
+        return await REPORTS[kind](request.app, day, datetime.now(TZ))
     except Skip as reason:
         raise HTTPException(409, f'Снимок не собран: {reason}.') from None
     except TimeoutError:
         raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
     except DataError as error:
         raise HTTPException(503, str(error)) from None
-    return report, await asyncio.to_thread(render, report)
 
 
-@router.get('/telegram-report/preview')
-async def telegram_report_preview(request: Request, date: date | None = None):
-    require_full_access(request)
-    _, photo = await telegram_photo(request, selected_day(date))
+async def telegram_preview(request: Request, kind: str, day):
+    photo, _ = await telegram_photo(request, kind, day)
     return Response(photo, media_type='image/png', headers={'Cache-Control': 'no-store'})
 
 
-@router.post('/telegram-report')
-async def telegram_report_send(request: Request, date: date | None = None):
+async def telegram_send(request: Request, kind: str, day):
     """Тестовая отправка: расписание этот день отправленным не считает."""
     require_full_access(request)
     reporter = getattr(request.app.state, 'telegram_report', None)
     if reporter is None:
         raise HTTPException(409, 'Задайте TELEGRAM_BOT_TOKEN и TELEGRAM_REPORT_CHAT_ID.')
     from retro.integrations.telegram import TelegramError
-    from .telegram_report import caption
-    day = selected_day(date)
-    report, photo = await telegram_photo(request, day)
+    from .telegram_report import FILE_NAMES
+    photo, text = await telegram_photo(request, kind, day)
     try:
-        message_id = await reporter.bot.send_photo(reporter.config.chat_id, photo, caption(report),
-                                                   filename=f'Retro-kassa-{day.isoformat()}.png')
+        message_id = await reporter.bot.send_photo(reporter.config.chat_id, photo, text,
+                                                   filename=f'Retro-{FILE_NAMES[kind]}-{day.isoformat()}.png')
     except TelegramError as error:
-        log_safe_failure('telegram-report', error, operation='manual_send',
+        log_safe_failure('telegram-report', error, operation=f'manual_send:{kind}',
                          request_id=request.state.request_id)
         raise HTTPException(502, f'Telegram не принял отправку ({error.code}).') from None
     return {'date': day.isoformat(), 'message_id': message_id}
+
+
+@router.get('/telegram-report/preview')
+async def telegram_report_preview(request: Request, date: date | None = None):
+    return await telegram_preview(request, 'cashier', selected_day(date))
+
+
+@router.post('/telegram-report')
+async def telegram_report_send(request: Request, date: date | None = None):
+    return await telegram_send(request, 'cashier', selected_day(date))
