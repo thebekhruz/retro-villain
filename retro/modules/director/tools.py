@@ -7,19 +7,22 @@ from datetime import date
 
 from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
-from retro.modules.founder.tools import ATTENDANCE_STATUSES, FounderChatTools
+from retro.modules.founder.tools import ATTENDANCE_STATUSES, MENU_CATALOG_TOOL, FounderChatTools
 
 
 # Директор видит на телефоне кассу дня, остаток и замечания бухгалтера (6a),
 # поэтому и AI получает эти дни целиком — только чтение, как у учредителя.
 DELEGATED_NAMES = {'get_iiko_sales_details', 'get_saved_director_reports',
-                   'get_cashier_day', 'get_accounting_day'}
+                   'get_cashier_day', 'get_accounting_day', 'get_menu_catalog'}
 TOOL_DEFINITIONS = (
+    MENU_CATALOG_TOOL,
     {
         'name': 'get_director_dashboard',
         'description': (
             'Получить тот же проверенный десятидневный снимок iiko, который показан в '
-            'модуле директора: выручка, блюда, маржа и официанты.'
+            'модуле директора: выручка, блюда, маржа и официанты. item_classes — позиции '
+            'продаж, которые не являются готовыми блюдами меню (добавки, компоненты сетов, '
+            'ингредиенты, услуги).'
         ),
         'input_schema': {
             'type': 'object',
@@ -57,12 +60,18 @@ class DirectorChatTools:
             if as_of > today_tashkent():
                 raise DataError('Будущая дата недоступна.')
             snapshot = await load_iiko(self.app.state, 'load_director_report', as_of, timeout=150)
-            return snapshot.json()
+            return await asyncio.to_thread(self._with_item_classes, snapshot.json())
         if name == 'get_employee_attendance':
             return await asyncio.to_thread(self._attendance, arguments)
         if name in DELEGATED_NAMES:
             return await self._delegate.execute(name, arguments)
         raise DataError('Чат директора запросил неизвестный инструмент.')
+
+    def _with_item_classes(self, data):
+        catalog = self._delegate.catalog()
+        names = (data.get('item_metrics') or {}).get('all', {})
+        return dict(data, item_classes=catalog.exceptions(names),
+                    item_classes_checked=catalog.available)
 
     def _attendance(self, arguments):
         if not isinstance(arguments, dict) or set(arguments) != {'date', 'status'}:
