@@ -144,3 +144,23 @@ test('подпись порога шума под кольцом', () => {
   assert.equal(body.scheme.noise_week, 1500000);
   assert.equal(body.scheme.share, 0.4);
 });
+
+test('«Как считается премия»: суммы из схемы и периода, неделя и месяц (T-503)', () => {
+  assert.equal(logic.money(1_500_000), '1,5 млн сум');
+  assert.equal(logic.money(1_000_000), '1 млн сум');
+  assert.equal(logic.money(6_428_571), '6,4 млн сум');
+  assert.equal(logic.money(640_000), '640 тыс сум');
+  assert.equal(logic.money(0), '0 сум');
+  const scheme = {share: 0.4, noise_week: 1_500_000, cap: 1_000_000, min_checks: 20, min_shifts: 3, baseline_weeks: 4, netting: true};
+  const week = logic.rulesText({goal_qty: 178.3, threshold: 1_500_000, cap: 1_000_000}, scheme, {days_total: 7});
+  assert.match(week[0], /^Цель — продать за период 179 порций целевых позиций\./);
+  assert.match(week[0], /среднее за 4 прошлые недели/);
+  assert.equal(week[3], 'Из дополнительной маржи первые 1,5 млн сум — обычные колебания, они остаются ресторану. В фонд премии идёт 40 % от того, что выше.');
+  assert.equal(week[4], 'Пример: дополнительная маржа 4 млн сум − порог 1,5 млн сум = 2,5 млн сум; в фонд идёт 1 млн сум.');
+  assert.match(week[5], /не больше 1 млн сум, остаток сверх потолка — ресторану\.$/);
+  assert.match(week[6], /от 20 чеков и от 3 смен\./);
+  // Месяц 30 дней: порог 1,5 млн × 30 / 7, потолок 1 млн × 4 недели — как в compute().
+  const month = logic.rulesText({goal_qty: 760, threshold: 6_428_571, cap: 4_000_000}, scheme, {days_total: 30});
+  assert.match(month[3], /первые 1,5 млн сум в неделю \(за этот период — 6,4 млн сум\)/);
+  assert.match(month[5], /не больше 1 млн сум в неделю \(за этот период — 4 млн сум\)/);
+});
