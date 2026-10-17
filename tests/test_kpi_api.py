@@ -23,7 +23,8 @@ START = TODAY - timedelta(days=TODAY.weekday() + 7)
 END = START + timedelta(days=6)
 TARGETS = [dict(key='tea', title='Фирменные чаи', group='напиток', target100=5.0, margin=36000, dishes=[[TEA, 'ЧАЙ Фруктовый']]),
            dict(key='soup', title='Эзогелин', group='блюдо', target100=4.0, margin=32000, dishes=[[SOUP, 'Суп Эзогелин']])]
-SCHEME = dict(share=0.25, cap=1_000_000, min_checks=2, min_shifts=1, baseline_weeks=4, netting=True)
+# Порог шума 0: эти тесты про деление фонда; порог проверяется отдельно.
+SCHEME = dict(share=0.25, noise_week=0, cap=1_000_000, min_checks=2, min_shifts=1, baseline_weeks=4, netting=True)
 
 
 class FakeSource:
@@ -109,7 +110,8 @@ def test_default_period_is_the_pilot_week_and_roles_are_separated(client):
     assert view['period']['pilot'] is (view['period']['start'] == '2026-10-19')
     assert date.fromisoformat(view['period']['start']).weekday() == 0
     assert date.fromisoformat(view['period']['start']) >= date(2026, 10, 19)
-    assert len(view['targets']) == 12 and view['scheme']['share'] == 0.25
+    assert len(view['targets']) == 12 and view['scheme']['share'] == 0.4 and view['scheme']['noise_week'] == 1_500_000
+    assert view['totals']['threshold'] == 1_500_000, 'порог шума за неделю по умолчанию'
     # Менеджеру настройки закрыты, директору чужой кабинет тоже.
     assert manager(client).put('/api/director/kpi/settings', json=dict(scheme={}, targets=TARGETS)).status_code == 403
     assert director(client).get('/api/manager/kpi').status_code == 403
@@ -132,12 +134,12 @@ def test_rating_shares_the_team_fund_by_checks(client):
     assert alina['initials'] == 'А' and alina['photo'] is None
     progress = {item['key']: item for item in view['targets_progress']}
     # Ожидаемые чеки: 128 за 16 дней базы × 7 = 56; цель чая 5 на 100 → 2,8 порции, супа 4 → 2,24.
-    # Цели по правилу: база 12,5 у обеих → 16,25 → 16,5 на 100; ожидаемые чеки 56 → 9,24 порции.
-    assert progress['tea']['target'] == 16.5 and progress['tea']['target_source'] == 'base'
-    assert progress['tea']['goal_qty'] == 9.2 and progress['tea']['sold'] == 12 and progress['tea']['remaining'] == 0
+    # Цели по правилу «база + 70 %»: база 12,5 у обеих → 21,25 → 21,5 на 100; ожидаемые чеки 56 → 12,04 порции.
+    assert progress['tea']['target'] == 21.5 and progress['tea']['target_source'] == 'base'
+    assert progress['tea']['goal_qty'] == 12.0 and progress['tea']['sold'] == 12 and progress['tea']['remaining'] == 1
     assert progress['soup']['sold'] == 4 and progress['soup']['lag'] > 0 and progress['soup']['push'] is True
-    assert view['totals']['goal_qty'] == 18.4 and view['totals']['sold'] == 16
-    assert view['hall']['rates']['tea']['target'] == 16.5 and view['fetched_at']
+    assert view['totals']['goal_qty'] == 24.0 and view['totals']['sold'] == 16
+    assert view['hall']['rates']['tea']['target'] == 21.5 and view['fetched_at']
     assert {t['key']: t['target_source'] for t in view['targets']} == {'tea': 'base', 'soup': 'base'}
     # Повтор идёт из кэша, «Обновить» читает iiko заново.
     calls = len(client.app.state.kpi_source.calls)
@@ -191,6 +193,23 @@ def test_registry_waiters_take_part_by_default_and_manual_marks_win(client):
     view = director(client).get('/api/director/kpi').json()
     assert {item['waiter']: item['source'] for item in view['logins']}['Алина'] == 'registry'
     assert manager(client).delete('/api/director/kpi/links', params={'waiter': 'Нурик'}).status_code == 403
+
+
+def test_saved_legacy_scheme_gets_threshold_and_new_share(client):
+    """Период, созданный до T-490 (доля 25 %, без порога), показывается и считается по новой схеме."""
+    configure(client)
+    store = client.app.state.kpi_store
+    period = store.current(START)
+    legacy = {k: v for k, v in period['settings']['scheme'].items() if k != 'noise_week'}
+    store.update_settings(period['id'], dict(period['settings'], scheme=dict(legacy, share=0.25)))
+    page = director(client).get('/api/director/kpi/settings').json()
+    assert page['settings']['scheme']['share'] == 0.4 and page['settings']['scheme']['noise_week'] == 1_500_000
+    view = manager(client).get('/api/manager/kpi').json()
+    # Прирост зала 288 000 ниже порога недели 1,5 млн: фонд 0, всё ресторану, метка порога на кольце есть.
+    assert view['totals']['threshold'] == 1_500_000 and view['totals']['fund'] == 0
+    assert view['totals']['restaurant_net'] == view['totals']['team_uplift'] == 288000
+    assert view['totals']['to_threshold'] == 1_500_000 - 288000 and view['totals']['above_threshold'] is False
+    assert 0 < view['totals']['threshold_mark'] <= 1
 
 
 def test_settings_validation_and_margin_fill(client):

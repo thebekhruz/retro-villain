@@ -184,12 +184,14 @@
       <label class="dir-field">Целевые позиции<input id="kpi-search" class="dir-search" type="search" maxlength="60" placeholder="Найти карточку iiko: «лимонад», «кунафе»…" autocomplete="off"></label>
       <div id="kpi-found" class="kpi-found" hidden></div>
       <div id="kpi-target-list"></div>
-      <p class="dir-note">Цель — порций на 100 чеков зала. Пустая ячейка: цель по правилу «база зала + 30 %» (подсказка в поле). Ручная цель действует, только если она выше правила. Маржа на порцию берётся из iiko за 8 недель до периода.</p>
-      <div class="dir-pair"><label class="dir-field">Доля прироста в фонд, %<input id="kpi-share" inputmode="numeric" maxlength="3"></label><label class="dir-field">Потолок, тыс сум на человека в неделю<input id="kpi-cap" inputmode="numeric" maxlength="7"></label></div>
+      <p class="dir-note">Цель — порций на 100 чеков зала. Пустая ячейка: цель по правилу «база зала + 70 %» (подсказка в поле). Ручная цель действует, только если она выше правила. Маржа на порцию берётся из iiko за 8 недель до периода.</p>
+      <label class="dir-field">Порог шума в неделю, тыс сум<input id="kpi-noise" inputmode="numeric" maxlength="7"></label>
+      <p class="dir-note">Премия начисляется только с прироста маржи сверх порога: ниже него обычные колебания недели, они остаются ресторану. На периоде порог считается по числу дней.</p>
+      <div class="dir-pair"><label class="dir-field">Доля прироста сверх порога в фонд, %<input id="kpi-share" inputmode="numeric" maxlength="3"></label><label class="dir-field">Потолок, тыс сум на человека в неделю<input id="kpi-cap" inputmode="numeric" maxlength="7"></label></div>
       <div class="dir-pair"><label class="dir-field">База зала, недель<input id="kpi-baseline" inputmode="numeric" maxlength="2"></label><label class="dir-field"><span>Делится</span><input value="по числу чеков" disabled aria-label="Фонд делится между участниками по числу чеков"></label></div>
       <div class="dir-pair"><label class="dir-field">Минимум чеков<input id="kpi-min-checks" inputmode="numeric" maxlength="4"></label><label class="dir-field">Минимум смен<input id="kpi-min-shifts" inputmode="numeric" maxlength="3"></label></div>
       <button id="kpi-netting" class="dir-check" type="button" aria-pressed="true"><span class="dir-check-box" aria-hidden="true"></span>Нетто по позициям: минус одной гасит плюс другой</button>
-      <p class="dir-note">Премия командная: фонд — доля прироста маржи зала по целевым позициям, делится между участниками по числу чеков.</p>
+      <p class="dir-note">Премия командная: фонд — доля прироста маржи зала по целевым позициям сверх порога шума, делится между участниками по числу чеков.</p>
       <p id="kpi-form-error" class="dir-error" role="alert"></p>
       <button id="kpi-save" class="dir-primary" type="submit">Сохранить настройки</button>
     </form>

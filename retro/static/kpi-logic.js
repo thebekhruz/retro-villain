@@ -149,12 +149,12 @@
     return {
       kind: form.kind === 'month' ? 'month' : 'week',
       start: form.start, end: form.end,
-      scheme: {share, cap: number(form.cap, 'потолок') * 1000,
+      scheme: {share, noise_week: number(form.noise_week ?? 1500, 'порог шума') * 1000, cap: number(form.cap, 'потолок') * 1000,
         min_checks: number(form.min_checks, 'минимум чеков'), min_shifts: number(form.min_shifts, 'минимум смен'),
         baseline_weeks: number(form.baseline_weeks ?? 4, 'база'), netting: Boolean(form.netting)},
       targets: (form.targets || []).map((t, index) => ({
         key: t.key || `t${index + 1}`, title: t.title, group: t.group || 'блюдо',
-        // Ручная цель хранится, только если директор её задал; иначе цель считает правило «база + 30 %».
+        // Ручная цель хранится, только если директор её задал; иначе цель считает правило «база + 70 %».
         target100: t.manual ? number(t.target100, 'цель') : null, manual: Boolean(t.manual),
         margin: t.margin ? number(t.margin, 'маржа') : null,
         dishes: (t.dishes || []).map(d => [d.id ?? d[0], d.name ?? d[1]]),
@@ -228,11 +228,17 @@
     return {registry: 'из реестра', manual: 'отмечен вручную', manual_off: 'не считать, вручную',
       unmatched: 'не сопоставлен'}[item?.source] || '';
   }
-  /* Откуда цель позиции (T-469): по правилу «база + 30 %» или ручная цель директора. */
+  /* Откуда цель позиции (T-469, T-490): по правилу «база + 70 %» или ручная цель директора. */
   function targetSource(item) {
-    return item?.target_source === 'manual' ? 'цель вручную' : 'цель: база + 30 %';
+    return item?.target_source === 'manual' ? 'цель вручную' : 'цель: база + 70 %';
   }
-  return {emptyState, goalPercent, sourceLabel, targetSource, dayMonth, thousands, signed, rate, percent, periodLabel, dayLabel, fetchedLabel, goalProgress, personProgress,
+  /* Подпись под кольцом о пороге шума (T-490): до метки — сколько маржи до премии, после — фонд. */
+  function thresholdLine(totals) {
+    if (!totals || !totals.threshold) return null;
+    if (totals.above_threshold) return {above: true, text: `Премия начисляется: фонд ${thousands(totals.fund)}`};
+    return {above: false, text: `До премии осталось ${thousands(totals.to_threshold)} маржи`};
+  }
+  return {emptyState, goalPercent, sourceLabel, targetSource, thresholdLine, dayMonth, thousands, signed, rate, percent, periodLabel, dayLabel, fetchedLabel, goalProgress, personProgress,
     personLine, plural, baseLabel, itemTone, itemProgress, sparkPath, ranking, initials, settingsFromForm,
     ringPercent, ringDash, remaining, paceState, bestDay};
 });

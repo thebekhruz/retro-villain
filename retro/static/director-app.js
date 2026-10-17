@@ -809,6 +809,7 @@
     $('kpi-end').value = data.period.end;
     $('kpi-share').value = Math.round(scheme.share * 100);
     $('kpi-cap').value = Math.round(scheme.cap / 1000);
+    $('kpi-noise').value = Math.round((scheme.noise_week ?? 1500000) / 1000);
     $('kpi-baseline').value = scheme.baseline_weeks;
     $('kpi-min-checks').value = scheme.min_checks;
     $('kpi-min-shifts').value = scheme.min_shifts;
@@ -849,7 +850,7 @@
         dishes.append(chip);
       }
       name.append(title, node('small', '', `${target.group}${target.margin ? ' · маржа ' + K().thousands(target.margin) : ''}`), dishes);
-      // Цель (T-469): по правилу «база + 30 %», ручная — только если выше правила. Пустое поле — снова правило.
+      // Цель (T-469, T-490): по правилу «база + 70 %», ручная — только если выше правила. Пустое поле — снова правило.
       const eff = (state.view?.targets || []).find(item => item.key === target.key);
       const auto = eff?.target_auto;
       const goal = node('label', 'kpi-goal', 'цель');
@@ -861,7 +862,7 @@
       const paint = () => {
         const manual = input.value.trim() !== '';
         const value = Number(input.value.replace(',', '.'));
-        source.textContent = !manual ? 'база + 30 %'
+        source.textContent = !manual ? 'база + 70 %'
           : auto !== undefined && value <= auto ? `ниже правила, действует ${K().rate(auto)}` : 'вручную';
       };
       input.addEventListener('input', () => { target.target100 = input.value; target.manual = input.value.trim() !== ''; paint(); });
@@ -968,7 +969,7 @@
     let body;
     try {
       body = K().settingsFromForm({kind: state.kind, start: $('kpi-start').value, end: $('kpi-end').value,
-        share: $('kpi-share').value, cap: $('kpi-cap').value,
+        share: $('kpi-share').value, cap: $('kpi-cap').value, noise_week: $('kpi-noise').value,
         min_checks: $('kpi-min-checks').value, min_shifts: $('kpi-min-shifts').value, baseline_weeks: $('kpi-baseline').value,
         netting: state.netting, targets: state.targets});
     } catch (error) { $('kpi-form-error').textContent = error.message; return; }
