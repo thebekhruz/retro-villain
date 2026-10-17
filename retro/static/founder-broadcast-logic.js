@@ -58,35 +58,105 @@
     next[key]={at};
     return next;
   }
-  /* ── Журнал рассылок (ТЗ 16.10, п. 5.3) ── */
-  /** Ручная — с этого экрана; «автоматически» — задел под автоотправку. */
-  function kindLabel(kind){return kind==='auto'?'автоматически':'вручную'}
-  /** Превью текста одной строкой: переносы — в пробелы, длинное — с «…». */
-  function journalPreview(text,max=90){
+
+  /* ── Журнал рассылок (ТЗ 16.10, п. 5.3; T-504) ───────────────────────── */
+  const SOURCES={dashboard:'Из панели',tg_admin:'Команда в боте',auto:'Автоматическая'};
+  const JOB_STATUSES={queued:'В очереди',running:'Идёт',completed:'Готово',failed:'Ошибка',interrupted:'Прервана'};
+  const DELIVERY_STATUSES={pending:'В очереди',sending:'Отправляется',sent:'Отправлено',blocked:'Заблокировал бота',failed:'Не дошло'};
+  // Коды бота вместо текста Telegram (контракт T-503).
+  const DELIVERY_ERRORS={
+    network_error:'Нет связи с Telegram',
+    delivery_unknown:'Бот перезапустился во время отправки: сообщение могло дойти',
+    unsubscribed:'Гость отписался до отправки',
+  };
+  /** Ручная — запустил человек (из панели или командой в боте). У старых
+   *  заданий источника нет: считаем ручной, автоматических тогда не было. */
+  const isManual=job=>job?.source?job.source!=='auto':job?.manual!==false;
+  function sourceLabel(job){
+    if(SOURCES[job?.source])return SOURCES[job.source];
+    return job?.manual===false?SOURCES.auto:'Источник не записан';
+  }
+  function jobStatusText(job){
+    if(job.status==='running')return `Идёт: ${job.sent+job.blocked+job.failed} из ${job.audience}`;
+    return JOB_STATUSES[job.status]||'Неизвестно';
+  }
+  /** Тон плашки статуса: идёт, готово, сбой; статус не узнали — серый. */
+  function jobTone(job){
+    if(job.status==='queued'||job.status==='running')return 'running';
+    if(job.status==='completed')return 'done';
+    return job.status==='failed'||job.status==='interrupted'?'error':'unknown';
+  }
+  /** Итоги задания в порядке экрана. «В очереди» — кому ещё не отправляли. */
+  function jobCounts(job){
+    const pending=Number.isInteger(job.pending)?job.pending:Math.max(0,job.audience-job.sent-job.blocked-job.failed);
+    return [['sent','Отправлено',job.sent],['blocked','Заблокировали',job.blocked],['failed','Не дошло',job.failed],['queued','В очереди',pending]];
+  }
+  // Ташкент круглый год UTC+5: без летнего времени, без зависимости от
+  // часового пояса браузера.
+  const TASHKENT_MS=5*36e5;
+  const pad=value=>String(value).padStart(2,'0');
+  function tashkent(value){
+    const ms=typeof value==='number'?value:Date.parse(value);
+    if(!Number.isFinite(ms))return null;
+    const day=new Date(ms+TASHKENT_MS);
+    return {year:day.getUTCFullYear(),date:`${pad(day.getUTCDate())}.${pad(day.getUTCMonth()+1)}`,time:`${pad(day.getUTCHours())}:${pad(day.getUTCMinutes())}`};
+  }
+  /** «17.10 14:05»; год — только если не текущий. */
+  function momentText(value,now){
+    const at=tashkent(value);if(!at)return '—';
+    const year=tashkent(now)?.year;
+    return `${at.date}${at.year!==year?'.'+at.year:''} ${at.time}`;
+  }
+  /** Telegram ответил 429, бот ждёт. Прошедшее время не показываем. */
+  function throttleText(job,now){
+    const until=Date.parse(job?.throttled_until||'');
+    if(!Number.isFinite(until)||until<=now)return '';
+    return `Telegram просит подождать до ${tashkent(until).time}`;
+  }
+  function resumeText(job,now){
+    if(!job?.resume_count)return '';
+    const at=job.resumed_at?momentText(job.resumed_at,now):'';
+    return job.resume_count===1?`Дослано ${at}`.trim():`Досылали: ${job.resume_count} · последний раз ${at}`.trim();
+  }
+  /** Начало текста одной строкой. */
+  function preview(text,limit=140){
     const line=String(text||'').replace(/\s+/g,' ').trim();
-    return line.length>max?line.slice(0,max-1).trimEnd()+'…':line;
+    return line.length>limit?line.slice(0,limit-1).trimEnd()+'…':line;
   }
-  /** Время журнала — как записал сервер (Ташкент), без пересчёта браузером. */
-  function journalWhen(value,withYear=true){
-    const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(value||''));
-    if(!match)return '—';
-    return `${match[3]}.${match[2]}${withYear?'.'+match[1]:''} ${match[4]}:${match[5]}`;
+  const deliveryStatusText=status=>DELIVERY_STATUSES[status]||status;
+  /** Пояснение к получателю: код бота — по-русски, текст Telegram — как есть (raw). */
+  function deliveryNote(row){
+    if(!row?.error||row.status==='blocked'||row.status==='sent')return null;
+    if(DELIVERY_ERRORS[row.error])return {text:DELIVERY_ERRORS[row.error],raw:false};
+    return {text:row.error,raw:true};
   }
-  /** Последний известный итог рассылки — те счётчики, что отдал бот. */
-  function journalStatus(entry){
-    const done=(entry.sent||0)+(entry.blocked||0)+(entry.failed||0),total=entry.audience||entry.recipients||0;
-    if(entry.status==='queued')return `в очереди · получателей: ${total}`;
-    if(entry.status==='running')return `отправляется: ${done} из ${total}`;
-    if(entry.status==='completed')return `отправлено ${entry.sent||0} · заблокировали бота ${entry.blocked||0} · ошибок ${entry.failed||0}`;
-    if(entry.status==='interrupted')return `прервана · обработано ${done} из ${total}`;
-    if(entry.status==='failed')return `ошибка · обработано ${done} из ${total}`;
-    return 'статус неизвестен';
+  const resumeLabel=count=>`Дослать оставшимся: ${count}`;
+  const resumeConfirm=count=>`Сообщение уйдёт ${count} ${plural(count,'гостю','гостям','гостям')} из очереди. Тем, кто уже получил его, заблокировал бота или остался с ошибкой, повторно ничего не уйдёт.`;
+  /** Такой же текст уже уходил за последние сутки — из панели, командой в
+   *  боте или с другого устройства. Журнал браузера этого не знает. */
+  function historyTwin(jobs,text,now,within=864e5){
+    const body=String(text||'').trim();if(!body)return null;
+    return (jobs||[]).find(job=>{
+      const at=Date.parse(job?.created_at||'');
+      return typeof job?.text==='string'&&job.text.trim()===body&&Number.isFinite(at)&&now-at<=within
+        &&(job.sent>0||job.status==='queued'||job.status==='running');
+    })||null;
   }
-  function journalState(status){
-    if(status==='completed')return 'done';
-    if(status==='failed'||status==='interrupted')return 'error';
-    return status==='queued'||status==='running'?'running':'unknown';
+  const twinWarning=(job,now)=>`Такой же текст уже рассылали ${momentText(job.created_at,now)} · ${sourceLabel(job)}.`;
+  /** Строка журнала панели (T-505) в виде задания бота: бот без своего
+   *  журнала показывается теми же карточками. Получателей и досылки у неё нет,
+   *  итог — последний, что панель узнала у бота. */
+  function fromPanelJournal(entry){
+    const audience=entry.audience||entry.recipients||0,done=(entry.sent||0)+(entry.blocked||0)+(entry.failed||0),auto=entry.kind==='auto';
+    return {id:entry.job_id||entry.operation_id,status:entry.status||'',audience,sent:entry.sent||0,blocked:entry.blocked||0,
+      failed:entry.failed||0,pending:Math.max(0,audience-done),created_at:entry.sent_at,source:auto?'auto':'dashboard',manual:!auto,
+      author:entry.sent_by||null,text:entry.text||null,recipients_known:false,resumable:false,resume_count:0,resumed_at:null,
+      resumed_by:null,throttled_until:null,panel:true,status_at:entry.status_at||null};
   }
+  const panelStatusText=(job,now)=>job.status_at?`Итог бота на ${momentText(job.status_at,now)}`:'';
+
   root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,draftKey,agoText,repeatWarning,
-    rememberSent,kindLabel,journalPreview,journalWhen,journalStatus,journalState,isTerminal:status=>terminal.has(status)};
+    rememberSent,isTerminal:status=>terminal.has(status),
+    isManual,sourceLabel,jobStatusText,jobTone,jobCounts,momentText,throttleText,resumeText,preview,
+    deliveryStatusText,deliveryNote,resumeLabel,resumeConfirm,historyTwin,twinWarning,fromPanelJournal,panelStatusText};
 })(typeof globalThis==='undefined'?window:globalThis);

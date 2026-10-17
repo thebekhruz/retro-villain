@@ -100,7 +100,7 @@ class Bot:
         self.status_value = job('running', sent=1)
         self.fail_status = False
 
-    async def start(self, operation_id, text, recipient_ids):
+    async def start(self, operation_id, text, recipient_ids, author=None):
         self.calls.append(('start', operation_id))
         return job(audience=len(recipient_ids))
 
@@ -195,11 +195,15 @@ def test_broadcast_survives_journal_failure(api):
 
 
 def test_broadcast_journal_page_section_is_present_and_translated():
+    # Один блок «Журнал рассылок» (T-504): журнал бота, а без него — этот журнал панели.
     from pathlib import Path
     root = Path(__file__).resolve().parents[1] / 'retro' / 'static'
     html = (root / 'founder.html').read_text()
-    assert 'id="broadcast-journal-list"' in html and 'Журнал рассылок' in html
+    assert 'id="broadcast-history-list"' in html and 'Журнал рассылок' in html
+    assert html.count('Журнал рассылок') == 1
+    assert "'/api/founder/broadcast/journal'" in (root / 'founder-broadcast-history.js').read_text()
     uz = (root / 'i18n-uz.js').read_text()
-    for phrase in ('Журнал рассылок', 'вручную', 'автоматически', 'Рассылок ещё не было.',
-                   'Последние 30 рассылок через эту панель'):
+    for phrase in ('Журнал рассылок', 'Рассылок ещё не было.', 'Из панели', 'Автоматическая',
+                   'Последние 30 рассылок через эту панель. Получатели по статусам и досылка '
+                   'появятся после обновления бота.'):
         assert f"'{phrase}':" in uz

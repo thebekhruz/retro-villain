@@ -4295,21 +4295,9 @@ globalThis.RetroTemplatesUz.push(
 /* ── T-505: журнал рассылок гостям (ТЗ 16.10, п. 5.3) ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Журнал рассылок': "Tarqatmalar jurnali",
-  'Последние 30 рассылок через эту панель': "Ushbu panel orqali so'nggi 30 ta tarqatma",
   'Рассылок ещё не было.': "Hali tarqatmalar bo'lmagan.",
-  'вручную': "qo'lda",
-  'автоматически': "avtomatik",
-  'статус неизвестен': "holati noma'lum",
   'Некорректный идентификатор рассылки.': "Tarqatma identifikatori noto'g'ri.",
 });
-globalThis.RetroTemplatesUz.push(
-  [/^гостей: (\d+)$/, "mehmonlar: $1"],
-  [/^в очереди · получателей: (\d+)$/, "navbatda · qabul qiluvchilar: $1"],
-  [/^отправляется: (\d+) из (\d+)$/, "yuborilmoqda: $1 / $2"],
-  [/^отправлено (\d+) · заблокировали бота (\d+) · ошибок (\d+)$/, "yuborildi $1 · botni bloklaganlar $2 · xatolar $3"],
-  [/^прервана · обработано (\d+) из (\d+)$/, "to'xtatildi · ishlov berildi $1 / $2"],
-  [/^ошибка · обработано (\d+) из (\d+)$/, "xato · ishlov berildi $1 / $2"],
-);
 /* ── /T-505 ── */
 
 /* ── T-506: статус сегодняшнего дня — «ещё идёт», время данных iiko, закрытая смена ── */
@@ -4324,3 +4312,68 @@ globalThis.RetroTemplatesUz.push(
   [/^Обновлено (\d{2}\.\d{2}), (\d{1,2}:\d{2})$/, "Yangilandi: $1, $2"],
 );
 /* ── /T-506 ── */
+
+/* ── T-504: журнал рассылок учредителя — журнал бота, получатели,
+   досылка оставшимся; без журнала бота — журнал панели (ТЗ 16.10, п. 5.3) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Ручные запускает человек: из панели или командой в боте. Автоматические уходят по расписанию без нажатия.': "Qo'lda yuboriladiganlarini odam ishga tushiradi: paneldan yoki botdagi buyruq bilan. Avtomatiklari jadval bo'yicha tugma bosilmasdan ketadi.",
+  'Какие рассылки показать': "Qaysi xabarnomalarni ko'rsatish",
+  'Ручные': "Qo'lda",
+  'Автоматические': "Avtomatik",
+  'Показать ещё': "Yana ko'rsatish",
+  'Не удалось загрузить журнал рассылок.': "Xabarnomalar jurnalini yuklab bo'lmadi.",
+  'Последние 30 рассылок через эту панель. Получатели по статусам и досылка появятся после обновления бота.': "Ushbu panel orqali so'nggi 30 ta xabarnoma. Oluvchilar holati va qolganlarga yuborish bot yangilangandan keyin paydo bo'ladi.",
+  'Автоматических рассылок пока не было.': "Avtomatik xabarnomalar hali bo'lmagan.",
+  'Ручных рассылок пока не было.': "Qo'lda yuborilgan xabarnomalar hali bo'lmagan.",
+  'Из панели': "Paneldan",
+  'Команда в боте': "Botdagi buyruq",
+  'Автоматическая': "Avtomatik",
+  'Источник не записан': "Manba yozilmagan",
+  'Автор:': "Muallif:",
+  'Идёт': "Ketmoqda",
+  'Прервана': "To'xtatilgan",
+  'Неизвестно': "Noma'lum",
+  'Текст не сохранился': "Matn saqlanmagan",
+  'Рассылку прервал перезапуск бота. Сама она не продолжится.': "Bot qayta ishga tushgani uchun xabarnoma to'xtadi. U o'zi davom etmaydi.",
+  'Получатели этой рассылки не записаны.': "Bu xabarnoma oluvchilari yozib olinmagan.",
+  'Отправлено': "Yuborildi",
+  'Заблокировали': "Bloklaganlar",
+  'Не дошло': "Yetib bormadi",
+  'В очереди': "Navbatda",
+  'Получатели': "Oluvchilar",
+  'Скрыть получателей': "Oluvchilarni yashirish",
+  'Получатели по статусу': "Oluvchilar holati bo'yicha",
+  '«Отправлено» значит, что Telegram принял сообщение. Прочитал ли его гость, бот не знает.': "«Yuborildi» Telegram xabarni qabul qilganini bildiradi. Mehmon uni o'qigan-o'qimaganini bot bilmaydi.",
+  'Таких получателей нет.': "Bunday oluvchilar yo'q.",
+  'Отправляется': "Yuborilmoqda",
+  'Заблокировал бота': "Botni bloklagan",
+  'Нет связи с Telegram': "Telegram bilan aloqa yo'q",
+  'Бот перезапустился во время отправки: сообщение могло дойти': "Yuborish paytida bot qayta ishga tushdi: xabar yetib borgan bo'lishi mumkin",
+  'Гость отписался до отправки': "Mehmon yuborishdan oldin obunani bekor qildi",
+  'Дослать': "Qolganlarga yuborish",
+  'Досылка запущена: сообщение получат только те, кому оно ещё не уходило.': "Qolganlarga yuborish boshlandi: xabarni faqat unga hali yuborilmaganlar oladi.",
+  'Досылать некому: всем получателям уже отправляли.': "Yuboradigan hech kim qolmadi: barcha oluvchilarga allaqachon yuborilgan.",
+  'Эту рассылку дослать нельзя: бот не сохранил её получателей.': "Bu xabarnomani qolganlarga yuborib bo'lmaydi: bot uning oluvchilarini saqlamagan.",
+  'Журнал рассылок обновился. Откройте его заново.': "Xabarnomalar jurnali yangilandi. Uni qaytadan oching.",
+  'Рассылка не найдена: бот хранит последние сто.': "Xabarnoma topilmadi: bot oxirgi yuztasini saqlaydi.",
+  'Некорректный запрос журнала рассылок.': "Xabarnomalar jurnali so'rovi noto'g'ri.",
+  'Некорректный запрос получателей рассылки.': "Xabarnoma oluvchilari so'rovi noto'g'ri.",
+  'Неизвестный вид рассылок.': "Xabarnoma turi noma'lum.",
+  'Некорректная страница журнала.': "Jurnal sahifasi noto'g'ri.",
+  'Неизвестный статус получателя.': "Oluvchi holati noma'lum.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Идёт: (\d+) из (\d+)$/, "Ketmoqda: $1 / $2"],
+  [/^Telegram просит подождать до (\d{2}:\d{2})$/, "Telegram $1 gacha kutishni so'rayapti"],
+  [/^Дослано (\d{2}\.\d{2}(?:\.\d{4})? \d{2}:\d{2})$/, "Qolganlarga yuborildi: $1"],
+  [/^Досылали: (\d+) · последний раз (.+)$/, "Qolganlarga yuborildi: $1 marta · oxirgisi $2"],
+  [/^Дослать оставшимся: (\d+)$/, "Qolganlarga yuborish: $1"],
+  [/^Итог бота на (\d{2}\.\d{2}(?:\.\d{4})? \d{2}:\d{2})$/, "Bot natijasi $1 holatiga"],
+  [/^Сообщение уйдёт (\d+) (?:гостю|гостям) из очереди\. Тем, кто уже получил его, заблокировал бота или остался с ошибкой, повторно ничего не уйдёт\.$/,
+    "Xabar navbatdagi $1 mehmonga yuboriladi. Uni allaqachon olgan, botni bloklagan yoki xato bilan qolganlarga qayta hech narsa yuborilmaydi."],
+  [/^Такой же текст уже рассылали (.+) · Из панели\.$/, "Xuddi shu matn $1 da yuborilgan · Paneldan."],
+  [/^Такой же текст уже рассылали (.+) · Команда в боте\.$/, "Xuddi shu matn $1 da yuborilgan · Botdagi buyruq."],
+  [/^Такой же текст уже рассылали (.+) · Автоматическая\.$/, "Xuddi shu matn $1 da yuborilgan · Avtomatik."],
+  [/^Такой же текст уже рассылали (.+) · Источник не записан\.$/, "Xuddi shu matn $1 da yuborilgan · Manba yozilmagan."],
+);
+/* ── /T-504 ── */
