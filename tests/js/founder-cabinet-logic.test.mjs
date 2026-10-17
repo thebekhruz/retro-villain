@@ -119,3 +119,23 @@ test('замечания 7b: недостача от кассира первой
     'Без ставки · 23.09', 'Покупка Шоха: Лук · 23.09']);
   assert.match(plain(logic.handoverMark(days.days[2]).tip), /Получено 8 700 000 при расчёте 9 000 000 · недостача 300 000/);
 });
+
+test('T-494: подпись прогноза называет, сколько недель реально в среднем', () => {
+  const note = weeks => logic.forecastNote({weeks: 8, sample_weeks: weeks});
+  assert.equal(note({min: 8, max: 8}), 'Среднее за 8 недель по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.');
+  assert.equal(note({min: 1, max: 1}), 'Среднее за 1 неделю по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.');
+  assert.equal(note({min: 7, max: 8}), 'Среднее за 7–8 недель по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.');
+  assert.equal(note({min: 0, max: 0}), 'За последние восемь недель продаж в iiko нет.');
+});
+
+test('T-494: блюда — по справочнику меню, без справочника ничего не прячем', () => {
+  const rows = [
+    {name: 'Плов', revenue: 900, profit: 500}, {name: 'Мёд', revenue: 800, profit: 450},
+    {name: 'Контейнер', revenue: 50, profit: 40}, {name: 'Новинка', revenue: 300, profit: 120},
+    {name: 'Чай', revenue: 0, profit: 0}];
+  const checked = {item_classes: {'Мёд': 'ingredient', 'Контейнер': 'stock', 'Новинка': 'unknown'}, item_classes_checked: true};
+  // Нет в номенклатуре (unknown) — не прячем; без выручки — не блюдо продаж.
+  assert.deepEqual(logic.soldDishes(checked, rows).map(row => row.name), ['Плов', 'Новинка']);
+  const empty = {item_classes: {'Плов': 'unknown', 'Мёд': 'unknown'}, item_classes_checked: false};
+  assert.deepEqual(logic.soldDishes(empty, rows).map(row => row.name), ['Плов', 'Мёд', 'Контейнер', 'Новинка']);
+});

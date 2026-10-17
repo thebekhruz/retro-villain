@@ -67,6 +67,57 @@ def _validated_period(start, end, granularity):
     return start, end
 
 
+async def with_dashboard_expenses(state, data, start, end):
+    """Аналитика iiko плюс расходы кассы и бухгалтерии за те же даты.
+
+    Общая для экрана аналитики и AI-помощника (get_revenue_analytics): оба
+    видят одну и ту же прибыль после расходов и одно и то же предупреждение."""
+    if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
+        return data
+    if start < ACCOUNTING_START:
+        # Расходы кассы и бухгалтерии ведутся с начала учёта; более ранние
+        # записи в рабочий учёт не входят. Вычесть их за часть периода из
+        # P&L за весь период — значит показать неверную прибыль; ноль вместо
+        # них — тоже. Показываем «нет данных».
+        result = dict(data)
+        result['dashboard_expenses'] = None
+        result['net_profit_after_dashboard_expenses'] = None
+        result['warnings'] = [*data.get('warnings', []), (
+            f'Расходы кассы и бухгалтерии ведутся с {ACCOUNTING_START:%d.%m.%Y}: '
+            'прибыль после записанных расходов считается для периодов с этой даты.')]
+        return result
+    # Чистая прибыль iiko уже содержит себестоимость товаров, прошедших через
+    # склад iiko. Поэтому закуп через Шоха (его покупки — приходные накладные
+    # iiko) не вычитается, а закуп, оплаченный поставщику напрямую, — статьи
+    # «Закуп» наличными и перечисления со счёта — вычитается: накладной по
+    # нему система не создаёт. Правило целиком — в expense_totals_between.
+    cashier, accountant, flows = await asyncio.gather(
+        asyncio.to_thread(state.expenses.total_between, start, end),
+        asyncio.to_thread(state.accountant_finance.expense_totals_between, start, end),
+        asyncio.to_thread(state.accountant_finance.cash_flows_between, start, end),
+    )
+    manual_total = cashier + accountant['total']
+    # В «зарплата» — и выплаты сменным, и строки «Зарплаты» журнала (оклады
+    # частями): иначе оклады попадали в «прочие». Итог не меняется.
+    salary_items = sum((Decimal(row['amount']) for row in flows
+                        if row['type'] == 'other_expense' and overview.flow_kind(row) == 'salary'),
+                       Decimal(0))
+    result = dict(data)
+    result['dashboard_expenses'] = {
+        'cashier': str(cashier),
+        'accountant_other': str(accountant['other'] - salary_items),
+        'accountant_salary': str(accountant['salary'] + salary_items),
+        'accountant': str(accountant['total']),
+        'total': str(manual_total),
+    }
+    result['net_profit_after_dashboard_expenses'] = str(
+        Decimal(data['pnl']['net_profit']) - manual_total)
+    result['scope_note'] = data.get('scope_note', '') + (
+        ' Чистая прибыль после расходов дэшборда равна чистой прибыли iiko '
+        'минус расходы кассы и бухгалтерии за выбранные даты.')
+    return result
+
+
 @router.get('/analytics')
 async def analytics(
         request: Request,
@@ -88,51 +139,7 @@ async def analytics(
                                request=request, timeout=180,
                                ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None,
                                stale=CLOSED_PERIOD_STALE if end < today_tashkent() else 0)
-        if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
-            return data
-        if start < ACCOUNTING_START:
-            # Расходы кассы и бухгалтерии ведутся с начала учёта; более ранние
-            # записи в рабочий учёт не входят. Вычесть их за часть периода из
-            # P&L за весь период — значит показать неверную прибыль; ноль вместо
-            # них — тоже. Показываем «нет данных».
-            result = dict(data)
-            result['dashboard_expenses'] = None
-            result['net_profit_after_dashboard_expenses'] = None
-            result['warnings'] = [*data.get('warnings', []), (
-                f'Расходы кассы и бухгалтерии ведутся с {ACCOUNTING_START:%d.%m.%Y}: '
-                'прибыль после записанных расходов считается для периодов с этой даты.')]
-            return result
-        # Чистая прибыль iiko уже содержит себестоимость товаров, прошедших через
-        # склад iiko. Поэтому закуп через Шоха (его покупки — приходные накладные
-        # iiko) не вычитается, а закуп, оплаченный поставщику напрямую, — статьи
-        # «Закуп» наличными и перечисления со счёта — вычитается: накладной по
-        # нему система не создаёт. Правило целиком — в expense_totals_between.
-        cashier, accountant, flows = await asyncio.gather(
-            asyncio.to_thread(request.app.state.expenses.total_between, start, end),
-            asyncio.to_thread(
-                request.app.state.accountant_finance.expense_totals_between, start, end),
-            asyncio.to_thread(request.app.state.accountant_finance.cash_flows_between, start, end),
-        )
-        manual_total = cashier + accountant['total']
-        # В «зарплата» — и выплаты сменным, и строки «Зарплаты» журнала (оклады
-        # частями): иначе оклады попадали в «прочие». Итог не меняется.
-        salary_items = sum((Decimal(row['amount']) for row in flows
-                            if row['type'] == 'other_expense' and overview.flow_kind(row) == 'salary'),
-                           Decimal(0))
-        result = dict(data)
-        result['dashboard_expenses'] = {
-            'cashier': str(cashier),
-            'accountant_other': str(accountant['other'] - salary_items),
-            'accountant_salary': str(accountant['salary'] + salary_items),
-            'accountant': str(accountant['total']),
-            'total': str(manual_total),
-        }
-        result['net_profit_after_dashboard_expenses'] = str(
-            Decimal(data['pnl']['net_profit']) - manual_total)
-        result['scope_note'] = data.get('scope_note', '') + (
-            ' Чистая прибыль после расходов дэшборда равна чистой прибыли iiko '
-            'минус расходы кассы и бухгалтерии за выбранные даты.')
-        return result
+        return await with_dashboard_expenses(request.app.state, data, start, end)
     except TimeoutError as error:
         log_safe_failure('founder-route', error, operation='analytics',
                          request_id=request.state.request_id)
@@ -330,15 +337,22 @@ def spending(request: Request, date: date | None = None):
 
 @router.get('/dishes')
 async def dishes(request: Request, days: int = Query(7, ge=1, le=30)):
-    """Блюда за последние закрытые дни — тот же отчёт iiko, что у директора."""
+    """Блюда за последние закрытые дни — тот же отчёт iiko, что у директора.
+
+    Продажи iiko — без границы учёта 13.10 (T-486): «7 дней» — семь дней.
+    `item_classes` — позиции, которые по справочнику меню не готовые блюда
+    (T-487): экран прячет их по классу, а не по слову в названии. Пустой
+    справочник ничего не исключает, `item_classes_checked` тогда false."""
     start, end = completed_period(today_tashkent(), days)
-    start = accounting_range_start(start, end)
     snapshot, error = await cabinet.iiko_or_error(
         request, 'load_director_report', today_tashkent(), start=start, end=end,
         operation='dishes', timeout=150)
     if snapshot is None:
         raise HTTPException(503, error)
-    return snapshot.json()
+    data = snapshot.json()
+    catalog = await asyncio.to_thread(FounderChatTools(request.app).catalog)
+    names = (data.get('item_metrics') or {}).get('all', {})
+    return dict(data, item_classes=catalog.exceptions(names), item_classes_checked=catalog.available)
 
 
 @router.get('/export/month')

@@ -281,8 +281,13 @@ async def founder_week(request, day: date):
 
 
 async def founder_forecast(request, day: date):
-    """Прогноз по дням недели по средним за восемь недель — это оценка, не факт."""
-    start = max(ACCOUNTING_START, day - timedelta(days=overview.FORECAST_WEEKS * 7))
+    """Прогноз по дням недели по средним за восемь недель — это оценка, не факт.
+
+    Выручка и чеки — из iiko за настоящие восемь недель: граница учёта 13.10 к
+    ним не относится (T-486). С ней «среднее за 8 недель» было одним днём на
+    каждый день недели. `sample_weeks` — сколько недель реально вошло в
+    среднее: подпись на экране не обещает больше, чем есть."""
+    start = day - timedelta(days=overview.FORECAST_WEEKS * 7)
     rows, error = await iiko_or_error(request, 'load_daily_orders', start, day,
                                       operation='forecast', timeout=120)
     if rows is None:
@@ -290,8 +295,10 @@ async def founder_forecast(request, day: date):
     history = overview.register_days(rows)
     weekdays = overview.weekday_forecast(history, day)
     today_values = history.get(day.isoformat(), {})
+    samples = [item['samples'] for item in weekdays]
     return dict(
         estimate=True, error=None, weeks=overview.FORECAST_WEEKS, weekdays=weekdays,
+        sample_weeks=dict(min=min(samples), max=max(samples)),
         month=overview.month_forecast(history, weekdays, day),
         today=dict(forecast=weekdays[day.weekday()],
                    orders={key: value['orders'] for key, value in today_values.items()}))

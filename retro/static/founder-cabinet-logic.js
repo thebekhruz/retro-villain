@@ -243,8 +243,32 @@
     return chef.bills.filter(bill => bill.over && (bill.day === today || bill.day === yesterday) && !hidden.has(bill.order_id));
   }
 
+  /** Подпись под прогнозом: сколько недель истории iiko реально вошло в
+   *  среднее (`sample_weeks` сервера), без обещания восьми недель. */
+  function forecastNote(data) {
+    const weeks = (data && data.sample_weeks) || {};
+    const low = num(weeks.min) || 0, high = num(weeks.max) || 0;
+    if (!high) return 'За последние восемь недель продаж в iiko нет.';
+    const count = low === high ? String(high) : low + '–' + high;
+    return 'Среднее за ' + count + ' ' + plural(high, 'неделю', 'недели', 'недель') +
+      ' по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.';
+  }
+
+  // Классы справочника меню, которые не блюда (retro/modules/menu/catalog.py,
+  // NOT_READY). «unknown» — позиции нет в номенклатуре: её не прячем (T-487).
+  const NOT_DISH_CLASSES = new Set(['ingredient', 'stock', 'semi_finished', 'set_component', 'service']);
+
+  /** «Приносят больше всего» (7b): проданные готовые позиции меню. Что
+   *  блюдо — решает справочник меню на сервере (`item_classes`), а не слово в
+   *  названии; без справочника ничего не скрываем. Порядок строк `rows`
+   *  сохраняется — его задаёт DirectorLogic.rank (по прибыли). */
+  function soldDishes(snapshot, rows) {
+    const classes = (snapshot && snapshot.item_classes) || {};
+    return (rows || []).filter(row => row.revenue > 0 && !NOT_DISH_CLASSES.has(classes[row.name]));
+  }
+
   // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
   return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
-    accountantIssues, chefAlerts};
+    accountantIssues, chefAlerts, forecastNote, soldDishes};
 });

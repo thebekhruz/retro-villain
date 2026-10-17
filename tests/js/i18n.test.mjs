@@ -119,3 +119,13 @@ test('T-428: shift and payout dates remain distinct in Uzbek labels', () => {
     'Али · Smena 09.10 · to‘lov 10.10 · 150000 so‘m berildi');
   assert.equal(translate('Доп. выплаты за смены · октябрь'), 'Smenalar uchun qo‘shimcha to‘lovlar · oktabr');
 });
+
+test('T-494: прогноз, блюда и закуп учредителя — по-узбекски', () => {
+  assert.equal(translate('Среднее за 7–8 недель по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.'),
+    "Retro va Oxbridge kassalari bo'yicha 7–8 haftalik o'rtacha, banket zalisiz. Bugun ajratib ko'rsatilgan.");
+  assert.equal(translate('10.10–16.10 · по прибыли: выручка минус себестоимость iiko'),
+    "10.10–16.10 · foyda bo'yicha: tushumdan iiko tannarxi ayrilgan");
+  assert.equal(translate('Закуп · уголь'), "Xarid · ko'mir");
+  assert.equal(translate('Переводы (Oxbridge, блогеры)'), "O'tkazmalar (Oxbridge, blogerlar)");
+  assert.equal(translate('Покупки с телефона · '), 'Telefondan xaridlar · ');
+});

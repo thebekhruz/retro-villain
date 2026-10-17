@@ -546,3 +546,111 @@ def test_founder_ai_sees_the_cabinet_numbers(tmp_path, today):
     assert data['chef_account']['week_over'] == 1 and 'bills' not in data['chef_account']
     assert 'categories' in data['spending']['expenses'] and 'transfers' in data['spending']['shokh']
     assert data['dividends']['week'] == '2026-W39'
+
+
+# ── T-494: периоды кабинета, блюда по прибыли, закуп понятным языком ──────
+
+OCTOBER_DAY = date(2026, 10, 17)  # суббота, пятый день учёта
+
+
+def test_forecast_reads_eight_real_weeks_across_the_accounting_start(tmp_path, monkeypatch):
+    """Выручка и чеки iiko — за настоящие восемь недель: граница 13.10 их не режет.
+    С ней «среднее за 8 недель» было одним днём на каждый день недели."""
+    monkeypatch.setattr('retro.modules.founder.cabinet.today_tashkent', lambda: OCTOBER_DAY)
+    iiko, calls = FakeIiko(), []
+    original = iiko.load_daily_orders
+
+    async def recorded(start, end):
+        calls.append((start, end))
+        return await original(start, end)
+
+    iiko.load_daily_orders = recorded
+    with client(tmp_path, iiko) as c:
+        data = c.get('/api/founder/forecast').json()
+    assert calls == [(date(2026, 8, 22), OCTOBER_DAY)]
+    assert data['sample_weeks'] == {'min': 8, 'max': 8}
+    assert {item['samples'] for item in data['weekdays']} == {8}
+    # Факт месяца — с 1 октября, как в iiko, а не с 13-го.
+    days = [date(2026, 10, 1) + timedelta(days=offset) for offset in range(17)]
+    assert data['month']['fact'] == f'{sum(34000000 + day.weekday() * 1000000 for day in days)}.00'
+
+
+def test_forecast_reports_how_many_weeks_of_history_it_really_had(tmp_path, today):
+    rows = [dict(day=(TODAY - timedelta(days=offset)).isoformat(), direction='retro', orders=10, revenue='100')
+            for offset in range(1, 22)]  # три недели истории
+    with client(tmp_path, FakeIiko(orders=rows)) as c:
+        data = c.get('/api/founder/forecast').json()
+    assert data['weeks'] == 8
+    assert data['sample_weeks'] == {'min': 3, 'max': 3}
+
+
+def test_expense_categories_split_direct_procurement_and_name_transfers():
+    result = overview.expense_categories([
+        dict(type='other_expense', item_code='proc_coal', amount='300000'),
+        dict(type='other_expense', item_code='proc_bread', amount='200000'),
+        dict(type='other_expense', item_code='proc_other', amount='50000'),
+        dict(type='procurement_advance', description='Азиз: овощи', amount='70000'),
+        dict(type='procurement_advance', description='Шох: базар', amount='1000000'),
+        dict(type='other_expense', item_code='distribution_oxbridge', amount='400000'),
+        dict(type='other_expense', item_code='distribution_bloggers', amount='100000'),
+        dict(type='other_expense', item_code='distribution_dividends', amount='900000'),
+    ])
+    labels = {item['label']: item['amount'] for item in result['categories']}
+    assert labels == {'Закуп · уголь': '300000.00', 'Закуп · хлеб': '200000.00', 'Закуп · прочее': '50000.00',
+                      'Закуп · выдачи на закуп': '70000.00', 'Закуп · наличные Шоху': '1000000.00',
+                      'Переводы (Oxbridge, блогеры)': '500000.00', 'Дивиденды': '900000.00'}
+    assert result['total'] == '3020000.00'
+
+
+def test_shokh_top_merges_bazaar_spellings_for_display_only():
+    expenses = [dict(place='Food City', amount='500000', note='Расход по счёт-фактуре'),
+                dict(place='Фуд  Сити', amount='300000', note=''),
+                dict(place='FoodCity', amount='200000', note=''),
+                dict(place='алайский базар', amount='400000', note=''),
+                dict(place='Новый рынок', amount='100000', note=''),
+                dict(place='новый  рынок', amount='50000', note=''),
+                dict(place=None, note='Закуп: Лук · Алайский', amount='70000'),
+                dict(place='', note='Счёт Шоха', amount='10000')]
+    result = overview.shokh_month([], [], pocket=None, expenses=expenses)
+    assert result['top_items'] == [
+        {'item': 'Food City', 'amount': '1000000.00'}, {'item': 'Алайский базар', 'amount': '400000.00'},
+        {'item': 'Новый рынок', 'amount': '150000.00'}, {'item': 'Покупки с телефона', 'amount': '70000.00'},
+        {'item': 'Место не указано', 'amount': '10000.00'}]
+    assert result['spent'] == '1630000.00'
+    assert expenses[1]['place'] == 'Фуд  Сити'  # запись бухгалтера не меняется
+    assert overview.display_place('  Базар   Шеф ') == 'Базар Шеф'
+    assert overview.display_place('Чорсу') == 'Чорсу'
+
+
+def test_dishes_read_seven_real_days_and_mark_non_dishes(tmp_path, monkeypatch):
+    """«Приносят больше всего»: семь закрытых дней iiko без границы 13.10 и
+    классы позиций из справочника меню (T-487)."""
+    from types import SimpleNamespace
+    from datetime import datetime
+    from retro.modules.cashier.service import TZ
+    monkeypatch.setattr('retro.modules.founder.routes.today_tashkent', lambda: OCTOBER_DAY)
+    calls = []
+
+    class DishesIiko(FakeIiko):
+        async def load_director_report(self, today, *, start=None, end=None, days=None):
+            calls.append((start, end))
+            return SimpleNamespace(json=lambda: {
+                'period_start': start.isoformat(), 'period_end': end.isoformat(),
+                'item_metrics': {'all': {'Плов': {'revenue': '900', 'gross_profit': '500', 'quantity': '9'},
+                                         'Мед': {'revenue': '100', 'gross_profit': '90', 'quantity': '5'},
+                                         'Новинка': {'revenue': '50', 'gross_profit': '20', 'quantity': '1'}}}})
+
+    with client(tmp_path, DishesIiko(), data_dir=tmp_path) as c:
+        empty = c.get('/api/founder/dishes').json()
+        c.app.state.menu_store.save([
+            dict(product_id='1', name='Плов', kind='DISH', category='', deleted=False),
+            dict(product_id='2', name='Мед', kind='GOODS', category='', deleted=False)],
+            at=datetime(2026, 10, 16, 10, tzinfo=TZ))
+        data = c.get('/api/founder/dishes').json()
+    assert calls[0] == (date(2026, 10, 10), date(2026, 10, 16))
+    # Пустой справочник по номенклатуре ничего не исключает; правило
+    # исключения ТЗ 3.1 (мёд — ингредиент) действует и без него, как в T-487.
+    assert empty['item_classes_checked'] is False
+    assert empty['item_classes'] == {'Плов': 'unknown', 'Мед': 'ingredient', 'Новинка': 'unknown'}
+    assert data['item_classes_checked'] is True
+    assert data['item_classes'] == {'Мед': 'ingredient', 'Новинка': 'unknown'}

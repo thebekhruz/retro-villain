@@ -412,3 +412,87 @@ def test_founder_page_exposes_accessible_chat_drawer(tmp_path):
     assert 'aria-controls="ai-chat-drawer"' in page.text
     assert 'src="/static/founder-markdown.js?v=' in page.text
     assert 'src="/static/founder-chat.js?v=' in page.text
+
+
+# ── T-494 (ТЗ 16.10, 4.1): AI считает по базе и называет короткий период ──
+
+def _series(days, amounts):
+    return [{'start': day, 'end': day, 'incomplete': False, 'values': {'retro': amount},
+             'total': amount} for day, amount in zip(days, amounts)]
+
+
+def test_revenue_tool_reads_thirty_real_days_and_says_expenses_are_missing(tmp_path, monkeypatch):
+    """«Выручка за 30 дней» 17.10: iiko — все тридцать дней, а не 13–16.10.
+    Расходы кассы и бухгалтерии до 13.10 не ведутся — null и предупреждение."""
+    monkeypatch.setattr('retro.modules.founder.tools.today_tashkent', lambda: date(2026, 10, 17))
+    calls = []
+
+    class IikoStub:
+        async def load_founder_analytics(self, start, end, granularity, directions):
+            calls.append((start, end, granularity, directions))
+            return {'period': {'start': str(start), 'end': str(end)}, 'includes_current_day': False,
+                    'revenue_series': [{'start': '2026-09-17', 'end': '2026-09-20', 'total': '400'},
+                                       {'start': '2026-09-21', 'end': '2026-10-16', 'total': '9000'}],
+                    'totals': {'retro': '9400', 'selected': '9400'}, 'pnl': {'net_profit': '1000'},
+                    'warnings': []}
+
+    app = create_app(Settings(data_dir=tmp_path))
+    app.state.iiko = IikoStub()
+    app.state.expenses.add(date(2026, 10, 14), 'Такси', '20000')
+    result = asyncio.run(FounderChatTools(app).execute('get_revenue_analytics', {
+        'start': '2026-09-17', 'end': '2026-10-16', 'granularity': 'week',
+        'directions': ['retro', 'school', 'banquet']}))
+
+    assert calls == [(date(2026, 9, 17), date(2026, 10, 16), 'week', ('retro', 'school', 'banquet'))]
+    assert result['requested_period'] == {'start': '2026-09-17', 'end': '2026-10-16', 'days': 30}
+    assert result['revenue_period'] == result['requested_period']
+    assert result['totals']['selected'] == '9400'
+    # Как на экране аналитики (T-486): частичные расходы прибыль не искажают.
+    assert result['dashboard_expenses'] is None and result['expenses_period'] is None
+    assert result['net_profit_after_dashboard_expenses'] is None
+    assert result['expenses_recorded_from'] == '2026-10-13'
+    assert any('13.10.2026' in warning for warning in result['warnings'])
+
+
+def test_revenue_tool_names_the_days_without_sales_and_the_open_day(tmp_path, monkeypatch):
+    monkeypatch.setattr('retro.modules.founder.tools.today_tashkent', lambda: date(2026, 10, 17))
+
+    class IikoStub:
+        async def load_founder_analytics(self, start, end, granularity, directions):
+            days = ['2026-10-13', '2026-10-14', '2026-10-15', '2026-10-16', '2026-10-17']
+            return {'period': {'start': str(start), 'end': str(end)}, 'includes_current_day': True,
+                    'revenue_series': _series(days, ['0', '500', '700', '600', '0']),
+                    'totals': {'retro': '1800', 'selected': '1800'}, 'pnl': {'net_profit': '900'},
+                    'warnings': []}
+
+    app = create_app(Settings(data_dir=tmp_path))
+    app.state.iiko = IikoStub()
+    result = asyncio.run(FounderChatTools(app).execute('get_revenue_analytics', {
+        'start': '2026-10-13', 'end': '2026-10-17', 'granularity': 'day', 'directions': ['retro']}))
+
+    assert result['revenue_period'] == {'start': '2026-10-14', 'end': '2026-10-16', 'days': 3}
+    assert 'Продажи в iiko есть только с 14.10.2026 по 16.10.2026: 3 дн. из 5 запрошенных.' in result['warnings']
+    assert 'Сегодняшний день ещё идёт: выручка за него неполная.' in result['warnings']
+    # Период с начала учёта — расходы вычтены за все запрошенные даты.
+    assert result['expenses_period'] == {'start': '2026-10-13', 'end': '2026-10-17', 'days': 5}
+    assert result['dashboard_expenses']['total'] == '0'
+
+
+def test_chat_prompt_demands_tool_numbers_and_a_named_short_period():
+    seen = {}
+
+    def handler(request):
+        seen['body'] = json.loads(request.content)
+        return claude_response('Ответ.')
+
+    settings = SimpleNamespace(claude_api_key='key', claude_model='claude-test', claude_configured=True)
+    asyncio.run(ClaudeClient(settings, transport=httpx.MockTransport(handler)).chat(
+        [{'role': 'user', 'content': 'Выручка за 30 дней?'}]))
+    system = seen['body']['system']
+    assert 'Любое число в ответе бери из результата инструмента' in system
+    assert 'период короче запрошенного' in system
+    assert 'Если данных для ответа не хватает, так и напиши' in system
+    assert 'Блюдом считай только готовую позицию меню' in system  # правило T-487 на месте
+    cabinet = next(tool for tool in FounderChatTools.definitions if tool['name'] == 'get_founder_cabinet')
+    assert 'куда ушли деньги' not in cabinet['description']
+    assert 'расходы месяца' in cabinet['description']
