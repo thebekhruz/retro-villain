@@ -55,6 +55,14 @@ OPERATION_KINDS = {'Оплата': 'paid', 'PAYMENT': 'paid',
 PAID_OPERATIONS = frozenset({'paid'})
 
 
+def source_cache_ttl(end, *, today=None):
+    """Сколько живут сырые OLAP iiko за период по `end` (iiko.olap_ttl) — то же
+    число, что API отдаёт как source_cache_max_age_seconds. iiko импортирует
+    этот модуль, поэтому функцию берём при вызове."""
+    from retro.integrations.iiko import olap_ttl as ttl
+    return ttl(end, today=today)
+
+
 def is_banquet_item(item):
     return isinstance(item, str) and 'бехруз' in item.casefold()
 
@@ -246,7 +254,7 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         'directions': list(directions),
         'includes_current_day': start <= today <= end,
         'updated_at': now.isoformat(),
-        'source_cache_max_age_seconds': 60,
+        'source_cache_max_age_seconds': source_cache_ttl(end, today=today),
         'currency': 'UZS',
         'totals': {**{direction: _amount(totals[direction]) for direction in DIRECTIONS},
                    'selected': _amount(selected_total)},

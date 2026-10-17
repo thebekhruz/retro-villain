@@ -270,3 +270,31 @@ def test_closed_cashier_day_is_not_refetched_on_every_open():
     assert today_again - today_first == today_first - forced > 0
     # Справочник — по разу на закрытый день и на сегодня, обновление его не трогает.
     assert fetches['dictionary'] == 2
+
+
+def test_director_report_states_its_real_cache_times(tmp_path, monkeypatch):
+    """T-508: отчёт за закрытый период отдаёт те TTL, с которыми он реально
+    закэширован, а не прежние 60 и 300 секунд."""
+    from retro.integrations.iiko import OLAP_TTL_CLOSED, OLAP_TTL_OPEN
+    from retro.modules.director.models import build_snapshot
+    from retro.report_cache import DIRECTOR_REPORT_TTL
+    from fastapi.testclient import TestClient
+    from legacy_app import create_app
+    from retro.modules.cashier.service import today_tashkent
+    from retro.modules.director import routes as director_routes
+
+    async def loader(today, *, start=None, end=None, days=None):
+        return build_snapshot([], {}, start, end)
+
+    app = create_app(Settings(data_dir=tmp_path))
+    monkeypatch.setattr(app.state.iiko, 'load_director_report', loader)
+    closed_end = today_tashkent() - timedelta(days=1)
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        data = client.get(f'/api/director/report?start={closed_end - timedelta(days=6)}&end={closed_end}').json()
+    assert data['report_cache_max_age_seconds'] == director_routes.CLOSED_PERIOD_TTL
+    assert data['source_cache_max_age_seconds'] == OLAP_TTL_CLOSED
+    # Без явного ttl (сегодня, чат) снимок живёт DIRECTOR_REPORT_TTL.
+    today = today_tashkent()
+    current = build_snapshot([], {}, today, today).json()
+    assert current['report_cache_max_age_seconds'] == DIRECTOR_REPORT_TTL
+    assert current['source_cache_max_age_seconds'] == OLAP_TTL_OPEN
