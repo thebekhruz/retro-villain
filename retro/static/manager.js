@@ -590,7 +590,7 @@ async function loadKpi(refresh) {
 
 /* Кольцо: SVG с дорожкой, дугой заполнения и отметками 50 % и 100 %. Заполнение
    анимируется от нуля при первом рисовании (stroke-dashoffset, kpi.css). */
-function ringNode(box, percent, inner, {size = 'lg', threshold = null} = {}) {
+function ringNode(box, percent, inner, {size = 'lg'} = {}) {
   const large = size === 'lg';
   const radius = large ? 80 : 18, width = large ? 12 : 5, side = (radius + width) * 2, center = radius + width;
   const dash = K().ringDash(percent, radius);
@@ -611,27 +611,7 @@ function ringNode(box, percent, inner, {size = 'lg', threshold = null} = {}) {
     }
     svg.append(circle);
   }
-  if (large) {
-    // Отметки 50 % (снизу) и 100 % (сверху): короткие штрихи поперёк дорожки.
-    for (const x of [center + radius, center - radius]) {
-      const tick = document.createElementNS(SVG, 'line');
-      tick.setAttribute('class', 'is-tick');
-      tick.setAttribute('x1', x); tick.setAttribute('x2', x);
-      tick.setAttribute('y1', center - width); tick.setAttribute('y2', center + width);
-      svg.append(tick);
-    }
-    // Метка порога шума (T-490): с этой доли цели начисляется премия. Тот же штрих, что 50 и 100 %.
-    if (threshold !== null && threshold > 0 && threshold < 1) {
-      const angle = 2 * Math.PI * threshold;
-      const tick = document.createElementNS(SVG, 'line');
-      tick.setAttribute('class', 'is-tick is-threshold');
-      tick.setAttribute('x1', (center + (radius - width) * Math.cos(angle)).toFixed(2));
-      tick.setAttribute('y1', (center + (radius - width) * Math.sin(angle)).toFixed(2));
-      tick.setAttribute('x2', (center + (radius + width) * Math.cos(angle)).toFixed(2));
-      tick.setAttribute('y2', (center + (radius + width) * Math.sin(angle)).toFixed(2));
-      svg.append(tick);
-    }
-  }
+  // Штрихов на кольце нет (просьба Amir 17.10): порог премии виден подписью под кольцом.
   box.replaceChildren(svg, inner);
   return box;
 }
@@ -663,7 +643,7 @@ function renderKpiHome() {
   big.dataset.i18n = 'off';
   inner.append(big, node('span', '', `продано ${totals.sold} из ${Math.ceil(totals.goal_qty)}`),
     node('small', '', totals.goal_qty ? (left ? `осталось ${left}` : 'цель взята') : 'цель считается'));
-  ringNode($('kpi-home-ring'), percent, inner, {threshold: totals.threshold_mark});
+  ringNode($('kpi-home-ring'), percent, inner);
   const pace = K().paceState(totals, period);
   $('kpi-home-pace').textContent = pace.text;
   $('kpi-home-pace').classList.toggle('is-done', pace.state === 'done');
