@@ -4186,3 +4186,9 @@ globalThis.RetroTemplatesUz.push(
   [/^Сотрудник для (.+)$/, "$1 uchun xodim"],
 );
 /* ── /T-495 ── */
+
+/* ── T-502: меню справа ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Меню справа': "Menyu o'ngda",
+});
+/* ── /T-502 ── */
