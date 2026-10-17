@@ -4259,3 +4259,10 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Меню справа': "Menyu o'ngda",
 });
 /* ── /T-502 ── */
+/* ── T-504: правила постоянных замечаний учредителю ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Смены прошлых дней: зарплата начислена, но выдана не полностью.': "O‘tgan kunlar smenalari: ish haqi hisoblangan, lekin to‘liq berilmagan.",
+  'У сотрудников в списке смены не указана ставка — их зарплату за день не посчитать.': "Smena ro‘yxatidagi xodimlarda stavka ko‘rsatilmagan — ularning kunlik ish haqini hisoblab bo‘lmaydi.",
+  'Расходы этого учётного периода, записанные в долг и ещё не оплаченные.': "Ushbu hisob davrida qarzga yozilgan va hali to‘lanmagan xarajatlar.",
+});
+/* ── /T-504 ── */

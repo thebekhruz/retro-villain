@@ -65,6 +65,17 @@ test('замечания к бухгалтеру: недостача касси�
     'Кассир передал меньше расчёта · 23.09', 'Остаток ушёл в минус · 23.09', 'Покупка Шоха: Лук · 23.09']);
 });
 
+test('постоянные замечания объясняют своё правило (ТЗ 16.10, п. 4.2)', () => {
+  const day = {...week.days[0], accounting: {date: '2026-09-21', expected_cashier: '1',
+    ledger: {cash_balance: '10', accruals: [{id: 7, work_day: '2026-09-20', debt: '150000'}], payroll_confirmed: true,
+      manual_debt_total: '300000'}, missing_rates: 2, payroll: {unknown_count: 0}, employees: []}};
+  const issues = logic.accountantIssues({days: [day]}, {}, accountant.dayChecks);
+  const rules = Object.fromEntries(issues.map(item => [item.text.split(' · ')[0], item.rule]));
+  assert.match(rules['Невыданные смены'], /начислена, но выдана не полностью/);
+  assert.match(rules['Без ставки'], /не указана ставка/);
+  assert.match(rules['Неоплаченные расходы'], /в долг и ещё не оплаченные/);
+});
+
 test('дивиденды: статус, доли и подпись выдачи', () => {
   const view = logic.dividendView({week: '2026-W39', start: '2026-09-21', end: '2026-09-27', payout_day: '2026-09-28',
     target: '10000000.00', collected: '2000000.00', pace: '5714285.71', due: '4285714.29', behind: true, done: false, free_cash_week: null});

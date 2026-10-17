@@ -460,6 +460,7 @@
       const row = node('div');
       const text = node('div');
       text.append(node('strong', '', item.text), node('small', '', item.sub));
+      if (item.rule) text.append(node('small', 'fo-check-rule', item.rule));
       row.append(node('i', item.level === 'bad' ? 'is-bad' : ''), text);
       list.append(row);
     });

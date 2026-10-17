@@ -107,10 +107,9 @@
 .chart-legend span{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .legend-dot{width:8px;height:8px;border-radius:50%}
 .chart-shell{height:280px;margin-top:18px;overflow-x:auto;position:relative}
-.chart-shell svg{display:block;min-width:720px;width:100%;height:100%}
-/* Столбцы выручки рисуются по ширине блока: прокрутки вбок нет. */
+/* Графики рисуются по ширине блока: прокрутки вбок нет. */
+.chart-shell svg{display:block;width:100%;height:100%}
 .revenue-chart{overflow:hidden}
-.revenue-chart svg{min-width:0}
 .chart-grid.is-zero{stroke:#cfd8cc}
 .chart-hover-band{fill:#f1f4ec;pointer-events:none}
 .chart-bar{pointer-events:none}
