@@ -294,6 +294,27 @@ def chef_bills(rows, *, week_start: date, week_end: date, month_start: date):
                 week_over=sum(row['over'] for row in week), month_over=sum(row['over'] for row in month))
 
 
+# Сколько самых крупных счетов недели называет сообщение учредителю.
+CHEF_WEEK_TOP = 3
+
+
+def chef_week(rows, *, start: date, end: date, limit):
+    """Счёт Шефа за неделю против недельного порога (ТЗ 16.10, п. 4.2).
+
+    Сумма та же, что «… за неделю» в блоке Счёта Шефа: по меню (DishSumInt),
+    счета с `start` по `end`. Порог достигнут, когда сумма не меньше `limit`.
+    Процент — вниз до целого: 99,6 % ещё не «100 %»."""
+    limit = Decimal(limit)
+    week = [row for row in rows if start.isoformat() <= row['day'] <= end.isoformat()]
+    total = sum((Decimal(row['amount']) for row in week), Decimal(0))
+    top = sorted(week, key=lambda row: (-Decimal(row['amount']), row['day'], str(row['order_id'])))
+    percent = int(min(Decimal(100), total * 100 / limit)) if limit > 0 else None
+    return dict(start=start.isoformat(), end=end.isoformat(), limit=money(limit), total=money(total),
+                bills=len(week), reached=total >= limit, percent=percent,
+                top=[dict(day=row['day'], table=row.get('table'), waiters=list(row.get('waiters') or ()),
+                          amount=money(row['amount'])) for row in top[:CHEF_WEEK_TOP]])
+
+
 def is_shokh_advance(row):
     """Выдача подотчёта Шоху — так же, как её видит резерв `shoh`."""
     return ((row['type'] == 'other_expense' and row.get('item_code') == 'proc_shoh') or

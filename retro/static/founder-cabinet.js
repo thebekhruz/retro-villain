@@ -311,7 +311,7 @@
       const meta = node('small');
       meta.append(node('span', '', 'RETRO MILLIY'), node('span', '', bill.day === state.today ? 'сегодня' : 'вчера'));
       body.append(meta, node('strong', '', 'Счёт Шефа · ' + sum(num(bill.amount)) + ' сум'),
-        node('p', '', 'Стол ' + bill.table + ' · ' + (bill.waiters.join(', ') || 'без официанта') + ' · больше ' + short(logic.CHEF_LIMIT) + ' за один счёт'));
+        node('p', '', 'Стол ' + bill.table + ' · ' + (bill.waiters.join(', ') || 'без официанта') + ' · больше ' + short(chefLimit(chef)) + ' за один счёт'));
       const close = node('button', '', '×');
       close.type = 'button';
       close.setAttribute('aria-label', 'Скрыть уведомление');
@@ -375,6 +375,13 @@
     const target = $('fo-chef-week');
     target.replaceChildren();
     if (chef.error) { target.append(node('p', 'fo-hint', 'Счёт Шефа: ' + chef.error)); return; }
+    // Недельный порог достигнут — первой строкой, как и на компьютере.
+    const week = logic.chefWeekView(chef.week_alert);
+    if (week && week.reached) {
+      const row = node('div', 'fo-line');
+      row.append(node('span', '', 'Счёт Шефа · неделя'), node('b', 'rm-num', week.progress));
+      target.append(row);
+    }
     chef.week.filter(bill => bill.over).forEach(bill => {
       const row = node('div', 'fo-line');
       row.append(node('span', '', 'Счёт Шефа · ' + dm(bill.day) + ' · стол ' + bill.table), node('b', 'rm-num', sum(num(bill.amount)) + ' сум'));
@@ -460,14 +467,38 @@
     $('fo-ask-checks').hidden = !issues.length;
   }
 
+  /** Поштучный порог — из ответа сервера (CHEF_BILL_LIMIT), до ответа — из логики. */
+  function chefLimit(chef) { return (chef && num(chef.limit)) || logic.CHEF_LIMIT; }
+
+  /** Прогресс недели к порогу и отметка об уведомлении учредителю (ТЗ 16.10, п. 4.2). */
+  function renderChefLimit(chef) {
+    const view = chef.error ? null : logic.chefWeekView(chef.week_alert);
+    $('fo-chef-limit').hidden = !view;
+    if (!view) return;
+    setText('fo-chef-limit-value', view.progress);
+    $('fo-chef-limit-value').classList.toggle('is-over', view.reached);
+    $('fo-chef-limit-bar').classList.toggle('is-over', view.reached);
+    $('fo-chef-limit-bar').firstElementChild.style.width = view.pct + '%';
+    $('fo-chef-limit-status').hidden = view.reached;
+    $('fo-chef-notice').hidden = !view.reached;
+    if (view.reached) {
+      setText('fo-chef-notice-title', view.title);
+      setText('fo-chef-notice-status', view.status);
+    } else {
+      setText('fo-chef-limit-status', view.status);
+    }
+  }
+
   function renderChef(chef) {
     renderAlerts(chef);
     renderChefWeek(chef);
+    renderChefLimit(chef);
+    setText('fo-chef-limit-note', 'Отмечаем счета больше ' + sum(chefLimit(chef)));
     const list = $('fo-chef');
     list.replaceChildren();
     if (chef.error) { list.append(node('p', 'fo-empty', chef.error)); setText('fo-chef-title', 'Нет данных iiko'); return; }
     setText('fo-chef-title', short(num(chef.week_total)) + ' за неделю');
-    setText('fo-chef-over', chef.week_over + ' выше 400 000');
+    setText('fo-chef-over', chef.week_over + ' выше ' + sum(chefLimit(chef)));
     setText('fo-chef-month', 'За месяц: ' + short(num(chef.month_total)));
     if (!chef.week.length) list.append(node('p', 'fo-empty', 'На этой неделе счетов «Счёт Шефа» нет.'));
     // Счета выше порога — наверх: ради них учредитель и открывает блок.
@@ -732,6 +763,7 @@
 
   (async function start() {
     paintSkeleton();
+    setText('fo-chef-limit-note', 'Отмечаем счета больше ' + sum(chefLimit(null)));
     state.today = new Date().toISOString().slice(0, 10);
     try {
       const config = await globalThis.RetroConfig;

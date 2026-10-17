@@ -86,6 +86,28 @@ test('уведомления о Счёте Шефа: только выше по�
   assert.deepEqual(logic.chefAlerts(chef, '2026-09-24', '2026-09-23', ['b']).map(bill => bill.order_id), ['a']);
 });
 
+test('ТЗ 16.10, п. 4.2: прогресс недели к порогу Счёта Шефа и отметка об уведомлении', () => {
+  const week = extra => ({total: '12400000.00', limit: '30000000.00', percent: 41, reached: false,
+    recipient: true, last: null, ...extra});
+  const below = logic.chefWeekView(week());
+  assert.equal(below.progress, '12,4 млн из 30 млн');
+  assert.equal(below.pct, 41);
+  assert.equal(below.reached, false);
+  assert.equal(below.status, 'При 30 млн за неделю придёт сообщение в Telegram');
+  assert.equal(logic.chefWeekView(week({recipient: false})).status, 'Получатель уведомления не настроен');
+  const reached = logic.chefWeekView(week({total: '31250000.00', percent: 100, reached: true,
+    last: {status: 'sent', at: '2026-10-21T10:15:02.120000+05:00'}}));
+  assert.equal(reached.title, 'Порог 30 млн за неделю достигнут');
+  assert.equal(reached.progress, '31,3 млн из 30 млн');
+  assert.equal(reached.status, 'Уведомление отправлено 21.10 10:15');
+  assert.equal(logic.chefWeekView(week({reached: true, last: {status: 'failed', at: '2026-10-21T10:15:00+05:00'}})).status,
+    'Уведомление не ушло, повторим через 15 минут');
+  assert.equal(logic.chefWeekView(week({reached: true})).status, 'Уведомление уйдёт при следующей проверке');
+  assert.equal(logic.chefWeekView(week({reached: true, recipient: false, last: {status: 'no_recipient'}})).status,
+    'Получатель уведомления не настроен');
+  assert.equal(logic.chefWeekView(null), null);
+});
+
 test('короткие суммы: миллионы и миллиарды', () => {
   assert.equal(logic.short(1438528898), '1,44 млрд');
   assert.equal(logic.short(42500000), '42,5 млн');

@@ -243,8 +243,33 @@
     return chef.bills.filter(bill => bill.over && (bill.day === today || bill.day === yesterday) && !hidden.has(bill.order_id));
   }
 
+  /** «16.10 14:15» из времени сервера: оно уже по Ташкенту, со сдвигом +05:00. */
+  function stamp(iso) { return iso ? dm(iso.slice(0, 10)) + ' ' + iso.slice(11, 16) : ''; }
+
+  /** Недельный порог Счёта Шефа (ТЗ 16.10, п. 4.2): «X из 30 млн», полоса и
+   *  что стало с уведомлением учредителю. Сумму, порог и «достигнут» решает
+   *  сервер — та же сумма по меню, что «за неделю» в заголовке блока. */
+  function chefWeekView(alert) {
+    if (!alert) return null;
+    const total = num(alert.total) || 0, limit = num(alert.limit);
+    const last = alert.last;
+    let status;
+    if (!alert.recipient) status = 'Получатель уведомления не настроен';
+    else if (!alert.reached && !last) status = 'При ' + short(limit) + ' за неделю придёт сообщение в Telegram';
+    else if (last && last.status === 'sent') status = 'Уведомление отправлено ' + stamp(last.at);
+    else if (last && last.status === 'failed') status = 'Уведомление не ушло, повторим через 15 минут';
+    else status = 'Уведомление уйдёт при следующей проверке';
+    return {
+      reached: Boolean(alert.reached),
+      progress: short(total) + ' из ' + short(limit),
+      pct: Math.max(0, Math.min(100, num(alert.percent) || 0)),
+      title: 'Порог ' + short(limit) + ' за неделю достигнут',
+      status,
+    };
+  }
+
   // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
   return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
-    accountantIssues, chefAlerts};
+    accountantIssues, chefAlerts, chefWeekView};
 });

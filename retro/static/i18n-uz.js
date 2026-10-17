@@ -3805,6 +3805,23 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 /* ── /T-461 ── */
 
+/* ── T-497 Счёт Шефа: недельный порог и уведомление учредителю (ТЗ 16.10, п. 4.2) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Порог недели': "Haftalik chegara",
+  'Счёт Шефа · неделя': "Shef hisobi · hafta",
+  'Получатель уведомления не настроен': "Bildirishnoma oluvchisi sozlanmagan",
+  'Уведомление уйдёт при следующей проверке': "Bildirishnoma keyingi tekshiruvda yuboriladi",
+  'Уведомление не ушло, повторим через 15 минут': "Bildirishnoma yuborilmadi, 15 daqiqadan keyin qayta urinamiz",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^([\d\s,]+(?: млн| млрд)?) из ([\d\s,]+ (?:млн|млрд))$/, "$1 / $2"],
+  [/^Порог (.+) за неделю достигнут$/, "Haftalik $1 chegarasiga yetildi"],
+  [/^При (.+) за неделю придёт сообщение в Telegram$/, "Haftada $1 bo‘lganda Telegram’ga xabar keladi"],
+  [/^Уведомление отправлено (\d\d\.\d\d \d\d:\d\d)$/, "Bildirishnoma yuborildi: $1"],
+  [/^Отмечаем счета больше ([\d\s]+)$/, "$1 dan katta hisoblarni belgilaymiz"],
+);
+/* ── /T-497 ── */
+
 /* ── KPI официантов: вкладка «Неделя» у менеджера, карточка и настройка периода у директора ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   "Неделя": "Hafta", "Официант": "Ofitsiant", "KPI официантов": "Ofitsiantlar KPI",
