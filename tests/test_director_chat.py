@@ -38,9 +38,13 @@ def test_director_chat_uses_least_privilege_tools_and_separate_history(tmp_path)
         'get_cashier_day', 'get_accounting_day',
         # ТЗ 2.3: справочник готовых блюд — AI не советует продавать ингредиенты.
         'get_menu_catalog',
+        # ТЗ 16.10, раздел 2: выручка за обед и любую часть прошлого дня.
+        'get_sales_by_time',
     }
     assert 'get_menu_catalog' in seen['body']['system']
     assert 'не блюда' in seen['body']['system']
+    assert 'window=lunch' in seen['body']['system']
+    assert 'Текущее время ресторана в Asia/Tashkent' in seen['body']['system']
     # Ответ по спецификации: по-русски, до 120 слов, без markdown, только по данным.
     assert 'до 120 слов' in seen['body']['system']
     assert 'без markdown' in seen['body']['system']

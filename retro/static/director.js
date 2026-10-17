@@ -14,7 +14,7 @@ function previewRows() { return phone.matches ? 12 : 25; }
  *  начинается в 10:00, и в плохой день список уезжает за экран. */
 const LATE_PREVIEW = 5;
 
-const view = { snapshot: null, group: 'all', sort: 'revenue', query: '', expanded: false };
+const view = { snapshot: null, group: 'all', sort: 'revenue', query: '', price: '', expanded: false };
 
 async function request(url, options) {
   const response = await fetch(url, options);
@@ -106,8 +106,37 @@ function menuRow(row, groupTotals) {
   const last = document.createElement('td');
   last.dataset.label = 'Маржа';
   last.append(marginCell(row.margin));
-  tr.append(first, ...cells, last);
+  tr.append(first, priceCell(row), ...cells, last);
   return tr;
+}
+
+/** Средняя цена продажи (ТЗ 3.2): только у меню, у официантов цены нет. */
+function priceCell(row) {
+  const cell = text('td', 'metric-cell');
+  cell.dataset.label = 'Цена';
+  cell.append(text('span', 'metric-label', 'Цена'),
+    text('strong', 'metric-main', row.price === null ? '—' : money.format(Math.round(row.price))));
+  return cell;
+}
+
+/** Чипы ценовых диапазонов: пороги — из отчёта сервера (DIRECTOR_PRICE_TIERS). */
+function renderPrices(snapshot) {
+  const tiers = logic.priceTiers(snapshot);
+  if (view.price && !tiers.some(tier => tier.key === view.price)) view.price = '';
+  $('menu-price-row').hidden = !tiers.length;
+  $('menu-price').replaceChildren(...[{key: '', label: 'Все'}].concat(tiers).map(tier => {
+    const chip = text('button', 'chip' + (tier.key === view.price ? ' active' : ''), tier.label);
+    chip.type = 'button';
+    chip.setAttribute('aria-pressed', String(tier.key === view.price));
+    chip.addEventListener('click', () => {
+      if (view.price === tier.key) return;
+      view.price = tier.key;
+      view.expanded = false;
+      renderMenu();
+      scrollToList();
+    });
+    return chip;
+  }));
 }
 
 function detailLine(label, value) {
@@ -154,7 +183,6 @@ function renderProfitSummary(total) {
   const parts = zeroParts(total);
   $('sales-profit').textContent = total.breakdown ? sums(total.breakdown.sales.profit) : '—';
   $('internal-cost').textContent = parts ? sums(parts.reduce((sum, part) => sum + part.cost, 0)) : '—';
-  $('summary-revenue').textContent = sums(total.revenue);
   $('summary-profit').textContent = sums(total.profit);
   const details = $('internal-detail');
   details.replaceChildren();
@@ -170,21 +198,28 @@ function renderMenu() {
   if (!snapshot) return;
   const group = snapshot.item_metrics[view.group] || {};
   const groupTotals = logic.totals(group);
-  const ranked = logic.search(logic.rank(group, view.sort), view.query);
+  renderPrices(snapshot);
+  const tiers = logic.priceTiers(snapshot);
+  const ranked = logic.search(logic.rank(group, view.sort), view.query)
+    .filter(row => logic.inPriceTier(row, view.price, tiers));
   const shown = view.expanded ? ranked : ranked.slice(0, previewRows());
   const body = $('menu-rows');
   body.replaceChildren();
   shown.forEach(row => body.append(menuRow(row, groupTotals)));
   $('menu-empty').hidden = ranked.length > 0;
+  $('menu-empty-text').textContent = view.query.trim() || view.price
+    ? 'Ничего не нашли. Сбросьте поиск или фильтр цены.' : 'По этому направлению продаж за период нет';
   // Выручку считаем по тому, что сейчас в списке: при поиске итог группы
-  // рядом с двумя найденными строками только путает.
+  // рядом с двумя найденными строками только путает. Без поиска и цены сумма
+  // равна плитке над таблицей (вся выручка или направление), и её не повторяем.
+  const filtered = Boolean(view.query.trim() || view.price);
   const shownRevenue = ranked.reduce((total, row) => total + row.revenue, 0);
   const positions = logic.plural(ranked.length, 'позиция', 'позиции', 'позиций');
   $('menu-count').textContent = ranked.length
     ? (shown.length < ranked.length
-        ? 'Показано ' + shown.length + ' из ' + ranked.length + ' · '
-        : ranked.length + ' ' + positions + ' · ')
-      + 'выручка ' + sums(shownRevenue)
+        ? 'Показано ' + shown.length + ' из ' + ranked.length
+        : ranked.length + ' ' + positions)
+      + (filtered ? ' · выручка ' + sums(shownRevenue) : '')
     : '';
   const more = $('menu-more');
   more.hidden = ranked.length <= previewRows();
@@ -210,18 +245,56 @@ function renderWaiters(metrics) {
   $('waiters-empty').hidden = rows.length > 0;
 }
 
+/** Абзац «Как считается» из отдельных фраз: каждую переводчик узнаёт
+ *  целиком (словарь или шаблон с суммой), название группы iiko не трогает. */
+function noteLine(...phrases) {
+  const line = text('p');
+  phrases.forEach((phrase, index) => {
+    if (index) line.append(' ');
+    line.append(text('span', '', phrase));
+  });
+  return line;
+}
+
+/** «Как считается» под выручкой (T-501): что вошло в главную цифру и что нет.
+ *  Раньше это была подпись в три строки под цифрой; Яндекс в ней повторял
+ *  плитку рядом. Строки с нулём не показываем. */
+function renderRevenueNotes(snapshot) {
+  const lines = [
+    noteLine('Выручка складывается из продаж по меню: Retro, Retro в школе и банкет.'),
+    noteLine('Банкет считается по блюдам с меткой «БЕХРУЗ» в названии.'),
+  ];
+  const excluded = Object.entries(snapshot.excluded_revenue || {});
+  if (excluded.length) {
+    lines.push(noteLine('Исключённые группы меню в выручку не входят.',
+      ...excluded.map(([name, value]) => 'Исключена группа «' + name + '»: ' + sums(logic.amount(value)) + '.'),
+      'Продажи вместе с ними: ' + sums(logic.amount(snapshot.cash_total)) + '.'));
+  }
+  const scope = logic.amount(snapshot.scope_excluded_revenue);
+  if (scope) {
+    lines.push(noteLine('Вне банкетной выборки: ' + sums(scope) + '.',
+      'Это продажи отделения «Бехруз (Свадьба)» без метки «БЕХРУЗ» в названии блюда. В выручку они не входят, сумма нужна для сверки.'));
+  }
+  const yandexPaid = logic.amount(snapshot.yandex_revenue);
+  const yandexMenu = logic.amount(snapshot.yandex_menu_revenue);
+  if (yandexPaid || yandexMenu) {
+    lines.push(noteLine(Math.round(yandexPaid) === Math.round(yandexMenu)
+      ? 'Яндекс Еда уже входит в выручку направлений: ' + sums(yandexMenu) + '.'
+      : 'Яндекс Еда уже входит в выручку направлений: по меню ' + sums(yandexMenu) + ', по оплатам ' + sums(yandexPaid) + '.'));
+  }
+  $('revenue-notes').replaceChildren(...lines);
+  $('revenue-hint').hidden = false;
+}
+
 function renderSnapshot(snapshot) {
   view.snapshot = snapshot;
   view.expanded = false;
   const all = logic.totals(snapshot.item_metrics.all || {});
   $('report-period').textContent = logic.periodLabel(snapshot.period_start, snapshot.period_end);
-  // Пустой список исключённых групп раньше давал «исключены группы: .» — теперь
-  // эта часть появляется только когда что-то действительно исключено.
-  const excludedGroups = Object.entries(snapshot.excluded_revenue || {});
-  $('cash-note').textContent = 'Продажи до исключений меню. Меню: ' + sums(snapshot.menu_revenue ?? all.revenue)
-    + (excludedGroups.length ? '; исключены группы: ' + excludedGroups.map(([name, amount]) => name + ' ' + sums(amount)).join(', ') : '')
-    + '. Вне банкетной выборки: ' + sums(snapshot.scope_excluded_revenue || 0) + '. Яндекс: оплаты ' + sums(snapshot.yandex_revenue) + ', меню ' + sums(snapshot.yandex_menu_revenue || 0) + '.';
-  $('cash').textContent = money.format(Math.round(logic.amount(snapshot.cash_total)));
+  // Главная цифра — выручка по меню, та же, от которой считаются маржа, плитки
+  // направлений и таблица. Продажи до исключений групп — в «Как считается».
+  $('revenue').textContent = money.format(Math.round(all.revenue));
+  renderRevenueNotes(snapshot);
   // В трёх узких плитках «сум» у каждого числа не помещается и рвёт строку:
   // единица измерения стоит один раз, у главной цифры над ними.
   $('retro').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.retro || {}).revenue));
@@ -230,7 +303,6 @@ function renderSnapshot(snapshot) {
   $('yandex').textContent = money.format(Math.round(logic.amount(snapshot.yandex_revenue)));
   $('margin-percent').textContent = all.margin === null ? '—' : decimal.format(all.margin);
   $('margin-fill').style.width = Math.max(0, Math.min(100, all.margin || 0)) + '%';
-  $('gross-profit').textContent = sums(all.profit);
   $('cost-total').textContent = sums(all.cost);
   $('positions').textContent = String(all.positions);
   renderProfitSummary(all);
@@ -283,8 +355,8 @@ function skeletonLines(target, rows) {
 /** Первая загрузка: вместо «—» полосы в строке каждой цифры, в таблице и
  *  топах — строки-скелеты. Всё это заменят данные при отрисовке. */
 function paintSkeleton() {
-  ['cash', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'gross-profit', 'cost-total', 'positions',
-    'summary-revenue', 'sales-profit', 'internal-cost', 'summary-profit', 'arrived', 'late']
+  ['revenue', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'cost-total', 'positions',
+    'sales-profit', 'internal-cost', 'summary-profit', 'arrived', 'late']
     .forEach(id => $(id).replaceChildren(skel()));
   $('report-period').replaceChildren(skel());
   skeletonLines($('locomotives'), 3);
@@ -297,7 +369,7 @@ function paintSkeleton() {
     row.className = 'dr-skel-tr';
     row.setAttribute('aria-hidden', 'true');
     const cell = document.createElement('td');
-    cell.colSpan = 8;
+    cell.colSpan = 9;
     const line = text('div', 'dr-skel-row');
     line.append(skel('rm-skel'), skel('rm-skel'), skel('rm-skel'), skel('rm-skel'));
     cell.append(line);
@@ -348,8 +420,8 @@ async function loadSnapshot(refresh = false) {
     if (requestId !== snapshotRequest || error.name === 'AbortError') return false;
     stateText(error.message + (view.snapshot ? ' На экране прежний отчёт за ' + logic.periodLabel(view.snapshot.period_start, view.snapshot.period_end) + '; обновление не выполнено.' : ''), 'error');
     if (!view.snapshot) {
-      dashSkeletons(['cash', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'gross-profit', 'cost-total',
-        'positions', 'summary-revenue', 'sales-profit', 'internal-cost', 'summary-profit', 'report-period']);
+      dashSkeletons(['revenue', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'cost-total',
+        'positions', 'sales-profit', 'internal-cost', 'summary-profit', 'report-period']);
       ['locomotives', 'drains'].forEach(id => { $(id).replaceChildren(); $(id).setAttribute('aria-busy', 'false'); });
       $('menu-rows').replaceChildren();
     }
@@ -508,9 +580,23 @@ function pendingCard(label) {
   return {card, note, clock};
 }
 
+/** Сохранить отчёт можно только за период с 13.10 (граница учёта, сервер
+ *  отвечает 422): раньше этой даты цифры смотрят, кнопка выключена. */
+function savable() {
+  const chosen = period ? period.state() : null;
+  return !chosen || !chosen.start || chosen.start >= RetroPeriod.START;
+}
+
+function syncGenerate() {
+  const allowed = savable();
+  $('generate').disabled = !allowed;
+  $('generate-note').hidden = allowed;
+}
+
 function generate() {
   const button = $('generate');
   if (period && !period.valid()) { stateText('Поправьте даты периода.', 'error'); return; }
+  if (!savable()) { stateText($('generate-note').textContent, 'error'); return; }
   const chosen = period ? period.state() : null;
   const label = chosen ? logic.periodLabel(chosen.start, chosen.end) : '';
   const list = $('reports');
@@ -616,12 +702,17 @@ let period = null;
   }
   period = RetroPeriod.mount({
     host: $('period-host'), today: today, modes: ['range'], preset: '10',
+    // Отчёт на экране — живая аналитика iiko (T-486, T-495): продажи до 13.10
+    // в iiko есть, и «10 дней» — это десять дней. Граница учёта остаётся у
+    // сохранения отчёта и PDF (syncGenerate).
+    floor: null,
     // Обработчику контрол передаёт выбранный период, и он попадал в
     // аргумент «перечитать мимо кеша»: смена периода каждый раз лезла в iiko.
-    onChange: () => loadSnapshot(),
+    onChange: () => { syncGenerate(); return loadSnapshot(); },
     // Чип периода крутится, пока iiko считает новый период.
     busy: true,
   });
+  syncGenerate();
   loadSnapshot();
   loadAttendance();
   loadReports();

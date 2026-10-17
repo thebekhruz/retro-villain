@@ -195,10 +195,54 @@ def test_founder_booking_api_applies_period_and_granularity_without_directions()
 
     assert response.status_code == 200
     assert response.json()['totals'] == {
-        'bookings': 2, 'guests': 5, 'unknown_guest_bookings': 1, 'cancelled': 0}
+        'bookings': 2, 'guests': 5, 'unknown_guest_bookings': 1, 'cancelled': 0, 'all': 2}
     assert response.json()['series'][0]['values'] == {
         'bookings': 2, 'guests': 5, 'cancelled': 0}
     assert source.calls == [(date(2026, 9, 1), date(2026, 9, 8))]
+
+
+class GuestIiko:
+    def __init__(self, rows=None, error=None):
+        self.rows = rows or []
+        self.error = error
+        self.calls = []
+
+    async def load_guest_counts(self, start, end):
+        self.calls.append((start, end))
+        if self.error:
+            raise self.error
+        return self.rows
+
+
+def test_founder_guests_api_counts_retro_checks_by_period_before_accounting_start():
+    """ТЗ 16.10, п. 5.3: гости по чекам iiko рядом с бронями. Это живое
+    чтение iiko — граница учёта 13.10 к нему не относится."""
+    iiko = GuestIiko([
+        {'day': '2026-09-01', 'direction': 'retro', 'guests': 40, 'orders': 25},
+        {'day': '2026-09-01', 'direction': 'school', 'guests': 70, 'orders': 70},
+        {'day': '2026-09-07', 'direction': 'retro', 'guests': 12, 'orders': 9},
+    ])
+    app = create_app(Settings())
+    app.state.iiko = iiko
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        response = client.get('/api/founder/guests', params={
+            'start': '2026-09-01', 'end': '2026-09-08', 'granularity': 'week'})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body['totals'] == {'retro': {'guests': 52, 'checks': 34}, 'school': {'guests': 70, 'checks': 70}}
+    assert [(row['start'], row['end'], row['values']) for row in body['series']] == [
+        ('2026-09-01', '2026-09-06', {'guests': 40, 'checks': 25}),
+        ('2026-09-07', '2026-09-08', {'guests': 12, 'checks': 9})]
+    assert iiko.calls == [(date(2026, 9, 1), date(2026, 9, 8))]
+
+
+def test_founder_guests_api_reports_iiko_failure_as_unavailable():
+    app = create_app(Settings())
+    app.state.iiko = GuestIiko(error=DataError('iiko недоступен'))
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        response = client.get('/api/founder/guests?start=2026-09-01&end=2026-09-08')
+    assert response.status_code == 503
+    assert response.json()['detail'] == 'iiko недоступен'
 
 
 def test_booking_api_error_is_local_and_does_not_replace_iiko_data():

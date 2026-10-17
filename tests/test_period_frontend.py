@@ -51,3 +51,21 @@ def test_the_director_page_mounts_the_shared_period_control():
         markup = (STATIC / page).read_text(encoding='utf-8')
         assert '/static/period.js' in markup, page
         assert 'id="period-host"' in markup, page
+
+
+def test_only_the_director_report_mounts_the_period_control_without_the_floor():
+    """ПК-отчёт директора читает живую аналитику iiko (T-495): контрол
+    периода без границы 13.10, сохранение PDF — по-прежнему с 13.10.
+    Других страниц с этим контролом нет, поэтому касса и бухгалтерия
+    своё поведение не меняют."""
+    mounts = sorted(path.name for path in STATIC.glob('*.js')
+                    if 'RetroPeriod.mount' in path.read_text(encoding='utf-8'))
+    assert mounts == ['director.js']
+    pages = sorted(path.name for path in STATIC.glob('*.html')
+                   if '/static/period.js' in path.read_text(encoding='utf-8'))
+    assert pages == ['director-app.html', 'director.html']
+    script = (STATIC / 'director.js').read_text(encoding='utf-8')
+    assert 'floor: null' in script
+    assert 'chosen.start >= RetroPeriod.START' in script
+    markup = (STATIC / 'director.html').read_text(encoding='utf-8')
+    assert 'id="generate-note"' in markup and 'aria-describedby="generate-note"' in markup

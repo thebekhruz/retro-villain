@@ -87,6 +87,15 @@
 .fo-chef-row>b{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .fo-chef-row.is-over{background:#fff7f8}
 .fo-chef-row.is-over>b{color:var(--late)}
+/* Недельный порог Счёта Шефа (ТЗ 16.10, п. 4.2): полоса как в «Расходах», при
+   достижении — красная, и под ней плашка .notice с отметкой об уведомлении. */
+.fo-chef-limit{margin-top:12px}
+.fo-bars.fo-chef-limit>div{margin-top:0}
+.fo-chef-limit .fo-hint{margin-top:6px}
+.fo-chef-limit .rm-bar.is-over>span{background:var(--late)}
+.fo-chef-limit .fo-bars-line .is-over{color:var(--late);font-weight:650}
+.notice.fo-chef-notice{margin:10px 0 0}
+.notice.fo-chef-notice strong{display:block}
 .fo-bars>div{margin-top:10px}
 .fo-bars-line{display:flex;justify-content:space-between;gap:10px;font-size:12px}
 .fo-bars-line span:last-child{white-space:nowrap}
@@ -116,13 +125,22 @@
 .fo-forecast strong{font-size:11px;color:var(--ink-2)}
 .fo-forecast .is-today strong{color:var(--warn)}
 .fo-forecast small{font-size:9px;color:#9aa69b;white-space:nowrap}
-.fo-dish{display:grid;grid-template-columns:18px minmax(0,1fr) 60px 70px 40px;gap:8px;align-items:baseline;padding:8px 0;border-top:1px solid #edf1e9;margin-top:4px;font-size:12px}
+/* Узкая колонка (полпанели на 1280, телефон): «32,2 млн» и «165 чеков» переносятся
+   под себя, а не наезжают на соседний день. */
+.fo-forecast span,.fo-forecast small{white-space:normal;text-align:center;line-height:1.2;overflow-wrap:normal}
+/* Строка блюда: № · название и продано · выручка · прибыль и маржа. Шапка —
+   та же сетка, поэтому ширины колонок фиксированные, без auto. */
+.fo-dish{display:grid;grid-template-columns:18px minmax(0,1fr) 64px 72px;gap:8px;align-items:start;padding:8px 0;border-top:1px solid #edf1e9;margin-top:4px;font-size:12px}
 .fo-dish>span:first-child{color:#b6a37a;font-weight:700}
-.fo-dish>strong{font-weight:600;min-width:0;overflow-wrap:anywhere}
-.fo-dish>span:nth-child(3),.fo-dish>b,.fo-dish>small{text-align:right;font-variant-numeric:tabular-nums}
-.fo-dish>span:nth-child(3){color:var(--muted-2)}
-.fo-dish>b{font-weight:600}
-.fo-dish>small{font-size:11px}
+.fo-dish>:nth-child(n+3){text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.fo-dish small{display:block;margin-top:2px;font-size:11px;font-weight:500}
+.fo-dish-name{min-width:0}
+.fo-dish-name strong{display:block;font-weight:600;overflow-wrap:anywhere}
+.fo-dish-name small{color:var(--muted-2)}
+.fo-dish-profit b{display:block;font-weight:650}
+.fo-dish.is-head{padding:0 0 2px;border-top:0;margin-top:8px;font-size:10px;font-weight:650;color:#818c80;text-transform:uppercase;letter-spacing:.4px}
+.fo-dish.is-head>span{color:inherit;font-weight:inherit;white-space:normal}
+.fo-week-legend{margin:0;padding:10px 18px 14px;line-height:1.5}
 .fo-low-title{margin:10px 0 0;font-size:11px;font-weight:600;color:#b0663a}
 
 /* ── AI-чат справа ────────────────────────────────────────────────────── */
@@ -303,7 +321,7 @@
   .fo-row.is-head>:first-child,.fo-row.is-balance>:first-child{background:var(--head-bg)}
   .fo-row.is-check>:first-child{background:var(--panel-2)}
   .fo-chef-row{grid-template-columns:52px minmax(0,1fr) auto}
-  .fo-dish{grid-template-columns:16px minmax(0,1fr) auto auto 34px;gap:6px}
+  .fo-dish{grid-template-columns:16px minmax(0,1fr) 58px 66px;gap:6px}
   .fo-forecast{gap:4px}
   .fo-forecast span{font-size:9px}
   .fo-forecast small{white-space:normal;text-align:center;line-height:1.2}

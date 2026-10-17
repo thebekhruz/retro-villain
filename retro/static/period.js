@@ -11,7 +11,7 @@
   const MONTHS = ['января', 'февраля', 'марта', 'апреля', 'мая', 'июня',
     'июля', 'августа', 'сентября', 'октября', 'ноября', 'декабря'];
   const START = '2026-10-13';
-  const clamp = day => day < START ? START : day;
+  const clamp = (day, floor) => floor && day < floor ? floor : day;
   const ISO = /^\d{4}-\d{2}-\d{2}$/;
 
   function valid(iso) { return typeof iso === 'string' && ISO.test(iso); }
@@ -54,7 +54,7 @@
 
   function presetRange(today, preset) {
     const range = rawPresetRange(today, preset);
-    return {start: clamp(range.start), end: range.end};
+    return {start: clamp(range.start, START), end: range.end};
   }
 
   /** Тот же пресет без границы учёта — для аналитики iiko (меню директора):
@@ -99,10 +99,12 @@
   const MAX_DAYS = 62;
 
   /** Те же правила, что и на сервере: пустой ответ вместо понятного отказа
-   *  человек читает как поломку панели. */
-  function check(start, end, today) {
+   *  человек читает как поломку панели. `floor` — нижняя граница дат; без
+   *  аргумента это граница учёта, null — без границы (живая аналитика iiko). */
+  function check(start, end, today, floor) {
+    const bound = floor === undefined ? START : floor;
     if (!valid(start) || !valid(end)) return 'Выберите обе даты периода.';
-    if (start < START || end < START) return 'Учёт доступен с 13 октября 2026.';
+    if (bound && (start < bound || end < bound)) return 'Учёт доступен с 13 октября 2026.';
     if (start > end) return 'Начало периода позже его конца.';
     if (end >= today) return 'Сегодняшний день ещё не закрыт: выберите период по вчерашний день.';
     if (daysBetween(start, end) > MAX_DAYS) return 'Период длиннее ' + MAX_DAYS + ' дней iiko не отдаёт.';
@@ -126,17 +128,26 @@
   }
 
   /** Разметка контрола. Возвращает объект со state() и set(): страница
-   *  спрашивает выбор, а не хранит его у себя вторым экземпляром. */
+   *  спрашивает выбор, а не хранит его у себя вторым экземпляром.
+   *
+   *  `options.floor` — с какого дня можно выбирать. По умолчанию граница
+   *  учёта (касса, бухгалтерия); null — без границы: ПК-отчёт директора
+   *  читает живую аналитику iiko, и «30 дней» там — тридцать дней (T-495). */
   function mount(options) {
     const host = options.host;
     const today = options.today;
     const modes = options.modes || ['day', 'range'];
+    const floor = options.floor === undefined ? START : options.floor;
+    const rangeFor = (day, preset) => {
+      const range = rawPresetRange(day, preset);
+      return {start: clamp(range.start, floor), end: range.end};
+    };
     const state = {
       mode: options.mode || modes[0],
-      day: clamp(options.day || shift(today, -1)),
+      day: clamp(options.day || shift(today, -1), floor),
       start: '', end: '', preset: options.preset || '10',
     };
-    Object.assign(state, presetRange(today, state.preset));
+    Object.assign(state, rangeFor(today, state.preset));
 
     const root = node('div', 'period');
     const switcher = node('div', 'period-modes');
@@ -150,7 +161,7 @@
     const dayInput = document.createElement('input');
     dayInput.type = 'date';
     dayInput.id = options.dayInputId || 'period-day';
-    dayInput.min = START;
+    if (floor) dayInput.min = floor;
     dayInput.max = today;
     dayInput.value = state.day;
     const dayLabelNode = node('label', '', 'Дата');
@@ -164,7 +175,7 @@
     const endInput = document.createElement('input');
     for (const input of [startInput, endInput]) {
       input.type = 'date';
-      input.min = START;
+      if (floor) input.min = floor;
       input.max = shift(today, -1);
     }
     startInput.id = 'period-start';
@@ -195,6 +206,11 @@
       }
     }
 
+    function dayProblem() {
+      if (!valid(state.day) || state.day > today) return floor ? 'Выберите дату с 13 октября по сегодня.' : 'Выберите дату по сегодня.';
+      return floor && state.day < floor ? 'Выберите дату с 13 октября по сегодня.' : '';
+    }
+
     function current() {
       return state.mode === 'day'
         ? { mode: 'day', day: state.day, start: state.day, end: state.day, label: dayLabel(state.day) }
@@ -220,8 +236,7 @@
       for (const chip of presetChips.querySelectorAll('button')) {
         chip.classList.toggle('active', chip.dataset.preset === state.preset);
       }
-      const problem = range ? check(state.start, state.end, today) :
-        (!valid(state.day) || state.day < START || state.day > today ? 'Выберите дату с 13 октября по сегодня.' : '');
+      const problem = range ? check(state.start, state.end, today, floor) : dayProblem();
       status.textContent = problem || (range
         ? label(state.start, state.end) + ' · ' + daysBetween(state.start, state.end) + ' дн.'
         : dayLabel(state.day));
@@ -249,7 +264,7 @@
     if (modes.includes('day')) {
       for (let offset = 0; offset <= 6; offset++) {
         const day = shift(today, -offset);
-        if (day < START) continue;
+        if (floor && day < floor) continue;
         const chip = node('button', 'chip', offset === 0 ? 'Сегодня' : offset === 1 ? 'Вчера'
           : shortDay(day));
         chip.type = 'button';
@@ -264,7 +279,7 @@
     }
     if (modes.includes('range')) {
       for (const preset of PRESETS) {
-        if (presetRange(today, preset.code).end < START) continue;
+        if (floor && rangeFor(today, preset.code).end < floor) continue;
         const chip = node('button', 'chip', preset.name);
         chip.type = 'button';
         chip.dataset.preset = preset.code;
@@ -272,7 +287,7 @@
           if (options.busy && state.mode === 'range' && state.preset === preset.code) return;
           state.preset = preset.code;
           trigger = chip;
-          Object.assign(state, presetRange(today, preset.code));
+          Object.assign(state, rangeFor(today, preset.code));
           if (paint()) emit();
         });
         presetChips.append(chip);
@@ -300,7 +315,7 @@
     return {
       element: root,
       state: current,
-      valid: () => state.mode === 'day' ? valid(state.day) && state.day >= START && state.day <= today : !check(state.start, state.end, today),
+      valid: () => state.mode === 'day' ? !dayProblem() : !check(state.start, state.end, today, floor),
       note: text => { status.textContent = text; status.classList.remove('is-error'); },
       set: next => {
         Object.assign(state, next);

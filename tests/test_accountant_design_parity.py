@@ -614,7 +614,7 @@ def test_founder_sees_transfers_as_procurement_spending(tmp_path):
         spending = c.get('/api/founder/spending', params={'date': DAY.isoformat()}).json()['expenses']
         categories = {item['label']: item['amount'] for item in spending['categories']}
         assert categories['Закуп · перечисления'] == '1850000.00'
-        assert categories['Закуп · напрямую'] == '300000.00'
+        assert categories['Закуп · уголь'] == '300000.00'  # прямой закуп — по статье журнала
         assert spending['total'] == '2150000.00'
         # Выплата оклада — один раз, как «Зарплаты · оклады».
         person = c.app.state.accountant_roster.add_monthly(name='Азиз', role='менеджер', salary='8000000')

@@ -36,8 +36,8 @@ test('шаблоны со своим порядком слов и неразры
 
 test('советы директора переводятся, название блюда остаётся как в iiko', () => {
   assert.equal(
-    translate('«Сет Ретро на 5-6 чел.» хорошо продаётся, но маржа 35% — не ставьте его в акции.'),
-    "«Сет Ретро на 5-6 чел.» yaxshi sotilmoqda, lekin marjasi 35% — uni aksiyaga qo'ymang.");
+    translate('«Сет Ретро на 5-6 чел.» хорошо продаётся, но маржа низкая — не ставьте его в акции.'),
+    "«Сет Ретро на 5-6 чел.» yaxshi sotilmoqda, lekin marjasi past — uni aksiyaga qo'ymang.");
 });
 
 test('вход и отказы сервера переводятся целиком', () => {
@@ -118,4 +118,66 @@ test('T-428: shift and payout dates remain distinct in Uzbek labels', () => {
   assert.equal(translate('Али · Смена 09.10 · выплата 10.10 · выдано 150000 сум'),
     'Али · Smena 09.10 · to‘lov 10.10 · 150000 so‘m berildi');
   assert.equal(translate('Доп. выплаты за смены · октябрь'), 'Smenalar uchun qo‘shimcha to‘lovlar · oktabr');
+});
+
+test('советы дня директора и их основание переводятся целиком (T-489)', () => {
+  assert.equal(translate('Продвигайте «Кебаб»: на нём Retro зарабатывает больше всего.'),
+    "«Кебаб»ni targ'ib qiling: Retro undan eng ko'p ishlaydi.");
+  assert.equal(translate('Основание: маржа 67%, 40 шт и 3 млн сум · 9 — 15 октября 2026'),
+    "Asos: marja 67%, 40 dona va 3 mln so'm · 9 — 15 oktabr 2026");
+  assert.equal(translate('Основание: 2 шт · 9 — 15 октября 2026'), 'Asos: 2 dona · 9 — 15 oktabr 2026');
+});
+
+test('T-494: прогноз, блюда и закуп учредителя — по-узбекски', () => {
+  assert.equal(translate('Среднее за 7–8 недель по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.'),
+    "Retro va Oxbridge kassalari bo'yicha 7–8 haftalik o'rtacha, banket zalisiz. Bugun ajratib ko'rsatilgan.");
+  assert.equal(translate('10.10–16.10 · по прибыли: выручка минус себестоимость iiko'),
+    "10.10–16.10 · foyda bo'yicha: tushumdan iiko tannarxi ayrilgan");
+  assert.equal(translate('Закуп · уголь'), "Xarid · ko'mir");
+  assert.equal(translate('Переводы (Oxbridge, блогеры)'), "O'tkazmalar (Oxbridge, blogerlar)");
+  assert.equal(translate('Покупки с телефона · '), 'Telefondan xaridlar · ');
+});
+
+test('T-497: недельный порог Счёта Шефа и уведомление учредителю', () => {
+  assert.equal(translate('Порог недели'), 'Haftalik chegara');
+  assert.equal(translate('12,4 млн из 30 млн'), '12,4 mln / 30 mln');
+  assert.equal(translate('950\u00a0000 из 30 млн'), '950\u00a0000 / 30 mln');
+  assert.equal(translate('Порог 30 млн за неделю достигнут'), 'Haftalik 30 mln chegarasiga yetildi');
+  assert.equal(translate('При 30 млн за неделю придёт сообщение в Telegram'),
+    'Haftada 30 mln bo‘lganda Telegram’ga xabar keladi');
+  assert.equal(translate('Уведомление отправлено 21.10 10:15'), 'Bildirishnoma yuborildi: 21.10 10:15');
+  assert.equal(translate('Отмечаем счета больше 400\u00a0000'), '400\u00a0000 dan katta hisoblarni belgilaymiz');
+  assert.equal(translate('3 выше 400\u00a0000'), '400\u00a0000 dan yuqori: 3');
+  assert.equal(translate('Получатель уведомления не настроен'), 'Bildirishnoma oluvchisi sozlanmagan');
+});
+
+test('T-496: аналитика учредителя — столбцы, брони, источники и повтор рассылки по-узбекски', () => {
+  assert.equal(translate('Неполная неделя: 3 дня из 7'), "To'liq bo'lmagan hafta: 7 kundan 3 kun");
+  assert.equal(translate('За 90 дней столбцы собраны по неделям.'), "90 kun uchun ustunlar haftalar bo'yicha yig'ilgan.");
+  assert.equal(translate('Retro в школе: 1 200 сум'), "Maktabdagi Retro: 1 200 so'm");
+  assert.equal(translate('в том числе Яндекс Еда'), 'shu jumladan Яндекс Еда');
+  assert.equal(translate('Гости по чекам iiko'), "iiko cheklari bo'yicha mehmonlar");
+  assert.equal(translate('12 заявок'), '12 ta ariza');
+  assert.equal(translate('Telegram с сайта · первый экран'), 'Saytdan Telegram · birinchi ekran');
+  assert.equal(translate('Telegram · метка «flyer_oct»'), 'Telegram · «flyer_oct» belgisi');
+  assert.equal(translate('Этот текст уже отправлен этим получателям 12 минут назад.'),
+    'Bu matn shu oluvchilarga 12 daqiqa oldin yuborilgan.');
+  assert.equal(translate('Отправить ещё раз'), 'Yana yuborish');
+});
+
+test('T-501: «Как считается» и заметки ПК-отчёта директора — по-узбекски, суммы и названия iiko не трогаем', () => {
+  assert.equal(translate('Как считается'), 'Qanday hisoblanadi');
+  assert.equal(translate('Вне банкетной выборки: 52 001 082 сум.'),
+    "Banket tanlanmasidan tashqari: 52 001 082 so'm.");
+  assert.equal(translate('Яндекс Еда уже входит в выручку направлений: 19 031 000 сум.'),
+    "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: 19 031 000 so'm.");
+  assert.equal(translate('Яндекс Еда уже входит в выручку направлений: по меню 15 000 сум, по оплатам 19 000 сум.'),
+    "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: menyu bo'yicha 15 000 so'm, to'lovlar bo'yicha 19 000 so'm.");
+  assert.equal(translate('Исключена группа «ДОСТАВКА ЯНДЕКС»: 3 450 000 сум.'),
+    "«ДОСТАВКА ЯНДЕКС» guruhi chiqarib tashlangan: 3 450 000 so'm.");
+  assert.equal(translate('Продажи вместе с ними: 603 328 318 сум.'), "Ular bilan birga savdo: 603 328 318 so'm.");
+  assert.equal(translate('Только позиции от 0,5 % выручки за период.'),
+    'Faqat davr tushumining kamida 0,5 % ini bergan pozitsiyalar.');
+  assert.equal(translate('Прибыль итоговая к выручке, после расхода без выручки'),
+    'Yakuniy foydaning tushumga nisbati, tushumsiz xarajatdan keyin');
 });

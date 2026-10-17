@@ -10,11 +10,12 @@ from pydantic import BaseModel, Field
 
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.accountant.roster import GROUPS, UNASSIGNED_GROUP, group_for
 from retro.modules.director.models import resolve_period
 from retro.modules.director.tools import DirectorChatTools
+from retro.modules.menu.catalog import NOT_READY, MenuCatalog
 
 router = APIRouter(prefix='/api/director', tags=['director'])
 
@@ -103,6 +104,16 @@ async def today(request: Request, refresh: bool = False):
         raise HTTPException(503, str(error)) from None
 
 
+def with_not_menu(state, data):
+    """Позиции продаж, которые не блюда меню (ингредиенты, компоненты сетов,
+    услуги): советы дня и срезы меню их не показывают (ТЗ 2.3). Непроверенные
+    (нет в номенклатуре) не помечаем — пустой справочник ничего не прячет."""
+    catalog = MenuCatalog.from_store(state.menu_store)
+    names = (data.get('item_metrics') or {}).get('all', {})
+    return dict(data, item_classes={name: item_class for name, item_class in catalog.exceptions(names).items()
+                                    if item_class in NOT_READY})
+
+
 @router.get('/report')
 async def report_for_period(request: Request, start: date | None = None, end: date | None = None,
                             days: int | None = None, refresh: bool = False):
@@ -116,7 +127,9 @@ async def report_for_period(request: Request, start: date | None = None, end: da
         snapshot = await load_iiko(request.app.state, 'load_director_report', today_tashkent(),
                                    start=start, end=end, refresh=refresh, request=request,
                                    timeout=150, ttl=CLOSED_PERIOD_TTL, stale=CLOSED_PERIOD_STALE)
-        return snapshot.json()
+        data = await asyncio.to_thread(with_not_menu, request.app.state, snapshot.json())
+        # Пороги ценовых диапазонов меню (ТЗ 3.2) — из настроек, вместе с отчётом.
+        return dict(data, price_tiers=list(request.app.state.settings.director_price_tiers))
     except TimeoutError:
         raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
     except DataError as error:
@@ -184,7 +197,8 @@ async def chat(request: Request, body: ChatInput):
     try:
         answer = await asyncio.wait_for(request.app.state.claude.chat(
             messages, tools=chat_tools.definitions, tool_handler=chat_tools.execute,
-            current_date=today_tashkent().isoformat(), audience='director'), timeout=180)
+            current_date=today_tashkent().isoformat(), current_time=datetime.now(TZ).strftime('%H:%M'),
+            audience='director'), timeout=180)
     except TimeoutError as error:
         log_safe_failure('director-chat', error, operation='answer',
                          request_id=request.state.request_id)

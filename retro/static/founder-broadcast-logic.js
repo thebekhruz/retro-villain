@@ -26,5 +26,38 @@
     if(job.status==='interrupted')return 'Рассылка была прервана перезапуском сервиса. Повтор автоматически не выполнялся.';
     return 'Рассылка завершилась с ошибкой.';
   }
-  root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,isTerminal:status=>terminal.has(status)};
+  /** Отпечаток черновика: тот же текст тем же получателям — тот же ключ.
+   *  Пока ключ не изменился, повтор «Отправить» идёт с прежним operation_id,
+   *  и бот не отправит сообщение второй раз. Сам текст в ключ не кладём. */
+  function draftKey(text,ids){
+    const value=String(text||'').trim()+'\n'+[...new Set(ids||[])].sort().join(',');
+    let hash=0x811c9dc5;
+    for(let index=0;index<value.length;index+=1){hash^=value.charCodeAt(index);hash=Math.imul(hash,0x01000193)}
+    return (hash>>>0).toString(16).padStart(8,'0')+'-'+value.length;
+  }
+  function plural(count,one,few,many){
+    const tens=count%100,units=count%10;
+    if(units===1&&tens!==11)return one;
+    if(units>=2&&units<=4&&(tens<12||tens>14))return few;
+    return many;
+  }
+  function agoText(milliseconds){
+    const minutes=Math.max(0,Math.floor(milliseconds/60000));
+    if(minutes<1)return 'только что';
+    if(minutes<60)return `${minutes} ${plural(minutes,'минуту','минуты','минут')} назад`;
+    const hours=Math.floor(minutes/60);
+    if(hours<24)return `${hours} ${plural(hours,'час','часа','часов')} назад`;
+    const days=Math.floor(hours/24);
+    return `${days} ${plural(days,'день','дня','дней')} назад`;
+  }
+  function repeatWarning(sentAt,now){return `Этот текст уже отправлен этим получателям ${agoText(now-sentAt)}.`}
+  /** Журнал отправленного в этом браузере: ключ → когда ушло. Неделя, не дольше. */
+  function rememberSent(history,key,at,keep=7*864e5){
+    const next={};
+    Object.entries(history||{}).forEach(([item,value])=>{if(Number(value?.at)>at-keep)next[item]=value});
+    next[key]={at};
+    return next;
+  }
+  root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,draftKey,agoText,repeatWarning,
+    rememberSent,isTerminal:status=>terminal.has(status)};
 })(typeof globalThis==='undefined'?window:globalThis);

@@ -49,10 +49,12 @@ PALE_GOLD = colors.HexColor('#FBF5E9')
 LINE = colors.HexColor('#DDE5DE')
 WHITE = colors.white
 
+# Названия направлений — как на экране отчёта и у учредителя (T-501): школа
+# везде «Retro в школе», без «Oxbridge» в одном месте и «Школы» в другом.
 DIRECTION_LABELS = {
     'all': 'Все направления',
     'retro': 'Retro',
-    'oxbridge': 'Oxbridge',
+    'oxbridge': 'Retro в школе',
     'banquet': 'Банкет',
     'yandex': 'Яндекс',
 }
@@ -169,6 +171,17 @@ def _period(snapshot):
     return f'{start} - {end}'
 
 
+def _menu_revenue(snapshot):
+    """Выручка по меню — та же главная цифра, что на экране отчёта. У старых
+    сохранённых отчётов поля menu_revenue нет: тогда сумма блюд «Все», а без
+    неё — продажи целиком, как PDF печатал раньше."""
+    if snapshot.get('menu_revenue') is not None:
+        return snapshot['menu_revenue']
+    if 'all' in snapshot.get('item_metrics', {}):
+        return _group_revenue(snapshot, 'all')
+    return snapshot.get('cash_total', 0)
+
+
 def _group_revenue(snapshot, name):
     values = snapshot.get('item_metrics', {}).get(name, {}).values()
     total = Decimal(0)
@@ -180,24 +193,32 @@ def _group_revenue(snapshot, name):
     return total
 
 
-def _page(canvas, document):
-    canvas.saveState()
-    width, _ = A4
-    canvas.setStrokeColor(LINE)
-    canvas.line(document.leftMargin, 15 * mm, width - document.rightMargin, 15 * mm)
-    canvas.setFont('RetroSans', 7.5)
-    canvas.setFillColor(MUTED)
-    canvas.drawString(document.leftMargin, 10 * mm, 'Retro Milliy - отчёт директора')
-    canvas.drawRightString(width - document.rightMargin, 10 * mm, f'Страница {document.page}')
-    canvas.restoreState()
+def _footer(snapshot):
+    """Футер страницы. Версия расчёта нужна только для сверки с другим
+    отчётом, поэтому стоит здесь мелко, а не абзацем под показателями."""
+    version = f'Версия расчёта {snapshot.get("calculation_version") or "историческая"}'
+
+    def draw(canvas, document):
+        canvas.saveState()
+        width, _ = A4
+        canvas.setStrokeColor(LINE)
+        canvas.line(document.leftMargin, 15 * mm, width - document.rightMargin, 15 * mm)
+        canvas.setFont('RetroSans', 7.5)
+        canvas.setFillColor(MUTED)
+        canvas.drawString(document.leftMargin, 10 * mm, 'Retro Milliy - отчёт директора')
+        canvas.drawRightString(width - document.rightMargin, 10 * mm, f'Страница {document.page}')
+        canvas.setFont('RetroSans', 6.5)
+        canvas.drawCentredString(width / 2, 10 * mm, version)
+        canvas.restoreState()
+    return draw
 
 
 def _metric_table(snapshot, styles):
     metrics = [
-        ('Продажи', snapshot.get('cash_total', 0)),
-        ('Retro · меню', _group_revenue(snapshot, 'retro')),
-        ('Школа · меню', _group_revenue(snapshot, 'oxbridge')),
-        ('Банкет · меню', _group_revenue(snapshot, 'banquet')),
+        ('Выручка', _menu_revenue(snapshot)),
+        ('Retro', _group_revenue(snapshot, 'retro')),
+        (DIRECTION_LABELS['oxbridge'], _group_revenue(snapshot, 'oxbridge')),
+        ('Банкет', _group_revenue(snapshot, 'banquet')),
         ('Яндекс · оплаты', snapshot.get('yandex_revenue', 0)),
     ]
     cells = []
@@ -218,6 +239,18 @@ def _metric_table(snapshot, styles):
         ('BOTTOMPADDING', (0, 0), (-1, -1), 3 * mm),
     ]))
     return table
+
+
+def _excluded_note(snapshot, styles):
+    """Строка под показателями — только когда группы меню исключены: тогда
+    выручка меньше продаж, и это надо видеть. Точные суммы, Яндекс и
+    «вне банкетной выборки» прежним абзацем повторяли таблицу (T-501)."""
+    excluded = snapshot.get('excluded_revenue') or {}
+    if not excluded:
+        return []
+    groups = ', '.join(f'{name} {_number(value, suffix=" сум")}' for name, value in excluded.items())
+    return [Spacer(1, 2 * mm),
+            Paragraph(_text(f'Не вошли в выручку исключённые группы меню: {groups}.'), styles['subtitle'])]
 
 
 def _problem_block(index, problem, styles):
@@ -252,7 +285,7 @@ def _waiter_table(waiters, styles):
     rows = [[
         Paragraph('Официант', styles['table_header']),
         Paragraph('Выручка', styles['table_header']),
-        Paragraph('Валовая прибыль', styles['table_header']),
+        Paragraph('Прибыль', styles['table_header']),
         Paragraph('Маржа', styles['table_header']),
     ]]
     ordered = sorted(waiters.items(), key=lambda item: Decimal(str(item[1].get('revenue', 0))),
@@ -302,17 +335,11 @@ def render_report_pdf(snapshot, analysis):
         Paragraph('Retro Milliy', styles['title']),
         Paragraph(f'Отчёт директора   •   {_period(snapshot)}', styles['subtitle']),
         Spacer(1, 6 * mm),
-        Paragraph('Выручка по направлениям, сум', styles['subtitle']),
+        Paragraph('Выручка по меню и направлениям, сум', styles['subtitle']),
         Spacer(1, 2 * mm),
         _metric_table(snapshot, styles),
-        Paragraph(_text('Карточки округлены. Точные суммы, сум: продажи ' + str(snapshot.get('cash_total', '—'))
-                  + '; меню после исключений ' + str(snapshot.get('menu_revenue', '—'))
-                  + '; оплаты Яндекс ' + str(snapshot.get('yandex_revenue', '—'))
-                  + '. Исключены из меню: ' + ', '.join(f'{key}: {value}' for key, value in snapshot.get('excluded_revenue', {}).items())
-                  + '. Вне банкетной выборки: ' + str(snapshot.get('scope_excluded_revenue', '—'))
-                  + '. Банкет — только блюда с меткой «БЕХРУЗ». Версия расчёта: '
-                  + str(snapshot.get('calculation_version', 'историческая'))), styles['subtitle']),
-        Paragraph('Вывод Claude', styles['section']),
+        *_excluded_note(snapshot, styles),
+        Paragraph('Вывод', styles['section']),
         Paragraph(_text(analysis.get('summary', 'Вывод не сформирован.')), styles['body']),
     ]
     problems = analysis.get('problems', [])
@@ -325,9 +352,11 @@ def render_report_pdf(snapshot, analysis):
         story.extend([
             PageBreak(),
             Paragraph('Официанты', styles['section']),
-            Paragraph('Выручка и валовая прибыль за тот же период.', styles['subtitle']),
+            Paragraph('Выручка, прибыль и маржа за тот же период. Расход без выручки уже вычтен.',
+                      styles['subtitle']),
             Spacer(1, 3 * mm),
             _waiter_table(waiters, styles),
         ])
-    document.build(story, onFirstPage=_page, onLaterPages=_page)
+    footer = _footer(snapshot)
+    document.build(story, onFirstPage=footer, onLaterPages=footer)
     return stream.getvalue()

@@ -108,7 +108,6 @@ globalThis.RetroDictionaryUz = {
   'Hikvision: работает': "Hikvision: ishlayapti",
   'Retro Milliy, главная': "Retro Milliy, asosiy sahifa",
   'Retro в школе': "Maktabdagi Retro",
-  'Retro, школа и банкетный зал — отдельно и без двойного учёта.': "Retro, maktab va banket zali — alohida, ikki marta hisoblanmaydi.",
   'TELEGRAM · БРОНИРОВАНИЯ': "TELEGRAM · BRONLAR",
   'iiko настроен': "iiko sozlangan",
   'iiko не вернул официантов за период': "iiko davr uchun ofitsiantlarni qaytarmadi",
@@ -122,7 +121,6 @@ globalThis.RetroDictionaryUz = {
   '· сумма ставок сотрудников из файла «ЗП»': "· «ЗП» faylidagi xodimlar stavkalari summasi",
   'АРХИВ': "ARXIV",
   'Авто': "Avto",
-  'Агрегаты по дате визита. Фильтр направлений на этот блок не влияет.': "Tashrif sanasi bo'yicha jamlanma. Yo'nalish filtri bu blokka ta'sir qilmaydi.",
   'Административный персонал': "Boshqaruv xodimlari",
   'Банкет': "Banket",
   'Банкет — по метке «БЕХРУЗ» в блюде': "Banket — taomdagi «БЕХРУЗ» belgisi bo'yicha",
@@ -140,7 +138,6 @@ globalThis.RetroDictionaryUz = {
   'В демонстрационном режиме поступления не сохраняются.': "Demo rejimda kirimlar saqlanmaydi.",
   'В демонстрационном режиме расходы не сохраняются.': "Demo rejimda xarajatlar saqlanmaydi.",
   'В кассу': "Kassaga",
-  'ВЫРУЧКА И ОПЛАТЫ': "TUSHUM VA TO'LOVLAR",
   'Валовая прибыль': "Yalpi foyda",
   'Валовая прибыль к выручке за период': "Davr tushumiga nisbatan yalpi foyda",
   'Введите логин и пароль своей панели.': "Panelingizning login va parolini kiriting.",
@@ -181,9 +178,7 @@ globalThis.RetroDictionaryUz = {
   'Выручка по типам оплаты': "To'lov turlari bo'yicha tushum",
   'Гости': "Mehmonlar",
   'Готов помочь с вопросами': "Savollarga yordam berishga tayyor",
-  'График выручки': "Tushum grafigi",
   'Группа': "Guruh",
-  'ДАННЫЕ ГРАФИКОВ': "GRAFIK MA'LUMOTLARI",
   'ДЕНЬГИ НА РАСХОДЫ': "XARAJATLAR UCHUN PUL",
   'ДИНАМИКА': "DINAMIKA",
   'Данные Hikvision устарели; отсутствие входа не считается прогулом.': "Hikvision ma'lumotlari eskirgan; kirish yozuvi yo'qligi ishga kelmaslik deb hisoblanmaydi.",
@@ -313,7 +308,6 @@ globalThis.RetroDictionaryUz = {
   'На выбранную дату укажите подтверждённый остаток на начало учёта. Старые записи кассы не войдут в новый расчёт. Далее остаток переносится автоматически.': "Tanlangan sanaga hisob boshidagi tasdiqlangan qoldiqni kiriting. Kassaning eski yozuvlari yangi hisobga kirmaydi. Keyin qoldiq avtomatik o'tadi.",
   'На начало дня': "Kun boshida",
   'На что потрачено': "Nimaga sarflandi",
-  'Наведите или коснитесь графика, чтобы увидеть суммы': "Summalarni ko'rish uchun grafikka bosing yoki ustiga olib boring",
   'Названия блюд читаются автоматически; позиции с меткой «БЕХРУЗ» учитываются как банкетный зал.': "Taom nomlari avtomatik o'qiladi; «БЕХРУЗ» belgisi bor pozitsiyalar banket zali deb hisoblanadi.",
   'Наименование': "Nomi",
   'Напишите вопрос…': "Savolingizni yozing…",
@@ -413,7 +407,6 @@ globalThis.RetroDictionaryUz = {
   'Отмена': "Bekor qilish",
   'Отмены': "Bekor qilinganlar",
   'Отправить сообщение': "Xabar yuborish",
-  'Отправленные заявки': "Yuborilgan arizalar",
   'Отчёт за': "Hisobot:",
   'Отчёт скачан за': "Hisobot yuklandi:",
   'Отчёт сохранён в архиве': "Hisobot arxivga saqlandi",
@@ -459,7 +452,6 @@ globalThis.RetroDictionaryUz = {
   'Поиск по названию': "Nomi bo'yicha izlash",
   'Показано': "Ko'rsatildi",
   'Показатели дня': "Kun ko'rsatkichlari",
-  'Показатели по периодам': "Davrlar bo'yicha ko'rsatkichlar",
   'Показать': "Ko'rsatish",
   'Показать все позиции': "Barchasini ko'rsatish",
   'Показать или скрыть опоздавших': "Kechikkanlarni ko'rsatish yoki yashirish",
@@ -569,7 +561,6 @@ globalThis.RetroDictionaryUz = {
   'Удалить приход за этот день?': "Bu kundagi kirim o'chirilsinmi?",
   'Удалить сотрудника': "Xodimni o'chirish",
   'Удалить эту финансовую операцию?': "Bu moliyaviy amal o'chirilsinmi?",
-  'Указанные гости': "Ko'rsatilgan mehmonlar",
   'Уменьшает деньги на расходы; увеличивает резерв дивидендов.': "Xarajat pulini kamaytiradi; dividend zaxirasini oshiradi.",
   'Уменьшает подотчёт Шоха по подтверждённой накладной. Деньги повторно не списываются.': "Tasdiqlangan hujjat bo'yicha Shoh avansini kamaytiradi. Pul qayta yechilmaydi.",
   'Уменьшает только реальные USD, не сумовую кассу.': "Faqat haqiqiy USD miqdorini kamaytiradi, so'm kassasini emas.",
@@ -654,9 +645,7 @@ globalThis.RetroDictionaryUz = {
   'пятница': "juma",
   'суббота': "shanba",
   'воскресенье': "yakshanba",
-  'TELEGRAM · РАССЫЛКА': "TELEGRAM · TARQATMA",
   'Сообщение гостям': "Mehmonlarga xabar",
-  'Только тем, кто оформлял заявку через booking-бота и не отписался. Instagram-only заявки ManyChat сюда не входят.': "Faqat booking-bot orqali ariza qoldirgan va obunadan chiqmagan mehmonlarga. Faqat Instagram orqali kelgan ManyChat arizalari kirmaydi.",
   'получателей': "qabul qiluvchi",
   'профилей всего': "jami profil",
   'Текст сообщения': "Xabar matni",
@@ -940,19 +929,16 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Другие операции': "Boshqa operatsiyalar",
   'требуют проверки': "tekshirish kerak",
   'требует проверки': "tekshirish kerak",
-  'Продажи с зачётом авансов': "Avanslar bilan savdo summasi",
   'сум · выбранные направления': "so'm · tanlangan yo'nalishlar",
   'Разбивка по способам оплаты': "To'lov usullari bo'yicha tafsilotlar",
   'Способ оплаты': "To'lov usuli",
   'Всего продаж': "Jami savdo",
-  'сум продаж · включая зачёт авансов': "so'm savdo · avanslar bilan",
   'Прибыль после записанных расходов': "Kiritilgan xarajatlardan keyingi foyda",
   'сум · весь ресторан, включая школу': "so'm · butun restoran, maktab bilan",
   'Чем оплачены продажи': "Savdo qanday to'langan",
   'Учтены только сохранённые расходы кассы и бухгалтерии. Расходы из внешних таблиц автоматически не импортируются.': "Faqat saqlangan kassa va buxgalteriya xarajatlari hisobga olingan. Tashqi jadvallardan xarajatlar avtomatik olinmaydi.",
   'Включая ранее внесённые авансы. Это распределение продаж, а не поступления денег за смену.': "Oldin kiritilgan avanslar bilan. Bu savdo taqsimoti, smenadagi pul kirimi emas.",
   'Поступления за смену и наличные к передаче → Кассир': "Smena kirimi va topshiriladigan naqd pul → Kassir",
-  'Это продажи по датам заказа. Новые авансы за будущие заказы не добавляются.': "Savdo buyurtma sanasi bo'yicha. Kelajak buyurtmalari uchun yangi avanslar qo'shilmaydi.",
   // ── Телефон директора и кабинет учредителя (T-377) ──
   'Салом, директор': "Salom, direktor",
   'AI · ЧТО СДЕЛАТЬ СЕГОДНЯ': "AI · BUGUN NIMA QILISH KERAK",
@@ -1297,6 +1283,11 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "ЗАКУП ЗАВЕРШЁН": "XARID YAKUNLANDI",
   "Записано!": "Yozildi!",
   "Записать три покупки": "Uchta xaridni yozish",
+  "Сортировать:": "Saralash:",
+  "кол-во": "soni",
+  "Все категории": "Barcha toifalar",
+  "Категория меню": "Menyu toifasi",
+  "Тренд к 30 дням недоступен — советы только по неделе.": "30 kunlik trend mavjud emas — maslahatlar faqat hafta bo'yicha.",
   "Расходы кассы и бухгалтерии ведутся с 13.10.2026: прибыль после записанных расходов считается для периодов с этой даты.": "Kassa va buxgalteriya xarajatlari 13.10.2026 dan yuritiladi: yozilgan xarajatlardan keyingi foyda shu sanadan boshlangan davrlar uchun hisoblanadi.",
   "Каждую покупку с фото": "Har bir xaridni foto bilan",
   "Меньше": "Kamroq",
@@ -1350,7 +1341,6 @@ Object.assign(globalThis.RetroDictionaryUz, {
   "сум себестоимости": "so'm tannarx",
   "Чистая прибыль iiko": "iiko sof foydasi",
   "API бронирований ещё не настроен.": "Bron API hali sozlanmagan.",
-  "Прибыль не равна остатку наличных к передаче. P&L повторяет бухгалтерский отчёт iiko «Прибыли и убытки» за выбранные даты. Фильтр направлений применяется только к выручке выше.": "Foyda topshiriladigan naqd qoldiqqa teng emas. P&L tanlangan sanalar bo'yicha iiko'ning «Foyda va zararlar» buxgalteriya hisobotini takrorlaydi. Yo'nalishlar filtri faqat yuqoridagi tushumga qo'llanadi.",
   "Прибыль после записанных расходов = чистая прибыль iiko − расходы кассы − расходы бухгалтерии. Дегустация и Счёт Шефа показаны для контроля и повторно из прибыли не вычитаются.": "Yozilgan xarajatlardan keyingi foyda = iiko sof foydasi − kassa xarajatlari − buxgalteriya xarajatlari. Degustatsiya va Shef hisobi nazorat uchun ko'rsatilgan va foydadan qayta ayirilmaydi.",
 });
 
@@ -1383,9 +1373,19 @@ globalThis.RetroTemplatesUz = [
   [/^Сумма в (.+) раз больше ставки\. Нажмите Enter ещё раз, чтобы записать\.$/, "Summa stavkadan $1 baravar ko‘p. Yozish uchun Enter’ni yana bosing."],
   [/^Сумма в (.+) раз больше ставки\. Не записано — проверьте и введите ещё раз\.$/, "Summa stavkadan $1 baravar ko‘p. Yozilmadi — tekshiring va qayta kiriting."],
   [/^(\d+) (?:покупка требует|покупки требуют|покупок требуют) проверки$/, "$1 ta xarid tekshiruvni talab qiladi"],
-  [/^Сегодня (\S+): продвигайте «(.+)» — маржа (\d+)%, на нём Retro зарабатывает больше всего\.$/, "Bugun $1: «$2»ni targ'ib qiling — marja $3%, Retro undan eng ko'p ishlaydi."],
-  [/^«(.+)» хорошо продаётся, но маржа (\d+)% — не ставьте его в акции\.$/, "«$1» yaxshi sotilmoqda, lekin marjasi $2% — uni aksiyaga qo'ymang."],
-  [/^«(.+)» почти не заказывают: (\d+) шт за неделю\. Подумайте, убрать ли из меню\.$/, "«$1» deyarli buyurtma qilinmaydi: haftada $2 dona. Menyudan olib tashlashni o'ylab ko'ring."],
+  [/^Сегодня (\S+): по \S+ Retro продаёт больше обычного дня — держите полную смену и запасы\.$/, "Bugun $1: shu kunlari Retro odatdagidan ko'proq sotadi — to'liq smena va zaxirani tayyorlang."],
+  [/^Сегодня (\S+): по \S+ Retro продаёт меньше обычного дня — хороший день для акции\.$/, "Bugun $1: shu kunlari Retro odatdagidan kamroq sotadi — aksiya uchun yaxshi kun."],
+  [/^Продвигайте «(.+)»: на нём Retro зарабатывает больше всего\.$/, "«$1»ni targ'ib qiling: Retro undan eng ko'p ishlaydi."],
+  [/^«(.+)» просел — проверьте наличие, качество и стоп-лист\.$/, "«$1» savdosi tushdi — mavjudligi, sifati va stop-listni tekshiring."],
+  [/^«(.+)» хорошо продаётся, но маржа низкая — не ставьте его в акции\.$/, "«$1» yaxshi sotilmoqda, lekin marjasi past — uni aksiyaga qo'ymang."],
+  [/^«(.+)» почти не заказывают\. Подумайте, убрать ли из меню\.$/, "«$1» deyarli buyurtma qilinmaydi. Menyudan olib tashlashni o'ylab ko'ring."],
+  [/^Основание: маржа (\d+)%, (.+) шт и (.+) сум; последние 3 дня ([+−]\d+%) к среднему за 30 · (.+)$/, "Asos: marja $1%, $2 dona va $3 so'm; so'nggi 3 kun 30 kunlik o'rtachaga nisbatan $4 · $5"],
+  [/^Основание: маржа (\d+)%, (.+) шт и (.+) сум · (.+)$/, "Asos: marja $1%, $2 dona va $3 so'm · $4"],
+  [/^Основание: последние 3 дня ([+−]\d+%) к среднему за 30; (.+) шт за 7 дней · (.+)$/, "Asos: so'nggi 3 kun 30 kunlik o'rtachaga nisbatan $1; 7 kunda $2 dona · $3"],
+  [/^Основание: маржа (\d+)%, выручка (.+) сум · (.+)$/, "Asos: marja $1%, tushum $2 so'm · $3"],
+  [/^Основание: выручка Retro ([+−]\d+%) к среднему дню, (\d+) таких дня · (.+)$/, "Asos: Retro tushumi o'rtacha kunga nisbatan $1, shunday kunlar: $2 · $3"],
+  [/^Основание: (.+) шт · (.+)$/, "Asos: $1 dona · $2"],
+  [/^В неделе нет данных iiko за (\d+) дн\. — цифры неполные\.$/, "Haftada $1 kunlik iiko ma'lumotlari yo'q — raqamlar to'liq emas."],
   [/^Обновлено в (\d\d:\d\d) · Ташкент$/, "Yangilandi: $1 · Toshkent"],
   [/^Без привязки к начислениям: (.+?) сум\. Эти расходы не погашают долг сотрудника\.$/, "Hisoblamaga bog'lanmagan: $1 so'm. Bu xarajatlar xodim qarzini yopmaydi."],
   [/^Начисления за смену ещё не подтверждены: (\d+) сотрудник\S* без расчёта\.$/, "Smena hisoblamalari hali tasdiqlanmagan: $1 xodim hisobsiz."],
@@ -2682,6 +2682,35 @@ globalThis.RetroTemplatesUz.push(
   [/^\+ наличными напрямую (.+)$/, "+ naqd to'g'ridan-to'g'ri $1"],
 );
 /* ── /QA 7a/7b Учредитель ── */
+/* ── T-494: кабинет учредителя — периоды, блюда по прибыли, закуп ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Блюдо · продано': "Taom · sotilgan",
+  'Прибыль · маржа': "Foyda · marja",
+  'Продаж блюд за эти дни в iiko нет.': "Bu kunlarda iikoda taom savdosi yo'q.",
+  'по прибыли: выручка минус себестоимость iiko': "foyda bo'yicha: tushumdan iiko tannarxi ayrilgan",
+  'Справочник меню не загружен: позиции не проверены.': "Menyu ma'lumotnomasi yuklanmagan: pozitsiyalar tekshirilmagan.",
+  'За последние восемь недель продаж в iiko нет.': "Oxirgi sakkiz haftada iikoda savdo yo'q.",
+  'Проверка передачи: ✓ совпало с расчётом · ⚠ расхождение или передача не записана · … день ещё идёт · – кассир не работал в панели, сверки нет · ? нет данных iiko':
+    "Topshirishni tekshirish: ✓ hisob bilan mos · ⚠ farq bor yoki topshirish yozilmagan · … kun hali davom etmoqda · – kassir panelda ishlamagan, solishtirish yo'q · ? iiko ma'lumoti yo'q",
+  'Переводы (Oxbridge, блогеры)': "O'tkazmalar (Oxbridge, blogerlar)",
+  'Закуп · казы и рулеты': "Xarid · qazi va ruletlar",
+  'Закуп · уголь': "Xarid · ko'mir",
+  'Закуп · грибы': "Xarid · qo'ziqorin",
+  'Закуп · хозяйственные товары': "Xarid · xo'jalik mollari",
+  'Закуп · прочее': "Xarid · boshqa",
+  'Закуп · тесто': "Xarid · xamir",
+  'Закуп · хасип': "Xarid · xasip",
+  'Закуп · хлеб': "Xarid · non",
+  'Закуп · моющие средства': "Xarid · yuvish vositalari",
+  'Закуп · выдачи на закуп': "Xarid · xarid uchun berilgan",
+  'Покупки с телефона': "Telefondan xaridlar",
+  'Место не указано': "Joy ko'rsatilmagan",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Среднее за (\d+(?:–\d+)?) (?:неделю|недели|недель) по кассам Retro и Oxbridge, без банкетного зала\. Сегодня выделен\.$/,
+    "Retro va Oxbridge kassalari bo'yicha $1 haftalik o'rtacha, banket zalisiz. Bugun ajratib ko'rsatilgan."],
+);
+/* ── /T-494 ── */
 /* ── QA 3a Закуп · Шох ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Выберите точку': 'Xarid joyini tanlang',
@@ -3805,6 +3834,23 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 /* ── /T-461 ── */
 
+/* ── T-497 Счёт Шефа: недельный порог и уведомление учредителю (ТЗ 16.10, п. 4.2) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Порог недели': "Haftalik chegara",
+  'Счёт Шефа · неделя': "Shef hisobi · hafta",
+  'Получатель уведомления не настроен': "Bildirishnoma oluvchisi sozlanmagan",
+  'Уведомление уйдёт при следующей проверке': "Bildirishnoma keyingi tekshiruvda yuboriladi",
+  'Уведомление не ушло, повторим через 15 минут': "Bildirishnoma yuborilmadi, 15 daqiqadan keyin qayta urinamiz",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^([\d\s,]+(?: млн| млрд)?) из ([\d\s,]+ (?:млн|млрд))$/, "$1 / $2"],
+  [/^Порог (.+) за неделю достигнут$/, "Haftalik $1 chegarasiga yetildi"],
+  [/^При (.+) за неделю придёт сообщение в Telegram$/, "Haftada $1 bo‘lganda Telegram’ga xabar keladi"],
+  [/^Уведомление отправлено (\d\d\.\d\d \d\d:\d\d)$/, "Bildirishnoma yuborildi: $1"],
+  [/^Отмечаем счета больше ([\d\s]+)$/, "$1 dan katta hisoblarni belgilaymiz"],
+);
+/* ── /T-497 ── */
+
 /* ── KPI официантов: вкладка «Неделя» у менеджера, карточка и настройка периода у директора ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   "Неделя": "Hafta", "Официант": "Ofitsiant", "KPI официантов": "Ofitsiantlar KPI",
@@ -4002,3 +4048,214 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Перетащите, чтобы подвинуть. Двойной клик — обратно в угол.': "Surish uchun torting. Ikki marta bosish — burchakka qaytarish.",
 });
 /* ── /T-475 ── */
+
+/* ── T-496: Founder Analytics по ТЗ 16.10 (раздел 5) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Разделы учредителя': "Ta'sischi bo'limlari",
+  'Аналитика': "Tahlil",
+  'Отчёт': "Hisobot",
+  'Прибыли и убытки': "Foyda va zararlar",
+  'БРОНИРОВАНИЯ': "BRONLAR",
+  'Отчёт бухгалтера · месяц · Excel': "Buxgalter hisoboti · oy · Excel",
+  'АНАЛИТИКА · IIKO, БРОНИ, РАССЫЛКА': "TAHLIL · IIKO, BRONLAR, TARQATMA",
+  'Retro, Retro в школе и банкетный зал считаются отдельно, без двойного учёта.': "Retro, maktabdagi Retro va banket zali alohida, ikki marta hisoblanmasdan sanaladi.",
+  'Фильтры изменены. Ниже прежняя выборка, нажмите «Показать», чтобы обновить.': "Filtrlar o'zgardi. Pastda avvalgi tanlanma, yangilash uchun «Ko'rsatish»ni bosing.",
+  'Как считаются цифры': "Raqamlar qanday hisoblanadi",
+  'касса Oxbridge': "Oxbridge kassasi",
+  'блюда с меткой «БЕХРУЗ»': "«БЕХРУЗ» belgili taomlar",
+  'выбранные направления': "tanlangan yo'nalishlar",
+  'Продажи по дате заказа в сумах, включая зачёт авансов. Направления не пересекаются, «Всего» равно их сумме. Яндекс Еда входит в Retro и к «Всего» отдельно не прибавляется.': "Buyurtma sanasi bo'yicha savdo so'mda, avanslarni hisobga olish bilan. Yo'nalishlar kesishmaydi, «Jami» ularning yig'indisiga teng. Яндекс Еда Retro ichida va «Jami»ga alohida qo'shilmaydi.",
+  'Столбец — сумма выбранных направлений.': "Ustun — tanlangan yo'nalishlar yig'indisi.",
+  'Столбчатая диаграмма выручки по направлениям': "Yo'nalishlar bo'yicha tushum ustunli diagrammasi",
+  'По дням.': "Kunlar bo'yicha.",
+  'По неделям.': "Haftalar bo'yicha.",
+  'По месяцам.': "Oylar bo'yicha.",
+  'Пунктирная рамка — неполная неделя: в период попали не все её дни.': "Punktir ramka — to'liq bo'lmagan hafta: davrga uning hamma kunlari kirmagan.",
+  'Пунктирная рамка — неполный месяц: в период попали не все его дни.': "Punktir ramka — to'liq bo'lmagan oy: davrga uning hamma kunlari kirmagan.",
+  'Наведите или коснитесь столбца, чтобы увидеть суммы': "Summalarni ko'rish uchun ustunga olib boring yoki bosing",
+  'Новые авансы за будущие заказы сюда не входят. Поступления за смену и наличные к передаче видны у кассира.': "Kelgusi buyurtmalar uchun yangi avanslar bu yerga kirmaydi. Smena tushumlari va topshiriladigan naqd pul kassirda ko'rinadi.",
+  'ВЕСЬ РЕСТОРАН · ОТЧЁТ IIKO': "BUTUN RESTORAN · IIKO HISOBOTI",
+  'Повторяет отчёт iiko «Прибыли и убытки» за выбранные даты. Фильтр направлений сюда не относится. Прибыль не равна наличным к передаче.': "Tanlangan sanalar uchun iiko «Foyda va zararlar» hisobotini takrorlaydi. Yo'nalishlar filtri bunga tegishli emas. Foyda topshiriladigan naqd pulga teng emas.",
+  'Заявки считаются по дате визита. Фильтр направлений на этот блок не влияет.': "Arizalar tashrif sanasi bo'yicha hisoblanadi. Yo'nalishlar filtri bu blokka ta'sir qilmaydi.",
+  'Всего заявок': "Jami arizalar",
+  'активные и отменённые': "faol va bekor qilingan",
+  'Активные': "Faol",
+  'заявки без отмены': "bekor qilinmagan arizalar",
+  'Отменённые': "Bekor qilingan",
+  'гость отменил заявку': "mehmon arizani bekor qilgan",
+  'Гости по заявкам': "Arizalar bo'yicha mehmonlar",
+  'заявлено в активных заявках': "faol arizalarda ko'rsatilgan",
+  'Гости по чекам iiko': "iiko cheklari bo'yicha mehmonlar",
+  'касса Retro, без банкетного зала': "Retro kassasi, banket zalisiz",
+  'Линейный график заявок, гостей и отмен': "Arizalar, mehmonlar va bekor qilishlar chizmasi",
+  'Откуда пришла заявка: канал и метка ссылки. Доля считается от всех заявок.': "Ariza qayerdan kelgan: kanal va havola belgisi. Ulush barcha arizalardan hisoblanadi.",
+  'TELEGRAM · РУЧНАЯ РАССЫЛКА': "TELEGRAM · QO'LDA TARQATMA",
+  'Рассылку отправляет вручную учредитель или менеджер: сообщение уходит от бота брони только после вашего подтверждения.': "Tarqatmani ta'sischi yoki menejer qo'lda yuboradi: xabar bron botidan faqat siz tasdiqlaganingizdan keyin ketadi.",
+  'Получатели — гости, которые оформляли заявку в боте брони и не отписались. Гости, которые писали только в Instagram, сюда не входят.': "Oluvchilar — bron botida ariza qoldirgan va obunadan chiqmagan mehmonlar. Faqat Instagram'da yozgan mehmonlar bu yerga kirmaydi.",
+  'ПО ПЕРИОДАМ': "DAVRLAR BO'YICHA",
+  'Выручка и брони по периодам': "Davrlar bo'yicha tushum va bronlar",
+  'Способы оплаты по периодам': "Davrlar bo'yicha to'lov usullari",
+  'Время Ташкента · суммы в сумах': "Toshkent vaqti · summalar so'mda",
+  'Активные заявки': "Faol arizalar",
+  'Заявок всего': "Jami arizalar",
+  'Источник не указан': "Manba ko'rsatilmagan",
+  'Источников за период нет.': "Davrda manbalar yo'q.",
+  'Telegram API подключён': "Telegram API ulangan",
+  'Отправить ещё раз': "Yana yuborish",
+  'Не удалось получить гостей из iiko.': "iikodan mehmonlarni olib bo'lmadi.",
+  // Источники заявок: подписи вместо сырых меток бота
+  'Telegram напрямую': "Telegram to'g'ridan-to'g'ri",
+  'Telegram с сайта · первый экран': "Saytdan Telegram · birinchi ekran",
+  'Telegram с сайта · верхнее меню': "Saytdan Telegram · yuqori menyu",
+  'Telegram с сайта · блок «Контакты»': "Saytdan Telegram · «Kontaktlar» bloki",
+  'Telegram с сайта · сеты': "Saytdan Telegram · setlar",
+  'Telegram с сайта · страница банкета': "Saytdan Telegram · banket sahifasi",
+  'Telegram с сайта · кнопка Telegram': "Saytdan Telegram · Telegram tugmasi",
+  'Telegram из Яндекс Карт': "Яндекс Карты orqali Telegram",
+  'Telegram из 2ГИС': "2GIS orqali Telegram",
+  'Telegram из TripAdvisor': "TripAdvisor orqali Telegram",
+  'Telegram из Instagram · шапка профиля': "Instagram orqali Telegram · profil sarlavhasi",
+  'Telegram из Instagram · сторис': "Instagram orqali Telegram · storis",
+  'Telegram · визитка на столе': "Telegram · stoldagi vizitka",
+  'Сайт · форма брони': "Sayt · bron shakli",
+  'Сайт · Telegram-чат бота сайта': "Sayt · sayt botining Telegram chati",
+  // Как считаются цифры — по предложению, как их показывает подсказка
+  'Выручка включает продажи, оплаченные авансом; новые авансы за будущие заказы не добавляются.': "Tushumga avans bilan to'langan savdolar kiradi; kelgusi buyurtmalar uchun yangi avanslar qo'shilmaydi.",
+  'Банкет — только блюда с меткой «БЕХРУЗ».': "Banket — faqat «БЕХРУЗ» belgili taomlar.",
+  'Блок P&L — бухгалтерские показатели всего ресторана из отчёта iiko «Прибыли и убытки»; фильтр направлений на него не влияет.': "P&L bloki — iiko «Foyda va zararlar» hisobotidan butun restoranning buxgalteriya ko'rsatkichlari; yo'nalishlar filtri unga ta'sir qilmaydi.",
+  'Дегустация и Счёт Шефа показаны отдельно по себестоимости операций без выручки и не прибавляются к продажам.': "Degustatsiya va Shef hisobi tushumsiz operatsiyalar tannarxi bo'yicha alohida ko'rsatilgan va savdoga qo'shilmaydi.",
+  'Способы оплаты показывают распределение продаж, а не поступления денег.': "To'lov usullari pul tushumini emas, savdo taqsimotini ko'rsatadi.",
+  // Ответы сервера
+  'iiko формирует отчёт по гостям слишком долго. Повторите позже.': "iiko mehmonlar hisobotini juda uzoq tayyorlayapti. Keyinroq qayta urinib ko'ring.",
+  'iiko вернул некорректную дату в отчёте по гостям.': "iiko mehmonlar hisobotida noto'g'ri sana qaytardi.",
+  'iiko вернул гостей вне выбранного периода.': "iiko tanlangan davrdan tashqari mehmonlarni qaytardi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^За (\d+) (?:день|дня|дней) столбцы собраны по неделям\.$/, "$1 kun uchun ustunlar haftalar bo'yicha yig'ilgan."],
+  [/^Неполная неделя: (\d+) (?:день|дня|дней) из (\d+)$/, "To'liq bo'lmagan hafta: $2 kundan $1 kun"],
+  [/^Неполный месяц: (\d+) (?:день|дня|дней) из (\d+)$/, "To'liq bo'lmagan oy: $2 kundan $1 kun"],
+  [/^(\d+) из (\d+) дн\.$/, "$1 / $2 kun"],
+  [/^заявлено в активных заявках · без числа гостей: (.+)$/, "faol arizalarda ko'rsatilgan · mehmon soni yo'q: $1"],
+  [/^([\d\s  ]+) (?:заявка|заявки|заявок)$/, "$1 ta ariza"],
+  [/^активных (.+) · отменено (.+) · гостей (.+) · доля не вычисляется$/, "faol $1 · bekor qilingan $2 · mehmonlar $3 · ulush hisoblanmaydi"],
+  [/^активных (.+) · отменено (.+) · гостей (.+) · (.+%)$/, "faol $1 · bekor qilingan $2 · mehmonlar $3 · $4"],
+  [/^Реклама Meta · (.+)$/, "Meta reklamasi · $1"],
+  [/^Telegram · метка «(.+)»$/, "Telegram · «$1» belgisi"],
+  [/^Сайт · (.+)$/, "Sayt · $1"],
+  [/^касса Retro без банкетного зала · чеков: (.+)$/, "Retro kassasi banket zalisiz · cheklar: $1"],
+  [/^Этот текст уже отправлен этим получателям только что\.$/, "Bu matn shu oluvchilarga hozirgina yuborilgan."],
+  [/^Этот текст уже отправлен этим получателям (\d+) (?:минуту|минуты|минут) назад\.$/, "Bu matn shu oluvchilarga $1 daqiqa oldin yuborilgan."],
+  [/^Этот текст уже отправлен этим получателям (\d+) (?:час|часа|часов) назад\.$/, "Bu matn shu oluvchilarga $1 soat oldin yuborilgan."],
+  [/^Этот текст уже отправлен этим получателям (\d+) (?:день|дня|дней) назад\.$/, "Bu matn shu oluvchilarga $1 kun oldin yuborilgan."],
+  [/^Все продажи выбранных направлений: (.+?) сум\.$/, "Tanlangan yo'nalishlarning barcha savdolari: $1 so'm."],
+  [/^Вне банкетной выборки: (.+?) сум\.$/, "Banket tanlanmasidan tashqari: $1 so'm."],
+  [/^Журнал ведётся с (.+)\.$/, "Jurnal $1 dan boshlab yuritiladi."],
+  [/^(.+): журнал с (.+)\.$/, "$1: jurnal $2 dan boshlab."],
+  [/^Без даты визита исключено: (.+)\.$/, "Tashrif sanasisiz chiqarib tashlandi: $1."],
+  [/^(.+) · подключено$/, "$1 · ulangan"],
+);
+/* ── /T-496 ── */
+
+/* ── T-495: ПК-отчёт без границы 13.10, цена и ценовые диапазоны меню,
+   «Все блюда» на телефоне, поиск по команде ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'PDF-отчёт сохраняется только за период с 13 октября 2026. На экране — цифры iiko за весь выбранный период.': "PDF hisobot faqat 2026-yil 13-oktabrdan boshlangan davr uchun saqlanadi. Ekranda — tanlangan butun davr uchun iiko raqamlari.",
+  'Выберите дату по сегодня.': "Bugungacha bo'lgan sanani tanlang.",
+  'Выберите дату с 13 октября по сегодня.': "13-oktabrdan bugungacha bo'lgan sanani tanlang.",
+  'Средняя цена': "O'rtacha narx",
+  'Цена — средняя цена продажи после скидок: выручка продаж, делённая на проданное количество. Счёт Шефа и дегустация в цену не входят.': "Narx — chegirmalardan keyingi o'rtacha sotuv narxi: sotuv tushumi sotilgan miqdorga bo'lingan. Shef hisobi va degustatsiya narxga kirmaydi.",
+  'Ничего не нашли. Сбросьте поиск или фильтр цены.': "Hech narsa topilmadi. Qidiruv yoki narx filtrini tozalang.",
+  'Все блюда': "Barcha taomlar",
+  'Все блюда за период': "Davrdagi barcha taomlar",
+  'Без ингредиентов и услуг · прибыль и маржа с учётом расхода без выручки': "Ingredientlar va xizmatlarsiz · foyda va marja tushumsiz xarajat bilan",
+  'Цена:': "Narx:",
+  'все': "hammasi",
+  'цена': "narx",
+  'Найти сотрудника': "Xodimni topish",
+  'Найти: имя или должность': "Topish: ism yoki lavozim",
+  'Найти сотрудника: имя или должность': "Xodimni topish: ism yoki lavozim",
+  'никого не нашли': "hech kim topilmadi",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^до (\d+(?:,\d+)?) тыс$/, "$1 minggacha"],
+  [/^(\d+(?:,\d+)?)–(\d+(?:,\d+)?) тыс$/, "$1–$2 ming"],
+  [/^от (\d+(?:,\d+)?) тыс$/, "$1 mingdan"],
+  [/^Основание: маржа (\d+)%, доля в выручке ([\d,]+%)$/, "Asos: marja $1%, tushumdagi ulushi $2"],
+  [/^найдено: (\d+)$/, "topildi: $1"],
+  [/^Найти сотрудника для (.+)$/, "$1 uchun xodimni topish"],
+  [/^Сотрудник для (.+)$/, "$1 uchun xodim"],
+);
+/* ── /T-495 ── */
+
+/* ── T-500: «Обед сегодня» на телефоне директора и лист обеда за день (ТЗ 16.10 §2) ──
+   Короткие одиночные слова («Обед», «идёт») — шаблонами на всю строку: ключом
+   словаря они переводились бы кусками внутри чужих фраз. */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Обед сегодня': "Bugungi tushlik",
+  'день идёт': "kun davom etmoqda",
+  'По часам': "Soatlar bo'yicha",
+  'По направлениям': "Yo'nalishlar bo'yicha",
+  'Топ-5 блюд окна': "Shu vaqtdagi top-5 taom",
+  'по количеству · под названием выручка': "soni bo'yicha · nomi ostida tushum",
+  '✦ Спросить AI про этот обед →': "✦ Bu tushlik haqida AI'dan so'rash →",
+  'Сколько продали за обед сегодня?': "Bugun tushlikda qancha sotildi?",
+  'За этот день данных нет': "Bu kun uchun ma'lumot yo'q",
+  'ещё не наступил': "hali boshlanmagan",
+  'ещё не загружен': "hali yuklanmagan",
+  'В окне обеда блюд не продавали.': "Tushlik vaqtida taom sotilmagan.",
+  'Retro и Школа · банкетный зал не входит': "Retro va Maktab · banket zali kirmaydi",
+  'по времени закрытия чека, Ташкент': "chek yopilgan vaqt bo'yicha, Toshkent",
+  'по времени открытия чека, Ташкент': "chek ochilgan vaqt bo'yicha, Toshkent",
+  'День ещё не загружен из iiko: он стоит в очереди загрузки.': "Kun hali iiko'dan yuklanmagan: u yuklash navbatida.",
+  'iiko не подключено: продажи загрузить неоткуда.': "iiko ulanmagan: savdolarni yuklab bo'lmaydi.",
+  'iiko отвечает медленно: день ещё загружается.': "iiko sekin javob bermoqda: kun hali yuklanmoqda.",
+  'iiko сейчас не отвечает.': "iiko hozir javob bermayapti.",
+  'Сегодняшние чеки ещё не загружены из iiko.': "Bugungi cheklar hali iiko'dan yuklanmagan.",
+  'Нет связи с панелью. Проверьте интернет и откройте снова.': "Panel bilan aloqa yo'q. Internetni tekshiring va qayta oching.",
+  'День ещё не перечитан после закрытия смены: цифры могут уточниться.': "Kun smena yopilgandan keyin hali qayta o'qilmagan: raqamlar aniqlashishi mumkin.",
+  'Сверка с итогом iiko за этот день не сошлась.': "Bu kun uchun iiko jami bilan solishtirish mos kelmadi.",
+  // Ответы сервера о свежести сегодняшнего дня (T-499)
+  'iiko сейчас не отвечает: показаны данные последней загрузки.': "iiko hozir javob bermayapti: oxirgi yuklash ma'lumotlari ko'rsatilgan.",
+  'iiko отвечает медленно: показаны данные последней загрузки, обновление идёт.': "iiko sekin javob bermoqda: oxirgi yuklash ma'lumotlari ko'rsatilgan, yangilanish davom etmoqda.",
+  'Показаны данные последней загрузки.': "Oxirgi yuklash ma'lumotlari ko'rsatilgan.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Обед$/, "Tushlik"],
+  [/^идёт$/, "davom etmoqda"],
+  [/^на ((?:\d{2}\.\d{2} )?\d{1,2}:\d{2})$/, "$1 holatiga"],
+  [/^на (\d{1,2}:\d{2}) · обновить не удалось$/, "$1 holatiga · yangilab bo'lmadi"],
+  [/^окно (\d{1,2}:\d{2}–\d{1,2}:\d{2})$/, "vaqt oralig'i $1"],
+  [/^(\d+) (?:чек|чека|чеков) · средний чек (.+)$/, "$1 ta chek · o'rtacha chek $2"],
+  [/^выручка (.+) сум$/, "tushum $1 so'm"],
+  [/^История продаж хранится с (\d{2}\.\d{2}\.\d{4})\.$/, "Savdo tarixi $1 dan saqlanadi."],
+  [/^День идёт: учтены чеки, закрытые к (\d{1,2}:\d{2})\. Открытые столы iiko не отдаёт\.$/,
+    "Kun davom etmoqda: $1 gacha yopilgan cheklar hisobga olindi. Ochiq stollarni iiko bermaydi."],
+);
+/* ── /T-500 ── */
+
+/* ── T-501: ПК-отчёт директора без дублей — одна выручка, «Как считается»,
+   одна заметка к таблице ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Как считается': "Qanday hisoblanadi",
+  'Прибыль итоговая к выручке, после расхода без выручки': "Yakuniy foydaning tushumga nisbati, tushumsiz xarajatdan keyin",
+  'Только позиции от 0,5 % выручки за период.': "Faqat davr tushumining kamida 0,5 % ini bergan pozitsiyalar.",
+  'Суммы в сум. Количество и себестоимость включают расход без выручки: Счёт Шефа, дегустацию и прочее. Прибыль продаж: выручка минус себестоимость проданного. Прибыль итоговая и маржа: после расхода без выручки. Цена: средняя цена продажи после скидок.': "Summalar so'mda. Miqdor va tannarx tushumsiz xarajatni ham o'z ichiga oladi: Shef hisobi, degustatsiya va boshqalar. Sotuv foydasi: tushumdan sotilganning tannarxi ayriladi. Yakuniy foyda va marja: tushumsiz xarajatdan keyin. Narx: chegirmalardan keyingi o'rtacha sotuv narxi.",
+  'Выручка складывается из продаж по меню: Retro, Retro в школе и банкет.': "Tushum menyu bo'yicha savdolardan tashkil topadi: Retro, maktabdagi Retro va banket.",
+  'Банкет считается по блюдам с меткой «БЕХРУЗ» в названии.': "Banket nomida «БЕХРУЗ» belgisi bor taomlar bo'yicha hisoblanadi.",
+  'Исключённые группы меню в выручку не входят.': "Menyuning chiqarib tashlangan guruhlari tushumga kirmaydi.",
+  'Это продажи отделения «Бехруз (Свадьба)» без метки «БЕХРУЗ» в названии блюда. В выручку они не входят, сумма нужна для сверки.': "Bu «Бехруз (Свадьба)» bo'limining taom nomida «БЕХРУЗ» belgisi bo'lmagan savdolari. Ular tushumga kirmaydi, summa solishtirish uchun kerak.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Исключена группа «(.+)»: (.+?) сум\.$/, "«$1» guruhi chiqarib tashlangan: $2 so'm."],
+  [/^Продажи вместе с ними: (.+?) сум\.$/, "Ular bilan birga savdo: $1 so'm."],
+  // Сначала строка с двумя суммами: короткий шаблон захватил бы её целиком.
+  [/^Яндекс Еда уже входит в выручку направлений: по меню (.+?) сум, по оплатам (.+?) сум\.$/, "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: menyu bo'yicha $1 so'm, to'lovlar bo'yicha $2 so'm."],
+  [/^Яндекс Еда уже входит в выручку направлений: (.+?) сум\.$/, "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: $1 so'm."],
+);
+/* ── /T-501 ── */
+
+/* ── T-502: меню справа ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Меню справа': "Menyu o'ngda",
+});
+/* ── /T-502 ── */

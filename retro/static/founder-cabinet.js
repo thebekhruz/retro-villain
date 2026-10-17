@@ -311,7 +311,7 @@
       const meta = node('small');
       meta.append(node('span', '', 'RETRO MILLIY'), node('span', '', bill.day === state.today ? 'сегодня' : 'вчера'));
       body.append(meta, node('strong', '', 'Счёт Шефа · ' + sum(num(bill.amount)) + ' сум'),
-        node('p', '', 'Стол ' + bill.table + ' · ' + (bill.waiters.join(', ') || 'без официанта') + ' · больше ' + short(logic.CHEF_LIMIT) + ' за один счёт'));
+        node('p', '', 'Стол ' + bill.table + ' · ' + (bill.waiters.join(', ') || 'без официанта') + ' · больше ' + short(chefLimit(chef)) + ' за один счёт'));
       const close = node('button', '', '×');
       close.type = 'button';
       close.setAttribute('aria-label', 'Скрыть уведомление');
@@ -375,6 +375,13 @@
     const target = $('fo-chef-week');
     target.replaceChildren();
     if (chef.error) { target.append(node('p', 'fo-hint', 'Счёт Шефа: ' + chef.error)); return; }
+    // Недельный порог достигнут — первой строкой, как и на компьютере.
+    const week = logic.chefWeekView(chef.week_alert);
+    if (week && week.reached) {
+      const row = node('div', 'fo-line');
+      row.append(node('span', '', 'Счёт Шефа · неделя'), node('b', 'rm-num', week.progress));
+      target.append(row);
+    }
     chef.week.filter(bill => bill.over).forEach(bill => {
       const row = node('div', 'fo-line');
       row.append(node('span', '', 'Счёт Шефа · ' + dm(bill.day) + ' · стол ' + bill.table), node('b', 'rm-num', sum(num(bill.amount)) + ' сум'));
@@ -460,14 +467,38 @@
     $('fo-ask-checks').hidden = !issues.length;
   }
 
+  /** Поштучный порог — из ответа сервера (CHEF_BILL_LIMIT), до ответа — из логики. */
+  function chefLimit(chef) { return (chef && num(chef.limit)) || logic.CHEF_LIMIT; }
+
+  /** Прогресс недели к порогу и отметка об уведомлении учредителю (ТЗ 16.10, п. 4.2). */
+  function renderChefLimit(chef) {
+    const view = chef.error ? null : logic.chefWeekView(chef.week_alert);
+    $('fo-chef-limit').hidden = !view;
+    if (!view) return;
+    setText('fo-chef-limit-value', view.progress);
+    $('fo-chef-limit-value').classList.toggle('is-over', view.reached);
+    $('fo-chef-limit-bar').classList.toggle('is-over', view.reached);
+    $('fo-chef-limit-bar').firstElementChild.style.width = view.pct + '%';
+    $('fo-chef-limit-status').hidden = view.reached;
+    $('fo-chef-notice').hidden = !view.reached;
+    if (view.reached) {
+      setText('fo-chef-notice-title', view.title);
+      setText('fo-chef-notice-status', view.status);
+    } else {
+      setText('fo-chef-limit-status', view.status);
+    }
+  }
+
   function renderChef(chef) {
     renderAlerts(chef);
     renderChefWeek(chef);
+    renderChefLimit(chef);
+    setText('fo-chef-limit-note', 'Отмечаем счета больше ' + sum(chefLimit(chef)));
     const list = $('fo-chef');
     list.replaceChildren();
     if (chef.error) { list.append(node('p', 'fo-empty', chef.error)); setText('fo-chef-title', 'Нет данных iiko'); return; }
     setText('fo-chef-title', short(num(chef.week_total)) + ' за неделю');
-    setText('fo-chef-over', chef.week_over + ' выше 400 000');
+    setText('fo-chef-over', chef.week_over + ' выше ' + sum(chefLimit(chef)));
     setText('fo-chef-month', 'За месяц: ' + short(num(chef.month_total)));
     if (!chef.week.length) list.append(node('p', 'fo-empty', 'На этой неделе счетов «Счёт Шефа» нет.'));
     // Счета выше порога — наверх: ради них учредитель и открывает блок.
@@ -552,7 +583,7 @@
         node('small', '', day.orders === null ? '—' : day.orders + ' чеков'));
       target.append(column);
     });
-    setText('fo-forecast-note', 'Среднее за ' + data.weeks + ' недель по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.');
+    setText('fo-forecast-note', logic.forecastNote(data));
     const month = data.month;
     setText('k-month', short(num(month.total)));
     setText('k-month-sub', 'факт ' + short(num(month.fact)) + ' + прогноз ' + short(num(month.forecast)));
@@ -560,22 +591,34 @@
     if (state.data.today) renderPhoneDays(state.data.today, state.data.yesterday);
   }
 
+  /** «Приносят больше всего» (ТЗ 16.10, 4.2): по прибыли, с выручкой и
+   *  количеством. Что блюдо — решает справочник меню сервера (T-487). */
   function renderDishes(snapshot) {
-    const rows = director.rank(snapshot.item_metrics.all || {}, 'revenue').filter(director.isDish).filter(row => row.revenue > 0);
+    const rows = logic.soldDishes(snapshot, director.rank(snapshot.item_metrics.all || {}, 'profit'));
     const target = $('fo-dishes');
     target.replaceChildren();
+    if (rows.length) {
+      const head = node('div', 'fo-dish is-head');
+      head.append(node('span'), node('span', '', 'Блюдо · продано'), node('span', '', 'Выручка'), node('span', '', 'Прибыль · маржа'));
+      target.append(head);
+    } else target.append(node('p', 'fo-empty', 'Продаж блюд за эти дни в iiko нет.'));
     rows.slice(0, 5).forEach((row, index) => {
       const line = node('div', 'fo-dish');
-      const margin = row.margin === null ? '—' : Math.round(row.margin) + '%';
+      const name = node('span', 'fo-dish-name');
       const dish = node('strong', '', row.name);
-      dish.dataset.i18n = 'off';  // название из iiko, не переводим
       dish.dataset.i18n = 'off';  // название из iiko не переводим
-      line.append(node('span', '', String(index + 1)), dish,
-        node('span', '', Math.round(row.quantity) + ' шт'), node('b', '', short(row.revenue)),
-        node('small', director.lowMargin(row) ? 'm-low' : 'm-ok', margin));
+      name.append(dish, node('small', '', Math.round(row.quantity) + ' шт'));
+      const profit = node('span', 'fo-dish-profit');
+      profit.append(node('b', '', short(row.profit)),
+        node('small', director.lowMargin(row) ? 'm-low' : 'm-ok', row.margin === null ? '—' : Math.round(row.margin) + '%'));
+      line.append(node('span', '', String(index + 1)), name, node('span', '', short(row.revenue)), profit);
       target.append(line);
     });
-    const low = rows.filter(director.lowMargin).slice(0, 3);
+    setText('fo-dishes-note', (snapshot.period_start ? dm(snapshot.period_start) + '–' + dm(snapshot.period_end) + ' · ' : '') +
+      'по прибыли: выручка минус себестоимость iiko' +
+      (snapshot.item_classes_checked === false ? '. Справочник меню не загружен: позиции не проверены.' : ''));
+    // «При хороших продажах» — самые продаваемые из низкомаржинальных.
+    const low = rows.filter(director.lowMargin).sort((a, b) => b.revenue - a.revenue).slice(0, 3);
     const chips = $('fo-dishes-low');
     chips.replaceChildren(...low.map(row => node('span', '', row.name + ' · маржа ' + Math.round(row.margin) + '% · ' + short(row.revenue) + ' за 7 дней')));
     if (!low.length) chips.append(node('span', '', 'Популярных блюд с маржой ниже ' + director.LOW_MARGIN + '% нет'));
@@ -732,6 +775,7 @@
 
   (async function start() {
     paintSkeleton();
+    setText('fo-chef-limit-note', 'Отмечаем счета больше ' + sum(chefLimit(null)));
     state.today = new Date().toISOString().slice(0, 10);
     try {
       const config = await globalThis.RetroConfig;

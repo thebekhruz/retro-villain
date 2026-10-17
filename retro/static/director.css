@@ -35,6 +35,14 @@
   border-top:1px solid #eef1ea;font-size:12.5px;color:var(--muted)}
 .margin-lines .rail-line b{color:var(--ink);font-weight:600;font-variant-numeric:tabular-nums}
 
+/* «Как считается» под выручкой (T-501) — та же раскрывашка, что «Как
+   считаются цифры» у учредителя (founder.css): стрелка и цвет ссылки — из
+   общего details>summary в mobile.css. */
+.calc-hint{margin-top:14px;font-size:12.5px;color:var(--muted)}
+.calc-hint>div{padding:2px 0 0 18px;max-width:90ch}
+.calc-hint p{margin:6px 0 0;line-height:1.6}
+@media(max-width:700px){.calc-hint>summary{min-height:44px}}
+
 .highlights{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin-bottom:20px}
 .highlight-card{padding:22px 24px}
 .highlight-card .panel-heading{margin-bottom:16px}
@@ -55,12 +63,21 @@
 .menu-panel{padding:24px 26px;margin-bottom:20px}
 .menu-head{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;margin-bottom:18px}
 .menu-head h2{font-size:21px;font-weight:550;letter-spacing:-.4px;margin:0}
+/* «Retro в школе» из трёх слов: на телефоне вкладка держится в одну строку,
+   полоса направлений прокручивается вбок. */
+.menu-head .ops-tab{white-space:nowrap}
 .menu-tools{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:14px}
 .menu-search{flex:1 1 220px;min-width:0}
 .menu-search input{width:100%;min-height:44px;border:1px solid var(--border);border-radius:9px;
   padding:10px 14px;background:#fff;color:var(--ink);font:inherit;font-size:13px}
 .menu-search input::placeholder{color:#9aa79b}
 .menu-sort{display:flex;gap:4px;padding:4px;background:#f1f4ec;border-radius:9px;flex-wrap:wrap}
+/* Ценовые диапазоны (ТЗ 3.2) — тем же рядом чипов, что сортировка. */
+.menu-price-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:-4px 0 14px}
+.menu-price-label{font-size:10px;font-weight:650;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+/* Подпись под «Сформировать отчёт»: период раньше 13.10 смотрят, но не сохраняют. */
+.controls{flex-wrap:wrap}
+.generate-note{flex-basis:100%;margin:0;font-size:11.5px;line-height:1.5;color:#7a6a45}
 
 /* Таблица с шестью числовыми колонками не влезает в телефон целиком,
    поэтому прокручивается внутри себя, а не растягивает страницу. */
@@ -148,6 +165,7 @@
   /* В двухколоночной сетке управления период занимает целую строку:
      иначе «Сформировать отчёт» не помещается рядом с датами. */
   .controls .period-display{grid-column:1 / -1}
+  .controls .generate-note{grid-column:1 / -1}
 }
 @media(max-width:620px){
   .menu-head,.menu-tools{align-items:stretch;flex-direction:column}
@@ -173,6 +191,7 @@
      последнюю кнопку висеть по центру: раскладываем два на два. */
   .menu-sort{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:4px}
   .menu-sort .chip{width:100%}
+  .menu-price-row{flex-direction:column;align-items:stretch;gap:6px}
   .report-link{grid-template-columns:20px minmax(0,1fr)}
   .report-format{display:none}
 }
@@ -275,12 +294,12 @@
 .attendance-list:empty::after{content:"Данные Hikvision ещё не подключены";
   display:block;padding:18px 10px;text-align:center;color:var(--muted);font-size:12px}
 
-/* Общий итог рядом с продажами и расходом без выручки. */
-.profit-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px;margin-bottom:20px}
+/* Общий итог рядом с продажами и расходом без выручки. Выручка — одна, в
+   карточке выше; формулы плиток — одной заметкой у таблицы блюд (T-501). */
+.profit-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:14px;margin-bottom:20px}
 .profit-tile{padding:20px;min-width:0}
 .profit-tile p{margin:0 0 10px;font-size:12px;color:var(--muted)}
 .profit-tile>strong{display:block;font-size:21px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
-.profit-tile>small{display:block;margin-top:10px;font-size:11px;line-height:1.5;color:var(--muted)}
 .profit-tile.is-total{background:#f0f5eb}
 #internal-detail{margin-top:10px}
 .metric-detail{display:flex;justify-content:space-between;gap:8px;margin-top:5px;font-size:10px;font-weight:400;color:var(--muted);line-height:1.4}
@@ -292,7 +311,8 @@
 .menu-table td{vertical-align:top}
 .menu-table td.metric-cell::before{content:none}
 @media(min-width:701px){.menu-table{min-width:980px}.metric-cell{min-width:90px}.metric-cell[data-label="Расход без выручки"]{min-width:165px}}
-@media(max-width:1100px){.profit-summary{grid-template-columns:repeat(2,minmax(0,1fr))}}
+/* В узкой колонке три суммы в ряд рвутся: две плитки сверху, итог — во всю ширину. */
+@media(max-width:1100px){.profit-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.profit-tile.is-total{grid-column:1/-1}}
 @media(max-width:700px){
   .profit-summary{gap:10px}
   .profit-tile{padding:14px}

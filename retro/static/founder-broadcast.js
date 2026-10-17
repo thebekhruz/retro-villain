@@ -1,7 +1,18 @@
 (function(){
   const $=id=>document.getElementById(id);
   const logic=globalThis.FounderBroadcastLogic;
-  let audience=null,operationId=null,pollTimer=null,pendingRecipientIds=[];
+  let audience=null,pollTimer=null,pendingRecipientIds=[];
+  // operation_id живёт, пока не изменились текст и получатели: двойное нажатие,
+  // повтор после обрыва связи или новая отправка того же черновика уходят с
+  // тем же id, и бот второй раз не отправляет. Новый id — только при новом
+  // черновике или по кнопке «Отправить ещё раз».
+  let operation=null;
+  const SENT_KEY='retro:founder-broadcast-sent';
+  // Журнал отправленного — в браузере учредителя; без хранилища (приватное
+  // окно) — хотя бы до перезагрузки страницы.
+  let sentMemory={};
+  const readSent=()=>{try{const stored=JSON.parse(localStorage.getItem(SENT_KEY)||'null');if(stored&&typeof stored==='object')return {...sentMemory,...stored}}catch{}return sentMemory};
+  const writeSent=value=>{sentMemory=value;try{localStorage.setItem(SENT_KEY,JSON.stringify(value))}catch{}};
   const selected=new Set();
   const setStatus=(text,error=false)=>{const node=$('broadcast-status');node.textContent=text;node.classList.toggle('is-error',error)};
   const api=async(url,options)=>RetroState.responseJson(await fetch(url,options),'Не удалось выполнить запрос рассылки.');
@@ -15,7 +26,6 @@
     $('broadcast-recipient-list').querySelectorAll('input').forEach(node=>{node.disabled=value});
     if(!value)updateSelected();
   };
-  const draftChanged=()=>{operationId=null};
 
   function updateSelected(){
     $('broadcast-selected').textContent=String(selected.size);
@@ -33,7 +43,7 @@
     rows.forEach(row=>{
       const label=document.createElement('label');label.className='broadcast-recipient';
       const input=document.createElement('input');input.type='checkbox';input.checked=selected.has(row.id);input.value=row.id;
-      input.addEventListener('change',()=>{input.checked?selected.add(row.id):selected.delete(row.id);draftChanged();updateSelected()});
+      input.addEventListener('change',()=>{input.checked?selected.add(row.id):selected.delete(row.id);updateSelected()});
       const body=document.createElement('span');const name=document.createElement('strong');name.textContent=row.name;
       const phone=document.createElement('small');phone.textContent=row.phone;body.append(name,phone);label.append(input,body);list.append(label);
     });
@@ -60,15 +70,15 @@
     try{
       // Опрос каждую секунду — фоновый: верхнюю полосу не зажигает.
       const job=await api('/api/founder/broadcast/'+encodeURIComponent(id),{retroBusy:false});showJob(job);
-      if(logic.isTerminal(job.status)){setBusy(false);operationId=null;await loadAudience().catch(()=>{});return}
+      if(logic.isTerminal(job.status)){setBusy(false);await loadAudience().catch(()=>{});return}
       pollTimer=setTimeout(()=>poll(id),1000);
     }catch(error){setStatus(error.message,true);resultState('error');setBusy(false)}
   }
 
   $('broadcast-search').addEventListener('input',renderRecipients);
-  $('broadcast-select-all').addEventListener('click',()=>{(audience?.recipients||[]).forEach(row=>selected.add(row.id));draftChanged();renderRecipients()});
-  $('broadcast-clear-all').addEventListener('click',()=>{selected.clear();draftChanged();renderRecipients()});
-  $('broadcast-text').addEventListener('input',()=>{draftChanged();$('broadcast-count').textContent=String($('broadcast-text').value.length)});
+  $('broadcast-select-all').addEventListener('click',()=>{(audience?.recipients||[]).forEach(row=>selected.add(row.id));renderRecipients()});
+  $('broadcast-clear-all').addEventListener('click',()=>{selected.clear();renderRecipients()});
+  $('broadcast-text').addEventListener('input',()=>{$('broadcast-count').textContent=String($('broadcast-text').value.length)});
   $('broadcast-form').addEventListener('submit',async event=>{
     event.preventDefault();const checked=logic.validateText($('broadcast-text').value);
     if(!checked.ok){setStatus(checked.error,true);$('broadcast-text').focus();return}
@@ -80,7 +90,13 @@
       const recipients=logic.validateRecipients([...selected],latest.recipients.map(row=>row.id));
       if(!recipients.ok){setStatus(recipients.error,true);$('broadcast-search').focus();return}
       pendingRecipientIds=recipients.ids;$('broadcast-preview').textContent=checked.text;
-      $('broadcast-confirm-count').textContent=String(pendingRecipientIds.length);$('broadcast-confirm').hidden=false;
+      $('broadcast-confirm-count').textContent=String(pendingRecipientIds.length);
+      // Тот же текст тем же гостям уже уходил: предупреждаем и просим нажать
+      // другую кнопку, чтобы повтор не случился по привычке.
+      const sent=readSent()[logic.draftKey(checked.text,pendingRecipientIds)],repeat=$('broadcast-repeat');
+      repeat.hidden=!sent;repeat.textContent=sent?logic.repeatWarning(Number(sent.at),Date.now()):'';
+      $('broadcast-confirm-send').textContent=sent?'Отправить ещё раз':'Отправить';
+      $('broadcast-confirm').hidden=false;
       $('broadcast-confirm-send').focus();setStatus('Проверьте текст, получателей и подтвердите отправку.');
     }catch{}
   });
@@ -97,13 +113,19 @@
     const checked=logic.validateText($('broadcast-preview').textContent);
     const recipients=logic.validateRecipients(pendingRecipientIds,audience?.recipients.map(row=>row.id)||[]);
     if(!checked.ok||!recipients.ok){setStatus(recipients.error||checked.error,true);return}
-    operationId=operationId||logic.operationId(globalThis.crypto);
+    const key=logic.draftKey(checked.text,recipients.ids);
+    const again=Boolean(readSent()[key])&&operation?.key===key&&operation.sent;
+    if(!operation||operation.key!==key||again)operation={key,id:logic.operationId(globalThis.crypto),sent:false};
+    const operationId=operation.id;
     // Окно подтверждения остаётся, пока сервер не принял рассылку: «Отправить»
     // крутится; дальше — ход рассылки в строке итога.
     const started=api('/api/founder/broadcast',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({operation_id:operationId,text:checked.text,recipient_ids:recipients.ids})});
     if(Busy)Busy.button($('broadcast-confirm-send'),started,{done:false});
     try{
-      const job=await started;setBusy(true);$('broadcast-confirm').hidden=true;showJob(job);poll(job.id);
+      const job=await started;
+      if(operation?.id===operationId)operation.sent=true;
+      writeSent(logic.rememberSent(readSent(),key,Date.now()));
+      setBusy(true);$('broadcast-confirm').hidden=true;showJob(job);poll(job.id);
     }catch(error){setStatus(error.message,true);$('broadcast-result').hidden=false;$('broadcast-result').textContent=error.message;resultState('error');$('broadcast-confirm').hidden=true}
   });
   audienceSkeleton();
