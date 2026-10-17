@@ -144,13 +144,17 @@ class FakeBot:
         pass
 
 
-def scheduler(database, bot, now, collector=None):
-    async def collect(state, day, *, now=None):
-        return replace(report(), day=day)
+def photo(name):
+    async def build(app, day, now):
+        return b'\x89PNG', f'{name} · {day.strftime("%d.%m.%Y")}'
+    return build
+
+
+def scheduler(database, bot, now, reports=None):
     config = TelegramReportConfig(token=TOKEN, chat_id='-100123')
     app = type('App', (), {'state': object()})()
-    return TelegramDailyReport(app, bot, SentStore(database), config,
-                               clock=lambda: now[0], collector=collector or collect)
+    return TelegramDailyReport(app, bot, SentStore(database), config, clock=lambda: now[0],
+                               reports=reports or {'cashier': photo('Касса'), 'accountant': photo('Бухгалтер')})
 
 
 @pytest.mark.parametrize('database', DATABASES)
@@ -166,41 +170,55 @@ def run_evening(database):
     async def scenario():
         bot, now = FakeBot(), [at(DAY, 23, 0)]
         reporter = scheduler(database, bot, now)
-        assert await reporter.run_once() is None
+        assert await reporter.run_once() == []
         now[0] = at(DAY, 23, 31)
-        assert await reporter.run_once() == DAY
+        assert await reporter.run_once() == [('cashier', DAY), ('accountant', DAY)]
         now[0] = at(DAY, 23, 45)
-        assert await reporter.run_once() is None
+        assert await reporter.run_once() == []
         # Второй процесс (или выкат) с той же базой день не повторяет.
         again = scheduler(database, bot, now)
-        assert await again.run_once() is None
-        assert [item[:2] for item in bot.sent] == [('-100123', 'Retro-kassa-2026-10-16.png')]
-        assert bot.sent[0][2].startswith('Касса Retro · 16.10.2026')
+        assert await again.run_once() == []
+        # Сначала касса, потом бухгалтер.
+        assert bot.sent == [('-100123', 'Retro-kassa-2026-10-16.png', 'Касса · 16.10.2026'),
+                            ('-100123', 'Retro-buhgalter-2026-10-16.png', 'Бухгалтер · 16.10.2026')]
     asyncio.run(scenario())
 
 
-def test_failed_send_retries_and_catches_up_after_midnight(tmp_path):
+def test_failed_report_retries_alone_and_catches_up_after_midnight(tmp_path):
+    calls = []
+
+    def flaky(name, failures):
+        async def build(app, day, now):
+            calls.append(name)
+            if failures:
+                failures.pop()
+                raise TelegramError('network')
+            return b'\x89PNG', name
+        return build
+
     async def scenario():
-        bot, now = FakeBot(fail=1), [at(DAY, 23, 30)]
-        reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now)
-        assert await reporter.run_once() is None
+        bot, now = FakeBot(), [at(DAY, 23, 30)]
+        reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now,
+                             reports={'cashier': flaky('Касса', []), 'accountant': flaky('Бухгалтер', [1])})
+        assert await reporter.run_once() == [('cashier', DAY)]
         now[0] = at(DAY, 23, 32)
-        assert await reporter.run_once() is None  # ждём 5 минут после сбоя
+        assert await reporter.run_once() == []  # ждём 5 минут после сбоя
         now[0] = at(date(2026, 10, 17), 0, 10)
-        assert await reporter.run_once() == DAY
-        assert len(bot.sent) == 1
+        assert await reporter.run_once() == [('accountant', DAY)]
+        assert calls == ['Касса', 'Бухгалтер', 'Бухгалтер']
+        assert [item[2] for item in bot.sent] == ['Касса', 'Бухгалтер']
     asyncio.run(scenario())
 
 
 def test_skip_marks_day_without_sending(tmp_path):
-    async def skip(state, day, *, now=None):
+    async def skip(app, day, now):
         raise Skip('демо-данные')
 
     async def scenario():
         bot, now = FakeBot(), [at(DAY, 23, 31)]
-        reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now, collector=skip)
-        assert await reporter.run_once() is None
-        assert reporter.store.sent(DAY) and not bot.sent
+        reporter = scheduler(tmp_path / 'tg.sqlite3', bot, now, reports={'cashier': skip})
+        assert await reporter.run_once() == []
+        assert reporter.store.sent('cashier', DAY) and not bot.sent
     asyncio.run(scenario())
 
 
@@ -265,6 +283,6 @@ def test_manual_send_goes_to_group_without_marking_schedule(tmp_path):
             assert answer.status_code == 200, answer.text
             assert answer.json() == {'date': day.isoformat(), 'message_id': 5}
         assert len(requests) == 1 and b'image/png' in requests[0].content
-        assert not app.state.telegram_report.store.sent(day)
+        assert not app.state.telegram_report.store.sent('cashier', day)
         await app.state.cashier_days.close()
     asyncio.run(scenario())

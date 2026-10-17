@@ -1618,3 +1618,18 @@ def add_bazaar(request: Request, body: BazaarInput):
     except LedgerError as error:
         finance_error(error)
     return dict(demo=False, bazaars=bazaars)
+
+
+# ── Снимок «Финансов дня» в Telegram (T-479) ────────────────────────────────
+# Та же ручная проверка, что у снимка кассы: только полный доступ.
+
+@router.get('/telegram-report/preview')
+async def telegram_report_preview(request: Request, date: date | None = None):
+    from retro.modules.cashier.routes import telegram_preview
+    return await telegram_preview(request, 'accountant', selected_day(date))
+
+
+@router.post('/telegram-report')
+async def telegram_report_send(request: Request, date: date | None = None):
+    from retro.modules.cashier.routes import telegram_send
+    return await telegram_send(request, 'accountant', selected_day(date))
