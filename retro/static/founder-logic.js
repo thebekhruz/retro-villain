@@ -174,6 +174,16 @@
     return null;
   }
 
+  /** Подпись времени аналитики. `updated_at` сервера уже по Ташкенту (+05:00) —
+     берём из строки, а не через часовой пояс браузера. Период с сегодняшним днём —
+     «Сегодня ещё идёт · данные на ЧЧ:ММ» (ТЗ 16.10, п. 2): итог дня ещё растёт. */
+  function updatedLabel(data){
+    const at=data&&data.updated_at;
+    if(!at)return data&&data.includes_current_day?'Сегодня ещё идёт · нет данных':'Нет данных';
+    const time=at.slice(11,16),day=at.slice(8,10)+'.'+at.slice(5,7);
+    return data.includes_current_day?'Сегодня ещё идёт · данные на '+time:'Обновлено '+day+', '+time;
+  }
+
   return {barIndexAt,barScale,barStack,bucketCoverage,filtersFromQuery,filtersToQuery,nearestRevenueIndex,niceCeil,
-    paymentLineSeries,periodError,quickPeriod,revenueBars,revenuePaths,requestGate,weekday};
+    paymentLineSeries,periodError,quickPeriod,revenueBars,revenuePaths,requestGate,updatedLabel,weekday};
 });

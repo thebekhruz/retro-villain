@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import vm from 'node:vm';
 import {readFileSync} from 'node:fs';
+import FounderLogic from '../../retro/static/founder-logic.js';
 
 const source=readFileSync(new URL('../../retro/static/founder.js',import.meta.url),'utf8');
 const renderSource=source.slice(source.indexOf('function render(data){'),source.indexOf('async function load('));
@@ -12,7 +13,7 @@ test('selecting Retro hides only unselected cards and leaves all direction contr
   const cards=Object.fromEntries(['retro','school','banquet'].map(key=>[key,node()]));
   const ids=new Map();
   const context=vm.createContext({
-    Intl, Number, Date, Math, lastAnalytics:null,lastBookings:null,
+    Intl, Number, Date, Math, FounderLogic, lastAnalytics:null,lastBookings:null,
     money:new Intl.NumberFormat('ru-RU'),exactMoney:new Intl.NumberFormat('ru-RU'),
     $:id=>{if(!ids.has(id))ids.set(id,node());return ids.get(id)},
     document:{querySelector(selector){const key=selector.match(/data-direction=(\w+)/)[1];return selector.startsWith('article')?cards[key]:controls[key]}},
@@ -27,6 +28,8 @@ test('selecting Retro hides only unselected cards and leaves all direction contr
   assert.equal(cards.banquet.hidden,true);
   assert.ok(Object.values(controls).every(control=>!control.hidden));
   // ТЗ 5.2: «в т.ч. Яндекс Еда» — из ответа iiko, «Всего» не меняется.
+  // Время — из ответа сервера по Ташкенту, а не пояс браузера (T-506).
+  assert.equal(ids.get('updated').textContent,'Обновлено 24.09, 18:00');
   assert.equal(ids.get('total-retro-yandex').textContent,new Intl.NumberFormat('ru-RU').format(6800000));
   assert.equal(ids.get('total-selected').textContent,new Intl.NumberFormat('ru-RU').format(42463500));
 });

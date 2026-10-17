@@ -259,7 +259,7 @@ function render(data){
   $('expense-dashboard-total').textContent=exact(expenses?.total);
   $('internal-tasting').textContent=exactMoney.format(Number(data.internal_costs.tasting));
   $('internal-chef').textContent=exactMoney.format(Number(data.internal_costs.chef_account));
-  ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`article[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent='Обновлено '+new Intl.DateTimeFormat('ru-RU',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}).format(new Date(data.updated_at));
+  ['retro','school','banquet'].forEach(direction=>{$('total-'+direction).textContent=money.format(Number(data.totals[direction]));document.querySelector(`article[data-direction=${direction}]`).hidden=!data.directions.includes(direction)});$('total-selected').textContent=money.format(Number(data.totals.selected));$('updated').textContent=FounderLogic.updatedLabel(data);
   // ТЗ 5.2: Яндекс Еда — тип оплаты внутри Retro, из iiko; к «Всего» не прибавляется.
   const yandex=data.yandex_totals?.retro;$('total-retro-yandex').textContent=yandex===undefined||yandex===null?'—':money.format(Number(yandex));
   // «Чем оплачены продажи» убран (ТЗ 4.3): несверка оплат остаётся в предупреждениях ниже.

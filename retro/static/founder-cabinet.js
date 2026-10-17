@@ -395,8 +395,8 @@
       load('yesterday', '/api/founder/day?date=' + state.yesterday),
     ]);
     renderPhoneDays(today.value, yesterday.value);
-    setText('updated', today.status === 'rejected' ? today.reason.message
-      : 'Данные на ' + new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'}));
+    // Время — чтения iiko сервером (ТЗ 16.10, п. 2), не часы телефона.
+    setText('updated', today.status === 'rejected' ? today.reason.message : logic.todayStatus(today.value, state.today));
   }
 
   // ── Компьютер (7b) ───────────────────────────────────────────────────
@@ -443,6 +443,8 @@
     setText('k-retro-sub', totals.days + ' ' + plural(totals.days, 'день', 'дня', 'дней') + ' недели');
     setText('k-ox-sub', week.orders_error ? 'чеки: ' + week.orders_error : '');
     setText('fo-week-label', dm(week.start) + '–' + dm(week.end));
+    // Неделя кабинета всегда доходит до сегодня: итоги растут вместе с днём.
+    setText('fo-desk-status', logic.todayStatus(week.days.find(day => day.date === state.today), state.today));
   }
 
   function renderChecks() {
@@ -666,8 +668,8 @@
     load('week', '/api/founder/week?date=' + state.today).then(week => {
       renderWeek(week);
       renderChecks();
-      setText('updated', 'Данные на ' + new Date().toLocaleTimeString('ru-RU', {hour: '2-digit', minute: '2-digit', timeZone: 'Asia/Tashkent'}));
     }).catch(error => {
+      setText('fo-desk-status', 'Сегодня · нет данных iiko');
       failBlock('fo-week-table', error);
       setText('fo-acc-line', 'Замечания: ' + error.message);
     });

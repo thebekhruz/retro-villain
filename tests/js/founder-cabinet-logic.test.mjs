@@ -161,3 +161,19 @@ test('T-494: блюда — по справочнику меню, без спр�
   const empty = {item_classes: {'Плов': 'unknown', 'Мёд': 'unknown'}, item_classes_checked: false};
   assert.deepEqual(logic.soldDishes(empty, rows).map(row => row.name), ['Плов', 'Мёд', 'Контейнер', 'Новинка']);
 });
+
+test('T-506: строка сегодняшнего дня — время чтения iiko, смена и «нет данных» вместо нулей', () => {
+  const open = {cashier: {fetched_at: '2026-09-24T14:05:31+05:00', shift: {open: true, opened_at: '2026-09-24T09:01:00', closed_at: null}}};
+  assert.equal(logic.todayStatus(open, '2026-09-24'), 'Сегодня ещё идёт · данные на 14:05');
+  // Смены нет в ответе (не прочитана) — день считаем идущим, а не закрытым.
+  assert.equal(logic.todayStatus({cashier: {fetched_at: '2026-09-24T14:05:31+05:00', shift: null}}, '2026-09-24'),
+    'Сегодня ещё идёт · данные на 14:05');
+  const closed = {cashier: {fetched_at: '2026-09-24T23:50:00+05:00', shift: {open: false, opened_at: '2026-09-24T09:01:00', closed_at: '2026-09-24T23:40:12'}}};
+  assert.equal(logic.todayStatus(closed, '2026-09-24'),
+    'Сегодня · смена закрыта, итог дня может пересчитаться iiko до утра · данные на 23:50');
+  // Ответ прочитан вчера — с датой: старое время не выглядит сегодняшним.
+  assert.equal(logic.todayStatus({cashier: {fetched_at: '2026-09-23T23:59:00+05:00'}}, '2026-09-24'),
+    'Сегодня ещё идёт · данные на 23.09 23:59');
+  assert.equal(logic.todayStatus({cashier: null, cashier_error: 'iiko недоступен'}, '2026-09-24'), 'Сегодня · нет данных iiko');
+  assert.equal(logic.todayStatus(undefined, '2026-09-24'), '');
+});
