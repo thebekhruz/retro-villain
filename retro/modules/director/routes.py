@@ -127,7 +127,9 @@ async def report_for_period(request: Request, start: date | None = None, end: da
         snapshot = await load_iiko(request.app.state, 'load_director_report', today_tashkent(),
                                    start=start, end=end, refresh=refresh, request=request,
                                    timeout=150, ttl=CLOSED_PERIOD_TTL, stale=CLOSED_PERIOD_STALE)
-        return await asyncio.to_thread(with_not_menu, request.app.state, snapshot.json())
+        data = await asyncio.to_thread(with_not_menu, request.app.state, snapshot.json())
+        # Пороги ценовых диапазонов меню (ТЗ 3.2) — из настроек, вместе с отчётом.
+        return dict(data, price_tiers=list(request.app.state.settings.director_price_tiers))
     except TimeoutError:
         raise HTTPException(504, 'iiko формирует отчёт слишком долго. Повторите позже.') from None
     except DataError as error:

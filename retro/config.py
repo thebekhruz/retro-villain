@@ -18,6 +18,7 @@ SMS_PROVIDERS = ('eskiz', 'console')
 # Текст SMS с кодом входа. У Eskiz каждый текст проходит модерацию шаблона:
 # отправится только тот, что одобрен в кабинете Eskiz, слово в слово.
 SMS_TEMPLATE = 'Код подтверждения для входа в платформу Retro: {code}'
+DEFAULT_PRICE_TIERS = (30000, 45000)
 
 
 @dataclass(frozen=True)
@@ -85,6 +86,10 @@ class Settings:
     claude_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
     director_excluded_groups: frozenset[str] = field(default_factory=frozenset)
+    # Пороги ценовых диапазонов меню директора, сум (ТЗ 16.10, 3.2): два порога —
+    # «до 30 тыс», «30–45 тыс», «от 45 тыс». Пороги не окончательные, поэтому в
+    # переменной окружения, а не в коде.
+    director_price_tiers: tuple[int, ...] = DEFAULT_PRICE_TIERS
     booking_api_url: str = ''
     booking_api_token: str = field(default='', repr=False)
     booking_broadcast_token: str = field(default='', repr=False)
@@ -152,6 +157,7 @@ class Settings:
         shokh_module_on = os.getenv('SHOKH_MODULE', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
         categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
+        price_tiers = parse_director_price_tiers(os.getenv('DIRECTOR_PRICE_TIERS', ''))
         booking_url = os.getenv('BOOKING_ANALYTICS_URL', '').strip().rstrip('/')
         booking_token = os.getenv('ANALYTICS_API_TOKEN', '').strip()
         broadcast_token = os.getenv('BROADCAST_API_TOKEN', '').strip()
@@ -204,6 +210,7 @@ class Settings:
             claude_model=os.getenv('CLAUDE_MODEL', 'claude-sonnet-4-6'),
             director_categories=categories,
             director_excluded_groups=excluded_groups,
+            director_price_tiers=price_tiers,
             booking_api_url=booking_url,
             booking_api_token=booking_token,
             booking_broadcast_token=broadcast_token,
@@ -381,6 +388,25 @@ def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
     if not required_roles.issubset(roles):
         raise ValueError('DASHBOARD_PANEL_USERS должен задавать по одному пользователю для каждой панели.')
     return result
+
+
+def parse_director_price_tiers(value: str) -> tuple[int, ...]:
+    """«30000,45000» → (30000, 45000). Пусто — пороги по умолчанию.
+
+    Пороги — целые суммы в сум по возрастанию, от одного до пяти: больше
+    шести чипов в ряд на телефоне не помещаются. Пробелы внутри числа
+    («30 000») допускаются — так сумму обычно и пишут."""
+    raw = value.strip()
+    if not raw:
+        return DEFAULT_PRICE_TIERS
+    message = 'DIRECTOR_PRICE_TIERS — пороги цен в сум через запятую по возрастанию, например 30000,45000.'
+    parts = [re.sub(r'[\s\u00a0\u202f]', '', part) for part in raw.split(',')]
+    if not 1 <= len(parts) <= 5 or not all(part.isdigit() for part in parts):
+        raise ValueError(message)
+    tiers = tuple(int(part) for part in parts)
+    if tiers[0] <= 0 or any(low >= high for low, high in zip(tiers, tiers[1:])):
+        raise ValueError(message)
+    return tiers
 
 
 def parse_director_excluded_groups(value: str) -> frozenset[str]:

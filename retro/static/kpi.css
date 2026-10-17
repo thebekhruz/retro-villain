@@ -84,6 +84,10 @@
 .kpi-login-seg{margin-top:0;flex:none;width:176px}
 .kpi-login-seg button{min-height:34px;font-size:11px;padding:0 6px}
 .kpi-login select{height:40px;border:1px solid #dbe3d8;border-radius:10px;background:#fff;color:var(--ink);font-size:13px;padding:0 8px;max-width:100%}
+/* Поиск сотрудника над списком реестра (ТЗ 3.2). 16 точек: с меньшим iOS увеличивает страницу. */
+.kpi-pick{display:grid;gap:6px}
+.kpi-pick-search{height:40px;border:1px solid #dbe3d8;border-radius:10px;background:#fff;color:var(--ink);font-size:16px;padding:0 10px;min-width:0;width:100%}
+.kpi-pick select{width:100%}
 @media(max-width:360px){.kpi-login-head{flex-wrap:wrap}.kpi-login-seg{width:100%}}
 
 /* ══ Кольцо прогресса (главная менеджера) ════════════════════════════════

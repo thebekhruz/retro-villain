@@ -14,7 +14,7 @@ function previewRows() { return phone.matches ? 12 : 25; }
  *  начинается в 10:00, и в плохой день список уезжает за экран. */
 const LATE_PREVIEW = 5;
 
-const view = { snapshot: null, group: 'all', sort: 'revenue', query: '', expanded: false };
+const view = { snapshot: null, group: 'all', sort: 'revenue', query: '', price: '', expanded: false };
 
 async function request(url, options) {
   const response = await fetch(url, options);
@@ -106,8 +106,37 @@ function menuRow(row, groupTotals) {
   const last = document.createElement('td');
   last.dataset.label = 'Маржа';
   last.append(marginCell(row.margin));
-  tr.append(first, ...cells, last);
+  tr.append(first, priceCell(row), ...cells, last);
   return tr;
+}
+
+/** Средняя цена продажи (ТЗ 3.2): только у меню, у официантов цены нет. */
+function priceCell(row) {
+  const cell = text('td', 'metric-cell');
+  cell.dataset.label = 'Цена';
+  cell.append(text('span', 'metric-label', 'Цена'),
+    text('strong', 'metric-main', row.price === null ? '—' : money.format(Math.round(row.price))));
+  return cell;
+}
+
+/** Чипы ценовых диапазонов: пороги — из отчёта сервера (DIRECTOR_PRICE_TIERS). */
+function renderPrices(snapshot) {
+  const tiers = logic.priceTiers(snapshot);
+  if (view.price && !tiers.some(tier => tier.key === view.price)) view.price = '';
+  $('menu-price-row').hidden = !tiers.length;
+  $('menu-price').replaceChildren(...[{key: '', label: 'Все'}].concat(tiers).map(tier => {
+    const chip = text('button', 'chip' + (tier.key === view.price ? ' active' : ''), tier.label);
+    chip.type = 'button';
+    chip.setAttribute('aria-pressed', String(tier.key === view.price));
+    chip.addEventListener('click', () => {
+      if (view.price === tier.key) return;
+      view.price = tier.key;
+      view.expanded = false;
+      renderMenu();
+      scrollToList();
+    });
+    return chip;
+  }));
 }
 
 function detailLine(label, value) {
@@ -170,12 +199,17 @@ function renderMenu() {
   if (!snapshot) return;
   const group = snapshot.item_metrics[view.group] || {};
   const groupTotals = logic.totals(group);
-  const ranked = logic.search(logic.rank(group, view.sort), view.query);
+  renderPrices(snapshot);
+  const tiers = logic.priceTiers(snapshot);
+  const ranked = logic.search(logic.rank(group, view.sort), view.query)
+    .filter(row => logic.inPriceTier(row, view.price, tiers));
   const shown = view.expanded ? ranked : ranked.slice(0, previewRows());
   const body = $('menu-rows');
   body.replaceChildren();
   shown.forEach(row => body.append(menuRow(row, groupTotals)));
   $('menu-empty').hidden = ranked.length > 0;
+  $('menu-empty-text').textContent = view.query.trim() || view.price
+    ? 'Ничего не нашли. Сбросьте поиск или фильтр цены.' : 'По этому направлению продаж за период нет';
   // Выручку считаем по тому, что сейчас в списке: при поиске итог группы
   // рядом с двумя найденными строками только путает.
   const shownRevenue = ranked.reduce((total, row) => total + row.revenue, 0);
@@ -297,7 +331,7 @@ function paintSkeleton() {
     row.className = 'dr-skel-tr';
     row.setAttribute('aria-hidden', 'true');
     const cell = document.createElement('td');
-    cell.colSpan = 8;
+    cell.colSpan = 9;
     const line = text('div', 'dr-skel-row');
     line.append(skel('rm-skel'), skel('rm-skel'), skel('rm-skel'), skel('rm-skel'));
     cell.append(line);
@@ -508,9 +542,23 @@ function pendingCard(label) {
   return {card, note, clock};
 }
 
+/** Сохранить отчёт можно только за период с 13.10 (граница учёта, сервер
+ *  отвечает 422): раньше этой даты цифры смотрят, кнопка выключена. */
+function savable() {
+  const chosen = period ? period.state() : null;
+  return !chosen || !chosen.start || chosen.start >= RetroPeriod.START;
+}
+
+function syncGenerate() {
+  const allowed = savable();
+  $('generate').disabled = !allowed;
+  $('generate-note').hidden = allowed;
+}
+
 function generate() {
   const button = $('generate');
   if (period && !period.valid()) { stateText('Поправьте даты периода.', 'error'); return; }
+  if (!savable()) { stateText($('generate-note').textContent, 'error'); return; }
   const chosen = period ? period.state() : null;
   const label = chosen ? logic.periodLabel(chosen.start, chosen.end) : '';
   const list = $('reports');
@@ -616,12 +664,17 @@ let period = null;
   }
   period = RetroPeriod.mount({
     host: $('period-host'), today: today, modes: ['range'], preset: '10',
+    // Отчёт на экране — живая аналитика iiko (T-486, T-495): продажи до 13.10
+    // в iiko есть, и «10 дней» — это десять дней. Граница учёта остаётся у
+    // сохранения отчёта и PDF (syncGenerate).
+    floor: null,
     // Обработчику контрол передаёт выбранный период, и он попадал в
     // аргумент «перечитать мимо кеша»: смена периода каждый раз лезла в iiko.
-    onChange: () => loadSnapshot(),
+    onChange: () => { syncGenerate(); return loadSnapshot(); },
     // Чип периода крутится, пока iiko считает новый период.
     busy: true,
   });
+  syncGenerate();
   loadSnapshot();
   loadAttendance();
   loadReports();

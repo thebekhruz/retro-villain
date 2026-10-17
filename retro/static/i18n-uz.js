@@ -4010,3 +4010,34 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Перетащите, чтобы подвинуть. Двойной клик — обратно в угол.': "Surish uchun torting. Ikki marta bosish — burchakka qaytarish.",
 });
 /* ── /T-475 ── */
+
+/* ── T-495: ПК-отчёт без границы 13.10, цена и ценовые диапазоны меню,
+   «Все блюда» на телефоне, поиск по команде ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'PDF-отчёт сохраняется только за период с 13 октября 2026. На экране — цифры iiko за весь выбранный период.': "PDF hisobot faqat 2026-yil 13-oktabrdan boshlangan davr uchun saqlanadi. Ekranda — tanlangan butun davr uchun iiko raqamlari.",
+  'Выберите дату по сегодня.': "Bugungacha bo'lgan sanani tanlang.",
+  'Выберите дату с 13 октября по сегодня.': "13-oktabrdan bugungacha bo'lgan sanani tanlang.",
+  'Средняя цена': "O'rtacha narx",
+  'Цена — средняя цена продажи после скидок: выручка продаж, делённая на проданное количество. Счёт Шефа и дегустация в цену не входят.': "Narx — chegirmalardan keyingi o'rtacha sotuv narxi: sotuv tushumi sotilgan miqdorga bo'lingan. Shef hisobi va degustatsiya narxga kirmaydi.",
+  'Ничего не нашли. Сбросьте поиск или фильтр цены.': "Hech narsa topilmadi. Qidiruv yoki narx filtrini tozalang.",
+  'Все блюда': "Barcha taomlar",
+  'Все блюда за период': "Davrdagi barcha taomlar",
+  'Без ингредиентов и услуг · прибыль и маржа с учётом расхода без выручки': "Ingredientlar va xizmatlarsiz · foyda va marja tushumsiz xarajat bilan",
+  'Цена:': "Narx:",
+  'все': "hammasi",
+  'цена': "narx",
+  'Найти сотрудника': "Xodimni topish",
+  'Найти: имя или должность': "Topish: ism yoki lavozim",
+  'Найти сотрудника: имя или должность': "Xodimni topish: ism yoki lavozim",
+  'никого не нашли': "hech kim topilmadi",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^до (\d+(?:,\d+)?) тыс$/, "$1 minggacha"],
+  [/^(\d+(?:,\d+)?)–(\d+(?:,\d+)?) тыс$/, "$1–$2 ming"],
+  [/^от (\d+(?:,\d+)?) тыс$/, "$1 mingdan"],
+  [/^Основание: маржа (\d+)%, доля в выручке ([\d,]+%)$/, "Asos: marja $1%, tushumdagi ulushi $2"],
+  [/^найдено: (\d+)$/, "topildi: $1"],
+  [/^Найти сотрудника для (.+)$/, "$1 uchun xodimni topish"],
+  [/^Сотрудник для (.+)$/, "$1 uchun xodim"],
+);
+/* ── /T-495 ── */

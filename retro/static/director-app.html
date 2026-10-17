@@ -84,13 +84,15 @@
           <button type="button" data-venue="all" class="is-active">Все</button><button type="button" data-venue="retro">Retro</button><button type="button" data-venue="oxbridge">Oxbridge</button><button type="button" data-venue="banquet">Бехруз</button>
         </div>
         <div class="dir-views" role="group" aria-label="Срез">
-          <button type="button" data-view="top" class="is-active">Лидеры</button><button type="button" data-view="weak">Слабые</button><button type="button" data-view="lowm">Низкая маржа</button><button type="button" data-view="notb">Нет в Бехрузе</button>
+          <button type="button" data-view="top" class="is-active">Лидеры</button><button type="button" data-view="weak">Слабые</button><button type="button" data-view="lowm">Низкая маржа</button><button type="button" data-view="notb">Нет в Бехрузе</button><button type="button" data-view="all" class="is-wide">Все блюда</button>
         </div>
         <div class="dir-sort">
           <div class="dir-sort-keys" role="group" aria-label="Сортировка"><span>Сортировать:</span><button type="button" data-sort="revenue" class="is-active">выручка</button><button type="button" data-sort="quantity">кол-во</button><button type="button" data-sort="margin">маржа</button></div>
           <label class="visually-hidden" for="menu-category">Категория меню</label>
           <select id="menu-category" class="dir-select"><option value="">Все категории</option></select>
         </div>
+        <!-- Ценовые диапазоны (ТЗ 3.2): пороги приходят с отчётом, DIRECTOR_PRICE_TIERS. -->
+        <div id="menu-price" class="dir-sort-keys dir-price" role="group" aria-label="Цена" hidden></div>
         <article class="rm-phone-card dir-menu-card">
           <div class="dir-menu-title"><strong id="view-title">Продаются лучше всего</strong><span id="view-note"></span></div>
           <div id="menu-list" class="dir-menu-list"></div>
@@ -154,6 +156,8 @@
         <button id="ask-waiters" class="dir-link" type="button">✦ Почему такая разница? · AI →</button>
       </article>
       <div id="team-days" class="dir-segment" role="group" aria-label="День"><button type="button" data-day="today" class="is-active">Сегодня</button><button type="button" data-day="yesterday">Вчера</button></div>
+      <label class="visually-hidden" for="team-query">Найти сотрудника</label>
+      <input id="team-query" class="dir-search" type="search" placeholder="Найти: имя или должность" autocomplete="off">
       <div id="team-filters" class="dir-chips" role="group" aria-label="Фильтр"></div>
       <div id="team-list" class="rm-phone-card dir-team-list"></div>
       <p class="dir-note">Правки видны бухгалтеру сразу: это тот же реестр, что в «Сотрудниках» и «Финансах дня».</p>

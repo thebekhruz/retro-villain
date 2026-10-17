@@ -21,7 +21,8 @@
 
   const view = {
     tab: 'home', today: null, menuDays: 7, venue: 'all', slice: 'top', query: '', sort: 'revenue', category: '',
-    reports: {}, loading: {}, team: null, teamDay: 'today', teamFilter: 'all',
+    price: '', expanded: false,
+    reports: {}, loading: {}, team: null, teamDay: 'today', teamFilter: 'all', teamQuery: '',
     editing: null, editorType: 'shift', manual: false,
   };
   let chat = null;
@@ -285,43 +286,99 @@
 
   // ── Меню ─────────────────────────────────────────────────────────────
   const VIEW_TITLES = {top: 'Продаются лучше всего', weak: 'Продаются хуже всего',
-    lowm: 'Популярные, но маржа ниже ' + logic.LOW_MARGIN + '%', notb: 'Хиты Retro и Oxbridge, которых нет в Бехрузе'};
+    lowm: 'Популярные, но маржа ниже ' + logic.LOW_MARGIN + '%', notb: 'Хиты Retro и Oxbridge, которых нет в Бехрузе',
+    all: 'Все блюда за период'};
+  /** Сколько блюд видно до «Показать все» (ТЗ 3.3): во всех блюдах — десять,
+   *  в срезах — пять, как в макете. Раскрываются «Все блюда» и «Низкая маржа». */
+  const SLICE_PREVIEW = {all: 10};
+  const EXPANDS = new Set(['all', 'lowm']);
 
   function marginClass(margin) {
     if (margin === null) return '';
     return Math.round(margin) < logic.LOW_MARGIN ? 'm-low' : margin < 60 ? 'm-mid' : 'm-ok';
   }
 
-  function dishButton(row, index, max, measure) {
-    const button = node('button', 'dir-dish');
-    button.type = 'button';
-    const line = node('span', 'dir-dish-line');
-    const name = node('span', 'dir-dish-name');
+  function marginText(margin) { return margin === null ? 'маржа —' : 'маржа ' + Math.round(margin) + '%'; }
+
+  /** «12,5%» — доля блюда в выручке заведения. */
+  function shareText(share) {
+    const value = Math.round(share * 1000) / 10;
+    return String(value).replace('.', ',') + '%';
+  }
+
+  /** Строка под названием: категория (данные iiko, без перевода) и цена;
+   *  в срезах — ещё выручка и маржа. У «Низкой маржи» маржа стоит в основании. */
+  function dishMeta(row, withMoney) {
     const meta = node('small');
     if (row.category) {
       const category = node('span', 'dir-dish-cat', row.category + ' · ');
       category.dataset.i18n = 'off';
       meta.append(category);
     }
-    meta.append(document.createTextNode(short(row.revenue) + ' сум · '));
-    meta.append(node('span', marginClass(row.margin), row.margin === null ? 'маржа —' : 'маржа ' + Math.round(row.margin) + '%'));
-    // Название блюда — данные iiko: переводчик не трогает («Хлеб» → «Non»).
-    const dishName = node('strong', '', row.name);
-    dishName.dataset.i18n = 'off';
-    name.append(dishName, meta);
+    const price = row.price === null || row.price === undefined ? 'цена —' : 'цена ' + sum(row.price);
+    meta.append(document.createTextNode(price + (withMoney ? ' · ' + short(row.revenue) + ' сум' + (view.slice === 'lowm' ? '' : ' · ') : '')));
+    if (withMoney && view.slice !== 'lowm') meta.append(node('span', marginClass(row.margin), marginText(row.margin)));
+    return meta;
+  }
+
+  /** Количество справа и стрелка тренда: последние 3 дня к среднему за 30. */
+  function dishQty(row) {
     const qty = node('span', 'dir-dish-qty');
     qty.append(node('strong', 'rm-num', money.format(Math.round(row.quantity)) + ' шт'));
     const change = logic.trend(row.name, view.slice === 'notb' ? 'all' : view.venue, view.reports[3], view.reports[30]);
     if (change !== null && Number.isFinite(change) && Math.abs(change) >= 0.05) {
       qty.append(node('small', change > 0 ? 'is-up' : 'is-down', (change > 0 ? '↑ ' : '↓ ') + Math.abs(Math.round(change * 100)) + '%'));
     }
-    line.append(node('span', 'dir-rank', String(index + 1)), name, qty);
+    return qty;
+  }
+
+  function dishHead(row, index, withMoney) {
+    const line = node('span', 'dir-dish-line');
+    const name = node('span', 'dir-dish-name');
+    // Название блюда — данные iiko: переводчик не трогает («Хлеб» → «Non»).
+    const dishName = node('strong', '', row.name);
+    dishName.dataset.i18n = 'off';
+    name.append(dishName, dishMeta(row, withMoney));
+    line.append(node('span', 'dir-rank', String(index + 1)), name, dishQty(row));
+    return line;
+  }
+
+  function askDish(button, row) {
+    button.addEventListener('click', () => ask('Расскажи про «' + row.name + '»: продажи по заведениям, маржа и что с ним делать?'));
+  }
+
+  function dishButton(row, index, max, measure) {
+    const button = node('button', 'dir-dish');
+    button.type = 'button';
+    button.append(dishHead(row, index, true));
+    // «Низкая маржа» с основанием (ТЗ 3.3): почему блюдо в списке — его маржа
+    // и сколько оно весит в выручке заведения за период.
+    if (view.slice === 'lowm' && row.share !== null && row.share !== undefined) {
+      button.append(node('small', 'dir-dish-basis', 'Основание: ' + marginText(row.margin) + ', доля в выручке ' + shareText(row.share)));
+    }
     const bar = node('span', 'dir-dish-bar');
     const fill = node('span');
     fill.style.width = Math.max(4, (measure ? measure(row) : row.quantity) / max * 100) + '%';
     bar.append(fill);
-    button.append(line, bar);
-    button.addEventListener('click', () => ask('Расскажи про «' + row.name + '»: продажи по заведениям, маржа и что с ним делать?'));
+    button.append(bar);
+    askDish(button, row);
+    return button;
+  }
+
+  /** Карточка в «Все блюда» (ТЗ 3.3, перенос «Блюд за период» с ПК):
+   *  название, категория, цена, количество, выручка, прибыль и маржа. */
+  function dishCard(row, index) {
+    const button = node('button', 'dir-dish is-card');
+    button.type = 'button';
+    const figures = node('span', 'dir-dish-figures');
+    [['Выручка', short(row.revenue), ''], ['Прибыль', short(row.profit), row.profit < 0 ? 'm-low' : ''],
+      ['Маржа', row.margin === null ? '—' : Math.round(row.margin) + '%', marginClass(row.margin)]].forEach(([label, value, tone]) => {
+      const cell = node('span');
+      cell.append(node('span', '', label), node('strong', ('rm-num ' + tone).trim(), value));
+      figures.append(cell);
+    });
+    button.append(dishHead(row, index, false), figures);
+    askDish(button, row);
     return button;
   }
 
@@ -330,19 +387,58 @@
     const list = $('menu-list');
     list.replaceChildren();
     $('view-title').textContent = VIEW_TITLES[view.slice];
-    $('view-note').textContent = view.slice === 'notb' ? 'Сумма Retro + Oxbridge · фильтр заведения не действует' : '';
+    $('view-note').textContent = view.slice === 'notb' ? 'Сумма Retro + Oxbridge · фильтр заведения не действует'
+      : view.slice === 'all' ? 'Без ингредиентов и услуг · прибыль и маржа с учётом расхода без выручки' : '';
     if (!snapshot) return;
     $('menu-period').textContent = 'iiko · ' + logic.periodLabel(snapshot.period_start, snapshot.period_end);
     if (view.query.trim()) return renderSearch(snapshot);
     $('menu-found').hidden = true;
     $('menu-browse').hidden = false;
     renderCategories(snapshot);
-    const rows = logic.menuSlice(snapshot, view.venue, view.slice, 5, {sort: view.sort, category: view.category});
+    renderPrices(snapshot);
+    const found = logic.menuSlice(snapshot, view.venue, view.slice, EXPANDS.has(view.slice) ? Infinity : 5,
+      {sort: view.sort, category: view.category, price: view.price});
+    const preview = SLICE_PREVIEW[view.slice] || 5;
+    const rows = view.expanded ? found : found.slice(0, preview);
     if (!rows.length) { list.append(node('p', 'dir-empty', 'За период в этом срезе нет блюд.')); return; }
     // Полоса — по тому показателю, по которому отсортировано (ТЗ 2.7).
     const measure = row => view.sort === 'quantity' ? row.quantity : view.sort === 'margin' ? Math.max(0, row.margin || 0) : row.revenue;
     const max = Math.max(1, ...rows.map(measure));
-    rows.forEach((row, index) => list.append(dishButton(row, index, max, measure)));
+    rows.forEach((row, index) => list.append(view.slice === 'all' ? dishCard(row, index) : dishButton(row, index, max, measure)));
+    if (found.length > preview) {
+      const more = node('button', 'dir-link dir-more', view.expanded ? 'Свернуть' : 'Показать все · ' + found.length);
+      more.type = 'button';
+      more.setAttribute('aria-expanded', String(view.expanded));
+      more.addEventListener('click', () => {
+        const folding = view.expanded;
+        view.expanded = !view.expanded;
+        renderMenu();
+        // Свернули длинный список — возвращаемся к его началу, а не остаёмся внизу пустой страницы.
+        if (folding) $('tab-menu').querySelector('.dir-menu-card').scrollIntoView({block: 'start', behavior: 'smooth'});
+      });
+      list.append(more);
+    }
+  }
+
+  /** Ценовые диапазоны (ТЗ 3.2): пороги — из отчёта сервера. Выбранный
+   *  держится, пока такой диапазон есть. Работает вместе с категорией. */
+  function renderPrices(snapshot) {
+    const target = $('menu-price');
+    const tiers = logic.priceTiers(snapshot);
+    if (view.price && !tiers.some(tier => tier.key === view.price)) view.price = '';
+    target.hidden = !tiers.length;
+    target.replaceChildren(node('span', '', 'Цена:'), ...[{key: '', label: 'все'}].concat(tiers).map(tier => {
+      const button = node('button', tier.key === view.price ? 'is-active' : '', tier.label);
+      button.type = 'button';
+      button.setAttribute('aria-pressed', String(tier.key === view.price));
+      button.addEventListener('click', () => {
+        if (view.price === tier.key) return;
+        view.price = tier.key;
+        view.expanded = false;
+        renderMenu();
+      });
+      return button;
+    }));
   }
 
   /** Категории — группы iiko проданных блюд; выбранная держится, пока она есть. */
@@ -375,7 +471,8 @@
       const title = node('div');
       const foundName = node('strong', '', row.name);
       foundName.dataset.i18n = 'off';
-      title.append(foundName, node('small', '', 'маржа ' + (row.margin === null ? '—' : Math.round(row.margin) + '%') + ' · ' + short(row.revenue) + ' сум'));
+      title.append(foundName, node('small', '', marginText(row.margin) + ' · ' + short(row.revenue) + ' сум · '
+        + (row.price === null ? 'цена —' : 'цена ' + sum(row.price))));
       head.append(title, node('b', 'rm-num', money.format(Math.round(row.quantity)) + ' шт'));
       const split = node('div', 'dir-split');
       [['retro', 'Retro'], ['oxbridge', 'Oxbridge'], ['banquet', 'Бехруз']].forEach(([group, label]) => {
@@ -475,21 +572,24 @@
   }
 
   function renderTeam() {
-    const rows = logic.teamRows(view.team);
-    const filters = [['all', 'Все'], ['shift', 'Сменные'], ['monthly', 'Оклад'], ['late', 'Опоздали'],
-      ['missing', 'Не пришли'], ['nohik', 'Без Hikvision']];
+    if (!view.team) return;
+    // Поиск по имени и должности (ТЗ 3.2) сужает список, и счётчики чипов
+    // считают уже найденных; пустые чипы прячутся, кроме «Все» и выбранного.
+    const rows = logic.teamSearch(logic.teamRows(view.team), view.teamQuery);
     const bar = $('team-filters');
-    bar.replaceChildren(...filters.map(([key, label]) => {
-      const button = node('button', key === view.teamFilter ? 'is-active' : '',
-        label + ' · ' + rows.filter(row => logic.teamMatches(row, key)).length);
+    bar.replaceChildren(...logic.teamChips(rows, view.teamFilter).map(chip => {
+      const button = node('button', chip.key === view.teamFilter ? 'is-active' : '', chip.label + ' · ' + chip.count);
       button.type = 'button';
-      button.addEventListener('click', () => { view.teamFilter = key; renderTeam(); });
+      button.addEventListener('click', () => { view.teamFilter = chip.key; renderTeam(); });
       return button;
     }));
     const list = $('team-list');
     list.replaceChildren();
     const shown = rows.filter(row => logic.teamMatches(row, view.teamFilter));
-    if (!shown.length) { list.append(node('p', 'dir-empty', 'Никого в этом списке.')); return; }
+    if (!shown.length) {
+      list.append(node('p', 'dir-empty', view.teamQuery.trim() ? 'Никого не нашли. Сбросьте поиск.' : 'Никого в этом списке.'));
+      return;
+    }
     shown.forEach(row => {
       const button = node('button', 'dir-person');
       button.type = 'button';
@@ -716,25 +816,30 @@
     document.querySelectorAll('#tab-menu [data-days]').forEach(button => button.addEventListener('click', () => {
       if (view.menuDays === Number(button.dataset.days)) return;
       view.menuDays = Number(button.dataset.days);
+      view.expanded = false;
       document.querySelectorAll('#tab-menu [data-days]').forEach(other => other.classList.toggle('is-active', other === button));
       loadMenu(button);
     }));
     document.querySelectorAll('[data-venue]').forEach(button => button.addEventListener('click', () => {
       view.venue = button.dataset.venue;
+      view.expanded = false;
       document.querySelectorAll('[data-venue]').forEach(other => other.classList.toggle('is-active', other === button));
       renderMenu();
     }));
     document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => {
       view.slice = button.dataset.view;
+      view.expanded = false;
       document.querySelectorAll('[data-view]').forEach(other => other.classList.toggle('is-active', other === button));
       renderMenu();
     }));
     document.querySelectorAll('[data-sort]').forEach(button => button.addEventListener('click', () => {
       view.sort = button.dataset.sort;
+      view.expanded = false;
       document.querySelectorAll('[data-sort]').forEach(other => other.classList.toggle('is-active', other === button));
       renderMenu();
     }));
-    $('menu-category').addEventListener('change', event => { view.category = event.target.value; renderMenu(); });
+    $('menu-category').addEventListener('change', event => { view.category = event.target.value; view.expanded = false; renderMenu(); });
+    $('team-query').addEventListener('input', event => { view.teamQuery = event.target.value; renderTeam(); });
     $('team-days').querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
       if (view.teamDay === button.dataset.day) return;
       view.teamDay = button.dataset.day;
@@ -1000,18 +1105,44 @@
         reset.addEventListener('click', () => resetLink(item.waiter));
         row.append(reset);
       }
-      if (active && item.source !== 'registry') {
-        const select = node('select');
-        select.setAttribute('aria-label', 'Сотрудник для ' + item.waiter);
-        select.append(new Option('— сотрудник из реестра —', ''));
-        for (const employee of state.employees) select.append(new Option(employee.name, String(employee.id)));
-        select.value = link.employee_id ? String(link.employee_id) : '';
-        select.addEventListener('change', () => saveLink(item.waiter, select.value ? Number(select.value) : null, true));
-        row.append(select);
-      }
+      if (active && item.source !== 'registry') row.append(employeePicker(item.waiter, link));
       return row;
     }) : [node('p', 'dir-note', 'Логины появятся после первых чеков зала.')]));
   }
+  /** Сотрудник для логина: список реестра длинный, поэтому над ним поиск по
+   *  имени и должности (ТЗ 3.2) — кириллицей или латиницей. Поиск сужает
+   *  список, выбранный сотрудник в нём остаётся всегда. */
+  function employeePicker(waiter, link) {
+    const box = node('div', 'kpi-pick');
+    const search = node('input', 'kpi-pick-search');
+    search.type = 'search';
+    search.autocomplete = 'off';
+    search.placeholder = 'Найти сотрудника: имя или должность';
+    search.setAttribute('aria-label', 'Найти сотрудника для ' + waiter);
+    const select = node('select');
+    select.setAttribute('aria-label', 'Сотрудник для ' + waiter);
+    const chosen = link.employee_id ? String(link.employee_id) : '';
+    const fill = () => {
+      const query = search.value;
+      const found = state.employees.filter(employee => String(employee.id) === chosen
+        || globalThis.DirectorLogic.personMatches(query, employee.name, employee.role));
+      const first = query.trim()
+        ? (found.length ? 'найдено: ' + found.length : 'никого не нашли')
+        : '— сотрудник из реестра —';
+      select.replaceChildren(new Option(first, ''), ...found.map(employee => {
+        const option = new Option(employee.name + (employee.role ? ' · ' + employee.role : ''), String(employee.id));
+        option.dataset.i18n = 'off';
+        return option;
+      }));
+      select.value = chosen;
+    };
+    fill();
+    search.addEventListener('input', fill);
+    select.addEventListener('change', () => saveLink(waiter, select.value ? Number(select.value) : null, true));
+    box.append(search, select);
+    return box;
+  }
+
   async function resetLink(waiter) {
     try {
       const data = await call('/links?waiter=' + encodeURIComponent(waiter), {method: 'DELETE'});

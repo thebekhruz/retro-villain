@@ -113,6 +113,18 @@
 .m-low{color:#b0663a}.m-mid{color:var(--warn)}.m-ok{color:var(--ok)}
 .dir-dish-bar{display:block;height:4px;border-radius:2px;background:#f1f3ee;margin:8px 0 0 26px;overflow:hidden}
 .dir-dish-bar span{display:block;height:100%;border-radius:2px;background:#24594b}
+/* «Все блюда» (ТЗ 3.3): под названием — три цифры плитками, как в карточке
+   найденного блюда (.dir-split). «Низкая маржа» — с основанием строкой. */
+.dir-views button.is-wide{grid-column:1/-1}
+.dir-price{min-height:32px}
+/* Четыре диапазона с подписью — одной строкой на 360 точках. */
+.dir-price button{padding:5px 7px}
+.dir-dish-basis{display:block;margin:5px 0 0 26px;font-size:11px;line-height:1.4;color:#8a6a3a}
+.dir-dish-figures{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0 0 26px}
+.dir-dish-figures>span{display:block;background:#f5f7f1;border-radius:10px;padding:7px 8px;min-width:0}
+.dir-dish-figures>span>span{display:block;font-size:10px;color:var(--muted-2)}
+.dir-dish-figures strong{display:block;font-size:13px;font-weight:650;margin-top:2px;overflow-wrap:anywhere}
+.dir-menu-list .dir-more{justify-self:start}
 .dir-found{display:grid;gap:10px}
 .dir-found-card{border-radius:18px}
 .dir-found-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}

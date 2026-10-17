@@ -47,7 +47,10 @@
     <section class="controls" aria-label="Период отчёта">
       <div id="period-host"></div>
       <button id="refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
-      <button id="generate" class="button primary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h4"/></svg>Сформировать отчёт</button>
+      <button id="generate" class="button primary" type="button" aria-describedby="generate-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h4"/></svg>Сформировать отчёт</button>
+      <!-- Цифры на экране — живая аналитика iiko без границы учёта (T-495);
+           сохранённый отчёт и PDF — только с 13.10, как у сервера. -->
+      <p id="generate-note" class="generate-note" hidden>PDF-отчёт сохраняется только за период с 13 октября 2026. На экране — цифры iiko за весь выбранный период.</p>
     </section>
 
     <div class="day-meta"><span class="source-dot"></span><strong>Источник: iikoWeb</strong><span id="state" role="status" aria-live="polite"></span><span class="day-meta-sep">·</span><span>Период <strong id="report-period">—</strong></span></div>
@@ -126,14 +129,17 @@
           <button class="chip" type="button" data-sort="quantity">По количеству</button>
         </div>
       </div>
+      <!-- Ценовые диапазоны (ТЗ 3.2): пороги приходят с отчётом, DIRECTOR_PRICE_TIERS. -->
+      <div id="menu-price-row" class="menu-price-row" hidden><span class="menu-price-label">Средняя цена</span><div id="menu-price" class="menu-sort menu-price" role="group" aria-label="Средняя цена"></div></div>
       <p class="panel-note">Выручка и прибыль — в сум. Количество и себестоимость включают все позиции; расход без выручки показан отдельно и уже вычтен из итоговой прибыли.</p>
+      <p class="panel-note menu-price-note">Цена — средняя цена продажи после скидок: выручка продаж, делённая на проданное количество. Счёт Шефа и дегустация в цену не входят.</p>
       <div class="menu-table-scroll" data-scroll>
         <table class="menu-table">
-          <thead><tr><th scope="col">Позиция</th><th scope="col">Количество</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль продаж</th><th scope="col">Расход без выручки</th><th scope="col">Прибыль итоговая</th><th scope="col">Маржа</th></tr></thead>
+          <thead><tr><th scope="col">Позиция</th><th scope="col">Цена</th><th scope="col">Количество</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль продаж</th><th scope="col">Расход без выручки</th><th scope="col">Прибыль итоговая</th><th scope="col">Маржа</th></tr></thead>
           <tbody id="menu-rows"></tbody>
         </table>
       </div>
-      <div id="menu-empty" class="empty-state" hidden><span>▤</span><p>По этому направлению продаж за период нет</p></div>
+      <div id="menu-empty" class="empty-state" hidden><span>▤</span><p id="menu-empty-text">По этому направлению продаж за период нет</p></div>
       <div class="menu-foot"><span id="menu-count">—</span><button id="menu-more" class="button secondary" type="button" hidden>Показать все позиции</button></div>
     </section>
 

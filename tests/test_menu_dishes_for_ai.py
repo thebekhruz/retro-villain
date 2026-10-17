@@ -152,3 +152,17 @@ def test_director_report_marks_not_menu_items_for_tips(app, monkeypatch):
     with TestClient(app, client=('127.0.0.1', 50000), base_url='http://127.0.0.1') as client:
         data = client.get('/api/director/report?start=2026-10-09&end=2026-10-15').json()
     assert data['item_classes'] == {'Мед': 'ingredient'}
+    # Пороги ценовых диапазонов меню (ТЗ 3.2, T-495) приходят вместе с отчётом.
+    assert data['price_tiers'] == [30000, 45000]
+
+
+def test_director_report_carries_configured_price_tiers(tmp_path, monkeypatch):
+    """DIRECTOR_PRICE_TIERS меняет диапазоны без выкладки кода (T-495)."""
+    from datetime import date
+    from retro.modules.director import routes
+    monkeypatch.setattr(routes, 'today_tashkent', lambda: date(2026, 10, 16))
+    application = create_app(Settings(data_dir=tmp_path, director_price_tiers=(20000, 50000, 90000)))
+    application.state.iiko = SalesIiko()
+    with TestClient(application, client=('127.0.0.1', 50000), base_url='http://127.0.0.1') as client:
+        data = client.get('/api/director/report?start=2026-09-20&end=2026-10-15').json()
+    assert data['price_tiers'] == [20000, 50000, 90000]

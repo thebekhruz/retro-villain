@@ -61,6 +61,13 @@
   padding:10px 14px;background:#fff;color:var(--ink);font:inherit;font-size:13px}
 .menu-search input::placeholder{color:#9aa79b}
 .menu-sort{display:flex;gap:4px;padding:4px;background:#f1f4ec;border-radius:9px;flex-wrap:wrap}
+/* Ценовые диапазоны (ТЗ 3.2) — тем же рядом чипов, что сортировка. */
+.menu-price-row{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:-4px 0 14px}
+.menu-price-label{font-size:10px;font-weight:650;letter-spacing:1.4px;text-transform:uppercase;color:var(--muted)}
+.panel-note.menu-price-note{margin-top:6px}
+/* Подпись под «Сформировать отчёт»: период раньше 13.10 смотрят, но не сохраняют. */
+.controls{flex-wrap:wrap}
+.generate-note{flex-basis:100%;margin:0;font-size:11.5px;line-height:1.5;color:#7a6a45}
 
 /* Таблица с шестью числовыми колонками не влезает в телефон целиком,
    поэтому прокручивается внутри себя, а не растягивает страницу. */
@@ -148,6 +155,7 @@
   /* В двухколоночной сетке управления период занимает целую строку:
      иначе «Сформировать отчёт» не помещается рядом с датами. */
   .controls .period-display{grid-column:1 / -1}
+  .controls .generate-note{grid-column:1 / -1}
 }
 @media(max-width:620px){
   .menu-head,.menu-tools{align-items:stretch;flex-direction:column}
@@ -173,6 +181,7 @@
      последнюю кнопку висеть по центру: раскладываем два на два. */
   .menu-sort{width:100%;display:grid;grid-template-columns:1fr 1fr;gap:4px}
   .menu-sort .chip{width:100%}
+  .menu-price-row{flex-direction:column;align-items:stretch;gap:6px}
   .report-link{grid-template-columns:20px minmax(0,1fr)}
   .report-format{display:none}
 }
