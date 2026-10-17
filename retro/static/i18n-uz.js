@@ -4232,3 +4232,24 @@ globalThis.RetroTemplatesUz.push(
     "Kun davom etmoqda: $1 gacha yopilgan cheklar hisobga olindi. Ochiq stollarni iiko bermaydi."],
 );
 /* ── /T-500 ── */
+
+/* ── T-501: ПК-отчёт директора без дублей — одна выручка, «Как считается»,
+   одна заметка к таблице ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Как считается': "Qanday hisoblanadi",
+  'Прибыль итоговая к выручке, после расхода без выручки': "Yakuniy foydaning tushumga nisbati, tushumsiz xarajatdan keyin",
+  'Только позиции от 0,5 % выручки за период.': "Faqat davr tushumining kamida 0,5 % ini bergan pozitsiyalar.",
+  'Суммы в сум. Количество и себестоимость включают расход без выручки: Счёт Шефа, дегустацию и прочее. Прибыль продаж: выручка минус себестоимость проданного. Прибыль итоговая и маржа: после расхода без выручки. Цена: средняя цена продажи после скидок.': "Summalar so'mda. Miqdor va tannarx tushumsiz xarajatni ham o'z ichiga oladi: Shef hisobi, degustatsiya va boshqalar. Sotuv foydasi: tushumdan sotilganning tannarxi ayriladi. Yakuniy foyda va marja: tushumsiz xarajatdan keyin. Narx: chegirmalardan keyingi o'rtacha sotuv narxi.",
+  'Выручка складывается из продаж по меню: Retro, Retro в школе и банкет.': "Tushum menyu bo'yicha savdolardan tashkil topadi: Retro, maktabdagi Retro va banket.",
+  'Банкет считается по блюдам с меткой «БЕХРУЗ» в названии.': "Banket nomida «БЕХРУЗ» belgisi bor taomlar bo'yicha hisoblanadi.",
+  'Исключённые группы меню в выручку не входят.': "Menyuning chiqarib tashlangan guruhlari tushumga kirmaydi.",
+  'Это продажи отделения «Бехруз (Свадьба)» без метки «БЕХРУЗ» в названии блюда. В выручку они не входят, сумма нужна для сверки.': "Bu «Бехруз (Свадьба)» bo'limining taom nomida «БЕХРУЗ» belgisi bo'lmagan savdolari. Ular tushumga kirmaydi, summa solishtirish uchun kerak.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Исключена группа «(.+)»: (.+?) сум\.$/, "«$1» guruhi chiqarib tashlangan: $2 so'm."],
+  [/^Продажи вместе с ними: (.+?) сум\.$/, "Ular bilan birga savdo: $1 so'm."],
+  // Сначала строка с двумя суммами: короткий шаблон захватил бы её целиком.
+  [/^Яндекс Еда уже входит в выручку направлений: по меню (.+?) сум, по оплатам (.+?) сум\.$/, "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: menyu bo'yicha $1 so'm, to'lovlar bo'yicha $2 so'm."],
+  [/^Яндекс Еда уже входит в выручку направлений: (.+?) сум\.$/, "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: $1 so'm."],
+);
+/* ── /T-501 ── */
