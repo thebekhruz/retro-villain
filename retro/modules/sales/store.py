@@ -24,6 +24,9 @@ from retro.modules.cashier.service import DataError, TZ
 CALCULATION_VERSION = 'sales-2026-10-17-v1'
 # Журнал прогонов: сегодняшний день пишет строку раз в десять минут.
 RUNS_KEPT_DAYS = 45
+# Почасовые контрольные снимки дня (T-507) живут долго: это след «сколько было
+# на 13:00» на случай спора или восстановления, а строк в них — не больше 24 в день.
+SNAPSHOTS_KEPT_DAYS = 400
 
 SCHEMA = '''
     CREATE TABLE IF NOT EXISTS sales_lines (
@@ -106,6 +109,28 @@ SCHEMA = '''
         error TEXT
     );
     CREATE INDEX IF NOT EXISTS sales_sync_runs_day ON sales_sync_runs(source, day);
+    CREATE TABLE IF NOT EXISTS sales_hourly_snapshots (
+        source TEXT NOT NULL,
+        day TEXT NOT NULL,
+        hour INTEGER NOT NULL,
+        fetched_at TEXT NOT NULL,
+        revision TEXT NOT NULL,
+        lines INTEGER NOT NULL,
+        orders INTEGER NOT NULL,
+        receipts INTEGER NOT NULL,
+        quantity TEXT NOT NULL,
+        gross TEXT NOT NULL,
+        revenue TEXT NOT NULL,
+        iiko_revenue TEXT,
+        iiko_orders INTEGER,
+        iiko_quantity TEXT,
+        difference TEXT,
+        last_closed_at TEXT,
+        status TEXT NOT NULL,
+        by_direction TEXT NOT NULL,
+        differences TEXT NOT NULL,
+        PRIMARY KEY (source, day, hour)
+    );
     CREATE TABLE IF NOT EXISTS sales_day_leases (
         source TEXT NOT NULL,
         day TEXT NOT NULL,
@@ -123,7 +148,10 @@ ORDER_COLUMNS = ('order_id', 'order_num', 'opened_at', 'closed_at', 'register', 
 DAY_COLUMNS = ('day', 'fetched_at', 'revision', 'closed', 'lines', 'orders', 'revenue', 'iiko_revenue',
                'status', 'reconciliation', 'revisions', 'changed_at')
 MONEY = frozenset({'quantity', 'gross', 'revenue', 'discount', 'cost', 'returned', 'paid', 'prepaid',
-                   'other', 'iiko_revenue'})
+                   'other', 'iiko_revenue', 'iiko_quantity', 'difference'})
+SNAPSHOT_COLUMNS = ('day', 'hour', 'fetched_at', 'revision', 'lines', 'orders', 'receipts', 'quantity', 'gross',
+                    'revenue', 'iiko_revenue', 'iiko_orders', 'iiko_quantity', 'difference', 'last_closed_at',
+                    'status', 'by_direction', 'differences')
 RUN_COLUMNS = ('id', 'day', 'reason', 'started_at', 'finished_at', 'status', 'lines', 'orders',
                'revenue', 'previous_revenue', 'revision', 'error')
 
@@ -154,6 +182,7 @@ class SalesStore:
         # отчёта не должны отдать чужую историю.
         scope = [settings.base_url, settings.store_id, CALCULATION_VERSION]
         self.source = hashlib.sha256(json.dumps(scope).encode()).hexdigest()
+        self.snapshots_kept_days = getattr(settings, 'sales_snapshots_kept_days', SNAPSHOTS_KEPT_DAYS)
         with closing(self.db.connect()) as connection:
             connection.executescript(SCHEMA)
 
@@ -325,3 +354,49 @@ class SalesStore:
                 'SELECT ' + ', '.join(RUN_COLUMNS) + ' FROM sales_sync_runs WHERE ' + ' AND '.join(where)
                 + ' ORDER BY started_at DESC, id DESC LIMIT ?', (*params, max(1, int(limit)))).fetchall()
         return [dict(zip(RUN_COLUMNS, row)) for row in rows]
+
+    # ── Почасовые контрольные снимки (T-507) ───────────────────────────────
+
+    def save_snapshot(self, day, hour, *, fetched_at, revision, lines, orders, receipts, quantity, gross,
+                      revenue, iiko_revenue, iiko_orders, iiko_quantity, last_closed_at, status, by_direction,
+                      differences):
+        """Итог дня «на этот час» — не больше одной строки на (день, час).
+
+        Первая загрузка часа пишет снимок, следующие в тот же час ничего не
+        меняют (`INSERT OR IGNORE`): снимок — след того, что было на тот момент,
+        а не ещё одна копия текущего дня. Возвращает, записан ли снимок.
+        Заодно удаляет снимки старше `snapshots_kept_days`; строки, чеки и
+        состояние дня это не трогает.
+        """
+        if fetched_at.tzinfo is None:
+            raise DataError('Время снимка продаж должно быть с часовым поясом.')
+        if not 0 <= hour <= 23:
+            raise DataError('Час снимка — от 0 до 23.')
+        difference = None if iiko_revenue is None else revenue - iiko_revenue
+        values = (self.source, day.isoformat(), hour, fetched_at.astimezone(TZ).isoformat(), revision, lines,
+                  orders, receipts, str(quantity), str(gross), str(revenue), stored(iiko_revenue), iiko_orders,
+                  stored(iiko_quantity), stored(difference), last_closed_at, status,
+                  json.dumps(by_direction, ensure_ascii=False, sort_keys=True),
+                  json.dumps(differences, ensure_ascii=False))
+        with closing(self.db.connect()) as connection, connection:
+            result = connection.execute(
+                'INSERT OR IGNORE INTO sales_hourly_snapshots (source, ' + ', '.join(SNAPSHOT_COLUMNS)
+                + ') VALUES (' + ','.join('?' for _ in values) + ')', values)
+            inserted = result.rowcount == 1
+            connection.execute('DELETE FROM sales_hourly_snapshots WHERE source=? AND day < ?',
+                               (self.source, (day - timedelta(days=self.snapshots_kept_days)).isoformat()))
+        return inserted
+
+    def snapshots(self, day):
+        """Снимки дня по часам, от раннего к позднему."""
+        with closing(self.db.connect()) as connection:
+            rows = connection.execute(
+                'SELECT ' + ', '.join(SNAPSHOT_COLUMNS) + ' FROM sales_hourly_snapshots '
+                'WHERE source=? AND day=? ORDER BY hour', (self.source, day.isoformat())).fetchall()
+        result = []
+        for row in rows:
+            item = dict(zip(SNAPSHOT_COLUMNS, row))
+            item['by_direction'] = json.loads(item['by_direction'])
+            item['differences'] = json.loads(item['differences'])
+            result.append(item)
+        return result

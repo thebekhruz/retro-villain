@@ -3609,7 +3609,6 @@ Object.assign(globalThis.RetroDictionaryUz, {
 /* ── T-442: редизайн кассира ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'К передаче бухгалтеру': "Buxgalterga topshiriladi",
-  'Средний счёт': "O'rtacha hisob",
   'Расходы из кассы': "Kassadan xarajatlar",
   'Поступления в кассу': "Kassaga kirimlar",
   '+ Предоплаты наличными': "+ Naqd oldindan to'lovlar",
@@ -4187,20 +4186,145 @@ globalThis.RetroTemplatesUz.push(
 );
 /* ── /T-495 ── */
 
-/* ── T-504: история рассылок учредителя — журнал бота, получатели,
-   досылка оставшимся (ТЗ 16.10, п. 5.3) ── */
+/* ── T-500: «Обед сегодня» на телефоне директора и лист обеда за день (ТЗ 16.10 §2) ──
+   Короткие одиночные слова («Обед», «идёт») — шаблонами на всю строку: ключом
+   словаря они переводились бы кусками внутри чужих фраз. */
 Object.assign(globalThis.RetroDictionaryUz, {
-  'История рассылок': "Xabarnomalar tarixi",
+  'Обед сегодня': "Bugungi tushlik",
+  'день идёт': "kun davom etmoqda",
+  'По часам': "Soatlar bo'yicha",
+  'По направлениям': "Yo'nalishlar bo'yicha",
+  'Топ-5 блюд окна': "Shu vaqtdagi top-5 taom",
+  'по количеству · под названием выручка': "soni bo'yicha · nomi ostida tushum",
+  '✦ Спросить AI про этот обед →': "✦ Bu tushlik haqida AI'dan so'rash →",
+  'Сколько продали за обед сегодня?': "Bugun tushlikda qancha sotildi?",
+  'За этот день данных нет': "Bu kun uchun ma'lumot yo'q",
+  'ещё не наступил': "hali boshlanmagan",
+  'ещё не загружен': "hali yuklanmagan",
+  'В окне обеда блюд не продавали.': "Tushlik vaqtida taom sotilmagan.",
+  'Retro и Школа · банкетный зал не входит': "Retro va Maktab · banket zali kirmaydi",
+  'по времени закрытия чека, Ташкент': "chek yopilgan vaqt bo'yicha, Toshkent",
+  'по времени открытия чека, Ташкент': "chek ochilgan vaqt bo'yicha, Toshkent",
+  'День ещё не загружен из iiko: он стоит в очереди загрузки.': "Kun hali iiko'dan yuklanmagan: u yuklash navbatida.",
+  'iiko не подключено: продажи загрузить неоткуда.': "iiko ulanmagan: savdolarni yuklab bo'lmaydi.",
+  'iiko отвечает медленно: день ещё загружается.': "iiko sekin javob bermoqda: kun hali yuklanmoqda.",
+  'iiko сейчас не отвечает.': "iiko hozir javob bermayapti.",
+  'Сегодняшние чеки ещё не загружены из iiko.': "Bugungi cheklar hali iiko'dan yuklanmagan.",
+  'Нет связи с панелью. Проверьте интернет и откройте снова.': "Panel bilan aloqa yo'q. Internetni tekshiring va qayta oching.",
+  'День ещё не перечитан после закрытия смены: цифры могут уточниться.': "Kun smena yopilgandan keyin hali qayta o'qilmagan: raqamlar aniqlashishi mumkin.",
+  'Сверка с итогом iiko за этот день не сошлась.': "Bu kun uchun iiko jami bilan solishtirish mos kelmadi.",
+  // Ответы сервера о свежести сегодняшнего дня (T-499)
+  'iiko сейчас не отвечает: показаны данные последней загрузки.': "iiko hozir javob bermayapti: oxirgi yuklash ma'lumotlari ko'rsatilgan.",
+  'iiko отвечает медленно: показаны данные последней загрузки, обновление идёт.': "iiko sekin javob bermoqda: oxirgi yuklash ma'lumotlari ko'rsatilgan, yangilanish davom etmoqda.",
+  'Показаны данные последней загрузки.': "Oxirgi yuklash ma'lumotlari ko'rsatilgan.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Обед$/, "Tushlik"],
+  [/^идёт$/, "davom etmoqda"],
+  [/^на ((?:\d{2}\.\d{2} )?\d{1,2}:\d{2})$/, "$1 holatiga"],
+  [/^на (\d{1,2}:\d{2}) · обновить не удалось$/, "$1 holatiga · yangilab bo'lmadi"],
+  [/^окно (\d{1,2}:\d{2}–\d{1,2}:\d{2})$/, "vaqt oralig'i $1"],
+  [/^(\d+) (?:чек|чека|чеков) · средний чек (.+)$/, "$1 ta chek · o'rtacha chek $2"],
+  [/^выручка (.+) сум$/, "tushum $1 so'm"],
+  [/^История продаж хранится с (\d{2}\.\d{2}\.\d{4})\.$/, "Savdo tarixi $1 dan saqlanadi."],
+  [/^День идёт: учтены чеки, закрытые к (\d{1,2}:\d{2})\. Открытые столы iiko не отдаёт\.$/,
+    "Kun davom etmoqda: $1 gacha yopilgan cheklar hisobga olindi. Ochiq stollarni iiko bermaydi."],
+);
+/* ── /T-500 ── */
+
+/* ── T-501: ПК-отчёт директора без дублей — одна выручка, «Как считается»,
+   одна заметка к таблице ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Как считается': "Qanday hisoblanadi",
+  'Прибыль итоговая к выручке, после расхода без выручки': "Yakuniy foydaning tushumga nisbati, tushumsiz xarajatdan keyin",
+  'Только позиции от 0,5 % выручки за период.': "Faqat davr tushumining kamida 0,5 % ini bergan pozitsiyalar.",
+  'Суммы в сум. Количество и себестоимость включают расход без выручки: Счёт Шефа, дегустацию и прочее. Прибыль продаж: выручка минус себестоимость проданного. Прибыль итоговая и маржа: после расхода без выручки. Цена: средняя цена продажи после скидок.': "Summalar so'mda. Miqdor va tannarx tushumsiz xarajatni ham o'z ichiga oladi: Shef hisobi, degustatsiya va boshqalar. Sotuv foydasi: tushumdan sotilganning tannarxi ayriladi. Yakuniy foyda va marja: tushumsiz xarajatdan keyin. Narx: chegirmalardan keyingi o'rtacha sotuv narxi.",
+  'Выручка складывается из продаж по меню: Retro, Retro в школе и банкет.': "Tushum menyu bo'yicha savdolardan tashkil topadi: Retro, maktabdagi Retro va banket.",
+  'Банкет считается по блюдам с меткой «БЕХРУЗ» в названии.': "Banket nomida «БЕХРУЗ» belgisi bor taomlar bo'yicha hisoblanadi.",
+  'Исключённые группы меню в выручку не входят.': "Menyuning chiqarib tashlangan guruhlari tushumga kirmaydi.",
+  'Это продажи отделения «Бехруз (Свадьба)» без метки «БЕХРУЗ» в названии блюда. В выручку они не входят, сумма нужна для сверки.': "Bu «Бехруз (Свадьба)» bo'limining taom nomida «БЕХРУЗ» belgisi bo'lmagan savdolari. Ular tushumga kirmaydi, summa solishtirish uchun kerak.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Исключена группа «(.+)»: (.+?) сум\.$/, "«$1» guruhi chiqarib tashlangan: $2 so'm."],
+  [/^Продажи вместе с ними: (.+?) сум\.$/, "Ular bilan birga savdo: $1 so'm."],
+  // Сначала строка с двумя суммами: короткий шаблон захватил бы её целиком.
+  [/^Яндекс Еда уже входит в выручку направлений: по меню (.+?) сум, по оплатам (.+?) сум\.$/, "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: menyu bo'yicha $1 so'm, to'lovlar bo'yicha $2 so'm."],
+  [/^Яндекс Еда уже входит в выручку направлений: (.+?) сум\.$/, "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: $1 so'm."],
+);
+/* ── /T-501 ── */
+
+/* ── T-502: меню справа ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Меню справа': "Menyu o'ngda",
+});
+/* ── /T-502 ── */
+/* ── T-504: правила постоянных замечаний учредителю ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Смены прошлых дней: зарплата начислена, но выдана не полностью.': "O‘tgan kunlar smenalari: ish haqi hisoblangan, lekin to‘liq berilmagan.",
+  'У сотрудников в списке смены не указана ставка — их зарплату за день не посчитать.': "Smena ro‘yxatidagi xodimlarda stavka ko‘rsatilmagan — ularning kunlik ish haqini hisoblab bo‘lmaydi.",
+  'Расходы этого учётного периода, записанные в долг и ещё не оплаченные.': "Ushbu hisob davrida qarzga yozilgan va hali to‘lanmagan xarajatlar.",
+});
+/* ── /T-504 ── */
+/* ── T-503: «Как считается премия» простыми словами ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Засчитываются только чеки зала под своим логином: оплаченные, без удалений и без ручной льготы. Не считаются «Счёт шефа», дегустация, комплимент, чек на двух официантах, доставка, вынос, Яндекс, Узум, банкет и школа.':
+    "Faqat o‘z logini ostidagi zal cheklari hisoblanadi: to‘langan, o‘chirishlarsiz va qo‘lda imtiyozsiz. «Oshpaz hisobi», degustatsiya, kompliment, ikki ofitsiantdagi chek, yetkazib berish, olib ketish, Yandex, Uzum, banket va maktab hisoblanmaydi.",
+  'Премия — из дополнительной маржи: сколько зал заработал на целевых позициях сверх своего обычного уровня. Если позиция продалась хуже обычного, её минус вычитается.':
+    "Mukofot — qo‘shimcha marjadan: zal maqsadli pozitsiyalarda odatdagi darajasidan ortiq qancha ishlab topgani. Pozitsiya odatdagidan yomonroq sotilsa, uning minusi ayiriladi.",
+  'Премия — из дополнительной маржи: сколько зал заработал на целевых позициях сверх своего обычного уровня. Позиции, которые продались хуже обычного, не вычитаются.':
+    "Mukofot — qo‘shimcha marjadan: zal maqsadli pozitsiyalarda odatdagi darajasidan ortiq qancha ishlab topgani. Odatdagidan yomonroq sotilgan pozitsiyalar ayirilmaydi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Цель — продать за период (\d+) (порцию|порции|порций) целевых позиций\. Это на 70 % больше, чем зал обычно продаёт на каждые 100 чеков \(минимум на 0,75 порции больше\); «обычно» — среднее за (\d+) (прошлую неделю|прошлые недели|прошлых недель)\. Директор может поставить цель выше\.$/,
+    "Maqsad — davr davomida maqsadli pozitsiyalardan $1 porsiya sotish. Bu zal odatda har 100 chekda sotganidan 70 % ko‘p (kamida 0,75 porsiya ko‘p); «odatda» — o‘tgan $3 hafta o‘rtachasi. Direktor maqsadni yuqoriroq qo‘yishi mumkin."],
+  [/^Из дополнительной маржи первые (.+) в неделю \(за этот период — (.+)\) — обычные колебания, они остаются ресторану\. В фонд премии идёт (\d+) % от того, что выше\.$/,
+    "Qo‘shimcha marjaning haftasiga birinchi $1 (bu davr uchun — $2) — odatiy tebranishlar, ular restoranda qoladi. Mukofot jamg‘armasiga undan yuqorisining $3 % i o‘tadi."],
+  [/^Из дополнительной маржи первые (.+) — обычные колебания, они остаются ресторану\. В фонд премии идёт (\d+) % от того, что выше\.$/,
+    "Qo‘shimcha marjaning birinchi $1 — odatiy tebranishlar, ular restoranda qoladi. Mukofot jamg‘armasiga undan yuqorisining $2 % i o‘tadi."],
+  [/^Пример: дополнительная маржа (.+) − порог (.+) = (.+); в фонд идёт (.+)\.$/,
+    "Misol: qo‘shimcha marja $1 − chegara $2 = $3; jamg‘armaga $4 o‘tadi."],
+  [/^Фонд делится между участниками по числу чеков: больше чеков — больше доля\. Один человек получает не больше (.+) в неделю \(за этот период — (.+)\), остаток сверх потолка — ресторану\.$/,
+    "Jamg‘arma ishtirokchilar o‘rtasida cheklar soniga qarab taqsimlanadi: chek ko‘p — ulush ko‘p. Bir kishi haftasiga $1 dan (bu davr uchun — $2) ko‘p olmaydi, chegaradan ortig‘i — restoranga."],
+  [/^Фонд делится между участниками по числу чеков: больше чеков — больше доля\. Один человек получает не больше (.+), остаток сверх потолка — ресторану\.$/,
+    "Jamg‘arma ishtirokchilar o‘rtasida cheklar soniga qarab taqsimlanadi: chek ko‘p — ulush ko‘p. Bir kishi $1 dan ko‘p olmaydi, chegaradan ortig‘i — restoranga."],
+  [/^Участвует тот, у кого за период от (\d+) (чека|чеков) и от (\d+) (смены|смен)\. Премию выдаёт бухгалтер после закрытия периода\.$/,
+    "Davr davomida kamida $1 chek va $3 smenasi bo‘lgan kishi ishtirok etadi. Mukofotni davr yopilgandan keyin buxgalter beradi."],
+);
+/* ── /T-503 ── */
+
+/* ── T-505: журнал рассылок гостям (ТЗ 16.10, п. 5.3) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Журнал рассылок': "Tarqatmalar jurnali",
+  'Рассылок ещё не было.': "Hali tarqatmalar bo'lmagan.",
+  'Некорректный идентификатор рассылки.': "Tarqatma identifikatori noto'g'ri.",
+});
+/* ── /T-505 ── */
+
+/* ── T-506: статус сегодняшнего дня — «ещё идёт», время данных iiko, закрытая смена ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Сегодня · нет данных iiko': "Bugun · iiko ma'lumoti yo'q",
+  'Сегодня ещё идёт · нет данных': "Bugun hali davom etmoqda · ma'lumot yo'q",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Сегодня ещё идёт · данные на ((?:\d{2}\.\d{2} )?\d{1,2}:\d{2})$/, "Bugun hali davom etmoqda · ma'lumotlar $1 holatiga"],
+  [/^Сегодня · смена закрыта, итог дня может пересчитаться iiko до утра · данные на ((?:\d{2}\.\d{2} )?\d{1,2}:\d{2})$/,
+    "Bugun · smena yopilgan, kun yakunini iiko ertalabgacha qayta hisoblashi mumkin · ma'lumotlar $1 holatiga"],
+  [/^Обновлено (\d{2}\.\d{2}), (\d{1,2}:\d{2})$/, "Yangilandi: $1, $2"],
+);
+/* ── /T-506 ── */
+
+/* ── T-504: журнал рассылок учредителя — журнал бота, получатели,
+   досылка оставшимся; без журнала бота — журнал панели (ТЗ 16.10, п. 5.3) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
   'Ручные запускает человек: из панели или командой в боте. Автоматические уходят по расписанию без нажатия.': "Qo'lda yuboriladiganlarini odam ishga tushiradi: paneldan yoki botdagi buyruq bilan. Avtomatiklari jadval bo'yicha tugma bosilmasdan ketadi.",
   'Какие рассылки показать': "Qaysi xabarnomalarni ko'rsatish",
   'Ручные': "Qo'lda",
   'Автоматические': "Avtomatik",
   'Показать ещё': "Yana ko'rsatish",
-  'Не удалось загрузить историю рассылок.': "Xabarnomalar tarixini yuklab bo'lmadi.",
-  'История появится после обновления бота.': "Tarix bot yangilangandan keyin paydo bo'ladi.",
+  'Не удалось загрузить журнал рассылок.': "Xabarnomalar jurnalini yuklab bo'lmadi.",
+  'Последние 30 рассылок через эту панель. Получатели по статусам и досылка появятся после обновления бота.': "Ushbu panel orqali so'nggi 30 ta xabarnoma. Oluvchilar holati va qolganlarga yuborish bot yangilangandan keyin paydo bo'ladi.",
   'Автоматических рассылок пока не было.': "Avtomatik xabarnomalar hali bo'lmagan.",
   'Ручных рассылок пока не было.': "Qo'lda yuborilgan xabarnomalar hali bo'lmagan.",
-  'Рассылок пока не было.': "Xabarnomalar hali bo'lmagan.",
   'Из панели': "Paneldan",
   'Команда в боте': "Botdagi buyruq",
   'Автоматическая': "Avtomatik",
@@ -4244,6 +4368,7 @@ globalThis.RetroTemplatesUz.push(
   [/^Дослано (\d{2}\.\d{2}(?:\.\d{4})? \d{2}:\d{2})$/, "Qolganlarga yuborildi: $1"],
   [/^Досылали: (\d+) · последний раз (.+)$/, "Qolganlarga yuborildi: $1 marta · oxirgisi $2"],
   [/^Дослать оставшимся: (\d+)$/, "Qolganlarga yuborish: $1"],
+  [/^Итог бота на (\d{2}\.\d{2}(?:\.\d{4})? \d{2}:\d{2})$/, "Bot natijasi $1 holatiga"],
   [/^Сообщение уйдёт (\d+) (?:гостю|гостям) из очереди\. Тем, кто уже получил его, заблокировал бота или остался с ошибкой, повторно ничего не уйдёт\.$/,
     "Xabar navbatdagi $1 mehmonga yuboriladi. Uni allaqachon olgan, botni bloklagan yoki xato bilan qolganlarga qayta hech narsa yuborilmaydi."],
   [/^Такой же текст уже рассылали (.+) · Из панели\.$/, "Xuddi shu matn $1 da yuborilgan · Paneldan."],

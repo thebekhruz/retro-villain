@@ -58,6 +58,7 @@ from retro.modules.kpi.source import KpiSource
 from retro.modules.kpi.store import KpiStore
 from retro.modules.users.routes import router as users_router
 from retro.modules.founder.chat import FounderChatStore
+from retro.modules.founder.broadcast_journal import BroadcastJournal
 from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
@@ -75,6 +76,12 @@ from retro.sessions import SessionIdentity, SessionStore
 
 STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
+# Lax, не Strict: Safari (WebKit) не отправляет Strict-cookie на переходах во
+# вкладке, если страницу входа открыли переходом с другого сайта (ссылка из
+# Telegram, SMS, поиска). Директор вводил код (verify 200), а /director тут же
+# уходил на вход (303) — 16.10.2026. Lax так же не отдаёт cookie чужим POST,
+# а все изменяющие запросы панели — POST/PUT/DELETE.
+SESSION_SAMESITE = 'lax'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js',
                 '/static/i18n.js', '/static/i18n-uz.js', '/static/busy.js', '/static/favicon.svg',
                 '/static/favicon-32.png', '/static/apple-touch-icon.png',
@@ -399,6 +406,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         cashier=lambda: getattr(app.state.cashier_days, 'archive', None))
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
+    # Журнал рассылок гостям (ТЗ 16.10, п. 5.3): рядом с чатом учредителя.
+    app.state.broadcast_journal = BroadcastJournal(founder_path)
     # Счёт Шефа за неделю (ТЗ 16.10, п. 4.2): журнал событий есть всегда, проверка
     # идёт только с iiko, а сообщение уходит, только если задан чат учредителя.
     from retro.modules.founder.chef_alert import ChefAlertStore, ChefWeekAlert
@@ -542,7 +551,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
         response.set_cookie(
             SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
-            samesite='strict', secure=effective_scheme(request) == 'https', path='/')
+            samesite=SESSION_SAMESITE, secure=effective_scheme(request) == 'https', path='/')
         return response
 
     def phone_failure(error: PhoneLoginError):
@@ -572,12 +581,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response = JSONResponse({'role': account.role, 'path': ROLE_PATHS[account.role]})
         response.set_cookie(
             SESSION_COOKIE, token, max_age=int(app.state.sessions.lifetime.total_seconds()),
-            httponly=True, samesite='strict', secure=effective_scheme(request) == 'https', path='/')
+            httponly=True, samesite=SESSION_SAMESITE, secure=effective_scheme(request) == 'https', path='/')
         return response
 
     def finish_logout(request: Request, response: Response):
         app.state.sessions.delete(request.cookies.get(SESSION_COOKIE))
-        response.delete_cookie(SESSION_COOKIE, path='/', samesite='strict')
+        response.delete_cookie(SESSION_COOKIE, path='/', samesite=SESSION_SAMESITE)
         return response
 
     @app.post('/api/session/logout', status_code=204)

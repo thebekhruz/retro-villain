@@ -19,6 +19,8 @@
 /* ── Шапка 7b ─────────────────────────────────────────────────────────── */
 .fo-heading{display:flex;align-items:flex-end;justify-content:space-between;gap:16px}
 .fo-heading h1{font-size:34px;letter-spacing:-1.4px}
+.fo-today-status{margin:6px 0 0;font-size:12px;color:var(--muted-2)}
+.fo-today-status:empty{display:none}
 .fo-excel{display:flex;flex-direction:column;align-items:flex-end;gap:6px}
 .fo-excel .button small{color:var(--gold);font-size:9px;letter-spacing:1px}
 .fo-excel>span{font-size:10px;color:var(--muted-2)}

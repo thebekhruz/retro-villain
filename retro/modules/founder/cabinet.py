@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import TZ, DataError, today_tashkent
 from retro.modules.cashier.till import expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
@@ -118,7 +118,10 @@ async def cashier_day(request, day: date):
         banquet=money(breakdown.bekhruz_banquet) if breakdown else None,
         register_revenue=money(snapshot.revenue), retro_checks=snapshot.receipt_count, demo=money(demo),
         expected_handover=money(expected_handover(snapshot, totals)),
-        fetched_at=snapshot.fetched_at.isoformat()), None
+        # Время чтения iiko и смена кассы — для строки «Сегодня ещё идёт · данные на ЧЧ:ММ»
+        # (ТЗ 16.10, п. 2): экран не подставляет свои часы.
+        fetched_at=snapshot.fetched_at.astimezone(TZ).isoformat(timespec='seconds'),
+        shift=snapshot.shift.json() if snapshot.shift is not None else None), None
 
 
 def shift_accrued(request, day: date) -> Decimal:
@@ -219,10 +222,12 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
     if checked:
         # Полученное бухгалтером (подтверждение или ручная запись, 2a) сверено
         # сервером с текущим расчётом кассы — та же недостача, что ошибка
-        # «От кассира получено меньше расчёта» в 2a и в Excel дня.
-        shortfall = Decimal(handover_state['shortfall'] or 0)
-        check = dict(status='mismatch' if shortfall > 1 else 'ok',
-                     difference=money(Decimal(recorded) - Decimal(expected)))
+        # «От кассира получено меньше расчёта» в 2a и в Excel дня. Расхождение —
+        # в обе стороны, как overview.handover_check: получено больше расчёта
+        # (shortfall тогда 0) — тоже не сходится, а не ✓.
+        difference = Decimal(recorded) - Decimal(expected)
+        check = dict(status='mismatch' if abs(difference) > 1 else 'ok',
+                     difference=money(difference))
     elif (recorded is not None and handover_state.get('source') == 'accountant'
           and not handover_state.get('cashier_active')):
         # Приход записал бухгалтер, а кассир в панели в этот день не работал:

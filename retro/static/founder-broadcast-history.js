@@ -1,21 +1,25 @@
-/* История рассылок (ТЗ 16.10, п. 5.3; T-504): журнал бота под формой рассылки.
-   Ручные (из панели, командой в боте) и автоматические — разными плашками и
-   фильтром. По нажатию — получатели со статусами; прерванную рассылку можно
-   дослать тем, кому сообщение ещё не уходило, после подтверждения. Бот без
-   журнала — спокойная пометка, форма рассылки работает как раньше. */
+/* Журнал рассылок (ТЗ 16.10, п. 5.3; T-504): один блок под формой рассылки.
+   Бот с журналом (T-503): ручные (из панели, командой в боте) и автоматические
+   разными плашками и фильтром; по нажатию — получатели со статусами;
+   прерванную рассылку можно дослать тем, кому сообщение ещё не уходило, после
+   подтверждения. Бот без журнала: те же карточки из журнала панели (T-505) —
+   рассылки через эту панель с последним итогом бота, без получателей и досылки. */
 (function(){
   const $=id=>document.getElementById(id);
   const logic=globalThis.FounderBroadcastLogic;
   const Busy=globalThis.RetroBusy;
-  const api=async(url,options)=>RetroState.responseJson(await fetch(url,options),'Не удалось загрузить историю рассылок.');
+  const api=async(url,options)=>RetroState.responseJson(await fetch(url,options),'Не удалось загрузить журнал рассылок.');
   const POLL_MS=3000;
   const FILTERS=[['all','Все'],['sent','Отправлено'],['blocked','Заблокировали'],['failed','Не дошло'],['queued','В очереди']];
-  let kind='all',cursor=null,loaded=[],supported=true,pollTimer=null,generation=0;
+  // supported: null — ещё не знаем, true — журнал бота, false — журнал панели.
+  let kind='all',cursor=null,loaded=[],supported=null,pollTimer=null,generation=0;
   const cards=new Map();// id задания → {job, root, …}
 
   const el=(tag,className,text)=>{const node=document.createElement(tag);if(className)node.className=className;if(text!==undefined)node.textContent=text;return node};
   /** Данные гостя и автора — как пришли: переводчик их не трогает. */
   const data=(tag,className,text)=>{const node=el(tag,className,text);node.setAttribute('data-i18n','off');return node};
+  // Статус — по id задачи бота (T-505); получатели и досылка — у журнала бота.
+  const statusUrl=id=>'/api/founder/broadcast/'+encodeURIComponent(id);
   const jobUrl=id=>'/api/founder/broadcast/jobs/'+encodeURIComponent(id);
   const setNote=(text,error=false)=>{const node=$('broadcast-history-note');node.hidden=!text;node.textContent=text||'';node.classList.toggle('is-error',error)};
 
@@ -45,7 +49,8 @@
     const throttle=logic.throttleText(job,now);if(throttle)notes.push(el('p','broadcast-job-note is-wait',throttle));
     const resumed=logic.resumeText(job,now);
     if(resumed){const note=el('p','broadcast-job-note');note.append(el('span','',resumed));if(job.resumed_by)note.append(' · ',data('span','',job.resumed_by));notes.push(note)}
-    if(!job.recipients_known)notes.push(el('p','broadcast-job-note','Получатели этой рассылки не записаны.'));
+    if(job.panel){const at=logic.panelStatusText(job,now);if(at)notes.push(el('p','broadcast-job-note',at))}
+    else if(!job.recipients_known)notes.push(el('p','broadcast-job-note','Получатели этой рассылки не записаны.'));
     const actions=el('div','broadcast-job-actions');
     if(job.recipients_known){
       const open=el('button','button broadcast-job-open',entry.open?'Скрыть получателей':'Получатели');open.type='button';
@@ -171,7 +176,7 @@
     for(const [id,entry] of cards)if(!loaded.some(job=>job.id===id))cards.delete(id);
     list.replaceChildren(...nodes);
     if(!loaded.length)list.append(el('p','founder-note broadcast-history-empty',
-      kind==='auto'?'Автоматических рассылок пока не было.':kind==='manual'?'Ручных рассылок пока не было.':'Рассылок пока не было.'));
+      kind==='auto'?'Автоматических рассылок пока не было.':kind==='manual'?'Ручных рассылок пока не было.':'Рассылок ещё не было.'));
   }
 
   async function load({append=false,quiet=false}={}){
@@ -182,8 +187,7 @@
       if(turn!==generation)return;
       supported=page.supported!==false;
       $('broadcast-history-kinds').hidden=!supported;
-      if(!supported){cards.clear();loaded=[];$('broadcast-history-list').replaceChildren();$('broadcast-history-more').hidden=true;
-        setNote('История появится после обновления бота.');return}
+      if(!supported)return await loadPanel(turn,quiet);
       setNote('');
       const deeper=quiet&&loaded.length>page.jobs.length;
       place(page.jobs,append);
@@ -199,21 +203,46 @@
     }
   }
 
-  /** Идущие рассылки опрашиваем по одной, пока не закончатся. */
+  /** Бот без журнала: рассылки через эту панель из её журнала (T-505).
+   *  Незавершённые сервер досчитывает у бота сам. */
+  async function loadPanel(turn,quiet){
+    const data=await api('/api/founder/broadcast/journal',{retroBusy:false});
+    if(turn!==generation)return;
+    const jobs=(Array.isArray(data?.entries)?data.entries:[]).map(logic.fromPanelJournal);
+    if(!quiet){cards.clear();loaded=[]}
+    setNote('Последние 30 рассылок через эту панель. Получатели по статусам и досылка появятся после обновления бота.');
+    place(jobs,false);cursor=null;$('broadcast-history-more').hidden=true;
+    schedule();
+  }
+
+  /** Опрос возвращает задание бота: в журнале панели и у старого бота в нём
+   *  нет текста и автора — их не теряем. Карточка журнала панели остаётся
+   *  без получателей и досылки: у бота без журнала их нет. */
+  function merged(previous,job){
+    const next={...job,text:job.text??previous.text,author:job.author??previous.author,source:job.source??previous.source,
+      manual:job.manual??previous.manual,panel:previous.panel,status_at:previous.status_at};
+    return previous.panel?{...next,recipients_known:false,resumable:false,status_at:new Date().toISOString()}:next;
+  }
+
+  /** Идущие рассылки опрашиваем по одной, пока не закончатся. Три ответа
+   *  подряд с ошибкой (бот не знает задание) или запись журнала панели старше
+   *  суток — не опрашиваем. */
+  const polled=entry=>(entry.job.status==='queued'||entry.job.status==='running')&&(entry.misses||0)<3
+    &&(!entry.job.panel||Date.now()-Date.parse(entry.job.created_at)<864e5);
   function schedule(){
     clearTimeout(pollTimer);pollTimer=null;
-    if([...cards.values()].some(entry=>!logic.isTerminal(entry.job.status)))pollTimer=setTimeout(poll,POLL_MS);
+    if([...cards.values()].some(polled))pollTimer=setTimeout(poll,POLL_MS);
   }
   async function poll(){
-    const active=[...cards.values()].filter(entry=>!logic.isTerminal(entry.job.status));
+    const active=[...cards.values()].filter(polled);
     await Promise.all(active.map(async entry=>{
       try{
-        const job=await api(jobUrl(entry.job.id),{retroBusy:false});
+        const job=merged(entry.job,await api(statusUrl(entry.job.id),{retroBusy:false}));
         const finished=logic.isTerminal(job.status);
-        entry.job=job;loaded=loaded.map(item=>item.id===job.id?job:item);summary(entry);
+        entry.job=job;entry.misses=0;loaded=loaded.map(item=>item.id===job.id?job:item);summary(entry);
         // Получатели открыты — по окончании рассылки перечитываем их статусы.
         if(entry.open&&finished)loadDeliveries(entry);
-      }catch{}
+      }catch{entry.misses=(entry.misses||0)+1}
     }));
     schedule();
   }
@@ -228,11 +257,13 @@
 
   document.querySelectorAll('#broadcast-history-kinds [data-kind]').forEach(chip=>chip.addEventListener('click',()=>setKind(chip.dataset.kind)));
   $('broadcast-history-more').addEventListener('click',()=>{const work=load({append:true});if(Busy)Busy.button($('broadcast-history-more'),work,{done:false})});
+  // «Обновить»: рассылки командой в боте и с другого устройства сами не появляются.
+  $('broadcast-history-refresh').addEventListener('click',()=>{const work=load({quiet:true});if(Busy)Busy.button($('broadcast-history-refresh'),work,{done:false})});
 
   // Форма рассылки сообщает о новой рассылке; предпросмотр сверяет текст с журналом.
   globalThis.FounderBroadcastHistory={
-    reload:()=>supported?load({quiet:true}):Promise.resolve(),
-    jobs:()=>supported?[...loaded]:[],
+    reload:()=>load({quiet:true}),
+    jobs:()=>[...loaded],
   };
   load();
 })();

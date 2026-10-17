@@ -23,6 +23,8 @@ SMS_TEMPLATE = 'Код подтверждения для входа в плат�
 # считаем обедом. Окно — минуты от полуночи по Ташкенту, правая граница не входит.
 SALES_HISTORY_START = date(2026, 9, 1)
 LUNCH_HOURS = (12 * 60, 15 * 60)
+# Сколько дней хранить почасовые контрольные снимки продаж (T-507).
+SALES_SNAPSHOTS_KEPT_DAYS = 400
 # Счёт Шефа за неделю (ТЗ 16.10, п. 4.2), сум по меню: с этой суммы учредитель
 # получает сообщение, повтор — когда сумма выросла ещё на шаг. Переменные
 # CHEF_WEEK_LIMIT и CHEF_WEEK_REPEAT_STEP меняют их без правки кода.
@@ -138,6 +140,7 @@ class Settings:
     report_retention: int = 24
     sales_history_start: date = SALES_HISTORY_START
     lunch_hours: tuple[int, int] = LUNCH_HOURS
+    sales_snapshots_kept_days: int = SALES_SNAPSHOTS_KEPT_DAYS
 
     @property
     def configured(self):
@@ -227,6 +230,7 @@ class Settings:
         telegram_report = parse_telegram_report_config(os.environ)
         sales_history_start = parse_sales_history_start(os.getenv('SALES_HISTORY_START', ''))
         lunch_hours = parse_lunch_hours(os.getenv('LUNCH_HOURS', ''))
+        snapshots_kept_days = parse_sales_snapshots_kept_days(os.getenv('SALES_SNAPSHOTS_KEPT_DAYS', ''))
         chef_alert = parse_chef_alert_config(os.environ)
         return cls(
             base_url=base,
@@ -262,6 +266,7 @@ class Settings:
             report_retention=int(retention_value),
             sales_history_start=sales_history_start,
             lunch_hours=lunch_hours,
+            sales_snapshots_kept_days=snapshots_kept_days,
         )
 
 
@@ -287,6 +292,16 @@ def parse_lunch_hours(value: str) -> tuple[int, int]:
     if start >= end:
         raise ValueError('LUNCH_HOURS: начало обеда должно быть раньше конца.')
     return start, end
+
+
+def parse_sales_snapshots_kept_days(value: str) -> int:
+    """SALES_SNAPSHOTS_KEPT_DAYS=400 — сколько дней хранить почасовые снимки продаж."""
+    value = value.strip()
+    if not value:
+        return SALES_SNAPSHOTS_KEPT_DAYS
+    if not value.isdigit() or not 1 <= int(value) <= 3660:
+        raise ValueError('SALES_SNAPSHOTS_KEPT_DAYS должен быть числом дней от 1 до 3660.')
+    return int(value)
 
 
 def parse_sales_history_start(value: str) -> date:

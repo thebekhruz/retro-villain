@@ -28,6 +28,50 @@
   function percent(value) {
     return Math.round((Number(value) || 0) * 100) + ' %';
   }
+  /* Сумма для текста правил: 1 500 000 → «1,5 млн сум», 1 000 000 → «1 млн сум», 640 000 → «640 тыс сум». */
+  function money(value) {
+    const n = Math.round(Number(value) || 0);
+    if (Math.abs(n) >= 1_000_000) return String(Math.round(n / 100_000) / 10).replace('.', ',') + ' млн сум';
+    if (Math.abs(n) >= 1000) return Math.round(n / 1000) + ' тыс сум';
+    return n + ' сум';
+  }
+  function plural(n, one, few, many) {
+    const mod10 = n % 10, mod100 = n % 100;
+    if (mod10 === 1 && mod100 !== 11) return one;
+    if (mod10 >= 2 && mod10 <= 4 && (mod100 < 12 || mod100 > 14)) return few;
+    return many;
+  }
+
+  /* «Как считается премия» (T-503): правила kpi/rules.py compute() простыми словами и в суммах.
+     Порог шума растёт с периодом по дням (noise_week × дни / 7), потолок — по целым неделям. */
+  function rulesText(totals, scheme, period) {
+    const weeks = scheme.baseline_weeks;
+    const weekly = (period.days_total || 7) === 7;
+    const share = Number(scheme.share) || 0;
+    const threshold = totals.threshold || 0;
+    const goal = Math.ceil(totals.goal_qty || 0);
+    const noise = weekly ? `первые ${money(threshold)}`
+      : `первые ${money(scheme.noise_week || 0)} в неделю (за этот период — ${money(threshold)})`;
+    const cap = weekly ? money(totals.cap)
+      : `${money(scheme.cap)} в неделю (за этот период — ${money(totals.cap)})`;
+    const above = 2_500_000;
+    return [
+      `Цель — продать за период ${goal} ${plural(goal, 'порцию', 'порции', 'порций')} целевых позиций. ` +
+        `Это на 70 % больше, чем зал обычно продаёт на каждые 100 чеков (минимум на 0,75 порции больше); ` +
+        `«обычно» — среднее за ${weeks} ${plural(weeks, 'прошлую неделю', 'прошлые недели', 'прошлых недель')}. Директор может поставить цель выше.`,
+      'Засчитываются только чеки зала под своим логином: оплаченные, без удалений и без ручной льготы. ' +
+        'Не считаются «Счёт шефа», дегустация, комплимент, чек на двух официантах, доставка, вынос, Яндекс, Узум, банкет и школа.',
+      `Премия — из дополнительной маржи: сколько зал заработал на целевых позициях сверх своего обычного уровня. ` +
+        (scheme.netting === false ? 'Позиции, которые продались хуже обычного, не вычитаются.'
+          : 'Если позиция продалась хуже обычного, её минус вычитается.'),
+      `Из дополнительной маржи ${noise} — обычные колебания, они остаются ресторану. В фонд премии идёт ${Math.round(share * 100)} % от того, что выше.`,
+      `Пример: дополнительная маржа ${money(threshold + above)} − порог ${money(threshold)} = ${money(above)}; в фонд идёт ${money(above * share)}.`,
+      `Фонд делится между участниками по числу чеков: больше чеков — больше доля. ` +
+        `Один человек получает не больше ${cap}, остаток сверх потолка — ресторану.`,
+      `Участвует тот, у кого за период от ${scheme.min_checks} ${plural(scheme.min_checks, 'чека', 'чеков', 'чеков')} ` +
+        `и от ${scheme.min_shifts} ${plural(scheme.min_shifts, 'смены', 'смен', 'смен')}. Премию выдаёт бухгалтер после закрытия периода.`,
+    ];
+  }
 
   /* «19–25 октября», «26 октября – 1 ноября», «1–30 ноября». */
   function periodLabel(start, end) {
@@ -238,7 +282,7 @@
     if (totals.above_threshold) return {above: true, text: `Премия начисляется: фонд ${thousands(totals.fund)}`};
     return {above: false, text: `До премии осталось ${thousands(totals.to_threshold)} маржи`};
   }
-  return {emptyState, goalPercent, sourceLabel, targetSource, thresholdLine, dayMonth, thousands, signed, rate, percent, periodLabel, dayLabel, fetchedLabel, goalProgress, personProgress,
+  return {emptyState, goalPercent, sourceLabel, targetSource, thresholdLine, dayMonth, thousands, signed, rate, percent, money, rulesText, periodLabel, dayLabel, fetchedLabel, goalProgress, personProgress,
     personLine, plural, baseLabel, itemTone, itemProgress, sparkPath, ranking, initials, settingsFromForm,
     ringPercent, ringDash, remaining, paceState, bestDay};
 });

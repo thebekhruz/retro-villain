@@ -54,6 +54,31 @@
     sidebar.append(toggle);
   }
 
+  /* Меню справа (T-502): переключатель внизу меню, в строке языка. Положение
+     ставит sidebar-state.js до первого кадра; здесь только кнопка. Подпись
+     одна и та же, состояние — в aria-pressed. На телефоне кнопку прячет
+     style.css: там меню — полоса сверху. */
+  const account = sidebar && sidebar.querySelector('.side-account');
+  const side = globalThis.RetroSidebar;
+  if (account && side) {
+    const place = document.createElement('button');
+    place.type = 'button';
+    place.className = 'side-place';
+    place.setAttribute('aria-label', 'Меню справа');
+    place.title = 'Меню справа';
+    place.innerHTML = '<svg class="ri" viewBox="0 0 24 24" aria-hidden="true">'
+      + '<path class="side-place-fill" d="M14.5 4.5H18a2.5 2.5 0 0 1 2.5 2.5v10a2.5 2.5 0 0 1-2.5 2.5h-3.5z"/>'
+      + '<rect x="3.5" y="4.5" width="17" height="15" rx="2.5"/><path d="M14.5 4.5v15"/></svg>';
+    const syncPlace = () => place.setAttribute('aria-pressed', String(side.current() === 'right'));
+    place.addEventListener('click', () => {
+      side.choose(side.current() === 'right' ? 'left' : 'right');
+      syncPlace();
+    });
+    syncPlace();
+    const lang = account.querySelector('.side-lang');
+    if (lang) lang.after(place); else account.prepend(place);
+  }
+
   /* Состояние данных внизу меню (T-455): в полосе значков видна только точка —
      текст уходит в подсказку. Кабинет учредителя показывает в меню копию
      строки из своей телефонной шапки (data-status-of). */

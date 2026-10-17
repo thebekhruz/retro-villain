@@ -349,7 +349,8 @@ def test_founder_broadcast_history_routes_pass_filters_and_author(monkeypatch):
         assert client.get('/api/founder/broadcast/jobs').json()['supported'] is True
         assert client.get('/api/founder/broadcast/jobs', params={
             'kind': 'auto', 'cursor': 'eyJhIjoiYiJ9'}).status_code == 200
-        assert client.get('/api/founder/broadcast/jobs/' + job_id).json()['status'] == 'completed'
+        # Статус — один маршрут для формы и журнала: по id задачи бота (T-505).
+        assert client.get('/api/founder/broadcast/' + job_id).json()['status'] == 'completed'
         assert client.get(f'/api/founder/broadcast/jobs/{job_id}/deliveries', params={
             'status': 'queued', 'offset': 100}).status_code == 200
         assert client.get(f'/api/founder/broadcast/jobs/{job_id}/deliveries').status_code == 200
@@ -413,3 +414,31 @@ def test_founder_broadcast_history_against_previous_bot_keeps_the_form_working()
     assert history.json() == {'supported': False, 'jobs': [], 'total': 0, 'next_cursor': None}
     assert started.status_code == 202 and started.json()['pending'] == 1
     assert len(posts) == 1
+
+
+def test_founder_broadcast_history_fills_old_bot_jobs_from_panel_journal(tmp_path):
+    """Задания, которые бот запомнил до своего журнала, без текста и автора:
+    если они ушли через панель, подпись берётся из журнала панели (T-505)."""
+    bare = {'id': 'job_' + 'x' * 20, 'status': 'completed', 'audience': 3, 'sent': 3, 'blocked': 0,
+            'failed': 0, 'pending': 0, 'source': None, 'manual': None, 'author': None, 'text': None,
+            'recipients_known': False, 'resumable': False, 'resume_count': 0}
+    other = dict(bare, id='job_' + 'y' * 20)
+
+    class Bot(FounderBroadcasts):
+        async def list(self, kind='all', cursor=None, limit=20):
+            return {'supported': True, 'jobs': [dict(bare), dict(other)], 'total': 2, 'next_cursor': None}
+
+    app = create_app(Settings(data_dir=tmp_path))
+    app.state.broadcasts = Bot()
+    app.state.broadcast_journal.record('12345678-1234-4123-8123-123456789012', bare, text='Плов в субботу',
+                                       recipients=3, sent_by='Карина', at='2026-10-17T14:05:00+05:00')
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        first, second = client.get('/api/founder/broadcast/jobs').json()['jobs']
+        resumed = client.post('/api/founder/broadcast/jobs/' + bare['id'] + '/resume')
+        [entry] = app.state.broadcast_journal.list()
+    assert (first['source'], first['manual'], first['text'], first['author']) == (
+        'dashboard', True, 'Плов в субботу', 'Карина')
+    # Не из панели — остаётся как есть: «Источник не записан».
+    assert (second['source'], second['text'], second['author']) == (None, None, None)
+    # Досылка освежает итог в журнале панели.
+    assert resumed.status_code == 200 and entry['status'] == 'queued'

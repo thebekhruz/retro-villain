@@ -164,3 +164,20 @@ test('T-496: аналитика учредителя — столбцы, бро�
     'Bu matn shu oluvchilarga 12 daqiqa oldin yuborilgan.');
   assert.equal(translate('Отправить ещё раз'), 'Yana yuborish');
 });
+
+test('T-501: «Как считается» и заметки ПК-отчёта директора — по-узбекски, суммы и названия iiko не трогаем', () => {
+  assert.equal(translate('Как считается'), 'Qanday hisoblanadi');
+  assert.equal(translate('Вне банкетной выборки: 52 001 082 сум.'),
+    "Banket tanlanmasidan tashqari: 52 001 082 so'm.");
+  assert.equal(translate('Яндекс Еда уже входит в выручку направлений: 19 031 000 сум.'),
+    "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: 19 031 000 so'm.");
+  assert.equal(translate('Яндекс Еда уже входит в выручку направлений: по меню 15 000 сум, по оплатам 19 000 сум.'),
+    "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: menyu bo'yicha 15 000 so'm, to'lovlar bo'yicha 19 000 so'm.");
+  assert.equal(translate('Исключена группа «ДОСТАВКА ЯНДЕКС»: 3 450 000 сум.'),
+    "«ДОСТАВКА ЯНДЕКС» guruhi chiqarib tashlangan: 3 450 000 so'm.");
+  assert.equal(translate('Продажи вместе с ними: 603 328 318 сум.'), "Ular bilan birga savdo: 603 328 318 so'm.");
+  assert.equal(translate('Только позиции от 0,5 % выручки за период.'),
+    'Faqat davr tushumining kamida 0,5 % ini bergan pozitsiyalar.');
+  assert.equal(translate('Прибыль итоговая к выручке, после расхода без выручки'),
+    'Yakuniy foydaning tushumga nisbati, tushumsiz xarajatdan keyin');
+});

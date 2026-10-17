@@ -551,7 +551,243 @@
     return true;
   }
 
+  // ── Обед на телефоне директора (T-500, ТЗ 16.10 §2) ───────────────────
+  // Данные — история чеков iiko в базе панели (/api/director/sales, T-499),
+  // окно обеда — LUNCH_HOURS сервера (по умолчанию 12:00–15:00 по закрытию чека).
+
+  /** Направления плитки «Обед»: Retro и Школа. Банкетный зал (свадьбы в зале
+   *  Бехруза) по умолчанию в обед не входит: это не обеденный зал, и одна
+   *  свадьба перекрыла бы весь обед. Сервер считает только эти направления. */
+  const LUNCH_DIRECTIONS = ['retro', 'school'];
+  /** Имена и цвета направлений — как у кассира и учредителя. */
+  const SALES_DIRECTIONS = {retro: {name: 'Retro', color: '#143e35'}, school: {name: 'Школа', color: '#52786f'},
+    banquet: {name: 'Банкет', color: '#a27445'}};
+  const LUNCH_TOP = 5;
+
+  function lunchUrl(day, directions) {
+    return '/api/director/sales?start=' + day + '&end=' + day + '&window=lunch&direction='
+      + (directions || LUNCH_DIRECTIONS).join(',') + '&top=' + LUNCH_TOP;
+  }
+
+  /** Подпись направлений обеда: кто входит и что нет. */
+  function lunchScope(directions) {
+    const keys = directions || LUNCH_DIRECTIONS;
+    const names = keys.map(function (key) { return (SALES_DIRECTIONS[key] || {name: key}).name; });
+    const text = names.length > 1 ? names.slice(0, -1).join(', ') + ' и ' + names[names.length - 1] : names[0] || '';
+    return keys.indexOf('banquet') === -1 ? text + ' · банкетный зал не входит' : text;
+  }
+
+  const SUMS = new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 0});
+  /** «2,4 млн» и «850 000» — как суммы в плитках телефона. */
+  function compactSum(value) {
+    const number = Math.round(amount(value));
+    if (Math.abs(number) >= 1e6) return String(Math.round(number / 1e5) / 10).replace('.', ',') + ' млн';
+    return SUMS.format(number);
+  }
+
+  /** «58 чеков · средний чек 55 000»; без чеков — «0 чеков»: это ноль, а не пропуск. */
+  function receiptsText(receipts, average) {
+    const count = Number(receipts) || 0;
+    const text = count + ' ' + plural(count, 'чек', 'чека', 'чеков');
+    return count && average !== null && average !== undefined ? text + ' · средний чек ' + compactSum(average) : text;
+  }
+
+  /** «13:42» из времени сервера: оно уже в поясе ресторана (+05:00). */
+  function clockOf(iso) {
+    const match = /T(\d{2}):(\d{2})/.exec(String(iso || ''));
+    return match ? match[1] + ':' + match[2] : '';
+  }
+
+  /** Сейчас по Ташкенту, «ЧЧ:ММ»: окно обеда — часы ресторана, а не телефона. */
+  function tashkentClock(moment) {
+    const parts = new Intl.DateTimeFormat('en-GB', {hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+      timeZone: 'Asia/Tashkent'}).formatToParts(moment || new Date());
+    const pick = function (type) { return (parts.find(function (part) { return part.type === type; }) || {}).value || '00'; };
+    return pick('hour') + ':' + pick('minute');
+  }
+
+  function minutesOf(clock) {
+    const match = /^(\d{1,2}):(\d{2})$/.exec(String(clock || ''));
+    return match ? Number(match[1]) * 60 + Number(match[2]) : null;
+  }
+
+  function clockText(minutes) {
+    return String(Math.floor(minutes / 60)).padStart(2, '0') + ':' + String(minutes % 60).padStart(2, '0');
+  }
+
+  /** Границы окна в минутах из подписи сервера «12:00–15:00». */
+  function windowBounds(label) {
+    const match = /^(\d{1,2}:\d{2})\s*[–-]\s*(\d{1,2}:\d{2})$/.exec(String(label || '').trim());
+    if (!match) return null;
+    const start = minutesOf(match[1]), end = minutesOf(match[2]);
+    return start !== null && end !== null && start < end ? {start: start, end: end} : null;
+  }
+
+  /** Часы окна по порядку, пустые тоже: в загруженном дне пустой час — честный
+   *  ноль. Сегодня час, который начался после последней загрузки, — «впереди»
+   *  (`ahead`), а не ноль; час, в котором была загрузка, — «идёт» (`current`).
+   *  `upcoming` — час ещё не наступил по часам ресторана; иначе он просто ещё
+   *  не загружен. Полоса — доля от самого сильного часа. */
+  function lunchHours(data, bounds, options) {
+    const opts = options || {};
+    const byHour = {};
+    ((data && data.by_hour) || []).forEach(function (row) { byHour[Number(String(row.hour).slice(0, 2))] = row; });
+    const rows = [];
+    if (bounds) {
+      const loaded = opts.isToday ? minutesOf(opts.updated) : null;
+      const now = opts.isToday ? minutesOf(opts.now) : null;
+      for (let hour = Math.floor(bounds.start / 60); hour * 60 < bounds.end; hour += 1) {
+        const from = Math.max(bounds.start, hour * 60), to = Math.min(bounds.end, hour * 60 + 60);
+        const row = byHour[hour];
+        const phase = !opts.isToday || loaded === null ? 'done'
+          : loaded >= to ? 'done' : (loaded >= from || row) ? 'current' : 'ahead';
+        rows.push({label: clockText(from) + '–' + clockText(to), phase: phase,
+          upcoming: phase === 'ahead' && (now === null || now < from),
+          revenue: row ? amount(row.revenue) : 0, receipts: row ? Number(row.receipts) || 0 : 0,
+          average: row && row.average_check !== null && row.average_check !== undefined ? amount(row.average_check) : null});
+      }
+    } else {
+      // Подписи окна нет (старый ответ) — только часы с продажами, как пришли.
+      Object.keys(byHour).sort().forEach(function (hour) {
+        const row = byHour[hour];
+        rows.push({label: row.hour, phase: 'done', upcoming: false, revenue: amount(row.revenue),
+          receipts: Number(row.receipts) || 0,
+          average: row.average_check !== null && row.average_check !== undefined ? amount(row.average_check) : null});
+      });
+    }
+    const max = Math.max.apply(null, [0].concat(rows.map(function (row) { return row.revenue; })));
+    rows.forEach(function (row) { row.share = max > 0 ? row.revenue / max : 0; });
+    return rows;
+  }
+
+  /** Направления обеда в порядке плитки; направление без продаж — ноль. */
+  function lunchDirections(data, directions) {
+    const table = (data && data.by_direction) || {};
+    const rows = (directions || LUNCH_DIRECTIONS).map(function (key) {
+      const item = table[key];
+      const info = SALES_DIRECTIONS[key] || {name: key, color: '#24594b'};
+      return {key: key, name: info.name, color: info.color, revenue: item ? amount(item.revenue) : 0,
+        receipts: item ? Number(item.receipts) || 0 : 0,
+        average: item && item.average_check !== null && item.average_check !== undefined ? amount(item.average_check) : null};
+    });
+    const max = Math.max.apply(null, [0].concat(rows.map(function (row) { return row.revenue; })));
+    rows.forEach(function (row) { row.share = max > 0 ? row.revenue / max : 0; });
+    return rows;
+  }
+
+  /** Топ блюд окна: сервер уже отобрал готовые блюда и напитки по справочнику. */
+  function lunchTop(data, limit) {
+    return ((data && data.top_items) || []).slice(0, limit || LUNCH_TOP).map(function (item) {
+      return {name: item.name, quantity: amount(item.quantity), revenue: amount(item.revenue)};
+    });
+  }
+
+  /** Почему данных нет. Сервер к ошибке обновления дописывает «показаны данные
+   *  последней загрузки» — когда показать нечего, эту часть не повторяем. */
+  function refreshReason(text) {
+    const value = String(text || '').trim();
+    if (/^iiko отвечает медленно/.test(value)) return 'iiko отвечает медленно: день ещё загружается.';
+    if (/^iiko сейчас не отвечает/.test(value)) return 'iiko сейчас не отвечает.';
+    return value.replace(/\s*Показаны данные последней загрузки[^.]*\.?$/, '') || 'iiko не вернул продажи.';
+  }
+
+  function dottedDay(iso) {
+    const parts = String(iso || '').split('-');
+    return parts.length === 3 ? parts[2] + '.' + parts[1] + '.' + parts[0] : '';
+  }
+
+  /** Обед за день — состояние для плитки и листа. `data` — ответ
+   *  /api/director/sales (null — ещё грузится). `options`: day и today — даты
+   *  ресторана, now — «ЧЧ:ММ» по Ташкенту, error — запрос не удался.
+   *  Состояния: `loading`; `unavailable` — iiko или синхронизация недоступны,
+   *  это «нет данных» с причиной, а не ноль; `missing` — прошедший день не
+   *  загружен («за этот день данных нет»); `ok` — цифры, и ноль здесь
+   *  настоящий («0 сум»). Сегодня всегда `partial`: учтены только чеки,
+   *  закрытые к `updated` (открытые столы iiko не отдаёт). */
+  function lunchView(data, options) {
+    const opts = options || {};
+    const day = opts.day || opts.today || '';
+    const isToday = Boolean(day) && day === opts.today;
+    const base = {day: day, isToday: isToday, window: '', basis: '', updated: '', notes: []};
+    if (opts.error) {
+      const error = opts.error;
+      // Без кода ответа — запрос не дошёл до панели (сеть, сервер перезапускается).
+      return Object.assign(base, {state: 'unavailable',
+        reason: error.status ? String(error.message || 'Не удалось получить данные.') : 'Нет связи с панелью. Проверьте интернет и откройте снова.'});
+    }
+    if (!data) return Object.assign(base, {state: 'loading'});
+    base.window = (data.window && data.window.label) || data.lunch_hours || '';
+    base.basis = (data.window && data.window.time) || '';
+    base.updated = clockOf(data.updated_at);
+    // Прошедший день читается следующим утром: «на 07:00» без даты сбивало бы с толку.
+    const read = String(data.updated_at || '').slice(0, 10);
+    base.updatedLabel = !base.updated ? '' : read && read !== day
+      ? 'на ' + read.slice(8, 10) + '.' + read.slice(5, 7) + ' ' + base.updated : 'на ' + base.updated;
+    base.historyStart = data.history_start || '';
+    if (!data.totals) {
+      let reason;
+      if (data.refresh_error) reason = refreshReason(data.refresh_error);
+      else if (data.configured === false) reason = 'iiko не подключено: продажи загрузить неоткуда.';
+      else if (data.history_start && day < data.history_start) reason = 'История продаж хранится с ' + dottedDay(data.history_start) + '.';
+      else if (isToday) reason = 'Сегодняшние чеки ещё не загружены из iiko.';
+      else reason = 'День ещё не загружен из iiko: он стоит в очереди загрузки.';
+      return Object.assign(base, {state: isToday ? 'unavailable' : 'missing', reason: reason});
+    }
+    const totals = data.totals;
+    const partial = (data.partial_days || []).indexOf(day) !== -1 || (isToday && Boolean(data.partial));
+    Object.assign(base, {
+      state: 'ok', revenue: amount(totals.revenue), receipts: Number(totals.receipts) || 0,
+      average: totals.average_check === null || totals.average_check === undefined ? null : amount(totals.average_check),
+      // Сегодня — «день идёт»; прошедший день, не перечитанный после 06:00, ещё может уточниться.
+      partial: isToday && partial, stale: !isToday && partial, refreshError: data.refresh_error || '',
+      hours: lunchHours(data, windowBounds(base.window), {isToday: isToday, updated: base.updated, now: opts.now}),
+      directions: lunchDirections(data, opts.directions), top: lunchTop(data),
+    });
+    if (base.partial) base.notes.push('День идёт: учтены чеки, закрытые к ' + base.updated + '. Открытые столы iiko не отдаёт.');
+    if (base.stale) base.notes.push('День ещё не перечитан после закрытия смены: цифры могут уточниться.');
+    if (base.refreshError) base.notes.push(base.refreshError);
+    if ((data.by_day || []).some(function (row) { return row.status && row.status !== 'ok'; })) {
+      base.notes.push('Сверка с итогом iiko за этот день не сошлась.');
+    }
+    return base;
+  }
+
+  /** Тексты плитки «Обед сегодня». `value: null` — скелет, ещё грузится. */
+  function lunchTile(state) {
+    if (state.state === 'loading') return {value: null, split: '', sub: '', note: '', badge: '', empty: false};
+    if (state.state !== 'ok') return {value: 'Нет данных', split: '', sub: state.reason, note: '', badge: '', empty: true};
+    return {
+      value: compactSum(state.revenue) + ' сум',
+      split: state.directions.map(function (row) { return row.name + ' ' + compactSum(row.revenue); }).join(' · '),
+      sub: receiptsText(state.receipts, state.average),
+      note: state.updatedLabel ? state.updatedLabel + (state.refreshError ? ' · обновить не удалось' : '') : '',
+      badge: state.partial ? 'день идёт' : '', empty: false,
+    };
+  }
+
+  /** Вопрос AI про обед выбранного дня: инструмент продаж по времени (T-499). */
+  function lunchQuestion(state) {
+    const when = state.isToday ? 'сегодня' : dayLabel(state.day);
+    return 'Как прошёл обед ' + when + ': выручка Retro и Школы без банкетного зала, чеки и что продавалось '
+      + 'лучше всего? Сравни с тем же днём прошлой недели.';
+  }
+
   return {
+    LUNCH_DIRECTIONS: LUNCH_DIRECTIONS,
+    SALES_DIRECTIONS: SALES_DIRECTIONS,
+    lunchUrl: lunchUrl,
+    lunchScope: lunchScope,
+    compactSum: compactSum,
+    receiptsText: receiptsText,
+    clockOf: clockOf,
+    tashkentClock: tashkentClock,
+    windowBounds: windowBounds,
+    lunchHours: lunchHours,
+    lunchDirections: lunchDirections,
+    lunchTop: lunchTop,
+    lunchView: lunchView,
+    lunchTile: lunchTile,
+    lunchQuestion: lunchQuestion,
     dishKey: dishKey,
     isDish: isDish,
     isDrinkOrBakery: isDrinkOrBakery,

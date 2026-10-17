@@ -107,10 +107,9 @@
 .chart-legend span{display:flex;align-items:center;gap:6px;white-space:nowrap}
 .legend-dot{width:8px;height:8px;border-radius:50%}
 .chart-shell{height:280px;margin-top:18px;overflow-x:auto;position:relative}
-.chart-shell svg{display:block;min-width:720px;width:100%;height:100%}
-/* Столбцы выручки рисуются по ширине блока: прокрутки вбок нет. */
+/* Графики рисуются по ширине блока: прокрутки вбок нет. */
+.chart-shell svg{display:block;width:100%;height:100%}
 .revenue-chart{overflow:hidden}
-.revenue-chart svg{min-width:0}
 .chart-grid.is-zero{stroke:#cfd8cc}
 .chart-hover-band{fill:#f1f4ec;pointer-events:none}
 .chart-bar{pointer-events:none}
@@ -399,7 +398,11 @@
 .broadcast-history-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}
 .broadcast-history-head h3{margin:0 0 4px;color:#173f36;font-size:16px}
 .broadcast-history-head p{margin:0;color:var(--muted);font-size:11.5px;line-height:1.55;max-width:62ch}
+.broadcast-history-tools{display:flex;align-items:center;gap:8px;flex:none}
 .broadcast-history-kinds{margin:0;flex:none}
+/* «Обновить» — как кнопки над получателями: белая, малая. */
+.broadcast-refresh{min-height:42px;padding:0 13px;background:#fff;color:#315e4c;border-color:#d6e0d5}
+.source-status.is-unknown{background:#f1f4ec;color:#718078}
 .broadcast-history-note{margin:0 0 12px}
 .broadcast-history-list{display:grid;gap:10px}
 .broadcast-history-empty{margin:4px 0 0}
@@ -463,7 +466,14 @@
 .fa-skel-delivery .rm-skel:first-child{width:60%}.fa-skel-delivery .rm-skel:last-child{width:50px;height:8px}
 @media(max-width:900px){
   .broadcast-history-head{flex-direction:column;gap:10px}
-  .broadcast-history-kinds{width:100%}
+  .broadcast-history-tools{width:100%}
+  .broadcast-history-kinds{flex:1 1 auto;min-width:0}
+}
+@media(max-width:650px){
+  /* Телефон: виды рассылок целиком в строку, «Обновить» — под ними. */
+  .broadcast-history-tools{flex-wrap:wrap}
+  .broadcast-history-kinds{flex:1 1 100%}
+  .broadcast-refresh{width:100%}
 }
 @media(max-width:560px){
   .broadcast-job{padding:12px 13px}

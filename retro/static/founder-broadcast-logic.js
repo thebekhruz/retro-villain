@@ -80,10 +80,11 @@
     if(job.status==='running')return `Идёт: ${job.sent+job.blocked+job.failed} из ${job.audience}`;
     return JOB_STATUSES[job.status]||'Неизвестно';
   }
-  /** Тон плашки статуса: идёт, готово, сбой. */
+  /** Тон плашки статуса: идёт, готово, сбой; статус не узнали — серый. */
   function jobTone(job){
     if(job.status==='queued'||job.status==='running')return 'running';
-    return job.status==='completed'?'done':'error';
+    if(job.status==='completed')return 'done';
+    return job.status==='failed'||job.status==='interrupted'?'error':'unknown';
   }
   /** Итоги задания в порядке экрана. «В очереди» — кому ещё не отправляли. */
   function jobCounts(job){
@@ -142,9 +143,20 @@
     })||null;
   }
   const twinWarning=(job,now)=>`Такой же текст уже рассылали ${momentText(job.created_at,now)} · ${sourceLabel(job)}.`;
+  /** Строка журнала панели (T-505) в виде задания бота: бот без своего
+   *  журнала показывается теми же карточками. Получателей и досылки у неё нет,
+   *  итог — последний, что панель узнала у бота. */
+  function fromPanelJournal(entry){
+    const audience=entry.audience||entry.recipients||0,done=(entry.sent||0)+(entry.blocked||0)+(entry.failed||0),auto=entry.kind==='auto';
+    return {id:entry.job_id||entry.operation_id,status:entry.status||'',audience,sent:entry.sent||0,blocked:entry.blocked||0,
+      failed:entry.failed||0,pending:Math.max(0,audience-done),created_at:entry.sent_at,source:auto?'auto':'dashboard',manual:!auto,
+      author:entry.sent_by||null,text:entry.text||null,recipients_known:false,resumable:false,resume_count:0,resumed_at:null,
+      resumed_by:null,throttled_until:null,panel:true,status_at:entry.status_at||null};
+  }
+  const panelStatusText=(job,now)=>job.status_at?`Итог бота на ${momentText(job.status_at,now)}`:'';
 
   root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,draftKey,agoText,repeatWarning,
     rememberSent,isTerminal:status=>terminal.has(status),
     isManual,sourceLabel,jobStatusText,jobTone,jobCounts,momentText,throttleText,resumeText,preview,
-    deliveryStatusText,deliveryNote,resumeLabel,resumeConfirm,historyTwin,twinWarning};
+    deliveryStatusText,deliveryNote,resumeLabel,resumeConfirm,historyTwin,twinWarning,fromPanelJournal,panelStatusText};
 })(typeof globalThis==='undefined'?window:globalThis);

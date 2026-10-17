@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 import {setImmediate as tick} from 'node:timers/promises';
 import '../../retro/static/founder-broadcast-logic.js';
 
-/* История рассылок (ТЗ 16.10, п. 5.3; T-504): чистые правила экрана и сценарий
+/* Журнал рассылок (ТЗ 16.10, п. 5.3; T-504): чистые правила экрана и сценарий
    блока на заглушках DOM с фейковым API — без бота и без Telegram. */
 const logic=globalThis.FounderBroadcastLogic;
 const NOW=Date.parse('2026-10-17T09:30:00Z');// 14:30 по Ташкенту
@@ -67,6 +67,28 @@ test('начало текста одной строкой; пояснения к
   assert.match(logic.resumeConfirm(1),/^Сообщение уйдёт 1 гостю из очереди\./);
   assert.match(logic.resumeConfirm(21),/^Сообщение уйдёт 21 гостю /);
   assert.match(logic.resumeConfirm(18),/^Сообщение уйдёт 18 гостям из очереди\. Тем, кто уже получил его/);
+});
+
+test('строка журнала панели (T-505) — в виде задания: те же итоги, без получателей и досылки',()=>{
+  const job=logic.fromPanelJournal({operation_id:'12345678-1234-4123-8123-123456789012',job_id:'job_'+'x'.repeat(20),
+    kind:'manual',sent_by:'Карина',sent_at:'2026-10-17T14:05:09+05:00',text:'Плов',recipients:4,status:'completed',
+    audience:4,sent:3,blocked:1,failed:0,status_at:'2026-10-17T14:06:00+05:00'});
+  assert.equal(job.id,'job_'+'x'.repeat(20));
+  assert.equal(logic.sourceLabel(job),'Из панели');
+  assert.equal(job.author,'Карина');
+  assert.equal(job.recipients_known,false);assert.equal(job.resumable,false);
+  assert.deepEqual(logic.jobCounts(job).map(([,,value])=>value),[3,1,0,0]);
+  assert.equal(logic.momentText(job.created_at,NOW),'17.10 14:05');
+  assert.equal(logic.panelStatusText(job,NOW),'Итог бота на 17.10 14:06');
+  // Итог ещё не узнали: серая плашка, гостей в очереди — сколько выбрано.
+  const unknown=logic.fromPanelJournal({operation_id:'x'.repeat(20),job_id:'',kind:'auto',sent_at:'2026-10-17T14:05:09+05:00',
+    text:'Напоминание',recipients:2,status:'',audience:0,sent:0,blocked:0,failed:0,status_at:null});
+  assert.equal(unknown.id,'x'.repeat(20));
+  assert.equal(logic.sourceLabel(unknown),'Автоматическая');
+  assert.equal(logic.jobTone(unknown),'unknown');
+  assert.equal(logic.jobStatusText(unknown),'Неизвестно');
+  assert.equal(logic.jobCounts(unknown)[3][2],2);
+  assert.equal(logic.panelStatusText(unknown,NOW),'');
 });
 
 test('повтор по журналу бота: такой же текст за сутки из любого источника',()=>{
@@ -134,14 +156,40 @@ function page(answers){
 }
 const settle=async()=>{for(let index=0;index<6;index+=1)await tick()};
 
-test('бот без журнала: спокойная пометка, форме рассылки история не мешает',async()=>{
-  const h=page(()=>({supported:false,jobs:[],total:0,next_cursor:null}));await settle();
+test('бот без журнала: те же карточки из журнала панели (T-505), без получателей и досылки',async()=>{
+  const entry={operation_id:'12345678-1234-4123-8123-123456789012',job_id:'job_'+'x'.repeat(20),kind:'manual',sent_by:'Карина',
+    sent_at:new Date(Date.now()-5*60000).toISOString(),text:'Завтра плов с 12:00',recipients:3,status:'running',audience:3,
+    sent:1,blocked:0,failed:0,status_at:'2026-10-17T09:06:00+05:00'};
+  let state='running';
+  const h=page(url=>{
+    if(url==='/api/founder/broadcast/jobs?kind=all')return {supported:false,jobs:[],total:0,next_cursor:null};
+    if(url==='/api/founder/broadcast/journal')return {entries:[entry]};
+    // Статус — по id задачи бота; старый бот текста и автора не отдаёт.
+    if(url===`/api/founder/broadcast/${entry.job_id}`)return {id:entry.job_id,status:state,audience:3,sent:3,blocked:0,failed:0,
+      pending:0,source:null,manual:null,author:null,text:null,recipients_known:true,resumable:false,resume_count:0,throttled_until:null};
+    throw new Error('unexpected '+url);
+  });
+  await settle();
   assert.equal(h.$('broadcast-history-note').hidden,false);
-  assert.equal(h.$('broadcast-history-note').textContent,'История появится после обновления бота.');
+  assert.equal(h.$('broadcast-history-note').textContent,
+    'Последние 30 рассылок через эту панель. Получатели по статусам и досылка появятся после обновления бота.');
   assert.equal(h.$('broadcast-history-note').classList.contains('is-error'),false);
   assert.equal(h.$('broadcast-history-kinds').hidden,true);
-  assert.equal(h.$('broadcast-history-list').children.length,0);
-  assert.deepEqual([...h.context.FounderBroadcastHistory.jobs()],[]);
+  const [card]=byClass(h.$('broadcast-history-list'),'broadcast-job');
+  assert.equal(text(byClass(card,'broadcast-job-source')[0]),'Из панели');
+  assert.match(text(card),/Автор: Карина/);
+  assert.match(text(card),/Итог бота на 17\.10 09:06/);
+  assert.equal(byText(card,'Получатели'),undefined);
+  assert.equal(byText(card,'Дослать'),undefined);
+  assert.doesNotMatch(text(card),/Получатели этой рассылки не записаны/);
+  // Повтор текста ловится и по журналу панели.
+  assert.equal(h.context.FounderBroadcastHistory.jobs()[0].text,'Завтра плов с 12:00');
+  // Идущую опрашиваем по id задачи бота; текст и автор не теряются.
+  state='completed';await h.timers.at(-1)();await settle();
+  assert.match(text(byClass(card,'broadcast-job-status')[0]),/^Готово$/);
+  assert.match(text(card),/Завтра плов с 12:00/);
+  assert.match(text(card),/Автор: Карина/);
+  assert.equal(byText(card,'Получатели'),undefined,'карточка журнала панели — без получателей');
 });
 
 test('журнал: ручные и автоматические различимы, досылка с подтверждением и одним запросом',async()=>{
@@ -156,7 +204,7 @@ test('журнал: ручные и автоматические различи�
     if(url.includes('/deliveries'))return {job_id:interrupted.id,recipients_known:true,total:2,next_offset:null,recipients:[
       {id:'A'.repeat(32),name:'Азиза',phone:'••• 12 34',status:'sent',error:null,at:'2026-10-17T07:58:00Z'},
       {id:'B'.repeat(32),name:'',phone:'••• 45 67',status:'failed',error:'delivery_unknown',at:'2026-10-17T07:58:02Z'}]};
-    if(url===`/api/founder/broadcast/jobs/${interrupted.id}`)return {...interrupted,status:state,resumable:false,pending:state==='completed'?0:18,
+    if(url===`/api/founder/broadcast/${interrupted.id}`)return {...interrupted,status:state,resumable:false,pending:state==='completed'?0:18,
       sent:state==='completed'?31:13,throttled_until:null};
     throw new Error('unexpected '+url+' '+options.method);
   });
@@ -202,7 +250,7 @@ test('журнал: ручные и автоматические различи�
   assert.ok(h.timers.length>0);
   state='completed';await h.timers.at(-1)();await settle();
   assert.match(text(byClass(cards[0],'broadcast-job-status')[0]),/^Готово$/);
-  const polls=h.requests.filter(([,url])=>url===`/api/founder/broadcast/jobs/${interrupted.id}`).length;
+  const polls=h.requests.filter(([,url])=>url===`/api/founder/broadcast/${interrupted.id}`).length;
   assert.equal(polls,1);
 
   // Получатели: все, затем «Не дошло»; имя пустое — «Без имени», телефон маской.
@@ -240,7 +288,7 @@ test('узбекский: подписи журнала и шаблоны с д�
   await import('../../retro/static/i18n-uz.js');
   await import('../../retro/static/i18n.js');
   const {translate}=globalThis.RetroI18n;
-  assert.equal(translate('История рассылок'),'Xabarnomalar tarixi');
+  assert.equal(translate('Журнал рассылок'),'Tarqatmalar jurnali');
   assert.equal(translate('Команда в боте'),'Botdagi buyruq');
   assert.equal(translate('Идёт: 12 из 33'),'Ketmoqda: 12 / 33');
   assert.equal(translate('Дослать оставшимся: 18'),'Qolganlarga yuborish: 18');
@@ -248,7 +296,6 @@ test('узбекский: подписи журнала и шаблоны с д�
   assert.equal(translate('Такой же текст уже рассылали 17.10 12:30 · Команда в боте.'),
     'Xuddi shu matn 17.10 12:30 da yuborilgan · Botdagi buyruq.');
   assert.match(translate(logic.resumeConfirm(18)),/^Xabar navbatdagi 18 mehmonga yuboriladi\./);
-  assert.equal(translate('История появится после обновления бота.'),"Tarix bot yangilangandan keyin paydo bo'ladi.");
   // Каждая подпись блока — без русских букв в переводе.
   for(const label of ['Из панели','Автоматическая','Источник не записан','Прервана','Отправлено','Заблокировали','Не дошло',
     'В очереди','Получатели','Скрыть получателей','Заблокировал бота','Отправляется','Автор:','Текст не сохранился',
@@ -256,7 +303,9 @@ test('узбекский: подписи журнала и шаблоны с д�
     'Рассылку прервал перезапуск бота. Сама она не продолжится.','Получатели этой рассылки не записаны.',
     '«Отправлено» значит, что Telegram принял сообщение. Прочитал ли его гость, бот не знает.','Таких получателей нет.',
     'Досылка запущена: сообщение получат только те, кому оно ещё не уходило.','Досылать некому: всем получателям уже отправляли.',
-    'Автоматических рассылок пока не было.','Ручных рассылок пока не было.','Рассылок пока не было.','Показать ещё',
+    'Автоматических рассылок пока не было.','Ручных рассылок пока не было.','Рассылок ещё не было.','Показать ещё',
+    'Журнал рассылок','Обновить','Итог бота на 17.10 14:06','Не удалось загрузить журнал рассылок.',
+    'Последние 30 рассылок через эту панель. Получатели по статусам и досылка появятся после обновления бота.',
     'Ручные запускает человек: из панели или командой в боте. Автоматические уходят по расписанию без нажатия.',
     'Дослано 17.10 14:00','Досылали: 2 · последний раз 17.10 14:00','Эту рассылку дослать нельзя: бот не сохранил её получателей.']){
     const uz=translate(label);

@@ -17,12 +17,14 @@ from .service import make_window
 director_router = APIRouter(prefix='/api/director/sales', tags=['sales'])
 founder_router = APIRouter(prefix='/api/founder/sales', tags=['sales'])
 TIME = r'^\d{1,2}(:\d{2})?$'
+# Одно направление или несколько через запятую: `retro,school` — обед без банкетного зала.
+DIRECTION = r'^(all|(retro|school|banquet)(,(retro|school|banquet)){0,2})$'
 
 
 async def sales(request: Request, start: date | None = None, end: date | None = None,
                 from_hour: str | None = Query(None, pattern=TIME), to_hour: str | None = Query(None, pattern=TIME),
                 window: Literal['lunch'] | None = None, basis: Literal['close', 'open'] = 'close',
-                direction: Literal['all', 'retro', 'school', 'banquet'] = 'all',
+                direction: str = Query('all', pattern=DIRECTION),
                 top: int = Query(10, ge=0, le=50), sort: Literal['quantity', 'revenue'] = 'quantity',
                 all_items: bool = False):
     service = request.app.state.sales
@@ -46,6 +48,14 @@ async def sales_reconcile(request: Request, date: date | None = None):
     return await request.app.state.sales.reconcile(day)
 
 
+async def sales_hourly(request: Request, date: date | None = None):
+    """Почасовые контрольные снимки дня (T-507): только чтение."""
+    day = date or today_tashkent()
+    if day > today_tashkent():
+        raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
+    return await request.app.state.sales.hourly(day)
+
+
 async def sales_sync(request: Request, date: date | None = None):
     """Перечитать день из iiko сейчас — после правки задним числом."""
     day = date or today_tashkent()
@@ -67,4 +77,5 @@ for router in (director_router, founder_router):
     router.add_api_route('', sales, methods=['GET'])
     router.add_api_route('/status', sales_status, methods=['GET'])
     router.add_api_route('/reconcile', sales_reconcile, methods=['GET'])
+    router.add_api_route('/hourly', sales_hourly, methods=['GET'])
 director_router.add_api_route('/sync', sales_sync, methods=['POST'])

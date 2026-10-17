@@ -13,10 +13,16 @@
 Неудачный день откладывается на `retry` и пишется в журнал прогонов с текстом
 ошибки; сохранённая прежняя версия дня при этом не трогается. Расписание и
 защита от двойного запуска живут в базе (аренда дня), а не в памяти процесса.
+
+Удачная загрузка сегодняшнего дня заодно пишет почасовой контрольный снимок
+(`sales_hourly_snapshots`, T-507): первый прогон часа по Ташкенту фиксирует итог
+нашей базы и контрольного отчёта iiko на этот момент. Снимок — дополнительный
+след для контроля и восстановления, источник истории — по-прежнему строки дня.
 """
 import asyncio
 import logging
 from datetime import datetime, time, timedelta
+from decimal import Decimal
 from time import monotonic
 from uuid import uuid4
 
@@ -100,6 +106,8 @@ class SalesSync:
             log_safe_failure('sales-sync', error, operation='load_day')
             raise DataError(message) from None
         self.failures.pop(day, None)
+        if saved['saved']:
+            await self._snapshot(day, fetched_at, data['revision'], prepared)
         status = 'ok' if saved['changed'] else 'unchanged' if saved['saved'] else 'skipped'
         await asyncio.to_thread(
             self.store.finish_run, run_id, status, at=self.clock(), lines=len(prepared['lines']),
@@ -111,6 +119,36 @@ class SalesSync:
         return dict(day=day.isoformat(), status=status, lines=len(prepared['lines']),
                     orders=len(prepared['orders']), revenue=str(prepared['revenue']),
                     reconciliation=prepared['status'], differences=prepared['reconciliation']['differences'])
+
+    async def _snapshot(self, day, fetched_at, revision, prepared):
+        """Почасовой снимок — только за живой день: (день, час) — это «на какой час
+        этого дня». Дозаливка и утреннее перечитывание прошлых дней снимков не
+        пишут, иначе час загрузки выдавался бы за час самого дня. Ошибка снимка
+        загрузку не роняет: день уже сохранён."""
+        local = fetched_at.astimezone(TZ)
+        if local.date() != day:
+            return None
+        lines, orders = prepared['lines'], prepared['orders']
+        reconciliation = prepared['reconciliation']
+        iiko = reconciliation.get('iiko', {})
+        directions = {name: dict(ours=reconciliation.get('lines', {}).get(name), iiko=iiko.get(name))
+                      for name in sorted(set(reconciliation.get('lines', {})) | set(iiko))}
+        try:
+            return await asyncio.to_thread(
+                self.store.save_snapshot, day, local.hour, fetched_at=fetched_at, revision=revision,
+                lines=len(lines), orders=len(orders),
+                receipts=sum(1 for item in orders if item['revenue'] > 0),
+                quantity=sum((line['quantity'] for line in lines), Decimal(0)),
+                gross=sum((line['gross'] for line in lines), Decimal(0)),
+                revenue=prepared['revenue'], iiko_revenue=prepared['iiko_revenue'],
+                iiko_orders=sum(int(item['orders']) for item in iiko.values()),
+                iiko_quantity=sum((Decimal(item['quantity']) for item in iiko.values()), Decimal(0)),
+                last_closed_at=max((line['closed_at'] for line in lines if line['closed_at']), default=None),
+                status=prepared['status'], by_direction=directions,
+                differences=reconciliation.get('differences', []))
+        except Exception as error:
+            log_safe_failure('sales-sync', error, operation='hourly_snapshot')
+            return None
 
     async def ensure_fresh(self, day, *, max_age, wait):
         """Сегодняшний день не старше `max_age` секунд; иначе — текст, почему нет."""

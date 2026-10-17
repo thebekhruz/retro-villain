@@ -65,6 +65,17 @@ test('замечания к бухгалтеру: недостача касси�
     'Кассир передал меньше расчёта · 23.09', 'Остаток ушёл в минус · 23.09', 'Покупка Шоха: Лук · 23.09']);
 });
 
+test('постоянные замечания объясняют своё правило (ТЗ 16.10, п. 4.2)', () => {
+  const day = {...week.days[0], accounting: {date: '2026-09-21', expected_cashier: '1',
+    ledger: {cash_balance: '10', accruals: [{id: 7, work_day: '2026-09-20', debt: '150000'}], payroll_confirmed: true,
+      manual_debt_total: '300000'}, missing_rates: 2, payroll: {unknown_count: 0}, employees: []}};
+  const issues = logic.accountantIssues({days: [day]}, {}, accountant.dayChecks);
+  const rules = Object.fromEntries(issues.map(item => [item.text.split(' · ')[0], item.rule]));
+  assert.match(rules['Невыданные смены'], /начислена, но выдана не полностью/);
+  assert.match(rules['Без ставки'], /не указана ставка/);
+  assert.match(rules['Неоплаченные расходы'], /в долг и ещё не оплаченные/);
+});
+
 test('дивиденды: статус, доли и подпись выдачи', () => {
   const view = logic.dividendView({week: '2026-W39', start: '2026-09-21', end: '2026-09-27', payout_day: '2026-09-28',
     target: '10000000.00', collected: '2000000.00', pace: '5714285.71', due: '4285714.29', behind: true, done: false, free_cash_week: null});
@@ -160,4 +171,20 @@ test('T-494: блюда — по справочнику меню, без спр�
   assert.deepEqual(logic.soldDishes(checked, rows).map(row => row.name), ['Плов', 'Новинка']);
   const empty = {item_classes: {'Плов': 'unknown', 'Мёд': 'unknown'}, item_classes_checked: false};
   assert.deepEqual(logic.soldDishes(empty, rows).map(row => row.name), ['Плов', 'Мёд', 'Контейнер', 'Новинка']);
+});
+
+test('T-506: строка сегодняшнего дня — время чтения iiko, смена и «нет данных» вместо нулей', () => {
+  const open = {cashier: {fetched_at: '2026-09-24T14:05:31+05:00', shift: {open: true, opened_at: '2026-09-24T09:01:00', closed_at: null}}};
+  assert.equal(logic.todayStatus(open, '2026-09-24'), 'Сегодня ещё идёт · данные на 14:05');
+  // Смены нет в ответе (не прочитана) — день считаем идущим, а не закрытым.
+  assert.equal(logic.todayStatus({cashier: {fetched_at: '2026-09-24T14:05:31+05:00', shift: null}}, '2026-09-24'),
+    'Сегодня ещё идёт · данные на 14:05');
+  const closed = {cashier: {fetched_at: '2026-09-24T23:50:00+05:00', shift: {open: false, opened_at: '2026-09-24T09:01:00', closed_at: '2026-09-24T23:40:12'}}};
+  assert.equal(logic.todayStatus(closed, '2026-09-24'),
+    'Сегодня · смена закрыта, итог дня может пересчитаться iiko до утра · данные на 23:50');
+  // Ответ прочитан вчера — с датой: старое время не выглядит сегодняшним.
+  assert.equal(logic.todayStatus({cashier: {fetched_at: '2026-09-23T23:59:00+05:00'}}, '2026-09-24'),
+    'Сегодня ещё идёт · данные на 23.09 23:59');
+  assert.equal(logic.todayStatus({cashier: null, cashier_error: 'iiko недоступен'}, '2026-09-24'), 'Сегодня · нет данных iiko');
+  assert.equal(logic.todayStatus(undefined, '2026-09-24'), '');
 });
