@@ -17,12 +17,14 @@ from .service import make_window
 director_router = APIRouter(prefix='/api/director/sales', tags=['sales'])
 founder_router = APIRouter(prefix='/api/founder/sales', tags=['sales'])
 TIME = r'^\d{1,2}(:\d{2})?$'
+# Одно направление или несколько через запятую: `retro,school` — обед без банкетного зала.
+DIRECTION = r'^(all|(retro|school|banquet)(,(retro|school|banquet)){0,2})$'
 
 
 async def sales(request: Request, start: date | None = None, end: date | None = None,
                 from_hour: str | None = Query(None, pattern=TIME), to_hour: str | None = Query(None, pattern=TIME),
                 window: Literal['lunch'] | None = None, basis: Literal['close', 'open'] = 'close',
-                direction: Literal['all', 'retro', 'school', 'banquet'] = 'all',
+                direction: str = Query('all', pattern=DIRECTION),
                 top: int = Query(10, ge=0, le=50), sort: Literal['quantity', 'revenue'] = 'quantity',
                 all_items: bool = False):
     service = request.app.state.sales

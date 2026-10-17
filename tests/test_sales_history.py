@@ -316,6 +316,30 @@ def test_lunch_window_by_close_time_and_direction(store):
     assert early['totals']['revenue'] == str(60000 + 108000)
 
 
+def test_several_directions_at_once_lunch_without_banquet(store):
+    """T-500: плитка обеда директора — Retro и Школа одним запросом, без банкетного зала."""
+    load(store, TODAY, LUNCH, NOW)
+    service = service_for(store)
+    lunch = make_window(lunch=LUNCH_HOURS)
+    result = asyncio.run(service.summary(TODAY, TODAY, window=lunch, direction='retro,school', top=5,
+                                         refresh=False))
+    assert result['direction'] == 'retro,school' and not result['configured']
+    assert result['totals']['revenue'] == str(108000 + 58000 + 150000 + 300000)
+    assert result['totals']['receipts'] == 4 and result['totals']['average_check'] == '154000'
+    assert set(result['by_direction']) == {'retro', 'school'}
+    assert 'БЕХРУЗ ПЛОВ' not in [item['name'] for item in result['top_items']]
+    assert sum(int(row['revenue']) for row in result['by_hour']) == 616000
+    for wrong in ('retro,retro', 'retro,bar', '', 'retro,'):
+        with pytest.raises(DataError):
+            asyncio.run(service.summary(TODAY, TODAY, window=lunch, direction=wrong, refresh=False))
+    assert asyncio.run(service_for(store, sync=FakeSync()).summary(TODAY, TODAY, refresh=False))['configured']
+
+
+class FakeSync:
+    """Синхронизация есть, но в тесте ничего не грузит."""
+    jobs = {}
+
+
 def test_today_is_partial_with_update_time_and_window_in_progress(store):
     load(store, TODAY, LUNCH, NOW - timedelta(minutes=1))
     result = asyncio.run(service_for(store).summary(TODAY, TODAY, window=make_window(lunch=LUNCH_HOURS),
@@ -517,6 +541,11 @@ def test_api_sales_for_director_and_founder_without_accounting_boundary(app):
         lunch = client.get('/api/director/sales?start=2026-10-17&end=2026-10-17&window=lunch&direction=retro')
         assert lunch.status_code == 200, lunch.text
         assert lunch.json()['totals']['revenue'] == '316000'
+        # T-500: обед Retro и Школы одним запросом; повтор и чужое имя — отказ.
+        both = client.get('/api/director/sales?start=2026-10-17&window=lunch&direction=retro,school&top=5')
+        assert both.status_code == 200 and both.json()['totals']['revenue'] == '616000'
+        assert client.get('/api/director/sales?direction=retro,retro').status_code == 422
+        assert client.get('/api/director/sales?direction=retro,bar').status_code == 422
         hours = client.get('/api/founder/sales?start=2026-10-17&from_hour=12&to_hour=13:00')
         assert hours.status_code == 200 and hours.json()['window']['label'] == '12:00–13:00'
         # До 13.10 (граница учёта) история доступна: это аналитика iiko, не учёт.
@@ -565,3 +594,17 @@ def test_settings_parse_lunch_and_history_start():
     assert parse_sales_history_start('2026-10-01') == date(2026, 10, 1)
     with pytest.raises(ValueError):
         parse_sales_history_start('01.10.2026')
+
+
+def test_director_phone_shows_lunch_tile_from_this_api(app):
+    """T-500: плитка «Обед сегодня» и лист обеда на телефоне директора берут ответ отсюда."""
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        phone = client.get('/director').text
+        logic = client.get('/static/director-logic.js').text
+        tile = client.get('/api/director/sales?start=2026-10-17&end=2026-10-17&window=lunch'
+                          '&direction=retro,school&top=5').json()
+    assert 'id="lunch-open"' in phone and 'id="lunch-sheet"' in phone and 'id="lunch-date"' in phone
+    assert "LUNCH_DIRECTIONS = ['retro', 'school']" in logic and '&window=lunch&direction=' in logic
+    # Банкетный зал в плитку не попадает; окно и время данных — в ответе.
+    assert set(tile['by_direction']) == {'retro', 'school'} and len(tile['top_items']) <= 5
+    assert tile['window']['label'] == '12:00–15:00' and tile['updated_at'] and tile['partial']
