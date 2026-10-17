@@ -137,3 +137,16 @@ test('T-494: прогноз, блюда и закуп учредителя — �
   assert.equal(translate('Переводы (Oxbridge, блогеры)'), "O'tkazmalar (Oxbridge, blogerlar)");
   assert.equal(translate('Покупки с телефона · '), 'Telefondan xaridlar · ');
 });
+
+test('T-497: недельный порог Счёта Шефа и уведомление учредителю', () => {
+  assert.equal(translate('Порог недели'), 'Haftalik chegara');
+  assert.equal(translate('12,4 млн из 30 млн'), '12,4 mln / 30 mln');
+  assert.equal(translate('950\u00a0000 из 30 млн'), '950\u00a0000 / 30 mln');
+  assert.equal(translate('Порог 30 млн за неделю достигнут'), 'Haftalik 30 mln chegarasiga yetildi');
+  assert.equal(translate('При 30 млн за неделю придёт сообщение в Telegram'),
+    'Haftada 30 mln bo‘lganda Telegram’ga xabar keladi');
+  assert.equal(translate('Уведомление отправлено 21.10 10:15'), 'Bildirishnoma yuborildi: 21.10 10:15');
+  assert.equal(translate('Отмечаем счета больше 400\u00a0000'), '400\u00a0000 dan katta hisoblarni belgilaymiz');
+  assert.equal(translate('3 выше 400\u00a0000'), '400\u00a0000 dan yuqori: 3');
+  assert.equal(translate('Получатель уведомления не настроен'), 'Bildirishnoma oluvchisi sozlanmagan');
+});

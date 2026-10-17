@@ -87,6 +87,15 @@
 .fo-chef-row>b{text-align:right;font-weight:600;font-variant-numeric:tabular-nums}
 .fo-chef-row.is-over{background:#fff7f8}
 .fo-chef-row.is-over>b{color:var(--late)}
+/* Недельный порог Счёта Шефа (ТЗ 16.10, п. 4.2): полоса как в «Расходах», при
+   достижении — красная, и под ней плашка .notice с отметкой об уведомлении. */
+.fo-chef-limit{margin-top:12px}
+.fo-bars.fo-chef-limit>div{margin-top:0}
+.fo-chef-limit .fo-hint{margin-top:6px}
+.fo-chef-limit .rm-bar.is-over>span{background:var(--late)}
+.fo-chef-limit .fo-bars-line .is-over{color:var(--late);font-weight:650}
+.notice.fo-chef-notice{margin:10px 0 0}
+.notice.fo-chef-notice strong{display:block}
 .fo-bars>div{margin-top:10px}
 .fo-bars-line{display:flex;justify-content:space-between;gap:10px;font-size:12px}
 .fo-bars-line span:last-child{white-space:nowrap}

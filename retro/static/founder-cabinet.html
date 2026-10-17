@@ -138,8 +138,14 @@
         </section>
         <section class="fo-panel">
           <div class="fo-panel-head"><div><p class="eyebrow">СЧЁТ ШЕФА · IIKO</p><h2 id="fo-chef-title">—</h2></div><span id="fo-chef-over" class="fo-red"></span></div>
+          <!-- Недельный порог (ТЗ 16.10, п. 4.2): прогресс и что с уведомлением учредителю. -->
+          <div id="fo-chef-limit" class="fo-bars fo-chef-limit" hidden>
+            <div><div class="fo-bars-line"><span>Порог недели</span><span id="fo-chef-limit-value" class="rm-num"></span></div><div id="fo-chef-limit-bar" class="rm-bar"><span></span></div></div>
+            <p id="fo-chef-limit-status" class="fo-hint"></p>
+            <p id="fo-chef-notice" class="notice fo-chef-notice" role="alert" hidden><strong id="fo-chef-notice-title"></strong><span id="fo-chef-notice-status"></span></p>
+          </div>
           <div id="fo-chef" class="fo-chef"></div>
-          <div class="fo-panel-foot"><span>Отмечаем счета больше 400 000</span><span id="fo-chef-month"></span></div>
+          <div class="fo-panel-foot"><span id="fo-chef-limit-note"></span><span id="fo-chef-month"></span></div>
         </section>
       </div>
 

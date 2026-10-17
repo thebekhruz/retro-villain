@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from datetime import date, time
 from pathlib import Path
 from urllib.parse import urlsplit
+from decimal import Decimal
 
 from dotenv import load_dotenv
 
@@ -22,6 +23,13 @@ SMS_TEMPLATE = 'Код подтверждения для входа в плат�
 # считаем обедом. Окно — минуты от полуночи по Ташкенту, правая граница не входит.
 SALES_HISTORY_START = date(2026, 9, 1)
 LUNCH_HOURS = (12 * 60, 15 * 60)
+# Счёт Шефа за неделю (ТЗ 16.10, п. 4.2), сум по меню: с этой суммы учредитель
+# получает сообщение, повтор — когда сумма выросла ещё на шаг. Переменные
+# CHEF_WEEK_LIMIT и CHEF_WEEK_REPEAT_STEP меняют их без правки кода.
+CHEF_WEEK_LIMIT = Decimal(30_000_000)
+CHEF_WEEK_REPEAT_STEP = Decimal(10_000_000)
+TELEGRAM_TOKEN = r'[0-9]{5,16}:[A-Za-z0-9_-]{30,64}'
+TELEGRAM_CHAT = r'-?[0-9]{5,20}|@[A-Za-z][A-Za-z0-9_]{4,31}'
 
 
 @dataclass(frozen=True)
@@ -54,6 +62,26 @@ class TelegramReportConfig:
     send_at: time = time(23, 30)
     # Выключено — бот шлёт только по кнопке проверки, без расписания.
     auto: bool = True
+
+
+@dataclass(frozen=True)
+class ChefAlertConfig:
+    """Счёт Шефа за неделю (ТЗ 16.10, п. 4.2): порог, шаг повтора и чат учредителя.
+
+    Чат учредителя свой: группа кассы (TELEGRAM_REPORT_CHAT_ID) для его данных
+    не подходит. Без бота или чата сообщение не уходит — порог виден в
+    кабинете, а событие пишется в журнал `founder_chef_alerts`."""
+    week_limit: Decimal = CHEF_WEEK_LIMIT
+    # 0 — без повторов: одно сообщение за неделю.
+    repeat_step: Decimal = CHEF_WEEK_REPEAT_STEP
+    token: str = field(default='', repr=False)
+    chat_id: str = ''
+    # Корень панели для ссылки в сообщении; пусто — сообщение без ссылки.
+    public_url: str = ''
+
+    @property
+    def recipient(self) -> bool:
+        return bool(self.token and self.chat_id)
 
 
 @dataclass(frozen=True)
@@ -96,6 +124,7 @@ class Settings:
     website_booking_api_token: str = field(default='', repr=False)
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
     telegram_report: TelegramReportConfig | None = field(default=None, repr=False)
+    chef_alert: ChefAlertConfig = field(default_factory=ChefAlertConfig, repr=False)
     data_dir: Path = ROOT / 'build'
     # Строка подключения Postgres. Пустая — работаем на файловом SQLite
     # (локальная разработка и тесты). На Railway диска нет, поэтому в
@@ -192,6 +221,7 @@ class Settings:
         telegram_report = parse_telegram_report_config(os.environ)
         sales_history_start = parse_sales_history_start(os.getenv('SALES_HISTORY_START', ''))
         lunch_hours = parse_lunch_hours(os.getenv('LUNCH_HOURS', ''))
+        chef_alert = parse_chef_alert_config(os.environ)
         return cls(
             base_url=base,
             login=os.getenv('IIKO_LOGIN', ''),
@@ -219,6 +249,7 @@ class Settings:
             website_booking_api_token=website_booking_token,
             hikvision=hikvision,
             telegram_report=telegram_report,
+            chef_alert=chef_alert,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
             database_url=database_url,
             report_retention=int(retention_value),
@@ -266,11 +297,14 @@ def parse_telegram_report_config(environ) -> TelegramReportConfig | None:
     chat_id = environ.get('TELEGRAM_REPORT_CHAT_ID', '').strip()
     if not token and not chat_id:
         return None
+    if token and not chat_id and environ.get('TELEGRAM_FOUNDER_CHAT_ID', '').strip():
+        # Бот только для учредителя (ТЗ 16.10, п. 4.2): снимка кассы в группу нет.
+        return None
     if not token or not chat_id:
         raise ValueError('TELEGRAM_BOT_TOKEN и TELEGRAM_REPORT_CHAT_ID задаются вместе.')
-    if not re.fullmatch(r'[0-9]{5,16}:[A-Za-z0-9_-]{30,64}', token):
+    if not re.fullmatch(TELEGRAM_TOKEN, token):
         raise ValueError('TELEGRAM_BOT_TOKEN должен быть токеном бота из @BotFather.')
-    if not re.fullmatch(r'-?[0-9]{5,20}|@[A-Za-z][A-Za-z0-9_]{4,31}', chat_id):
+    if not re.fullmatch(TELEGRAM_CHAT, chat_id):
         raise ValueError('TELEGRAM_REPORT_CHAT_ID — числовой id группы (например -1001234567890) или @канал.')
     raw_time = environ.get('TELEGRAM_REPORT_TIME', '23:30').strip()
     match = re.fullmatch(r'([01][0-9]|2[0-3]):([0-5][0-9])', raw_time)
@@ -282,6 +316,40 @@ def parse_telegram_report_config(environ) -> TelegramReportConfig | None:
     return TelegramReportConfig(token=token, chat_id=chat_id,
                                 send_at=time(int(match[1]), int(match[2])),
                                 auto=auto in {'true', '1', 'yes'})
+
+
+def parse_chef_alert_config(environ) -> ChefAlertConfig:
+    def amount(name, default, *, allow_zero):
+        raw = environ.get(name, '').strip().replace(' ', '').replace('_', '')
+        if not raw:
+            return default
+        if not raw.isdigit() or len(raw) > 13 or (int(raw) == 0 and not allow_zero):
+            raise ValueError(f'{name} — сумма в сумах цифрами, например {int(default)}.')
+        return Decimal(int(raw))
+
+    limit = amount('CHEF_WEEK_LIMIT', CHEF_WEEK_LIMIT, allow_zero=False)
+    step = amount('CHEF_WEEK_REPEAT_STEP', CHEF_WEEK_REPEAT_STEP, allow_zero=True)
+    chat_id = environ.get('TELEGRAM_FOUNDER_CHAT_ID', '').strip()
+    token = environ.get('TELEGRAM_BOT_TOKEN', '').strip() if chat_id else ''
+    if chat_id:
+        if not token:
+            raise ValueError('TELEGRAM_FOUNDER_CHAT_ID работает только вместе с TELEGRAM_BOT_TOKEN.')
+        if not re.fullmatch(TELEGRAM_TOKEN, token):
+            raise ValueError('TELEGRAM_BOT_TOKEN должен быть токеном бота из @BotFather.')
+        if not re.fullmatch(TELEGRAM_CHAT, chat_id):
+            raise ValueError('TELEGRAM_FOUNDER_CHAT_ID — числовой id чата (например 123456789 или '
+                             '-1001234567890) или @канал.')
+    # Railway сам задаёт RAILWAY_PUBLIC_DOMAIN; свой домен — DASHBOARD_PUBLIC_URL.
+    public = environ.get('DASHBOARD_PUBLIC_URL', '').strip().rstrip('/')
+    if not public and environ.get('RAILWAY_PUBLIC_DOMAIN', '').strip():
+        public = 'https://' + environ['RAILWAY_PUBLIC_DOMAIN'].strip().strip('/')
+    if public:
+        parsed = urlsplit(public)
+        if (parsed.scheme not in ('http', 'https') or not parsed.hostname or parsed.username
+                or parsed.password or parsed.query or parsed.fragment or parsed.path not in ('', '/')):
+            raise ValueError('DASHBOARD_PUBLIC_URL — адрес панели без пути, например https://dashboard.example.uz.')
+    return ChefAlertConfig(week_limit=limit, repeat_step=step, token=token, chat_id=chat_id,
+                           public_url=public)
 
 
 def parse_hikvision_config(environ) -> HikvisionConfig | None:

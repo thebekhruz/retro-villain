@@ -258,6 +258,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # поэтому короткая жизнь приложения в тестах до iiko не доходит.
         if application.state.sales_sync is not None:
             application.state.sales_sync.start()
+        if application.state.chef_alert is not None:
+            application.state.chef_alert.start()
         if application.state.telegram_report is not None:
             application.state.telegram_report.start()
         photos = (asyncio.create_task(keep_device_photos_warm(application.state))
@@ -282,6 +284,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await application.state.sales_sync.close()
             if application.state.telegram_report is not None:
                 await application.state.telegram_report.close()
+            if application.state.chef_alert is not None:
+                await application.state.chef_alert.close()
             await application.state.reports.close()
             await application.state.phone_login.close()
             # Клиенты держат свои пулы соединений всё время жизни приложения;
@@ -394,6 +398,19 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         cashier=lambda: getattr(app.state.cashier_days, 'archive', None))
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
+    # Счёт Шефа за неделю (ТЗ 16.10, п. 4.2): журнал событий есть всегда, проверка
+    # идёт только с iiko, а сообщение уходит, только если задан чат учредителя.
+    from retro.modules.founder.chef_alert import ChefAlertStore, ChefWeekAlert
+    app.state.chef_alerts = ChefAlertStore(founder_path)
+    app.state.chef_alert = None
+    if settings.configured:
+        bot = None
+        if settings.chef_alert.recipient:
+            from retro.integrations.telegram import TelegramBot
+            bot = TelegramBot(settings.chef_alert.token, transport=telegram_transport)
+        app.state.chef_alert = ChefWeekAlert(
+            app.state.chef_alerts, settings.chef_alert, bot=bot,
+            loader=lambda start, end: load_iiko(app.state, 'load_chef_bills', start, end, timeout=120))
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
         app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention,
