@@ -1414,6 +1414,7 @@ globalThis.RetroTemplatesUz = [
   [/^из них Демо (.+) · (.+) Retro$/, "shundan Демо $1 · Retro'ning $2"],
   [/^Кассир передал меньше расчёта · (.+)$/, "Kassir hisobdan kam topshirdi · $1"],
   [/^Отчёт бухгалтера · (.+)$/, "Buxgalter hisoboti · $1"],
+  [/^Передано (.+?) при расчёте ([\d\s]+) · сверх расчёта (.+)$/, "Topshirildi $1, hisob bo'yicha $2 · hisobdan ortiq $3"],
   [/^Передано (.+?) при расчёте ([\d\s]+) · разница (.+)$/, "Topshirildi $1, hisob bo'yicha $2 · farq $3"],
   [/^Передано (.+?) при расчёте ([\d\s]+)$/, "Topshirildi $1, hisob bo'yicha $2"],
   [/^Передача кассы не записана · (.+)$/, "Kassa topshirilishi yozilmagan · $1"],
@@ -2673,6 +2674,7 @@ globalThis.RetroTemplatesUz.push(
   [/^От кассира получено меньше расчёта · (.+)$/, "Kassirdan hisobdan kam olindi · $1"],
   [/^От кассира получено больше расчёта · (.+)$/, "Kassirdan hisobdan ko'p olindi · $1"],
   [/^Кассир передал больше расчёта · (.+)$/, "Kassir hisobdan ko'p topshirdi · $1"],
+  [/^Получено (.+) при расчёте (.+) · сверх расчёта (.+)$/, "Olindi $1, hisob $2 · hisobdan ortiq $3"],
   [/^Получено (.+) при расчёте (.+) · недостача (.+)$/, "Olindi $1, hisob $2 · kamomad $3"],
   [/^Получено (.+) при расчёте (.+)$/, "Olindi $1, hisob $2"],
   [/^Бухгалтер подтвердил: получено (.+) — совпало с расчётом$/, "Buxgalter tasdiqladi: $1 olindi — hisob bilan mos"],
@@ -3995,3 +3997,31 @@ globalThis.RetroTemplatesUz.push(
   [/^фонд премии (.+) · ресторану (.+)$/, "mukofot jamg‘armasi $1 · restoranga $2"],
 );
 /* ── /KPI официантов ── */
+
+/* ── T-509: уведомления о Счёте Шефа на устройстве (push.js) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Уведомления о Счёте Шефа': "Oshpaz hisobi haqida bildirishnomalar",
+  'Каждый заказ за Счёт Шефа — уведомление на это устройство.': "Oshpaz hisobidagi har bir buyurtma — shu qurilmaga bildirishnoma.",
+  'Включены на этом устройстве.': "Shu qurilmada yoqilgan.",
+  'Уведомления для сайта запрещены: Safari → Настройки → Веб-сайты → Уведомления.': "Sayt uchun bildirishnomalar taqiqlangan: Safari → Sozlamalar → Veb-saytlar → Bildirishnomalar.",
+  'Уведомления запрещены: Настройки iPhone → Уведомления → Retro Milliy.': "Bildirishnomalar taqiqlangan: iPhone sozlamalari → Bildirishnomalar → Retro Milliy.",
+  'Уведомления для этого сайта запрещены в настройках браузера.': "Bu sayt uchun bildirishnomalar brauzer sozlamalarida taqiqlangan.",
+  'На iPhone уведомления приходят только из значка: «Поделиться» → «На экран „Домой“», откройте Retro Milliy со значка и включите здесь.': "iPhone'da bildirishnomalar faqat belgidan keladi: «Ulashish» → «Bosh ekranga», Retro Milliy'ni belgidan oching va shu yerda yoqing.",
+  'Для уведомлений на iPhone нужна iOS 16.4 или новее.': "iPhone'da bildirishnomalar uchun iOS 16.4 yoki undan yangisi kerak.",
+  'Этот браузер не умеет получать уведомления.': "Bu brauzer bildirishnomalarni qabul qila olmaydi.",
+  'Проверочное уведомление отправлено.': "Sinov bildirishnomasi yuborildi.",
+  'Включить': "Yoqish",
+  'Проверить': "Tekshirish",
+  'Выключить': "O'chirish",
+  'Сервер не ответил.': "Server javob bermadi.",
+  'Это устройство не подписано на уведомления.': "Bu qurilma bildirishnomalarga obuna emas.",
+  'Подписка устарела. Включите уведомления заново.': "Obuna eskirgan. Bildirishnomalarni qaytadan yoqing.",
+  'Браузер прислал неизвестный адрес службы уведомлений.': "Brauzer bildirishnoma xizmatining noma'lum manzilini yubordi.",
+  'Браузер прислал повреждённые ключи подписки.': "Brauzer obunaning buzilgan kalitlarini yubordi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Не удалось включить: (.+)$/, "Yoqib bo'lmadi: $1"],
+  [/^Не удалось выключить: (.+)$/, "O'chirib bo'lmadi: $1"],
+  [/^Служба уведомлений отказала \((.+)\)\. Попробуйте позже\.$/, "Bildirishnoma xizmati rad etdi ($1). Keyinroq urinib ko'ring."],
+);
+/* ── /T-509 ── */

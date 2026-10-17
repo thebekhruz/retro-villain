@@ -31,6 +31,11 @@ test('единицы после чисел', () => {
 test('шаблоны со своим порядком слов и неразрывными пробелами в суммах', () => {
   assert.equal(translate('39% выручки Retro'), 'Retro tushumining 39%');
   assert.equal(translate('Передано 0 при расчёте 14 723 000'), "Topshirildi 0, hisob bo'yicha 14 723 000");
+  // Суммы приходят из Intl с неразрывными пробелами.
+  assert.equal(translate('Получено 45 110 000 при расчёте 45 108 500 · сверх расчёта 1 500'),
+    'Olindi 45 110 000, hisob 45 108 500 · hisobdan ortiq 1 500');
+  assert.equal(translate('Передано 45 110 000 при расчёте 45 108 500 · сверх расчёта 1 500'),
+    "Topshirildi 45 110 000, hisob bo'yicha 45 108 500 · hisobdan ortiq 1 500");
   assert.equal(translate('3 замечания'), '3 ta izoh');
 });
 

@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="/static/director-app.css">
   <link rel="stylesheet" href="/static/founder-cabinet.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script><script src="/static/push.js" defer></script>
 </head>
 <body class="founder-cabinet">
 <aside class="sidebar" data-collapsible>
@@ -99,6 +99,7 @@
       <span>Язык</span>
       <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
     </div>
+    <div class="push-box app-sheet-row" data-push hidden></div>
     <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
     <a id="fo-back" class="dir-primary app-secondary app-sheet-link" href="/login" hidden>Вся панель</a>
     <button id="logout" class="dir-primary app-secondary" type="button">Выйти</button>
@@ -137,6 +138,8 @@
         </section>
         <section class="fo-panel">
           <div class="fo-panel-head"><div><p class="eyebrow">СЧЁТ ШЕФА · IIKO</p><h2 id="fo-chef-title">—</h2></div><span id="fo-chef-over" class="fo-red"></span></div>
+          <!-- Уведомление на это устройство о каждом заказе за Счёт Шефа (push.js). -->
+          <div class="push-box" data-push hidden></div>
           <div id="fo-chef" class="fo-chef"></div>
           <div class="fo-panel-foot"><span>Отмечаем счета больше 400 000</span><span id="fo-chef-month"></span></div>
         </section>

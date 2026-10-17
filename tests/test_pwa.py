@@ -131,8 +131,13 @@ def test_every_page_can_be_added_to_the_home_screen(page):
 
 
 def test_no_service_worker_caches_money_data():
-    """Панель денежная: данные только живые. Service worker не нужен для
-    установки, и его нет — значит, нет и офлайн-копий отчётов."""
+    """Панель денежная: данные только живые, офлайн-копий отчётов нет.
+    Service worker с T-509 есть, но только для уведомлений о Счёте Шефа:
+    регистрирует его один push.js, а сам он запросы не перехватывает и
+    Cache API не трогает."""
     for path in STATIC.iterdir():
-        if path.suffix in ('.js', '.html'):
+        if path.suffix in ('.js', '.html') and path.name != 'push.js':
             assert 'serviceWorker' not in path.read_text(encoding='utf-8'), path.name
+    worker = (STATIC / 'sw.js').read_text(encoding='utf-8')
+    for banned in ("addEventListener('fetch'", 'addEventListener("fetch"', 'onfetch', 'caches.', 'importScripts'):
+        assert banned not in worker, banned

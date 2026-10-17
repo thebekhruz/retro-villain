@@ -1,3 +1,6 @@
 -r requirements.txt
 # Test runner used locally and in GitHub Actions.
 pytest==9.1.1
+# Независимая расшифровка aes128gcm (RFC 8188): тесты проверяют наши уведомления
+# так же, как их расшифрует браузер.
+http-ece==1.2.1
