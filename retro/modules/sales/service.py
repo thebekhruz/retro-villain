@@ -404,12 +404,15 @@ class SalesService:
     def _reconcile(self, day):
         """Наша база против контрольного отчёта iiko (при загрузке) и снимка кассы."""
         state = self.store.state(day)
+        # Почасовые снимки (T-507) — что база и контроль iiko показывали в каждый час дня.
+        hourly = self.store.snapshots(day)
         if state is None:
-            return dict(day=day.isoformat(), status='missing', differences=['День ещё не загружен.'])
+            return dict(day=day.isoformat(), status='missing', differences=['День ещё не загружен.'],
+                        hourly=hourly)
         result = dict(day=day.isoformat(), status=state['status'], closed=state['closed'],
                       updated_at=state['fetched_at'].astimezone(TZ).isoformat(timespec='seconds'),
                       revisions=state['revisions'], revenue=str(state['revenue']),
-                      iiko_revenue=money(state['iiko_revenue']), **state['reconciliation'])
+                      iiko_revenue=money(state['iiko_revenue']), **state['reconciliation'], hourly=hourly)
         archive = self._cashier()
         snapshot = archive.get(day) if archive is not None else None
         if snapshot is None or snapshot.revenue_breakdown is None:
@@ -437,6 +440,13 @@ class SalesService:
             # чеки, закрытые между двумя чтениями, а не ошибка.
             comparable=fetched >= archive_boundary(day) and state['closed'])
         return result
+
+    async def hourly(self, day):
+        return await asyncio.to_thread(self._hourly, day)
+
+    def _hourly(self, day):
+        return dict(day=day.isoformat(), timezone=str(TZ), kept_days=self.store.snapshots_kept_days,
+                    snapshots=self.store.snapshots(day))
 
     # ── Состояние синхронизации ─────────────────────────────────────────────
 

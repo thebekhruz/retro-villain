@@ -48,6 +48,14 @@ async def sales_reconcile(request: Request, date: date | None = None):
     return await request.app.state.sales.reconcile(day)
 
 
+async def sales_hourly(request: Request, date: date | None = None):
+    """Почасовые контрольные снимки дня (T-507): только чтение."""
+    day = date or today_tashkent()
+    if day > today_tashkent():
+        raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
+    return await request.app.state.sales.hourly(day)
+
+
 async def sales_sync(request: Request, date: date | None = None):
     """Перечитать день из iiko сейчас — после правки задним числом."""
     day = date or today_tashkent()
@@ -69,4 +77,5 @@ for router in (director_router, founder_router):
     router.add_api_route('', sales, methods=['GET'])
     router.add_api_route('/status', sales_status, methods=['GET'])
     router.add_api_route('/reconcile', sales_reconcile, methods=['GET'])
+    router.add_api_route('/hourly', sales_hourly, methods=['GET'])
 director_router.add_api_route('/sync', sales_sync, methods=['POST'])
