@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.accountant.roster import GROUPS, UNASSIGNED_GROUP, group_for
 from retro.modules.director.models import resolve_period
@@ -195,7 +195,8 @@ async def chat(request: Request, body: ChatInput):
     try:
         answer = await asyncio.wait_for(request.app.state.claude.chat(
             messages, tools=chat_tools.definitions, tool_handler=chat_tools.execute,
-            current_date=today_tashkent().isoformat(), audience='director'), timeout=180)
+            current_date=today_tashkent().isoformat(), current_time=datetime.now(TZ).strftime('%H:%M'),
+            audience='director'), timeout=180)
     except TimeoutError as error:
         log_safe_failure('director-chat', error, operation='answer',
                          request_id=request.state.request_id)

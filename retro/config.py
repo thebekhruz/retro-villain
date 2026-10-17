@@ -2,7 +2,7 @@ import os
 import re
 from ipaddress import IPv4Network, IPv6Network, ip_network
 from dataclasses import dataclass, field
-from datetime import time
+from datetime import date, time
 from pathlib import Path
 from urllib.parse import urlsplit
 
@@ -18,6 +18,10 @@ SMS_PROVIDERS = ('eskiz', 'console')
 # Текст SMS с кодом входа. У Eskiz каждый текст проходит модерацию шаблона:
 # отправится только тот, что одобрен в кабинете Eskiz, слово в слово.
 SMS_TEMPLATE = 'Код подтверждения для входа в платформу Retro: {code}'
+# История продаж (T-499): с какого дня держим чеки iiko в своей базе и что
+# считаем обедом. Окно — минуты от полуночи по Ташкенту, правая граница не входит.
+SALES_HISTORY_START = date(2026, 9, 1)
+LUNCH_HOURS = (12 * 60, 15 * 60)
 
 
 @dataclass(frozen=True)
@@ -98,6 +102,8 @@ class Settings:
     # продакшене она обязательна: иначе базы исчезнут на выкате.
     database_url: str = ''
     report_retention: int = 24
+    sales_history_start: date = SALES_HISTORY_START
+    lunch_hours: tuple[int, int] = LUNCH_HOURS
 
     @property
     def configured(self):
@@ -184,6 +190,8 @@ class Settings:
             raise ValueError('DIRECTOR_REPORT_RETENTION должен быть числом от 1 до 1000.')
         hikvision = parse_hikvision_config(os.environ)
         telegram_report = parse_telegram_report_config(os.environ)
+        sales_history_start = parse_sales_history_start(os.getenv('SALES_HISTORY_START', ''))
+        lunch_hours = parse_lunch_hours(os.getenv('LUNCH_HOURS', ''))
         return cls(
             base_url=base,
             login=os.getenv('IIKO_LOGIN', ''),
@@ -214,7 +222,43 @@ class Settings:
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
             database_url=database_url,
             report_retention=int(retention_value),
+            sales_history_start=sales_history_start,
+            lunch_hours=lunch_hours,
         )
+
+
+def parse_clock(value: str, name: str) -> int:
+    """«12», «12:30», «24:00» → минуты от полуночи."""
+    match = re.fullmatch(r'([01]?[0-9]|2[0-4])(?::([0-5][0-9]))?', value.strip())
+    if not match:
+        raise ValueError(f'{name}: время задаётся как ЧЧ или ЧЧ:ММ.')
+    minutes = int(match[1]) * 60 + int(match[2] or 0)
+    if minutes > 24 * 60:
+        raise ValueError(f'{name}: время не позже 24:00.')
+    return minutes
+
+
+def parse_lunch_hours(value: str) -> tuple[int, int]:
+    """LUNCH_HOURS=12:00-15:00 — окно обеда по времени закрытия чека."""
+    if not value.strip():
+        return LUNCH_HOURS
+    parts = value.split('-')
+    if len(parts) != 2:
+        raise ValueError('LUNCH_HOURS задаётся как ЧЧ:ММ-ЧЧ:ММ, например 12:00-15:00.')
+    start, end = (parse_clock(part, 'LUNCH_HOURS') for part in parts)
+    if start >= end:
+        raise ValueError('LUNCH_HOURS: начало обеда должно быть раньше конца.')
+    return start, end
+
+
+def parse_sales_history_start(value: str) -> date:
+    """SALES_HISTORY_START=2026-09-01 — первый день истории продаж в базе."""
+    if not value.strip():
+        return SALES_HISTORY_START
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        raise ValueError('SALES_HISTORY_START задаётся датой ГГГГ-ММ-ДД.') from None
 
 
 def parse_telegram_report_config(environ) -> TelegramReportConfig | None:

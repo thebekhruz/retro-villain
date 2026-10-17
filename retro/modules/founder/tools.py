@@ -18,6 +18,7 @@ from retro.modules.cashier.till import shokh_gives, shokh_total, usd_balance
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
 from retro.modules.menu.catalog import MenuCatalog
+from retro.modules.sales.tools import SALES_BY_TIME_TOOL, sales_by_time
 
 
 # manual_present / manual_absent — отметка бухгалтера у сотрудников без
@@ -48,6 +49,7 @@ MENU_CATALOG_TOOL = {
 
 TOOL_DEFINITIONS = (
     MENU_CATALOG_TOOL,
+    SALES_BY_TIME_TOOL,
     {
         'name': 'get_revenue_analytics',
         'description': (
@@ -276,6 +278,8 @@ class FounderChatTools:
     async def execute(self, name, arguments):
         if name == 'get_menu_catalog':
             return await asyncio.to_thread(self._menu_catalog, arguments)
+        if name == 'get_sales_by_time':
+            return await sales_by_time(self.app.state.sales, arguments)
         if name == 'get_revenue_analytics':
             start, end, granularity, directions = _period(arguments, with_directions=True)
             return await load_iiko(self.app.state, 'load_founder_analytics',

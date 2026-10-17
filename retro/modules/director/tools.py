@@ -8,14 +8,17 @@ from datetime import date
 from retro.modules.accountant.payroll import ABSENT_STATUSES, PRESENT_STATUSES, draft_payroll
 from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.founder.tools import ATTENDANCE_STATUSES, MENU_CATALOG_TOOL, FounderChatTools
+from retro.modules.sales.tools import SALES_BY_TIME_TOOL
 
 
 # Директор видит на телефоне кассу дня, остаток и замечания бухгалтера (6a),
 # поэтому и AI получает эти дни целиком — только чтение, как у учредителя.
+# Продажи по времени (ТЗ 16.10, раздел 2): «выручка за обед сегодня» и любой прошлый период.
 DELEGATED_NAMES = {'get_iiko_sales_details', 'get_saved_director_reports',
-                   'get_cashier_day', 'get_accounting_day', 'get_menu_catalog'}
+                   'get_cashier_day', 'get_accounting_day', 'get_menu_catalog', 'get_sales_by_time'}
 TOOL_DEFINITIONS = (
     MENU_CATALOG_TOOL,
+    SALES_BY_TIME_TOOL,
     {
         'name': 'get_director_dashboard',
         'description': (

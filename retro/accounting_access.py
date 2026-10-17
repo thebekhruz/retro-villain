@@ -15,6 +15,11 @@ MESSAGE = f'Учёт доступен с {ACCOUNTING_START:%d.%m.%Y}. Более
 # расходы дэшборда учредитель для таких периодов не считает (founder/routes).
 IIKO_ANALYTICS_READS = frozenset({
     '/api/director/report', '/api/founder/analytics', '/api/founder/bookings'})
+# История продаж (T-499) — та же живая аналитика iiko, только из нашей базы;
+# перечитать день из iiko можно с начала истории, а не с начала учёта.
+SALES_HISTORY_PATHS = frozenset({
+    '/api/director/sales', '/api/director/sales/reconcile', '/api/director/sales/sync',
+    '/api/founder/sales', '/api/founder/sales/reconcile'})
 
 
 def check_dates(values, *, salary=False):
@@ -46,6 +51,8 @@ async def require_accounting_dates(request: Request):
     if not request.url.path.startswith('/api/'):
         return
     if request.method == 'GET' and request.url.path in IIKO_ANALYTICS_READS:
+        return
+    if request.url.path in SALES_HISTORY_PATHS:
         return
     salary = request.url.path.startswith('/api/accountant/salary-day/')
     check_dates(request.query_params.multi_items(), salary=salary)
