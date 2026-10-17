@@ -4253,3 +4253,9 @@ globalThis.RetroTemplatesUz.push(
   [/^Яндекс Еда уже входит в выручку направлений: (.+?) сум\.$/, "Яндекс Еда yo'nalishlar tushumiga allaqachon kirgan: $1 so'm."],
 );
 /* ── /T-501 ── */
+
+/* ── T-502: меню справа ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Меню справа': "Menyu o'ngda",
+});
+/* ── /T-502 ── */
