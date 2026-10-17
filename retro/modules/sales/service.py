@@ -39,6 +39,17 @@ FRESH_WAIT = 20
 DISH_TYPE = 'Блюдо'
 
 
+def directions_of(direction):
+    """Направления ответа: `all` — все; иначе одно или несколько через запятую.
+    Плитка обеда директора просит `retro,school` — без банкетного зала (T-500)."""
+    if direction == 'all':
+        return None
+    names = tuple(direction.split(',')) if isinstance(direction, str) else ()
+    if not names or len(set(names)) != len(names) or not set(names) <= set(DIRECTIONS):
+        raise DataError('Направление — all, retro, school или banquet; несколько — через запятую.')
+    return names
+
+
 def direction_of(register, section):
     if register == SCHOOL_REGISTER:
         return 'school'
@@ -234,17 +245,19 @@ class SalesService:
     async def summary(self, start=None, end=None, *, window=None, direction='all', top=10, sort='quantity',
                       include_non_dishes=False, refresh=True):
         start, end = self.period(start, end)
-        if direction not in ('all', *DIRECTIONS):
-            raise DataError('Направление — all, retro, school или banquet.')
+        selected = directions_of(direction)
         if not isinstance(top, int) or isinstance(top, bool) or not 0 <= top <= TOP_LIMIT:
             raise DataError(f'Число позиций в рейтинге — от 0 до {TOP_LIMIT}.')
         if sort not in ('quantity', 'revenue'):
             raise DataError('Рейтинг сортируется по quantity или revenue.')
         refresh_error = await self.refresh_today(start, end) if refresh else None
-        return await asyncio.to_thread(self._summary, start, end, window, direction, top, sort,
-                                       include_non_dishes, refresh_error)
+        result = await asyncio.to_thread(self._summary, start, end, window, direction, selected, top, sort,
+                                         include_non_dishes, refresh_error)
+        # Без подключения iiko пустой день — «загрузить неоткуда», а не «ещё грузится».
+        result['configured'] = self.sync is not None
+        return result
 
-    def _summary(self, start, end, window, direction, top, sort, include_non_dishes, refresh_error):
+    def _summary(self, start, end, window, direction, selected, top, sort, include_non_dishes, refresh_error):
         now = self.clock()
         today = now.date()
         history_start = self.settings.sales_history_start
@@ -255,8 +268,8 @@ class SalesService:
         lines = self.store.lines(start, end, ('order_id', 'opened_at', 'closed_at', 'direction',
                                               'dish_name', 'dish_type', 'quantity', 'gross', 'revenue',
                                               'cost'))
-        if direction != 'all':
-            lines = [line for line in lines if line['direction'] == direction]
+        if selected is not None:
+            lines = [line for line in lines if line['direction'] in selected]
         untimed = 0
         if window is not None:
             field = 'closed_at' if window['basis'] == 'close' else 'opened_at'

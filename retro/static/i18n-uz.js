@@ -4186,3 +4186,49 @@ globalThis.RetroTemplatesUz.push(
   [/^Сотрудник для (.+)$/, "$1 uchun xodim"],
 );
 /* ── /T-495 ── */
+
+/* ── T-500: «Обед сегодня» на телефоне директора и лист обеда за день (ТЗ 16.10 §2) ──
+   Короткие одиночные слова («Обед», «идёт») — шаблонами на всю строку: ключом
+   словаря они переводились бы кусками внутри чужих фраз. */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Обед сегодня': "Bugungi tushlik",
+  'день идёт': "kun davom etmoqda",
+  'По часам': "Soatlar bo'yicha",
+  'По направлениям': "Yo'nalishlar bo'yicha",
+  'Топ-5 блюд окна': "Shu vaqtdagi top-5 taom",
+  'по количеству · под названием выручка': "soni bo'yicha · nomi ostida tushum",
+  '✦ Спросить AI про этот обед →': "✦ Bu tushlik haqida AI'dan so'rash →",
+  'Сколько продали за обед сегодня?': "Bugun tushlikda qancha sotildi?",
+  'За этот день данных нет': "Bu kun uchun ma'lumot yo'q",
+  'ещё не наступил': "hali boshlanmagan",
+  'ещё не загружен': "hali yuklanmagan",
+  'В окне обеда блюд не продавали.': "Tushlik vaqtida taom sotilmagan.",
+  'Retro и Школа · банкетный зал не входит': "Retro va Maktab · banket zali kirmaydi",
+  'по времени закрытия чека, Ташкент': "chek yopilgan vaqt bo'yicha, Toshkent",
+  'по времени открытия чека, Ташкент': "chek ochilgan vaqt bo'yicha, Toshkent",
+  'День ещё не загружен из iiko: он стоит в очереди загрузки.': "Kun hali iiko'dan yuklanmagan: u yuklash navbatida.",
+  'iiko не подключено: продажи загрузить неоткуда.': "iiko ulanmagan: savdolarni yuklab bo'lmaydi.",
+  'iiko отвечает медленно: день ещё загружается.': "iiko sekin javob bermoqda: kun hali yuklanmoqda.",
+  'iiko сейчас не отвечает.': "iiko hozir javob bermayapti.",
+  'Сегодняшние чеки ещё не загружены из iiko.': "Bugungi cheklar hali iiko'dan yuklanmagan.",
+  'Нет связи с панелью. Проверьте интернет и откройте снова.': "Panel bilan aloqa yo'q. Internetni tekshiring va qayta oching.",
+  'День ещё не перечитан после закрытия смены: цифры могут уточниться.': "Kun smena yopilgandan keyin hali qayta o'qilmagan: raqamlar aniqlashishi mumkin.",
+  'Сверка с итогом iiko за этот день не сошлась.': "Bu kun uchun iiko jami bilan solishtirish mos kelmadi.",
+  // Ответы сервера о свежести сегодняшнего дня (T-499)
+  'iiko сейчас не отвечает: показаны данные последней загрузки.': "iiko hozir javob bermayapti: oxirgi yuklash ma'lumotlari ko'rsatilgan.",
+  'iiko отвечает медленно: показаны данные последней загрузки, обновление идёт.': "iiko sekin javob bermoqda: oxirgi yuklash ma'lumotlari ko'rsatilgan, yangilanish davom etmoqda.",
+  'Показаны данные последней загрузки.': "Oxirgi yuklash ma'lumotlari ko'rsatilgan.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Обед$/, "Tushlik"],
+  [/^идёт$/, "davom etmoqda"],
+  [/^на ((?:\d{2}\.\d{2} )?\d{1,2}:\d{2})$/, "$1 holatiga"],
+  [/^на (\d{1,2}:\d{2}) · обновить не удалось$/, "$1 holatiga · yangilab bo'lmadi"],
+  [/^окно (\d{1,2}:\d{2}–\d{1,2}:\d{2})$/, "vaqt oralig'i $1"],
+  [/^(\d+) (?:чек|чека|чеков) · средний чек (.+)$/, "$1 ta chek · o'rtacha chek $2"],
+  [/^выручка (.+) сум$/, "tushum $1 so'm"],
+  [/^История продаж хранится с (\d{2}\.\d{2}\.\d{4})\.$/, "Savdo tarixi $1 dan saqlanadi."],
+  [/^День идёт: учтены чеки, закрытые к (\d{1,2}:\d{2})\. Открытые столы iiko не отдаёт\.$/,
+    "Kun davom etmoqda: $1 gacha yopilgan cheklar hisobga olindi. Ochiq stollarni iiko bermaydi."],
+);
+/* ── /T-500 ── */

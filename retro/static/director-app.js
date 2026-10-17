@@ -215,6 +215,225 @@
     });
     loadAccounting();
     loadTeam();
+    if (Date.now() - lunch.loadedAt >= LUNCH_REFRESH_MS) loadLunchTile();
+  }
+
+  // ── Обед (T-500, ТЗ 16.10 §2) ────────────────────────────────────────
+  /** «Обед сегодня» под кассой и лист обеда за любой день — из истории чеков
+   *  iiko в базе панели (/api/director/sales, T-499). Окно обеда задаёт сервер
+   *  (LUNCH_HOURS), направления — DirectorLogic.LUNCH_DIRECTIONS. Ответы за
+   *  прошедшие дни держим в памяти: они почти не меняются; сегодня
+   *  перечитываем при открытии листа и раз в пять минут на «Сегодня». */
+  const LUNCH_REFRESH_MS = 5 * 60000;
+  const lunch = {day: null, answers: {}, errors: {}, pending: {}, historyStart: '', loadedAt: 0};
+
+  function fetchLunch(day, force) {
+    if (lunch.pending[day]) return lunch.pending[day];
+    if (!force && lunch.answers[day]) return Promise.resolve(lunch.answers[day]);
+    lunch.pending[day] = request(logic.lunchUrl(day)).then(data => {
+      lunch.answers[day] = data;
+      delete lunch.errors[day];
+      if (data.history_start) lunch.historyStart = data.history_start;
+    }).catch(error => {
+      // Прежний ответ остаётся на экране: «на ЧЧ:ММ» скажет, насколько он старый.
+      if (!lunch.answers[day]) lunch.errors[day] = error;
+    }).finally(() => { delete lunch.pending[day]; });
+    return lunch.pending[day];
+  }
+
+  function lunchState(day) {
+    return logic.lunchView(lunch.answers[day] || null, {day, today: view.today, now: logic.tashkentClock(),
+      error: lunch.answers[day] ? null : lunch.errors[day] || null});
+  }
+
+  function fillText(id, text) {
+    const target = $(id);
+    target.textContent = text || '';
+    target.hidden = !text;
+  }
+
+  function renderLunchTile() {
+    const state = lunchState(view.today);
+    const tile = logic.lunchTile(state);
+    $('lunch-window').textContent = state.window;
+    const value = $('lunch-value');
+    if (tile.value === null) {
+      if (!value.querySelector('.rm-skel')) value.replaceChildren(node('span', 'rm-skel is-val'));
+    } else value.textContent = tile.value;
+    value.classList.toggle('is-empty', tile.empty);
+    fillText('lunch-split', tile.split);
+    fillText('lunch-sub', tile.sub);
+    fillText('lunch-note', tile.note);
+    fillText('lunch-badge', tile.badge);
+  }
+
+  function loadLunchTile() {
+    lunch.loadedAt = Date.now();
+    renderLunchTile();
+    return fetchLunch(view.today, true).then(() => {
+      renderLunchTile();
+      if ($('lunch-sheet').open && lunch.day === view.today) renderLunchSheet();
+    });
+  }
+
+  /** Полоса строки: доля от самой сильной строки; ноль — пустая дорожка. */
+  function lunchBar(share, color) {
+    const bar = node('div', 'rm-bar');
+    const fill = node('span');
+    fill.style.width = (share > 0 ? Math.max(4, share * 100) : 0) + '%';
+    if (color) fill.style.background = color;
+    bar.append(fill);
+    return bar;
+  }
+
+  function lunchSummary(state) {
+    const card = $('lunch-summary');
+    const when = node('span', 'dir-lunch-when');
+    when.append(node('span', '', (state.isToday ? 'Сегодня · ' : '') + logic.dayLabel(state.day)));
+    card.replaceChildren(when);
+    card.setAttribute('aria-busy', String(state.state === 'loading'));
+    if (state.state === 'loading') {
+      const value = node('strong', 'rm-num');
+      value.append(node('span', 'rm-skel is-val'));
+      card.append(value, node('span', 'rm-skel is-line'));
+      return;
+    }
+    if (state.state !== 'ok') {
+      // Нет данных — словами и с причиной: ноль здесь был бы неправдой.
+      card.append(node('strong', 'is-empty', state.state === 'missing' ? 'За этот день данных нет' : 'Нет данных'),
+        node('small', '', state.reason));
+      return;
+    }
+    if (state.partial) when.append(node('span', 'dir-badge is-live', 'день идёт'));
+    card.append(node('strong', 'rm-num', logic.compactSum(state.revenue) + ' сум'),
+      node('small', '', logic.receiptsText(state.receipts, state.average)));
+    if (state.updatedLabel) card.append(node('small', '', state.updatedLabel));
+    state.notes.forEach(text => card.append(node('p', 'dir-note', text)));
+  }
+
+  function lunchHourRows(state) {
+    $('lunch-hours-note').textContent = state.window ? 'окно ' + state.window : '';
+    $('lunch-hours').replaceChildren(...state.hours.map(row => {
+      const item = node('div', 'is-' + row.phase);
+      const line = node('div', 'dir-lunch-line');
+      const label = node('span', '', row.label);
+      if (row.phase === 'current') label.append(node('em', 'dir-lunch-live', 'идёт'));
+      line.append(label, node('b', 'rm-num', row.phase === 'ahead' ? '—' : logic.compactSum(row.revenue)));
+      // Час после последней загрузки — не ноль: его ещё не было или его ещё не прочитали.
+      item.append(line, lunchBar(row.phase === 'ahead' ? 0 : row.share), node('small', '', row.phase === 'ahead'
+        ? (row.upcoming ? 'ещё не наступил' : 'ещё не загружен') : logic.receiptsText(row.receipts, row.average)));
+      return item;
+    }));
+  }
+
+  function lunchDirectionRows(state) {
+    $('lunch-directions').replaceChildren(...state.directions.map(row => {
+      const item = node('div');
+      const line = node('div', 'dir-lunch-line');
+      const name = node('span');
+      const dot = node('i', 'dir-lunch-dot');
+      dot.style.background = row.color;
+      name.append(dot, document.createTextNode(row.name));
+      line.append(name, node('b', 'rm-num', logic.compactSum(row.revenue)));
+      item.append(line, lunchBar(row.share, row.color), node('small', '', logic.receiptsText(row.receipts, row.average)));
+      return item;
+    }));
+    $('lunch-scope').textContent = logic.lunchScope();
+  }
+
+  function lunchTopRows(state) {
+    const list = $('lunch-top');
+    if (!state.top.length) { list.replaceChildren(node('p', 'dir-empty', 'В окне обеда блюд не продавали.')); return; }
+    list.replaceChildren(...state.top.map((row, index) => {
+      const item = node('div', 'dir-dish');
+      const line = node('span', 'dir-dish-line');
+      const name = node('span', 'dir-dish-name');
+      // Название блюда — данные iiko: переводчик его не трогает.
+      const dish = node('strong', '', row.name);
+      dish.dataset.i18n = 'off';
+      name.append(dish, node('small', '', 'выручка ' + logic.compactSum(row.revenue) + ' сум'));
+      const qty = node('span', 'dir-dish-qty');
+      qty.append(node('strong', 'rm-num', money.format(Math.round(row.quantity)) + ' шт'));
+      line.append(node('span', 'dir-rank', String(index + 1)), name, qty);
+      item.append(line);
+      return item;
+    }));
+  }
+
+  function renderLunchSheet() {
+    const day = lunch.day;
+    const state = lunchState(day);
+    const yesterday = shiftDay(view.today, -1);
+    $('lunch-days').querySelectorAll('button').forEach(button => {
+      const active = (button.dataset.lunchDay === 'today' ? view.today : yesterday) === day;
+      button.classList.toggle('is-active', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    const input = $('lunch-date');
+    input.max = view.today;
+    if (lunch.historyStart) input.min = lunch.historyStart;
+    if (input.value !== day) input.value = day;
+    $('lunch-sheet-window').textContent = state.window ? state.window + (state.basis ? ' · ' + state.basis : '') : '';
+    lunchSummary(state);
+    const ok = state.state === 'ok';
+    ['lunch-hours-card', 'lunch-directions-card', 'lunch-top-card'].forEach(id => { $(id).hidden = !ok; });
+    $('lunch-ask').hidden = state.state === 'loading';
+    if (!ok) return;
+    lunchHourRows(state);
+    lunchDirectionRows(state);
+    lunchTopRows(state);
+  }
+
+  /** День в листе: прошедший берём из памяти, сегодня перечитываем. */
+  function selectLunchDay(day, trigger) {
+    lunch.day = day;
+    const today = day === view.today;
+    if (!lunch.answers[day]) delete lunch.errors[day];
+    renderLunchSheet();
+    const work = fetchLunch(day, today).then(() => {
+      if (today) renderLunchTile();
+      if (lunch.day === day) renderLunchSheet();
+    });
+    if (trigger && !lunch.answers[day]) busyButton(trigger, work, {done: false});
+    return work;
+  }
+
+  function openLunch() {
+    const sheet = $('lunch-sheet');
+    if (typeof sheet.showModal === 'function') { if (!sheet.open) sheet.showModal(); } else sheet.setAttribute('open', '');
+    sheet.scrollTop = 0;
+    selectLunchDay(view.today);
+  }
+
+  function closeLunch() {
+    const sheet = $('lunch-sheet');
+    if (typeof sheet.close === 'function') sheet.close(); else sheet.removeAttribute('open');
+  }
+
+  function bindLunch() {
+    $('lunch-open').addEventListener('click', openLunch);
+    $('lunch-close').addEventListener('click', closeLunch);
+    // Нажатие на затемнение вокруг листа закрывает его (по самому листу — нет), как у профиля.
+    $('lunch-sheet').addEventListener('click', event => {
+      if (event.target !== $('lunch-sheet')) return;
+      const box = $('lunch-sheet').getBoundingClientRect();
+      if (event.clientX < box.left || event.clientX > box.right || event.clientY < box.top || event.clientY > box.bottom) closeLunch();
+    });
+    $('lunch-days').querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
+      const day = button.dataset.lunchDay === 'today' ? view.today : shiftDay(view.today, -1);
+      if (day !== lunch.day) selectLunchDay(day, button);
+    }));
+    $('lunch-date').addEventListener('change', event => {
+      const day = event.target.value;
+      // Будущий день и пустое поле не запрашиваем: продаж за них нет и быть не может.
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(day) || day > view.today || day === lunch.day) return;
+      selectLunchDay(day);
+    });
+    $('lunch-ask').addEventListener('click', () => {
+      const question = logic.lunchQuestion(lunchState(lunch.day));
+      closeLunch();
+      ask(question);
+    });
   }
 
   /** «Сегодня» обновляется само раз в минуту, пока экран открыт и виден:
@@ -859,6 +1078,7 @@
     $('editor-keep').addEventListener('click', () => { $('editor-delete').hidden = false; $('editor-confirm').hidden = true; });
     $('editor-delete-yes').addEventListener('click', deleteEditor);
     document.querySelectorAll('a[href="/director/report"]').forEach(busyLink);
+    bindLunch();
   }
 
   (async function start() {
