@@ -4377,3 +4377,31 @@ globalThis.RetroTemplatesUz.push(
   [/^Такой же текст уже рассылали (.+) · Источник не записан\.$/, "Xuddi shu matn $1 da yuborilgan · Manba yozilmagan."],
 );
 /* ── /T-504 ── */
+
+/* ── T-509: уведомления о Счёте Шефа на устройстве (push.js) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Уведомления о Счёте Шефа': "Oshpaz hisobi haqida bildirishnomalar",
+  'Каждый заказ за Счёт Шефа — уведомление на это устройство.': "Oshpaz hisobidagi har bir buyurtma — shu qurilmaga bildirishnoma.",
+  'Включены на этом устройстве.': "Shu qurilmada yoqilgan.",
+  'Уведомления для сайта запрещены: Safari → Настройки → Веб-сайты → Уведомления.': "Sayt uchun bildirishnomalar taqiqlangan: Safari → Sozlamalar → Veb-saytlar → Bildirishnomalar.",
+  'Уведомления запрещены: Настройки iPhone → Уведомления → Retro Milliy.': "Bildirishnomalar taqiqlangan: iPhone sozlamalari → Bildirishnomalar → Retro Milliy.",
+  'Уведомления для этого сайта запрещены в настройках браузера.': "Bu sayt uchun bildirishnomalar brauzer sozlamalarida taqiqlangan.",
+  'На iPhone уведомления приходят только из значка: «Поделиться» → «На экран „Домой“», откройте Retro Milliy со значка и включите здесь.': "iPhone'da bildirishnomalar faqat belgidan keladi: «Ulashish» → «Bosh ekranga», Retro Milliy'ni belgidan oching va shu yerda yoqing.",
+  'Для уведомлений на iPhone нужна iOS 16.4 или новее.': "iPhone'da bildirishnomalar uchun iOS 16.4 yoki undan yangisi kerak.",
+  'Этот браузер не умеет получать уведомления.': "Bu brauzer bildirishnomalarni qabul qila olmaydi.",
+  'Проверочное уведомление отправлено.': "Sinov bildirishnomasi yuborildi.",
+  'Включить': "Yoqish",
+  'Проверить': "Tekshirish",
+  'Выключить': "O'chirish",
+  'Сервер не ответил.': "Server javob bermadi.",
+  'Это устройство не подписано на уведомления.': "Bu qurilma bildirishnomalarga obuna emas.",
+  'Подписка устарела. Включите уведомления заново.': "Obuna eskirgan. Bildirishnomalarni qaytadan yoqing.",
+  'Браузер прислал неизвестный адрес службы уведомлений.': "Brauzer bildirishnoma xizmatining noma'lum manzilini yubordi.",
+  'Браузер прислал повреждённые ключи подписки.': "Brauzer obunaning buzilgan kalitlarini yubordi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Не удалось включить: (.+)$/, "Yoqib bo'lmadi: $1"],
+  [/^Не удалось выключить: (.+)$/, "O'chirib bo'lmadi: $1"],
+  [/^Служба уведомлений отказала \((.+)\)\. Попробуйте позже\.$/, "Bildirishnoma xizmati rad etdi ($1). Keyinroq urinib ko'ring."],
+);
+/* ── /T-509 ── */
