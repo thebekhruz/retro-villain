@@ -58,6 +58,35 @@
     next[key]={at};
     return next;
   }
+  /* ── Журнал рассылок (ТЗ 16.10, п. 5.3) ── */
+  /** Ручная — с этого экрана; «автоматически» — задел под автоотправку. */
+  function kindLabel(kind){return kind==='auto'?'автоматически':'вручную'}
+  /** Превью текста одной строкой: переносы — в пробелы, длинное — с «…». */
+  function journalPreview(text,max=90){
+    const line=String(text||'').replace(/\s+/g,' ').trim();
+    return line.length>max?line.slice(0,max-1).trimEnd()+'…':line;
+  }
+  /** Время журнала — как записал сервер (Ташкент), без пересчёта браузером. */
+  function journalWhen(value,withYear=true){
+    const match=/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})/.exec(String(value||''));
+    if(!match)return '—';
+    return `${match[3]}.${match[2]}${withYear?'.'+match[1]:''} ${match[4]}:${match[5]}`;
+  }
+  /** Последний известный итог рассылки — те счётчики, что отдал бот. */
+  function journalStatus(entry){
+    const done=(entry.sent||0)+(entry.blocked||0)+(entry.failed||0),total=entry.audience||entry.recipients||0;
+    if(entry.status==='queued')return `в очереди · получателей: ${total}`;
+    if(entry.status==='running')return `отправляется: ${done} из ${total}`;
+    if(entry.status==='completed')return `отправлено ${entry.sent||0} · заблокировали бота ${entry.blocked||0} · ошибок ${entry.failed||0}`;
+    if(entry.status==='interrupted')return `прервана · обработано ${done} из ${total}`;
+    if(entry.status==='failed')return `ошибка · обработано ${done} из ${total}`;
+    return 'статус неизвестен';
+  }
+  function journalState(status){
+    if(status==='completed')return 'done';
+    if(status==='failed'||status==='interrupted')return 'error';
+    return status==='queued'||status==='running'?'running':'unknown';
+  }
   root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,draftKey,agoText,repeatWarning,
-    rememberSent,isTerminal:status=>terminal.has(status)};
+    rememberSent,kindLabel,journalPreview,journalWhen,journalStatus,journalState,isTerminal:status=>terminal.has(status)};
 })(typeof globalThis==='undefined'?window:globalThis);

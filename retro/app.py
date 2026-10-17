@@ -58,6 +58,7 @@ from retro.modules.kpi.source import KpiSource
 from retro.modules.kpi.store import KpiStore
 from retro.modules.users.routes import router as users_router
 from retro.modules.founder.chat import FounderChatStore
+from retro.modules.founder.broadcast_journal import BroadcastJournal
 from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
@@ -398,6 +399,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         cashier=lambda: getattr(app.state.cashier_days, 'archive', None))
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
+    # Журнал рассылок гостям (ТЗ 16.10, п. 5.3): рядом с чатом учредителя.
+    app.state.broadcast_journal = BroadcastJournal(founder_path)
     # Счёт Шефа за неделю (ТЗ 16.10, п. 4.2): журнал событий есть всегда, проверка
     # идёт только с iiko, а сообщение уходит, только если задан чат учредителя.
     from retro.modules.founder.chef_alert import ChefAlertStore, ChefWeekAlert
