@@ -5,6 +5,7 @@ import binascii
 import posixpath
 import secrets
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 
 from fastapi import Depends, FastAPI, HTTPException, Request
@@ -83,7 +84,10 @@ PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js
                 # Значок на экране телефона (T-451): манифест и его иконки браузер
                 # запрашивает без кук, поэтому они открыты. Больше ничего.
                 '/manifest.webmanifest', '/static/icon-192.png', '/static/icon-512.png',
-                '/static/icon-maskable-192.png', '/static/icon-maskable-512.png'}
+                '/static/icon-maskable-192.png', '/static/icon-maskable-512.png',
+                # Обработчик уведомлений (Web Push): браузер обновляет его сам, в
+                # фоне, и куки при этом не обязан слать. Секретов в нём нет.
+                '/sw.js'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
@@ -149,6 +153,8 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'founder-logic.js': {'founder'}, 'founder-cabinet-logic.js': {'founder'},
         'founder-broadcast.js': {'founder'}, 'founder-broadcast-logic.js': {'founder'},
         'founder.css': {'founder'}, 'founder-cabinet.css': {'founder'},
+        # Уведомления о Счёте Шефа на устройстве (Web Push); обработчик — /sw.js
+        'push.js': {'founder'},
         # Закуп · Шох
         'shokh.html': {'shokh'}, 'shokh.js': {'shokh'}, 'shokh-logic.js': {'shokh'},
         # Телефонный каркас закупа — тот же у кабинета менеджера: те же классы.
@@ -241,7 +247,7 @@ async def keep_device_photos_warm(state, every: float = 600):
 def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, rate_transport=None,
                director_db_path=None, founder_db_path=None, claude_transport=None, booking_transport=None,
                broadcast_transport=None, hikvision_client=None, hikvision_poller=None,
-               hikvision_writer=None, sms_client=None, telegram_transport=None):
+               hikvision_writer=None, sms_client=None, telegram_transport=None, push_transport=None):
     configure_logging()
     settings = settings or Settings.from_env()
 
@@ -254,6 +260,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             application.state.cashier_days.start()
         if application.state.menu_sync is not None:
             application.state.menu_sync.start()
+        if application.state.chef_push is not None:
+            application.state.chef_push.start()
         if application.state.telegram_report is not None:
             application.state.telegram_report.start()
         photos = (asyncio.create_task(keep_device_photos_warm(application.state))
@@ -280,6 +288,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await application.state.drive_backup.close()
             if application.state.telegram_report is not None:
                 await application.state.telegram_report.close()
+            if application.state.chef_push is not None:
+                await application.state.chef_push.close()
+            await application.state.push_sender.close()
             await application.state.reports.close()
             await application.state.phone_login.close()
             # Клиенты держат свои пулы соединений всё время жизни приложения;
@@ -382,6 +393,21 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                            if settings.configured else None)
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
+    # Уведомления в браузер (Web Push): подписки устройств и ключ VAPID — рядом с
+    # журналами учредителя. Ключ из VAPID_PRIVATE_KEY, иначе созданный один раз в базе.
+    from retro.web_push import PushSender, PushStore, VapidKeys
+    from retro.modules.founder.chef_push import ChefOrderPush, ChefOrderStore
+    app.state.push_store = PushStore(founder_path)
+    vapid = (VapidKeys.from_private(settings.push.private_key) if settings.push.private_key
+             else app.state.push_store.vapid(datetime.now(timezone.utc)))
+    app.state.push_sender = PushSender(vapid, settings.push.subject, transport=push_transport)
+    # Каждый заказ за Счёт Шефа — уведомление на подписанные устройства (ТЗ 16.10, п. 4.2).
+    app.state.chef_orders = ChefOrderStore(founder_path)
+    app.state.chef_push = None
+    if settings.configured:
+        app.state.chef_push = ChefOrderPush(
+            app.state.chef_orders, app.state.push_store, sender=app.state.push_sender,
+            loader=lambda start, end: load_iiko(app.state, 'load_chef_orders', start, end, timeout=60))
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
     app.state.director_service = DirectorService(
         app.state.iiko, app.state.claude, app.state.director_store, settings.report_retention,
@@ -503,6 +529,14 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         # не дописывают ему ?v=<хэш>, и у установленного значка он не меняется.
         # Тип — явно, чтобы не зависеть от таблицы mimetypes на сервере.
         return FileResponse(STATIC / 'manifest.webmanifest', media_type='application/manifest+json')
+
+    @app.get('/sw.js')
+    def service_worker():
+        # Только уведомления: запросы страниц он не перехватывает и ничего не
+        # кеширует. Адрес в корне — область действия весь сайт; кеш запрещает
+        # общий no-store панели, и браузер берёт свежую версию при открытии.
+        return FileResponse(STATIC / 'sw.js', media_type='text/javascript',
+                            headers={'Service-Worker-Allowed': '/'})
 
     @app.post('/api/session')
     def login(request: Request, body: LoginInput):
