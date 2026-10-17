@@ -21,7 +21,7 @@
   <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Финансовый отдел</strong></span><div class="topbar-actions"><span class="top-status">Локальный просмотр</span><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
   <div class="workspace accountant-workspace">
     <div class="page-heading"><div><p class="eyebrow">МОДУЛЬ 02 · ФИНАНСОВЫЙ ОТДЕЛ</p><h1>Финансы под контролем<span>.</span></h1><p class="subtitle">Остаток и обязательства — сразу. Записи по дню — ниже.</p></div><div class="module-badge"><span>02</span><div>Модуль<small>Финансы</small></div></div></div>
-    <div class="accountant-demo-banner" role="note"><strong>ДЕМО</strong><span>Проходы Hikvision смоделированы по списку «ЗП». Эти начисления, выплаты и расходы не меняют реальную кассу.</span></div>
+    <div id="attendance-banner" class="accountant-demo-banner" role="note"><strong>HIKVISION</strong><span id="attendance-banner-text">Проверяем состояние подключения…</span></div>
     <section class="controls" aria-label="День проходов">
       <div class="date-group"><label for="accountant-date">Дата</label><input id="accountant-date" type="date" required></div>
       <div class="quick-days"><button id="accountant-today" class="chip" type="button" aria-pressed="false">Сегодня</button><button id="accountant-yesterday" class="chip" type="button" aria-pressed="false">Вчера</button></div>
@@ -91,9 +91,9 @@
         </section>
 
         <section class="panel accountant-panel" aria-labelledby="staff-title">
-          <div class="accountant-panel-head"><div><p class="eyebrow">КОМАНДА · ПОСЛЕ 10:00</p><h2 id="staff-title">Опоздавшие сотрудники</h2><p id="staff-summary" class="accountant-help">Загружаем список…</p></div><span class="accountant-chip">Hikvision: демопроходы</span></div>
+          <div class="accountant-panel-head"><div><p class="eyebrow">КОМАНДА · ПОСЛЕ 10:00</p><h2 id="staff-title">Опоздавшие сотрудники</h2><p id="staff-summary" class="accountant-help">Загружаем список…</p></div><span id="attendance-chip" class="accountant-chip">Hikvision: проверка</span></div>
           <details id="late-details" class="late-details"><summary>Показать или скрыть опоздавших</summary><div id="late-list" class="staff-list" aria-live="polite"></div></details>
-          <div class="accountant-panel-foot"><p>Входы за <span id="entrances-day">—</span> · данные демонстрационные.</p><div class="accountant-actions"><a id="all-employees-link" class="button secondary" href="/accountant/employees">Все сотрудники</a><button id="entrances-download" class="button attendance-button" type="button">Скачать опоздавших <span class="attendance-file-type">XLSX</span></button></div></div>
+          <div class="accountant-panel-foot"><p>Входы за <span id="entrances-day">—</span> · <span id="attendance-footnote">проверяем Hikvision…</span></p><div class="accountant-actions"><a id="all-employees-link" class="button secondary" href="/accountant/employees">Все сотрудники</a><button id="entrances-download" class="button attendance-button" type="button">Скачать опоздавших <span class="attendance-file-type">XLSX</span></button></div></div>
         </section>
 
         <!-- Ручной приход и начальные остатки — разовые действия. Свёрнуты,

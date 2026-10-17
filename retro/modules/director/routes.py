@@ -1,4 +1,5 @@
 import asyncio
+from datetime import date
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import Response
@@ -11,25 +12,30 @@ router = APIRouter(prefix='/api/director', tags=['director'])
 
 
 @router.get('/attendance')
-def attendance(request: Request):
-    """Return deterministic demo Hikvision attendance for the director preview."""
-    day = today_tashkent()
+def attendance(request: Request, date: date | None = None):
+    """Return read-only Hikvision attendance without payroll amounts."""
+    day = date or today_tashkent()
+    if day > today_tashkent():
+        raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
     roster = request.app.state.accountant_roster.list()
-    rows = draft_payroll(day, roster, set())
+    snapshot = request.app.state.attendance.snapshot(day, roster)
+    rows = draft_payroll(day, roster, set(), snapshot.rows)
     arrived = [row for row in rows if row.status in ('on_time', 'late')]
     late = [row for row in rows if row.status == 'late']
     return {
-        'demo': True,
+        'demo': False,
         'date': day.isoformat(),
-        'source': 'Демо Hikvision; реальная интеграция ожидается',
+        'source': 'Hikvision ISAPI',
+        'attendance': snapshot.health,
         'roster_count': len(rows),
         'arrived_count': len(arrived),
         'late_count': len(late),
         'missing_count': sum(row.status == 'missing' for row in rows),
+        'unavailable_count': sum(row.status == 'unavailable' for row in rows),
         'employees': [dict(employee_id=row.employee_id, name=row.name, role=row.role,
                            group=row.group_name, status=row.status,
                            first_entry=row.occurred_at.isoformat() if row.occurred_at else None,
-                           demo=True) for row in rows],
+                           demo=False) for row in rows],
     }
 
 

@@ -188,14 +188,15 @@
 
 .employees-groups{display:grid;gap:12px;margin-top:18px}
 .employee-roster-scroll{overflow-x:auto}
-.employee-roster-table{min-width:660px}
+.employee-roster-table{min-width:730px}
 .employee-roster-table th{white-space:nowrap}
 .employee-roster-table .staff-status{display:inline-block;justify-self:auto}
+.employee-arrival-time{font-variant-numeric:tabular-nums;white-space:nowrap;color:#4f5d54}
 .roster-missing{color:#a2562f}
 .employee-add-row{align-items:end}
 
 @media(max-width:700px){
-  /* Реестр на телефоне: шесть колонок не помещаются, строка становится карточкой. */
+  /* Реестр на телефоне: колонки не помещаются, строка становится карточкой. */
   .employee-roster-scroll{overflow-x:visible}
   .employee-roster-table{min-width:0;display:block}
   .employee-roster-table thead{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%)}

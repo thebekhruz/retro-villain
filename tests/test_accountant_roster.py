@@ -3,6 +3,7 @@ from decimal import Decimal
 import pytest
 from openpyxl import Workbook
 
+from retro.integrations.hikvision import HikvisionPerson
 from retro.modules.accountant.roster import RosterStore
 
 
@@ -50,6 +51,29 @@ def test_reimport_does_not_overwrite_corrected_rate(tmp_path):
 
     assert store.import_xlsx(source) == {'imported': 0, 'existing': 3}
     assert RosterStore(tmp_path / 'demo.sqlite3').list()[0].rate == Decimal('260000')
+
+
+def test_replace_clears_hikvision_link_when_source_row_changes_person(tmp_path):
+    source = tmp_path / 'roster.xlsx'
+    make_roster(source)
+    store = RosterStore(tmp_path / 'demo.sqlite3')
+    store.import_xlsx(source)
+    store.link_hikvision_people((
+        HikvisionPerson('100', 'Повар Тест'),
+    ))
+
+    book = Workbook()
+    sheet = book.active
+    sheet.title = 'ЗП'
+    sheet.cell(5, 1, 1)
+    sheet.cell(5, 2, 'Другой Сотрудник')
+    sheet.cell(5, 3, 'повар')
+    sheet.cell(5, 4, 250000)
+    book.save(source)
+
+    store.import_xlsx(source, replace=True)
+
+    assert store.list()[0].hikvision_id is None
 
 
 @pytest.mark.parametrize('field,value', [

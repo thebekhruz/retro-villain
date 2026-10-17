@@ -229,6 +229,10 @@ async function loadSnapshot() {
 async function loadAttendance() {
   try {
     const data = await request('/api/director/attendance');
+    const status = data.attendance?.status || 'starting';
+    const labels = {ok: 'Hikvision · актуально', starting: 'Hikvision · подключение',
+      stale: 'Hikvision · данные устарели', not_configured: 'Hikvision · не настроен'};
+    $('attendance-note').textContent = labels[status] || 'Hikvision · нет связи';
     $('arrived').textContent = String(data.arrived_count);
     $('late').textContent = String(data.late_count);
     $('attendance-date').textContent = logic.dayLabel(data.date);

@@ -1,4 +1,4 @@
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from dataclasses import replace
 from io import BytesIO
@@ -8,7 +8,8 @@ from openpyxl import Workbook, load_workbook
 
 from retro.app import create_app
 from retro.config import Settings
-from retro.modules.cashier.service import DataError, Payment, demo_snapshot, today_tashkent
+from retro.integrations.hikvision import HikvisionEvent, HikvisionPerson
+from retro.modules.cashier.service import DataError, Payment, TZ, demo_snapshot, today_tashkent
 from retro.modules.cashier.expenses import seed_cashier_expense
 
 
@@ -165,6 +166,20 @@ def demo_client(tmp_path):
         sheet.cell(row, 4, 250000)
     book.save(source)
     app.state.accountant_roster.import_xlsx(source)
+    roster = app.state.accountant_roster.list()
+    app.state.accountant_roster.link_hikvision_people(tuple(
+        HikvisionPerson(f'test-{employee.id}', employee.name)
+        for employee in roster if employee.source_row % 19 != 0))
+    for employee in app.state.accountant_roster.list():
+        if employee.hikvision_id is not None:
+            app.state.attendance_store.ingest(HikvisionEvent(
+                'retro-main-entry', f'serial-{employee.id}', employee.hikvision_id,
+                datetime(2026, 9, 16, 9, employee.id % 50, tzinfo=TZ)), employee.id)
+    app.state.attendance_store.record_success(
+        'retro-main-entry', at=datetime(2026, 9, 17, 0, 5, tzinfo=TZ),
+        cursor_at=datetime(2026, 9, 17, 0, 5, tzinfo=TZ),
+        covered_from=datetime(2026, 9, 16, 0, 0, tzinfo=TZ),
+        covered_through=datetime(2026, 9, 17, 0, 0, tzinfo=TZ))
     return TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000))
 
 
@@ -241,14 +256,14 @@ def test_unpaid_expense_can_be_recorded_without_iiko_and_does_not_spend_cash(tmp
             'note': 'Ошибка', 'amount': '400000', 'paid_amount': '400001'}).status_code == 422
 
 
-def test_day_is_clearly_demo_defaults_to_yesterday_and_does_not_touch_cashier(tmp_path):
+def test_day_uses_attendance_source_defaults_to_yesterday_and_does_not_touch_cashier(tmp_path):
     with demo_client(tmp_path) as client:
         default = client.get('/api/accountant/day').json()
         assert default['date'] == (today_tashkent() - timedelta(days=1)).isoformat()
         day = client.get('/api/accountant/day', params={'date': DAY.isoformat()})
         assert day.status_code == 200
         data = day.json()
-        assert data['demo'] is True
+        assert data['demo'] is False
         assert len(data['employees']) == 20
         assert data['payroll']['draft_total'] != '0'
         assert data['ledger']['cash_balance'] is None
@@ -407,9 +422,9 @@ def test_employee_exports_split_late_and_everyone_without_claiming_real_hikvisio
         all_sheet = load_workbook(BytesIO(everyone.content), data_only=True).active
         assert late_sheet['B4'].value == late_count
         assert all_sheet['B4'].value == 20
-        assert 'ДЕМО' in late_sheet['A1'].value
-        assert 'ДЕМО' in all_sheet['A1'].value
-        assert all_sheet['D7'].value in ('Вовремя', 'Опоздал', 'Не пришёл', 'Нет привязки')
+        assert 'ДЕМО' not in late_sheet['A1'].value
+        assert 'ДЕМО' not in all_sheet['A1'].value
+        assert all_sheet['D7'].value in ('Вовремя', 'Опоздал', 'Не пришёл', 'Нет привязки', 'Данных нет')
         assert client.get('/api/accountant/employees/export', params={
             'date': DAY.isoformat(), 'scope': 'invalid'}).status_code == 422
         page = client.get('/accountant/employees')

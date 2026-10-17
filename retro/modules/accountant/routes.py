@@ -12,7 +12,7 @@ from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.cashier.expenses import cash_to_finance
 
-from .attendance import export_entrances
+from .attendance import Entrance, export_entrances
 from .employee_export import export_employees
 from .expense_catalog import catalog_json
 from .ledger import LedgerError, amount_value, required_text
@@ -36,6 +36,11 @@ def finance_error(error: LedgerError):
 def money_json(summary: dict) -> dict:
     return {key: str(value) if isinstance(value, Decimal) else value
             for key, value in summary.items()}
+
+
+def attendance_payroll(request: Request, day: date, roster, exceptions):
+    snapshot = request.app.state.attendance.snapshot(day, roster)
+    return snapshot, draft_payroll(day, roster, exceptions, snapshot.rows)
 
 
 async def cashier_handover(request: Request, day: date) -> Decimal | None:
@@ -80,7 +85,7 @@ async def day_view(request: Request, date: date | None = None):
     day = selected_day(date)
     roster = request.app.state.accountant_roster.list()
     finance = request.app.state.accountant_finance
-    rows = draft_payroll(day, roster, finance.exceptions_for_day(day))
+    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
     cashier_error = None
     try:
         cashier_amount = await cashier_handover(request, day)
@@ -115,7 +120,8 @@ async def day_view(request: Request, date: date | None = None):
                  for item in group_items]
     reserves = finance.reserves(day)
     reserves['monthly']['total'] = str(request.app.state.accountant_roster.monthly_total())
-    return dict(demo=True, date=day.isoformat(), source='Симуляция; ресторанный Hikvision не подключён',
+    return dict(demo=False, date=day.isoformat(), source='Hikvision ISAPI',
+                attendance=attendance.health,
                 employees=[row.json() for row in rows], roster_count=len(roster), manual_handover=request.app.state.settings.manual_handover_only,
                 monthly_employees=[row.json() for row in request.app.state.accountant_roster.list_monthly()],
                 actual_hikvision_unlinked=sum(employee.hikvision_id is None for employee in roster),
@@ -124,7 +130,8 @@ async def day_view(request: Request, date: date | None = None):
                 payroll=dict(draft_total=str(draft_total), unknown_count=sum(row.payable is None for row in rows),
                              late_count=sum(row.status == 'late' for row in rows),
                              missing_count=sum(row.status == 'missing' for row in rows),
-                             unlinked_count=sum(row.status == 'unlinked' for row in rows)),
+                             unlinked_count=sum(row.status == 'unlinked' for row in rows),
+                             unavailable_count=sum(row.status == 'unavailable' for row in rows)),
                 ledger=money_json(summary),
                 reserves=reserves,
                 expected_cashier=str(cashier_amount) if cashier_amount is not None else None,
@@ -237,9 +244,10 @@ def add_exception(request: Request, body: ExceptionInput):
         raise HTTPException(422, 'Сначала укажите дневную ставку.')
     if request.app.state.accountant_finance.summary(day)['payroll_confirmed']:
         raise HTTPException(409, 'Начисления за день уже подтверждены.')
-    simulated = next(row for row in draft_payroll(day, roster, set()) if row.employee_id == body.employee_id)
-    if simulated.status != 'unlinked':
-        raise HTTPException(422, 'Исключение доступно только для сотрудника без демопривязки.')
+    _, rows = attendance_payroll(request, day, roster, set())
+    employee_row = next(row for row in rows if row.employee_id == body.employee_id)
+    if employee_row.status != 'unlinked':
+        raise HTTPException(422, 'Исключение доступно только для сотрудника без привязки Hikvision.')
     try:
         request.app.state.accountant_finance.grant_exception(body.employee_id, day,
                                                               body.reason, body.approver)
@@ -257,7 +265,10 @@ class ConfirmInput(BaseModel):
 def confirm_payroll(request: Request, body: ConfirmInput):
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
-    rows = draft_payroll(day, request.app.state.accountant_roster.list(), finance.exceptions_for_day(day))
+    roster = request.app.state.accountant_roster.list()
+    _, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
+    if any(row.status == 'unavailable' for row in rows):
+        raise HTTPException(409, 'Данные Hikvision за этот день неполные. Начисление не подтверждено.')
     try:
         confirmed = finance.confirm_payroll(day, rows, body.approver)
     except LedgerError as error:
@@ -485,11 +496,11 @@ def download_employees(request: Request, date: date, scope: str):
     if scope not in ('late', 'all'):
         raise HTTPException(422, 'Выберите опоздавших или всех сотрудников.')
     finance = request.app.state.accountant_finance
-    rows = draft_payroll(day, request.app.state.accountant_roster.list(),
-                         finance.exceptions_for_day(day))
+    roster = request.app.state.accountant_roster.list()
+    attendance, rows = attendance_payroll(request, day, roster, finance.exceptions_for_day(day))
     selected = [row for row in rows if row.status == 'late'] if scope == 'late' else rows
-    data = export_employees(day, selected, scope)
-    name = f'Retro-{"late" if scope == "late" else "employees"}-{day.isoformat()}-DEMO.xlsx'
+    data = export_employees(day, selected, scope, attendance.health)
+    name = f'Retro-{"late" if scope == "late" else "employees"}-{day.isoformat()}.xlsx'
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{name}"'})
 
@@ -514,10 +525,13 @@ async def add_procurement(request: Request, body: ProcurementInput):
 
 
 @router.get('/entrances/export')
-def download_entrances(date: date):
+def download_entrances(request: Request, date: date):
     if date > today_tashkent():
         raise HTTPException(422, 'Выберите сегодняшний или прошедший день.')
-    # Empty until the restaurant's Hikvision ISAPI source is connected.
-    data = export_entrances(date)
+    roster = request.app.state.accountant_roster.list()
+    attendance, rows = attendance_payroll(request, date, roster, set())
+    entries = tuple(Entrance(row.name, row.occurred_at) for row in rows
+                    if row.status in ('on_time', 'late') and row.occurred_at is not None)
+    data = export_entrances(date, entries, attendance.health)
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="Retro-entrances-{date.isoformat()}.xlsx"'})
