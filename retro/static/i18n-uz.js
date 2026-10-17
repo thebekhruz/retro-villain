@@ -3609,7 +3609,6 @@ Object.assign(globalThis.RetroDictionaryUz, {
 /* ── T-442: редизайн кассира ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'К передаче бухгалтеру': "Buxgalterga topshiriladi",
-  'Средний счёт': "O'rtacha hisob",
   'Расходы из кассы': "Kassadan xarajatlar",
   'Поступления в кассу': "Kassaga kirimlar",
   '+ Предоплаты наличными': "+ Naqd oldindan to'lovlar",
