@@ -31,6 +31,7 @@
 .dir-tips-list li:before{content:counter(tip);flex:none;color:var(--gold);font-weight:700}
 .dir-tips-list li.is-muted{color:#a9bfb1}
 .dir-tips-list li.is-muted:before{content:none}
+.dir-tip-basis{display:block;margin-top:3px;font-size:11px;line-height:1.4;color:#a9bfb1}
 .dir-tips-ask{width:100%;min-height:44px;margin-top:16px;border:1px solid #d8b97766;border-radius:14px;background:#ffffff0f;
   color:#e8cf95;font-size:13px;font-weight:600}
 
@@ -85,6 +86,13 @@
 .dir-views{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
 .dir-views button{min-height:40px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--ink-2);font-size:12px;font-weight:650}
 .dir-views button.is-active{background:#fbf0d7;border-color:#e2c98e;color:#7a5a22}
+.dir-sort{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.dir-sort-keys{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--ink-2)}
+.dir-sort-keys span{margin-right:2px}
+.dir-sort-keys button{min-height:32px;border:1px solid var(--border);border-radius:16px;padding:5px 10px;background:#fff;color:var(--ink-2);font-size:12px;font-weight:600}
+.dir-sort-keys button.is-active{background:var(--green);border-color:var(--green);color:#fff}
+.dir-select{flex:1 1 160px;min-width:0;min-height:36px;border:1px solid var(--border);border-radius:12px;padding:6px 10px;background:#fff;color:var(--ink);font-size:12px}
+.dir-dish-cat{color:var(--ink-2)}
 #menu-browse{display:flex;flex-direction:column;gap:10px}
 .dir-menu-card{padding:6px 16px 10px}
 .dir-menu-title{padding:10px 0 4px}

@@ -20,7 +20,7 @@
   const WEEKDAYS = ['воскресенье', 'понедельник', 'вторник', 'среда', 'четверг', 'пятница', 'суббота'];
 
   const view = {
-    tab: 'home', today: null, menuDays: 7, venue: 'all', slice: 'top', query: '',
+    tab: 'home', today: null, menuDays: 7, venue: 'all', slice: 'top', query: '', sort: 'revenue', category: '',
     reports: {}, loading: {}, team: null, teamDay: 'today', teamFilter: 'all',
     editing: null, editorType: 'shift', manual: false,
   };
@@ -143,23 +143,58 @@
   }
 
   // ── Сегодня ──────────────────────────────────────────────────────────
-  function renderTips(snapshot) {
+  function pct(value) { return (value > 0 ? '+' : '−') + Math.abs(Math.round(value * 100)) + '%'; }
+
+  /** Совет и его основание (ТЗ 2.4): что сделать — и по каким цифрам, за какой период. */
+  function tipText(tip, weekday) {
+    const period = tip.period ? logic.periodLabel(tip.period.start, tip.period.end) : '';
+    const trendText = tip.trend === null || tip.trend === undefined ? '' : '; последние 3 дня ' + pct(tip.trend) + ' к среднему за 30';
+    if (tip.kind === 'weekday') return {
+      text: 'Сегодня ' + weekday + ': по ' + tip.weekdayDative + ' Retro продаёт ' + (tip.shift > 0 ? 'больше' : 'меньше') +
+        ' обычного дня — ' + (tip.shift > 0 ? 'держите полную смену и запасы.' : 'хороший день для акции.'),
+      basis: 'выручка Retro ' + pct(tip.shift) + ' к среднему дню, ' + tip.days + ' таких дня · ' + period};
+    if (tip.kind === 'promo') return {
+      text: 'Продвигайте «' + tip.dish + '»: на нём Retro зарабатывает больше всего.',
+      basis: 'маржа ' + Math.round(tip.margin) + '%, ' + money.format(Math.round(tip.quantity)) + ' шт и ' + short(tip.revenue) + ' сум' + trendText + ' · ' + period};
+    if (tip.kind === 'drop') return {
+      text: '«' + tip.dish + '» просел — проверьте наличие, качество и стоп-лист.',
+      basis: 'последние 3 дня ' + pct(tip.trend) + ' к среднему за 30; ' + money.format(Math.round(tip.quantity)) + ' шт за 7 дней · ' + period};
+    if (tip.kind === 'trap') return {
+      text: '«' + tip.dish + '» хорошо продаётся, но маржа низкая — не ставьте его в акции.',
+      basis: 'маржа ' + Math.round(tip.margin) + '%, выручка ' + short(tip.revenue) + ' сум · ' + period};
+    return {
+      text: '«' + tip.dish + '» почти не заказывают. Подумайте, убрать ли из меню.',
+      basis: money.format(Math.round(tip.quantity)) + ' шт · ' + period};
+  }
+
+  function renderTips(week, short3, long30) {
     const list = $('tips');
     list.replaceChildren();
     settled(list);
-    const tips = logic.dayTips(snapshot);
+    const options = {short: short3, long: long30, today: view.today};
+    const tips = logic.dayTips(week, options);
     const weekday = WEEKDAYS[new Date(view.today + 'T12:00:00Z').getUTCDay()];
-    const texts = tips.map(tip => {
-      if (tip.kind === 'promo') return 'Сегодня ' + weekday + ': продвигайте «' + tip.dish + '» — маржа ' + Math.round(tip.margin) + '%, на нём Retro зарабатывает больше всего.';
-      if (tip.kind === 'trap') return '«' + tip.dish + '» хорошо продаётся, но маржа ' + Math.round(tip.margin) + '% — не ставьте его в акции.';
-      return '«' + tip.dish + '» почти не заказывают: ' + tip.quantity + ' шт за неделю. Подумайте, убрать ли из меню.';
+    tips.forEach(tip => {
+      const parts = tipText(tip, weekday);
+      const item = node('li');
+      const body = node('div');
+      body.append(node('span', '', parts.text), node('small', 'dir-tip-basis', 'Основание: ' + parts.basis));
+      item.append(body);
+      list.append(item);
     });
-    if (!texts.length) texts.push('За неделю в iiko нет продаж — советовать не из чего.');
-    texts.forEach(text => list.append(node('li', '', text)));
+    if (!tips.length) list.append(node('li', '', 'За неделю в iiko нет продаж — советовать не из чего.'));
+    else logic.tipNotes(week, options).forEach(text => list.append(node('li', 'is-muted', text)));
   }
 
   async function loadHome() {
-    loadReport(7).then(renderTips).catch(error => {
+    loadReport(7).then(week => {
+      renderTips(week);
+      // Тренд и дни недели — ещё два отчёта; грузим вслед, без верхней полосы.
+      let trends;
+      const start = () => { trends = Promise.all([loadReport(3), loadReport(30)]); };
+      if (Busy) Busy.silent(start); else start();
+      return trends.then(([short3, long30]) => renderTips(week, short3, long30)).catch(() => {});
+    }).catch(error => {
       $('tips').replaceChildren(node('li', 'is-muted', 'Меню за неделю недоступно: ' + error.message));
       settled($('tips'));
     });
@@ -257,12 +292,17 @@
     return Math.round(margin) < logic.LOW_MARGIN ? 'm-low' : margin < 60 ? 'm-mid' : 'm-ok';
   }
 
-  function dishButton(row, index, max) {
+  function dishButton(row, index, max, measure) {
     const button = node('button', 'dir-dish');
     button.type = 'button';
     const line = node('span', 'dir-dish-line');
     const name = node('span', 'dir-dish-name');
     const meta = node('small');
+    if (row.category) {
+      const category = node('span', 'dir-dish-cat', row.category + ' · ');
+      category.dataset.i18n = 'off';
+      meta.append(category);
+    }
     meta.append(document.createTextNode(short(row.revenue) + ' сум · '));
     meta.append(node('span', marginClass(row.margin), row.margin === null ? 'маржа —' : 'маржа ' + Math.round(row.margin) + '%'));
     // Название блюда — данные iiko: переводчик не трогает («Хлеб» → «Non»).
@@ -278,7 +318,7 @@
     line.append(node('span', 'dir-rank', String(index + 1)), name, qty);
     const bar = node('span', 'dir-dish-bar');
     const fill = node('span');
-    fill.style.width = Math.max(4, row.quantity / max * 100) + '%';
+    fill.style.width = Math.max(4, (measure ? measure(row) : row.quantity) / max * 100) + '%';
     bar.append(fill);
     button.append(line, bar);
     button.addEventListener('click', () => ask('Расскажи про «' + row.name + '»: продажи по заведениям, маржа и что с ним делать?'));
@@ -296,10 +336,30 @@
     if (view.query.trim()) return renderSearch(snapshot);
     $('menu-found').hidden = true;
     $('menu-browse').hidden = false;
-    const rows = logic.menuSlice(snapshot, view.venue, view.slice, 5);
+    renderCategories(snapshot);
+    const rows = logic.menuSlice(snapshot, view.venue, view.slice, 5, {sort: view.sort, category: view.category});
     if (!rows.length) { list.append(node('p', 'dir-empty', 'За период в этом срезе нет блюд.')); return; }
-    const max = Math.max(1, ...rows.map(row => row.quantity));
-    rows.forEach((row, index) => list.append(dishButton(row, index, max)));
+    // Полоса — по тому показателю, по которому отсортировано (ТЗ 2.7).
+    const measure = row => view.sort === 'quantity' ? row.quantity : view.sort === 'margin' ? Math.max(0, row.margin || 0) : row.revenue;
+    const max = Math.max(1, ...rows.map(measure));
+    rows.forEach((row, index) => list.append(dishButton(row, index, max, measure)));
+  }
+
+  /** Категории — группы iiko проданных блюд; выбранная держится, пока она есть. */
+  function renderCategories(snapshot) {
+    const select = $('menu-category');
+    const venue = view.slice === 'notb' ? 'all' : view.venue;
+    const categories = logic.menuCategories(snapshot, venue);
+    if (view.category && !categories.some(item => item.name === view.category)) view.category = '';
+    const first = node('option', '', 'Все категории');
+    first.value = '';
+    select.replaceChildren(first, ...categories.map(item => {
+      const option = node('option', '', item.name + ' · ' + item.count);
+      option.value = item.name;
+      option.dataset.i18n = 'off';
+      return option;
+    }));
+    select.value = view.category;
   }
 
   function renderSearch(snapshot) {
@@ -669,6 +729,12 @@
       document.querySelectorAll('[data-view]').forEach(other => other.classList.toggle('is-active', other === button));
       renderMenu();
     }));
+    document.querySelectorAll('[data-sort]').forEach(button => button.addEventListener('click', () => {
+      view.sort = button.dataset.sort;
+      document.querySelectorAll('[data-sort]').forEach(other => other.classList.toggle('is-active', other === button));
+      renderMenu();
+    }));
+    $('menu-category').addEventListener('change', event => { view.category = event.target.value; renderMenu(); });
     $('team-days').querySelectorAll('button').forEach(button => button.addEventListener('click', () => {
       if (view.teamDay === button.dataset.day) return;
       view.teamDay = button.dataset.day;
