@@ -58,6 +58,13 @@
       return {mark: '✓', tone: 'ok', tip: handover.confirmed ? 'Бухгалтер подтвердил: получено ' + sum(num(handover.recorded)) +
         ' — совпало с расчётом' : 'Передача совпала с расчётом'};
     }
+    if (handover.status === 'mismatch' && num(handover.difference) > 0) {
+      // Передали больше расчёта — в кассе не было мелочи на сдачу, это не
+      // ошибка: зелёная галочка со стрелкой вверх вместо знака опасности.
+      const received = handover.confirmed || handover.checked;
+      return {mark: '✓↑', tone: 'extra', tip: (received ? 'Получено ' : 'Передано ') + sum(num(handover.recorded)) +
+        ' при расчёте ' + sum(num(handover.expected)) + ' · сверх расчёта ' + sum(num(handover.difference))};
+    }
     if (handover.status === 'mismatch') {
       // Полученное бухгалтером (подтверждение или ручная запись) сверено сервером
       // с текущим расчётом кассы: та же недостача, что в «Проверках» 2a.
@@ -187,12 +194,11 @@
     days.forEach(day => {
       if (!day.handover) return;
       const handover = day.handover;
-      if (handover.status === 'mismatch') {
-        const diff = num(handover.difference);
+      // Получено больше расчёта — не замечание: сдачу дали крупной купюрой.
+      if (handover.status === 'mismatch' && num(handover.difference) < 0) {
         const received = handover.confirmed || handover.checked;
-        const text = received ? (diff < 0 ? 'От кассира получено меньше расчёта' : 'От кассира получено больше расчёта')
-          : diff < 0 ? 'Кассир передал меньше расчёта' : 'Кассир передал больше расчёта';
-        items.push({level: 'bad', rank: diff < 0 ? 0 : 1, text: text + ' · ' + dm(day.date),
+        const text = received ? 'От кассира получено меньше расчёта' : 'Кассир передал меньше расчёта';
+        items.push({level: 'bad', rank: 0, text: text + ' · ' + dm(day.date),
           sub: (received ? 'Получено ' : 'Передано ') + sum(num(handover.recorded)) + ' при расчёте ' + sum(num(handover.expected))
             + (received && num(handover.shortfall) > 0 ? ' · недостача ' + sum(num(handover.shortfall)) : '')});
       } else if (handover.status === 'missing') {

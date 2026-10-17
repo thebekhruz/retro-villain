@@ -47,6 +47,23 @@ test('сверка передачи: совпало, недостача, ден�
   assert.equal(logic.handoverMark(week.days[5]).mark, '');
 });
 
+test('передали больше расчёта: галочка со стрелкой вверх и не замечание', () => {
+  // 16.10: получено 45 110 000 при расчёте 45 108 500 — в кассе не было мелочи на сдачу.
+  const extra = {...week.days[0], date: '2026-10-16', accounting: undefined, handover: {recorded: '45110000.00',
+    expected: '45108500.00', status: 'mismatch', difference: '1500.00', confirmed: true, checked: true, shortfall: '0'}};
+  const mark = logic.handoverMark(extra);
+  assert.equal(mark.mark, '✓↑');
+  assert.equal(mark.tone, 'extra');
+  assert.equal(plain(mark.tip), 'Получено 45 110 000 при расчёте 45 108 500 · сверх расчёта 1 500');
+  const unconfirmed = logic.handoverMark({...extra, handover: {...extra.handover, confirmed: false, checked: false}});
+  assert.equal(plain(unconfirmed.tip), 'Передано 45 110 000 при расчёте 45 108 500 · сверх расчёта 1 500');
+  assert.deepEqual(logic.accountantIssues({days: [extra]}, {}, accountant.dayChecks), []);
+  // Недостача — по-прежнему знак опасности и замечание.
+  assert.equal(logic.handoverMark(week.days[2]).mark, '⚠');
+  assert.deepEqual(logic.accountantIssues({days: [week.days[2]]}, {}, accountant.dayChecks).map(item => item.text),
+    ['Кассир передал меньше расчёта · 23.09']);
+});
+
 test('итоги недели не считают дни без iiko нулями', () => {
   const totals = logic.weekTotals(week);
   assert.equal(totals.days, 3);
