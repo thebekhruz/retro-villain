@@ -76,6 +76,12 @@ from retro.sessions import SessionIdentity, SessionStore
 
 STATIC = Path(__file__).parent / 'static'
 SESSION_COOKIE = 'retro_session'
+# Lax, не Strict: Safari (WebKit) не отправляет Strict-cookie на переходах во
+# вкладке, если страницу входа открыли переходом с другого сайта (ссылка из
+# Telegram, SMS, поиска). Директор вводил код (verify 200), а /director тут же
+# уходил на вход (303) — 16.10.2026. Lax так же не отдаёт cookie чужим POST,
+# а все изменяющие запросы панели — POST/PUT/DELETE.
+SESSION_SAMESITE = 'lax'
 PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js',
                 '/static/i18n.js', '/static/i18n-uz.js', '/static/busy.js', '/static/favicon.svg',
                 '/static/favicon-32.png', '/static/apple-touch-icon.png',
@@ -544,7 +550,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
         response.set_cookie(
             SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
-            samesite='strict', secure=effective_scheme(request) == 'https', path='/')
+            samesite=SESSION_SAMESITE, secure=effective_scheme(request) == 'https', path='/')
         return response
 
     def phone_failure(error: PhoneLoginError):
@@ -574,12 +580,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response = JSONResponse({'role': account.role, 'path': ROLE_PATHS[account.role]})
         response.set_cookie(
             SESSION_COOKIE, token, max_age=int(app.state.sessions.lifetime.total_seconds()),
-            httponly=True, samesite='strict', secure=effective_scheme(request) == 'https', path='/')
+            httponly=True, samesite=SESSION_SAMESITE, secure=effective_scheme(request) == 'https', path='/')
         return response
 
     def finish_logout(request: Request, response: Response):
         app.state.sessions.delete(request.cookies.get(SESSION_COOKIE))
-        response.delete_cookie(SESSION_COOKIE, path='/', samesite='strict')
+        response.delete_cookie(SESSION_COOKIE, path='/', samesite=SESSION_SAMESITE)
         return response
 
     @app.post('/api/session/logout', status_code=204)
