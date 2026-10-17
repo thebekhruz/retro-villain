@@ -128,3 +128,26 @@ test('a retry of a send that did not answer keeps the same operation id',async()
   assert.equal(h.posts.length,2);
   assert.equal(h.posts[0].operation_id,h.posts[1].operation_id);
 });
+
+test('T-504: such a text went out from the bot command an hour ago: warning from the bot journal',async()=>{
+  const h=page();await tick();
+  let reloads=0;
+  h.context.FounderBroadcastHistory={reload:()=>{reloads+=1},jobs:()=>[{
+    id:'a'.repeat(20),status:'completed',source:'tg_admin',manual:true,text:'Завтра плов с 12:00',
+    created_at:new Date(Date.now()-60*60000).toISOString(),audience:30,sent:30,blocked:0,failed:0,pending:0}]};
+  h.$('broadcast-select-all').fire('click');
+  h.$('broadcast-text').value='Завтра плов с 12:00';
+  await h.$('broadcast-form').fire('submit');await tick();
+  assert.equal(h.$('broadcast-repeat').hidden,false);
+  assert.match(h.$('broadcast-repeat').textContent,/^Такой же текст уже рассылали \d\d\.\d\d \d\d:\d\d · Команда в боте\.$/);
+  assert.equal(h.$('broadcast-confirm-send').textContent,'Отправить ещё раз');
+  await h.$('broadcast-confirm-send').fire('click');await tick();await tick();
+  assert.equal(h.posts.length,1);
+  // Журнал на экране обновляется: новая рассылка видна в истории сразу.
+  assert.ok(reloads>=1);
+  // Другой текст — без предупреждения.
+  h.$('broadcast-text').value='Послезавтра лагман';
+  await h.$('broadcast-form').fire('submit');await tick();
+  assert.equal(h.$('broadcast-repeat').hidden,true);
+  assert.equal(h.$('broadcast-confirm-send').textContent,'Отправить');
+});

@@ -47,8 +47,8 @@ class FounderBroadcasts:
             {'id': 'B' * 32, 'name': 'Бехруз', 'phone': '••• 56 78'},
         ]}
 
-    async def start(self, operation_id, text, recipient_ids):
-        self.calls.append((operation_id, text, recipient_ids))
+    async def start(self, operation_id, text, recipient_ids, author=None):
+        self.calls.append((operation_id, text, recipient_ids, author))
         if self.error:
             raise self.error
         return {'id': operation_id, 'status': 'queued', 'audience': len(recipient_ids),
@@ -60,6 +60,24 @@ class FounderBroadcasts:
             raise self.error
         return {'id': operation_id, 'status': 'completed', 'audience': 7,
                 'sent': 6, 'blocked': 1, 'failed': 0}
+
+    async def list(self, kind='all', cursor=None, limit=20):
+        self.calls.append(('list', kind, cursor))
+        if self.error:
+            raise self.error
+        return {'supported': True, 'jobs': [], 'total': 0, 'next_cursor': None}
+
+    async def deliveries(self, job_id, statuses=None, offset=0, limit=100):
+        self.calls.append(('deliveries', job_id, statuses, offset))
+        if self.error:
+            raise self.error
+        return {'job_id': job_id, 'recipients_known': True, 'total': 0, 'recipients': [], 'next_offset': None}
+
+    async def resume(self, job_id, author=None):
+        self.calls.append(('resume', job_id, author))
+        if self.error:
+            raise self.error
+        return {'job': {'id': job_id, 'status': 'queued'}, 'started': True}
 
 
 def client_with(source):
@@ -276,8 +294,9 @@ def test_founder_broadcast_preview_start_and_status_are_server_side():
     assert audience.json()['recipients'][1]['name'] == 'Бехруз'
     assert started.status_code == 202
     assert status.json()['sent'] == 6
+    # Без входа (стенд с петли) автор — логин «local»; с входом — имя учётной записи.
     assert source.calls == [
-        (operation_id, 'Новое меню', ['B' * 32]), ('status', operation_id)]
+        (operation_id, 'Новое меню', ['B' * 32], 'local'), ('status', operation_id)]
 
 
 def test_founder_broadcast_rejects_empty_text_and_reports_parallel_run():
@@ -316,3 +335,81 @@ def test_founder_expense_detail_counts_monthly_salaries_as_salary(tmp_path, monk
     assert data['dashboard_expenses'] == {
         'cashier': '0', 'accountant_other': '200', 'accountant_salary': '1500',
         'accountant': '1700', 'total': '1700'}
+
+
+def test_founder_broadcast_history_routes_pass_filters_and_author(monkeypatch):
+    """Журнал рассылок (ТЗ 16.10, п. 5.3): вид, страница, фильтр получателей, досылка от имени вошедшего."""
+    from types import SimpleNamespace
+    app = create_app(Settings())
+    source = FounderBroadcasts()
+    app.state.broadcasts = source
+    monkeypatch.setattr(app.state.accounts, 'get', lambda login: SimpleNamespace(label='Карина'))
+    job_id = 'job_restart_1234567890'
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        assert client.get('/api/founder/broadcast/jobs').json()['supported'] is True
+        assert client.get('/api/founder/broadcast/jobs', params={
+            'kind': 'auto', 'cursor': 'eyJhIjoiYiJ9'}).status_code == 200
+        assert client.get('/api/founder/broadcast/jobs/' + job_id).json()['status'] == 'completed'
+        assert client.get(f'/api/founder/broadcast/jobs/{job_id}/deliveries', params={
+            'status': 'queued', 'offset': 100}).status_code == 200
+        assert client.get(f'/api/founder/broadcast/jobs/{job_id}/deliveries').status_code == 200
+        resumed = client.post(f'/api/founder/broadcast/jobs/{job_id}/resume')
+        client.post('/api/founder/broadcast', json={
+            'operation_id': '12345678-1234-4123-8123-123456789012', 'text': 'Плов',
+            'recipient_ids': ['A' * 32]})
+        # Плохие параметры до бота не доходят.
+        assert client.get('/api/founder/broadcast/jobs', params={'kind': 'sms'}).status_code == 422
+        assert client.get('/api/founder/broadcast/jobs', params={'cursor': 'a b'}).status_code == 422
+        assert client.get('/api/founder/broadcast/jobs/short/deliveries').status_code == 422
+        assert client.get(f'/api/founder/broadcast/jobs/{job_id}/deliveries',
+                          params={'status': 'read'}).status_code == 422
+        assert client.post('/api/founder/broadcast/jobs/short/resume').status_code == 422
+    assert resumed.json() == {'job': {'id': job_id, 'status': 'queued'}, 'started': True}
+    assert source.calls == [
+        ('list', 'all', None), ('list', 'auto', 'eyJhIjoiYiJ9'), ('status', job_id),
+        ('deliveries', job_id, ('pending', 'sending'), 100), ('deliveries', job_id, None, 0),
+        ('resume', job_id, 'Карина'),
+        ('12345678-1234-4123-8123-123456789012', 'Плов', ['A' * 32], 'Карина'),
+    ]
+
+
+def test_founder_broadcast_history_maps_bot_errors():
+    from retro.integrations.broadcasts import BroadcastNotFound
+    app = create_app(Settings())
+    job_id = 'job_restart_1234567890'
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        app.state.broadcasts = FounderBroadcasts(error=BroadcastConflict('Другая рассылка уже выполняется.'))
+        conflict = client.post(f'/api/founder/broadcast/jobs/{job_id}/resume')
+        app.state.broadcasts = FounderBroadcasts(error=BroadcastNotFound('Рассылка не найдена.'))
+        missing = client.get(f'/api/founder/broadcast/jobs/{job_id}/deliveries')
+        app.state.broadcasts = FounderBroadcasts(error=DataError('Рассылка через booking-бот ещё не настроена.'))
+        unconfigured = client.get('/api/founder/broadcast/jobs')
+    assert (conflict.status_code, conflict.json()) == (409, {'detail': 'Другая рассылка уже выполняется.'})
+    assert missing.status_code == 404
+    assert (unconfigured.status_code, unconfigured.json()) == (
+        503, {'detail': 'Рассылка через booking-бот ещё не настроена.'})
+
+
+def test_founder_broadcast_history_against_previous_bot_keeps_the_form_working():
+    """Бот без журнала: история «не поддерживается», запуск рассылки работает как раньше."""
+    import httpx
+    posts = []
+
+    def handler(request):
+        if request.method == 'GET' and request.url.path == '/admin/broadcast/jobs':
+            return httpx.Response(405, json={'error': 'method_not_allowed'})
+        posts.append(request)
+        return httpx.Response(202, json={'id': '12345678-1234-4123-8123-123456789012', 'status': 'queued',
+                                         'audience': 1, 'sent': 0, 'blocked': 0, 'failed': 0})
+
+    settings = Settings(booking_api_url='https://booking.example.test', booking_api_token='read-secret',
+                        booking_broadcast_token='write-secret')
+    app = create_app(settings, broadcast_transport=httpx.MockTransport(handler))
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        history = client.get('/api/founder/broadcast/jobs')
+        started = client.post('/api/founder/broadcast', json={
+            'operation_id': '12345678-1234-4123-8123-123456789012', 'text': 'Плов',
+            'recipient_ids': ['A' * 32]})
+    assert history.json() == {'supported': False, 'jobs': [], 'total': 0, 'next_cursor': None}
+    assert started.status_code == 202 and started.json()['pending'] == 1
+    assert len(posts) == 1

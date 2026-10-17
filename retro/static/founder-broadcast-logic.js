@@ -58,6 +58,93 @@
     next[key]={at};
     return next;
   }
+
+  /* ── Журнал рассылок (ТЗ 16.10, п. 5.3; T-504) ───────────────────────── */
+  const SOURCES={dashboard:'Из панели',tg_admin:'Команда в боте',auto:'Автоматическая'};
+  const JOB_STATUSES={queued:'В очереди',running:'Идёт',completed:'Готово',failed:'Ошибка',interrupted:'Прервана'};
+  const DELIVERY_STATUSES={pending:'В очереди',sending:'Отправляется',sent:'Отправлено',blocked:'Заблокировал бота',failed:'Не дошло'};
+  // Коды бота вместо текста Telegram (контракт T-503).
+  const DELIVERY_ERRORS={
+    network_error:'Нет связи с Telegram',
+    delivery_unknown:'Бот перезапустился во время отправки: сообщение могло дойти',
+    unsubscribed:'Гость отписался до отправки',
+  };
+  /** Ручная — запустил человек (из панели или командой в боте). У старых
+   *  заданий источника нет: считаем ручной, автоматических тогда не было. */
+  const isManual=job=>job?.source?job.source!=='auto':job?.manual!==false;
+  function sourceLabel(job){
+    if(SOURCES[job?.source])return SOURCES[job.source];
+    return job?.manual===false?SOURCES.auto:'Источник не записан';
+  }
+  function jobStatusText(job){
+    if(job.status==='running')return `Идёт: ${job.sent+job.blocked+job.failed} из ${job.audience}`;
+    return JOB_STATUSES[job.status]||'Неизвестно';
+  }
+  /** Тон плашки статуса: идёт, готово, сбой. */
+  function jobTone(job){
+    if(job.status==='queued'||job.status==='running')return 'running';
+    return job.status==='completed'?'done':'error';
+  }
+  /** Итоги задания в порядке экрана. «В очереди» — кому ещё не отправляли. */
+  function jobCounts(job){
+    const pending=Number.isInteger(job.pending)?job.pending:Math.max(0,job.audience-job.sent-job.blocked-job.failed);
+    return [['sent','Отправлено',job.sent],['blocked','Заблокировали',job.blocked],['failed','Не дошло',job.failed],['queued','В очереди',pending]];
+  }
+  // Ташкент круглый год UTC+5: без летнего времени, без зависимости от
+  // часового пояса браузера.
+  const TASHKENT_MS=5*36e5;
+  const pad=value=>String(value).padStart(2,'0');
+  function tashkent(value){
+    const ms=typeof value==='number'?value:Date.parse(value);
+    if(!Number.isFinite(ms))return null;
+    const day=new Date(ms+TASHKENT_MS);
+    return {year:day.getUTCFullYear(),date:`${pad(day.getUTCDate())}.${pad(day.getUTCMonth()+1)}`,time:`${pad(day.getUTCHours())}:${pad(day.getUTCMinutes())}`};
+  }
+  /** «17.10 14:05»; год — только если не текущий. */
+  function momentText(value,now){
+    const at=tashkent(value);if(!at)return '—';
+    const year=tashkent(now)?.year;
+    return `${at.date}${at.year!==year?'.'+at.year:''} ${at.time}`;
+  }
+  /** Telegram ответил 429, бот ждёт. Прошедшее время не показываем. */
+  function throttleText(job,now){
+    const until=Date.parse(job?.throttled_until||'');
+    if(!Number.isFinite(until)||until<=now)return '';
+    return `Telegram просит подождать до ${tashkent(until).time}`;
+  }
+  function resumeText(job,now){
+    if(!job?.resume_count)return '';
+    const at=job.resumed_at?momentText(job.resumed_at,now):'';
+    return job.resume_count===1?`Дослано ${at}`.trim():`Досылали: ${job.resume_count} · последний раз ${at}`.trim();
+  }
+  /** Начало текста одной строкой. */
+  function preview(text,limit=140){
+    const line=String(text||'').replace(/\s+/g,' ').trim();
+    return line.length>limit?line.slice(0,limit-1).trimEnd()+'…':line;
+  }
+  const deliveryStatusText=status=>DELIVERY_STATUSES[status]||status;
+  /** Пояснение к получателю: код бота — по-русски, текст Telegram — как есть (raw). */
+  function deliveryNote(row){
+    if(!row?.error||row.status==='blocked'||row.status==='sent')return null;
+    if(DELIVERY_ERRORS[row.error])return {text:DELIVERY_ERRORS[row.error],raw:false};
+    return {text:row.error,raw:true};
+  }
+  const resumeLabel=count=>`Дослать оставшимся: ${count}`;
+  const resumeConfirm=count=>`Сообщение уйдёт ${count} ${plural(count,'гостю','гостям','гостям')} из очереди. Тем, кто уже получил его, заблокировал бота или остался с ошибкой, повторно ничего не уйдёт.`;
+  /** Такой же текст уже уходил за последние сутки — из панели, командой в
+   *  боте или с другого устройства. Журнал браузера этого не знает. */
+  function historyTwin(jobs,text,now,within=864e5){
+    const body=String(text||'').trim();if(!body)return null;
+    return (jobs||[]).find(job=>{
+      const at=Date.parse(job?.created_at||'');
+      return typeof job?.text==='string'&&job.text.trim()===body&&Number.isFinite(at)&&now-at<=within
+        &&(job.sent>0||job.status==='queued'||job.status==='running');
+    })||null;
+  }
+  const twinWarning=(job,now)=>`Такой же текст уже рассылали ${momentText(job.created_at,now)} · ${sourceLabel(job)}.`;
+
   root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,draftKey,agoText,repeatWarning,
-    rememberSent,isTerminal:status=>terminal.has(status)};
+    rememberSent,isTerminal:status=>terminal.has(status),
+    isManual,sourceLabel,jobStatusText,jobTone,jobCounts,momentText,throttleText,resumeText,preview,
+    deliveryStatusText,deliveryNote,resumeLabel,resumeConfirm,historyTwin,twinWarning};
 })(typeof globalThis==='undefined'?window:globalThis);

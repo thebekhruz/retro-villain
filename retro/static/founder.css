@@ -391,3 +391,85 @@
   .fa-phone-status .top-status{font-size:11px;color:var(--muted-2)}
   .fa-phone-status .top-status.rm-status-skel:empty{width:140px}
 }
+
+/* ── История рассылок (ТЗ 16.10, п. 5.3; T-504) ─────────────────────────
+   Журнал бота под формой. Ручная — зелёная плашка источника и черта слева,
+   автоматическая — золотые: разницу видно, не читая подпись. */
+.broadcast-history{margin-top:22px;padding-top:20px;border-top:1px solid #e5ebe4}
+.broadcast-history-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin-bottom:14px}
+.broadcast-history-head h3{margin:0 0 4px;color:#173f36;font-size:16px}
+.broadcast-history-head p{margin:0;color:var(--muted);font-size:11.5px;line-height:1.55;max-width:62ch}
+.broadcast-history-kinds{margin:0;flex:none}
+.broadcast-history-note{margin:0 0 12px}
+.broadcast-history-list{display:grid;gap:10px}
+.broadcast-history-empty{margin:4px 0 0}
+.broadcast-job{min-width:0;padding:14px 16px;border:1px solid #e1e8e0;border-left:3px solid #52786f;border-radius:12px;background:#fff}
+.broadcast-job.is-auto{border-left-color:#d8b977;background:#fffdf8}
+.broadcast-job-head{display:flex;flex-wrap:wrap;align-items:center;gap:6px 12px;font-size:11px;color:var(--muted)}
+.broadcast-job-source{padding:4px 9px;border-radius:999px;background:#edf5ea;color:#3f6c53;font-size:10.5px;font-weight:700}
+.broadcast-job.is-auto .broadcast-job-source{background:#fff3df;color:#785b2d}
+.broadcast-job-time{color:#476257;font-weight:600;font-variant-numeric:tabular-nums}
+.broadcast-job-author b{color:#294c41;font-weight:600}
+.broadcast-job-status{margin-left:auto}
+.source-status.is-running{background:#fff3df;color:#785b2d}
+.broadcast-job-text{margin:10px 0 0;color:#294c41;font-size:12.5px;line-height:1.5;overflow-wrap:anywhere;
+  display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.broadcast-job-text.is-missing{color:#8a978f;font-style:italic}
+.broadcast-job-counts{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:12px 0 0}
+.broadcast-job-counts>div{min-width:0;padding:8px 10px;border-radius:9px;background:#f5f8f4}
+.broadcast-job-counts dt{color:#718078;font-size:10px}
+.broadcast-job-counts dd{margin:3px 0 0;color:#173f36;font-size:16px;font-weight:650;font-variant-numeric:tabular-nums}
+.broadcast-job-counts .is-blocked.has-value dd{color:#8a6a3a}
+.broadcast-job-counts .is-failed.has-value dd{color:#963f38}
+.broadcast-job-note{margin:9px 0 0;color:#64756c;font-size:11px;line-height:1.5}
+.broadcast-job-note.is-wait{padding:8px 11px;border-radius:9px;background:#fff3df;color:#785b2d}
+.broadcast-job-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:12px}
+.broadcast-job-actions .button{min-height:40px}
+/* Второстепенные кнопки — белые, как «Выбрать всех» у получателей. */
+.broadcast-job-actions .button:not(.primary),.broadcast-more{background:#fff;color:#315e4c;border-color:#d6e0d5}
+.broadcast-job-confirm{margin-top:12px}
+.broadcast-job-message{margin:10px 0 0;padding:10px 12px;border-radius:9px;background:#edf5ea;color:#315e4c;font-size:11.5px;line-height:1.5}
+.broadcast-job-message.is-error{background:#fff0ed;color:#963f38}
+.broadcast-job-detail{margin-top:12px;padding-top:12px;border-top:1px dashed #dfe7df}
+.broadcast-job-full{max-height:200px;overflow:auto;margin:0 0 12px;padding:11px 12px;border:1px solid #e5ebe4;border-radius:9px;
+  background:#fbfcfa;color:#294c41;white-space:pre-wrap;overflow-wrap:anywhere}
+/* «font: 500 12px/1.55 inherit» браузер отбрасывает целиком (inherit в сокращённой
+   записи нельзя), и текст рассылки шёл моноширинным: шрифт страницы явно. */
+.broadcast-form textarea{font-family:inherit;font-size:13px;font-weight:500;line-height:1.55}
+.broadcast-confirm pre,.broadcast-job-full{font-family:inherit;font-size:12px;font-weight:500;line-height:1.55}
+/* Предупреждение о повторе — жёлтое, как задумано: общее правило абзацев окна его перекрашивало. */
+.broadcast-confirm .broadcast-repeat{margin:0 0 12px;color:#785b2d;font-size:12px}
+.broadcast-delivery-filters{margin:0}
+.broadcast-chip-count{color:#8a978f;font-variant-numeric:tabular-nums}
+.broadcast-delivery-hint{margin:8px 0 10px}
+.broadcast-delivery-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:7px;max-height:340px;overflow:auto;
+  margin:0;padding:0 3px 0 0;list-style:none}
+.broadcast-delivery{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:4px 10px;align-items:center;min-height:48px;
+  padding:8px 10px;border:1px solid #e1e8e0;border-radius:10px;background:#fff}
+.broadcast-delivery-who{min-width:0}
+.broadcast-delivery-who strong,.broadcast-delivery-who small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.broadcast-delivery-who strong{color:#294c41;font-size:11px}
+.broadcast-delivery-who small{margin-top:3px;color:#89968e;font-size:9.5px}
+.broadcast-delivery-state{text-align:right}
+.broadcast-delivery-state b{display:block;color:#3f6c53;font-size:10.5px}
+.broadcast-delivery-state small{display:block;margin-top:3px;color:#89968e;font-size:9.5px;font-variant-numeric:tabular-nums}
+.broadcast-delivery.is-blocked .broadcast-delivery-state b{color:#8a6a3a}
+.broadcast-delivery.is-failed .broadcast-delivery-state b{color:#963f38}
+.broadcast-delivery:is(.is-pending,.is-sending) .broadcast-delivery-state b{color:#718078}
+.broadcast-delivery-error{grid-column:1/-1;color:#7a4b3c;font-size:10px;line-height:1.45;overflow-wrap:anywhere}
+.broadcast-more{width:max-content;max-width:100%;min-height:40px;margin:12px auto 0}
+.fa-skel-job{display:flex;flex-direction:column;gap:10px;pointer-events:none}
+.fa-skel-job .rm-skel:nth-child(1){width:38%}.fa-skel-job .rm-skel:nth-child(2){width:82%}.fa-skel-job .rm-skel:nth-child(3){width:60%;height:8px}
+.fa-skel-delivery .rm-skel:first-child{width:60%}.fa-skel-delivery .rm-skel:last-child{width:50px;height:8px}
+@media(max-width:900px){
+  .broadcast-history-head{flex-direction:column;gap:10px}
+  .broadcast-history-kinds{width:100%}
+}
+@media(max-width:560px){
+  .broadcast-job{padding:12px 13px}
+  .broadcast-job-counts{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .broadcast-job-status{margin-left:0}
+  .broadcast-job-actions{display:grid;grid-template-columns:1fr}
+  .broadcast-job-actions .button{width:100%}
+  .broadcast-delivery-list{grid-template-columns:1fr}
+}

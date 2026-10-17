@@ -148,6 +148,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'founder.js': {'founder'}, 'founder-cabinet.js': {'founder'},
         'founder-logic.js': {'founder'}, 'founder-cabinet-logic.js': {'founder'},
         'founder-broadcast.js': {'founder'}, 'founder-broadcast-logic.js': {'founder'},
+        'founder-broadcast-history.js': {'founder'},
         'founder.css': {'founder'}, 'founder-cabinet.css': {'founder'},
         # Закуп · Шох
         'shokh.html': {'shokh'}, 'shokh.js': {'shokh'}, 'shokh-logic.js': {'shokh'},

@@ -14,7 +14,7 @@ from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES, build_iiko_guests
 from retro.modules.founder.tools import FounderChatTools
-from retro.integrations.broadcasts import BroadcastConflict
+from retro.integrations.broadcasts import CURSOR, HISTORY_KINDS, JOB_ID, BroadcastConflict, BroadcastNotFound
 from retro.modules.director.models import completed_period
 from retro.modules.founder import cabinet, overview
 from retro.modules.founder.dividends import DividendTargetError
@@ -212,15 +212,90 @@ async def broadcast_audience(request: Request):
         raise HTTPException(503, str(error)) from None
 
 
+async def _broadcast_author(request):
+    """Кто запускает рассылку — для журнала бота: имя из учётной записи
+    панели (T-446), без него — логин."""
+    login = getattr(request.state, 'dashboard_user', None)
+    if not login:
+        return None
+    account = await asyncio.to_thread(request.app.state.accounts.get, login)
+    return account.label if account else login
+
+
+async def _broadcast_call(request, operation, call):
+    try:
+        return await asyncio.wait_for(call, timeout=20)
+    except BroadcastConflict as error:
+        raise HTTPException(409, str(error)) from None
+    except BroadcastNotFound as error:
+        raise HTTPException(404, str(error)) from None
+    except TimeoutError as error:
+        log_safe_failure('founder-broadcast', error, operation=operation,
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'API рассылок отвечает слишком долго.') from None
+    except DataError as error:
+        log_safe_failure('founder-broadcast', error, operation=operation,
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
+def _job_id(value):
+    if not JOB_ID.fullmatch(value):
+        raise HTTPException(422, 'Некорректный идентификатор рассылки.')
+    return value
+
+
+# Фильтр получателей на экране → статусы бота. «В очереди» — кому ещё не
+# отправляли, вместе с тем, кому отправляется прямо сейчас.
+DELIVERY_FILTERS = {'all': None, 'sent': ('sent',), 'blocked': ('blocked',),
+                    'failed': ('failed',), 'queued': ('pending', 'sending')}
+
+
+# Журнал объявлен раньше /broadcast/{operation_id}: иначе «jobs» разбирался
+# бы как идентификатор рассылки.
+@router.get('/broadcast/jobs')
+async def broadcast_history(request: Request, kind: str = Query('all'),
+                            cursor: str | None = Query(None, max_length=512)):
+    """Журнал рассылок бота (ТЗ 16.10, п. 5.3): ручные и автоматические."""
+    if kind not in HISTORY_KINDS:
+        raise HTTPException(422, 'Неизвестный вид рассылок.')
+    if cursor is not None and not CURSOR.fullmatch(cursor):
+        raise HTTPException(422, 'Некорректная страница журнала.')
+    return await _broadcast_call(request, 'list', request.app.state.broadcasts.list(kind, cursor))
+
+
+@router.get('/broadcast/jobs/{job_id}')
+async def broadcast_job(request: Request, job_id: str):
+    return await _broadcast_call(request, 'status', request.app.state.broadcasts.status(_job_id(job_id)))
+
+
+@router.get('/broadcast/jobs/{job_id}/deliveries')
+async def broadcast_deliveries(request: Request, job_id: str, status: str = Query('all'),
+                               offset: int = Query(0, ge=0, le=100000)):
+    if status not in DELIVERY_FILTERS:
+        raise HTTPException(422, 'Неизвестный статус получателя.')
+    return await _broadcast_call(request, 'deliveries', request.app.state.broadcasts.deliveries(
+        _job_id(job_id), DELIVERY_FILTERS[status], offset))
+
+
+@router.post('/broadcast/jobs/{job_id}/resume')
+async def resume_broadcast(request: Request, job_id: str):
+    """Дослать оставшимся. Бот шлёт только тем, кому ещё не отправлял."""
+    job_id = _job_id(job_id)
+    author = await _broadcast_author(request)
+    return await _broadcast_call(request, 'resume', request.app.state.broadcasts.resume(job_id, author))
+
+
 @router.post('/broadcast', status_code=202)
 async def start_broadcast(request: Request, body: BroadcastInput):
     text = body.text.strip()
     if not text:
         raise HTTPException(422, 'Введите текст рассылки.')
+    author = await _broadcast_author(request)
     try:
         return await asyncio.wait_for(
             request.app.state.broadcasts.start(
-                str(body.operation_id), text, body.recipient_ids), timeout=20)
+                str(body.operation_id), text, body.recipient_ids, author=author), timeout=20)
     except BroadcastConflict as error:
         raise HTTPException(409, str(error)) from None
     except TimeoutError as error:

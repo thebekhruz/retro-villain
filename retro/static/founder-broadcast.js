@@ -70,7 +70,7 @@
     try{
       // Опрос каждую секунду — фоновый: верхнюю полосу не зажигает.
       const job=await api('/api/founder/broadcast/'+encodeURIComponent(id),{retroBusy:false});showJob(job);
-      if(logic.isTerminal(job.status)){setBusy(false);await loadAudience().catch(()=>{});return}
+      if(logic.isTerminal(job.status)){setBusy(false);globalThis.FounderBroadcastHistory?.reload();await loadAudience().catch(()=>{});return}
       pollTimer=setTimeout(()=>poll(id),1000);
     }catch(error){setStatus(error.message,true);resultState('error');setBusy(false)}
   }
@@ -94,8 +94,12 @@
       // Тот же текст тем же гостям уже уходил: предупреждаем и просим нажать
       // другую кнопку, чтобы повтор не случился по привычке.
       const sent=readSent()[logic.draftKey(checked.text,pendingRecipientIds)],repeat=$('broadcast-repeat');
-      repeat.hidden=!sent;repeat.textContent=sent?logic.repeatWarning(Number(sent.at),Date.now()):'';
-      $('broadcast-confirm-send').textContent=sent?'Отправить ещё раз':'Отправить';
+      // Журнал бота (T-504) знает и рассылки командой в боте, и с другого
+      // устройства: такой же текст за сутки — то же предупреждение.
+      const twin=sent?null:logic.historyTwin(globalThis.FounderBroadcastHistory?.jobs(),checked.text,Date.now());
+      const warning=sent?logic.repeatWarning(Number(sent.at),Date.now()):twin?logic.twinWarning(twin,Date.now()):'';
+      repeat.hidden=!warning;repeat.textContent=warning;
+      $('broadcast-confirm-send').textContent=warning?'Отправить ещё раз':'Отправить';
       $('broadcast-confirm').hidden=false;
       $('broadcast-confirm-send').focus();setStatus('Проверьте текст, получателей и подтвердите отправку.');
     }catch{}
@@ -126,6 +130,7 @@
       if(operation?.id===operationId)operation.sent=true;
       writeSent(logic.rememberSent(readSent(),key,Date.now()));
       setBusy(true);$('broadcast-confirm').hidden=true;showJob(job);poll(job.id);
+      globalThis.FounderBroadcastHistory?.reload();
     }catch(error){setStatus(error.message,true);$('broadcast-result').hidden=false;$('broadcast-result').textContent=error.message;resultState('error');$('broadcast-confirm').hidden=true}
   });
   audienceSkeleton();
