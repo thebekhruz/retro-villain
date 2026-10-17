@@ -9,7 +9,7 @@ import pytest
 from retro.config import Settings
 from retro.integrations.iiko import (
     IikoClient, founder_internal_costs_from_olap, founder_pnl_from_kpi,
-    founder_rows_from_olap,
+    founder_rows_from_olap, guest_counts_from_olap,
 )
 from retro.modules.cashier.service import DataError
 
@@ -363,3 +363,44 @@ def test_derived_payment_report_keeps_only_the_requested_operations():
     assert sum(row.amount for row in payments_without_operation(operations)) == Decimal(157)
     paid = payments_without_operation(operations, kinds=PAID_OPERATIONS)
     assert [row.amount for row in paid] == [Decimal(120)]
+
+
+def test_guest_counts_read_guestnum_by_day_and_register_without_banquet_hall():
+    """Гости по чекам iiko (ТЗ 16.10, п. 5.3): поле GuestNum, два измерения,
+    банкетный зал исключён тем же фильтром, что у чеков по дням."""
+    requests = []
+
+    def handler(request):
+        if request.url.path == '/api/auth/login':
+            return httpx.Response(200, json={'token': 'test-only'})
+        body = json.loads(request.content)
+        if request.url.path == '/api/olap/init':
+            requests.append(body)
+            return httpx.Response(200, json={'fetchId': 'guests'})
+        # Лист отчёта: значения метрик идут под номерами после измерений.
+        rows = [{'field0': {'value': '2026-10-15'}, 'children': [
+            {'field1': {'value': 'GL-Kassa-Oksbrich'}, 'field2': {'value': 181}, 'field3': {'value': 181}},
+            {'field1': {'value': 'Kassa-FiscalBox1'}, 'field2': {'value': 141}, 'field3': {'value': 107}},
+        ]}]
+        return httpx.Response(200, json={'result': {'rows': rows}})
+
+    source = IikoClient(Settings(login='test', password='test', store_id=123),
+                        transport=httpx.MockTransport(handler), poll_delay=0)
+    result = asyncio.run(source.load_guest_counts(date(2026, 10, 15), date(2026, 10, 15)))
+
+    assert result == [
+        {'day': '2026-10-15', 'direction': 'school', 'guests': 181, 'orders': 181},
+        {'day': '2026-10-15', 'direction': 'retro', 'guests': 141, 'orders': 107},
+    ]
+    assert len(requests) == 1
+    assert requests[0]['groupFields'] == ['OpenDate.Typed', 'CashRegisterName']
+    assert requests[0]['dataFields'] == ['GuestNum', 'UniqOrderId.OrdersCount']
+    assert {'field': 'RestaurantSection', 'filterType': 'value_list',
+            'valueList': ['Бехруз (Свадьба)'], 'inclusiveList': False} in requests[0]['filters']
+
+
+def test_guest_counts_reject_unknown_register():
+    rows = [{'field0': {'value': '2026-10-15'}, 'children': [
+        {'field1': {'value': 'New-Kassa'}, 'field2': {'value': 3}, 'field3': {'value': 2}}]}]
+    with pytest.raises(DataError, match='неизвестная касса'):
+        guest_counts_from_olap(rows)

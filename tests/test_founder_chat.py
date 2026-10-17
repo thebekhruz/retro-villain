@@ -147,8 +147,9 @@ def test_founder_chat_booking_tool_returns_existing_founder_metrics():
         'start': '2026-09-01', 'end': '2026-09-07', 'granularity': 'week'}))
 
     assert result['totals'] == {
-        'bookings': 2, 'guests': 5, 'unknown_guest_bookings': 0, 'cancelled': 1}
-    assert result['sources'][0]['name'] == 'Прямые'
+        'bookings': 2, 'guests': 5, 'unknown_guest_bookings': 0, 'cancelled': 1, 'all': 3}
+    # Сырая метка бота `direct` получает понятную подпись.
+    assert result['sources'][0]['name'] == 'Telegram напрямую'
 
 
 @pytest.mark.parametrize('payload', [

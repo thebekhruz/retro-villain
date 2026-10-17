@@ -136,8 +136,9 @@ def test_two_sources_sum_once_and_preserve_source_labels_and_history():
     for request in requests:
         expected = 'website-secret' if request.url.host == 'website.example.test' else 'telegram-secret'
         assert request.headers['Authorization'] == 'Bearer ' + expected
-    assert result['totals'] == {'bookings': 4, 'guests': 10, 'unknown_guest_bookings': 2, 'cancelled': 2}
-    assert {r['name'] for r in result['sources']} == {'Telegram · direct', 'Сайт'}
+    assert result['totals'] == {'bookings': 4, 'guests': 10, 'unknown_guest_bookings': 2, 'cancelled': 2,
+                                'all': 6}
+    assert {r['name'] for r in result['sources']} == {'Telegram напрямую', 'Сайт · форма брони'}
     assert [s['name'] for s in result['coverage']['sources']] == ['Telegram', 'Сайт']
     assert result['coverage']['sources'][1]['history_started_at'] == '2026-09-20T00:00:00.000Z'
     assert result['series'][0]['values'] == {'bookings': 4, 'guests': 10, 'cancelled': 2}

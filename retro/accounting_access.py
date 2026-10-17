@@ -14,7 +14,8 @@ MESSAGE = f'Учёт доступен с {ACCOUNTING_START:%d.%m.%Y}. Более
 # «30 дней» должны быть тридцатью. Учётных данных эти чтения не отдают —
 # расходы дэшборда учредитель для таких периодов не считает (founder/routes).
 IIKO_ANALYTICS_READS = frozenset({
-    '/api/director/report', '/api/founder/analytics', '/api/founder/bookings'})
+    '/api/director/report', '/api/founder/analytics', '/api/founder/bookings',
+    '/api/founder/guests'})
 # История продаж (T-499) — та же живая аналитика iiko, только из нашей базы;
 # перечитать день из iiko можно с начала истории, а не с начала учёта.
 SALES_HISTORY_PATHS = frozenset({
