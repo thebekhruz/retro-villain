@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import TZ, DataError, today_tashkent
 from retro.modules.cashier.till import expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
@@ -118,7 +118,10 @@ async def cashier_day(request, day: date):
         banquet=money(breakdown.bekhruz_banquet) if breakdown else None,
         register_revenue=money(snapshot.revenue), retro_checks=snapshot.receipt_count, demo=money(demo),
         expected_handover=money(expected_handover(snapshot, totals)),
-        fetched_at=snapshot.fetched_at.isoformat()), None
+        # Время чтения iiko и смена кассы — для строки «Сегодня ещё идёт · данные на ЧЧ:ММ»
+        # (ТЗ 16.10, п. 2): экран не подставляет свои часы.
+        fetched_at=snapshot.fetched_at.astimezone(TZ).isoformat(timespec='seconds'),
+        shift=snapshot.shift.json() if snapshot.shift is not None else None), None
 
 
 def shift_accrued(request, day: date) -> Decimal:

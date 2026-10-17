@@ -4312,3 +4312,16 @@ globalThis.RetroTemplatesUz.push(
   [/^ошибка · обработано (\d+) из (\d+)$/, "xato · ishlov berildi $1 / $2"],
 );
 /* ── /T-505 ── */
+
+/* ── T-506: статус сегодняшнего дня — «ещё идёт», время данных iiko, закрытая смена ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Сегодня · нет данных iiko': "Bugun · iiko ma'lumoti yo'q",
+  'Сегодня ещё идёт · нет данных': "Bugun hali davom etmoqda · ma'lumot yo'q",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Сегодня ещё идёт · данные на ((?:\d{2}\.\d{2} )?\d{1,2}:\d{2})$/, "Bugun hali davom etmoqda · ma'lumotlar $1 holatiga"],
+  [/^Сегодня · смена закрыта, итог дня может пересчитаться iiko до утра · данные на ((?:\d{2}\.\d{2} )?\d{1,2}:\d{2})$/,
+    "Bugun · smena yopilgan, kun yakunini iiko ertalabgacha qayta hisoblashi mumkin · ma'lumotlar $1 holatiga"],
+  [/^Обновлено (\d{2}\.\d{2}), (\d{1,2}:\d{2})$/, "Yangilandi: $1, $2"],
+);
+/* ── /T-506 ── */

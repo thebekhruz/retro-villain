@@ -277,6 +277,27 @@
   /** «16.10 14:15» из времени сервера: оно уже по Ташкенту, со сдвигом +05:00. */
   function stamp(iso) { return iso ? dm(iso.slice(0, 10)) + ' ' + iso.slice(11, 16) : ''; }
 
+  /** «данные на 14:05» по времени чтения iiko (оно по Ташкенту, +05:00);
+   *  прочитано не сегодня — с датой, чтобы старый ответ не выглядел свежим. */
+  function dataAt(iso, today) {
+    return 'данные на ' + (today && iso.slice(0, 10) !== today ? stamp(iso) : iso.slice(11, 16));
+  }
+
+  /** Строка состояния сегодняшнего дня (ТЗ 16.10, п. 2). `day` — день из
+   *  /api/founder/day или /week. Время — `cashier.fetched_at` сервера, не часы
+   *  браузера; смена закрыта — iiko ещё может пересчитать итог до утра.
+   *  iiko не ответил — «нет данных», а не нули. */
+  function todayStatus(day, today) {
+    if (!day) return '';
+    const cashier = day.cashier;
+    if (!cashier || !cashier.fetched_at) return 'Сегодня · нет данных iiko';
+    const shift = cashier.shift;
+    const at = dataAt(cashier.fetched_at, today);
+    if (shift && shift.open === false && shift.closed_at)
+      return 'Сегодня · смена закрыта, итог дня может пересчитаться iiko до утра · ' + at;
+    return 'Сегодня ещё идёт · ' + at;
+  }
+
   /** Недельный порог Счёта Шефа (ТЗ 16.10, п. 4.2): «X из 30 млн», полоса и
    *  что стало с уведомлением учредителю. Сумму, порог и «достигнут» решает
    *  сервер — та же сумма по меню, что «за неделю» в заголовке блока. */
@@ -302,5 +323,5 @@
   // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
   return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
-    accountantIssues, chefAlerts, forecastNote, soldDishes, chefWeekView};
+    accountantIssues, chefAlerts, forecastNote, soldDishes, chefWeekView, todayStatus};
 });

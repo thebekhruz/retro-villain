@@ -1,7 +1,7 @@
 """Кабинет учредителя (T-377): неделя по дням, дивиденды, прогноз, Счёт Шефа."""
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import patch
@@ -14,7 +14,7 @@ from legacy_app import create_app
 from retro.config import Settings
 from retro.integrations.iiko import chef_bills_from_olap, daily_orders_from_olap
 from retro.modules.cashier.service import (
-    DataError, Payment, RETRO_REGISTER, SCHOOL_REGISTER, RevenueBreakdown, demo_snapshot,
+    DataError, Payment, RETRO_REGISTER, SCHOOL_REGISTER, RevenueBreakdown, ShiftStatus, demo_snapshot,
 )
 from retro.modules.founder import overview
 from retro.modules.founder.dividends import DividendTargetError, DividendTargetStore
@@ -654,3 +654,22 @@ def test_dishes_read_seven_real_days_and_mark_non_dishes(tmp_path, monkeypatch):
     assert empty['item_classes'] == {'Плов': 'unknown', 'Мед': 'ingredient', 'Новинка': 'unknown'}
     assert data['item_classes_checked'] is True
     assert data['item_classes'] == {'Мед': 'ingredient', 'Новинка': 'unknown'}
+
+
+def test_today_card_carries_iiko_read_time_and_shift_state(tmp_path, today):
+    """ТЗ 16.10, п. 2: «Сегодня ещё идёт · данные на ЧЧ:ММ» и закрытая смена — из
+    ответа сервера: время чтения iiko по Ташкенту и смена кассы Retro."""
+    class ShiftIiko(FakeIiko):
+        async def load(self, day):
+            base = await super().load(day)
+            return replace(base, fetched_at=datetime(2026, 9, 24, 18, 5, 30, tzinfo=timezone.utc),
+                           shift=ShiftStatus(False, '2026-09-24T09:01:00', '2026-09-24T23:40:12'))
+
+    with client(tmp_path, ShiftIiko(fail_days={date(2026, 9, 23)})) as c:
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+        failed = c.get('/api/founder/day', params={'date': '2026-09-23'}).json()
+    assert day['cashier']['fetched_at'] == '2026-09-24T23:05:30+05:00'
+    assert day['cashier']['shift'] == {'open': False, 'opened_at': '2026-09-24T09:01:00',
+                                       'closed_at': '2026-09-24T23:40:12'}
+    # iiko не ответил — ни времени, ни нулей: экран пишет «нет данных».
+    assert failed['cashier'] is None and failed['cashier_error'] == 'iiko временно недоступен'
