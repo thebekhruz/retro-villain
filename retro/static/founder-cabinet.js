@@ -580,9 +580,14 @@
     const todayWeekday = (new Date(state.today + 'T12:00:00Z').getUTCDay() + 6) % 7;
     data.weekdays.forEach(day => {
       const column = node('div', day.weekday === todayWeekday ? 'is-today' : '');
+      // Высота столбика — доля от дорожки, а не от всей колонки: иначе подписи
+      // отнимали место, flex ужимал высокие столбики, и все выходили одинаковыми.
+      const track = node('div', 'fo-fc-track');
       const bar = node('i');
       bar.style.height = Math.max(6, (num(day.revenue) || 0) / max * 100) + '%';
-      column.append(node('span', 'rm-num', short(num(day.revenue))), bar, node('strong', '', day.label),
+      bar.append(node('span', 'rm-num', short(num(day.revenue))));
+      track.append(bar);
+      column.append(track, node('strong', '', day.label),
         node('small', '', day.orders === null ? '—' : day.orders + ' чеков'));
       target.append(column);
     });

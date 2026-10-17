@@ -52,3 +52,18 @@ def test_login_page_loads_only_publicly_allowed_files():
     markup = (STATIC / 'login.html').read_text(encoding='utf-8')
     for asset in re.findall(r'(?:href|src)="(/static/[^"]+)"', markup):
         assert asset in allowed, asset
+
+
+def test_forecast_bars_are_measured_against_their_own_track():
+    """17.10: все семь столбиков «Средней выручки» выходили одной высоты.
+    Столбик стоял в колонке рядом с подписями, и flex ужимал все высокие до
+    остатка места. Теперь процент считается от дорожки, которая забирает всё,
+    что осталось от подписей, а сумма висит над столбиком, не отнимая высоты."""
+    css = (STATIC / 'founder-cabinet.css').read_text(encoding='utf-8')
+    script = (STATIC / 'founder-cabinet.js').read_text(encoding='utf-8')
+    assert re.search(r'\.fo-fc-track\{[^}]*flex:1 1 0[^}]*min-height:0', css)
+    assert re.search(r'\.fo-forecast i>span\{[^}]*position:absolute[^}]*bottom:100%', css)
+    render = script[script.index('function renderForecast'):]
+    render = render[:render.index('\n  }\n')]
+    assert "node('div', 'fo-fc-track')" in render and 'track.append(bar)' in render
+    assert 'bar.append(' in render  # сумма внутри столбика, а не соседом в колонке
