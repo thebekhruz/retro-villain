@@ -43,3 +43,19 @@ def test_the_panel_does_not_name_the_model_vendor_on_screen():
     for page in DASHBOARDS + ('login.html',):
         assert 'Claude' not in markup(page), page
     assert 'Claude' not in (STATIC / 'founder-chat.js').read_text(encoding='utf-8')
+
+
+def test_founder_desk_fills_the_menu_status_line():
+    """17.10: внизу меню кабинета учредителя на ПК навсегда висела полоса
+    загрузки. Меню копирует строку из телефонной шапки (#updated), а её
+    заполнял только телефон. Компьютер пишет время данных и туда."""
+    assert 'data-status-of="updated"' in markup('founder-cabinet.html')
+    script = (STATIC / 'founder-cabinet.js').read_text(encoding='utf-8')
+    helper = script[script.index('function deskStatus'):]
+    helper = helper[:helper.index('\n  }\n')]
+    assert "setText('fo-desk-status', text)" in helper and "setText('updated', text)" in helper
+    # Время на ПК ставит только deskStatus — иначе меню снова отстанет от шапки.
+    assert script.count("setText('fo-desk-status'") == 1
+    load_desk = script[script.index('function loadDesk'):]
+    load_desk = load_desk[:load_desk.index('\n  }\n')]
+    assert "deskStatus('Сегодня · нет данных iiko')" in load_desk

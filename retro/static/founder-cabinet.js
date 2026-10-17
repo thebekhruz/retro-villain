@@ -444,7 +444,15 @@
     setText('k-ox-sub', week.orders_error ? 'чеки: ' + week.orders_error : '');
     setText('fo-week-label', dm(week.start) + '–' + dm(week.end));
     // Неделя кабинета всегда доходит до сегодня: итоги растут вместе с днём.
-    setText('fo-desk-status', logic.todayStatus(week.days.find(day => day.date === state.today), state.today));
+    deskStatus(logic.todayStatus(week.days.find(day => day.date === state.today), state.today));
+  }
+
+  /* Время данных на компьютере. Строку внизу меню nav.js копирует из
+     телефонной шапки (#updated), а её заполнял только телефон — на ПК
+     там навсегда оставалась полоса загрузки. Телефон пишет туда сам. */
+  function deskStatus(text) {
+    setText('fo-desk-status', text);
+    if (desk.matches || !$('updated').textContent) setText('updated', text);
   }
 
   function renderChecks() {
@@ -675,7 +683,7 @@
       renderWeek(week);
       renderChecks();
     }).catch(error => {
-      setText('fo-desk-status', 'Сегодня · нет данных iiko');
+      deskStatus('Сегодня · нет данных iiko');
       failBlock('fo-week-table', error);
       setText('fo-acc-line', 'Замечания: ' + error.message);
     });
