@@ -166,6 +166,10 @@
     const unassignedTotal=received===null?null:Math.round((received-assignedTotal)*100)/100;
     const groupsTotal=groups.reduce((sum,item)=>sum+Math.round(item.total*100),0)/100;
     const difference=total===null||unassignedTotal===null?null:Math.round((groupsTotal+unassignedTotal-total)*100)/100;
+    /* Средний чек — на закрытый счёт: та же база, что «Чеков» (полные счета
+       дня с зачтёнными авансами, как в отчёте Telegram). Он намеренно не равен
+       total / receipts: выручка дня считает аванс в день получения и без зачёта,
+       а делить деньги одного дня на счета другого — не средний чек ничего. */
     return {fallback,total,received,receipts,groups,unassigned,unassignedTotal,
       average:toNumber(fallback?snapshot.average_receipt:snapshot.full_average_receipt),
       match:difference===null?null:Math.abs(difference)<=1,difference,

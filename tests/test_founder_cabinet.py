@@ -529,6 +529,20 @@ def test_week_check_uses_the_accountant_confirmation(tmp_path, today):
     assert day['handover']['status'] == 'mismatch'
 
 
+def test_week_check_flags_overpayment_after_confirmation(tmp_path, today):
+    """Получено больше расчёта — тоже расхождение, а не ✓ (недостачи при этом нет)."""
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        finance.record_handover(date(2026, 9, 24), Decimal('9000000'), source='cashier')
+        finance.confirm_handover(date(2026, 9, 24), '9300000', None, 'buh')
+        week = c.get('/api/founder/week').json()
+    day = {item['date']: item for item in week['days']}['2026-09-23']
+    assert day['handover']['checked'] is True
+    assert day['handover']['shortfall'] == '0'
+    assert day['handover']['status'] == 'mismatch'
+    assert day['handover']['difference'] == '300000.00'
+
+
 def test_founder_ai_sees_the_cabinet_numbers(tmp_path, today):
     """Функционал, AI: основатель видит деньги недели по дням, категории, закуп, Счёт Шефа."""
     import asyncio

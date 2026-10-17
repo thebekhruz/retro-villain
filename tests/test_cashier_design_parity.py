@@ -772,3 +772,10 @@ def test_cashier_salary_row_is_automatic_daily_and_not_deletable(tmp_path):
     # Без настроенной политики ничего не создаётся.
     with client_for(build_app(tmp_path / 'clean')) as c:
         assert c.get('/api/cashier/expenses', params={'date': DAY.isoformat()}).json()['expenses'] == []
+
+
+def test_cashier_card_says_average_check_like_the_rest_of_the_panel():
+    """T-508: «Средний чек», как в Excel кассира, Telegram и у директора."""
+    from pathlib import Path
+    html = (Path(__file__).resolve().parents[1] / 'retro/static/index.html').read_text(encoding='utf-8')
+    assert '<dt>Средний чек</dt>' in html and 'Средний счёт' not in html

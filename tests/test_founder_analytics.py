@@ -211,3 +211,13 @@ def test_yandex_eda_is_counted_inside_retro_from_iiko_payment_type():
     only_school = build_analytics(rows, payments, START, END, 'day', ('school',),
                                   now=datetime(2026, 9, 9, 10, 0))
     assert only_school['yandex_totals']['retro'] == '800'
+
+
+def test_source_cache_age_follows_the_real_olap_ttl():
+    """T-508: закрытый период iiko кэширует 15 минут, открытый — минуту."""
+    from retro.integrations.iiko import OLAP_TTL_CLOSED, OLAP_TTL_OPEN
+    now = datetime(2026, 9, 8, 8, 0)
+    closed = build_analytics([], [], date(2026, 9, 6), date(2026, 9, 7), 'day', ('retro',), now=now)
+    current = build_analytics([], [], date(2026, 9, 7), date(2026, 9, 8), 'day', ('retro',), now=now)
+    assert closed['source_cache_max_age_seconds'] == OLAP_TTL_CLOSED == 900
+    assert current['source_cache_max_age_seconds'] == OLAP_TTL_OPEN == 60
