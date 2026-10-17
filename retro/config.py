@@ -88,6 +88,15 @@ class ChefAlertConfig:
 
 
 @dataclass(frozen=True)
+class PushConfig:
+    """Уведомления в браузер (Web Push). Ключ VAPID необязателен: без него сервер
+    создаёт свой и хранит в базе. `subject` — контакт для служб доставки; Apple
+    принимает только mailto: или https:."""
+    private_key: str = field(default='', repr=False)
+    subject: str = 'mailto:push@retro-milliy.uz'
+
+
+@dataclass(frozen=True)
 class Settings:
     base_url: str = IIKO_ORIGIN
     login: str = field(default='', repr=False)
@@ -132,6 +141,7 @@ class Settings:
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
     telegram_report: TelegramReportConfig | None = field(default=None, repr=False)
     chef_alert: ChefAlertConfig = field(default_factory=ChefAlertConfig, repr=False)
+    push: PushConfig = field(default_factory=PushConfig, repr=False)
     data_dir: Path = ROOT / 'build'
     # Строка подключения Postgres. Пустая — работаем на файловом SQLite
     # (локальная разработка и тесты). На Railway диска нет, поэтому в
@@ -232,6 +242,7 @@ class Settings:
         lunch_hours = parse_lunch_hours(os.getenv('LUNCH_HOURS', ''))
         snapshots_kept_days = parse_sales_snapshots_kept_days(os.getenv('SALES_SNAPSHOTS_KEPT_DAYS', ''))
         chef_alert = parse_chef_alert_config(os.environ)
+        push = parse_push_config(os.environ, public_url=chef_alert.public_url)
         return cls(
             base_url=base,
             login=os.getenv('IIKO_LOGIN', ''),
@@ -261,6 +272,7 @@ class Settings:
             hikvision=hikvision,
             telegram_report=telegram_report,
             chef_alert=chef_alert,
+            push=push,
             data_dir=resolve_data_dir(os.getenv('RETRO_DATA_DIR', '').strip()),
             database_url=database_url,
             report_retention=int(retention_value),
@@ -372,6 +384,20 @@ def parse_chef_alert_config(environ) -> ChefAlertConfig:
             raise ValueError('DASHBOARD_PUBLIC_URL — адрес панели без пути, например https://dashboard.example.uz.')
     return ChefAlertConfig(week_limit=limit, repeat_step=step, token=token, chat_id=chat_id,
                            public_url=public)
+
+
+def parse_push_config(environ, *, public_url: str = '') -> PushConfig:
+    private_key = environ.get('VAPID_PRIVATE_KEY', '').strip()
+    if private_key:
+        from retro.web_push import VapidKeys
+        VapidKeys.from_private(private_key)  # ошибка формата — сразу при старте
+    subject = environ.get('VAPID_SUBJECT', '').strip()
+    if subject:
+        if not re.fullmatch(r'mailto:[^@\s]+@[^@\s]+\.[^@\s]+|https://[^\s/]+(/\S*)?', subject):
+            raise ValueError('VAPID_SUBJECT — mailto:адрес или https://адрес (так требует Apple).')
+    elif public_url.startswith('https://'):
+        subject = public_url
+    return PushConfig(private_key=private_key, **({'subject': subject} if subject else {}))
 
 
 def parse_hikvision_config(environ) -> HikvisionConfig | None:

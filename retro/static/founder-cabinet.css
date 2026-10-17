@@ -401,3 +401,22 @@
   .fo-phone{display:flex;flex-direction:column;min-height:100vh;min-height:100dvh}
   .fo-phone .rm-phone-body{flex:1}
 }
+
+/* ── Уведомления о Счёте Шефа на этом устройстве (push.js) ────────────── */
+.push-box{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:12px;padding:12px 14px;
+  border:1px solid var(--line-mid);border-radius:12px;background:var(--panel-2)}
+.push-box[hidden]{display:none}
+.push-text{display:grid;gap:2px;min-width:0}
+.push-text strong{font-size:13px;font-weight:650}
+.push-status{font-size:12px;font-weight:400;line-height:1.35;color:var(--muted-2,#748376)}
+.push-box[data-state="on"] .push-status{color:var(--ok)}
+.push-box[data-state="denied"] .push-status{color:var(--late)}
+.push-actions{display:flex;flex-wrap:wrap;justify-content:flex-end;gap:6px;flex:none}
+.push-button{min-height:36px;padding:0 14px;border:1px solid var(--line-mid);border-radius:999px;background:#fff;
+  font:inherit;font-size:13px;font-weight:600;color:var(--ink,#1d2b24);cursor:pointer}
+.push-button.is-primary{border-color:#24594b;background:#24594b;color:#fff}
+.push-button:disabled{opacity:.55;cursor:default}
+/* В листе профиля на телефоне — строка листа: кнопки под текстом, на всю ширину. */
+.app-sheet .push-box{margin-top:0;flex-direction:column;align-items:stretch}
+.app-sheet .push-actions{justify-content:stretch}
+.app-sheet .push-button{flex:1;min-height:44px}
