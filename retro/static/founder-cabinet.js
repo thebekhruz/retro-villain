@@ -552,7 +552,7 @@
         node('small', '', day.orders === null ? '—' : day.orders + ' чеков'));
       target.append(column);
     });
-    setText('fo-forecast-note', 'Среднее за ' + data.weeks + ' недель по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.');
+    setText('fo-forecast-note', logic.forecastNote(data));
     const month = data.month;
     setText('k-month', short(num(month.total)));
     setText('k-month-sub', 'факт ' + short(num(month.fact)) + ' + прогноз ' + short(num(month.forecast)));
@@ -560,22 +560,34 @@
     if (state.data.today) renderPhoneDays(state.data.today, state.data.yesterday);
   }
 
+  /** «Приносят больше всего» (ТЗ 16.10, 4.2): по прибыли, с выручкой и
+   *  количеством. Что блюдо — решает справочник меню сервера (T-487). */
   function renderDishes(snapshot) {
-    const rows = director.rank(snapshot.item_metrics.all || {}, 'revenue').filter(director.isDish).filter(row => row.revenue > 0);
+    const rows = logic.soldDishes(snapshot, director.rank(snapshot.item_metrics.all || {}, 'profit'));
     const target = $('fo-dishes');
     target.replaceChildren();
+    if (rows.length) {
+      const head = node('div', 'fo-dish is-head');
+      head.append(node('span'), node('span', '', 'Блюдо · продано'), node('span', '', 'Выручка'), node('span', '', 'Прибыль · маржа'));
+      target.append(head);
+    } else target.append(node('p', 'fo-empty', 'Продаж блюд за эти дни в iiko нет.'));
     rows.slice(0, 5).forEach((row, index) => {
       const line = node('div', 'fo-dish');
-      const margin = row.margin === null ? '—' : Math.round(row.margin) + '%';
+      const name = node('span', 'fo-dish-name');
       const dish = node('strong', '', row.name);
-      dish.dataset.i18n = 'off';  // название из iiko, не переводим
       dish.dataset.i18n = 'off';  // название из iiko не переводим
-      line.append(node('span', '', String(index + 1)), dish,
-        node('span', '', Math.round(row.quantity) + ' шт'), node('b', '', short(row.revenue)),
-        node('small', director.lowMargin(row) ? 'm-low' : 'm-ok', margin));
+      name.append(dish, node('small', '', Math.round(row.quantity) + ' шт'));
+      const profit = node('span', 'fo-dish-profit');
+      profit.append(node('b', '', short(row.profit)),
+        node('small', director.lowMargin(row) ? 'm-low' : 'm-ok', row.margin === null ? '—' : Math.round(row.margin) + '%'));
+      line.append(node('span', '', String(index + 1)), name, node('span', '', short(row.revenue)), profit);
       target.append(line);
     });
-    const low = rows.filter(director.lowMargin).slice(0, 3);
+    setText('fo-dishes-note', (snapshot.period_start ? dm(snapshot.period_start) + '–' + dm(snapshot.period_end) + ' · ' : '') +
+      'по прибыли: выручка минус себестоимость iiko' +
+      (snapshot.item_classes_checked === false ? '. Справочник меню не загружен: позиции не проверены.' : ''));
+    // «При хороших продажах» — самые продаваемые из низкомаржинальных.
+    const low = rows.filter(director.lowMargin).sort((a, b) => b.revenue - a.revenue).slice(0, 3);
     const chips = $('fo-dishes-low');
     chips.replaceChildren(...low.map(row => node('span', '', row.name + ' · маржа ' + Math.round(row.margin) + '% · ' + short(row.revenue) + ' за 7 дней')));
     if (!low.length) chips.append(node('span', '', 'Популярных блюд с маржой ниже ' + director.LOW_MARGIN + '% нет'));

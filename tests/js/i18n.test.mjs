@@ -127,3 +127,13 @@ test('советы дня директора и их основание пере
     "Asos: marja 67%, 40 dona va 3 mln so'm · 9 — 15 oktabr 2026");
   assert.equal(translate('Основание: 2 шт · 9 — 15 октября 2026'), 'Asos: 2 dona · 9 — 15 oktabr 2026');
 });
+
+test('T-494: прогноз, блюда и закуп учредителя — по-узбекски', () => {
+  assert.equal(translate('Среднее за 7–8 недель по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.'),
+    "Retro va Oxbridge kassalari bo'yicha 7–8 haftalik o'rtacha, banket zalisiz. Bugun ajratib ko'rsatilgan.");
+  assert.equal(translate('10.10–16.10 · по прибыли: выручка минус себестоимость iiko'),
+    "10.10–16.10 · foyda bo'yicha: tushumdan iiko tannarxi ayrilgan");
+  assert.equal(translate('Закуп · уголь'), "Xarid · ko'mir");
+  assert.equal(translate('Переводы (Oxbridge, блогеры)'), "O'tkazmalar (Oxbridge, blogerlar)");
+  assert.equal(translate('Покупки с телефона · '), 'Telefondan xaridlar · ');
+});

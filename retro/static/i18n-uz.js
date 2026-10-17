@@ -2697,6 +2697,35 @@ globalThis.RetroTemplatesUz.push(
   [/^\+ наличными напрямую (.+)$/, "+ naqd to'g'ridan-to'g'ri $1"],
 );
 /* ── /QA 7a/7b Учредитель ── */
+/* ── T-494: кабинет учредителя — периоды, блюда по прибыли, закуп ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Блюдо · продано': "Taom · sotilgan",
+  'Прибыль · маржа': "Foyda · marja",
+  'Продаж блюд за эти дни в iiko нет.': "Bu kunlarda iikoda taom savdosi yo'q.",
+  'по прибыли: выручка минус себестоимость iiko': "foyda bo'yicha: tushumdan iiko tannarxi ayrilgan",
+  'Справочник меню не загружен: позиции не проверены.': "Menyu ma'lumotnomasi yuklanmagan: pozitsiyalar tekshirilmagan.",
+  'За последние восемь недель продаж в iiko нет.': "Oxirgi sakkiz haftada iikoda savdo yo'q.",
+  'Проверка передачи: ✓ совпало с расчётом · ⚠ расхождение или передача не записана · … день ещё идёт · – кассир не работал в панели, сверки нет · ? нет данных iiko':
+    "Topshirishni tekshirish: ✓ hisob bilan mos · ⚠ farq bor yoki topshirish yozilmagan · … kun hali davom etmoqda · – kassir panelda ishlamagan, solishtirish yo'q · ? iiko ma'lumoti yo'q",
+  'Переводы (Oxbridge, блогеры)': "O'tkazmalar (Oxbridge, blogerlar)",
+  'Закуп · казы и рулеты': "Xarid · qazi va ruletlar",
+  'Закуп · уголь': "Xarid · ko'mir",
+  'Закуп · грибы': "Xarid · qo'ziqorin",
+  'Закуп · хозяйственные товары': "Xarid · xo'jalik mollari",
+  'Закуп · прочее': "Xarid · boshqa",
+  'Закуп · тесто': "Xarid · xamir",
+  'Закуп · хасип': "Xarid · xasip",
+  'Закуп · хлеб': "Xarid · non",
+  'Закуп · моющие средства': "Xarid · yuvish vositalari",
+  'Закуп · выдачи на закуп': "Xarid · xarid uchun berilgan",
+  'Покупки с телефона': "Telefondan xaridlar",
+  'Место не указано': "Joy ko'rsatilmagan",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Среднее за (\d+(?:–\d+)?) (?:неделю|недели|недель) по кассам Retro и Oxbridge, без банкетного зала\. Сегодня выделен\.$/,
+    "Retro va Oxbridge kassalari bo'yicha $1 haftalik o'rtacha, banket zalisiz. Bugun ajratib ko'rsatilgan."],
+);
+/* ── /T-494 ── */
 /* ── QA 3a Закуп · Шох ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Выберите точку': 'Xarid joyini tanlang',

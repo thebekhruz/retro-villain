@@ -30,6 +30,17 @@ FORECAST_WEEKS = 8
 WEEKDAYS = ('Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс')
 
 GROUP_LABELS = {code: label for code, label, _ in GROUPS}
+# В журнале бухгалтера группа «Дивиденды и переводы» — одна. У учредителя
+# дивиденды идут своей строкой (flow_kind), а остаток группы — это переводы
+# Oxbridge и блогерам: под прежним именем их путали с «Дивидендами».
+CATEGORY_LABELS = {**GROUP_LABELS, 'distributions': 'Переводы (Oxbridge, блогеры)'}
+# Прямой закуп бухгалтера — строкой на статью журнала («Закуп · уголь»):
+# одной строкой «Закуп · напрямую» уголь, хлеб и прочее было не различить.
+PROCUREMENT_LABELS = {code: 'Закуп · ' + label[:1].lower() + label[1:]
+                      for code, (group, label) in ITEMS.items() if group == 'procurement'}
+PROCUREMENT_LABELS['proc_other'] = 'Закуп · прочее'
+# Выдача на закуп не Шоху («Кому: на что») — статьи у неё нет.
+PROCUREMENT_ADVANCE_LABEL = 'Закуп · выдачи на закуп'
 
 
 def money(value):
@@ -121,10 +132,10 @@ def expense_categories(rows, transfers=(), *, shokh_from_till=Decimal(0)):
         elif is_shokh_advance(row):
             totals['Закуп · наличные Шоху'] += amount
         elif kind == 'procurement':
-            totals['Закуп · напрямую'] += amount
+            totals[PROCUREMENT_LABELS.get(row.get('item_code'), PROCUREMENT_ADVANCE_LABEL)] += amount
         else:
             group = ITEMS.get(row.get('item_code'), (None,))[0]
-            totals[GROUP_LABELS.get(group, 'Прочее')] += amount
+            totals[CATEGORY_LABELS.get(group, 'Прочее')] += amount
     total = sum(totals.values(), Decimal(0))
     ordered = sorted(totals.items(), key=lambda item: (-item[1], item[0]))
     return dict(total=money(total), categories=[
@@ -258,8 +269,9 @@ def month_forecast(history, forecast, today: date):
     """Прогноз месяца (Функционал §3.8): факт с 1-го числа по сегодня плюс
     прогноз оставшегося. Сегодняшний день ещё идёт: в факт входит то, что
     уже пробито, а в прогноз — недобранное до среднего этого дня недели
-    (если день уже перерос среднее, прогноз на него 0)."""
-    first = accounting_range_start(today.replace(day=1), today)
+    (если день уже перерос среднее, прогноз на него 0). Факт — выручка iiko
+    с 1-го числа: граница учёта 13.10 к ней не относится (T-486)."""
+    first = today.replace(day=1)
     last = (first.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
     fact = Decimal(0)
     today_fact = Decimal(0)
@@ -294,6 +306,36 @@ def chef_bills(rows, *, week_start: date, week_end: date, month_start: date):
                 week_over=sum(row['over'] for row in week), month_over=sum(row['over'] for row in month))
 
 
+# Один и тот же базар бухгалтер записывает по-разному: «Food City», «Фуд Сити»,
+# «FoodCity». Для показа сводим написания к одному имени (DEFAULT_BAZAARS в
+# accountant/ledger.py); запись в журнале остаётся как есть. Ключ — без
+# регистра, пробелов, дефисов и кавычек.
+PLACE_ALIASES = {
+    'foodcity': 'Food City', 'фудсити': 'Food City', 'фудситти': 'Food City',
+    'алайский': 'Алайский базар', 'алайскийбазар': 'Алайский базар',
+    'алайскийрынок': 'Алайский базар', 'алайбазар': 'Алайский базар',
+    'базаршеф': 'Базар Шеф', 'bazarchef': 'Базар Шеф', 'bazarshef': 'Базар Шеф',
+}
+# Расход Шоха без базара — покупка с телефона, принятая бухгалтером
+# (shokh.store.accept_with_finance пишет «Закуп: товар · точка»).
+PHONE_PURCHASES = 'Покупки с телефона'
+PLACE_UNKNOWN = 'Место не указано'
+
+
+def place_key(name) -> str:
+    text = str(name or '').casefold().replace('ё', 'е')
+    return ''.join(char for char in text if char.isalnum())
+
+
+def display_place(place, note='') -> str:
+    """Место покупки Шоха для показа: пробелы схлопнуты, известные написания
+    базара — одним именем. Только для экрана; данные не меняются."""
+    text = ' '.join(str(place or '').split())
+    if not text:
+        return PHONE_PURCHASES if str(note or '').startswith('Закуп:') else PLACE_UNKNOWN
+    return PLACE_ALIASES.get(place_key(text), text)
+
+
 def is_shokh_advance(row):
     """Выдача подотчёта Шоху — так же, как её видит резерв `shoh`."""
     return ((row['type'] == 'other_expense' and row.get('item_code') == 'proc_shoh') or
@@ -319,8 +361,13 @@ def shokh_month(purchases, flows, *, pocket, from_till=Decimal(0), transfers=(),
     if expenses is not None:
         purchases = []
         spent = sum((Decimal(row['amount']) for row in expenses), Decimal(0))
+        # Написания одного базара, которых нет в PLACE_ALIASES («food city» и
+        # «Food City»), сходятся по ключу; имя — первое встреченное.
+        names = {}
         for row in expenses:
-            by_item[row.get('place') or 'Без базара'] += Decimal(row['amount'])
+            place = display_place(row.get('place'), row.get('note'))
+            name = names.setdefault(place_key(place), place)
+            by_item[name] += Decimal(row['amount'])
     else:
         spent = sum((Decimal(row['total']) for row in purchases), Decimal(0))
         for row in purchases:

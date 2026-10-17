@@ -204,11 +204,12 @@ def test_cash_book_can_read_both_periods_in_one_pass(tmp_path):
         assert book.position(START)[1] == Decimal('1200')
 
 
-def test_founder_month_fact_and_first_week_plan_start_on_october_6():
+def test_founder_month_fact_counts_iiko_from_the_first_and_week_plan_starts_on_accounting_start():
     history = {day.isoformat(): {'retro': {'revenue': Decimal(amount)}}
                for day, amount in ((OLD, '9999'), (START, '100'), (NEXT, '200'))}
     forecast = {weekday: {'revenue': '0'} for weekday in range(7)}
-    assert overview.month_forecast(history, forecast, NEXT)['fact'] == '300.00'
+    # Выручка iiko — без границы учёта (T-486, T-494): факт месяца с 1-го числа.
+    assert overview.month_forecast(history, forecast, NEXT)['fact'] == '10299.00'
     plan = overview.dividend_week(START, Decimal('300'), {})
     assert plan['start'] == START.isoformat()
     assert len(plan['days']) == 6

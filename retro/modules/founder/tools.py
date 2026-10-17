@@ -2,11 +2,12 @@
 
 from __future__ import annotations
 
-from retro.accounting_period import accounting_range_start
+from retro.accounting_period import ACCOUNTING_START
 from retro.report_cache import load_iiko
 
 import asyncio
 from datetime import date
+from decimal import Decimal
 from types import SimpleNamespace
 
 from fastapi import HTTPException
@@ -57,7 +58,12 @@ TOOL_DEFINITIONS = (
             'включительный период. Используй для вопросов о выручке, оплатах, долях, '
             'направлениях Retro/школа/банкет, динамике и сверке. '
             'sales_bridge разделяет оплаты продаж и зачёт авансов; это не поступления '
-            'кассовой смены и не остаток наличных. Не называй продажи суммой к передаче.'
+            'кассовой смены и не остаток наличных. Не называй продажи суммой к передаче. '
+            'Выручка iiko — за весь запрошенный период. requested_period — что спрошено, '
+            'revenue_period — с какого по какой день в iiko есть продажи (с точностью до '
+            'шага детализации), expenses_period — за какие даты вычтены расходы кассы и '
+            'бухгалтерии (null — не вычитались: они ведутся с expenses_recorded_from). '
+            'Всё, что короче запрошенного, перечислено в warnings.'
         ),
         'input_schema': {
             'type': 'object',
@@ -181,10 +187,12 @@ TOOL_DEFINITIONS = (
         'description': (
             'Кабинет учредителя (экраны 7a/7b) за неделю с датой: деньги по дням — выручка '
             'Retro и Oxbridge, Демо, чеки, передача кассира и её сверка с расчётом (недостача), '
-            'зарплаты, закуп, прочие расходы, дивиденды, остаток у бухгалтера; дивиденды недели '
-            '(цель, отложено, план, «касса свободно даёт», прошлые недели); куда ушли деньги '
-            'за месяц по категориям; закуп Шоха за месяц (выдано, потрачено, перечисления, '
-            'на руках, покупки на проверку, топ товаров); Счёт Шефа за неделю и месяц.'
+            'зарплаты, закуп (наличные бухгалтера; перечисления поставщикам и выдачи Шоху '
+            'из кассы кассира в нём не видны), прочие расходы, дивиденды, остаток у бухгалтера; '
+            'дивиденды недели (цель, отложено, план, «касса свободно даёт», прошлые недели); '
+            'расходы месяца по категориям, включая перечисления и выдачи Шоху из кассы; закуп '
+            'Шоха за месяц (выдано, потрачено, перечисления, на руках, покупки на проверку, '
+            'топ мест покупки или товаров); Счёт Шефа за неделю и месяц.'
         ),
         'input_schema': {
             'type': 'object',
@@ -247,7 +255,36 @@ def _period(arguments, *, with_directions):
             or len(set(directions)) != len(directions)
             or any(item not in DIRECTIONS for item in directions)):
         raise DataError('Выберите направления retro, school или banquet без повторов.')
-    return accounting_range_start(start, end), end, granularity, tuple(directions)
+    # Граница учёта 13.10 сюда не относится (T-486): выручка iiko берётся за
+    # весь период. С ней вопрос «за 30 дней» получал три-четыре дня.
+    return start, end, granularity, tuple(directions)
+
+
+def with_period_coverage(data, start: date, end: date):
+    """Запрошенный период против дат, за которые данные реально есть (ТЗ 16.10, 4.1).
+
+    AI отвечал «за 30 дней» по трём дням: период молча резался границей учёта.
+    Теперь всё, что короче запрошенного, названо прямо: продаж iiko нет в
+    начале или в конце периода, расходы кассы и бухгалтерии не вычтены, день
+    ещё идёт. Продажи ищем по `revenue_series` — с точностью до её шага."""
+    requested = dict(start=start.isoformat(), end=end.isoformat(), days=(end - start).days + 1)
+    sold = [item for item in data.get('revenue_series') or []
+            if Decimal(str(item.get('total') or 0))]
+    warnings = list(data.get('warnings', []))
+    revenue = None
+    if sold:
+        first, last = date.fromisoformat(sold[0]['start']), date.fromisoformat(sold[-1]['end'])
+        revenue = dict(start=first.isoformat(), end=last.isoformat(), days=(last - first).days + 1)
+        if revenue['days'] < requested['days']:
+            warnings.append(f'Продажи в iiko есть только с {first:%d.%m.%Y} по {last:%d.%m.%Y}: '
+                            f'{revenue["days"]} дн. из {requested["days"]} запрошенных.')
+    elif 'revenue_series' in data:
+        warnings.append('В iiko нет продаж за запрошенный период.')
+    if data.get('includes_current_day'):
+        warnings.append('Сегодняшний день ещё идёт: выручка за него неполная.')
+    expenses = requested if data.get('dashboard_expenses') is not None else None
+    return dict(data, warnings=warnings, requested_period=requested, revenue_period=revenue,
+                expenses_period=expenses, expenses_recorded_from=ACCOUNTING_START.isoformat())
 
 
 def _single_day(arguments):
@@ -281,9 +318,7 @@ class FounderChatTools:
         if name == 'get_sales_by_time':
             return await sales_by_time(self.app.state.sales, arguments)
         if name == 'get_revenue_analytics':
-            start, end, granularity, directions = _period(arguments, with_directions=True)
-            return await load_iiko(self.app.state, 'load_founder_analytics',
-                                   start, end, granularity, directions, timeout=180)
+            return await self._revenue_analytics(arguments)
         if name == 'get_bookings':
             start, end, granularity = _period(arguments, with_directions=False)
             raw = await asyncio.wait_for(self.app.state.bookings.load(start, end), timeout=20)
@@ -348,6 +383,16 @@ class FounderChatTools:
             result['warnings'] = [*details.get('warnings', []),
                                   'Справочник меню не загружен: классы позиций не проверены.']
         return result
+
+    async def _revenue_analytics(self, arguments):
+        """Те же числа, что на экране «Аналитика iiko»: выручка за весь период,
+        расходы кассы и бухгалтерии — только если период начинается с 13.10."""
+        from retro.modules.founder.routes import with_dashboard_expenses
+        start, end, granularity, directions = _period(arguments, with_directions=True)
+        data = await load_iiko(self.app.state, 'load_founder_analytics',
+                               start, end, granularity, directions, timeout=180)
+        data = await with_dashboard_expenses(self.app.state, data, start, end)
+        return with_period_coverage(data, start, end)
 
     async def _founder_cabinet(self, arguments):
         """Те же числа, что на экранах 7a/7b, без полного дня бухгалтерии в каждой
