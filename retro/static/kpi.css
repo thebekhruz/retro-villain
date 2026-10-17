@@ -161,3 +161,6 @@
 .kpi-goal-source{display:block;max-width:76px;font-size:9px;line-height:1.2;color:var(--muted-3);white-space:normal}
 .kpi-goal input::placeholder{color:#9aa69b;font-weight:500}
 .kpi-targets-rule{margin:4px 0 2px}
+/* Порог шума (T-490): подпись под кольцом. Метка на кольце — тот же штрих .is-tick, что 50 и 100 %. */
+.kpi-home-threshold{font-size:12px;color:var(--muted-2)}
+.kpi-home-threshold.is-on{color:#906c2b;font-weight:600}

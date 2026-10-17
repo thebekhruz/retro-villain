@@ -590,7 +590,7 @@ async function loadKpi(refresh) {
 
 /* Кольцо: SVG с дорожкой, дугой заполнения и отметками 50 % и 100 %. Заполнение
    анимируется от нуля при первом рисовании (stroke-dashoffset, kpi.css). */
-function ringNode(box, percent, inner, {size = 'lg'} = {}) {
+function ringNode(box, percent, inner, {size = 'lg', threshold = null} = {}) {
   const large = size === 'lg';
   const radius = large ? 80 : 18, width = large ? 12 : 5, side = (radius + width) * 2, center = radius + width;
   const dash = K().ringDash(percent, radius);
@@ -618,6 +618,17 @@ function ringNode(box, percent, inner, {size = 'lg'} = {}) {
       tick.setAttribute('class', 'is-tick');
       tick.setAttribute('x1', x); tick.setAttribute('x2', x);
       tick.setAttribute('y1', center - width); tick.setAttribute('y2', center + width);
+      svg.append(tick);
+    }
+    // Метка порога шума (T-490): с этой доли цели начисляется премия. Тот же штрих, что 50 и 100 %.
+    if (threshold !== null && threshold > 0 && threshold < 1) {
+      const angle = 2 * Math.PI * threshold;
+      const tick = document.createElementNS(SVG, 'line');
+      tick.setAttribute('class', 'is-tick is-threshold');
+      tick.setAttribute('x1', (center + (radius - width) * Math.cos(angle)).toFixed(2));
+      tick.setAttribute('y1', (center + (radius - width) * Math.sin(angle)).toFixed(2));
+      tick.setAttribute('x2', (center + (radius + width) * Math.cos(angle)).toFixed(2));
+      tick.setAttribute('y2', (center + (radius + width) * Math.sin(angle)).toFixed(2));
       svg.append(tick);
     }
   }
@@ -652,10 +663,15 @@ function renderKpiHome() {
   big.dataset.i18n = 'off';
   inner.append(big, node('span', '', `продано ${totals.sold} из ${Math.ceil(totals.goal_qty)}`),
     node('small', '', totals.goal_qty ? (left ? `осталось ${left}` : 'цель взята') : 'цель считается'));
-  ringNode($('kpi-home-ring'), percent, inner);
+  ringNode($('kpi-home-ring'), percent, inner, {threshold: totals.threshold_mark});
   const pace = K().paceState(totals, period);
   $('kpi-home-pace').textContent = pace.text;
   $('kpi-home-pace').classList.toggle('is-done', pace.state === 'done');
+  // Порог шума (T-490): до метки — сколько маржи осталось до премии, после — какой фонд уже начислен.
+  const line = K().thresholdLine(totals);
+  $('kpi-home-threshold').textContent = line ? line.text : '';
+  $('kpi-home-threshold').hidden = !line;
+  $('kpi-home-threshold').classList.toggle('is-on', Boolean(line?.above));
   $('kpi-home-fund').textContent = K().thousands(totals.fund);
   const meta = [];
   const best = K().bestDay(data.hall.sold_by_day);
@@ -811,9 +827,10 @@ function renderKpi() {
     margin: item.margin, uplift: item.uplift, base: item.base, now: item.now, target: item.target, target_source: item.target_source}, null)));
   $('kpi-rules-list').replaceChildren(...[
     `Цель периода — ${Math.ceil(totals.goal_qty)} порций целевых позиций: цели на 100 чеков × ожидаемые чеки (средние за ${scheme.baseline_weeks} прошлые недели).`,
-    'Цель позиции на 100 чеков — база зала плюс 30 %, но не меньше базы плюс полпорции, с округлением вверх до 0,5. Директор может поставить цель выше вручную.',
+    'Цель позиции на 100 чеков — база зала плюс 70 %, но не меньше базы плюс 0,75 порции, с округлением вверх до 0,5. Директор может поставить цель выше вручную.',
     'Считается чек зала под своим логином: оплаченный, без удалений, без ручной льготы, без «Счет Шефа» и переносов между официантами.',
-    `Премия командная: ${K().percent(scheme.share)} от прироста маржи зала по целевым позициям против базы зала за ${scheme.baseline_weeks} недели; фонд делится между участниками по числу чеков.`,
+    `Премия начисляется с той маржи, которую зал заработал сверх обычных колебаний недели: порог ${K().thousands(scheme.noise_week || 0)} в неделю, за период ${K().thousands(totals.threshold || 0)}. Всё, что ниже порога, остаётся ресторану.`,
+    `Премия командная: ${K().percent(scheme.share)} от прироста маржи зала сверх порога по целевым позициям против базы зала за ${scheme.baseline_weeks} недели; фонд делится между участниками по числу чеков.`,
     `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен. Потолок ${K().thousands(totals.cap)} на человека за период. Выплата через бухгалтера после закрытия периода.`,
   ].map(text => node('li', '', text)));
   renderKpiView();

@@ -76,7 +76,7 @@ test('настройки из формы: проценты в доли, тыся
     targets: [{title: 'Чай', target100: '7,5', manual: true, dishes: [{id: 'a', name: 'ЧАЙ'}]}]});
   assert.equal(manual.targets[0].target100, 7.5);
   assert.equal(manual.targets[0].manual, true);
-  assert.equal(logic.targetSource({target_source: 'base'}), 'цель: база + 30 %');
+  assert.equal(logic.targetSource({target_source: 'base'}), 'цель: база + 70 %');
   assert.equal(logic.targetSource({target_source: 'manual'}), 'цель вручную');
   assert.throws(() => logic.settingsFromForm({share: 'x', cap: '1'}), /доля прироста/);
 });
@@ -132,4 +132,15 @@ test('процент цели в кольце без потолка и подп�
   assert.equal(logic.sourceLabel({source: 'manual_off'}), 'не считать, вручную');
   assert.equal(logic.sourceLabel({source: 'unmatched'}), 'не сопоставлен');
   assert.equal(logic.dayMonth('2026-11-01'), '1 ноября');
+});
+
+test('подпись порога шума под кольцом', () => {
+  assert.deepEqual(logic.thresholdLine({threshold: 1500000, to_threshold: 1212000, above_threshold: false, fund: 0}),
+    {above: false, text: 'До премии осталось 1 212 тыс маржи'});
+  assert.deepEqual(logic.thresholdLine({threshold: 1500000, to_threshold: 0, above_threshold: true, fund: 420000}),
+    {above: true, text: 'Премия начисляется: фонд 420 тыс'});
+  assert.equal(logic.thresholdLine({threshold: 0}), null, 'без порога подписи нет');
+  const body = logic.settingsFromForm({share: '40', cap: '1 000', noise_week: '1 500', min_checks: '20', min_shifts: '3', targets: []});
+  assert.equal(body.scheme.noise_week, 1500000);
+  assert.equal(body.scheme.share, 0.4);
 });
