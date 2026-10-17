@@ -135,7 +135,7 @@
   function loadReport(days) {
     if (view.reports[days]) return Promise.resolve(view.reports[days]);
     if (view.loading[days]) return view.loading[days];
-    const range = globalThis.RetroPeriod.presetRange(view.today, String(days));
+    const range = globalThis.RetroPeriod.analyticsRange(view.today, String(days));
     view.loading[days] = request('/api/director/report?start=' + range.start + '&end=' + range.end)
       .then(snapshot => { view.reports[days] = snapshot; return snapshot; })
       .finally(() => { delete view.loading[days]; });
@@ -723,4 +723,336 @@
       settled($('waiters'));
     });
   })();
+})();
+
+/* ── KPI официантов у директора: карточка периода в «Команде», лист настройки,
+   закрытие периода, Excel и передача премий бухгалтеру. Отдельный модуль:
+   свои запросы (/api/director/kpi), свои элементы, ничего из основного IIFE. ── */
+(function () {
+  const $ = id => document.getElementById(id);
+  const K = () => globalThis.KpiLogic;
+  const state = {view: null, settings: null, employees: [], links: {}, kind: 'week', targets: [], netting: true,
+    loadedAt: 0, searchTimer: 0};
+
+  function node(tag, cls, text) {
+    const element = document.createElement(tag);
+    if (cls) element.className = cls;
+    if (text !== undefined) element.textContent = text;
+    return element;
+  }
+  async function call(path, options = {}) {
+    const response = await fetch('/api/director/kpi' + path, {cache: 'no-store', ...options,
+      headers: {accept: 'application/json', 'Content-Type': 'application/json', ...(options.headers || {})}});
+    let payload = null;
+    try { payload = await response.json(); } catch {}
+    if (response.status === 401) window.location.assign('/login');
+    if (!response.ok) {
+      const error = new Error(typeof payload?.detail === 'string' ? payload.detail : 'Не удалось выполнить запрос. Повторите.');
+      error.status = response.status;
+      throw error;
+    }
+    return payload;
+  }
+
+  async function loadCard(force) {
+    if (!force && Date.now() - state.loadedAt < 60000) return;
+    try {
+      const view = await call('');
+      state.view = view;
+      state.loadedAt = Date.now();
+      renderCard();
+      // Лист уже открыт, а чеки пришли позже: карточки логинов дорисовываются.
+      if ($('kpi-sheet').open) renderLinks();
+    } catch (error) {
+      $('kpi-card-note').textContent = error.message;
+    }
+  }
+  function renderCard() {
+    const view = state.view;
+    const period = view.period;
+    $('kpi-card-period').textContent = K().periodLabel(period.start, period.end);
+    $('kpi-card-badge').hidden = false;
+    $('kpi-card-badge').textContent = period.status === 'closed' ? 'закрыт' : period.days_passed ? 'идёт' : 'не начался';
+    $('kpi-card-badge').className = 'dir-badge' + (period.status === 'open' && period.days_passed ? ' is-ok' : '');
+    const marked = (view.logins || []).filter(item => item.active).length;
+    $('kpi-card-note').textContent = marked
+      ? `Отмечено официантов: ${marked} · фонд премии сейчас ${K().thousands(view.totals.fund)}. Рейтинг и кольцо — на главной менеджера.`
+      : 'Отметьте логины официантов в настройке периода: без отметки рейтинг у менеджера пуст.';
+    $('kpi-payouts').hidden = period.status !== 'closed';
+    $('kpi-close-period').hidden = period.status === 'closed';
+  }
+
+  /* ── Лист настройки ── */
+  async function openSheet() {
+    $('kpi-sheet-error').textContent = '';
+    $('kpi-form-error').textContent = '';
+    try {
+      // Без экрана периода нет списка логинов: ждём его, если он ещё не пришёл.
+      if (!state.view) await loadCard(true);
+      const data = await call('/settings' + (state.view ? '?period=' + state.view.period.id : ''));
+      state.settings = data;
+      state.employees = data.employees;
+      state.links = data.links;
+      state.kind = data.period.kind;
+      state.targets = data.settings.targets.map(t => ({...t, dishes: t.dishes.map(d => ({id: d[0], name: d[1]}))}));
+      state.netting = Boolean(data.settings.scheme.netting);
+      fillForm(data);
+      $('kpi-sheet').showModal();
+    } catch (error) {
+      $('kpi-card-note').textContent = error.message;
+    }
+  }
+  function fillForm(data) {
+    const scheme = data.settings.scheme;
+    $('kpi-sheet-sub').textContent = K().periodLabel(data.period.start, data.period.end) + (data.period.status === 'closed' ? ' · закрыт' : '');
+    $('kpi-start').value = data.period.start;
+    $('kpi-end').value = data.period.end;
+    $('kpi-share').value = Math.round(scheme.share * 100);
+    $('kpi-cap').value = Math.round(scheme.cap / 1000);
+    $('kpi-baseline').value = scheme.baseline_weeks;
+    $('kpi-min-checks').value = scheme.min_checks;
+    $('kpi-min-shifts').value = scheme.min_shifts;
+    setKind(state.kind);
+    setNetting(state.netting);
+    const locked = data.period.status === 'closed';
+    $('kpi-form').classList.toggle('is-saving', locked);
+    $('kpi-save').disabled = locked;
+    renderTargets();
+    renderLinks();
+  }
+  function setKind(kind) {
+    state.kind = kind;
+    $('kpi-kind').querySelectorAll('button').forEach(button => button.classList.toggle('is-active', button.dataset.kind === kind));
+  }
+  function setNetting(value) {
+    state.netting = value;
+    $('kpi-netting').setAttribute('aria-pressed', String(value));
+  }
+  function renderTargets() {
+    $('kpi-target-list').replaceChildren(...state.targets.map((target, index) => {
+      const row = node('div', 'kpi-target');
+      const name = node('span', 'kpi-target-name');
+      const title = node('strong', '', target.title);
+      title.dataset.i18n = 'off';
+      const dishes = node('span', 'kpi-dish-list');
+      for (const dish of target.dishes) {
+        const chip = node('span', '', dish.name);
+        chip.dataset.i18n = 'off';
+        const remove = node('button', '', '×');
+        remove.type = 'button'; remove.setAttribute('aria-label', 'Убрать карточку');
+        remove.addEventListener('click', () => {
+          target.dishes = target.dishes.filter(item => item.id !== dish.id);
+          if (!target.dishes.length) state.targets.splice(index, 1);
+          renderTargets();
+        });
+        chip.append(remove);
+        dishes.append(chip);
+      }
+      name.append(title, node('small', '', `${target.group}${target.margin ? ' · маржа ' + K().thousands(target.margin) : ''}`), dishes);
+      // Цель (T-469): по правилу «база + 30 %», ручная — только если выше правила. Пустое поле — снова правило.
+      const eff = (state.view?.targets || []).find(item => item.key === target.key);
+      const auto = eff?.target_auto;
+      const goal = node('label', 'kpi-goal', 'цель');
+      const input = node('input');
+      input.inputMode = 'decimal'; input.setAttribute('aria-label', 'Цель на 100 чеков');
+      input.value = target.manual ? K().rate(target.target100) : '';
+      input.placeholder = auto !== undefined ? K().rate(auto) : '';
+      const source = node('small', 'kpi-goal-source', '');
+      const paint = () => {
+        const manual = input.value.trim() !== '';
+        const value = Number(input.value.replace(',', '.'));
+        source.textContent = !manual ? 'база + 30 %'
+          : auto !== undefined && value <= auto ? `ниже правила, действует ${K().rate(auto)}` : 'вручную';
+      };
+      input.addEventListener('input', () => { target.target100 = input.value; target.manual = input.value.trim() !== ''; paint(); });
+      paint();
+      goal.append(input, source);
+      const remove = node('button', 'dir-close', '×');
+      remove.type = 'button'; remove.setAttribute('aria-label', 'Убрать позицию');
+      remove.addEventListener('click', () => { state.targets.splice(index, 1); renderTargets(); });
+      row.append(name, goal, remove);
+      return row;
+    }));
+  }
+  function renderFound(items) {
+    $('kpi-found').hidden = !items.length;
+    $('kpi-found').replaceChildren(...items.map(item => {
+      const button = node('button');
+      button.type = 'button';
+      const name = node('span', '', item.name);
+      name.dataset.i18n = 'off';
+      button.append(name, node('small', '', item.group || ''));
+      button.addEventListener('click', () => {
+        if (state.targets.some(target => target.dishes.some(dish => dish.id === item.id))) return;
+        state.targets.push({key: 'n' + Date.now().toString(36), title: item.name, group: 'блюдо', target100: null, manual: false, margin: null,
+          dishes: [{id: item.id, name: item.name}]});
+        $('kpi-search').value = '';
+        renderFound([]);
+        renderTargets();
+      });
+      return button;
+    }));
+  }
+  /* Карточки логинов iiko (T-466): кто из них официант зала — решает директор. Непомеченные
+     в KPI не идут. Отметка и сотрудник хранятся в базе и переходят на следующий период. */
+  function renderLinks() {
+    const logins = (state.view?.logins || []).slice();
+    for (const waiter of Object.keys(state.links)) {
+      if (!logins.some(item => item.waiter === waiter)) logins.push({waiter, checks: 0, base_checks: 0});
+    }
+    const registry = state.view?.registry;
+    $('kpi-registry').textContent = registry
+      ? `Официантов в реестре: ${registry.waiters} · сопоставлено логинов: ${registry.matched} · вручную: ${registry.manual} · не сопоставлено: ${registry.unmatched}` : '';
+    $('kpi-links').replaceChildren(...(logins.length ? logins.map(item => {
+      const link = state.links[item.waiter] || {};
+      const active = item.active !== undefined ? Boolean(item.active) : Boolean(link.active);
+      const row = node('div', 'kpi-login' + (active ? ' is-active' : ''));
+      const head = node('div', 'kpi-login-head');
+      const name = node('span', 'kpi-login-name');
+      const strong = node('strong', '', item.waiter);
+      strong.dataset.i18n = 'off';
+      const checks = item.checks ? `${item.checks} ${K().plural(item.checks, 'чек', 'чека', 'чеков')} за период`
+        : item.base_checks ? `${item.base_checks} ${K().plural(item.base_checks, 'чек', 'чека', 'чеков')} в базе` : 'чеков пока нет';
+      // Откуда участие (T-469): из реестра, отмечен вручную, «не считать» вручную, не сопоставлен.
+      const source = K().sourceLabel(item);
+      const who = item.source === 'registry' && item.employee_name ? ` · ${item.employee_name}` : '';
+      name.append(strong, node('small', '', checks), node('small', 'kpi-login-source is-' + (item.source || 'none'), source + who));
+      const segment = node('div', 'dir-segment is-compact kpi-login-seg');
+      segment.setAttribute('role', 'group');
+      for (const [value, label] of [[true, 'официант зала'], [false, 'не считать']]) {
+        const button = node('button', active === value ? 'is-active' : '', label);
+        button.type = 'button';
+        button.setAttribute('aria-pressed', String(active === value));
+        button.addEventListener('click', () => saveLink(item.waiter, link.employee_id ?? null, value));
+        segment.append(button);
+      }
+      head.append(name, segment);
+      row.append(head);
+      if (state.links[item.waiter]) {
+        const reset = node('button', 'dir-link kpi-login-reset', 'вернуть как в реестре');
+        reset.type = 'button';
+        reset.addEventListener('click', () => resetLink(item.waiter));
+        row.append(reset);
+      }
+      if (active && item.source !== 'registry') {
+        const select = node('select');
+        select.setAttribute('aria-label', 'Сотрудник для ' + item.waiter);
+        select.append(new Option('— сотрудник из реестра —', ''));
+        for (const employee of state.employees) select.append(new Option(employee.name, String(employee.id)));
+        select.value = link.employee_id ? String(link.employee_id) : '';
+        select.addEventListener('change', () => saveLink(item.waiter, select.value ? Number(select.value) : null, true));
+        row.append(select);
+      }
+      return row;
+    }) : [node('p', 'dir-note', 'Логины появятся после первых чеков зала.')]));
+  }
+  async function resetLink(waiter) {
+    try {
+      const data = await call('/links?waiter=' + encodeURIComponent(waiter), {method: 'DELETE'});
+      state.links = data.links;
+      await loadCard(true);
+      renderLinks();
+    } catch (error) { $('kpi-sheet-error').textContent = error.message; }
+  }
+  async function saveLink(waiter, employeeId, active) {
+    try {
+      const data = await call('/links', {method: 'PUT', body: JSON.stringify({waiter, employee_id: employeeId, active})});
+      state.links = data.links;
+      await loadCard(true);
+      renderLinks();
+    } catch (error) { $('kpi-sheet-error').textContent = error.message; }
+  }
+  async function save(event) {
+    event.preventDefault();
+    $('kpi-form-error').textContent = '';
+    let body;
+    try {
+      body = K().settingsFromForm({kind: state.kind, start: $('kpi-start').value, end: $('kpi-end').value,
+        share: $('kpi-share').value, cap: $('kpi-cap').value,
+        min_checks: $('kpi-min-checks').value, min_shifts: $('kpi-min-shifts').value, baseline_weeks: $('kpi-baseline').value,
+        netting: state.netting, targets: state.targets});
+    } catch (error) { $('kpi-form-error').textContent = error.message; return; }
+    $('kpi-save').disabled = true;
+    try {
+      const data = await call('/settings?period=' + state.settings.period.id, {method: 'PUT', body: JSON.stringify(body)});
+      state.settings.settings = data.settings;
+      state.settings.period = {...state.settings.period, ...data.period};
+      state.targets = data.settings.targets.map(t => ({...t, dishes: t.dishes.map(d => ({id: d[0], name: d[1]}))}));
+      renderTargets();
+      $('kpi-sheet-sub').textContent = K().periodLabel(data.period.start, data.period.end) + ' · сохранено';
+      state.loadedAt = 0;
+      loadCard(true);
+    } catch (error) {
+      $('kpi-form-error').textContent = error.message;
+    } finally {
+      $('kpi-save').disabled = false;
+    }
+  }
+  async function closePeriod() {
+    $('kpi-sheet-error').textContent = '';
+    $('kpi-close-yes').disabled = true;
+    try {
+      const data = await call('/close?period=' + state.settings.period.id, {method: 'POST', body: JSON.stringify({withheld: {}})});
+      $('kpi-close-confirm').hidden = true;
+      $('kpi-close-period').hidden = true;
+      $('kpi-payouts').hidden = false;
+      $('kpi-sheet-sub').textContent = 'закрыт · фонд ' + K().thousands(data.totals.fund) + (data.next ? ' · следующий с ' + data.next.start.slice(8, 10) + '.' + data.next.start.slice(5, 7) : '');
+      state.settings.period.status = 'closed';
+      state.loadedAt = 0;
+      loadCard(true);
+    } catch (error) {
+      $('kpi-sheet-error').textContent = error.message;
+    } finally {
+      $('kpi-close-yes').disabled = false;
+    }
+  }
+  async function payouts() {
+    $('kpi-sheet-error').textContent = '';
+    $('kpi-payouts-yes').disabled = true;
+    try {
+      const data = await call('/payouts?period=' + state.settings.period.id, {method: 'POST', body: JSON.stringify({confirm: true})});
+      $('kpi-payouts-confirm').hidden = true;
+      $('kpi-payouts-list').replaceChildren(...data.results.map(item => {
+        const line = node('div', item.status === 'created' ? 'is-ok' : item.status === 'error' ? 'is-error' : '',
+          `${item.waiter}: ${K().thousands(item.amount)} — ` + (item.status === 'created' ? 'записано бухгалтеру' : item.message));
+        line.dataset.i18n = 'off';
+        return line;
+      }));
+      if (data.results.some(item => item.status === 'created')) $('kpi-payouts').hidden = true;
+    } catch (error) {
+      $('kpi-sheet-error').textContent = error.message;
+    } finally {
+      $('kpi-payouts-yes').disabled = false;
+    }
+  }
+
+  function bind() {
+    if (!$('kpi-card')) return;
+    document.querySelectorAll('.dir-tabs [data-tab="team"]').forEach(button => button.addEventListener('click', () => loadCard(false)));
+    $('kpi-settings-open').addEventListener('click', openSheet);
+    $('kpi-sheet-close').addEventListener('click', () => $('kpi-sheet').close());
+    $('kpi-export').addEventListener('click', () => {
+      if (state.view) window.location.assign('/api/director/kpi/export?period=' + state.view.period.id);
+    });
+    $('kpi-kind').querySelectorAll('button').forEach(button => button.addEventListener('click', () => setKind(button.dataset.kind)));
+    $('kpi-netting').addEventListener('click', () => setNetting(!state.netting));
+    $('kpi-form').addEventListener('submit', save);
+    $('kpi-search').addEventListener('input', () => {
+      clearTimeout(state.searchTimer);
+      const query = $('kpi-search').value.trim();
+      if (query.length < 2) { renderFound([]); return; }
+      state.searchTimer = setTimeout(async () => {
+        try { renderFound((await call('/items?q=' + encodeURIComponent(query))).items); }
+        catch (error) { $('kpi-form-error').textContent = error.message; }
+      }, 250);
+    });
+    $('kpi-close-period').addEventListener('click', () => { $('kpi-close-confirm').hidden = false; });
+    $('kpi-close-no').addEventListener('click', () => { $('kpi-close-confirm').hidden = true; });
+    $('kpi-close-yes').addEventListener('click', closePeriod);
+    $('kpi-payouts').addEventListener('click', () => { $('kpi-payouts-confirm').hidden = false; });
+    $('kpi-payouts-no').addEventListener('click', () => { $('kpi-payouts-confirm').hidden = true; });
+    $('kpi-payouts-yes').addEventListener('click', payouts);
+    if (document.body.dataset.dirTab === 'team') loadCard(false);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', bind); else bind();
 })();

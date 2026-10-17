@@ -19,6 +19,15 @@ ANTHROPIC_VERSION = '2023-06-01'
 MAX_PROBLEMS = 6
 MAX_CHAT_TOOL_CALLS = 8
 MAX_CHAT_TOOL_RESULT_CHARS = 100_000
+# ТЗ 16.10 (2.3, 3.1): AI советовал продавать мёд и листья салата как блюда.
+MENU_RULE = (
+    'Блюдом считай только готовую позицию меню: класс dish или drink в get_menu_catalog. '
+    'Позиции из item_classes и строки с item_class, отличным от dish/drink (ингредиенты и '
+    'сырьё вроде мёда и листьев салата, товары склада, закупки Шоха, полуфабрикаты, '
+    'компоненты сетов, услуги), — не блюда: не советуй их продавать, продвигать или '
+    'убирать из меню и не ставь в рейтинги блюд. Если справочник меню недоступен, '
+    'скажи, что тип позиции не проверен.'
+)
 CHAT_SYSTEM_PROMPTS = {
     'founder': (
         'Ты конфиденциальный деловой ассистент учредителей ресторана Retro Milliy. '
@@ -94,16 +103,23 @@ def _direction_totals(item_metrics):
     return result
 
 
-def compact_analysis_input(snapshot):
-    """Build a bounded fact set so Claude never receives the full menu dump."""
+def compact_analysis_input(snapshot, item_classes=None):
+    """Build a bounded fact set so Claude never receives the full menu dump.
+
+    item_classes — позиции продаж, которые не готовые блюда меню
+    (MenuCatalog.exceptions): в кандидаты на «убрать/продвигать» они не идут."""
     item_metrics = snapshot.get('item_metrics', {})
     all_items = item_metrics.get('all', {})
+    not_dishes = {name for name, item_class in (item_classes or {}).items()
+                  if item_class != 'unknown'}
 
     candidates = [_metric(name, direction, value)
                   for direction in ('retro', 'oxbridge', 'banquet')
-                  for name, value in item_metrics.get(direction, {}).items()]
+                  for name, value in item_metrics.get(direction, {}).items()
+                  if name not in not_dishes]
     if not candidates:
-        candidates = [_metric(name, 'all', value) for name, value in all_items.items()]
+        candidates = [_metric(name, 'all', value) for name, value in all_items.items()
+                      if name not in not_dishes]
     losses = sorted(
         (item for item in candidates if _decimal(item['gross_profit']) < 0),
         key=lambda item: (_decimal(item['gross_profit']), -_decimal(item['revenue'])),
@@ -146,6 +162,7 @@ def compact_analysis_input(snapshot):
         'direction_totals': _direction_totals(item_metrics),
         'review_candidates': selected,
         'negative_waiters': negative_waiters[:6],
+        'not_menu_dishes_excluded': sorted(not_dishes),
         'scope': {key: snapshot.get(key) for key in ('calculation_version', 'menu_revenue',
                   'excluded_revenue', 'excluded_groups', 'scope_excluded_revenue', 'yandex_menu_revenue')},
     }
@@ -155,10 +172,10 @@ class ClaudeClient:
     def __init__(self, settings, *, transport=None):
         self.settings, self.transport = settings, transport
 
-    async def analyze(self, snapshot):
+    async def analyze(self, snapshot, item_classes=None):
         if not self.settings.claude_configured:
             raise DataError('Настройте CLAUDE_API_KEY и CLAUDE_MODEL для AI-анализа.')
-        report_data = compact_analysis_input(snapshot.json())
+        report_data = compact_analysis_input(snapshot.json(), item_classes)
         prompt = (
             'Верни краткий JSON-анализ отчёта Retro Milliy: резюме и не более '
             f'{MAX_PROBLEMS} неповторяющихся проблем. Пиши сжато, только по фактам из данных.\n'
@@ -176,7 +193,10 @@ class ClaudeClient:
             'system': ('Ты аналитик ресторанного бизнеса. Возвращай результат строго по заданной '
                        'JSON-схеме. Не придумывай отсутствующие показатели. Выручка и маржа меню имеют '
                        'разный охват с оплатами. breakdown разделяет продажи, счёт шефа, дегустации '
-                       'и прочие нулевые выдачи: внутреннее потребление не означает убыточную продажу.'),
+                       'и прочие нулевые выдачи: внутреннее потребление не означает убыточную продажу. '
+                       'В кандидатах только готовые блюда и напитки меню; позиции из '
+                       'not_menu_dishes_excluded (ингредиенты, компоненты сетов, услуги) — не '
+                       'блюда, не предлагай их продавать или убирать.'),
             'messages': [{'role': 'user', 'content': prompt}],
             'output_config': {
                 'format': {'type': 'json_schema', 'schema': ANALYSIS_SCHEMA},
@@ -234,7 +254,7 @@ class ClaudeClient:
             'напрямую к детальному OLAP-инструменту iiko. Указывай период и предупреждения '
             'источника. unavailable и unlinked не означают, что сотрудник отсутствовал; '
             'missing достоверен только при complete=true. Не выполняй действия и не меняй '
-            'данные — инструменты работают только на чтение.'
+            'данные — инструменты работают только на чтение. ' + MENU_RULE
         )
         if current_date is not None:
             system += f' Текущая дата ресторана в Asia/Tashkent: {current_date}.'

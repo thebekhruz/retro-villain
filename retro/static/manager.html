@@ -17,8 +17,9 @@
   <link rel="stylesheet" href="/static/director-app.css">
   <link rel="stylesheet" href="/static/shokh.css">
   <link rel="stylesheet" href="/static/manager.css">
+  <link rel="stylesheet" href="/static/kpi.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/manager-logic.js" defer></script><script src="/static/manager.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/kpi-logic.js" defer></script><script src="/static/manager-logic.js" defer></script><script src="/static/manager.js" defer></script>
 </head>
 <body class="director-app mgr-page" data-dir-tab="home">
 <aside class="sidebar" data-collapsible>
@@ -40,8 +41,8 @@
       <div class="dir-hello"><span id="today-label">Сегодня</span><strong id="screen-title">Кабинет менеджера</strong></div>
       <!-- T-461: строки «‹ Панель · РУ/UZ · имя · Выйти» над приветствием нет —
            всё это в профиле по кружку справа. На компьютере — внизу меню слева. -->
-      <button id="profile-open" class="mgr-profile" type="button" aria-haspopup="dialog" aria-controls="profile-sheet" aria-label="Профиль">
-        <span id="profile-mark" data-i18n="off"></span>
+      <button id="profile-open" class="app-profile" type="button" aria-haspopup="dialog" aria-controls="profile-sheet" aria-label="Профиль">
+        <span id="profile-mark" data-profile-mark data-i18n="off"></span>
       </button>
     </header>
     <p id="state" class="dir-state" role="status" aria-live="polite" hidden></p>
@@ -74,6 +75,52 @@
         <div id="sections" class="dir-team-counts mgr-sections"></div>
         <p class="dir-note mgr-sections-note">Нажмите раздел — откроется его команда.</p>
       </article>
+    </section>
+
+
+    <!-- ── KPI официантов: отдельная вкладка (T-469). Кольцо команды «продано / осталось до цели»,
+         темп, фонд, лучший день и лидер; «Что продавать»; люди с долей командного фонда; виды
+         «Люди / Позиции / Правила». До старта или без отмеченных официантов — понятное пустое состояние. ── -->
+    <section id="tab-kpi" class="dir-screen" aria-label="KPI" hidden>
+      <div class="kpi-top"><h1 class="dir-h1">KPI</h1><span id="kpi-badge" class="dir-badge" data-i18n="off"></span></div>
+      <article id="kpi-empty" class="rm-phone-card kpi-empty" role="status" hidden>
+        <span class="dir-spark" aria-hidden="true">✦</span>
+        <div><strong id="kpi-empty-title" data-i18n="off"></strong><p id="kpi-empty-text"></p></div>
+      </article>
+      <article id="kpi-team" class="rm-phone-card kpi-home">
+        <div class="kpi-home-head"><strong>Команда зала</strong><span id="kpi-home-day" class="dir-badge" data-i18n="off"></span></div>
+        <div id="kpi-home-ring" class="kpi-ring" aria-hidden="true"></div>
+        <span id="kpi-home-pace" class="kpi-home-pace">&nbsp;</span>
+        <span class="kpi-home-fund">фонд премии сейчас<b id="kpi-home-fund" class="rm-num" data-i18n="off">—</b></span>
+        <div id="kpi-home-meta" class="kpi-home-meta"></div>
+        <span id="kpi-home-note" class="kpi-home-empty" hidden></span>
+      </article>
+      <!-- Позиции периода (T-468): что, сколько продано, цель, остаток; сверху те, где отставание от темпа больше. -->
+      <article id="kpi-home-targets" class="rm-phone-card kpi-targets" hidden>
+        <div class="dir-card-head"><strong>Что продавать</strong><span id="kpi-home-targets-badge" class="dir-badge" data-i18n="off"></span></div>
+        <p class="dir-note kpi-targets-rule">Цель позиции: база зала + 30 % на 100 чеков; ручные цели директора помечены.</p>
+        <div id="kpi-home-targets-list" class="kpi-target-rows"></div>
+      </article>
+      <div id="kpi-stats" class="dir-pair">
+        <div class="rm-phone-card dir-kpi"><span>Прирост маржи зала</span><strong id="kpi-uplift" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-fund-line"></small></div>
+        <div class="rm-phone-card dir-kpi"><span>Участвуют</span><strong id="kpi-sold" class="rm-num" data-i18n="off"><span class="rm-skel is-val"></span></strong><small id="kpi-stamp"></small></div>
+      </div>
+      <div id="kpi-views" class="dir-chips" role="group" aria-label="Показать">
+        <button type="button" data-kpi-view="rating" class="is-active">Люди</button><button type="button" data-kpi-view="targets">Позиции</button><button type="button" data-kpi-view="rules">Правила</button>
+      </div>
+      <div id="kpi-rating" class="rm-phone-card dir-team-list mgr-list kpi-people" aria-busy="true">
+        <div class="dir-skel-list" aria-hidden="true"><div class="dir-skel-line"><span class="rm-skel is-dot"></span><span><span class="rm-skel"></span><span class="rm-skel"></span></span></div><div class="dir-skel-line"><span class="rm-skel is-dot"></span><span><span class="rm-skel"></span><span class="rm-skel"></span></span></div></div>
+      </div>
+      <article id="kpi-targets" class="rm-phone-card" hidden>
+        <strong class="dir-card-title">Целевые позиции · зал на 100 чеков</strong>
+        <div id="kpi-targets-list"></div>
+      </article>
+      <article id="kpi-rules" class="rm-phone-card" hidden>
+        <strong class="dir-card-title">Как считается премия</strong>
+        <ul id="kpi-rules-list" class="kpi-rules"></ul>
+      </article>
+      <div class="kpi-stamp-row"><span id="kpi-threshold" class="dir-note"></span><button id="kpi-refresh" class="dir-link" type="button">Обновить данные iiko</button></div>
+      <p class="dir-note">Премия командная: фонд делится между участниками по числу чеков за период. У человека показаны его продажи целевых позиций против базы зала.</p>
     </section>
 
     <!-- ── Съёмка ──────────────────────────────────────────────────────── -->
@@ -187,24 +234,25 @@
     </section>
   </div>
   <!-- Профиль: кто вошёл, язык, вся панель (администратору), выход. -->
-  <dialog id="profile-sheet" class="mgr-sheet" aria-labelledby="profile-name">
-    <div class="mgr-sheet-head">
-      <span id="profile-sheet-mark" class="mgr-sheet-mark" aria-hidden="true" data-i18n="off"></span>
-      <div class="mgr-sheet-who"><strong id="profile-name" data-i18n="off"></strong><span id="profile-dirs" data-i18n="off"></span></div>
+  <dialog id="profile-sheet" class="app-sheet" aria-labelledby="profile-name">
+    <div class="app-sheet-head">
+      <span id="profile-sheet-mark" class="app-sheet-mark" aria-hidden="true" data-i18n="off"></span>
+      <div class="app-sheet-who"><strong id="profile-name" data-i18n="off"></strong><span id="profile-dirs" data-i18n="off"></span></div>
       <button id="profile-close" class="dir-close" type="button" aria-label="Закрыть">×</button>
     </div>
-    <div class="mgr-sheet-row">
+    <div class="app-sheet-row">
       <span>Язык</span>
       <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
     </div>
     <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
-    <a id="mgr-back" class="dir-primary mgr-secondary mgr-sheet-link" href="/login" hidden>Вся панель</a>
-    <button id="logout" class="dir-primary mgr-secondary" type="button">Выйти</button>
+    <a id="mgr-back" class="dir-primary app-secondary app-sheet-link" href="/login" hidden>Вся панель</a>
+    <button id="logout" class="dir-primary app-secondary" type="button">Выйти</button>
   </dialog>
   <nav class="rm-tabs dir-tabs" role="tablist" aria-label="Разделы менеджера">
     <button type="button" class="rm-tab is-active" role="tab" aria-selected="true" data-tab="home"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span>Сегодня</button>
     <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="shoot"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 8.5A2.5 2.5 0 0 1 6.5 6h1.2l1.4-2h5.8l1.4 2h1.2A2.5 2.5 0 0 1 20 8.5v8A2.5 2.5 0 0 1 17.5 19h-11A2.5 2.5 0 0 1 4 16.5z"/><circle cx="12" cy="12.5" r="3.4"/></svg></span>Съёмка</button>
     <button type="button" class="rm-tab rm-tab--ai" role="tab" aria-selected="false" data-tab="add"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg></span>Добавить</button>
+    <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="kpi"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 20h16M6 16l4-5 3 3 5-7"/><path d="M15 7h3v3"/></svg></span>KPI</button>
     <button type="button" class="rm-tab" role="tab" aria-selected="false" data-tab="team"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 11a3 3 0 100-6 3 3 0 000 6zM3 20c0-3.3 2.7-5 6-5s6 1.7 6 5M16 11a3 3 0 100-6M18 20c0-2.3-1-3.8-3-4.6"/></svg></span>Команда</button>
   </nav>
 </div>

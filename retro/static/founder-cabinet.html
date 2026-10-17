@@ -14,7 +14,7 @@
   <link rel="stylesheet" href="/static/director-app.css">
   <link rel="stylesheet" href="/static/founder-cabinet.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
+  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script>
 </head>
 <body class="founder-cabinet">
 <aside class="sidebar" data-collapsible>
@@ -30,13 +30,15 @@
   </div>
 </aside>
 <main class="fo-main">
-  <header class="topbar"><span class="breadcrumb">Рабочее пространство <span>/</span> <strong>Учредитель</strong></span><div class="topbar-actions"><a id="fo-back" class="logout-button fo-back" href="/login" hidden><span aria-hidden="true">‹</span> Панель</a><span class="top-status rm-status-skel" id="updated"></span><div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div><button id="logout" class="logout-button" type="button">Выйти</button></div></header>
+  <!-- T-463: верхней строки нет — время данных под шапкой телефона, язык, «Панель» и
+       «Выйти» в профиле; на компьютере всё внизу меню слева (T-455). -->
 
   <!-- ══ 7a · Телефон: сколько денег и сколько моих ══════════════════════ -->
   <div class="fo-phone rm-phone">
     <div class="rm-phone-body fo-phone-body">
       <div id="fo-alerts" class="fo-alerts" aria-live="polite"></div>
-      <div class="fo-phone-head"><div><span id="fo-phone-date">Сегодня</span><strong>Мои деньги</strong></div><span class="rm-phone-mark" aria-hidden="true">R</span></div>
+      <div id="fo-top" class="fo-phone-head"><span class="rm-phone-mark" aria-hidden="true">R</span><div><span id="fo-phone-date">Сегодня</span><strong>Мои деньги</strong></div><button id="profile-open" class="app-profile" type="button" aria-haspopup="dialog" aria-controls="profile-sheet" aria-label="Профиль"><span data-profile-mark data-i18n="off"></span></button></div>
+      <p class="fo-phone-status"><span class="top-status rm-status-skel" id="updated"></span></p>
 
       <article class="rm-phone-hero fo-div">
         <div class="fo-div-top"><span>Дивиденды · неделя <b id="fo-div-range">—</b></span></div>
@@ -75,15 +77,32 @@
         <button id="fo-phone-ask-checks" class="dir-link fo-phone-ask" type="button" hidden>✦ Разобрать с AI →</button>
       </article>
 
-      <!-- Макет 7a — «только важное». Остальное (AI, выгрузка, аналитика)
-           живёт на компьютере, но с телефона до него тоже можно дойти. -->
-      <nav class="rm-phone-card fo-phone-links" aria-label="Ещё">
-        <button id="fo-phone-ai" class="fo-phone-link" type="button"><span class="dir-spark" aria-hidden="true">✦</span><span>AI-помощник</span></button>
-        <a id="fo-phone-excel" class="fo-phone-link" href="/api/founder/export/month" download><span class="fo-phone-link-icon" aria-hidden="true">↓</span><span id="fo-phone-excel-label">Отчёт бухгалтера · месяц · Excel</span></a>
-        <a class="fo-phone-link" href="/founder/analytics"><span class="fo-phone-link-icon" aria-hidden="true">→</span><span>Аналитика iiko · брони · рассылки</span></a>
-      </nav>
     </div>
+    <!-- T-463: вкладки внизу, как у телефона директора. Макет 7a — «только
+         важное»: отчёт, AI и аналитика, которые раньше были списком «Ещё». -->
+    <nav class="rm-tabs dir-tabs fo-tabs" aria-label="Разделы учредителя">
+      <a class="rm-tab is-active" href="#fo-top" aria-current="page"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M4 11l8-7 8 7v9h-5v-6H9v6H4z"/></svg></span>Сегодня</a>
+      <a id="fo-phone-excel" class="rm-tab" href="/api/founder/export/month" download><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg></span>Отчёт<span id="fo-phone-excel-label" class="visually-hidden">Отчёт бухгалтера · месяц · Excel</span></a>
+      <button id="fo-phone-ai" class="rm-tab rm-tab--ai" type="button"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24" class="is-filled"><path d="M12 3l2 6 6 2-6 2-2 6-2-6-6-2 6-2z"/></svg></span>AI</button>
+      <a class="rm-tab" href="/founder/analytics"><span class="rm-tab-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M5 19V11M12 19V5M19 19v-6"/></svg></span>Аналитика</a>
+    </nav>
   </div>
+
+  <!-- Профиль: кто вошёл, язык, вся панель (администратору), выход. -->
+  <dialog id="profile-sheet" class="app-sheet" aria-labelledby="profile-name">
+    <div class="app-sheet-head">
+      <span class="app-sheet-mark" data-profile-mark aria-hidden="true" data-i18n="off"></span>
+      <div class="app-sheet-who"><strong id="profile-name" data-profile-name data-i18n="off"></strong><span data-profile-role></span></div>
+      <button id="profile-close" class="dir-close" type="button" aria-label="Закрыть">×</button>
+    </div>
+    <div class="app-sheet-row">
+      <span>Язык</span>
+      <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+    </div>
+    <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
+    <a id="fo-back" class="dir-primary app-secondary app-sheet-link" href="/login" hidden>Вся панель</a>
+    <button id="logout" class="dir-primary app-secondary" type="button">Выйти</button>
+  </dialog>
 
   <!-- ══ 7b · Компьютер: всё ли работает правильно ═══════════════════════ -->
   <div class="fo-desk">
@@ -133,7 +152,7 @@
       <a class="fo-fold" href="#fo-exp" data-fold="fo-exp" role="button" aria-expanded="false" aria-controls="fo-exp"><span>Расходы и закуп</span><i aria-hidden="true">›</i></a>
       <div id="fo-exp" class="fo-grid">
         <section class="fo-panel">
-          <div class="fo-panel-head"><div><p class="eyebrow">КУДА УШЛИ ДЕНЬГИ · <span id="fo-exp-month">МЕСЯЦ</span></p><h2 id="fo-exp-total">—</h2></div></div>
+          <div class="fo-panel-head"><div><p id="fo-exp-title" class="eyebrow">РАСХОДЫ МЕСЯЦА</p><h2 id="fo-exp-total">—</h2></div></div>
           <div id="fo-exp-list" class="fo-bars"></div>
         </section>
         <section class="fo-panel">

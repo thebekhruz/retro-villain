@@ -18,7 +18,7 @@ class ClaudeStub:
     def __init__(self):
         self.calls = 0
 
-    async def analyze(self, snapshot):
+    async def analyze(self, snapshot, item_classes=None):
         self.calls += 1
         return {'summary': 'Краткий вывод.', 'problems': []}
 

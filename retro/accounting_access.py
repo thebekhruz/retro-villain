@@ -10,6 +10,11 @@ DATE_FIELDS = {'date', 'day', 'start', 'end', 'first', 'last', 'paid_day',
                'handover_date', 'received_date', 'cashier_date', 'work_day'}
 DATE_ADAPTER = TypeAdapter(date)
 MESSAGE = f'Учёт доступен с {ACCOUNTING_START:%d.%m.%Y}. Более ранние даты недоступны.'
+# Живая аналитика из iiko и API броней: продажи до начала учёта там есть, и
+# «30 дней» должны быть тридцатью. Учётных данных эти чтения не отдают —
+# расходы дэшборда учредитель для таких периодов не считает (founder/routes).
+IIKO_ANALYTICS_READS = frozenset({
+    '/api/director/report', '/api/founder/analytics', '/api/founder/bookings'})
 
 
 def check_dates(values, *, salary=False):
@@ -39,6 +44,8 @@ def check_dates(values, *, salary=False):
 
 async def require_accounting_dates(request: Request):
     if not request.url.path.startswith('/api/'):
+        return
+    if request.method == 'GET' and request.url.path in IIKO_ANALYTICS_READS:
         return
     salary = request.url.path.startswith('/api/accountant/salary-day/')
     check_dates(request.query_params.multi_items(), salary=salary)
