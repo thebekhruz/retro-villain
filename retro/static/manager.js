@@ -805,14 +805,7 @@ function renderKpi() {
   renderKpiList();
   $('kpi-targets-list').replaceChildren(...(data.targets_progress || []).map(item => kpiItemNode({title: item.title, group: item.group,
     margin: item.margin, uplift: item.uplift, base: item.base, now: item.now, target: item.target, target_source: item.target_source}, null)));
-  $('kpi-rules-list').replaceChildren(...[
-    `Цель периода — ${Math.ceil(totals.goal_qty)} порций целевых позиций: цели на 100 чеков × ожидаемые чеки (средние за ${scheme.baseline_weeks} прошлые недели).`,
-    'Цель позиции на 100 чеков — база зала плюс 70 %, но не меньше базы плюс 0,75 порции, с округлением вверх до 0,5. Директор может поставить цель выше вручную.',
-    'Считается чек зала под своим логином: оплаченный, без удалений, без ручной льготы, без «Счет Шефа» и переносов между официантами.',
-    `Премия начисляется с той маржи, которую зал заработал сверх обычных колебаний недели: порог ${K().thousands(scheme.noise_week || 0)} в неделю, за период ${K().thousands(totals.threshold || 0)}. Всё, что ниже порога, остаётся ресторану.`,
-    `Премия командная: ${K().percent(scheme.share)} от прироста маржи зала сверх порога по целевым позициям против базы зала за ${scheme.baseline_weeks} недели; фонд делится между участниками по числу чеков.`,
-    `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен. Потолок ${K().thousands(totals.cap)} на человека за период. Выплата через бухгалтера после закрытия периода.`,
-  ].map(text => node('li', '', text)));
+  $('kpi-rules-list').replaceChildren(...K().rulesText(totals, scheme, period).map(text => node('li', '', text)));
   renderKpiView();
 }
 

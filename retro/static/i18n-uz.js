@@ -4259,3 +4259,29 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Меню справа': "Menyu o'ngda",
 });
 /* ── /T-502 ── */
+/* ── T-503: «Как считается премия» простыми словами ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Засчитываются только чеки зала под своим логином: оплаченные, без удалений и без ручной льготы. Не считаются «Счёт шефа», дегустация, комплимент, чек на двух официантах, доставка, вынос, Яндекс, Узум, банкет и школа.':
+    "Faqat o‘z logini ostidagi zal cheklari hisoblanadi: to‘langan, o‘chirishlarsiz va qo‘lda imtiyozsiz. «Oshpaz hisobi», degustatsiya, kompliment, ikki ofitsiantdagi chek, yetkazib berish, olib ketish, Yandex, Uzum, banket va maktab hisoblanmaydi.",
+  'Премия — из дополнительной маржи: сколько зал заработал на целевых позициях сверх своего обычного уровня. Если позиция продалась хуже обычного, её минус вычитается.':
+    "Mukofot — qo‘shimcha marjadan: zal maqsadli pozitsiyalarda odatdagi darajasidan ortiq qancha ishlab topgani. Pozitsiya odatdagidan yomonroq sotilsa, uning minusi ayiriladi.",
+  'Премия — из дополнительной маржи: сколько зал заработал на целевых позициях сверх своего обычного уровня. Позиции, которые продались хуже обычного, не вычитаются.':
+    "Mukofot — qo‘shimcha marjadan: zal maqsadli pozitsiyalarda odatdagi darajasidan ortiq qancha ishlab topgani. Odatdagidan yomonroq sotilgan pozitsiyalar ayirilmaydi.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Цель — продать за период (\d+) (порцию|порции|порций) целевых позиций\. Это на 70 % больше, чем зал обычно продаёт на каждые 100 чеков \(минимум на 0,75 порции больше\); «обычно» — среднее за (\d+) (прошлую неделю|прошлые недели|прошлых недель)\. Директор может поставить цель выше\.$/,
+    "Maqsad — davr davomida maqsadli pozitsiyalardan $1 porsiya sotish. Bu zal odatda har 100 chekda sotganidan 70 % ko‘p (kamida 0,75 porsiya ko‘p); «odatda» — o‘tgan $3 hafta o‘rtachasi. Direktor maqsadni yuqoriroq qo‘yishi mumkin."],
+  [/^Из дополнительной маржи первые (.+) в неделю \(за этот период — (.+)\) — обычные колебания, они остаются ресторану\. В фонд премии идёт (\d+) % от того, что выше\.$/,
+    "Qo‘shimcha marjaning haftasiga birinchi $1 (bu davr uchun — $2) — odatiy tebranishlar, ular restoranda qoladi. Mukofot jamg‘armasiga undan yuqorisining $3 % i o‘tadi."],
+  [/^Из дополнительной маржи первые (.+) — обычные колебания, они остаются ресторану\. В фонд премии идёт (\d+) % от того, что выше\.$/,
+    "Qo‘shimcha marjaning birinchi $1 — odatiy tebranishlar, ular restoranda qoladi. Mukofot jamg‘armasiga undan yuqorisining $2 % i o‘tadi."],
+  [/^Пример: дополнительная маржа (.+) − порог (.+) = (.+); в фонд идёт (.+)\.$/,
+    "Misol: qo‘shimcha marja $1 − chegara $2 = $3; jamg‘armaga $4 o‘tadi."],
+  [/^Фонд делится между участниками по числу чеков: больше чеков — больше доля\. Один человек получает не больше (.+) в неделю \(за этот период — (.+)\), остаток сверх потолка — ресторану\.$/,
+    "Jamg‘arma ishtirokchilar o‘rtasida cheklar soniga qarab taqsimlanadi: chek ko‘p — ulush ko‘p. Bir kishi haftasiga $1 dan (bu davr uchun — $2) ko‘p olmaydi, chegaradan ortig‘i — restoranga."],
+  [/^Фонд делится между участниками по числу чеков: больше чеков — больше доля\. Один человек получает не больше (.+), остаток сверх потолка — ресторану\.$/,
+    "Jamg‘arma ishtirokchilar o‘rtasida cheklar soniga qarab taqsimlanadi: chek ko‘p — ulush ko‘p. Bir kishi $1 dan ko‘p olmaydi, chegaradan ortig‘i — restoranga."],
+  [/^Участвует тот, у кого за период от (\d+) (чека|чеков) и от (\d+) (смены|смен)\. Премию выдаёт бухгалтер после закрытия периода\.$/,
+    "Davr davomida kamida $1 chek va $3 smenasi bo‘lgan kishi ishtirok etadi. Mukofotni davr yopilgandan keyin buxgalter beradi."],
+);
+/* ── /T-503 ── */

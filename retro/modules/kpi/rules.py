@@ -285,7 +285,7 @@ def normalize_targets(raw) -> list:
 
 
 def auto_target(base100: float) -> float:
-    """Цель на 100 чеков по правилу: max(база × 1,3; база + 0,5), вверх до 0,5. База 0 → 0,5."""
+    """Цель на 100 чеков по правилу: max(база × 1,7; база + 0,75), вверх до 0,5. База 0 → 1."""
     raw = max(base100 * TARGET_GROWTH, base100 + TARGET_MIN_STEP)
     return math.ceil(round(raw * 2, 6)) / 2
 
