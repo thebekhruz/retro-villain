@@ -14,7 +14,8 @@ MESSAGE = f'Учёт доступен с {ACCOUNTING_START:%d.%m.%Y}. Более
 # «30 дней» должны быть тридцатью. Учётных данных эти чтения не отдают —
 # расходы дэшборда учредитель для таких периодов не считает (founder/routes).
 IIKO_ANALYTICS_READS = frozenset({
-    '/api/director/report', '/api/founder/analytics', '/api/founder/bookings'})
+    '/api/director/report', '/api/founder/analytics', '/api/founder/bookings',
+    '/api/founder/guests'})
 
 
 def check_dates(values, *, salary=False):

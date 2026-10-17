@@ -119,3 +119,17 @@ test('T-428: shift and payout dates remain distinct in Uzbek labels', () => {
     'Али · Smena 09.10 · to‘lov 10.10 · 150000 so‘m berildi');
   assert.equal(translate('Доп. выплаты за смены · октябрь'), 'Smenalar uchun qo‘shimcha to‘lovlar · oktabr');
 });
+
+test('T-496: аналитика учредителя — столбцы, брони, источники и повтор рассылки по-узбекски', () => {
+  assert.equal(translate('Неполная неделя: 3 дня из 7'), "To'liq bo'lmagan hafta: 7 kundan 3 kun");
+  assert.equal(translate('За 90 дней столбцы собраны по неделям.'), "90 kun uchun ustunlar haftalar bo'yicha yig'ilgan.");
+  assert.equal(translate('Retro в школе: 1 200 сум'), "Maktabdagi Retro: 1 200 so'm");
+  assert.equal(translate('в том числе Яндекс Еда'), 'shu jumladan Яндекс Еда');
+  assert.equal(translate('Гости по чекам iiko'), "iiko cheklari bo'yicha mehmonlar");
+  assert.equal(translate('12 заявок'), '12 ta ariza');
+  assert.equal(translate('Telegram с сайта · первый экран'), 'Saytdan Telegram · birinchi ekran');
+  assert.equal(translate('Telegram · метка «flyer_oct»'), 'Telegram · «flyer_oct» belgisi');
+  assert.equal(translate('Этот текст уже отправлен этим получателям 12 минут назад.'),
+    'Bu matn shu oluvchilarga 12 daqiqa oldin yuborilgan.');
+  assert.equal(translate('Отправить ещё раз'), 'Yana yuborish');
+});

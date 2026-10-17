@@ -12,7 +12,7 @@ from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import DataError, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
-from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
+from retro.modules.founder.models import DIRECTIONS, GRANULARITIES, build_iiko_guests
 from retro.modules.founder.tools import FounderChatTools
 from retro.integrations.broadcasts import BroadcastConflict
 from retro.modules.director.models import completed_period
@@ -160,6 +160,33 @@ async def bookings(
         raise HTTPException(504, 'API бронирований отвечает слишком долго. Повторите позже.') from None
     except DataError as error:
         log_safe_failure('founder-route', error, operation='bookings',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
+@router.get('/guests')
+async def guests(
+        request: Request,
+        start: date | None = None,
+        end: date | None = None,
+        granularity: str = Query('day'),
+        refresh: bool = False,
+):
+    """Гости по чекам iiko рядом с бронями: сколько пришло по факту."""
+    start, end = _validated_period(start, end, granularity)
+    closed = end < today_tashkent()
+    try:
+        rows = await load_iiko(request.app.state, 'load_guest_counts', start, end, refresh=refresh,
+                               request=request, timeout=60,
+                               ttl=CLOSED_PERIOD_TTL if closed else None,
+                               stale=CLOSED_PERIOD_STALE if closed else 0)
+        return build_iiko_guests(rows, start, end, granularity)
+    except TimeoutError as error:
+        log_safe_failure('founder-route', error, operation='guests',
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'iiko формирует отчёт по гостям слишком долго. Повторите позже.') from None
+    except DataError as error:
+        log_safe_failure('founder-route', error, operation='guests',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
 
