@@ -13,7 +13,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from legacy_app import create_app
-from retro.config import LUNCH_HOURS, Settings, parse_lunch_hours, parse_sales_history_start
+from retro.config import (LUNCH_HOURS, Settings, parse_lunch_hours, parse_sales_history_start,
+                          parse_sales_snapshots_kept_days)
 from retro.integrations.iiko import IikoClient
 from retro.modules.cashier.archive import CashierArchive
 from retro.modules.cashier.service import (BANQUET_SECTION, RETRO_REGISTER, SCHOOL_REGISTER, DataError,
@@ -608,3 +609,133 @@ def test_director_phone_shows_lunch_tile_from_this_api(app):
     # Банкетный зал в плитку не попадает; окно и время данных — в ответе.
     assert set(tile['by_direction']) == {'retro', 'school'} and len(tile['top_items']) <= 5
     assert tile['window']['label'] == '12:00–15:00' and tile['updated_at'] and tile['partial']
+
+
+# ── Почасовые контрольные снимки (T-507) ───────────────────────────────────
+
+def test_hourly_snapshot_one_per_hour_first_load_wins(store):
+    box, clock = clock_at(NOW)
+    source = FakeSource({TODAY: LUNCH[:2]})
+
+    async def scenario():
+        sync = SalesSync(store, source, history_start=date(2026, 10, 1), clock=clock)
+        await sync.start_day(TODAY, reason='test')
+        # Через десять минут — уже больше чеков, но час тот же: снимок 13:00 не меняется.
+        source.days[TODAY] = LUNCH
+        box[0] = NOW + timedelta(minutes=10)
+        await sync.start_day(TODAY, reason='test')
+        box[0] = NOW + timedelta(minutes=20)
+        await sync.start_day(TODAY, reason='test')  # тот же ответ iiko, тот же час
+        box[0] = datetime(2026, 10, 17, 14, 2, tzinfo=TZ)
+        await sync.start_day(TODAY, reason='test')
+
+    asyncio.run(scenario())
+    snapshots = store.snapshots(TODAY)
+    assert [item['hour'] for item in snapshots] == [13, 14]
+    first, second = snapshots
+    assert first['fetched_at'] == NOW.isoformat() and first['orders'] == 2 and first['receipts'] == 2
+    assert first['revenue'] == '166000' and first['iiko_revenue'] == '166000' and first['difference'] == '0'
+    assert first['iiko_orders'] == 2 and first['quantity'] == first['iiko_quantity'] == '5'
+    assert first['status'] == 'ok' and first['differences'] == []
+    assert first['last_closed_at'] == '2026-10-17T14:55:30.125000+05:00'
+    assert first['by_direction']['retro']['ours']['revenue'] == first['by_direction']['retro']['iiko']['revenue']
+    # Восемь заказов, «g» (Счёт Шефа) без выручки — не чек.
+    assert second['orders'] == 8 and second['receipts'] == 7 and second['revenue'] == '5796000'
+    assert set(second['by_direction']) == {'retro', 'school', 'banquet'}
+    assert row_count(store, 'sales_hourly_snapshots', TODAY) == 2
+    # Сам день хранится как раньше: снимок — дополнение, а не замена.
+    assert row_count(store, 'sales_lines', TODAY) == 11
+
+
+def test_hourly_snapshot_save_is_idempotent_and_keeps_mismatch(store):
+    common = dict(revision='r', lines=1, orders=1, receipts=1, quantity=Decimal(1), gross=Decimal(10),
+                  revenue=Decimal(10), iiko_revenue=Decimal(15), iiko_orders=1, iiko_quantity=Decimal(1),
+                  last_closed_at=None, status='mismatch', by_direction={}, differences=['выручка'])
+    assert store.save_snapshot(TODAY, 13, fetched_at=NOW, **common)
+    assert not store.save_snapshot(TODAY, 13, fetched_at=NOW + timedelta(minutes=30),
+                                   **dict(common, revenue=Decimal(99)))
+    [only] = store.snapshots(TODAY)
+    assert only['revenue'] == '10' and only['difference'] == '-5' and only['differences'] == ['выручка']
+    with pytest.raises(DataError):
+        store.save_snapshot(TODAY, 24, fetched_at=NOW, **common)
+    with pytest.raises(DataError):
+        store.save_snapshot(TODAY, 1, fetched_at=NOW.replace(tzinfo=None), **common)
+
+
+def test_hourly_snapshot_only_for_live_day_and_not_on_failure(store):
+    box, clock = clock_at(NOW)
+    source = FakeSource({YESTERDAY: [replace_day(item, YESTERDAY) for item in LUNCH]})
+
+    async def scenario():
+        sync = SalesSync(store, source, history_start=date(2026, 10, 1), clock=clock)
+        # Перечитывание прошлого дня не выдаёт час загрузки за час того дня.
+        await sync.start_day(YESTERDAY, reason='test')
+        source.error = httpx.ConnectError('down')
+        with pytest.raises(DataError):
+            await sync.start_day(TODAY, reason='test')
+
+    asyncio.run(scenario())
+    assert store.snapshots(YESTERDAY) == [] and store.snapshots(TODAY) == []
+
+
+def test_hourly_snapshot_retention_removes_only_old_snapshots(store):
+    store.snapshots_kept_days = 400
+    common = dict(revision='r', lines=0, orders=0, receipts=0, quantity=Decimal(0), gross=Decimal(0),
+                  revenue=Decimal(0), iiko_revenue=None, iiko_orders=None, iiko_quantity=None,
+                  last_closed_at=None, status='ok', by_direction={}, differences=[])
+    old, kept = TODAY - timedelta(days=401), TODAY - timedelta(days=400)
+    for day in (old, kept):
+        store.save_snapshot(day, 10, fetched_at=datetime.combine(day, datetime.min.time(), TZ), **common)
+    assert len(store.snapshots(old)) == 1  # старее срока, но ещё никто не писал после
+    store.save_snapshot(TODAY, 10, fetched_at=NOW, **common)
+    assert store.snapshots(old) == [] and len(store.snapshots(kept)) == 1
+    assert store.snapshots(TODAY)[0]['difference'] is None
+    assert parse_sales_snapshots_kept_days('') == 400
+    assert parse_sales_snapshots_kept_days('30') == 30
+    for wrong in ('0', '-1', 'год', '99999'):
+        with pytest.raises(ValueError):
+            parse_sales_snapshots_kept_days(wrong)
+    assert SalesStore(store.db, Settings(sales_snapshots_kept_days=30)).snapshots_kept_days == 30
+
+
+def test_hourly_snapshots_api_read_only_and_in_reconcile(app):
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as client:
+        for prefix in ('/api/director/sales', '/api/founder/sales'):
+            hourly = client.get(f'{prefix}/hourly?date=2026-10-17')
+            assert hourly.status_code == 200, hourly.text
+            body = hourly.json()
+            assert body['kept_days'] == 400 and body['timezone'] == 'Asia/Tashkent'
+            assert [item['hour'] for item in body['snapshots']] == [13]
+            assert body['snapshots'][0]['revenue'] == body['snapshots'][0]['iiko_revenue']
+            assert client.get(f'{prefix}/hourly?date=2099-01-01').status_code == 422
+            assert client.post(f'{prefix}/hourly?date=2026-10-17').status_code == 405
+        reconcile = client.get('/api/director/sales/reconcile?date=2026-10-17').json()
+        assert [item['hour'] for item in reconcile['hourly']] == [13]
+        assert client.get('/api/director/sales/reconcile?date=2026-10-16').json()['hourly'] == []
+        assert client.get('/api/director/sales/hourly?date=2026-10-16').json()['snapshots'] == []
+
+
+def test_hourly_snapshots_api_follows_panel_roles(tmp_path):
+    users = {'director': ('password', 'director'), 'cashier': ('password', 'cashier'),
+             'founder': ('password', 'founder')}
+    app = create_app(Settings(dashboard_panel_users=users, data_dir=tmp_path))
+    with TestClient(app, client=('127.0.0.1', 50000), base_url='http://127.0.0.1') as client:
+        for user, director, founder in (('director', 200, 403), ('founder', 403, 200), ('cashier', 403, 403)):
+            client.post('/api/session', json={'username': user, 'password': 'password'})
+            assert client.get('/api/director/sales/hourly').status_code == director, user
+            assert client.get('/api/founder/sales/hourly').status_code == founder, user
+            client.post('/api/session/logout')
+
+
+def test_late_answer_writes_no_hourly_snapshot(store):
+    box, clock = clock_at(datetime(2026, 10, 17, 14, 5, tzinfo=TZ))
+
+    async def scenario():
+        sync = SalesSync(store, FakeSource({TODAY: LUNCH}), history_start=date(2026, 10, 1), clock=clock)
+        await sync.start_day(TODAY, reason='test')
+        # Медленный прогон с ответом на 13:05 закончился позже: день он не пишет — и снимок тоже.
+        box[0] = NOW
+        return await sync.start_day(TODAY, reason='test')
+
+    assert asyncio.run(scenario())['status'] == 'skipped'
+    assert [item['hour'] for item in store.snapshots(TODAY)] == [14]
