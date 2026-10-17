@@ -183,7 +183,6 @@ function renderProfitSummary(total) {
   const parts = zeroParts(total);
   $('sales-profit').textContent = total.breakdown ? sums(total.breakdown.sales.profit) : '—';
   $('internal-cost').textContent = parts ? sums(parts.reduce((sum, part) => sum + part.cost, 0)) : '—';
-  $('summary-revenue').textContent = sums(total.revenue);
   $('summary-profit').textContent = sums(total.profit);
   const details = $('internal-detail');
   details.replaceChildren();
@@ -211,14 +210,16 @@ function renderMenu() {
   $('menu-empty-text').textContent = view.query.trim() || view.price
     ? 'Ничего не нашли. Сбросьте поиск или фильтр цены.' : 'По этому направлению продаж за период нет';
   // Выручку считаем по тому, что сейчас в списке: при поиске итог группы
-  // рядом с двумя найденными строками только путает.
+  // рядом с двумя найденными строками только путает. Без поиска и цены сумма
+  // равна плитке над таблицей (вся выручка или направление), и её не повторяем.
+  const filtered = Boolean(view.query.trim() || view.price);
   const shownRevenue = ranked.reduce((total, row) => total + row.revenue, 0);
   const positions = logic.plural(ranked.length, 'позиция', 'позиции', 'позиций');
   $('menu-count').textContent = ranked.length
     ? (shown.length < ranked.length
-        ? 'Показано ' + shown.length + ' из ' + ranked.length + ' · '
-        : ranked.length + ' ' + positions + ' · ')
-      + 'выручка ' + sums(shownRevenue)
+        ? 'Показано ' + shown.length + ' из ' + ranked.length
+        : ranked.length + ' ' + positions)
+      + (filtered ? ' · выручка ' + sums(shownRevenue) : '')
     : '';
   const more = $('menu-more');
   more.hidden = ranked.length <= previewRows();
@@ -244,18 +245,56 @@ function renderWaiters(metrics) {
   $('waiters-empty').hidden = rows.length > 0;
 }
 
+/** Абзац «Как считается» из отдельных фраз: каждую переводчик узнаёт
+ *  целиком (словарь или шаблон с суммой), название группы iiko не трогает. */
+function noteLine(...phrases) {
+  const line = text('p');
+  phrases.forEach((phrase, index) => {
+    if (index) line.append(' ');
+    line.append(text('span', '', phrase));
+  });
+  return line;
+}
+
+/** «Как считается» под выручкой (T-501): что вошло в главную цифру и что нет.
+ *  Раньше это была подпись в три строки под цифрой; Яндекс в ней повторял
+ *  плитку рядом. Строки с нулём не показываем. */
+function renderRevenueNotes(snapshot) {
+  const lines = [
+    noteLine('Выручка складывается из продаж по меню: Retro, Retro в школе и банкет.'),
+    noteLine('Банкет считается по блюдам с меткой «БЕХРУЗ» в названии.'),
+  ];
+  const excluded = Object.entries(snapshot.excluded_revenue || {});
+  if (excluded.length) {
+    lines.push(noteLine('Исключённые группы меню в выручку не входят.',
+      ...excluded.map(([name, value]) => 'Исключена группа «' + name + '»: ' + sums(logic.amount(value)) + '.'),
+      'Продажи вместе с ними: ' + sums(logic.amount(snapshot.cash_total)) + '.'));
+  }
+  const scope = logic.amount(snapshot.scope_excluded_revenue);
+  if (scope) {
+    lines.push(noteLine('Вне банкетной выборки: ' + sums(scope) + '.',
+      'Это продажи отделения «Бехруз (Свадьба)» без метки «БЕХРУЗ» в названии блюда. В выручку они не входят, сумма нужна для сверки.'));
+  }
+  const yandexPaid = logic.amount(snapshot.yandex_revenue);
+  const yandexMenu = logic.amount(snapshot.yandex_menu_revenue);
+  if (yandexPaid || yandexMenu) {
+    lines.push(noteLine(Math.round(yandexPaid) === Math.round(yandexMenu)
+      ? 'Яндекс Еда уже входит в выручку направлений: ' + sums(yandexMenu) + '.'
+      : 'Яндекс Еда уже входит в выручку направлений: по меню ' + sums(yandexMenu) + ', по оплатам ' + sums(yandexPaid) + '.'));
+  }
+  $('revenue-notes').replaceChildren(...lines);
+  $('revenue-hint').hidden = false;
+}
+
 function renderSnapshot(snapshot) {
   view.snapshot = snapshot;
   view.expanded = false;
   const all = logic.totals(snapshot.item_metrics.all || {});
   $('report-period').textContent = logic.periodLabel(snapshot.period_start, snapshot.period_end);
-  // Пустой список исключённых групп раньше давал «исключены группы: .» — теперь
-  // эта часть появляется только когда что-то действительно исключено.
-  const excludedGroups = Object.entries(snapshot.excluded_revenue || {});
-  $('cash-note').textContent = 'Продажи до исключений меню. Меню: ' + sums(snapshot.menu_revenue ?? all.revenue)
-    + (excludedGroups.length ? '; исключены группы: ' + excludedGroups.map(([name, amount]) => name + ' ' + sums(amount)).join(', ') : '')
-    + '. Вне банкетной выборки: ' + sums(snapshot.scope_excluded_revenue || 0) + '. Яндекс: оплаты ' + sums(snapshot.yandex_revenue) + ', меню ' + sums(snapshot.yandex_menu_revenue || 0) + '.';
-  $('cash').textContent = money.format(Math.round(logic.amount(snapshot.cash_total)));
+  // Главная цифра — выручка по меню, та же, от которой считаются маржа, плитки
+  // направлений и таблица. Продажи до исключений групп — в «Как считается».
+  $('revenue').textContent = money.format(Math.round(all.revenue));
+  renderRevenueNotes(snapshot);
   // В трёх узких плитках «сум» у каждого числа не помещается и рвёт строку:
   // единица измерения стоит один раз, у главной цифры над ними.
   $('retro').textContent = money.format(Math.round(logic.totals(snapshot.item_metrics.retro || {}).revenue));
@@ -264,7 +303,6 @@ function renderSnapshot(snapshot) {
   $('yandex').textContent = money.format(Math.round(logic.amount(snapshot.yandex_revenue)));
   $('margin-percent').textContent = all.margin === null ? '—' : decimal.format(all.margin);
   $('margin-fill').style.width = Math.max(0, Math.min(100, all.margin || 0)) + '%';
-  $('gross-profit').textContent = sums(all.profit);
   $('cost-total').textContent = sums(all.cost);
   $('positions').textContent = String(all.positions);
   renderProfitSummary(all);
@@ -317,8 +355,8 @@ function skeletonLines(target, rows) {
 /** Первая загрузка: вместо «—» полосы в строке каждой цифры, в таблице и
  *  топах — строки-скелеты. Всё это заменят данные при отрисовке. */
 function paintSkeleton() {
-  ['cash', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'gross-profit', 'cost-total', 'positions',
-    'summary-revenue', 'sales-profit', 'internal-cost', 'summary-profit', 'arrived', 'late']
+  ['revenue', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'cost-total', 'positions',
+    'sales-profit', 'internal-cost', 'summary-profit', 'arrived', 'late']
     .forEach(id => $(id).replaceChildren(skel()));
   $('report-period').replaceChildren(skel());
   skeletonLines($('locomotives'), 3);
@@ -382,8 +420,8 @@ async function loadSnapshot(refresh = false) {
     if (requestId !== snapshotRequest || error.name === 'AbortError') return false;
     stateText(error.message + (view.snapshot ? ' На экране прежний отчёт за ' + logic.periodLabel(view.snapshot.period_start, view.snapshot.period_end) + '; обновление не выполнено.' : ''), 'error');
     if (!view.snapshot) {
-      dashSkeletons(['cash', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'gross-profit', 'cost-total',
-        'positions', 'summary-revenue', 'sales-profit', 'internal-cost', 'summary-profit', 'report-period']);
+      dashSkeletons(['revenue', 'retro', 'oxbridge', 'banquet', 'yandex', 'margin-percent', 'cost-total',
+        'positions', 'sales-profit', 'internal-cost', 'summary-profit', 'report-period']);
       ['locomotives', 'drains'].forEach(id => { $(id).replaceChildren(); $(id).setAttribute('aria-busy', 'false'); });
       $('menu-rows').replaceChildren();
     }
