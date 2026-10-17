@@ -28,6 +28,14 @@ MENU_RULE = (
     'убирать из меню и не ставь в рейтинги блюд. Если справочник меню недоступен, '
     'скажи, что тип позиции не проверен.'
 )
+# ТЗ 16.10 (раздел 2): выручка за обед сегодня и за любую часть прошлого дня.
+SALES_RULE = (
+    'Выручку за часть дня (обед, утро, вечер, до или после какого-то часа) и самые '
+    'продаваемые блюда за период бери из get_sales_by_time; обед — window=lunch. В ответе '
+    'назови окно часов (window.label) и время последнего обновления данных (updated_at). '
+    'Если partial=true, скажи, что день ещё идёт и учтены только закрытые чеки; дни из '
+    'missing_days назови и не считай их нулём.'
+)
 CHAT_SYSTEM_PROMPTS = {
     'founder': (
         'Ты конфиденциальный деловой ассистент учредителей ресторана Retro Milliy. '
@@ -229,7 +237,7 @@ class ClaudeClient:
             raise DataError('Claude вернул некорректный ответ. Повторите позже.') from None
 
     async def chat(self, messages, *, tools=(), tool_handler=None, current_date=None,
-                   audience='founder'):
+                   current_time=None, audience='founder'):
         """Answer a scoped dashboard conversation using allowlisted read-only tools."""
         if not self.settings.claude_configured:
             raise DataError('Настройте CLAUDE_API_KEY и CLAUDE_MODEL для чата с ИИ.')
@@ -254,10 +262,12 @@ class ClaudeClient:
             'напрямую к детальному OLAP-инструменту iiko. Указывай период и предупреждения '
             'источника. unavailable и unlinked не означают, что сотрудник отсутствовал; '
             'missing достоверен только при complete=true. Не выполняй действия и не меняй '
-            'данные — инструменты работают только на чтение. ' + MENU_RULE
+            'данные — инструменты работают только на чтение. ' + MENU_RULE + ' ' + SALES_RULE
         )
         if current_date is not None:
             system += f' Текущая дата ресторана в Asia/Tashkent: {current_date}.'
+        if current_time is not None:
+            system += f' Текущее время ресторана в Asia/Tashkent: {current_time}.'
         body = {
             'model': self.settings.claude_model,
             'max_tokens': 5600,

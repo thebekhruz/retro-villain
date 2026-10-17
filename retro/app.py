@@ -39,6 +39,12 @@ from retro.modules.menu.store import MenuStore
 from retro.modules.menu.catalog import MenuCatalog
 from retro.modules.menu.iiko import MenuIiko
 from retro.modules.menu.sync import MenuSync
+from retro.modules.sales.iiko import SalesIiko
+from retro.modules.sales.routes import (director_router as sales_director_router,
+                                        founder_router as sales_founder_router)
+from retro.modules.sales.service import SalesService
+from retro.modules.sales.store import SalesStore
+from retro.modules.sales.sync import SalesSync
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
@@ -248,6 +254,10 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             application.state.cashier_days.start()
         if application.state.menu_sync is not None:
             application.state.menu_sync.start()
+        # История продаж: первый шаг через две с половиной минуты после старта,
+        # поэтому короткая жизнь приложения в тестах до iiko не доходит.
+        if application.state.sales_sync is not None:
+            application.state.sales_sync.start()
         if application.state.telegram_report is not None:
             application.state.telegram_report.start()
         photos = (asyncio.create_task(keep_device_photos_warm(application.state))
@@ -268,6 +278,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await application.state.cashier_days.close()
             if application.state.menu_sync is not None:
                 await application.state.menu_sync.close()
+            if application.state.sales_sync is not None:
+                await application.state.sales_sync.close()
             if application.state.telegram_report is not None:
                 await application.state.telegram_report.close()
             await application.state.reports.close()
@@ -370,6 +382,16 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.menu_iiko = MenuIiko(app.state.iiko)
     app.state.menu_sync = (MenuSync(app.state.menu_store, app.state.menu_iiko)
                            if settings.configured else None)
+    # История продаж (ТЗ 16.10, раздел 2): чеки и позиции iiko в нашей базе,
+    # рядом с меню — по ним считается «обед сегодня» и любой прошлый период.
+    app.state.sales_store = SalesStore(director_path, settings)
+    app.state.sales_sync = (SalesSync(app.state.sales_store, SalesIiko(lambda: app.state.iiko),
+                                      history_start=settings.sales_history_start)
+                            if settings.configured else None)
+    app.state.sales = SalesService(
+        app.state.sales_store, settings=settings, sync=lambda: app.state.sales_sync,
+        catalog=lambda: MenuCatalog.from_store(app.state.menu_store),
+        cashier=lambda: getattr(app.state.cashier_days, 'archive', None))
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
     app.state.claude = ClaudeClient(settings, transport=claude_transport)
@@ -645,6 +667,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(shokh_router, dependencies=[Depends(shokh_module_on)])
     app.include_router(director_router)
     app.include_router(founder_router)
+    app.include_router(sales_director_router)
+    app.include_router(sales_founder_router)
     app.include_router(manager_router)
     app.include_router(kpi_manager_router)
     app.include_router(kpi_director_router)

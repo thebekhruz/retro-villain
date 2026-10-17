@@ -10,7 +10,7 @@ from uuid import UUID
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
 from retro.modules.founder.tools import FounderChatTools
@@ -239,6 +239,7 @@ async def chat(request: Request, body: ChatInput):
             tools=chat_tools.definitions,
             tool_handler=chat_tools.execute,
             current_date=today_tashkent().isoformat(),
+            current_time=datetime.now(TZ).strftime('%H:%M'),
         ), timeout=180)
     except TimeoutError as error:
         log_safe_failure('founder-chat', error, operation='answer',
