@@ -65,12 +65,37 @@
 
   function closeConfirm(){const panel=$('broadcast-confirm');panel.hidden=true;$('broadcast-prepare').focus()}
   function showJob(job){const failed=job.status==='failed'||job.status==='interrupted';setStatus(logic.statusText(job),failed);$('broadcast-result').hidden=false;$('broadcast-result').textContent=logic.statusText(job);resultState(failed?'error':logic.isTerminal(job.status)?'done':'running')}
+  /* Журнал рассылок (ТЗ 16.10, п. 5.3): что ушло через панель, кто отправил,
+     вручную или автоматически, и последний известный итог бота. */
+  function journalRow(entry){
+    const item=document.createElement('li');item.className='broadcast-journal-item is-'+logic.journalState(entry.status);
+    const meta=document.createElement('div');meta.className='broadcast-journal-meta';
+    const when=document.createElement('time');when.dateTime=entry.sent_at||'';when.textContent=logic.journalWhen(entry.sent_at);
+    const who=document.createElement('span');who.textContent=entry.sent_by||'—';
+    const kind=document.createElement('span');kind.className='broadcast-kind is-'+(entry.kind==='auto'?'auto':'manual');kind.textContent=logic.kindLabel(entry.kind);
+    const count=document.createElement('span');count.textContent=`гостей: ${entry.recipients}`;
+    meta.append(when,who,kind,count);
+    const text=document.createElement('p');text.className='broadcast-journal-text';text.textContent=logic.journalPreview(entry.text);text.title=entry.text||'';
+    const status=document.createElement('div');status.className='broadcast-journal-status';
+    const line=document.createElement('span');line.textContent=logic.journalStatus(entry);status.append(line);
+    if(entry.status_at){const at=document.createElement('small');at.textContent='на '+logic.journalWhen(entry.status_at,false);status.append(at)}
+    item.append(meta,text,status);return item;
+  }
+  async function loadJournal(){
+    const error=$('broadcast-journal-error');
+    try{
+      const data=await api('/api/founder/broadcast/journal',{retroBusy:false});
+      const entries=Array.isArray(data?.entries)?data.entries:[];
+      $('broadcast-journal-list').replaceChildren(...entries.map(journalRow));
+      $('broadcast-journal-empty').hidden=entries.length>0;error.hidden=true;
+    }catch(problem){error.textContent=problem.message;error.hidden=false}
+  }
   async function poll(id){
     clearTimeout(pollTimer);
     try{
       // Опрос каждую секунду — фоновый: верхнюю полосу не зажигает.
       const job=await api('/api/founder/broadcast/'+encodeURIComponent(id),{retroBusy:false});showJob(job);
-      if(logic.isTerminal(job.status)){setBusy(false);await loadAudience().catch(()=>{});return}
+      if(logic.isTerminal(job.status)){setBusy(false);loadJournal();await loadAudience().catch(()=>{});return}
       pollTimer=setTimeout(()=>poll(id),1000);
     }catch(error){setStatus(error.message,true);resultState('error');setBusy(false)}
   }
@@ -125,9 +150,11 @@
       const job=await started;
       if(operation?.id===operationId)operation.sent=true;
       writeSent(logic.rememberSent(readSent(),key,Date.now()));
-      setBusy(true);$('broadcast-confirm').hidden=true;showJob(job);poll(job.id);
+      setBusy(true);$('broadcast-confirm').hidden=true;showJob(job);loadJournal();poll(job.id);
     }catch(error){setStatus(error.message,true);$('broadcast-result').hidden=false;$('broadcast-result').textContent=error.message;resultState('error');$('broadcast-confirm').hidden=true}
   });
+  $('broadcast-journal-refresh').addEventListener('click',()=>{const done=loadJournal();if(Busy)Busy.button($('broadcast-journal-refresh'),done,{done:false})});
   audienceSkeleton();
   loadAudience().catch(()=>{});
+  loadJournal();
 })();

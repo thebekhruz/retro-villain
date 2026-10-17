@@ -14,7 +14,8 @@ from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
 from retro.modules.founder.models import DIRECTIONS, GRANULARITIES, build_iiko_guests
 from retro.modules.founder.tools import FounderChatTools
-from retro.integrations.broadcasts import BroadcastConflict
+from retro.integrations.broadcasts import JOB_ID, BroadcastConflict
+from retro.modules.founder.broadcast_journal import JOURNAL_LIMIT, TERMINAL
 from retro.modules.director.models import completed_period
 from retro.modules.founder import cabinet, overview
 from retro.modules.founder.dividends import DividendTargetError
@@ -212,13 +213,30 @@ async def broadcast_audience(request: Request):
         raise HTTPException(503, str(error)) from None
 
 
+def _journal_now():
+    return datetime.now(TZ).isoformat(timespec='seconds')
+
+
+async def _journal_write(request, operation, write, *args, **kwargs):
+    """Журнал — запись о том, что уже сделал бот. Сбой журнала не отменяет
+    принятую рассылку и не прячет её статус: пишем в лог и отвечаем как есть."""
+    journal = getattr(request.app.state, 'broadcast_journal', None)
+    if journal is None:
+        return
+    try:
+        await asyncio.to_thread(getattr(journal, write), *args, **kwargs)
+    except Exception as error:  # noqa: BLE001 — журнал не должен ронять рассылку
+        log_safe_failure('founder-broadcast', error, operation=operation,
+                         request_id=request.state.request_id)
+
+
 @router.post('/broadcast', status_code=202)
 async def start_broadcast(request: Request, body: BroadcastInput):
     text = body.text.strip()
     if not text:
         raise HTTPException(422, 'Введите текст рассылки.')
     try:
-        return await asyncio.wait_for(
+        job = await asyncio.wait_for(
             request.app.state.broadcasts.start(
                 str(body.operation_id), text, body.recipient_ids), timeout=20)
     except BroadcastConflict as error:
@@ -231,13 +249,51 @@ async def start_broadcast(request: Request, body: BroadcastInput):
         log_safe_failure('founder-broadcast', error, operation='start',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+    # ТЗ 16.10, п. 5.3: журнал отправок. Отправка с экрана — всегда ручная.
+    await _journal_write(
+        request, 'journal-record', 'record', str(body.operation_id), job, text=text,
+        recipients=len(set(body.recipient_ids)), kind='manual', at=_journal_now(),
+        sent_by=getattr(request.state, 'dashboard_user', None) or '')
+    return job
 
 
-@router.get('/broadcast/{operation_id}')
-async def broadcast_status(request: Request, operation_id: UUID):
+@router.get('/broadcast/journal')
+async def broadcast_journal(request: Request, limit: int = Query(JOURNAL_LIMIT, ge=1, le=100)):
+    """Последние рассылки через эту панель (ТЗ 16.10, п. 5.3).
+
+    Незавершённые рассылки (экран закрыли посреди отправки) досчитываем у
+    бота здесь же — немного и без ошибок: не ответил бот, остаётся последний
+    известный итог со временем, когда он был получен."""
+    journal = request.app.state.broadcast_journal
+    entries = await asyncio.to_thread(journal.list, limit)
+    # Только свежие: потерянная ботом задача не должна стоить опроса на каждый вход.
+    since = (datetime.now(TZ) - timedelta(days=1)).isoformat(timespec='seconds')
+    pending = [entry for entry in entries
+               if entry['job_id'] and entry['status'] not in TERMINAL
+               and entry['sent_at'] >= since][:3]
+    if pending:
+        for entry in pending:
+            try:
+                job = await asyncio.wait_for(
+                    request.app.state.broadcasts.status(entry['job_id']), timeout=5)
+            except (TimeoutError, DataError) as error:
+                log_safe_failure('founder-broadcast', error, operation='journal-refresh',
+                                 request_id=request.state.request_id)
+                break
+            await _journal_write(request, 'journal-status', 'update_status', job, _journal_now())
+        entries = await asyncio.to_thread(journal.list, limit)
+    return {'entries': entries}
+
+
+@router.get('/broadcast/{job_id}')
+async def broadcast_status(request: Request, job_id: str):
+    # Экран опрашивает статус по id задачи, который вернул бот (job.id), а не
+    # по нашему operation_id: id бота — не обязательно UUID (T-505).
+    if not JOB_ID.fullmatch(job_id):
+        raise HTTPException(422, 'Некорректный идентификатор рассылки.')
     try:
-        return await asyncio.wait_for(
-            request.app.state.broadcasts.status(str(operation_id)), timeout=20)
+        job = await asyncio.wait_for(
+            request.app.state.broadcasts.status(job_id), timeout=20)
     except TimeoutError as error:
         log_safe_failure('founder-broadcast', error, operation='status',
                          request_id=request.state.request_id)
@@ -246,6 +302,8 @@ async def broadcast_status(request: Request, operation_id: UUID):
         log_safe_failure('founder-broadcast', error, operation='status',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+    await _journal_write(request, 'journal-status', 'update_status', job, _journal_now())
+    return job
 
 
 @router.get('/chat')

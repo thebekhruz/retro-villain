@@ -4259,3 +4259,23 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Меню справа': "Menyu o'ngda",
 });
 /* ── /T-502 ── */
+
+/* ── T-505: журнал рассылок гостям (ТЗ 16.10, п. 5.3) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Журнал рассылок': "Tarqatmalar jurnali",
+  'Последние 30 рассылок через эту панель': "Ushbu panel orqali so'nggi 30 ta tarqatma",
+  'Рассылок ещё не было.': "Hali tarqatmalar bo'lmagan.",
+  'вручную': "qo'lda",
+  'автоматически': "avtomatik",
+  'статус неизвестен': "holati noma'lum",
+  'Некорректный идентификатор рассылки.': "Tarqatma identifikatori noto'g'ri.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^гостей: (\d+)$/, "mehmonlar: $1"],
+  [/^в очереди · получателей: (\d+)$/, "navbatda · qabul qiluvchilar: $1"],
+  [/^отправляется: (\d+) из (\d+)$/, "yuborilmoqda: $1 / $2"],
+  [/^отправлено (\d+) · заблокировали бота (\d+) · ошибок (\d+)$/, "yuborildi $1 · botni bloklaganlar $2 · xatolar $3"],
+  [/^прервана · обработано (\d+) из (\d+)$/, "to'xtatildi · ishlov berildi $1 / $2"],
+  [/^ошибка · обработано (\d+) из (\d+)$/, "xato · ishlov berildi $1 / $2"],
+);
+/* ── /T-505 ── */

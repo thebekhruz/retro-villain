@@ -128,3 +128,22 @@ test('a retry of a send that did not answer keeps the same operation id',async()
   assert.equal(h.posts.length,2);
   assert.equal(h.posts[0].operation_id,h.posts[1].operation_id);
 });
+
+test('T-505: broadcast journal labels kind, previews text and shows only bot counts',()=>{
+  assert.equal(logic.kindLabel('manual'),'вручную');
+  assert.equal(logic.kindLabel('auto'),'автоматически');
+  assert.equal(logic.journalPreview('  Завтра\n\nплов  '),'Завтра плов');
+  const long=logic.journalPreview('а'.repeat(200),20);
+  assert.equal(long.length,20);assert.ok(long.endsWith('…'));
+  assert.equal(logic.journalWhen('2026-10-17T14:05:09+05:00'),'17.10.2026 14:05');
+  assert.equal(logic.journalWhen('2026-10-17T14:05:09+05:00',false),'17.10 14:05');
+  assert.equal(logic.journalWhen(null),'—');
+  assert.equal(logic.journalStatus({status:'completed',audience:7,sent:6,blocked:1,failed:0}),
+    'отправлено 6 · заблокировали бота 1 · ошибок 0');
+  assert.equal(logic.journalStatus({status:'running',audience:7,sent:2,blocked:1,failed:0}),'отправляется: 3 из 7');
+  assert.equal(logic.journalStatus({status:'queued',audience:0,recipients:4,sent:0,blocked:0,failed:0}),'в очереди · получателей: 4');
+  assert.equal(logic.journalStatus({status:'',recipients:4}),'статус неизвестен');
+  assert.equal(logic.journalState('interrupted'),'error');
+  assert.equal(logic.journalState('running'),'running');
+  assert.equal(logic.journalState('completed'),'done');
+});

@@ -372,6 +372,25 @@
 .broadcast-repeat{margin:0 0 12px;padding:11px 13px;border-radius:10px;background:#fff3df;border:1px solid #eddfbe;
   color:#785b2d;font-size:12px;line-height:1.55}
 
+/* Журнал рассылок (ТЗ 16.10, п. 5.3): кто, когда, вручную или автоматически, итог бота. */
+.broadcast-journal{margin-top:20px;padding:15px;border:1px solid #e0e7df;border-radius:14px;background:#fbfcfa}
+.broadcast-journal-head{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.broadcast-journal-head h3{margin:0 0 3px;color:#173f36;font-size:15px}.broadcast-journal-head span{color:#718078;font-size:10px}
+.broadcast-journal-head button{min-height:38px;padding:0 11px;border:1px solid #d6e0d5;border-radius:9px;background:#fff;color:#315e4c;font:650 10px/1 inherit}
+.broadcast-journal-list{display:grid;gap:7px;max-height:420px;overflow:auto;margin:12px 0 0;padding:0;list-style:none}
+.broadcast-journal-list:empty{display:none}
+.broadcast-journal-item{display:grid;grid-template-columns:minmax(0,1fr) minmax(170px,auto);gap:4px 14px;padding:10px 12px;border:1px solid #e1e8e0;border-left:3px solid #c9d4c8;border-radius:10px;background:#fff}
+.broadcast-journal-item.is-done{border-left-color:#5b9a70}.broadcast-journal-item.is-error{border-left-color:#c56a5c}.broadcast-journal-item.is-running{border-left-color:#d1b46a}
+.broadcast-journal-meta{display:flex;flex-wrap:wrap;gap:4px 10px;align-items:center;color:#718078;font-size:10px}
+.broadcast-journal-meta time{color:#294c41;font-weight:650;font-variant-numeric:tabular-nums}
+.broadcast-kind{padding:2px 7px;border-radius:999px;background:#eef3ee;color:#476257;font-weight:650}.broadcast-kind.is-auto{background:#eef0fa;color:#3f4f86}
+.broadcast-journal-text{grid-column:1;margin:0;color:#294c41;font-size:12px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.broadcast-journal-status{grid-column:2;grid-row:1/span 2;align-self:center;text-align:right;color:#315e4c;font-size:11px;font-variant-numeric:tabular-nums}
+.broadcast-journal-status small{display:block;margin-top:3px;color:#8a978f;font-size:9px}
+.broadcast-journal-item.is-error .broadcast-journal-status{color:#a33f2b}
+.broadcast-journal .founder-note.is-error{color:#963f38}.broadcast-journal .founder-note[hidden]{display:none}
+@media(max-width:900px){.broadcast-journal-item{grid-template-columns:1fr}.broadcast-journal-status{grid-column:1;grid-row:auto;text-align:left}}
+
 /* ── Телефон (≤900 px) как в кабинете (ТЗ 16.10, п. 5.4) ─────────────────
    Меню слева скрыто; шапка со знаком и профилем, время данных под ней,
    внизу вкладки кабинета: «Сегодня», «Отчёт», «AI», «Аналитика». Круглая
