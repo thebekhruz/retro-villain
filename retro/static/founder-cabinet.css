@@ -77,7 +77,7 @@
 .fo-row.is-check{border-top:1px solid #dfe6db;background:var(--panel-2)}
 .fo-row.is-check>:first-child{font-weight:650}
 .fo-row.is-check>span{font-size:14px;font-weight:700}
-.fo-row.is-check .is-ok{color:var(--ok)}
+.fo-row.is-check :is(.is-ok,.is-extra){color:var(--ok)}
 .fo-row.is-check .is-bad{color:var(--late)}
 .fo-row.is-check .is-wait{color:var(--warn)}
 
@@ -223,7 +223,7 @@
 .fo-line b{font-weight:600}
 .fo-line.is-plain{border-top:0;padding-top:0;margin-top:10px}
 .fo-line-strong{font-size:15px;font-weight:650}
-.fo-mark.is-ok{color:var(--ok)}
+.fo-mark:is(.is-ok,.is-extra){color:var(--ok)}
 .fo-mark.is-bad{color:var(--late)}
 .fo-card-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
 .fo-card-head strong{font-size:14px;font-weight:600}
