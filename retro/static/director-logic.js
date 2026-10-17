@@ -11,6 +11,14 @@
     return Number.isFinite(parsed) ? parsed : 0;
   }
 
+  /** Средняя фактическая цена позиции (ТЗ 3.2): выручка продаж на проданное
+   *  количество, после скидок. Счёт Шефа и дегустация выручки не дают и в цену
+   *  не входят. В ответе без разбивки (старый формат) отделить их нечем —
+   *  там выручка на всё количество. Нет платных продаж — цены нет (null). */
+  function unitPrice(quantity, revenue) {
+    return quantity > 0 && revenue > 0 ? revenue / quantity : null;
+  }
+
   function entries(group) {
     if (!group) return [];
     return Object.keys(group).map(function (name) {
@@ -18,23 +26,58 @@
       const revenue = amount(metric.revenue);
       const cost = amount(metric.cost);
       const profit = amount(metric.gross_profit);
+      const quantity = amount(metric.quantity);
+      const breakdown = metric.breakdown ? Object.fromEntries(
+        ['sales', 'chef', 'tasting', 'other_zero'].map(function (key) {
+          const part = metric.breakdown[key] || {};
+          return [key, { quantity: amount(part.quantity), revenue: amount(part.revenue),
+            cost: amount(part.cost), profit: amount(part.gross_profit) }];
+        })) : null;
       return {
         name: name,
-        quantity: amount(metric.quantity),
+        quantity: quantity,
         revenue: revenue,
         cost: cost,
         profit: profit,
-        breakdown: metric.breakdown ? Object.fromEntries(
-          ['sales', 'chef', 'tasting', 'other_zero'].map(function (key) {
-            const part = metric.breakdown[key] || {};
-            return [key, { quantity: amount(part.quantity), revenue: amount(part.revenue),
-              cost: amount(part.cost), profit: amount(part.gross_profit) }];
-          })) : null,
+        breakdown: breakdown,
+        price: breakdown ? unitPrice(breakdown.sales.quantity, breakdown.sales.revenue) : unitPrice(quantity, revenue),
         // Маржу считаем сами, а не берём строкой: позиция с нулевой выручкой
         // не имеет процента, и рисовать у неё ноль было бы враньём.
         margin: revenue > 0 ? (profit / revenue) * 100 : null,
       };
     });
+  }
+
+  /** Ценовые диапазоны (ТЗ 3.2). Пороги в сум приходят вместе с отчётом
+   *  (DIRECTOR_PRICE_TIERS на сервере, по умолчанию 30 000 и 45 000): два
+   *  порога — три диапазона «до 30 тыс», «30–45 тыс», «от 45 тыс». Порог
+   *  входит в верхний диапазон: блюдо за 45 000 — «от 45 тыс». */
+  const PRICE_TIERS = [30000, 45000];
+
+  function thousands(value) { return String(Math.round(value / 100) / 10).replace('.', ','); }
+
+  function priceTiers(snapshot) {
+    const raw = snapshot && Array.isArray(snapshot.price_tiers) ? snapshot.price_tiers : PRICE_TIERS;
+    const limits = raw.map(Number).filter(function (value) { return Number.isFinite(value) && value > 0; })
+      .sort(function (a, b) { return a - b; })
+      .filter(function (value, index, list) { return index === 0 || value !== list[index - 1]; });
+    if (!limits.length) return [];
+    return limits.map(function (limit, index) {
+      const low = index ? limits[index - 1] : null;
+      return {key: (low === null ? '' : low) + '-' + limit, min: low, max: limit,
+        label: low === null ? 'до ' + thousands(limit) + ' тыс' : thousands(low) + '–' + thousands(limit) + ' тыс'};
+    }).concat([{key: limits[limits.length - 1] + '-', min: limits[limits.length - 1], max: null,
+      label: 'от ' + thousands(limits[limits.length - 1]) + ' тыс'}]);
+  }
+
+  /** Попадает ли позиция в диапазон цены. Пустой ключ — «Все»; позиция без
+   *  цены (не продавалась за деньги) в диапазоны не попадает. */
+  function inPriceTier(row, key, tiers) {
+    if (!key) return true;
+    const tier = (tiers || []).find(function (item) { return item.key === key; });
+    if (!tier) return true;
+    if (row.price === null || row.price === undefined) return false;
+    return (tier.min === null || row.price >= tier.min) && (tier.max === null || row.price < tier.max);
   }
 
   function totals(group) {
@@ -231,11 +274,14 @@
       .map(function (name) { return {name: name, count: counts[name]}; });
   }
 
-  /** Четыре среза меню: лидеры, слабые, низкая маржа, нет в Бехрузе.
-   *  `snapshot` — отчёт директора; `venue` — all | retro | oxbridge | banquet.
-   *  `options.sort` — revenue (по умолчанию) | quantity | margin: популярность
-   *  не по числу дешёвых позиций (ТЗ 2.7); «Слабые» — снизу по тому же
-   *  показателю. `options.category` — группа iiko (DishGroup). */
+  /** Срезы меню: лидеры, слабые, низкая маржа, нет в Бехрузе и все блюда
+   *  (`all`, ТЗ 3.3). `snapshot` — отчёт директора; `venue` — all | retro |
+   *  oxbridge | banquet. `options.sort` — revenue (по умолчанию) | quantity |
+   *  margin: популярность не по числу дешёвых позиций (ТЗ 2.7); «Слабые» —
+   *  снизу по тому же показателю. `options.category` — группа iiko (DishGroup),
+   *  `options.price` — ключ ценового диапазона (priceTiers). `limit` — сколько
+   *  строк вернуть (5 по умолчанию, Infinity — все). У строки есть цена и
+   *  доля в выручке заведения (`share`) — основание среза «Низкая маржа». */
   function menuSlice(snapshot, venue, view, limit, options) {
     const opts = options || {};
     const sort = SLICE_SORTS[opts.sort] ? opts.sort : 'revenue';
@@ -243,7 +289,8 @@
     const groups = (snapshot && snapshot.item_groups) || {};
     const dish = menuDish(snapshot);
     const count = limit || 5;
-    let rows;
+    // Выручка заведения целиком — основание «доли в выручке» у среза.
+    let rows, base = 0;
     if (view === 'notb') {
       // Хиты зала, которых нет в банкетном меню. Фильтр заведения здесь не
       // действует: сравниваем весь зал (Retro + Oxbridge) с Бехрузом.
@@ -251,19 +298,25 @@
       const hall = {};
       ['retro', 'oxbridge'].forEach(function (group) {
         entries(metrics[group]).forEach(function (row) {
-          const current = hall[row.name] || {name: row.name, quantity: 0, revenue: 0, cost: 0, profit: 0};
+          const current = hall[row.name] || {name: row.name, quantity: 0, revenue: 0, cost: 0, profit: 0,
+            salesQuantity: 0, salesRevenue: 0};
+          const sales = row.breakdown ? row.breakdown.sales : row;
           current.quantity += row.quantity; current.revenue += row.revenue;
           current.cost += row.cost; current.profit += row.profit;
+          current.salesQuantity += sales.quantity; current.salesRevenue += sales.revenue;
           hall[row.name] = current;
         });
+        base += totals(metrics[group]).revenue;
       });
       rows = Object.keys(hall).map(function (name) {
         const row = hall[name];
         row.margin = row.revenue > 0 ? row.profit / row.revenue * 100 : null;
+        row.price = unitPrice(row.salesQuantity, row.salesRevenue);
         return row;
       }).filter(function (row) { return row.revenue > 0 && dish(row) && !banquet.has(dishKey(row.name)); });
       rows.sort(SLICE_SORTS[sort]);
     } else {
+      base = totals(metrics[venue === 'all' ? 'all' : venue]).revenue;
       const sold = entries(metrics[venue === 'all' ? 'all' : venue])
         .filter(function (row) { return row.revenue > 0 && dish(row); });
       if (view === 'weak') {
@@ -277,8 +330,12 @@
       }
     }
     if (opts.category) rows = rows.filter(function (row) { return (groups[row.name] || '') === opts.category; });
+    if (opts.price) {
+      const tiers = priceTiers(snapshot);
+      rows = rows.filter(function (row) { return inPriceTier(row, opts.price, tiers); });
+    }
     return rows.slice(0, count).map(function (row) {
-      return Object.assign({}, row, {category: groups[row.name] || ''});
+      return Object.assign({}, row, {category: groups[row.name] || '', share: base > 0 ? row.revenue / base : null});
     });
   }
 
@@ -443,6 +500,47 @@
       .sort(function (a, b) { return b.revenue - a.revenue; });
   }
 
+  /** Поиск человека по имени и должности (ТЗ 3.2): без регистра, «ё» = «е»,
+   *  кириллица находится латиницей (Alijon → Алижон, Shoxrux / Shokhrukh →
+   *  Шохрух). Та же нормализация, что у бухгалтера в «Сотрудниках»
+   *  (employees-logic.js): тот модуль директору не открыт, поэтому — копия. */
+  const CYR = {а: 'a', б: 'b', в: 'v', г: 'g', д: 'd', е: 'e', ж: 'j', з: 'z', и: 'i', й: 'y', к: 'k', л: 'l',
+    м: 'm', н: 'n', о: 'o', п: 'p', р: 'r', с: 's', т: 't', у: 'u', ф: 'f', х: 'x', ц: 's', ч: 'ch', ш: 'sh',
+    щ: 'sh', ъ: '', ы: 'i', ь: '', э: 'e', ю: 'yu', я: 'ya', ў: 'o', қ: 'q', ғ: 'g', ҳ: 'x'};
+  function plainText(value) { return String(value || '').toLowerCase().replace(/ё/g, 'е').replace(/\s+/g, ' ').trim(); }
+  function latinKey(value) {
+    // Для латиницы «ё» — это «yo» (Ихтиёр → Ixtiyor), а не «е».
+    const cyr = String(value || '').toLowerCase().replace(/\s+/g, ' ').trim().replace(/ё/g, 'yo')
+      .replace(/[а-яўқғҳ]/g, function (ch) { return CYR[ch] !== undefined ? CYR[ch] : ch; });
+    return cyr.replace(/[ʻʼ’‘'`]/g, '').replace(/kh/g, 'x').replace(/zh/g, 'j').replace(/ts/g, 's')
+      .replace(/(^|[^sc])h/g, '$1x').replace(/ye/g, 'e').replace(/w/g, 'v');
+  }
+  function personMatches(query) {
+    const fields = Array.prototype.slice.call(arguments, 1);
+    const needle = plainText(query);
+    if (!needle) return true;
+    const latin = latinKey(needle);
+    return fields.some(function (field) {
+      return plainText(field).indexOf(needle) !== -1 || Boolean(latin && latinKey(field).indexOf(latin) !== -1);
+    });
+  }
+
+  /** Строки «Команды» под поиском: имя или должность. */
+  function teamSearch(rows, query) {
+    return (rows || []).filter(function (row) { return personMatches(query, row.name, row.role); });
+  }
+
+  /** Чипы фильтра «Команды» со счётчиками. Пустой чип не показываем: в нём
+   *  некого смотреть. «Все» и выбранный остаются всегда — выбранный приходит
+   *  и с «Сегодня» (карточка «опоздали»), и пропавший чип запутал бы. */
+  const TEAM_FILTERS = [['all', 'Все'], ['shift', 'Сменные'], ['monthly', 'Оклад'], ['late', 'Опоздали'],
+    ['missing', 'Не пришли'], ['nohik', 'Без Hikvision']];
+  function teamChips(rows, active) {
+    return TEAM_FILTERS.map(function (pair) {
+      return {key: pair[0], label: pair[1], count: (rows || []).filter(function (row) { return teamMatches(row, pair[0]); }).length};
+    }).filter(function (chip) { return chip.key === 'all' || chip.key === active || chip.count > 0; });
+  }
+
   function teamMatches(row, filter) {
     if (filter === 'shift') return row.type === 'shift';
     if (filter === 'monthly') return row.type === 'monthly';
@@ -468,6 +566,12 @@
     tipNotes: tipNotes,
     teamRows: teamRows,
     teamMatches: teamMatches,
+    teamSearch: teamSearch,
+    teamChips: teamChips,
+    personMatches: personMatches,
+    priceTiers: priceTiers,
+    inPriceTier: inPriceTier,
+    PRICE_TIERS: PRICE_TIERS,
     LOW_MARGIN: LOW_MARGIN,
     amount: amount,
     entries: entries,
