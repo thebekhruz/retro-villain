@@ -522,6 +522,32 @@ def chef_bills_from_olap(rows):
     return [dict(bill, amount=str(bill['amount']), cost=str(bill['cost'].quantize(
         Decimal('.01'), rounding=ROUND_HALF_UP))) for bill in bills.values()]
 
+def chef_orders_from_olap(rows):
+    """Заказы «Счёт Шефа» с блюдами — для уведомления на каждый заказ.
+
+    Тот же отбор, что у chef_bills_from_olap, плюс блюдо и количество: в
+    уведомлении видно, что именно отдали за счёт шефа."""
+    orders = {}
+    for (day, order_id, table, waiter, dish), row in olap_leaves(rows, 5, 'Счёт Шефа'):
+        try:
+            date.fromisoformat(day)
+        except (TypeError, ValueError):
+            raise DataError('iiko вернул некорректную дату Счёта Шефа.') from None
+        order = orders.setdefault(order_id, dict(day=day, order_id=order_id, table=table, waiters=[],
+                                                 amount=Decimal(0), dishes={}))
+        if waiter and waiter not in order['waiters']:
+            order['waiters'].append(waiter)
+        amount = number(cell(row, 5))
+        order['amount'] += amount
+        if dish:
+            line = order['dishes'].setdefault(dish, dict(name=dish, quantity=Decimal(0), amount=Decimal(0)))
+            line['quantity'] += number(cell(row, 6))
+            line['amount'] += amount
+    return [dict(order, amount=str(order['amount']),
+                 dishes=[dict(line, quantity=str(line['quantity']), amount=str(line['amount']))
+                         for line in sorted(order['dishes'].values(), key=lambda line: -line['amount'])])
+            for order in orders.values()]
+
 class IikoClient:
     def __init__(self, settings, *, transport=None, poll_delay=1):
         self.settings, self.transport, self.poll_delay = settings, transport, poll_delay
@@ -891,6 +917,22 @@ class IikoClient:
                 return [row for answer in answers for row in chef_bills_from_olap(answer)]
         except (httpx.HTTPError, TimeoutError) as error:
             log_upstream_failure('iiko', error, operation='load_chef_bills')
+            raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
+
+    async def load_chef_orders(self, start, end):
+        """Заказы «Счёт Шефа» с блюдами (уведомления учредителю на каждый заказ)."""
+        if not self.settings.configured:
+            raise DataError('Подключение iiko ещё не настроено. Нужен файл build/.env.')
+        scope = [dict(field='NonCashPaymentType', filterType='value_list',
+                      valueList=['Счет Шефа'], inclusiveList=True)]
+        try:
+            async with self._client() as client:
+                rows = await self._olap_range(
+                    client, start, end, ['OpenDate.Typed', 'UniqOrderId.Id', 'TableNum', 'WaiterName', 'DishName'],
+                    ['DishSumInt', 'DishAmountInt'], scope)
+                return chef_orders_from_olap(rows)
+        except (httpx.HTTPError, TimeoutError) as error:
+            log_upstream_failure('iiko', error, operation='load_chef_orders')
             raise DataError('Не удалось связаться с iiko. Попробуйте обновить данные позже.') from None
 
     async def _shifts(self, client, day):

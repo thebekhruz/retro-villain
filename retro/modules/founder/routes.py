@@ -19,6 +19,7 @@ from retro.modules.director.models import completed_period
 from retro.modules.founder import cabinet, overview
 from retro.modules.founder.dividends import DividendTargetError
 from retro.modules.founder.export import month_workbook
+from retro.web_push import PushError, push_host_allowed, valid_keys
 
 
 router = APIRouter(prefix='/api/founder', tags=['founder'])
@@ -38,6 +39,20 @@ class BroadcastInput(BaseModel):
     operation_id: UUID
     text: str = Field(min_length=1, max_length=4096)
     recipient_ids: list[str] = Field(min_length=1, max_length=2000)
+
+
+class PushKeysInput(BaseModel):
+    p256dh: str = Field(min_length=80, max_length=100)
+    auth: str = Field(min_length=16, max_length=30)
+
+
+class PushSubscriptionInput(BaseModel):
+    endpoint: str = Field(min_length=20, max_length=1000)
+    keys: PushKeysInput
+
+
+class PushEndpointInput(BaseModel):
+    endpoint: str = Field(min_length=20, max_length=1000)
 
 
 def _chat_owner(request):
@@ -375,3 +390,57 @@ def accountant_reconciliation(request: Request, month: str):
     """Сверка месяца по дням — та же, что скачивает бухгалтер."""
     from retro.modules.accountant.routes import reconciliation_export
     return reconciliation_export(request, month)
+
+
+# ── Уведомления в браузер (Web Push) ─────────────────────────────────────────
+# Устройство подписывает страница кабинета (push.js); уходит туда уведомление
+# о каждом заказе за Счёт Шефа (chef_push.py) и проверочное — по кнопке.
+
+PUSH_TEST = dict(title='Retro Milliy', body='Уведомления включены. Так придёт заказ за Счёт Шефа.',
+                 url='/founder', tag='retro-push-test')
+
+
+@router.get('/push')
+def push_config(request: Request):
+    return {'key': request.app.state.push_sender.keys.public_key}
+
+
+@router.post('/push/subscribe')
+async def push_subscribe(request: Request, body: PushSubscriptionInput):
+    if not push_host_allowed(body.endpoint):
+        raise HTTPException(422, 'Браузер прислал неизвестный адрес службы уведомлений.')
+    if not valid_keys(body.keys.p256dh, body.keys.auth):
+        raise HTTPException(422, 'Браузер прислал повреждённые ключи подписки.')
+    store = request.app.state.push_store
+    await asyncio.to_thread(
+        store.save, dict(endpoint=body.endpoint, p256dh=body.keys.p256dh, auth=body.keys.auth),
+        owner=getattr(request.state, 'dashboard_user', None) or 'local',
+        role=getattr(request.state, 'dashboard_role', None),
+        user_agent=request.headers.get('user-agent', ''), now=datetime.now(timezone.utc))
+    return {'subscribed': True}
+
+
+@router.post('/push/unsubscribe')
+async def push_unsubscribe(request: Request, body: PushEndpointInput):
+    await asyncio.to_thread(request.app.state.push_store.remove, body.endpoint)
+    return {'subscribed': False}
+
+
+@router.post('/push/test')
+async def push_test(request: Request, body: PushEndpointInput):
+    store = request.app.state.push_store
+    subscription = await asyncio.to_thread(store.get, body.endpoint)
+    if subscription is None:
+        raise HTTPException(404, 'Это устройство не подписано на уведомления.')
+    now = datetime.now(timezone.utc)
+    try:
+        await request.app.state.push_sender.send(subscription, PUSH_TEST)
+    except PushError as error:
+        if error.gone:
+            await asyncio.to_thread(store.remove, body.endpoint)
+            raise HTTPException(410, 'Подписка устарела. Включите уведомления заново.') from None
+        await asyncio.to_thread(store.mark, body.endpoint, now, error.code)
+        log_safe_failure('push', error, operation='test')
+        raise HTTPException(502, f'Служба уведомлений отказала ({error.code}). Попробуйте позже.') from None
+    await asyncio.to_thread(store.mark, body.endpoint, now)
+    return {'sent': True}
