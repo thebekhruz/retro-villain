@@ -84,6 +84,10 @@
 .kpi-login-seg{margin-top:0;flex:none;width:176px}
 .kpi-login-seg button{min-height:34px;font-size:11px;padding:0 6px}
 .kpi-login select{height:40px;border:1px solid #dbe3d8;border-radius:10px;background:#fff;color:var(--ink);font-size:13px;padding:0 8px;max-width:100%}
+/* Поиск сотрудника над списком реестра (ТЗ 3.2). 16 точек: с меньшим iOS увеличивает страницу. */
+.kpi-pick{display:grid;gap:6px}
+.kpi-pick-search{height:40px;border:1px solid #dbe3d8;border-radius:10px;background:#fff;color:var(--ink);font-size:16px;padding:0 10px;min-width:0;width:100%}
+.kpi-pick select{width:100%}
 @media(max-width:360px){.kpi-login-head{flex-wrap:wrap}.kpi-login-seg{width:100%}}
 
 /* ══ Кольцо прогресса (главная менеджера) ════════════════════════════════
@@ -96,9 +100,7 @@
 .kpi-ring .is-track{stroke:#edf1e8}
 .kpi-ring .is-fill{stroke:var(--green);stroke-linecap:round;transition:stroke-dashoffset .7s ease-out}
 .kpi-ring.is-full .is-fill{stroke:var(--gold)}
-.kpi-ring .is-tick{stroke:#c9d2c6;stroke-width:2;stroke-linecap:round}
 .kpi-ring.is-sm{--ring:44px;--ring-w:5}
-.kpi-ring.is-sm .is-tick{display:none}
 .kpi-ring-inner{position:relative;text-align:center;display:grid;gap:2px}
 .kpi-ring-inner span{font-size:11px;color:var(--muted-2)}
 .kpi-ring-inner strong{font-size:40px;font-weight:650;letter-spacing:-1.4px;line-height:1;color:var(--ink);white-space:nowrap}
@@ -161,3 +163,6 @@
 .kpi-goal-source{display:block;max-width:76px;font-size:9px;line-height:1.2;color:var(--muted-3);white-space:normal}
 .kpi-goal input::placeholder{color:#9aa69b;font-weight:500}
 .kpi-targets-rule{margin:4px 0 2px}
+/* Порог шума (T-490): подпись под кольцом, штрихов на кольце нет. */
+.kpi-home-threshold{font-size:12px;color:var(--muted-2)}
+.kpi-home-threshold.is-on{color:#906c2b;font-weight:600}

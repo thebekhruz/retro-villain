@@ -1,8 +1,12 @@
 """KPI официантов: правила чека, целевые позиции и расчёт премии. Без iiko и без базы.
 
-Схема (KPI-Waiters/03-scheme.md): премия платится из прироста валовой маржи по
-целевым позициям над собственной базой официанта (его частота на 100 чеков за
-предыдущие недели). Фонд — доля прироста, часть лично, часть в командный пул.
+Премия — командная (compute, T-468): прирост валовой маржи зала по целевым
+позициям — частота позиции на 100 чеков за период против средней частоты зала
+за базовые недели, умноженная на чеки периода и опорную маржу. Личных баз нет:
+позиции официанта показываются против базы зала. Прирост ниже порога шума
+(noise_week за неделю, T-490) целиком остаётся ресторану; в фонд идёт доля
+остатка (share, по умолчанию 40%). Фонд делится между прошедшими порог чеков
+и смен пропорционально числу их чеков, с потолком на человека за неделю.
 Считается только чек зала, оплаченный, без удалений, без ручной льготы, без
 безналичных «Счет Шефа / Дегустация / Комплимент» и целиком на одном официанте.
 """
@@ -62,14 +66,18 @@ DEFAULT_TARGETS = [
     dict(key='sudak', title='Судак жареный (0,5 кг или 1 кг)', group='новинка', target100=None, manual=False, margin=80364,
          dishes=[('05acdae3-bdb2-4042-8cc0-a6f7434cdce3', 'Судак жареный филе 0,5'), ('622fad41-351a-4912-96f5-1bfdc1d62496', 'Судак жареный филе 1 кг')]),
 ]
-DEFAULT_SCHEME = dict(share=0.25, cap=1_000_000, min_checks=20, min_shifts=3, baseline_weeks=4, netting=True)
+# Фонд 40 % от прироста сверх порога шума 1,5 млн в неделю (решение Amir 17.10, T-490).
+DEFAULT_SCHEME = dict(share=0.40, noise_week=1_500_000, cap=1_000_000, min_checks=20, min_shifts=3, baseline_weeks=4,
+                      netting=True)
+# Схема до T-490: без порога шума, доля 25 % по умолчанию. Такие сохранённые настройки поднимаются до новых дефолтов.
+LEGACY_SHARE = 0.25
 # Прежние поля схемы (личная часть 70 %, своя база от N чеков) — читаются из старых настроек и отбрасываются (T-468).
 LEGACY_SCHEME_KEYS = ('personal', 'team', 'baseline_min_checks')
 MAX_TARGETS = 20
-# Цель на 100 чеков по умолчанию (решение Amir 15.10, T-469): база зала + 30 %, но не меньше чем база + 0,5,
-# с округлением вверх до 0,5. Ручная цель директора действует, только если она выше правила.
-TARGET_GROWTH = 1.3
-TARGET_MIN_STEP = 0.5
+# Цель на 100 чеков по умолчанию (решение Amir 17.10, T-490; до этого +30 %, T-469): база зала + 70 %, но не меньше
+# чем база + 0,75, с округлением вверх до 0,5. Ручная цель директора действует, только если она выше правила.
+TARGET_GROWTH = 1.7
+TARGET_MIN_STEP = 0.75
 
 
 class KpiError(ValueError):
@@ -199,6 +207,16 @@ def login_counts(orders) -> Counter:
     return counts
 
 
+def upgrade_scheme(scheme: dict) -> dict:
+    """Сохранённая схема до T-490 (без порога шума): порог по умолчанию, доля 25 % → 40 %. Ручная доля остаётся."""
+    if not isinstance(scheme, dict) or 'noise_week' in scheme:
+        return scheme
+    upgraded = dict(scheme, noise_week=DEFAULT_SCHEME['noise_week'])
+    if abs(float(upgraded.get('share', LEGACY_SHARE)) - LEGACY_SHARE) < 1e-9:
+        upgraded['share'] = DEFAULT_SCHEME['share']
+    return upgraded
+
+
 def normalize_scheme(raw) -> dict:
     if not isinstance(raw, dict):
         raise KpiError('Настройки схемы должны быть объектом.')
@@ -212,7 +230,7 @@ def normalize_scheme(raw) -> dict:
     if share > 0.5:
         raise KpiError('Доля фонда больше половины прироста: ресторан перестаёт выигрывать.')
     scheme['share'] = share
-    for name in ('cap', 'min_checks', 'min_shifts', 'baseline_weeks'):
+    for name in ('noise_week', 'cap', 'min_checks', 'min_shifts', 'baseline_weeks'):
         value = raw.get(name, scheme[name])
         if isinstance(value, bool) or not isinstance(value, (int, float)) or value < 0 or int(value) != value:
             raise KpiError(f'Поле {name}: целое число не меньше нуля.')
@@ -271,7 +289,7 @@ def normalize_targets(raw) -> list:
 
 
 def auto_target(base100: float) -> float:
-    """Цель на 100 чеков по правилу: max(база × 1,3; база + 0,5), вверх до 0,5. База 0 → 0,5."""
+    """Цель на 100 чеков по правилу: max(база × 1,7; база + 0,75), вверх до 0,5. База 0 → 1."""
     raw = max(base100 * TARGET_GROWTH, base100 + TARGET_MIN_STEP)
     return math.ceil(round(raw * 2, 6)) / 2
 
@@ -329,8 +347,9 @@ def compute(now: dict, base: dict, targets, scheme, *, days_total=7, days_passed
     behind = [item for item in progress if item['lag'] > 0]
     for index, item in enumerate(progress):
         item['push'] = item['lag'] > 0 and index < (3 if len(behind) >= 3 else len(behind))
-    team_uplift_positive = max(team_uplift, 0.0)
-    fund_total = scheme['share'] * team_uplift_positive
+    # Порог шума (T-490): прирост ниже порога периода — обычные колебания недели, он целиком остаётся ресторану.
+    threshold = scheme.get('noise_week', 0) * days_total / 7
+    fund_total = scheme['share'] * max(team_uplift - threshold, 0.0)
     rows = []
     for waiter, stats in now.items():
         if waiter == HALL:
@@ -358,6 +377,10 @@ def compute(now: dict, base: dict, targets, scheme, *, days_total=7, days_passed
     fund = sum(row['premium'] for row in rows)
     goal_margin = sum(max(target['target100'] - hall_base.rate(target['key']), 0) / 100 * expected_checks
                       * margins[target['key']] for target in targets)
+    # Метка порога на кольце (порции): с какой доли цели прирост маржи переходит порог шума.
+    base_qty = sum(hall_base.rate(target['key']) / 100 * expected_checks for target in targets)
+    goal_qty_total = sum(item['goal_qty'] for item in progress)
+    threshold_mark = threshold_position(base_qty, goal_qty_total, threshold, goal_margin)
     return dict(rows=rows, team_uplift=round(team_uplift), net_uplift=round(team_uplift), fund=round(fund),
                 fund_total=round(fund_total), restaurant_net=round(team_uplift - fund), participants=len(eligible_rows),
                 waiters=len(rows), team_checks=team_checks,
@@ -367,7 +390,18 @@ def compute(now: dict, base: dict, targets, scheme, *, days_total=7, days_passed
                           sold_by_day={day: round(sum(counter[t['key']] for t in targets)) for day, counter in sorted(hall_now.by_day.items())},
                           rates={t['key']: dict(base=round(hall_base.rate(t['key']), 2), now=round(hall_now.rate(t['key']), 2),
                                                 target=t['target100']) for t in targets}),
-                goal=round(goal_margin), cap=cap, targets=targets)
+                goal=round(goal_margin), goal_uplift=round(goal_margin), cap=cap, targets=targets,
+                threshold=round(threshold), threshold_mark=threshold_mark, base_qty=round(base_qty, 1),
+                to_threshold=round(max(threshold - team_uplift, 0.0)), above_threshold=team_uplift > threshold)
+
+
+def threshold_position(base_qty: float, goal_qty: float, threshold: float, goal_uplift: float):
+    """Доля кольца (0–1), с которой начисляется премия: базовые порции плюс доля пути к цели, равная
+    порогу шума от прироста при выходе на цель. None — цели или прироста при цели нет."""
+    if goal_qty <= 0 or goal_uplift <= 0:
+        return None
+    mark = (base_qty + threshold / goal_uplift * (goal_qty - base_qty)) / goal_qty
+    return round(min(max(mark, 0.0), 1.0), 4)
 
 
 def week_bounds(day: date):

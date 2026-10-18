@@ -611,16 +611,7 @@ function ringNode(box, percent, inner, {size = 'lg'} = {}) {
     }
     svg.append(circle);
   }
-  if (large) {
-    // Отметки 50 % (снизу) и 100 % (сверху): короткие штрихи поперёк дорожки.
-    for (const x of [center + radius, center - radius]) {
-      const tick = document.createElementNS(SVG, 'line');
-      tick.setAttribute('class', 'is-tick');
-      tick.setAttribute('x1', x); tick.setAttribute('x2', x);
-      tick.setAttribute('y1', center - width); tick.setAttribute('y2', center + width);
-      svg.append(tick);
-    }
-  }
+  // Штрихов на кольце нет (просьба Amir 17.10): порог премии виден подписью под кольцом.
   box.replaceChildren(svg, inner);
   return box;
 }
@@ -656,6 +647,11 @@ function renderKpiHome() {
   const pace = K().paceState(totals, period);
   $('kpi-home-pace').textContent = pace.text;
   $('kpi-home-pace').classList.toggle('is-done', pace.state === 'done');
+  // Порог шума (T-490): до метки — сколько маржи осталось до премии, после — какой фонд уже начислен.
+  const line = K().thresholdLine(totals);
+  $('kpi-home-threshold').textContent = line ? line.text : '';
+  $('kpi-home-threshold').hidden = !line;
+  $('kpi-home-threshold').classList.toggle('is-on', Boolean(line?.above));
   $('kpi-home-fund').textContent = K().thousands(totals.fund);
   const meta = [];
   const best = K().bestDay(data.hall.sold_by_day);
@@ -809,13 +805,7 @@ function renderKpi() {
   renderKpiList();
   $('kpi-targets-list').replaceChildren(...(data.targets_progress || []).map(item => kpiItemNode({title: item.title, group: item.group,
     margin: item.margin, uplift: item.uplift, base: item.base, now: item.now, target: item.target, target_source: item.target_source}, null)));
-  $('kpi-rules-list').replaceChildren(...[
-    `Цель периода — ${Math.ceil(totals.goal_qty)} порций целевых позиций: цели на 100 чеков × ожидаемые чеки (средние за ${scheme.baseline_weeks} прошлые недели).`,
-    'Цель позиции на 100 чеков — база зала плюс 30 %, но не меньше базы плюс полпорции, с округлением вверх до 0,5. Директор может поставить цель выше вручную.',
-    'Считается чек зала под своим логином: оплаченный, без удалений, без ручной льготы, без «Счет Шефа» и переносов между официантами.',
-    `Премия командная: ${K().percent(scheme.share)} от прироста маржи зала по целевым позициям против базы зала за ${scheme.baseline_weeks} недели; фонд делится между участниками по числу чеков.`,
-    `Участие от ${scheme.min_checks} чеков и ${scheme.min_shifts} смен. Потолок ${K().thousands(totals.cap)} на человека за период. Выплата через бухгалтера после закрытия периода.`,
-  ].map(text => node('li', '', text)));
+  $('kpi-rules-list').replaceChildren(...K().rulesText(totals, scheme, period).map(text => node('li', '', text)));
   renderKpiView();
 }
 

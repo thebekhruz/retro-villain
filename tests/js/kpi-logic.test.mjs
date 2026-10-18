@@ -76,7 +76,7 @@ test('настройки из формы: проценты в доли, тыся
     targets: [{title: 'Чай', target100: '7,5', manual: true, dishes: [{id: 'a', name: 'ЧАЙ'}]}]});
   assert.equal(manual.targets[0].target100, 7.5);
   assert.equal(manual.targets[0].manual, true);
-  assert.equal(logic.targetSource({target_source: 'base'}), 'цель: база + 30 %');
+  assert.equal(logic.targetSource({target_source: 'base'}), 'цель: база + 70 %');
   assert.equal(logic.targetSource({target_source: 'manual'}), 'цель вручную');
   assert.throws(() => logic.settingsFromForm({share: 'x', cap: '1'}), /доля прироста/);
 });
@@ -132,4 +132,35 @@ test('процент цели в кольце без потолка и подп�
   assert.equal(logic.sourceLabel({source: 'manual_off'}), 'не считать, вручную');
   assert.equal(logic.sourceLabel({source: 'unmatched'}), 'не сопоставлен');
   assert.equal(logic.dayMonth('2026-11-01'), '1 ноября');
+});
+
+test('подпись порога шума под кольцом', () => {
+  assert.deepEqual(logic.thresholdLine({threshold: 1500000, to_threshold: 1212000, above_threshold: false, fund: 0}),
+    {above: false, text: 'До премии осталось 1 212 тыс маржи'});
+  assert.deepEqual(logic.thresholdLine({threshold: 1500000, to_threshold: 0, above_threshold: true, fund: 420000}),
+    {above: true, text: 'Премия начисляется: фонд 420 тыс'});
+  assert.equal(logic.thresholdLine({threshold: 0}), null, 'без порога подписи нет');
+  const body = logic.settingsFromForm({share: '40', cap: '1 000', noise_week: '1 500', min_checks: '20', min_shifts: '3', targets: []});
+  assert.equal(body.scheme.noise_week, 1500000);
+  assert.equal(body.scheme.share, 0.4);
+});
+
+test('«Как считается премия»: суммы из схемы и периода, неделя и месяц (T-503)', () => {
+  assert.equal(logic.money(1_500_000), '1,5 млн сум');
+  assert.equal(logic.money(1_000_000), '1 млн сум');
+  assert.equal(logic.money(6_428_571), '6,4 млн сум');
+  assert.equal(logic.money(640_000), '640 тыс сум');
+  assert.equal(logic.money(0), '0 сум');
+  const scheme = {share: 0.4, noise_week: 1_500_000, cap: 1_000_000, min_checks: 20, min_shifts: 3, baseline_weeks: 4, netting: true};
+  const week = logic.rulesText({goal_qty: 178.3, threshold: 1_500_000, cap: 1_000_000}, scheme, {days_total: 7});
+  assert.match(week[0], /^Цель — продать за период 179 порций целевых позиций\./);
+  assert.match(week[0], /среднее за 4 прошлые недели/);
+  assert.equal(week[3], 'Из дополнительной маржи первые 1,5 млн сум — обычные колебания, они остаются ресторану. В фонд премии идёт 40 % от того, что выше.');
+  assert.equal(week[4], 'Пример: дополнительная маржа 4 млн сум − порог 1,5 млн сум = 2,5 млн сум; в фонд идёт 1 млн сум.');
+  assert.match(week[5], /не больше 1 млн сум, остаток сверх потолка — ресторану\.$/);
+  assert.match(week[6], /от 20 чеков и от 3 смен\./);
+  // Месяц 30 дней: порог 1,5 млн × 30 / 7, потолок 1 млн × 4 недели — как в compute().
+  const month = logic.rulesText({goal_qty: 760, threshold: 6_428_571, cap: 4_000_000}, scheme, {days_total: 30});
+  assert.match(month[3], /первые 1,5 млн сум в неделю \(за этот период — 6,4 млн сум\)/);
+  assert.match(month[5], /не больше 1 млн сум в неделю \(за этот период — 4 млн сум\)/);
 });

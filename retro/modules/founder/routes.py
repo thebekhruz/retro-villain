@@ -10,11 +10,12 @@ from uuid import UUID
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start
 from retro.report_cache import load_iiko
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import DataError, TZ, today_tashkent
 from retro.modules.founder.bookings import build_booking_analytics
-from retro.modules.founder.models import DIRECTIONS, GRANULARITIES
+from retro.modules.founder.models import DIRECTIONS, GRANULARITIES, build_iiko_guests
 from retro.modules.founder.tools import FounderChatTools
-from retro.integrations.broadcasts import BroadcastConflict
+from retro.integrations.broadcasts import CURSOR, HISTORY_KINDS, JOB_ID, BroadcastConflict, BroadcastNotFound
+from retro.modules.founder.broadcast_journal import JOURNAL_LIMIT, TERMINAL
 from retro.modules.director.models import completed_period
 from retro.modules.founder import cabinet, overview
 from retro.modules.founder.dividends import DividendTargetError
@@ -82,6 +83,57 @@ def _validated_period(start, end, granularity):
     return start, end
 
 
+async def with_dashboard_expenses(state, data, start, end):
+    """Аналитика iiko плюс расходы кассы и бухгалтерии за те же даты.
+
+    Общая для экрана аналитики и AI-помощника (get_revenue_analytics): оба
+    видят одну и ту же прибыль после расходов и одно и то же предупреждение."""
+    if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
+        return data
+    if start < ACCOUNTING_START:
+        # Расходы кассы и бухгалтерии ведутся с начала учёта; более ранние
+        # записи в рабочий учёт не входят. Вычесть их за часть периода из
+        # P&L за весь период — значит показать неверную прибыль; ноль вместо
+        # них — тоже. Показываем «нет данных».
+        result = dict(data)
+        result['dashboard_expenses'] = None
+        result['net_profit_after_dashboard_expenses'] = None
+        result['warnings'] = [*data.get('warnings', []), (
+            f'Расходы кассы и бухгалтерии ведутся с {ACCOUNTING_START:%d.%m.%Y}: '
+            'прибыль после записанных расходов считается для периодов с этой даты.')]
+        return result
+    # Чистая прибыль iiko уже содержит себестоимость товаров, прошедших через
+    # склад iiko. Поэтому закуп через Шоха (его покупки — приходные накладные
+    # iiko) не вычитается, а закуп, оплаченный поставщику напрямую, — статьи
+    # «Закуп» наличными и перечисления со счёта — вычитается: накладной по
+    # нему система не создаёт. Правило целиком — в expense_totals_between.
+    cashier, accountant, flows = await asyncio.gather(
+        asyncio.to_thread(state.expenses.total_between, start, end),
+        asyncio.to_thread(state.accountant_finance.expense_totals_between, start, end),
+        asyncio.to_thread(state.accountant_finance.cash_flows_between, start, end),
+    )
+    manual_total = cashier + accountant['total']
+    # В «зарплата» — и выплаты сменным, и строки «Зарплаты» журнала (оклады
+    # частями): иначе оклады попадали в «прочие». Итог не меняется.
+    salary_items = sum((Decimal(row['amount']) for row in flows
+                        if row['type'] == 'other_expense' and overview.flow_kind(row) == 'salary'),
+                       Decimal(0))
+    result = dict(data)
+    result['dashboard_expenses'] = {
+        'cashier': str(cashier),
+        'accountant_other': str(accountant['other'] - salary_items),
+        'accountant_salary': str(accountant['salary'] + salary_items),
+        'accountant': str(accountant['total']),
+        'total': str(manual_total),
+    }
+    result['net_profit_after_dashboard_expenses'] = str(
+        Decimal(data['pnl']['net_profit']) - manual_total)
+    result['scope_note'] = data.get('scope_note', '') + (
+        ' Чистая прибыль после расходов дэшборда равна чистой прибыли iiko '
+        'минус расходы кассы и бухгалтерии за выбранные даты.')
+    return result
+
+
 @router.get('/analytics')
 async def analytics(
         request: Request,
@@ -103,51 +155,7 @@ async def analytics(
                                request=request, timeout=180,
                                ttl=CLOSED_PERIOD_TTL if end < today_tashkent() else None,
                                stale=CLOSED_PERIOD_STALE if end < today_tashkent() else 0)
-        if not isinstance(data.get('pnl'), dict) or 'net_profit' not in data['pnl']:
-            return data
-        if start < ACCOUNTING_START:
-            # Расходы кассы и бухгалтерии ведутся с начала учёта; более ранние
-            # записи в рабочий учёт не входят. Вычесть их за часть периода из
-            # P&L за весь период — значит показать неверную прибыль; ноль вместо
-            # них — тоже. Показываем «нет данных».
-            result = dict(data)
-            result['dashboard_expenses'] = None
-            result['net_profit_after_dashboard_expenses'] = None
-            result['warnings'] = [*data.get('warnings', []), (
-                f'Расходы кассы и бухгалтерии ведутся с {ACCOUNTING_START:%d.%m.%Y}: '
-                'прибыль после записанных расходов считается для периодов с этой даты.')]
-            return result
-        # Чистая прибыль iiko уже содержит себестоимость товаров, прошедших через
-        # склад iiko. Поэтому закуп через Шоха (его покупки — приходные накладные
-        # iiko) не вычитается, а закуп, оплаченный поставщику напрямую, — статьи
-        # «Закуп» наличными и перечисления со счёта — вычитается: накладной по
-        # нему система не создаёт. Правило целиком — в expense_totals_between.
-        cashier, accountant, flows = await asyncio.gather(
-            asyncio.to_thread(request.app.state.expenses.total_between, start, end),
-            asyncio.to_thread(
-                request.app.state.accountant_finance.expense_totals_between, start, end),
-            asyncio.to_thread(request.app.state.accountant_finance.cash_flows_between, start, end),
-        )
-        manual_total = cashier + accountant['total']
-        # В «зарплата» — и выплаты сменным, и строки «Зарплаты» журнала (оклады
-        # частями): иначе оклады попадали в «прочие». Итог не меняется.
-        salary_items = sum((Decimal(row['amount']) for row in flows
-                            if row['type'] == 'other_expense' and overview.flow_kind(row) == 'salary'),
-                           Decimal(0))
-        result = dict(data)
-        result['dashboard_expenses'] = {
-            'cashier': str(cashier),
-            'accountant_other': str(accountant['other'] - salary_items),
-            'accountant_salary': str(accountant['salary'] + salary_items),
-            'accountant': str(accountant['total']),
-            'total': str(manual_total),
-        }
-        result['net_profit_after_dashboard_expenses'] = str(
-            Decimal(data['pnl']['net_profit']) - manual_total)
-        result['scope_note'] = data.get('scope_note', '') + (
-            ' Чистая прибыль после расходов дэшборда равна чистой прибыли iiko '
-            'минус расходы кассы и бухгалтерии за выбранные даты.')
-        return result
+        return await with_dashboard_expenses(request.app.state, data, start, end)
     except TimeoutError as error:
         log_safe_failure('founder-route', error, operation='analytics',
                          request_id=request.state.request_id)
@@ -179,6 +187,33 @@ async def bookings(
         raise HTTPException(503, str(error)) from None
 
 
+@router.get('/guests')
+async def guests(
+        request: Request,
+        start: date | None = None,
+        end: date | None = None,
+        granularity: str = Query('day'),
+        refresh: bool = False,
+):
+    """Гости по чекам iiko рядом с бронями: сколько пришло по факту."""
+    start, end = _validated_period(start, end, granularity)
+    closed = end < today_tashkent()
+    try:
+        rows = await load_iiko(request.app.state, 'load_guest_counts', start, end, refresh=refresh,
+                               request=request, timeout=60,
+                               ttl=CLOSED_PERIOD_TTL if closed else None,
+                               stale=CLOSED_PERIOD_STALE if closed else 0)
+        return build_iiko_guests(rows, start, end, granularity)
+    except TimeoutError as error:
+        log_safe_failure('founder-route', error, operation='guests',
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'iiko формирует отчёт по гостям слишком долго. Повторите позже.') from None
+    except DataError as error:
+        log_safe_failure('founder-route', error, operation='guests',
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
 @router.get('/broadcast/audience')
 async def broadcast_audience(request: Request):
     try:
@@ -193,15 +228,132 @@ async def broadcast_audience(request: Request):
         raise HTTPException(503, str(error)) from None
 
 
+async def _broadcast_author(request):
+    """Кто запускает рассылку — для журнала бота: имя из учётной записи
+    панели (T-446), без него — логин."""
+    login = getattr(request.state, 'dashboard_user', None)
+    if not login:
+        return None
+    account = await asyncio.to_thread(request.app.state.accounts.get, login)
+    return account.label if account else login
+
+
+async def _broadcast_call(request, operation, call):
+    try:
+        return await asyncio.wait_for(call, timeout=20)
+    except BroadcastConflict as error:
+        raise HTTPException(409, str(error)) from None
+    except BroadcastNotFound as error:
+        raise HTTPException(404, str(error)) from None
+    except TimeoutError as error:
+        log_safe_failure('founder-broadcast', error, operation=operation,
+                         request_id=request.state.request_id)
+        raise HTTPException(504, 'API рассылок отвечает слишком долго.') from None
+    except DataError as error:
+        log_safe_failure('founder-broadcast', error, operation=operation,
+                         request_id=request.state.request_id)
+        raise HTTPException(503, str(error)) from None
+
+
+def _job_id(value):
+    if not JOB_ID.fullmatch(value):
+        raise HTTPException(422, 'Некорректный идентификатор рассылки.')
+    return value
+
+
+# Фильтр получателей на экране → статусы бота. «В очереди» — кому ещё не
+# отправляли, вместе с тем, кому отправляется прямо сейчас.
+DELIVERY_FILTERS = {'all': None, 'sent': ('sent',), 'blocked': ('blocked',),
+                    'failed': ('failed',), 'queued': ('pending', 'sending')}
+
+
+async def _with_panel_journal(request, page):
+    """Задания, которые бот запомнил до своего журнала (без текста и
+    источника), но которые ушли через эту панель: текст, автора и вид
+    подставляем из журнала панели (T-505). Сбой журнала список не прячет."""
+    bare = [job for job in page['jobs'] if job['source'] is None]
+    journal = getattr(request.app.state, 'broadcast_journal', None)
+    if not bare or journal is None:
+        return page
+    try:
+        entries = await asyncio.to_thread(journal.list, 100)
+    except Exception as error:  # noqa: BLE001 — без подписей из журнала список всё равно нужен
+        log_safe_failure('founder-broadcast', error, operation='journal-merge',
+                         request_id=request.state.request_id)
+        return page
+    known = {entry['job_id']: entry for entry in entries if entry['job_id']}
+    for job in bare:
+        entry = known.get(job['id'])
+        if entry:
+            source = 'auto' if entry['kind'] == 'auto' else 'dashboard'
+            job.update(source=source, manual=source != 'auto', text=job['text'] or entry['text'],
+                       author=job['author'] or entry['sent_by'] or None)
+    return page
+
+
+# /broadcast/jobs и /broadcast/journal объявлены раньше /broadcast/{job_id}:
+# иначе слово разбиралось бы как идентификатор рассылки.
+@router.get('/broadcast/jobs')
+async def broadcast_history(request: Request, kind: str = Query('all'),
+                            cursor: str | None = Query(None, max_length=512)):
+    """Журнал рассылок бота (ТЗ 16.10, п. 5.3): ручные и автоматические,
+    из панели и командой в боте. Бот без журнала — `supported: false`, и
+    экран показывает журнал панели (/broadcast/journal)."""
+    if kind not in HISTORY_KINDS:
+        raise HTTPException(422, 'Неизвестный вид рассылок.')
+    if cursor is not None and not CURSOR.fullmatch(cursor):
+        raise HTTPException(422, 'Некорректная страница журнала.')
+    page = await _broadcast_call(request, 'list', request.app.state.broadcasts.list(kind, cursor))
+    return await _with_panel_journal(request, page)
+
+
+@router.get('/broadcast/jobs/{job_id}/deliveries')
+async def broadcast_deliveries(request: Request, job_id: str, status: str = Query('all'),
+                               offset: int = Query(0, ge=0, le=100000)):
+    if status not in DELIVERY_FILTERS:
+        raise HTTPException(422, 'Неизвестный статус получателя.')
+    return await _broadcast_call(request, 'deliveries', request.app.state.broadcasts.deliveries(
+        _job_id(job_id), DELIVERY_FILTERS[status], offset))
+
+
+@router.post('/broadcast/jobs/{job_id}/resume')
+async def resume_broadcast(request: Request, job_id: str):
+    """Дослать оставшимся. Бот шлёт только тем, кому ещё не отправлял."""
+    job_id = _job_id(job_id)
+    author = await _broadcast_author(request)
+    result = await _broadcast_call(request, 'resume', request.app.state.broadcasts.resume(job_id, author))
+    # Журнал панели знает только свои рассылки; чужой job_id он пропустит.
+    await _journal_write(request, 'journal-status', 'update_status', result['job'], _journal_now())
+    return result
+
+
+def _journal_now():
+    return datetime.now(TZ).isoformat(timespec='seconds')
+
+
+async def _journal_write(request, operation, write, *args, **kwargs):
+    """Журнал — запись о том, что уже сделал бот. Сбой журнала не отменяет
+    принятую рассылку и не прячет её статус: пишем в лог и отвечаем как есть."""
+    journal = getattr(request.app.state, 'broadcast_journal', None)
+    if journal is None:
+        return
+    try:
+        await asyncio.to_thread(getattr(journal, write), *args, **kwargs)
+    except Exception as error:  # noqa: BLE001 — журнал не должен ронять рассылку
+        log_safe_failure('founder-broadcast', error, operation=operation,
+                         request_id=request.state.request_id)
+
+
 @router.post('/broadcast', status_code=202)
 async def start_broadcast(request: Request, body: BroadcastInput):
     text = body.text.strip()
     if not text:
         raise HTTPException(422, 'Введите текст рассылки.')
+    author = await _broadcast_author(request)
     try:
-        return await asyncio.wait_for(
+        job = await asyncio.wait_for(
             request.app.state.broadcasts.start(
-                str(body.operation_id), text, body.recipient_ids), timeout=20)
+                str(body.operation_id), text, body.recipient_ids, author=author), timeout=20)
     except BroadcastConflict as error:
         raise HTTPException(409, str(error)) from None
     except TimeoutError as error:
@@ -212,13 +364,51 @@ async def start_broadcast(request: Request, body: BroadcastInput):
         log_safe_failure('founder-broadcast', error, operation='start',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+    # ТЗ 16.10, п. 5.3: журнал отправок. Отправка с экрана — всегда ручная.
+    await _journal_write(
+        request, 'journal-record', 'record', str(body.operation_id), job, text=text,
+        recipients=len(set(body.recipient_ids)), kind='manual', at=_journal_now(),
+        sent_by=author or '')
+    return job
 
 
-@router.get('/broadcast/{operation_id}')
-async def broadcast_status(request: Request, operation_id: UUID):
+@router.get('/broadcast/journal')
+async def broadcast_journal(request: Request, limit: int = Query(JOURNAL_LIMIT, ge=1, le=100)):
+    """Последние рассылки через эту панель (ТЗ 16.10, п. 5.3).
+
+    Незавершённые рассылки (экран закрыли посреди отправки) досчитываем у
+    бота здесь же — немного и без ошибок: не ответил бот, остаётся последний
+    известный итог со временем, когда он был получен."""
+    journal = request.app.state.broadcast_journal
+    entries = await asyncio.to_thread(journal.list, limit)
+    # Только свежие: потерянная ботом задача не должна стоить опроса на каждый вход.
+    since = (datetime.now(TZ) - timedelta(days=1)).isoformat(timespec='seconds')
+    pending = [entry for entry in entries
+               if entry['job_id'] and entry['status'] not in TERMINAL
+               and entry['sent_at'] >= since][:3]
+    if pending:
+        for entry in pending:
+            try:
+                job = await asyncio.wait_for(
+                    request.app.state.broadcasts.status(entry['job_id']), timeout=5)
+            except (TimeoutError, DataError) as error:
+                log_safe_failure('founder-broadcast', error, operation='journal-refresh',
+                                 request_id=request.state.request_id)
+                break
+            await _journal_write(request, 'journal-status', 'update_status', job, _journal_now())
+        entries = await asyncio.to_thread(journal.list, limit)
+    return {'entries': entries}
+
+
+@router.get('/broadcast/{job_id}')
+async def broadcast_status(request: Request, job_id: str):
+    # Экран опрашивает статус по id задачи, который вернул бот (job.id), а не
+    # по нашему operation_id: id бота — не обязательно UUID (T-505).
+    if not JOB_ID.fullmatch(job_id):
+        raise HTTPException(422, 'Некорректный идентификатор рассылки.')
     try:
-        return await asyncio.wait_for(
-            request.app.state.broadcasts.status(str(operation_id)), timeout=20)
+        job = await asyncio.wait_for(
+            request.app.state.broadcasts.status(job_id), timeout=20)
     except TimeoutError as error:
         log_safe_failure('founder-broadcast', error, operation='status',
                          request_id=request.state.request_id)
@@ -227,6 +417,8 @@ async def broadcast_status(request: Request, operation_id: UUID):
         log_safe_failure('founder-broadcast', error, operation='status',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+    await _journal_write(request, 'journal-status', 'update_status', job, _journal_now())
+    return job
 
 
 @router.get('/chat')
@@ -254,6 +446,7 @@ async def chat(request: Request, body: ChatInput):
             tools=chat_tools.definitions,
             tool_handler=chat_tools.execute,
             current_date=today_tashkent().isoformat(),
+            current_time=datetime.now(TZ).strftime('%H:%M'),
         ), timeout=180)
     except TimeoutError as error:
         log_safe_failure('founder-chat', error, operation='answer',
@@ -345,15 +538,22 @@ def spending(request: Request, date: date | None = None):
 
 @router.get('/dishes')
 async def dishes(request: Request, days: int = Query(7, ge=1, le=30)):
-    """Блюда за последние закрытые дни — тот же отчёт iiko, что у директора."""
+    """Блюда за последние закрытые дни — тот же отчёт iiko, что у директора.
+
+    Продажи iiko — без границы учёта 13.10 (T-486): «7 дней» — семь дней.
+    `item_classes` — позиции, которые по справочнику меню не готовые блюда
+    (T-487): экран прячет их по классу, а не по слову в названии. Пустой
+    справочник ничего не исключает, `item_classes_checked` тогда false."""
     start, end = completed_period(today_tashkent(), days)
-    start = accounting_range_start(start, end)
     snapshot, error = await cabinet.iiko_or_error(
         request, 'load_director_report', today_tashkent(), start=start, end=end,
         operation='dishes', timeout=150)
     if snapshot is None:
         raise HTTPException(503, error)
-    return snapshot.json()
+    data = snapshot.json()
+    catalog = await asyncio.to_thread(FounderChatTools(request.app).catalog)
+    names = (data.get('item_metrics') or {}).get('all', {})
+    return dict(data, item_classes=catalog.exceptions(names), item_classes_checked=catalog.available)
 
 
 @router.get('/export/month')

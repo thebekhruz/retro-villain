@@ -176,6 +176,12 @@
   // «Без ставки» или долг по старым сменам в каждом дне недели повторялись бы
   // одним и тем же пунктом. Такие берём по последнему дню, где они есть.
   const STANDING_CHECKS = new Set(['Невыданные смены', 'Без ставки', 'Неоплаченные расходы']);
+  // Что именно считает каждая постоянная проверка (ТЗ 16.10, п. 4.2) — строкой под суммой.
+  const CHECK_RULES = {
+    'Невыданные смены': 'Смены прошлых дней: зарплата начислена, но выдана не полностью.',
+    'Без ставки': 'У сотрудников в списке смены не указана ставка — их зарплату за день не посчитать.',
+    'Неоплаченные расходы': 'Расходы этого учётного периода, записанные в долг и ещё не оплаченные.',
+  };
 
   /** Замечания к бухгалтеру за неделю (7b, Функционал §4): недостача от кассира —
    *  первой, затем остальные ошибки, затем предупреждения. Источники: сверка
@@ -209,7 +215,8 @@
           if (check.sub && check.sub.amount !== undefined) parts.push(sum(num(check.sub.amount)) + ' сум');
           const item = {level: check.level, rank: check.level === 'bad' ? 1 : 2, text: check.text + ' · ' + dm(day.date),
             sub: parts.join(' · ') || 'Финансы дня'};
-          if (STANDING_CHECKS.has(check.text)) standing.set(check.text, item); else items.push(item);
+          if (STANDING_CHECKS.has(check.text)) standing.set(check.text, {...item, rule: CHECK_RULES[check.text]});
+          else items.push(item);
         });
       }
     });
@@ -249,8 +256,78 @@
     return chef.bills.filter(bill => bill.over && (bill.day === today || bill.day === yesterday) && !hidden.has(bill.order_id));
   }
 
+  /** Подпись под прогнозом: сколько недель истории iiko реально вошло в
+   *  среднее (`sample_weeks` сервера), без обещания восьми недель. */
+  function forecastNote(data) {
+    const weeks = (data && data.sample_weeks) || {};
+    const low = num(weeks.min) || 0, high = num(weeks.max) || 0;
+    if (!high) return 'За последние восемь недель продаж в iiko нет.';
+    const count = low === high ? String(high) : low + '–' + high;
+    return 'Среднее за ' + count + ' ' + plural(high, 'неделю', 'недели', 'недель') +
+      ' по кассам Retro и Oxbridge, без банкетного зала. Сегодня выделен.';
+  }
+
+  // Классы справочника меню, которые не блюда (retro/modules/menu/catalog.py,
+  // NOT_READY). «unknown» — позиции нет в номенклатуре: её не прячем (T-487).
+  const NOT_DISH_CLASSES = new Set(['ingredient', 'stock', 'semi_finished', 'set_component', 'service']);
+
+  /** «Приносят больше всего» (7b): проданные готовые позиции меню. Что
+   *  блюдо — решает справочник меню на сервере (`item_classes`), а не слово в
+   *  названии; без справочника ничего не скрываем. Порядок строк `rows`
+   *  сохраняется — его задаёт DirectorLogic.rank (по прибыли). */
+  function soldDishes(snapshot, rows) {
+    const classes = (snapshot && snapshot.item_classes) || {};
+    return (rows || []).filter(row => row.revenue > 0 && !NOT_DISH_CLASSES.has(classes[row.name]));
+  }
+
+  /** «16.10 14:15» из времени сервера: оно уже по Ташкенту, со сдвигом +05:00. */
+  function stamp(iso) { return iso ? dm(iso.slice(0, 10)) + ' ' + iso.slice(11, 16) : ''; }
+
+  /** «данные на 14:05» по времени чтения iiko (оно по Ташкенту, +05:00);
+   *  прочитано не сегодня — с датой, чтобы старый ответ не выглядел свежим. */
+  function dataAt(iso, today) {
+    return 'данные на ' + (today && iso.slice(0, 10) !== today ? stamp(iso) : iso.slice(11, 16));
+  }
+
+  /** Строка состояния сегодняшнего дня (ТЗ 16.10, п. 2). `day` — день из
+   *  /api/founder/day или /week. Время — `cashier.fetched_at` сервера, не часы
+   *  браузера; смена закрыта — iiko ещё может пересчитать итог до утра.
+   *  iiko не ответил — «нет данных», а не нули. */
+  function todayStatus(day, today) {
+    if (!day) return '';
+    const cashier = day.cashier;
+    if (!cashier || !cashier.fetched_at) return 'Сегодня · нет данных iiko';
+    const shift = cashier.shift;
+    const at = dataAt(cashier.fetched_at, today);
+    if (shift && shift.open === false && shift.closed_at)
+      return 'Сегодня · смена закрыта, итог дня может пересчитаться iiko до утра · ' + at;
+    return 'Сегодня ещё идёт · ' + at;
+  }
+
+  /** Недельный порог Счёта Шефа (ТЗ 16.10, п. 4.2): «X из 30 млн», полоса и
+   *  что стало с уведомлением учредителю. Сумму, порог и «достигнут» решает
+   *  сервер — та же сумма по меню, что «за неделю» в заголовке блока. */
+  function chefWeekView(alert) {
+    if (!alert) return null;
+    const total = num(alert.total) || 0, limit = num(alert.limit);
+    const last = alert.last;
+    let status;
+    if (!alert.recipient) status = 'Получатель уведомления не настроен';
+    else if (!alert.reached && !last) status = 'При ' + short(limit) + ' за неделю придёт сообщение в Telegram';
+    else if (last && last.status === 'sent') status = 'Уведомление отправлено ' + stamp(last.at);
+    else if (last && last.status === 'failed') status = 'Уведомление не ушло, повторим через 15 минут';
+    else status = 'Уведомление уйдёт при следующей проверке';
+    return {
+      reached: Boolean(alert.reached),
+      progress: short(total) + ' из ' + short(limit),
+      pct: Math.max(0, Math.min(100, num(alert.percent) || 0)),
+      title: 'Порог ' + short(limit) + ' за неделю достигнут',
+      status,
+    };
+  }
+
   // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
   return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
-    accountantIssues, chefAlerts};
+    accountantIssues, chefAlerts, forecastNote, soldDishes, chefWeekView, todayStatus};
 });

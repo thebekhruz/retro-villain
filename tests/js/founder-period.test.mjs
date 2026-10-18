@@ -15,3 +15,11 @@ test('аналитика iiko не обрезается началом учёт�
   assert.deepEqual(logic.quickPeriod('30','2026-10-16'),{start:'2026-09-16',end:'2026-10-15'});
   assert.deepEqual(logic.quickPeriod('7','2026-10-16'),{start:'2026-10-09',end:'2026-10-15'});
 });
+
+test('T-506: подпись времени аналитики — по Ташкенту из ответа, сегодня — «ещё идёт»', () => {
+  assert.equal(logic.updatedLabel({updated_at: '2026-10-17T14:05:09+05:00', includes_current_day: true}),
+    'Сегодня ещё идёт · данные на 14:05');
+  assert.equal(logic.updatedLabel({updated_at: '2026-10-17T00:30:00+05:00', includes_current_day: false}),
+    'Обновлено 17.10, 00:30');
+  assert.equal(logic.updatedLabel({updated_at: null, includes_current_day: true}), 'Сегодня ещё идёт · нет данных');
+});

@@ -4,7 +4,7 @@ from datetime import date
 import pytest
 
 from retro.modules.kpi.rules import (
-    auto_target, effective_targets,
+    auto_target, effective_targets, threshold_position, upgrade_scheme,
     HALL, KpiError, Line, Order, Stats, aggregate, baseline_window, compute, default_settings, exclusion_reasons,
     login_counts, month_bounds, next_bounds, normalize_scheme, normalize_targets, week_bounds,
 )
@@ -90,19 +90,19 @@ def test_compute_team_fund_is_shared_by_checks():
     assert result['fund'] == 3 * rows['Алина']['premium'] and result['restaurant_net'] == result['team_uplift'] - result['fund']
     assert 'uplift' not in rows['Алина'] and 'own_base' not in rows['Алина']
     # Позиции у человека — против базы зала.
-    assert rows['Алина']['items'][0] == dict(key='tea', title='Фирменные чаи', group='напиток', base=6.0, now=10.0, target=8.0,
+    assert rows['Алина']['items'][0] == dict(key='tea', title='Фирменные чаи', group='напиток', base=6.0, now=10.0, target=10.5,
                                               quantity=1, margin=36000, by_day={})
     assert rows['Новичок']['sold'] == 2 and result['rows'][0]['waiter'] == 'Новичок', 'при равной премии выше тот, кто продал больше'
     # Цель периода в штуках: ожидаемые чеки 200 / 2 × 7 = 700; цели 5 + 4 → 63; продано 3.
-    # Цели по правилу «база + 30 %»: чай 6,0 → 7,8 → 8,0; суп 1,0 → max(1,3; 1,5) → 1,5. Ожидаемые чеки 700.
-    assert result['expected_checks'] == 700 and result['goal_qty'] == 66.5 and result['sold'] == 3
+    # Цели по правилу «база + 70 %» (T-490): чай 6,0 → 10,2 → 10,5; суп 1,0 → max(1,7; 1,75) → 2,0. Ожидаемые чеки 700.
+    assert result['expected_checks'] == 700 and result['goal_qty'] == 87.5 and result['sold'] == 3
     progress = {item['key']: item for item in result['targets_progress']}
-    assert progress['tea'] == dict(key='tea', title='Фирменные чаи', group='напиток', margin=36000, base=6.0, now=6.45, target=8.0,
-                                   target_source='base', target_auto=8.0,
-                                   sold=2, goal_qty=56.0, remaining=54, lag=14.0, uplift=5040, push=True)
-    assert progress['soup']['target'] == 1.5 and progress['soup']['lag'] == 2.0 and progress['soup']['push'] is True
+    assert progress['tea'] == dict(key='tea', title='Фирменные чаи', group='напиток', margin=36000, base=6.0, now=6.45, target=10.5,
+                                   target_source='base', target_auto=10.5,
+                                   sold=2, goal_qty=73.5, remaining=72, lag=19.0, uplift=5040, push=True)
+    assert progress['soup']['target'] == 2.0 and progress['soup']['lag'] == 3.0 and progress['soup']['push'] is True
     assert [item['key'] for item in result['targets_progress']] == ['tea', 'soup'], 'сначала большее отставание'
-    assert result['hall']['rates']['tea'] == dict(base=6.0, now=6.45, target=8.0)
+    assert result['hall']['rates']['tea'] == dict(base=6.0, now=6.45, target=10.5)
 
 
 def test_negative_team_uplift_pays_nothing_and_netting_toggle():
@@ -140,7 +140,7 @@ def test_threshold_excludes_small_weeks_from_the_fund():
 
 
 def test_scheme_and_targets_validation():
-    assert normalize_scheme({})['share'] == 0.25
+    assert normalize_scheme({})['share'] == 0.40 and normalize_scheme({})['noise_week'] == 1_500_000
     assert normalize_scheme(dict(share='0.3', netting=False))['netting'] is False
     # Старые поля схемы (лично/команда, своя база) читаются и отбрасываются.
     assert 'personal' not in normalize_scheme(dict(personal=0.7, team=0.3, baseline_min_checks=40))
@@ -189,26 +189,65 @@ def test_store_renames_reserved_end_column_in_old_databases(tmp_path):
     assert KpiStore(path).list()[0]['id'] == period['id'], 'повторное открытие не ломает мигрированную базу'
 
 
-def test_auto_target_is_base_plus_30_percent_rounded_up_to_half():
-    """T-469, решение Amir: цель = max(база × 1,3; база + 0,5), вверх до 0,5."""
-    assert auto_target(0) == 0.5, 'база 0 — цель полпорции на 100 чеков'
-    assert auto_target(0.9) == 1.5, '0,9 + 0,5 = 1,4 больше 1,17 → 1,5'
-    assert auto_target(1.0) == 1.5
-    assert auto_target(1.7) == 2.5, '1,7 × 1,3 = 2,21 → 2,5'
-    assert auto_target(4.2) == 5.5, 'Эзогелин: 4,2 × 1,3 = 5,46 → 5,5'
-    assert auto_target(4.34) == 6.0, 'Грибной суп: 5,64 → 6,0'
-    assert auto_target(5.0) == 6.5, 'ровно 6,5 не округляется вверх ещё раз'
-    assert auto_target(10.0) == 13.0
+def test_auto_target_is_base_plus_70_percent_rounded_up_to_half():
+    """T-490, решение Amir 17.10: цель = max(база × 1,7; база + 0,75), вверх до 0,5."""
+    assert auto_target(0) == 1.0, 'база 0: 0,75 → 1,0'
+    assert auto_target(0.9) == 2.0, '0,9 + 0,75 = 1,65 больше 1,53 → 2,0'
+    assert auto_target(1.0) == 2.0, 'max(1,7; 1,75) → 2,0'
+    assert auto_target(1.7) == 3.0, '1,7 × 1,7 = 2,89 → 3,0'
+    assert auto_target(4.2) == 7.5, 'Эзогелин: 7,14 → 7,5'
+    assert auto_target(5.0) == 8.5, 'ровно 8,5 не округляется вверх ещё раз'
+    assert auto_target(10.0) == 17.0
 
 
 def test_manual_target_wins_only_when_above_the_rule():
     base = stats(100, [1], tea=4, soup=10)
     targets = [dict(TARGETS[0], target100=9.0, manual=True), dict(TARGETS[1], target100=5.0, manual=True)]
     tea, soup = effective_targets(targets, base)
-    assert (tea['target100'], tea['target_source'], tea['target_auto']) == (9.0, 'manual', 5.5)
-    assert (soup['target100'], soup['target_source'], soup['target_auto']) == (13.0, 'base', 13.0), 'ручная ниже правила — правило'
+    assert (tea['target100'], tea['target_source'], tea['target_auto']) == (9.0, 'manual', 7.0)
+    assert (soup['target100'], soup['target_source'], soup['target_auto']) == (17.0, 'base', 17.0), 'ручная ниже правила — правило'
     plain = effective_targets([dict(TARGETS[0], target100=None, manual=False)], base)[0]
-    assert (plain['target100'], plain['target_source']) == (5.5, 'base')
+    assert (plain['target100'], plain['target_source']) == (7.0, 'base')
     # Нормализация: без флага manual цель не хранится, с флагом — хранится.
     stored = normalize_targets([dict(title='Чай', dishes=[(TEA, 'x')], target100='7'), dict(title='Суп', dishes=[(SOUP, 'y')], target100='7', manual=True)])
     assert [(t['target100'], t['manual']) for t in stored] == [(None, False), (7.0, True)]
+
+
+def test_noise_threshold_keeps_small_gains_for_the_restaurant():
+    """T-490: фонд = доля × max(0; прирост − порог периода); ниже порога всё остаётся ресторану."""
+    base = {HALL: stats(100, [1], tea=10, soup=10)}
+    now = {'Алина': stats(100, [1, 2, 3], tea=20, soup=10), HALL: stats(100, [1, 2, 3], tea=20, soup=10)}
+    # Прирост зала: +10 на 100 × 100 чеков × 36 000 = 360 000.
+    below = compute(now, base, TARGETS, dict(SCHEME, noise_week=500_000))
+    assert below['team_uplift'] == 360000 and below['threshold'] == 500000
+    assert below['fund'] == 0 and below['fund_total'] == 0 and below['restaurant_net'] == 360000
+    assert below['to_threshold'] == 140000 and below['above_threshold'] is False
+    above = compute(now, base, TARGETS, dict(SCHEME, noise_week=100_000))
+    assert above['fund_total'] == round(SCHEME['share'] * (360000 - 100000)) and above['above_threshold'] is True
+    assert above['fund'] == above['rows'][0]['premium'] == above['fund_total'] and above['to_threshold'] == 0
+    # На двух неделях порог вдвое больше.
+    assert compute(now, base, TARGETS, dict(SCHEME, noise_week=100_000), days_total=14)['threshold'] == 200000
+    # Без порога в схеме — прежнее поведение (порог 0).
+    assert compute(now, base, TARGETS, SCHEME)['fund_total'] == round(SCHEME['share'] * 360000)
+
+
+def test_threshold_mark_on_the_ring():
+    """Метка порога на кольце: базовые порции + порог / прирост при цели × (цель − база), к цели."""
+    assert threshold_position(111, 203, 1_500_000, 3_990_000) == 0.7172, 'пилот: около 72 %'
+    assert threshold_position(100, 200, 0, 1_000_000) == 0.5, 'без порога метка на базе'
+    assert threshold_position(100, 200, 2_000_000, 1_000_000) == 1.0, 'порог выше прироста при цели — у конца'
+    assert threshold_position(0, 0, 1, 1) is None and threshold_position(10, 20, 1, 0) is None
+    base = {HALL: stats(100, [1], tea=10, soup=0)}
+    now = {HALL: stats(0, [], tea=0, soup=0)}
+    result = compute(now, base, TARGETS, dict(SCHEME, noise_week=100_000), days_total=7, days_passed=0)
+    # База чая 10 → цель 17; суп 0 → 1,0. Ожидаемые чеки 700: база 70 порций, цель 126; прирост при цели 1 988 000.
+    assert result['base_qty'] == 70.0 and result['goal_qty'] == 126.0 and result['goal_uplift'] == 1988000
+    assert result['threshold_mark'] == threshold_position(70.0, 126.0, 100_000, 1_988_000)
+
+
+def test_saved_scheme_before_threshold_is_upgraded():
+    old = dict(share=0.25, cap=1_000_000, min_checks=20, min_shifts=3, baseline_weeks=4, netting=True)
+    assert upgrade_scheme(old) == dict(old, share=0.40, noise_week=1_500_000)
+    assert upgrade_scheme(dict(old, share=0.3))['share'] == 0.3, 'долю, заданную директором, не трогаем'
+    fresh = dict(old, share=0.2, noise_week=0)
+    assert upgrade_scheme(fresh) is fresh

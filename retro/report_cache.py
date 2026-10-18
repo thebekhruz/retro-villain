@@ -6,6 +6,10 @@ from dataclasses import dataclass
 import logging
 from time import monotonic
 
+# Готовый отчёт директора без явного ttl (сегодня, чат, блюда учредителя);
+# /api/director/report держит закрытый период дольше — director.routes.
+DIRECTOR_REPORT_TTL = 300
+
 
 refresh_source = ContextVar('refresh_source', default=False)
 
@@ -132,7 +136,7 @@ async def load_iiko(state, method, *args, refresh=False, request=None, timeout=9
             refresh_source.reset(token)
 
     if ttl is None:
-        ttl = 300 if method == 'load_director_report' else 30 if method == 'load' else 60
+        ttl = DIRECTOR_REPORT_TTL if method == 'load_director_report' else 30 if method == 'load' else 60
     days = getattr(state, 'cashier_days', None)
     if method == 'load' and days is not None:
         async def daily_read():

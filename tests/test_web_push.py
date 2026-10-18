@@ -148,10 +148,9 @@ def test_sender_refuses_foreign_endpoints_and_broken_keys_without_a_request():
 
 def test_push_config_subject_follows_apple_rules():
     assert parse_push_config({}).subject == 'mailto:push@retro-milliy.uz'
-    assert parse_push_config({'DASHBOARD_PUBLIC_URL': 'https://dashboard.retro-milliy.uz/'}).subject == \
+    assert parse_push_config({}, public_url='https://dashboard.retro-milliy.uz').subject == \
         'https://dashboard.retro-milliy.uz'
-    assert parse_push_config({'RAILWAY_PUBLIC_DOMAIN': 'retro.up.railway.app'}).subject == 'https://retro.up.railway.app'
-    assert parse_push_config({'DASHBOARD_PUBLIC_URL': 'http://192.168.1.5:8010'}).subject == 'mailto:push@retro-milliy.uz'
+    assert parse_push_config({}, public_url='http://192.168.1.5:8010').subject == 'mailto:push@retro-milliy.uz'
     assert parse_push_config({'VAPID_SUBJECT': 'mailto:boss@retro.uz'}).subject == 'mailto:boss@retro.uz'
     for bad in ({'VAPID_SUBJECT': 'boss@retro.uz'}, {'VAPID_SUBJECT': 'http://x.uz'},
                 {'VAPID_PRIVATE_KEY': 'abc'}):

@@ -38,7 +38,7 @@
     <div class="page-heading">
       <div>
         <p class="eyebrow">РЕШЕНИЯ ПО РЕСТОРАНУ</p>
-        <h1>Меню под контролем<span>.</span></h1>
+        <h1>Полный отчёт<span>.</span></h1>
         <p class="subtitle">Выбранный период по данным iiko: что продаётся, что съедает маржу, кто продаёт.</p>
       </div>
       <div class="module-badge"><span>03</span><div>Модуль<small>Директор</small></div></div>
@@ -47,48 +47,51 @@
     <section class="controls" aria-label="Период отчёта">
       <div id="period-host"></div>
       <button id="refresh" class="button secondary" type="button"><span aria-hidden="true">↻</span> Обновить</button>
-      <button id="generate" class="button primary" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h4"/></svg>Сформировать отчёт</button>
+      <button id="generate" class="button primary" type="button" aria-describedby="generate-note"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/><path d="M9 13h6M9 17h4"/></svg>Сформировать отчёт</button>
+      <!-- Цифры на экране — живая аналитика iiko без границы учёта (T-495);
+           сохранённый отчёт и PDF — только с 13.10, как у сервера. -->
+      <p id="generate-note" class="generate-note" hidden>PDF-отчёт сохраняется только за период с 13 октября 2026. На экране — цифры iiko за весь выбранный период.</p>
     </section>
 
-    <div class="day-meta"><span class="source-dot"></span><strong>Источник: iikoWeb</strong><span id="state" role="status" aria-live="polite"></span><span class="day-meta-sep">·</span><span>Период <strong id="report-period">—</strong></span></div>
+    <div class="day-meta"><span class="source-dot"></span><span>Период <strong id="report-period">—</strong></span><span class="day-meta-sep">·</span><span id="state" role="status" aria-live="polite"></span></div>
 
     <section id="setup" class="setup" hidden><span class="setup-symbol">⌁</span><div><h2 id="setup-title">Нет данных iiko</h2><p id="setup-note">Названия блюд читаются автоматически; позиции с меткой «БЕХРУЗ» учитываются как банкетный зал.</p><p id="setup-reason" class="setup-reason"></p><a class="text-link" href="/director">Вернуться на экран директора <span>↗</span></a></div></section>
 
-    <!-- 1. Итог периода: за этой цифрой сюда и заходят. -->
+    <!-- 1. Итог периода: за этой цифрой сюда и заходят. Выручка одна — по
+         меню; что в неё не вошло и где Яндекс — в «Как считается» (T-501). -->
     <section class="shift" aria-label="Итог периода">
       <div class="panel day-figures">
         <p class="kicker-line">Выручка · за период</p>
         <div class="hero">
-          <span class="hero-value"><strong id="cash">—</strong><small>сум</small></span>
-          <span class="hero-note" id="cash-note">Банкет — по метке «БЕХРУЗ» в блюде</span>
+          <span class="hero-value"><strong id="revenue">—</strong><small>сум</small></span>
         </div>
         <div class="mini-row mini-row-four">
-          <div class="mini"><span class="mini-name">Retro · меню</span><span class="mini-value"><strong id="retro">—</strong></span></div>
-          <div class="mini"><span class="mini-name">Oxbridge · меню</span><span class="mini-value"><strong id="oxbridge">—</strong></span></div>
-          <div class="mini"><span class="mini-name">Банкет · меню</span><span class="mini-value"><strong id="banquet">—</strong></span></div>
+          <div class="mini"><span class="mini-name">Retro</span><span class="mini-value"><strong id="retro">—</strong></span></div>
+          <div class="mini"><span class="mini-name">Retro в школе</span><span class="mini-value"><strong id="oxbridge">—</strong></span></div>
+          <div class="mini"><span class="mini-name">Банкет</span><span class="mini-value"><strong id="banquet">—</strong></span></div>
           <div class="mini"><span class="mini-name">Яндекс · оплаты</span><span class="mini-value"><strong id="yandex">—</strong></span></div>
         </div>
+        <details id="revenue-hint" class="calc-hint" hidden><summary>Как считается</summary><div id="revenue-notes"></div></details>
       </div>
       <div class="panel margin-card">
         <p class="kicker-line">Маржа · по меню</p>
         <div class="hero">
           <span class="hero-value"><strong id="margin-percent">—</strong><small>%</small></span>
-          <span class="hero-note">Валовая прибыль к выручке за период</span>
+          <span class="hero-note">Прибыль итоговая к выручке, после расхода без выручки</span>
         </div>
         <div class="margin-bar" aria-hidden="true"><span id="margin-fill"></span></div>
         <div class="margin-lines">
-          <div class="rail-line"><span>Валовая прибыль</span><b id="gross-profit">—</b></div>
           <div class="rail-line"><span>Себестоимость</span><b id="cost-total">—</b></div>
           <div class="rail-line"><span>Позиций в продаже</span><b id="positions">—</b></div>
         </div>
       </div>
     </section>
 
-    <section class="profit-summary" aria-label="Выручка и прибыль">
-      <div class="panel profit-tile"><p>Выручка</p><strong id="summary-revenue">—</strong><small>Меню после исключений</small></div>
-      <div class="panel profit-tile"><p>Прибыль продаж</p><strong id="sales-profit">—</strong><small>Выручка минус себестоимость платных позиций</small></div>
+    <!-- Как считается прибыль — одной заметкой у таблицы блюд. -->
+    <section class="profit-summary" aria-label="Прибыль">
+      <div class="panel profit-tile"><p>Прибыль продаж</p><strong id="sales-profit">—</strong></div>
       <div class="panel profit-tile"><p>Расход без выручки</p><strong id="internal-cost">—</strong><div id="internal-detail"></div></div>
-      <div class="panel profit-tile is-total"><p>Прибыль итоговая</p><strong id="summary-profit">—</strong><small>Прибыль продаж минус расход без выручки</small></div>
+      <div class="panel profit-tile is-total"><p>Прибыль итоговая</p><strong id="summary-profit">—</strong></div>
     </section>
 
     <!-- 2. Две короткие выжимки перед таблицей: на чём зарабатываем и что
@@ -101,7 +104,7 @@
       <div class="panel highlight-card is-warning">
         <div class="panel-heading"><div><p class="eyebrow">СЪЕДАЮТ МАРЖУ</p><h2>Заметные с низкой маржой</h2></div><span class="tag">топ-3</span></div>
         <div id="drains" class="highlight-list"></div>
-        <p class="panel-note">Считаем только позиции, дающие не меньше половины процента выручки. Единичные продажи в список не попадают.</p>
+        <p class="panel-note">Только позиции от 0,5 % выручки за период.</p>
       </div>
     </section>
 
@@ -112,7 +115,7 @@
         <div class="ops-tabs" role="tablist" aria-label="Направление">
           <button class="ops-tab is-active" type="button" role="tab" aria-selected="true" data-group="all">Все</button>
           <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="retro">Retro</button>
-          <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="oxbridge">Oxbridge</button>
+          <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="oxbridge">Retro в школе</button>
           <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="banquet">Банкет</button>
           <button class="ops-tab" type="button" role="tab" aria-selected="false" data-group="yandex">Яндекс</button>
         </div>
@@ -126,14 +129,16 @@
           <button class="chip" type="button" data-sort="quantity">По количеству</button>
         </div>
       </div>
-      <p class="panel-note">Выручка и прибыль — в сум. Количество и себестоимость включают все позиции; расход без выручки показан отдельно и уже вычтен из итоговой прибыли.</p>
+      <!-- Ценовые диапазоны (ТЗ 3.2): пороги приходят с отчётом, DIRECTOR_PRICE_TIERS. -->
+      <div id="menu-price-row" class="menu-price-row" hidden><span class="menu-price-label">Средняя цена</span><div id="menu-price" class="menu-sort menu-price" role="group" aria-label="Средняя цена"></div></div>
+      <p class="panel-note">Суммы в сум. Количество и себестоимость включают расход без выручки: Счёт Шефа, дегустацию и прочее. Прибыль продаж: выручка минус себестоимость проданного. Прибыль итоговая и маржа: после расхода без выручки. Цена: средняя цена продажи после скидок.</p>
       <div class="menu-table-scroll" data-scroll>
         <table class="menu-table">
-          <thead><tr><th scope="col">Позиция</th><th scope="col">Количество</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль продаж</th><th scope="col">Расход без выручки</th><th scope="col">Прибыль итоговая</th><th scope="col">Маржа</th></tr></thead>
+          <thead><tr><th scope="col">Позиция</th><th scope="col">Цена</th><th scope="col">Количество</th><th scope="col">Выручка</th><th scope="col">Себестоимость</th><th scope="col">Прибыль продаж</th><th scope="col">Расход без выручки</th><th scope="col">Прибыль итоговая</th><th scope="col">Маржа</th></tr></thead>
           <tbody id="menu-rows"></tbody>
         </table>
       </div>
-      <div id="menu-empty" class="empty-state" hidden><span>▤</span><p>По этому направлению продаж за период нет</p></div>
+      <div id="menu-empty" class="empty-state" hidden><span>▤</span><p id="menu-empty-text">По этому направлению продаж за период нет</p></div>
       <div class="menu-foot"><span id="menu-count">—</span><button id="menu-more" class="button secondary" type="button" hidden>Показать все позиции</button></div>
     </section>
 
@@ -148,7 +153,7 @@
           </table>
         </div>
         <div id="waiters-empty" class="empty-state" hidden><span>◉</span><p>iiko не вернул официантов за период</p></div>
-        <p class="panel-note">Выручка засчитывается официанту, открывшему заказ. Итоговая прибыль и маржа учитывают расход без выручки.</p>
+        <p class="panel-note">Выручка засчитывается официанту, открывшему заказ.</p>
       </section>
     </details>
 

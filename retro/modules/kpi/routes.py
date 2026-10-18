@@ -18,7 +18,7 @@ from retro.modules.accountant.ledger import LedgerError
 from retro.modules.cashier.service import DataError, today_tashkent
 
 from .export import kpi_workbook
-from .rules import KpiError, normalize_scheme, normalize_targets
+from .rules import KpiError, normalize_scheme, normalize_targets, upgrade_scheme
 from .service import fill_margins, period_view, snapshot_for_close
 
 manager_router = APIRouter(prefix='/api/manager/kpi', tags=['kpi'])
@@ -112,9 +112,10 @@ def settings(request: Request, period: int | None = None):
     current = _period_or_404(request, period)
     store = request.app.state.kpi_store
     cards = request.app.state.accountant_roster.manager_cards()
+    settings = dict(current['settings'], scheme=upgrade_scheme(current['settings']['scheme']))
     return dict(period=dict(id=current['id'], kind=current['kind'], start=current['start'], end=current['end'],
                             status=current['status']),
-                settings=current['settings'], links=store.links(),
+                settings=settings, links=store.links(),
                 employees=[dict(id=card['id'], name=card['name'], role=card['role'], group=card['group'])
                            for card in cards if card['group'] in ('Обслуживание зала', 'Бар', 'Встреча гостей')])
 
