@@ -786,7 +786,18 @@
     load('dishes', '/api/founder/dishes?days=7').then(renderDishes).catch(error => failBlock('fo-dishes', error));
   }
 
+  /* Счёт Шефа (T-514): на телефоне — сразу под дивидендами, а не в свёрнутом
+     разделе внизу; на компьютере — на своём месте рядом с проверкой бухгалтера.
+     Узел один и тот же: id, данные и кнопки уведомлений не дублируются. */
+  function placeChef() {
+    const panel = $('fo-chef-panel');
+    const slot = desk.matches ? $('fo-chef-slot-desk') : $('fo-chef-slot-phone');
+    if (desk.matches) { if (slot.nextElementSibling !== panel) slot.after(panel); }
+    else if (panel.parentElement !== slot) slot.append(panel);
+  }
+
   function loadForLayout() {
+    placeChef();
     // Телефон показывает 7a и под ним всю картину компьютера — данные нужны обе.
     if (desk.matches) loadDesk(); else { loadPhone().catch(() => {}); if (!state.deskLoaded) loadDesk(); }
     if (!desk.matches) state.deskLoaded = true;
