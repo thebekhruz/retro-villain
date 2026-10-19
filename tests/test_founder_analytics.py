@@ -191,3 +191,33 @@ def test_gross_profit_preserves_losses_and_decimal_precision():
     rows = [RevenueRow(day, 'Kassa-FiscalBox1', 'Ресторан', 'Плов', Decimal('10.01'), Decimal('15.03'))]
     report = build_analytics(rows, [], day, day, 'day', ('retro',))
     assert report['gross_profit_totals']['selected'] == '-5.02'
+
+
+def test_yandex_eda_is_counted_inside_retro_from_iiko_payment_type():
+    """ТЗ 16.10, п. 5.2: «в т.ч. Яндекс Еда» внутри Retro — из типа оплаты iiko,
+    вместе с алиасом «Яндех Еда»; к «Всего» не прибавляется."""
+    rows = [revenue(START, 1000), revenue(START, 300, item='Самса'),
+            revenue(START, 200, register='GL-Kassa-Oksbrich', section='Зал', item='Обед')]
+    payments = [payment(START, 'UzCard', 500), payment(START, 'Яндекс Еда', 500),
+                payment(START, 'Яндех Еда', 300, item='Самса'),
+                payment(START, 'UzCard', 200, register='GL-Kassa-Oksbrich', section='Зал', item='Обед')]
+
+    result = build_analytics(rows, payments, START, END, 'day', ('retro', 'school'),
+                             now=datetime(2026, 9, 9, 10, 0))
+
+    assert result['yandex_totals'] == {'retro': '800', 'school': '0', 'banquet': '0'}
+    assert result['totals']['selected'] == '1500'
+    # Retro не выбран — его Яндекс всё равно посчитан, как и totals.
+    only_school = build_analytics(rows, payments, START, END, 'day', ('school',),
+                                  now=datetime(2026, 9, 9, 10, 0))
+    assert only_school['yandex_totals']['retro'] == '800'
+
+
+def test_source_cache_age_follows_the_real_olap_ttl():
+    """T-508: закрытый период iiko кэширует 15 минут, открытый — минуту."""
+    from retro.integrations.iiko import OLAP_TTL_CLOSED, OLAP_TTL_OPEN
+    now = datetime(2026, 9, 8, 8, 0)
+    closed = build_analytics([], [], date(2026, 9, 6), date(2026, 9, 7), 'day', ('retro',), now=now)
+    current = build_analytics([], [], date(2026, 9, 7), date(2026, 9, 8), 'day', ('retro',), now=now)
+    assert closed['source_cache_max_age_seconds'] == OLAP_TTL_CLOSED == 900
+    assert current['source_cache_max_age_seconds'] == OLAP_TTL_OPEN == 60

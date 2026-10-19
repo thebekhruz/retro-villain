@@ -94,3 +94,20 @@ def test_panel_user_config_rejects_invalid_values(monkeypatch, value):
 
     with pytest.raises(ValueError, match='DASHBOARD_PANEL_USERS'):
         Settings.from_env()
+
+
+def test_director_price_tiers_default_and_custom(monkeypatch):
+    monkeypatch.delenv('DIRECTOR_PRICE_TIERS', raising=False)
+    assert Settings.from_env().director_price_tiers == (30000, 45000)
+    monkeypatch.setenv('DIRECTOR_PRICE_TIERS', '')
+    assert Settings.from_env().director_price_tiers == (30000, 45000)
+    monkeypatch.setenv('DIRECTOR_PRICE_TIERS', '25 000, 40000,60000')
+    assert Settings.from_env().director_price_tiers == (25000, 40000, 60000)
+
+
+@pytest.mark.parametrize('value', ['45000,30000', '30000,30000', '0,30000', '30к', '1,2,3,4,5,6', ','])
+def test_director_price_tiers_reject_invalid_values(monkeypatch, value):
+    monkeypatch.setenv('DIRECTOR_PRICE_TIERS', value)
+
+    with pytest.raises(ValueError, match='DIRECTOR_PRICE_TIERS'):
+        Settings.from_env()

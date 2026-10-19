@@ -44,7 +44,8 @@ def kpi_workbook(view: dict, *, withheld=None) -> bytes:
     summary.append([])
     summary.append(['Период', label])
     summary.append(['Прирост маржи зала по целевым позициям, сум', totals['team_uplift']])
-    summary.append(['Фонд премии (доля прироста), сум', totals.get('fund_total', totals['fund'])])
+    summary.append(['Порог шума за период, сум', totals.get('threshold') or 0])
+    summary.append(['Фонд премии (доля прироста сверх порога), сум', totals.get('fund_total', totals['fund'])])
     summary.append(['Выплачено с учётом потолка, сум', totals['fund']])
     summary.append(['Ресторану сверх премии, сум', totals['restaurant_net']])
     summary.append(['Данные iiko на', view.get('fetched_at') or ''])
@@ -60,7 +61,10 @@ def kpi_workbook(view: dict, *, withheld=None) -> bytes:
            [34, 10, 16, 14, 14, 14, 14, 60])
     scheme = view['scheme']
     _sheet(workbook, 'Настройки', ['Параметр', 'Значение'], [
-        ['Период', label], ['Доля прироста зала в фонд', scheme['share']], ['Делится', 'между участниками по числу чеков'],
+        ['Период', label], ['Доля прироста зала сверх порога в фонд', scheme['share']],
+        ['Порог шума в неделю, сум', scheme.get('noise_week', 0)],
+        ['Порог шума за период, сум', view['totals'].get('threshold') or 0],
+        ['Делится', 'между участниками по числу чеков'],
         ['Потолок на человека в неделю, сум', scheme['cap']],
         ['Минимум чеков', scheme['min_checks']], ['Минимум смен', scheme['min_shifts']],
         ['База зала, недель', scheme['baseline_weeks']],

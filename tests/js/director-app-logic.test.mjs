@@ -57,6 +57,61 @@ test('советы дня опираются на меню Retro: продвиг
   assert.deepEqual(logic.dayTips({item_metrics: {}}), []);
 });
 
+// ТЗ 16.10: 2.1 — тренд и день недели, 2.2 — без ежедневного повтора, 2.4 — основание.
+const week = {period_start: '2026-10-09', period_end: '2026-10-15', item_metrics: {retro: {
+  'Плов': metric(70, 4550000, 1750000), 'Кебаб': metric(40, 3000000, 1000000),
+  'Лагман': metric(60, 2880000, 2000000), 'Манты': metric(50, 2500000, 1700000), 'Шурпа': metric(45, 2000000, 1400000),
+  'Халим': metric(1, 42000, 20000), 'Долма': metric(2, 90000, 40000), 'Нарын': metric(3, 120000, 60000),
+}}};
+const short3 = {period_days: 3, item_metrics: {retro: {
+  'Плов': metric(10, 1, 0), 'Кебаб': metric(30, 1, 0), 'Лагман': metric(30, 1, 0), 'Манты': metric(20, 1, 0),
+  'Шурпа': metric(20, 1, 0)}}};
+const long30 = {period_days: 30, period_start: '2026-09-16', period_end: '2026-10-15',
+  item_metrics: {retro: {'Плов': metric(300, 1, 0), 'Кебаб': metric(150, 1, 0), 'Лагман': metric(300, 1, 0),
+    'Манты': metric(200, 1, 0), 'Шурпа': metric(200, 1, 0)}},
+  // Пятницы (02.10, 09.10) — 60 млн, прочие дни — 40 млн.
+  daily_totals: ['2026-10-01', '2026-10-02', '2026-10-03', '2026-10-08', '2026-10-09', '2026-10-10']
+    .map(day => ({day, directions: {retro: ['2026-10-02', '2026-10-09'].includes(day) ? '60000000' : '40000000'}}))};
+
+test('тренд меняет «продвигать»: растущее блюдо с высокой маржой обгоняет вчерашнего лидера', () => {
+  const tips = logic.dayTips(week, {short: short3, long: long30, today: '2026-10-16'});
+  const promo = tips.find(tip => tip.kind === 'promo');
+  // Плов: прибыль 2,8 млн, но −67 % к среднему; Кебаб: 2 млн и +100 %.
+  assert.equal(promo.dish, 'Кебаб');
+  assert.equal(promo.trend, 1);
+  assert.deepEqual(promo.period, {start: '2026-10-09', end: '2026-10-15'});
+});
+
+test('просевшее популярное блюдо — отдельный совет с основанием', () => {
+  const tips = logic.dayTips(week, {short: short3, long: long30, today: '2026-10-16'});
+  const drop = tips.find(tip => tip.kind === 'drop');
+  assert.equal(drop.dish, 'Плов');
+  assert.ok(drop.trend <= -0.35);
+});
+
+test('день недели: пятница выше среднего дня Retro', () => {
+  const tips = logic.dayTips(week, {short: short3, long: long30, today: '2026-10-16'});
+  const day = tips.find(tip => tip.kind === 'weekday');
+  assert.equal(day.weekdayDative, 'пятницам');
+  assert.equal(day.days, 2);
+  assert.ok(Math.abs(day.shift - (60 / (280 / 6) - 1)) < 1e-9);
+});
+
+test('«не акционировать» и «убрать» не повторяются каждый день', () => {
+  const pick = today => logic.dayTips(week, {today}).filter(tip => tip.kind === 'trap' || tip.kind === 'weak')
+    .map(tip => tip.dish).join('|');
+  const days = ['2026-10-16', '2026-10-17', '2026-10-18'].map(pick);
+  assert.equal(new Set(days).size, 3);
+  // В один день — один и тот же совет при повторном открытии.
+  assert.equal(pick('2026-10-16'), days[0]);
+});
+
+test('без тренда советы честно говорят, что они только по неделе', () => {
+  assert.deepEqual(logic.tipNotes(week, {}), ['Тренд к 30 дням недоступен — советы только по неделе.']);
+  assert.deepEqual(logic.tipNotes(week, {short: short3, long: long30}), []);
+  assert.match(logic.tipNotes(Object.assign({missing_days: ['2026-10-12']}, week), {short: short3, long: long30})[0], /1 дн/);
+});
+
 test('команда: смены с посещаемостью и оклады с выплатами из реестра', () => {
   const rows = logic.teamRows({
     shift: [{employee_id: 1, name: 'Жасур', role: 'официант', rate: '180000', status: 'late',
@@ -130,4 +185,117 @@ test('официанты Retro: по выручке, чеки, смены, ср�
 test('период из одного дня подписан одной датой', () => {
   assert.equal(logic.periodLabel('2026-09-28', '2026-09-28'), '28 сентября 2026');
   assert.equal(logic.periodLabel('2026-09-22', '2026-09-28'), '22 — 28 сентября 2026');
+});
+
+test('ингредиент из справочника меню не попадает ни в советы, ни в срезы (ТЗ 2.3)', () => {
+  const withHoney = {...week, item_classes: {'Мед': 'ingredient'}, item_metrics: {retro: {
+    ...week.item_metrics.retro, 'Мед': metric(1, 8000, 2000)}}};
+  const dishes = logic.dayTips(withHoney, {today: '2026-10-16'}).map(tip => tip.dish);
+  assert.ok(!dishes.includes('Мед'));
+  assert.ok(!logic.menuSlice(withHoney, 'retro', 'weak', 50).some(row => row.name === 'Мед'));
+});
+
+test('«продвигать» тоже по очереди дней из лучших (здесь маржу ≥ 60 % держат двое)', () => {
+  const promos = ['2026-10-16', '2026-10-17', '2026-10-18'].map(today =>
+    logic.dayTips(week, {short: short3, long: long30, today}).find(tip => tip.kind === 'promo').dish);
+  assert.deepEqual(promos, ['Кебаб', 'Плов', 'Кебаб']);
+});
+
+test('срезы меню: сортировка по выручке, количеству, марже и фильтр категории (ТЗ 2.7)', () => {
+  const snap = {item_groups: {'Плов': 'Горячее', 'Лагман': 'Супы', 'Халим': 'Горячее'}, item_metrics: {retro: {
+    'Плов': metric(10, 900000, 300000), 'Лагман': metric(60, 600000, 500000), 'Халим': metric(30, 300000, 50000)}}};
+  assert.deepEqual(logic.menuSlice(snap, 'retro', 'top').map(r => r.name), ['Плов', 'Лагман', 'Халим']);
+  assert.deepEqual(logic.menuSlice(snap, 'retro', 'top', 5, {sort: 'quantity'}).map(r => r.name), ['Лагман', 'Халим', 'Плов']);
+  assert.deepEqual(logic.menuSlice(snap, 'retro', 'top', 5, {sort: 'margin'}).map(r => r.name), ['Халим', 'Плов', 'Лагман']);
+  const hot = logic.menuSlice(snap, 'retro', 'top', 5, {category: 'Горячее'});
+  assert.deepEqual(hot.map(r => [r.name, r.category]), [['Плов', 'Горячее'], ['Халим', 'Горячее']]);
+  assert.deepEqual(logic.menuCategories(snap, 'retro'), [{name: 'Горячее', count: 2}, {name: 'Супы', count: 1}]);
+});
+
+// T-495 (ТЗ 16.10, 3.2–3.3): цена, ценовые диапазоны, «Все блюда», поиск по команде.
+const sold = (quantity, revenue, cost, chef = 0) => ({
+  quantity: String(quantity + chef), revenue: String(revenue), cost: String(cost), gross_profit: String(revenue - cost),
+  breakdown: {sales: {quantity: String(quantity), revenue: String(revenue), cost: String(cost * 0.9)},
+    chef: {quantity: String(chef), revenue: '0', cost: String(cost * 0.1)}, tasting: {}, other_zero: {}}});
+
+const priced = {
+  price_tiers: [30000, 45000],
+  item_groups: {'Плов': 'Миллий', 'Лагман': 'Миллий', 'Цезарь': 'Салаты', 'Чай': 'Напитки', 'Мед': 'Миллий'},
+  item_classes: {'Мед': 'ingredient'},
+  item_metrics: {
+    all: {'Плов': sold(100, 4500000, 1500000, 10), 'Лагман': sold(50, 1500000, 1000000),
+      'Цезарь': sold(40, 1196000, 400000), 'Чай': sold(200, 2000000, 200000),
+      'Мед': sold(3, 24000, 18000), 'Контейнер 1-х (Миллий)': sold(100, 250000, 100000)},
+  },
+};
+
+test('цена — выручка продаж на проданное количество, без Счёта Шефа и дегустации', () => {
+  const rows = Object.fromEntries(logic.entries(priced.item_metrics.all).map(row => [row.name, row.price]));
+  // Плов: 110 порций, из них 10 — Счёт Шефа; цена 4 500 000 / 100.
+  assert.equal(rows['Плов'], 45000);
+  assert.equal(rows['Цезарь'], 29900);
+  // Ответ без разбивки — выручка на всё количество; без продаж цены нет.
+  assert.equal(logic.entries({'Хлеб': metric(4, 20000, 4000)})[0].price, 5000);
+  assert.equal(logic.entries({'Хлеб': metric(3, 0, 0)})[0].price, null);
+});
+
+test('ценовые диапазоны из порогов отчёта: порог входит в верхний диапазон', () => {
+  const tiers = logic.priceTiers(priced);
+  assert.deepEqual(tiers.map(tier => tier.label), ['до 30 тыс', '30–45 тыс', 'от 45 тыс']);
+  assert.deepEqual(logic.priceTiers({price_tiers: [12500]}).map(tier => tier.label), ['до 12,5 тыс', 'от 12,5 тыс']);
+  // Отчёт без порогов — пороги по умолчанию.
+  assert.deepEqual(logic.priceTiers({}).map(tier => tier.key), tiers.map(tier => tier.key));
+  const [low, middle, high] = tiers.map(tier => tier.key);
+  assert.equal(logic.inPriceTier({price: 29999}, low, tiers), true);
+  assert.equal(logic.inPriceTier({price: 30000}, middle, tiers), true);
+  assert.equal(logic.inPriceTier({price: 45000}, middle, tiers), false);
+  assert.equal(logic.inPriceTier({price: 45000}, high, tiers), true);
+  assert.equal(logic.inPriceTier({price: null}, low, tiers), false);
+  assert.equal(logic.inPriceTier({price: null}, '', tiers), true);
+});
+
+test('«Все блюда»: все проданные блюда с ценой, без ингредиентов и упаковки; фильтры вместе', () => {
+  const all = logic.menuSlice(priced, 'all', 'all', Infinity);
+  assert.deepEqual(all.map(row => row.name), ['Плов', 'Чай', 'Лагман', 'Цезарь']);
+  assert.equal(all[0].price, 45000);
+  assert.equal(all[0].category, 'Миллий');
+  const [, middle, high] = logic.priceTiers(priced).map(tier => tier.key);
+  assert.deepEqual(logic.menuSlice(priced, 'all', 'all', Infinity, {price: middle}).map(row => row.name), ['Лагман']);
+  assert.deepEqual(logic.menuSlice(priced, 'all', 'all', Infinity, {price: high, sort: 'quantity'}).map(row => row.name),
+    ['Плов']);
+  // Цена и категория вместе: в «Миллий» за 30–45 тыс — только лагман.
+  assert.deepEqual(logic.menuSlice(priced, 'all', 'all', Infinity, {category: 'Миллий', price: middle})
+    .map(row => row.name), ['Лагман']);
+  assert.equal(logic.menuSlice(priced, 'all', 'all').length, 4);
+});
+
+test('«Низкая маржа» несёт основание: долю блюда в выручке заведения', () => {
+  const [row] = logic.menuSlice(priced, 'all', 'lowm', Infinity);
+  assert.equal(row.name, 'Лагман');
+  // Доля — от всей выручки заведения за период, вместе с упаковкой и мёдом.
+  assert.ok(Math.abs(row.share - 1500000 / 9470000) < 1e-9);
+  assert.ok(Math.round(row.margin) < logic.LOW_MARGIN);
+});
+
+test('поиск по команде: имя или должность, кириллица находится латиницей', () => {
+  const rows = [{name: 'Шохрух Тураев', role: 'повар миллий', type: 'shift', status: 'late'},
+    {name: 'Ихтиёр Насиров', role: 'бармен', type: 'shift', status: 'on_time'},
+    {name: 'Нодира Азимова', role: 'менеджер', type: 'monthly', status: 'monthly'}];
+  const names = query => logic.teamSearch(rows, query).map(row => row.name);
+  assert.deepEqual(names('shoxrux'), ['Шохрух Тураев']);
+  assert.deepEqual(names('Shokhrukh'), ['Шохрух Тураев']);
+  assert.deepEqual(names('ixtiyor'), ['Ихтиёр Насиров']);
+  assert.deepEqual(names('ихтиер'), ['Ихтиёр Насиров']);
+  assert.deepEqual(names('БАРМЕН'), ['Ихтиёр Насиров']);
+  assert.deepEqual(names('  '), rows.map(row => row.name));
+  assert.deepEqual(names('Жасур'), []);
+});
+
+test('чипы команды: пустые скрыты, «Все» и выбранный остаются', () => {
+  const rows = [{type: 'shift', status: 'late', noHik: false}, {type: 'shift', status: 'on_time', noHik: false}];
+  const chips = active => logic.teamChips(rows, active).map(chip => chip.key + ':' + chip.count);
+  assert.deepEqual(chips('all'), ['all:2', 'shift:2', 'late:1']);
+  // «Без Hikvision» выбрали с «Сегодня», а таких нет — чип с нулём не пропадает.
+  assert.deepEqual(chips('nohik'), ['all:2', 'shift:2', 'late:1', 'nohik:0']);
+  assert.deepEqual(logic.teamChips([], 'all').map(chip => chip.key), ['all']);
 });

@@ -6,7 +6,8 @@ from decimal import Decimal, ROUND_HALF_UP
 from retro.modules.cashier.service import (
     BANQUET_SECTION, PAYMENT_ALIASES, RETRO_REGISTER, SCHOOL_REGISTER, DataError,
 )
-from retro.modules.founder.models import classify_direction
+from retro.modules.founder.models import classify_direction, source_cache_ttl
+from retro.report_cache import DIRECTOR_REPORT_TTL
 
 # Где настраивается соответствие «группа меню iiko = тип отчёта». Имя
 # переменной называем прямо в отказе: экран видит директор, а правит её тот,
@@ -122,7 +123,8 @@ class DirectorSnapshot:
         return dict(period_start=self.period_start.isoformat(), period_end=self.period_end.isoformat(),
                     period_days=(self.period_end - self.period_start).days + 1,
                     cash_total=money(self.cash_total), yandex_revenue=money(self.yandex_revenue),
-                    calculation_version='2026-09-24', source_cache_max_age_seconds=60, report_cache_max_age_seconds=300,
+                    calculation_version='2026-09-24', source_cache_max_age_seconds=source_cache_ttl(self.period_end),
+                    report_cache_max_age_seconds=DIRECTOR_REPORT_TTL,
                     menu_revenue=money(sum((v.revenue for v in self.item_metrics['all'].values()), Decimal(0))),
                     excluded_revenue={key: money(value) for key, value in self.excluded_revenue.items()},
                     excluded_groups=list(self.excluded_groups),

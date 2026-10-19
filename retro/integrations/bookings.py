@@ -234,14 +234,13 @@ def merge_summaries(sources):
             merged[field] = _merge_rows([row for _, _, raw in sources for row in raw[status][field]])
         merged['by_utm'] = {field: _merge_rows(
             [row for _, _, raw in sources for row in raw[status]['by_utm'][field]]) for field in UTM_FIELDS}
+        # Метка остаётся сырой, приставка в value говорит, чей это источник:
+        # подпись «Telegram напрямую», «Сайт · форма брони» ставит
+        # founder.bookings.source_label — одна на оба режима, с сайтом и без.
         merged['by_source'] = []
-        for key, label, raw in sources:
+        for key, _label, raw in sources:
             for row in raw[status]['by_source']:
-                detail = row['label']
-                if key == 'website':
-                    detail = {'website': '', 'website_telegram': 'Telegram-чат бота сайта'}.get(row['value'], detail)
-                merged['by_source'].append({**row, 'value': key + ':' + str(row['value']),
-                                            'label': label + (' · ' + detail if detail else '')})
+                merged['by_source'].append({**row, 'value': key + ':' + str(row['value'])})
         result[status] = merged
     return result
 

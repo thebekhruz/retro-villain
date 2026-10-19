@@ -26,5 +26,137 @@
     if(job.status==='interrupted')return 'Рассылка была прервана перезапуском сервиса. Повтор автоматически не выполнялся.';
     return 'Рассылка завершилась с ошибкой.';
   }
-  root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,isTerminal:status=>terminal.has(status)};
+  /** Отпечаток черновика: тот же текст тем же получателям — тот же ключ.
+   *  Пока ключ не изменился, повтор «Отправить» идёт с прежним operation_id,
+   *  и бот не отправит сообщение второй раз. Сам текст в ключ не кладём. */
+  function draftKey(text,ids){
+    const value=String(text||'').trim()+'\n'+[...new Set(ids||[])].sort().join(',');
+    let hash=0x811c9dc5;
+    for(let index=0;index<value.length;index+=1){hash^=value.charCodeAt(index);hash=Math.imul(hash,0x01000193)}
+    return (hash>>>0).toString(16).padStart(8,'0')+'-'+value.length;
+  }
+  function plural(count,one,few,many){
+    const tens=count%100,units=count%10;
+    if(units===1&&tens!==11)return one;
+    if(units>=2&&units<=4&&(tens<12||tens>14))return few;
+    return many;
+  }
+  function agoText(milliseconds){
+    const minutes=Math.max(0,Math.floor(milliseconds/60000));
+    if(minutes<1)return 'только что';
+    if(minutes<60)return `${minutes} ${plural(minutes,'минуту','минуты','минут')} назад`;
+    const hours=Math.floor(minutes/60);
+    if(hours<24)return `${hours} ${plural(hours,'час','часа','часов')} назад`;
+    const days=Math.floor(hours/24);
+    return `${days} ${plural(days,'день','дня','дней')} назад`;
+  }
+  function repeatWarning(sentAt,now){return `Этот текст уже отправлен этим получателям ${agoText(now-sentAt)}.`}
+  /** Журнал отправленного в этом браузере: ключ → когда ушло. Неделя, не дольше. */
+  function rememberSent(history,key,at,keep=7*864e5){
+    const next={};
+    Object.entries(history||{}).forEach(([item,value])=>{if(Number(value?.at)>at-keep)next[item]=value});
+    next[key]={at};
+    return next;
+  }
+
+  /* ── Журнал рассылок (ТЗ 16.10, п. 5.3; T-504) ───────────────────────── */
+  const SOURCES={dashboard:'Из панели',tg_admin:'Команда в боте',auto:'Автоматическая'};
+  const JOB_STATUSES={queued:'В очереди',running:'Идёт',completed:'Готово',failed:'Ошибка',interrupted:'Прервана'};
+  const DELIVERY_STATUSES={pending:'В очереди',sending:'Отправляется',sent:'Отправлено',blocked:'Заблокировал бота',failed:'Не дошло'};
+  // Коды бота вместо текста Telegram (контракт T-503).
+  const DELIVERY_ERRORS={
+    network_error:'Нет связи с Telegram',
+    delivery_unknown:'Бот перезапустился во время отправки: сообщение могло дойти',
+    unsubscribed:'Гость отписался до отправки',
+  };
+  /** Ручная — запустил человек (из панели или командой в боте). У старых
+   *  заданий источника нет: считаем ручной, автоматических тогда не было. */
+  const isManual=job=>job?.source?job.source!=='auto':job?.manual!==false;
+  function sourceLabel(job){
+    if(SOURCES[job?.source])return SOURCES[job.source];
+    return job?.manual===false?SOURCES.auto:'Источник не записан';
+  }
+  function jobStatusText(job){
+    if(job.status==='running')return `Идёт: ${job.sent+job.blocked+job.failed} из ${job.audience}`;
+    return JOB_STATUSES[job.status]||'Неизвестно';
+  }
+  /** Тон плашки статуса: идёт, готово, сбой; статус не узнали — серый. */
+  function jobTone(job){
+    if(job.status==='queued'||job.status==='running')return 'running';
+    if(job.status==='completed')return 'done';
+    return job.status==='failed'||job.status==='interrupted'?'error':'unknown';
+  }
+  /** Итоги задания в порядке экрана. «В очереди» — кому ещё не отправляли. */
+  function jobCounts(job){
+    const pending=Number.isInteger(job.pending)?job.pending:Math.max(0,job.audience-job.sent-job.blocked-job.failed);
+    return [['sent','Отправлено',job.sent],['blocked','Заблокировали',job.blocked],['failed','Не дошло',job.failed],['queued','В очереди',pending]];
+  }
+  // Ташкент круглый год UTC+5: без летнего времени, без зависимости от
+  // часового пояса браузера.
+  const TASHKENT_MS=5*36e5;
+  const pad=value=>String(value).padStart(2,'0');
+  function tashkent(value){
+    const ms=typeof value==='number'?value:Date.parse(value);
+    if(!Number.isFinite(ms))return null;
+    const day=new Date(ms+TASHKENT_MS);
+    return {year:day.getUTCFullYear(),date:`${pad(day.getUTCDate())}.${pad(day.getUTCMonth()+1)}`,time:`${pad(day.getUTCHours())}:${pad(day.getUTCMinutes())}`};
+  }
+  /** «17.10 14:05»; год — только если не текущий. */
+  function momentText(value,now){
+    const at=tashkent(value);if(!at)return '—';
+    const year=tashkent(now)?.year;
+    return `${at.date}${at.year!==year?'.'+at.year:''} ${at.time}`;
+  }
+  /** Telegram ответил 429, бот ждёт. Прошедшее время не показываем. */
+  function throttleText(job,now){
+    const until=Date.parse(job?.throttled_until||'');
+    if(!Number.isFinite(until)||until<=now)return '';
+    return `Telegram просит подождать до ${tashkent(until).time}`;
+  }
+  function resumeText(job,now){
+    if(!job?.resume_count)return '';
+    const at=job.resumed_at?momentText(job.resumed_at,now):'';
+    return job.resume_count===1?`Дослано ${at}`.trim():`Досылали: ${job.resume_count} · последний раз ${at}`.trim();
+  }
+  /** Начало текста одной строкой. */
+  function preview(text,limit=140){
+    const line=String(text||'').replace(/\s+/g,' ').trim();
+    return line.length>limit?line.slice(0,limit-1).trimEnd()+'…':line;
+  }
+  const deliveryStatusText=status=>DELIVERY_STATUSES[status]||status;
+  /** Пояснение к получателю: код бота — по-русски, текст Telegram — как есть (raw). */
+  function deliveryNote(row){
+    if(!row?.error||row.status==='blocked'||row.status==='sent')return null;
+    if(DELIVERY_ERRORS[row.error])return {text:DELIVERY_ERRORS[row.error],raw:false};
+    return {text:row.error,raw:true};
+  }
+  const resumeLabel=count=>`Дослать оставшимся: ${count}`;
+  const resumeConfirm=count=>`Сообщение уйдёт ${count} ${plural(count,'гостю','гостям','гостям')} из очереди. Тем, кто уже получил его, заблокировал бота или остался с ошибкой, повторно ничего не уйдёт.`;
+  /** Такой же текст уже уходил за последние сутки — из панели, командой в
+   *  боте или с другого устройства. Журнал браузера этого не знает. */
+  function historyTwin(jobs,text,now,within=864e5){
+    const body=String(text||'').trim();if(!body)return null;
+    return (jobs||[]).find(job=>{
+      const at=Date.parse(job?.created_at||'');
+      return typeof job?.text==='string'&&job.text.trim()===body&&Number.isFinite(at)&&now-at<=within
+        &&(job.sent>0||job.status==='queued'||job.status==='running');
+    })||null;
+  }
+  const twinWarning=(job,now)=>`Такой же текст уже рассылали ${momentText(job.created_at,now)} · ${sourceLabel(job)}.`;
+  /** Строка журнала панели (T-505) в виде задания бота: бот без своего
+   *  журнала показывается теми же карточками. Получателей и досылки у неё нет,
+   *  итог — последний, что панель узнала у бота. */
+  function fromPanelJournal(entry){
+    const audience=entry.audience||entry.recipients||0,done=(entry.sent||0)+(entry.blocked||0)+(entry.failed||0),auto=entry.kind==='auto';
+    return {id:entry.job_id||entry.operation_id,status:entry.status||'',audience,sent:entry.sent||0,blocked:entry.blocked||0,
+      failed:entry.failed||0,pending:Math.max(0,audience-done),created_at:entry.sent_at,source:auto?'auto':'dashboard',manual:!auto,
+      author:entry.sent_by||null,text:entry.text||null,recipients_known:false,resumable:false,resume_count:0,resumed_at:null,
+      resumed_by:null,throttled_until:null,panel:true,status_at:entry.status_at||null};
+  }
+  const panelStatusText=(job,now)=>job.status_at?`Итог бота на ${momentText(job.status_at,now)}`:'';
+
+  root.FounderBroadcastLogic={validateText,validateRecipients,operationId,statusText,draftKey,agoText,repeatWarning,
+    rememberSent,isTerminal:status=>terminal.has(status),
+    isManual,sourceLabel,jobStatusText,jobTone,jobCounts,momentText,throttleText,resumeText,preview,
+    deliveryStatusText,deliveryNote,resumeLabel,resumeConfirm,historyTwin,twinWarning,fromPanelJournal,panelStatusText};
 })(typeof globalThis==='undefined'?window:globalThis);

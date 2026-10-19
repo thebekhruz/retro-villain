@@ -16,6 +16,9 @@ from retro.modules.cashier.service import (
 
 DIRECTIONS = ('retro', 'school', 'banquet')
 GRANULARITIES = ('day', 'week', 'month')
+# Доставка Яндекс Еды — тип оплаты iiko внутри продаж направления, а не
+# отдельное направление: «в т.ч.» на карточке, к «Всего» не прибавляется.
+YANDEX_PAYMENT = 'Яндекс Еда'
 RETRO_SECTIONS = frozenset({
     '2.1 Бар мили', 'Бар Рестаран', 'Вынос', 'Доставка', 'Летка',
     'Напитки Мили', 'Напитки Ресторан', 'Ресторан', 'Ресторан Алкоголь',
@@ -50,6 +53,14 @@ class PaymentRow:
 OPERATION_KINDS = {'Оплата': 'paid', 'PAYMENT': 'paid',
                    'Предоплата': 'prepaid', 'PREPAYMENT': 'prepaid'}
 PAID_OPERATIONS = frozenset({'paid'})
+
+
+def source_cache_ttl(end, *, today=None):
+    """Сколько живут сырые OLAP iiko за период по `end` (iiko.olap_ttl) — то же
+    число, что API отдаёт как source_cache_max_age_seconds. iiko импортирует
+    этот модуль, поэтому функцию берём при вызове."""
+    from retro.integrations.iiko import olap_ttl as ttl
+    return ttl(end, today=today)
 
 
 def is_banquet_item(item):
@@ -243,7 +254,7 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
         'directions': list(directions),
         'includes_current_day': start <= today <= end,
         'updated_at': now.isoformat(),
-        'source_cache_max_age_seconds': 60,
+        'source_cache_max_age_seconds': source_cache_ttl(end, today=today),
         'currency': 'UZS',
         'totals': {**{direction: _amount(totals[direction]) for direction in DIRECTIONS},
                    'selected': _amount(selected_total)},
@@ -259,6 +270,12 @@ def build_analytics(revenue_rows, payment_rows, start, end, granularity, directi
             'selected': None if missing_cost.intersection(directions) else _amount(
                 selected_total - sum((costs[direction] for direction in directions), Decimal(0))),
         },
+        # Оплаты Яндекс Едой по каждому направлению — часть его продаж (алиас
+        # «Яндех Еда» уже сведён). Считается для всех направлений, как totals.
+        'yandex_totals': {direction: _amount(sum(
+            (bucket.get(direction, {}).get(YANDEX_PAYMENT, Decimal(0))
+             for bucket in payment_by_group.values()),
+            Decimal(0))) for direction in DIRECTIONS},
         'revenue_series': revenue_series,
         'payment_summary': summary,
         'payment_series': payment_series,
@@ -328,4 +345,36 @@ def build_sales_bridge(payment_rows, operation_rows, start, end, granularity, di
         'unknown_operations': sorted(unknown),
         'note': 'Оплаты продаж и зачёт авансов относятся к дате заказа. Новые авансы за будущие '
                 'заказы сюда не входят. Поступления денег за смену смотрите в модуле кассира.',
+    }
+
+
+def build_iiko_guests(rows, start, end, granularity, *, now=None):
+    """Гости по чекам iiko: итог по кассам и ряд по периодам для кассы Retro.
+
+    Брони считают гостей, которых заявил гость, а этот блок — тех, кого
+    официант поставил в заказе. Касса школы ставит одного гостя на чек,
+    поэтому сравнивать с бронями имеет смысл только кассу Retro."""
+    if granularity not in GRANULARITIES:
+        raise DataError('Неизвестная детализация аналитики.')
+    now = now or datetime.now(TZ)
+    totals = {direction: {'guests': 0, 'checks': 0} for direction in ('retro', 'school')}
+    grouped = defaultdict(lambda: {'guests': 0, 'checks': 0})
+    for row in rows:
+        day = date.fromisoformat(row['day'])
+        if not start <= day <= end:
+            raise DataError('iiko вернул гостей вне выбранного периода.')
+        totals[row['direction']]['guests'] += row['guests']
+        totals[row['direction']]['checks'] += row['orders']
+        if row['direction'] == 'retro':
+            group = grouped[_period_start(day, start, granularity)]
+            group['guests'] += row['guests']
+            group['checks'] += row['orders']
+    return {
+        'period': {'start': start.isoformat(), 'end': end.isoformat()},
+        'granularity': granularity,
+        'updated_at': now.isoformat(),
+        'totals': totals,
+        'series': [dict(start=first.isoformat(), end=last.isoformat(),
+                        incomplete=first <= now.date() <= last, values=dict(grouped[first]))
+                   for first, last in _periods(start, end, granularity)],
     }

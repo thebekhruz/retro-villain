@@ -244,3 +244,9 @@ test('получено несколькими взносами: подпись �
   assert.deepEqual(clickType(view).advances.map(item=>item.amount), [300000,200000]);
   assert.equal(view.match, true);
 });
+
+test('T-508: средний чек — на полный счёт, той же базы, что «Чеков», а не выручка ÷ чеки', () => {
+  const view = logic.revenueGroups(day());
+  assert.equal(view.average, 628742.57);
+  assert.notEqual(Math.round(view.average), Math.round(view.total / view.receipts));
+});

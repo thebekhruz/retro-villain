@@ -1,7 +1,7 @@
 """Кабинет учредителя (T-377): неделя по дням, дивиденды, прогноз, Счёт Шефа."""
 
 from dataclasses import replace
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from io import BytesIO
 from unittest.mock import patch
@@ -14,7 +14,7 @@ from legacy_app import create_app
 from retro.config import Settings
 from retro.integrations.iiko import chef_bills_from_olap, daily_orders_from_olap
 from retro.modules.cashier.service import (
-    DataError, Payment, RETRO_REGISTER, SCHOOL_REGISTER, RevenueBreakdown, demo_snapshot,
+    DataError, Payment, RETRO_REGISTER, SCHOOL_REGISTER, RevenueBreakdown, ShiftStatus, demo_snapshot,
 )
 from retro.modules.founder import overview
 from retro.modules.founder.dividends import DividendTargetError, DividendTargetStore
@@ -529,6 +529,20 @@ def test_week_check_uses_the_accountant_confirmation(tmp_path, today):
     assert day['handover']['status'] == 'mismatch'
 
 
+def test_week_check_flags_overpayment_after_confirmation(tmp_path, today):
+    """Получено больше расчёта — тоже расхождение, а не ✓ (недостачи при этом нет)."""
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        finance.record_handover(date(2026, 9, 24), Decimal('9000000'), source='cashier')
+        finance.confirm_handover(date(2026, 9, 24), '9300000', None, 'buh')
+        week = c.get('/api/founder/week').json()
+    day = {item['date']: item for item in week['days']}['2026-09-23']
+    assert day['handover']['checked'] is True
+    assert day['handover']['shortfall'] == '0'
+    assert day['handover']['status'] == 'mismatch'
+    assert day['handover']['difference'] == '300000.00'
+
+
 def test_founder_ai_sees_the_cabinet_numbers(tmp_path, today):
     """Функционал, AI: основатель видит деньги недели по дням, категории, закуп, Счёт Шефа."""
     import asyncio
@@ -546,3 +560,130 @@ def test_founder_ai_sees_the_cabinet_numbers(tmp_path, today):
     assert data['chef_account']['week_over'] == 1 and 'bills' not in data['chef_account']
     assert 'categories' in data['spending']['expenses'] and 'transfers' in data['spending']['shokh']
     assert data['dividends']['week'] == '2026-W39'
+
+
+# ── T-494: периоды кабинета, блюда по прибыли, закуп понятным языком ──────
+
+OCTOBER_DAY = date(2026, 10, 17)  # суббота, пятый день учёта
+
+
+def test_forecast_reads_eight_real_weeks_across_the_accounting_start(tmp_path, monkeypatch):
+    """Выручка и чеки iiko — за настоящие восемь недель: граница 13.10 их не режет.
+    С ней «среднее за 8 недель» было одним днём на каждый день недели."""
+    monkeypatch.setattr('retro.modules.founder.cabinet.today_tashkent', lambda: OCTOBER_DAY)
+    iiko, calls = FakeIiko(), []
+    original = iiko.load_daily_orders
+
+    async def recorded(start, end):
+        calls.append((start, end))
+        return await original(start, end)
+
+    iiko.load_daily_orders = recorded
+    with client(tmp_path, iiko) as c:
+        data = c.get('/api/founder/forecast').json()
+    assert calls == [(date(2026, 8, 22), OCTOBER_DAY)]
+    assert data['sample_weeks'] == {'min': 8, 'max': 8}
+    assert {item['samples'] for item in data['weekdays']} == {8}
+    # Факт месяца — с 1 октября, как в iiko, а не с 13-го.
+    days = [date(2026, 10, 1) + timedelta(days=offset) for offset in range(17)]
+    assert data['month']['fact'] == f'{sum(34000000 + day.weekday() * 1000000 for day in days)}.00'
+
+
+def test_forecast_reports_how_many_weeks_of_history_it_really_had(tmp_path, today):
+    rows = [dict(day=(TODAY - timedelta(days=offset)).isoformat(), direction='retro', orders=10, revenue='100')
+            for offset in range(1, 22)]  # три недели истории
+    with client(tmp_path, FakeIiko(orders=rows)) as c:
+        data = c.get('/api/founder/forecast').json()
+    assert data['weeks'] == 8
+    assert data['sample_weeks'] == {'min': 3, 'max': 3}
+
+
+def test_expense_categories_split_direct_procurement_and_name_transfers():
+    result = overview.expense_categories([
+        dict(type='other_expense', item_code='proc_coal', amount='300000'),
+        dict(type='other_expense', item_code='proc_bread', amount='200000'),
+        dict(type='other_expense', item_code='proc_other', amount='50000'),
+        dict(type='procurement_advance', description='Азиз: овощи', amount='70000'),
+        dict(type='procurement_advance', description='Шох: базар', amount='1000000'),
+        dict(type='other_expense', item_code='distribution_oxbridge', amount='400000'),
+        dict(type='other_expense', item_code='distribution_bloggers', amount='100000'),
+        dict(type='other_expense', item_code='distribution_dividends', amount='900000'),
+    ])
+    labels = {item['label']: item['amount'] for item in result['categories']}
+    assert labels == {'Закуп · уголь': '300000.00', 'Закуп · хлеб': '200000.00', 'Закуп · прочее': '50000.00',
+                      'Закуп · выдачи на закуп': '70000.00', 'Закуп · наличные Шоху': '1000000.00',
+                      'Переводы (Oxbridge, блогеры)': '500000.00', 'Дивиденды': '900000.00'}
+    assert result['total'] == '3020000.00'
+
+
+def test_shokh_top_merges_bazaar_spellings_for_display_only():
+    expenses = [dict(place='Food City', amount='500000', note='Расход по счёт-фактуре'),
+                dict(place='Фуд  Сити', amount='300000', note=''),
+                dict(place='FoodCity', amount='200000', note=''),
+                dict(place='алайский базар', amount='400000', note=''),
+                dict(place='Новый рынок', amount='100000', note=''),
+                dict(place='новый  рынок', amount='50000', note=''),
+                dict(place=None, note='Закуп: Лук · Алайский', amount='70000'),
+                dict(place='', note='Счёт Шоха', amount='10000')]
+    result = overview.shokh_month([], [], pocket=None, expenses=expenses)
+    assert result['top_items'] == [
+        {'item': 'Food City', 'amount': '1000000.00'}, {'item': 'Алайский базар', 'amount': '400000.00'},
+        {'item': 'Новый рынок', 'amount': '150000.00'}, {'item': 'Покупки с телефона', 'amount': '70000.00'},
+        {'item': 'Место не указано', 'amount': '10000.00'}]
+    assert result['spent'] == '1630000.00'
+    assert expenses[1]['place'] == 'Фуд  Сити'  # запись бухгалтера не меняется
+    assert overview.display_place('  Базар   Шеф ') == 'Базар Шеф'
+    assert overview.display_place('Чорсу') == 'Чорсу'
+
+
+def test_dishes_read_seven_real_days_and_mark_non_dishes(tmp_path, monkeypatch):
+    """«Приносят больше всего»: семь закрытых дней iiko без границы 13.10 и
+    классы позиций из справочника меню (T-487)."""
+    from types import SimpleNamespace
+    from datetime import datetime
+    from retro.modules.cashier.service import TZ
+    monkeypatch.setattr('retro.modules.founder.routes.today_tashkent', lambda: OCTOBER_DAY)
+    calls = []
+
+    class DishesIiko(FakeIiko):
+        async def load_director_report(self, today, *, start=None, end=None, days=None):
+            calls.append((start, end))
+            return SimpleNamespace(json=lambda: {
+                'period_start': start.isoformat(), 'period_end': end.isoformat(),
+                'item_metrics': {'all': {'Плов': {'revenue': '900', 'gross_profit': '500', 'quantity': '9'},
+                                         'Мед': {'revenue': '100', 'gross_profit': '90', 'quantity': '5'},
+                                         'Новинка': {'revenue': '50', 'gross_profit': '20', 'quantity': '1'}}}})
+
+    with client(tmp_path, DishesIiko(), data_dir=tmp_path) as c:
+        empty = c.get('/api/founder/dishes').json()
+        c.app.state.menu_store.save([
+            dict(product_id='1', name='Плов', kind='DISH', category='', deleted=False),
+            dict(product_id='2', name='Мед', kind='GOODS', category='', deleted=False)],
+            at=datetime(2026, 10, 16, 10, tzinfo=TZ))
+        data = c.get('/api/founder/dishes').json()
+    assert calls[0] == (date(2026, 10, 10), date(2026, 10, 16))
+    # Пустой справочник по номенклатуре ничего не исключает; правило
+    # исключения ТЗ 3.1 (мёд — ингредиент) действует и без него, как в T-487.
+    assert empty['item_classes_checked'] is False
+    assert empty['item_classes'] == {'Плов': 'unknown', 'Мед': 'ingredient', 'Новинка': 'unknown'}
+    assert data['item_classes_checked'] is True
+    assert data['item_classes'] == {'Мед': 'ingredient', 'Новинка': 'unknown'}
+
+
+def test_today_card_carries_iiko_read_time_and_shift_state(tmp_path, today):
+    """ТЗ 16.10, п. 2: «Сегодня ещё идёт · данные на ЧЧ:ММ» и закрытая смена — из
+    ответа сервера: время чтения iiko по Ташкенту и смена кассы Retro."""
+    class ShiftIiko(FakeIiko):
+        async def load(self, day):
+            base = await super().load(day)
+            return replace(base, fetched_at=datetime(2026, 9, 24, 18, 5, 30, tzinfo=timezone.utc),
+                           shift=ShiftStatus(False, '2026-09-24T09:01:00', '2026-09-24T23:40:12'))
+
+    with client(tmp_path, ShiftIiko(fail_days={date(2026, 9, 23)})) as c:
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+        failed = c.get('/api/founder/day', params={'date': '2026-09-23'}).json()
+    assert day['cashier']['fetched_at'] == '2026-09-24T23:05:30+05:00'
+    assert day['cashier']['shift'] == {'open': False, 'opened_at': '2026-09-24T09:01:00',
+                                       'closed_at': '2026-09-24T23:40:12'}
+    # iiko не ответил — ни времени, ни нулей: экран пишет «нет данных».
+    assert failed['cashier'] is None and failed['cashier_error'] == 'iiko временно недоступен'

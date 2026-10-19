@@ -31,6 +31,7 @@
 .dir-tips-list li:before{content:counter(tip);flex:none;color:var(--gold);font-weight:700}
 .dir-tips-list li.is-muted{color:#a9bfb1}
 .dir-tips-list li.is-muted:before{content:none}
+.dir-tip-basis{display:block;margin-top:3px;font-size:11px;line-height:1.4;color:#a9bfb1}
 .dir-tips-ask{width:100%;min-height:44px;margin-top:16px;border:1px solid #d8b97766;border-radius:14px;background:#ffffff0f;
   color:#e8cf95;font-size:13px;font-weight:600}
 
@@ -85,6 +86,13 @@
 .dir-views{display:grid;grid-template-columns:1fr 1fr;gap:6px;margin-top:10px}
 .dir-views button{min-height:40px;border:1px solid var(--border);border-radius:12px;background:#fff;color:var(--ink-2);font-size:12px;font-weight:650}
 .dir-views button.is-active{background:#fbf0d7;border-color:#e2c98e;color:#7a5a22}
+.dir-sort{display:flex;flex-wrap:wrap;align-items:center;gap:8px}
+.dir-sort-keys{display:flex;align-items:center;gap:4px;flex-wrap:wrap;font-size:12px;color:var(--ink-2)}
+.dir-sort-keys span{margin-right:2px}
+.dir-sort-keys button{min-height:32px;border:1px solid var(--border);border-radius:16px;padding:5px 10px;background:#fff;color:var(--ink-2);font-size:12px;font-weight:600}
+.dir-sort-keys button.is-active{background:var(--green);border-color:var(--green);color:#fff}
+.dir-select{flex:1 1 160px;min-width:0;min-height:36px;border:1px solid var(--border);border-radius:12px;padding:6px 10px;background:#fff;color:var(--ink);font-size:12px}
+.dir-dish-cat{color:var(--ink-2)}
 #menu-browse{display:flex;flex-direction:column;gap:10px}
 .dir-menu-card{padding:6px 16px 10px}
 .dir-menu-title{padding:10px 0 4px}
@@ -105,6 +113,18 @@
 .m-low{color:#b0663a}.m-mid{color:var(--warn)}.m-ok{color:var(--ok)}
 .dir-dish-bar{display:block;height:4px;border-radius:2px;background:#f1f3ee;margin:8px 0 0 26px;overflow:hidden}
 .dir-dish-bar span{display:block;height:100%;border-radius:2px;background:#24594b}
+/* «Все блюда» (ТЗ 3.3): под названием — три цифры плитками, как в карточке
+   найденного блюда (.dir-split). «Низкая маржа» — с основанием строкой. */
+.dir-views button.is-wide{grid-column:1/-1}
+.dir-price{min-height:32px}
+/* Четыре диапазона с подписью — одной строкой на 360 точках. */
+.dir-price button{padding:5px 7px}
+.dir-dish-basis{display:block;margin:5px 0 0 26px;font-size:11px;line-height:1.4;color:#8a6a3a}
+.dir-dish-figures{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;margin:8px 0 0 26px}
+.dir-dish-figures>span{display:block;background:#f5f7f1;border-radius:10px;padding:7px 8px;min-width:0}
+.dir-dish-figures>span>span{display:block;font-size:10px;color:var(--muted-2)}
+.dir-dish-figures strong{display:block;font-size:13px;font-weight:650;margin-top:2px;overflow-wrap:anywhere}
+.dir-menu-list .dir-more{justify-self:start}
 .dir-found{display:grid;gap:10px}
 .dir-found-card{border-radius:18px}
 .dir-found-head{display:flex;justify-content:space-between;align-items:baseline;gap:10px}
@@ -384,3 +404,49 @@ body[data-dir-tab]:not([data-dir-tab=home]) .dir-hello{display:none}
 .app-sheet-link[hidden]{display:none!important}
 .app-sheet .top-user{display:none}
 @media(min-width:600px){.app-sheet{margin:auto;border-radius:24px}}
+
+/* ══ Обед (T-500, ТЗ 16.10 §2) ═════════════════════════════════════════════
+   Плитка «Обед сегодня» под кассой — та же карточка .dir-kpi, на всю ширину и
+   нажимается. Лист обеда — .app-sheet, как профиль и KPI: выбор дня, часы
+   окна полосами (как официанты), направления цветами кассира, топ блюд
+   строками меню. «Нет данных» — серым словом, ноль — цифрой. */
+.dir-lunch{display:block;width:100%;border:0;text-align:left;color:var(--ink);font:inherit;cursor:pointer}
+.dir-lunch .dir-lunch-head{display:flex;align-items:center;gap:6px;min-height:22px}
+.dir-lunch .dir-lunch-head>span{display:inline;font-size:11px;color:var(--muted-2)}
+.dir-lunch-window{font-size:11px;font-weight:600;color:var(--ink-2)}
+.dir-lunch .dir-badge,.dir-lunch-summary .dir-badge{display:inline-block;padding:3px 8px;font-size:10px;font-weight:650}
+.dir-badge.is-live{background:var(--warn-bg);color:var(--warn)}
+.dir-lunch .dir-lunch-head>.dir-badge{margin-left:auto;color:var(--warn)}
+.dir-lunch .dir-lunch-head>.dir-chevron{margin-left:auto;font-size:18px;line-height:1;color:#b3bdb1}
+.dir-lunch .dir-lunch-head>.dir-badge:not([hidden])+.dir-chevron{margin-left:0}
+.dir-lunch strong.is-empty,.dir-lunch-summary strong.is-empty{font-size:19px;color:var(--muted-2);letter-spacing:-.2px}
+.dir-lunch .dir-lunch-split{font-size:11px;color:var(--ink-2);margin-top:4px}
+.dir-lunch small,.dir-lunch-summary small{overflow-wrap:anywhere}
+.dir-lunch-sheet{max-height:92vh;overflow:auto}
+.dir-lunch-icon{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
+.dir-lunch-days{display:flex;gap:8px;align-items:stretch}
+.dir-lunch-days .dir-segment{flex:1;min-width:0}
+.dir-lunch-days .dir-segment button{min-width:0}
+/* Поле даты — 16 точек: с меньшим шрифтом iOS при фокусе увеличивает страницу. */
+.dir-lunch-date{flex:0 1 150px;min-width:0;max-width:170px;min-height:46px;border:1px solid #dbe3d8;border-radius:12px;
+  padding:0 10px;background:#fff;color:var(--ink);font-size:16px}
+.dir-lunch-summary{display:grid;gap:3px;border-radius:18px}
+.dir-lunch-summary>span{font-size:11px;color:var(--muted-2)}
+.dir-lunch-summary strong{font-size:26px;margin-top:4px}
+.dir-lunch-summary .dir-lunch-when{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.dir-lunch-summary .dir-note{margin-top:6px}
+.dir-lunch-summary .rm-skel.is-line{width:60%;height:9px;margin-top:6px}
+.dir-lunch-rows>div{padding:10px 0 0;margin-top:10px;border-top:1px solid #eef1ea}
+.dir-lunch-rows>div:first-child{margin-top:6px}
+.dir-lunch-line{display:flex;align-items:baseline;justify-content:space-between;gap:10px}
+.dir-lunch-line>span{display:flex;align-items:center;gap:6px;min-width:0;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+.dir-lunch-line>b{font-size:14px;font-weight:650;white-space:nowrap}
+.dir-lunch-dot{width:8px;height:8px;flex:none;border-radius:50%}
+.dir-lunch-live{padding:1px 6px;border-radius:6px;background:var(--warn-bg);color:var(--warn);font-size:9px;font-style:normal;font-weight:700}
+.dir-lunch-rows .rm-bar{display:block;margin-top:7px}
+.dir-lunch-rows small{display:block;margin-top:4px;font-size:10px;color:var(--muted-3)}
+.dir-lunch-rows .is-ahead .dir-lunch-line{color:#b3bdb1}
+.dir-lunch-scope{margin-top:10px}
+.dir-lunch-ask{justify-self:start;margin:0 2px}
+.dir-lunch-sheet .dir-menu-card{padding:6px 16px 10px}
+.dir-lunch-sheet .dir-dish:first-child{border-top:0}

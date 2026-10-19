@@ -4,7 +4,7 @@ from datetime import date, datetime
 
 from retro.modules.cashier.service import TZ, today_tashkent
 
-from .rules import HALL, PILOT_START, KpiError, aggregate, baseline_window, compute, login_counts
+from .rules import HALL, PILOT_START, KpiError, aggregate, baseline_window, compute, login_counts, upgrade_scheme
 from .source import margin_per_unit
 
 OPEN_TTL, OPEN_STALE = 15 * 60, 60 * 60          # окно с сегодняшним днём: раз в 15 минут, «Обновить» — сразу
@@ -125,7 +125,7 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
     start, end, total, passed = period_days(period, today)
     settings = period['settings']
     targets = await fill_margins(state, [dict(t) for t in settings['targets']], start, refresh=refresh)
-    scheme = settings['scheme']
+    scheme = upgrade_scheme(settings['scheme'])
     links = state.kpi_store.links()
     cards = state.accountant_roster.manager_cards() if not by_name_only else []
     waiters = registry_waiters(cards, today)
@@ -172,9 +172,10 @@ async def period_view(state, period, *, refresh=False, photo_url=None, by_name_o
                             pilot=period['start'] == PILOT_START.isoformat(),
                             closed_at=period.get('closed_at')),
                 scheme=scheme, targets=result.get('targets') or targets, fetched_at=fetched_at, logins=logins, registry=registry,
-                totals={key: result[key] for key in ('team_uplift', 'net_uplift', 'fund', 'fund_total', 'restaurant_net',
-                                                      'participants', 'waiters', 'team_checks', 'goal', 'cap', 'sold',
-                                                      'goal_qty', 'expected_checks')},
+                totals={key: result.get(key) for key in ('team_uplift', 'net_uplift', 'fund', 'fund_total', 'restaurant_net',
+                                                          'participants', 'waiters', 'team_checks', 'goal', 'cap', 'sold',
+                                                          'goal_qty', 'expected_checks', 'goal_uplift', 'threshold',
+                                                          'threshold_mark', 'base_qty', 'to_threshold', 'above_threshold')},
                 targets_progress=result['targets_progress'],
                 hall=result['hall'], rows=rows)
 

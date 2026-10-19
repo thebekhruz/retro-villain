@@ -40,6 +40,12 @@ from retro.modules.menu.store import MenuStore
 from retro.modules.menu.catalog import MenuCatalog
 from retro.modules.menu.iiko import MenuIiko
 from retro.modules.menu.sync import MenuSync
+from retro.modules.sales.iiko import SalesIiko
+from retro.modules.sales.routes import (director_router as sales_director_router,
+                                        founder_router as sales_founder_router)
+from retro.modules.sales.service import SalesService
+from retro.modules.sales.store import SalesStore
+from retro.modules.sales.sync import SalesSync
 from retro.modules.accountant.roster import RosterStore
 from retro.modules.accountant.ledger import FinanceStore
 from retro.modules.cashier.service import SnapshotCache, today_tashkent
@@ -53,6 +59,7 @@ from retro.modules.kpi.source import KpiSource
 from retro.modules.kpi.store import KpiStore
 from retro.modules.users.routes import router as users_router
 from retro.modules.founder.chat import FounderChatStore
+from retro.modules.founder.broadcast_journal import BroadcastJournal
 from retro.modules.founder.dividends import DividendTargetStore
 from retro.integrations.claude import ClaudeClient
 from retro.integrations.hikvision import HikvisionClient
@@ -152,6 +159,7 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'founder.js': {'founder'}, 'founder-cabinet.js': {'founder'},
         'founder-logic.js': {'founder'}, 'founder-cabinet-logic.js': {'founder'},
         'founder-broadcast.js': {'founder'}, 'founder-broadcast-logic.js': {'founder'},
+        'founder-broadcast-history.js': {'founder'},
         'founder.css': {'founder'}, 'founder-cabinet.css': {'founder'},
         # Уведомления о Счёте Шефа на устройстве (Web Push); обработчик — /sw.js
         'push.js': {'founder'},
@@ -260,6 +268,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
             application.state.cashier_days.start()
         if application.state.menu_sync is not None:
             application.state.menu_sync.start()
+        # История продаж: первый шаг через две с половиной минуты после старта,
+        # поэтому короткая жизнь приложения в тестах до iiko не доходит.
+        if application.state.sales_sync is not None:
+            application.state.sales_sync.start()
+        if application.state.chef_alert is not None:
+            application.state.chef_alert.start()
         if application.state.chef_push is not None:
             application.state.chef_push.start()
         if application.state.telegram_report is not None:
@@ -286,8 +300,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                 await application.state.menu_sync.close()
             if application.state.drive_backup is not None:
                 await application.state.drive_backup.close()
+            if application.state.sales_sync is not None:
+                await application.state.sales_sync.close()
             if application.state.telegram_report is not None:
                 await application.state.telegram_report.close()
+            if application.state.chef_alert is not None:
+                await application.state.chef_alert.close()
             if application.state.chef_push is not None:
                 await application.state.chef_push.close()
             await application.state.push_sender.close()
@@ -391,8 +409,33 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.state.menu_iiko = MenuIiko(app.state.iiko)
     app.state.menu_sync = (MenuSync(app.state.menu_store, app.state.menu_iiko)
                            if settings.configured else None)
+    # История продаж (ТЗ 16.10, раздел 2): чеки и позиции iiko в нашей базе,
+    # рядом с меню — по ним считается «обед сегодня» и любой прошлый период.
+    app.state.sales_store = SalesStore(director_path, settings)
+    app.state.sales_sync = (SalesSync(app.state.sales_store, SalesIiko(lambda: app.state.iiko),
+                                      history_start=settings.sales_history_start)
+                            if settings.configured else None)
+    app.state.sales = SalesService(
+        app.state.sales_store, settings=settings, sync=lambda: app.state.sales_sync,
+        catalog=lambda: MenuCatalog.from_store(app.state.menu_store),
+        cashier=lambda: getattr(app.state.cashier_days, 'archive', None))
     founder_path = founder_db_path or shared or settings.data_dir / 'founder.sqlite3'
     app.state.founder_chat_store = FounderChatStore(founder_path)
+    # Журнал рассылок гостям (ТЗ 16.10, п. 5.3): рядом с чатом учредителя.
+    app.state.broadcast_journal = BroadcastJournal(founder_path)
+    # Счёт Шефа за неделю (ТЗ 16.10, п. 4.2): журнал событий есть всегда, проверка
+    # идёт только с iiko, а сообщение уходит, только если задан чат учредителя.
+    from retro.modules.founder.chef_alert import ChefAlertStore, ChefWeekAlert
+    app.state.chef_alerts = ChefAlertStore(founder_path)
+    app.state.chef_alert = None
+    if settings.configured:
+        bot = None
+        if settings.chef_alert.recipient:
+            from retro.integrations.telegram import TelegramBot
+            bot = TelegramBot(settings.chef_alert.token, transport=telegram_transport)
+        app.state.chef_alert = ChefWeekAlert(
+            app.state.chef_alerts, settings.chef_alert, bot=bot,
+            loader=lambda start, end: load_iiko(app.state, 'load_chef_bills', start, end, timeout=120))
     # Уведомления в браузер (Web Push): подписки устройств и ключ VAPID — рядом с
     # журналами учредителя. Ключ из VAPID_PRIVATE_KEY, иначе созданный один раз в базе.
     from retro.web_push import PushSender, PushStore, VapidKeys
@@ -698,6 +741,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(shokh_router, dependencies=[Depends(shokh_module_on)])
     app.include_router(director_router)
     app.include_router(founder_router)
+    app.include_router(sales_director_router)
+    app.include_router(sales_founder_router)
     app.include_router(manager_router)
     app.include_router(kpi_manager_router)
     app.include_router(kpi_director_router)

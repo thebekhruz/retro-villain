@@ -15,7 +15,7 @@ from fastapi import HTTPException
 from retro.accounting_period import ACCOUNTING_START, accounting_range_start, period_start
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
-from retro.modules.cashier.service import DataError, today_tashkent
+from retro.modules.cashier.service import TZ, DataError, today_tashkent
 from retro.modules.cashier.till import expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
@@ -118,7 +118,10 @@ async def cashier_day(request, day: date):
         banquet=money(breakdown.bekhruz_banquet) if breakdown else None,
         register_revenue=money(snapshot.revenue), retro_checks=snapshot.receipt_count, demo=money(demo),
         expected_handover=money(expected_handover(snapshot, totals)),
-        fetched_at=snapshot.fetched_at.isoformat()), None
+        # Время чтения iiko и смена кассы — для строки «Сегодня ещё идёт · данные на ЧЧ:ММ»
+        # (ТЗ 16.10, п. 2): экран не подставляет свои часы.
+        fetched_at=snapshot.fetched_at.astimezone(TZ).isoformat(timespec='seconds'),
+        shift=snapshot.shift.json() if snapshot.shift is not None else None), None
 
 
 def shift_accrued(request, day: date) -> Decimal:
@@ -219,10 +222,12 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
     if checked:
         # Полученное бухгалтером (подтверждение или ручная запись, 2a) сверено
         # сервером с текущим расчётом кассы — та же недостача, что ошибка
-        # «От кассира получено меньше расчёта» в 2a и в Excel дня.
-        shortfall = Decimal(handover_state['shortfall'] or 0)
-        check = dict(status='mismatch' if shortfall > 1 else 'ok',
-                     difference=money(Decimal(recorded) - Decimal(expected)))
+        # «От кассира получено меньше расчёта» в 2a и в Excel дня. Расхождение —
+        # в обе стороны, как overview.handover_check: получено больше расчёта
+        # (shortfall тогда 0) — тоже не сходится, а не ✓.
+        difference = Decimal(recorded) - Decimal(expected)
+        check = dict(status='mismatch' if abs(difference) > 1 else 'ok',
+                     difference=money(difference))
     elif (recorded is not None and handover_state.get('source') == 'accountant'
           and not handover_state.get('cashier_active')):
         # Приход записал бухгалтер, а кассир в панели в этот день не работал:
@@ -281,8 +286,13 @@ async def founder_week(request, day: date):
 
 
 async def founder_forecast(request, day: date):
-    """Прогноз по дням недели по средним за восемь недель — это оценка, не факт."""
-    start = max(ACCOUNTING_START, day - timedelta(days=overview.FORECAST_WEEKS * 7))
+    """Прогноз по дням недели по средним за восемь недель — это оценка, не факт.
+
+    Выручка и чеки — из iiko за настоящие восемь недель: граница учёта 13.10 к
+    ним не относится (T-486). С ней «среднее за 8 недель» было одним днём на
+    каждый день недели. `sample_weeks` — сколько недель реально вошло в
+    среднее: подпись на экране не обещает больше, чем есть."""
+    start = day - timedelta(days=overview.FORECAST_WEEKS * 7)
     rows, error = await iiko_or_error(request, 'load_daily_orders', start, day,
                                       operation='forecast', timeout=120)
     if rows is None:
@@ -290,8 +300,10 @@ async def founder_forecast(request, day: date):
     history = overview.register_days(rows)
     weekdays = overview.weekday_forecast(history, day)
     today_values = history.get(day.isoformat(), {})
+    samples = [item['samples'] for item in weekdays]
     return dict(
         estimate=True, error=None, weeks=overview.FORECAST_WEEKS, weekdays=weekdays,
+        sample_weeks=dict(min=min(samples), max=max(samples)),
         month=overview.month_forecast(history, weekdays, day),
         today=dict(forecast=weekdays[day.weekday()],
                    orders={key: value['orders'] for key, value in today_values.items()}))
@@ -305,7 +317,23 @@ async def founder_chef(request, day: date):
     if rows is None:
         return dict(error=error)
     return dict(error=None, date=day.isoformat(), month=first.isoformat()[:7],
-                **overview.chef_bills(rows, week_start=monday, week_end=sunday, month_start=first))
+                **overview.chef_bills(rows, week_start=monday, week_end=sunday, month_start=first),
+                week_alert=await chef_week_alert(request.app.state, rows, day))
+
+
+async def chef_week_alert(state, rows, day: date):
+    """Недельный порог Счёта Шефа (ТЗ 16.10, п. 4.2): та же сумма, что «за
+    неделю» в блоке, и что стало с уведомлением учредителю."""
+    from .chef_alert import status_view
+
+    config = state.settings.chef_alert
+    monday, sunday, week = overview.week_of(day)
+    summary = overview.chef_week(rows, start=accounting_range_start(monday, day), end=sunday,
+                                 limit=config.week_limit)
+    store = getattr(state, 'chef_alerts', None)
+    events = await asyncio.to_thread(store.events, week) if store is not None else []
+    return dict(summary, week=week, repeat_step=money(config.repeat_step), recipient=config.recipient,
+                last=status_view(events, config))
 
 
 def founder_spending(state, day: date):
