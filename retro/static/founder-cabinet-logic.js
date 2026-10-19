@@ -364,14 +364,27 @@
       received = {label: 'Бухгалтер получил', value: day.date === today ? 'ещё не передано' : 'не записано',
         mark: day.date === today ? '' : mark.mark, tone: day.date === today ? 'wait' : mark.tone, tip: mark.tip};
     }
+    // Выручка дня = продажи + полученные за день предоплаты (как «Выручка за
+    // день» у кассира). Реестр предоплат не пришёл — показываем продажи и
+    // честно пишем, что выручка требует проверки.
+    const prepay = report.prepayments;
+    const notes = (report.issues || []).slice();
+    if (prepay === null) notes.unshift('Предоплаты за день недоступны — выручка требует проверки.');
+    const known = report.revenue !== undefined && report.revenue !== null;
     return {
-      sales: num(report.sales !== undefined ? report.sales : cashier.register_revenue),
+      title: known ? 'Выручка за день' : 'Продажи по кассе',
+      sales: num(known ? report.revenue : report.sales !== undefined ? report.sales : cashier.register_revenue),
+      prepayments: prepay ? {
+        title: 'Предоплаты получены · ' + prepay.count,
+        total: sum(num(prepay.total)),
+        rows: prepay.methods.map(item => ({label: item.name, value: sum(num(item.amount))})),
+      } : null,
       checks: count === null || count === undefined ? '' : count + ' ' + plural(count, 'чек', 'чека', 'чеков') +
         (num(report.average) ? ' · средний ' + sum(num(report.average)) : ''),
       pill,
       payments: (report.payments || []).map(item => ({label: item.name, value: sum(num(item.amount))})),
       handover: report.handover !== undefined ? num(report.handover) : num(cashier.expected_handover),
-      steps, received, notes: report.issues || [],
+      steps, received, notes,
     };
   }
 
@@ -388,8 +401,17 @@
         : {text: 'Отчёт сдан ' + clock(saved.submitted_at), tone: 'ok'};
     const movements = (accounting.ledger.movements || []).filter(item => item.type !== 'opening');
     const cashier = flow.received_from_cashier;
+    // В остаток книги передача кассира входит, только когда бухгалтер её
+    // подтвердил (handover_counted). Учредителю нужно «сколько денег у
+    // бухгалтера»: на утро + от кассира − расходы, поэтому переданное, но ещё
+    // не подтверждённое прибавляем и подписываем это.
+    const closing = num(flow.closing_balance !== undefined ? flow.closing_balance : day.closing_balance);
+    const unconfirmed = Math.max(0, (num(cashier) || 0) - (num(flow.received_counted) || 0));
+    const balance = closing === null ? null : closing + unconfirmed;
     return {
-      balance: num(flow.closing_balance !== undefined ? flow.closing_balance : day.closing_balance),
+      balance,
+      pendingNote: closing !== null && unconfirmed
+        ? 'Включая ' + sum(unconfirmed) + ' от кассира — бухгалтер ещё не подтвердил получение' : '',
       ops: movements.length ? movements.length + ' ' + plural(movements.length, 'операция', 'операции', 'операций') + ' за день'
         : 'Операций за день пока нет',
       pill,

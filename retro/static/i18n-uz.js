@@ -4415,6 +4415,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Касса · сегодня': "Kassa · bugun",
   'Бухгалтер · сегодня': "Buxgalter · bugun",
   'Продажи по кассе': "Kassa bo'yicha savdo",
+  'Способ не указан': "Usul ko'rsatilmagan",
+  'Предоплаты за день недоступны — выручка требует проверки.': "Kunlik oldindan to'lovlar mavjud emas — tushumni tekshirish kerak.",
   'Смена ещё не открыта': "Smena hali ochilmagan",
   'Бухгалтер получил': "Buxgalter oldi",
   'Бухгалтер подтвердил': "Buxgalter tasdiqladi",
@@ -4431,6 +4433,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
 });
 globalThis.RetroTemplatesUz.push(
   [/^Смена закрыта (\d\d:\d\d)$/, "Smena yopildi $1"],
+  [/^Предоплаты получены · (\d+)$/, "Oldindan to'lovlar olindi · $1"],
+  [/^Включая (.+) от кассира — бухгалтер ещё не подтвердил получение$/, "Kassirdan $1 bilan birga — buxgalter hali olganini tasdiqlamadi"],
   [/^Отчёт сдан (\d\d:\d\d)$/, "Hisobot topshirildi $1"],
   [/^(\d+) (?:чек|чека|чеков)$/, "$1 ta chek"],
   [/^(\d+) (?:чек|чека|чеков) · средний (.+)$/, "$1 ta chek · o'rtacha $2"],
