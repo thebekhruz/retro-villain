@@ -13,7 +13,7 @@ import json
 import logging
 import re
 import sqlite3
-from contextlib import contextmanager
+from contextlib import closing, contextmanager
 from datetime import datetime, timedelta, timezone
 from urllib.parse import parse_qs, parse_qsl, urlencode, urlsplit, urlunsplit
 from uuid import uuid4
@@ -28,6 +28,7 @@ from retro.config import SmsConfig, Settings, parse_sms_config
 from retro.integrations.sms import ConsoleSms, EskizSms, SmsError, render_message, sms_sender
 from retro.phone_login import ADDRESS_REQUESTS_PER_HOUR, MAX_ATTEMPTS, PHONE_SENDS_PER_HOUR
 from retro.phone_numbers import display_phone, normalize_phone, parse_phone_users
+from retro.sessions import stamp
 
 USERS = {'cashier': ('secret', 'cashier'), 'accountant': ('secret', 'accountant'),
          'director': ('secret', 'director'), 'founder': ('secret', 'founder'),
@@ -466,12 +467,10 @@ def test_logout_ends_the_phone_session(tmp_path, sms, clock):
 
 def test_session_ends_after_thirty_days(tmp_path, sms, clock):
     cookie = signed_in(tmp_path, sms, clock)
-    path = tmp_path / 'sessions.json'
-    saved = json.loads(path.read_text(encoding='utf-8'))
-    for row in saved.values():
-        assert row['phone'] == KARINA
-        row['started'] = (datetime.now(timezone.utc) - timedelta(days=30, seconds=1)).isoformat()
-    path.write_text(json.dumps(saved), encoding='utf-8')
+    with closing(sqlite3.connect(tmp_path / 'sessions.sqlite3')) as connection, connection:
+        assert [row[0] for row in connection.execute('SELECT phone FROM panel_sessions')] == [KARINA]
+        connection.execute('UPDATE panel_sessions SET started = ?',
+                           (stamp(datetime.now(timezone.utc) - timedelta(days=30, seconds=1)),))
     with open_client(sqlite_app(tmp_path, sms), clock) as client:
         client.cookies.set('retro_session', cookie)
         assert client.get('/manager').headers['location'] == '/login'
@@ -485,7 +484,8 @@ def test_removing_the_number_closes_its_session(tmp_path, sms, clock):
     with open_client(app, clock) as client:
         client.cookies.set('retro_session', cookie)
         assert client.get('/manager').status_code == 303
-    assert KARINA not in (tmp_path / 'sessions.json').read_text(encoding='utf-8')
+    with closing(sqlite3.connect(tmp_path / 'sessions.sqlite3')) as connection:
+        assert connection.execute('SELECT COUNT(*) FROM panel_sessions WHERE phone = ?', (KARINA,)).fetchone()[0] == 0
 
 
 def test_password_sessions_are_not_touched_by_phone_checks(tmp_path, sms, clock):
