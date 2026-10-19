@@ -494,6 +494,34 @@ def test_today_outlook_follows_the_spec_formulas(tmp_path, today):
     assert Decimal(outlook['evening']) == evening
 
 
+def test_day_carries_cashier_brief_report_for_home_screen(tmp_path, today):
+    """T-512: краткий отчёт кассира на главной — оплаты по типам и «К передаче»
+    по шагам теми же числами, что у кассира (till_summary)."""
+    with client(tmp_path) as c:
+        c.post('/api/cashier/receipts', json={'date': TODAY.isoformat(), 'description': 'Возврат', 'amount': '200000'})
+        c.post('/api/cashier/expenses', json={'date': TODAY.isoformat(), 'description': 'Газ', 'amount': '300000'})
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+    report = day['cashier']['report']
+    # Оплаты — по типам из касс iiko, как у кассира; «Демо» называется «Наличные».
+    paid = {}
+    for group in demo_snapshot(TODAY).payment_groups:
+        for item in group.types:
+            if item.paid:
+                name = 'Наличные' if item.name == 'Демо' else item.name
+                paid[name] = paid.get(name, Decimal(0)) + item.paid
+    assert {row['name']: Decimal(row['amount']) for row in report['payments']} == paid
+    amounts = [Decimal(row['amount']) for row in report['payments']]
+    assert amounts == sorted(amounts, reverse=True)
+    assert Decimal(report['demo_cash']) == Decimal('9000000')
+    assert Decimal(report['receipts']) == Decimal('200000') and Decimal(report['expenses']) == Decimal('300000')
+    assert Decimal(report['handover']) == Decimal('8900000')
+    assert Decimal(report['handover']) == Decimal(day['cashier']['expected_handover'])
+    assert report['issues'] == []
+    assert day['accounting']['ledger']['cash_flow'].keys() >= {
+        'opening_balance', 'received_from_cashier', 'other_receipts', 'salary_paid', 'other_outflows',
+        'closing_balance'}
+
+
 def test_dividend_history_shows_collected_of_target_and_payout(tmp_path, today):
     with client(tmp_path) as c:
         finance = c.app.state.accountant_finance

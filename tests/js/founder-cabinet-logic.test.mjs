@@ -205,3 +205,58 @@ test('T-506: строка сегодняшнего дня — время чте�
   assert.equal(logic.todayStatus({cashier: null, cashier_error: 'iiko недоступен'}, '2026-09-24'), 'Сегодня · нет данных iiko');
   assert.equal(logic.todayStatus(undefined, '2026-09-24'), '');
 });
+
+test('T-512: краткий отчёт кассира — продажи, оплаты, «К передаче» по шагам и отметка бухгалтера', () => {
+  const day = {date: '2026-10-18', handover: {recorded: '31348000.00', expected: '31346500.00', status: 'mismatch', difference: '1500.00', confirmed: true},
+    cashier: {register_revenue: '32492000.00', expected_handover: '31346500.00', shift: {open: false, closed_at: '2026-10-19T00:41:10'},
+      report: {sales: '32492000.00', receipts_count: 207, average: '156966.18',
+        payments: [{name: 'Наличные', amount: '31000000.00'}, {name: 'Uzcard', amount: '1492000.00'}],
+        demo_cash: '31000000', cash_prepayment: '0', receipts: '646500', expenses: '300000', shokh: '0', usd_total: '0',
+        handover: '31346500.00', issues: []}}};
+  const view = logic.cashierBrief(day, '2026-10-19');
+  assert.equal(view.sales, 32492000);
+  assert.equal(plain(view.checks), '207 чеков · средний 156 966');
+  assert.deepEqual(view.pill, {text: 'Смена закрыта 00:41', tone: 'ok'});
+  assert.equal(plain(view.payments[0].value), '31 000 000');
+  assert.equal(view.handover, 31346500);
+  assert.deepEqual(view.steps.map(row => row.label), ['Наличные', '+ Предоплаты наличными', '+ Поступления', '− Расходы', '− На закуп']);
+  assert.equal(view.steps[1].muted, true);  // ноль приглушён
+  assert.equal(view.received.label, 'Бухгалтер подтвердил');
+  assert.equal(view.received.mark, '✓↑');  // передали больше расчёта — норма (T-507)
+});
+
+test('T-512: касса сегодня — смена открыта, ещё не передано; доллары отдельной строкой; нет iiko — ошибка', () => {
+  const today = {date: '2026-10-19', handover: {recorded: null, expected: '900000.00', status: 'pending', difference: null},
+    cashier: {shift: {open: true, closed_at: null}, report: {sales: '1000000', receipts_count: 1, average: '1000000', payments: [],
+      demo_cash: '900000', cash_prepayment: '0', receipts: '0', expenses: '0', shokh: '0', usd_total: '100', handover: null,
+      issues: ['Нет курса Retro за этот день. Обновите курс USD перед передачей.']}}};
+  const view = logic.cashierBrief(today, '2026-10-19');
+  assert.deepEqual(view.pill, {text: 'Смена открыта', tone: 'wait'});
+  assert.equal(plain(view.checks), '1 чек · средний 1 000 000');
+  assert.equal(view.received.value, 'ещё не передано');
+  assert.equal(view.received.mark, '');
+  assert.equal(view.handover, null);
+  assert.equal(view.steps.at(-1).label, '− Доллары в сейф');
+  assert.equal(view.steps.at(-1).value, '$100');
+  assert.equal(view.notes.length, 1);
+  assert.deepEqual(logic.cashierBrief({date: '2026-10-19', cashier: null, cashier_error: 'iiko не ответил'}, '2026-10-19'), {error: 'iiko не ответил'});
+  assert.equal(logic.cashierBrief(null), null);
+});
+
+test('T-512: отчёт бухгалтера за сегодня — остаток, движение денег и сдан ли отчёт', () => {
+  const day = {date: '2026-10-19', closing_balance: '425000', accounting: {
+    ledger: {cash_flow: {opening_balance: '425000', received_from_cashier: null, other_receipts: '0', salary_paid: '1200000',
+      other_outflows: '300000', closing_balance: '-1075000'},
+    movements: [{type: 'opening'}, {type: 'salary_payment'}, {type: 'other_expense'}]}, day_report: null}};
+  const view = logic.accountantBrief(day);
+  assert.equal(view.balance, -1075000);
+  assert.equal(view.ops, '2 операции за день');
+  assert.deepEqual(view.pill, {text: 'Отчёт дня не сдан', tone: 'wait'});
+  assert.deepEqual(view.rows.map(row => row.label), ['На утро', '+ От кассира', '+ Прочие поступления', '− Зарплаты', '− Прочие расходы']);
+  assert.equal(view.rows[1].value, 'не записано');
+  day.accounting.day_report = {submitted_at: '2026-10-19T13:15:00+05:00', changed: false};
+  assert.deepEqual(logic.accountantBrief(day).pill, {text: 'Отчёт сдан 13:15', tone: 'ok'});
+  day.accounting.day_report.changed = true;
+  assert.equal(logic.accountantBrief(day).pill.tone, 'bad');
+  assert.deepEqual(logic.accountantBrief({date: '2026-10-19'}), {error: 'Нет данных бухгалтера за этот день'});
+});

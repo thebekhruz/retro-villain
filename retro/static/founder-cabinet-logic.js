@@ -326,8 +326,86 @@
     };
   }
 
+  /** «22:56» из времени iiko или ISO с поясом — часы как записаны (Ташкент). */
+  function clock(iso) { return iso ? String(iso).slice(11, 16) : ''; }
+
+  /** Шаг расшифровки: «+ Поступления 120 000»; ноль — приглушён. */
+  function step(label, value, sign) {
+    const amount = num(value);
+    return {label: (sign ? sign + ' ' : '') + label, value: sum(amount), muted: !amount};
+  }
+
+  /** Краткий отчёт кассира за день на главной (T-512): продажи, оплаты по
+   *  типам и «К передаче бухгалтеру» по шагам — числа сервера (till_summary),
+   *  как у кассира; экран только раскладывает. Нет iiko — так и пишем. */
+  function cashierBrief(day, today) {
+    if (!day) return null;
+    const cashier = day.cashier;
+    if (!cashier) return {error: day.cashier_error || 'Нет данных iiko за этот день'};
+    const report = cashier.report || {};
+    const shift = cashier.shift;
+    let pill = null;
+    if (shift && shift.open) pill = {text: 'Смена открыта', tone: 'wait'};
+    else if (shift && shift.closed_at) pill = {text: 'Смена закрыта ' + clock(shift.closed_at), tone: 'ok'};
+    else if (day.date === today) pill = {text: 'Смена ещё не открыта', tone: 'wait'};
+    const count = report.receipts_count;
+    const usd = num(report.usd_total) || 0;
+    const steps = [step('Наличные', report.demo_cash, ''), step('Предоплаты наличными', report.cash_prepayment, '+'),
+      step('Поступления', report.receipts, '+'), step('Расходы', report.expenses, '−'),
+      step('На закуп', report.shokh, '−')];
+    if (usd) steps.push({label: '− Доллары в сейф', value: '$' + sum(usd), muted: false});
+    const handover = day.handover || {};
+    const mark = handoverMark(day);
+    let received;
+    if (handover.recorded !== null && handover.recorded !== undefined) {
+      received = {label: handover.confirmed ? 'Бухгалтер подтвердил' : 'Бухгалтер получил',
+        value: sum(num(handover.recorded)), mark: mark.mark, tone: mark.tone, tip: mark.tip};
+    } else {
+      received = {label: 'Бухгалтер получил', value: day.date === today ? 'ещё не передано' : 'не записано',
+        mark: day.date === today ? '' : mark.mark, tone: day.date === today ? 'wait' : mark.tone, tip: mark.tip};
+    }
+    return {
+      sales: num(report.sales !== undefined ? report.sales : cashier.register_revenue),
+      checks: count === null || count === undefined ? '' : count + ' ' + plural(count, 'чек', 'чека', 'чеков') +
+        (num(report.average) ? ' · средний ' + sum(num(report.average)) : ''),
+      pill,
+      payments: (report.payments || []).map(item => ({label: item.name, value: sum(num(item.amount))})),
+      handover: report.handover !== undefined ? num(report.handover) : num(cashier.expected_handover),
+      steps, received, notes: report.issues || [],
+    };
+  }
+
+  /** Отчёт бухгалтера за день (T-512): остаток сейчас и движение денег —
+   *  `cash_flow` из /api/accountant/day, как у бухгалтера на 2a. */
+  function accountantBrief(day) {
+    if (!day) return null;
+    const accounting = day.accounting;
+    const flow = accounting && accounting.ledger && accounting.ledger.cash_flow;
+    if (!flow) return {error: 'Нет данных бухгалтера за этот день'};
+    const saved = accounting.day_report;
+    const pill = !saved ? {text: 'Отчёт дня не сдан', tone: 'wait'}
+      : saved.changed ? {text: 'Изменён после сдачи', tone: 'bad'}
+        : {text: 'Отчёт сдан ' + clock(saved.submitted_at), tone: 'ok'};
+    const movements = (accounting.ledger.movements || []).filter(item => item.type !== 'opening');
+    const cashier = flow.received_from_cashier;
+    return {
+      balance: num(flow.closing_balance !== undefined ? flow.closing_balance : day.closing_balance),
+      ops: movements.length ? movements.length + ' ' + plural(movements.length, 'операция', 'операции', 'операций') + ' за день'
+        : 'Операций за день пока нет',
+      pill,
+      rows: [
+        step('На утро', flow.opening_balance, ''),
+        cashier === null || cashier === undefined ? {label: '+ От кассира', value: 'не записано', muted: true}
+          : step('От кассира', cashier, '+'),
+        step('Прочие поступления', flow.other_receipts, '+'),
+        step('Зарплаты', flow.salary_paid, '−'),
+        step('Прочие расходы', flow.other_outflows, '−'),
+      ],
+    };
+  }
+
   // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
   return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
-    accountantIssues, chefAlerts, forecastNote, soldDishes, chefWeekView, todayStatus};
+    accountantIssues, chefAlerts, forecastNote, soldDishes, chefWeekView, todayStatus, cashierBrief, accountantBrief};
 });

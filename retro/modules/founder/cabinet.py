@@ -16,7 +16,8 @@ from retro.accounting_period import ACCOUNTING_START, accounting_range_start, pe
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import TZ, DataError, today_tashkent
-from retro.modules.cashier.till import expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total
+from retro.modules.cashier.till import (expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total,
+                                       till_summary)
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
@@ -121,7 +122,33 @@ async def cashier_day(request, day: date):
         # Время чтения iiko и смена кассы — для строки «Сегодня ещё идёт · данные на ЧЧ:ММ»
         # (ТЗ 16.10, п. 2): экран не подставляет свои часы.
         fetched_at=snapshot.fetched_at.astimezone(TZ).isoformat(timespec='seconds'),
-        shift=snapshot.shift.json() if snapshot.shift is not None else None), None
+        shift=snapshot.shift.json() if snapshot.shift is not None else None,
+        report=till_report(state, day, snapshot, totals)), None
+
+
+def till_report(state, day: date, snapshot, totals) -> dict:
+    """Краткий отчёт кассира на главной учредителя (T-512): оплаты по типам и
+    «К передаче бухгалтеру» по шагам — те же числа, что на экране кассира
+    (till_summary), без повторного счёта."""
+    summary = till_summary(state, day, snapshot, totals=totals)
+    methods: dict[str, Decimal] = {}
+    if snapshot.payment_groups is not None:
+        rows = [(item.name, item.paid) for group in snapshot.payment_groups for item in group.types]
+    else:
+        rows = [(item.name, item.amount) for item in snapshot.payments]
+    for name, amount in rows:
+        if amount:
+            name = 'Наличные' if name == 'Демо' else name
+            methods[name] = methods.get(name, Decimal(0)) + amount
+    payments = sorted(methods.items(), key=lambda item: -item[1])
+    pick = lambda key: summary.get(key)
+    return dict(sales=money(snapshot.revenue), receipts_count=snapshot.receipt_count,
+                average=money(snapshot.average_receipt) if snapshot.average_receipt is not None else None,
+                payments=[dict(name=name, amount=money(amount)) for name, amount in payments],
+                demo_cash=pick('demo_cash'), cash_prepayment=pick('cash_prepayment'),
+                receipts=pick('receipts'), expenses=pick('expenses'), shokh=pick('shokh'),
+                usd_total=pick('usd_total'), handover=pick('handover'),
+                issues=[issue for issue in (pick('prepayment_issue'), pick('usd_issue')) if issue])
 
 
 def shift_accrued(request, day: date) -> Decimal:
