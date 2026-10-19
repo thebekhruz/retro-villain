@@ -253,6 +253,9 @@
 .fo-rep-pill.is-wait{background:#f6eedc;color:#806125}
 .fo-rep-pill.is-bad{background:#f7e3e6;color:#aa4656}
 .fo-rep-sub{margin:2px 0 0;font-size:11px;color:var(--muted-2)}
+.fo-rep-body .fo-line.fo-rep-group>span{font-weight:600;color:var(--ink)}
+.fo-rep-body .fo-line.fo-rep-sub-line{padding-left:12px;border-top-style:dashed}
+.fo-rep-body .fo-line.fo-rep-sub-line b{font-weight:500}
 .fo-rep-body .fo-line.is-muted>*{color:#a3ada4}
 .fo-rep-hand{margin-top:12px;padding:12px;border-radius:14px;background:#f5f7f2}
 .fo-rep-hand-label{display:block;font-size:12px;font-weight:600;color:var(--ink-2)}

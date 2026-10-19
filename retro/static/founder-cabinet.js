@@ -414,7 +414,7 @@
   function cashierBody(view) {
     const box = document.createDocumentFragment();
     const head = node('div', 'fo-rep-head');
-    head.append(node('span', 'fo-label', 'Продажи по кассе'));
+    head.append(node('span', 'fo-label', view.title));
     const pill = briefPill(view.pill);
     if (pill) head.append(pill);
     const big = node('div', 'fo-big');
@@ -422,6 +422,10 @@
     box.append(head, big);
     if (view.checks) box.append(node('p', 'fo-rep-sub', view.checks));
     view.payments.forEach(row => box.append(briefLine(row)));
+    if (view.prepayments && view.prepayments.rows.length) {
+      box.append(briefLine({label: view.prepayments.title, value: view.prepayments.total}, 'fo-rep-group'));
+      view.prepayments.rows.forEach(row => box.append(briefLine(row, 'fo-rep-sub-line')));
+    }
     const handover = node('div', 'fo-rep-hand');
     handover.append(node('span', 'fo-rep-hand-label', 'К передаче бухгалтеру'));
     const amount = node('div', 'fo-big');
@@ -449,6 +453,7 @@
     const big = node('div', 'fo-big');
     big.append(node('strong', 'rm-num', sum(view.balance)), node('small', '', view.balance === null ? '' : 'сум'));
     box.append(head, big, node('p', 'fo-rep-sub', view.ops));
+    if (view.pendingNote) box.append(node('p', 'fo-rep-note', view.pendingNote));
     view.rows.forEach(row => box.append(briefLine(row)));
     return box;
   }

@@ -16,6 +16,7 @@ from retro.accounting_period import ACCOUNTING_START, accounting_range_start, pe
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import TZ, DataError, today_tashkent
+from retro.modules.cashier.routes import CLOSED_DAY_TTL, with_prepayments
 from retro.modules.cashier.till import (expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total,
                                        till_summary)
 from retro.modules.shokh.store import pocket_position
@@ -102,9 +103,19 @@ def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS, *
     return result
 
 
-async def cashier_day(request, day: date):
-    """Касса дня глазами кассира: выручка по заведениям, «Демо», расчёт передачи."""
-    snapshot, error = await iiko_or_error(request, 'load', day, operation='cashier_day')
+async def cashier_day(request, day: date, *, brief: bool = False):
+    """Касса дня глазами кассира: выручка по заведениям, «Демо», расчёт передачи.
+
+    brief — ещё и краткий отчёт кассира для главной (T-512): тогда вместе со
+    снимком берём реестр предоплат дня, как экран кассира и отчёт в Telegram.
+    Неделе и месяцу он не нужен — лишних запросов в iiko они не делают."""
+    if brief:
+        (snapshot, error), (entries, _) = await asyncio.gather(
+            iiko_or_error(request, 'load', day, operation='cashier_day'),
+            iiko_or_error(request, 'load_prepayments', day, operation='cashier_day_prepayments', timeout=35,
+                          ttl=CLOSED_DAY_TTL if day < today_tashkent() else 30))
+    else:
+        snapshot, error = await iiko_or_error(request, 'load', day, operation='cashier_day')
     if snapshot is None:
         return None, error
     state = request.app.state
@@ -123,7 +134,8 @@ async def cashier_day(request, day: date):
         # (ТЗ 16.10, п. 2): экран не подставляет свои часы.
         fetched_at=snapshot.fetched_at.astimezone(TZ).isoformat(timespec='seconds'),
         shift=snapshot.shift.json() if snapshot.shift is not None else None,
-        report=till_report(state, day, snapshot, totals)), None
+        **({'report': till_report(state, day, with_prepayments(snapshot, entries) if entries is not None
+                                  else snapshot, totals)} if brief else {})), None
 
 
 def till_report(state, day: date, snapshot, totals) -> dict:
@@ -131,6 +143,8 @@ def till_report(state, day: date, snapshot, totals) -> dict:
     «К передаче бухгалтеру» по шагам — те же числа, что на экране кассира
     (till_summary), без повторного счёта."""
     summary = till_summary(state, day, snapshot, totals=totals)
+    data = snapshot.json()
+    grouped = snapshot.payment_groups is not None
     methods: dict[str, Decimal] = {}
     if snapshot.payment_groups is not None:
         rows = [(item.name, item.paid) for group in snapshot.payment_groups for item in group.types]
@@ -142,9 +156,25 @@ def till_report(state, day: date, snapshot, totals) -> dict:
             methods[name] = methods.get(name, Decimal(0)) + amount
     payments = sorted(methods.items(), key=lambda item: -item[1])
     pick = lambda key: summary.get(key)
-    return dict(sales=money(snapshot.revenue), receipts_count=snapshot.receipt_count,
-                average=money(snapshot.average_receipt) if snapshot.average_receipt is not None else None,
+    # Предоплаты, полученные за день, — отдельной группой по способам, как в
+    # отчёте в Telegram; выручка дня = продажи + они (Snapshot.daily_revenue).
+    # Реестр не пришёл — None: экран пишет «недоступны», а не ноль.
+    prepayments = None
+    if snapshot.prepayments is not None:
+        by_method: dict[str, Decimal] = {}
+        for entry in snapshot.prepayments:
+            name = entry.payment_method or 'Способ не указан'
+            by_method[name] = by_method.get(name, Decimal(0)) + entry.amount
+        prepayments = dict(count=len(snapshot.prepayments), total=money(sum(by_method.values(), Decimal(0))),
+                           methods=[dict(name=name, amount=money(amount)) for name, amount
+                                    in sorted(by_method.items(), key=lambda item: -item[1])])
+    receipts = data.get('full_receipt_count') if grouped else data.get('receipt_count')
+    average = data.get('full_average_receipt') if grouped else data.get('average_receipt')
+    revenue = snapshot.daily_revenue
+    return dict(sales=money(snapshot.revenue), revenue=money(revenue) if revenue is not None else None,
+                receipts_count=receipts, average=money(average) if average is not None else None,
                 payments=[dict(name=name, amount=money(amount)) for name, amount in payments],
+                prepayments=prepayments,
                 demo_cash=pick('demo_cash'), cash_prepayment=pick('cash_prepayment'),
                 receipts=pick('receipts'), expenses=pick('expenses'), shokh=pick('shokh'),
                 usd_total=pick('usd_total'), handover=pick('handover'),
@@ -229,13 +259,13 @@ async def month_cashier(request, first: date, last: date):
     return {day.isoformat(): value for day, value, _ in results if value}, (errors[0] if errors else None)
 
 
-async def founder_day(request, day: date, *, orders=None, flows=None):
+async def founder_day(request, day: date, *, orders=None, flows=None, brief=False):
     """Один день: касса iiko, деньги бухгалтера и сверка передачи между ними."""
     from retro.modules.accountant.routes import day_view
 
     state = request.app.state
     accounting, (cashier, cashier_error) = await asyncio.gather(
-        day_view(request, day), cashier_day(request, day))
+        day_view(request, day), cashier_day(request, day, brief=brief))
     if flows is None:
         flows = overview.daily_flows(
             await asyncio.to_thread(state.accountant_finance.cash_flows_between, day, day))

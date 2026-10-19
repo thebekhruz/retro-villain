@@ -513,7 +513,7 @@ def set_dividend_target(request: Request, body: DividendTargetInput):
 
 @router.get('/day')
 async def founder_day(request: Request, date: date | None = None):
-    return await cabinet.founder_day(request, cabinet.selected_day(date))
+    return await cabinet.founder_day(request, cabinet.selected_day(date), brief=True)
 
 
 @router.get('/week')

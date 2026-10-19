@@ -46,6 +46,9 @@ class FakeIiko:
             raise DataError('iiko временно недоступен')
         return snapshot(day)
 
+    async def load_prepayments(self, day):
+        raise DataError('реестр предоплат недоступен')
+
     async def load_daily_orders(self, start, end):
         if self.error:
             raise self.error
@@ -517,6 +520,35 @@ def test_day_carries_cashier_brief_report_for_home_screen(tmp_path, today):
     assert Decimal(report['handover']) == Decimal('8900000')
     assert Decimal(report['handover']) == Decimal(day['cashier']['expected_handover'])
     assert report['issues'] == []
+    # Реестр предоплат не ответил — остаются предоплаты, что уже в снимке iiko.
+    known = demo_snapshot(TODAY).prepayments
+    assert report['prepayments']['count'] == len(known)
+    assert Decimal(report['revenue']) == Decimal(report['sales']) + sum(entry.amount for entry in known)
+
+
+def test_brief_report_counts_prepayments_received_that_day(tmp_path, today):
+    """T-512: предоплаты, полученные за день, — в выручке и отдельным списком по
+    способам; неделя реестр предоплат не запрашивает."""
+    from retro.modules.cashier.service import Prepayment
+
+    class WithPrepayments(FakeIiko):
+        calls = 0
+
+        async def load_prepayments(self, day):
+            WithPrepayments.calls += 1
+            return (Prepayment('1', f'{day}T12:00:00', Decimal('2000000'), 'Payme'),
+                    Prepayment('2', f'{day}T13:00:00', Decimal('500000'), 'Payme'),
+                    Prepayment('3', f'{day}T14:00:00', Decimal('3000000'), 'Наличные'))
+
+    with client(tmp_path, WithPrepayments()) as c:
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+        assert WithPrepayments.calls == 1
+        c.get('/api/founder/week', params={'date': TODAY.isoformat()})
+        assert WithPrepayments.calls == 1
+    report = day['cashier']['report']
+    assert report['prepayments'] == {'count': 3, 'total': '5500000.00', 'methods': [
+        {'name': 'Наличные', 'amount': '3000000.00'}, {'name': 'Payme', 'amount': '2500000.00'}]}
+    assert Decimal(report['revenue']) == Decimal(report['sales']) + Decimal('5500000')
     assert day['accounting']['ledger']['cash_flow'].keys() >= {
         'opening_balance', 'received_from_cashier', 'other_receipts', 'salary_paid', 'other_outflows',
         'closing_balance'}
