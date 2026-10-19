@@ -472,7 +472,9 @@ def test_week_label_must_be_canonical():
 
 def test_today_outlook_follows_the_spec_formulas(tmp_path, today):
     """Функционал §3.8: зарплаты = начислено сменным за вчера + оклады сегодня;
-    закуп и прочее — среднее за 7 дней до 10 000; к вечеру = утро + к передаче − всё это."""
+    закуп и прочее — среднее за 7 дней до 10 000. К вечеру (T-514) = утро +
+    касса за вчера, полученная сегодня, + прочие поступления − всё это;
+    сегодняшняя касса (её передадут завтра) не входит."""
     with client(tmp_path) as c:
         finance = c.app.state.accountant_finance
         for offset in range(7):
@@ -485,16 +487,25 @@ def test_today_outlook_follows_the_spec_formulas(tmp_path, today):
         finance.add_expense(date(2026, 9, 23), 'distribution_dividends', 'Дивиденды', '700000',
                             cashier_amount=Decimal('9000000'))
         with patch('retro.modules.founder.cabinet.shift_accrued', return_value=Decimal('1234000')):
+            before = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+            # Касса за вчера пришла бухгалтеру сегодня; подтверждена или нет — деньги у него.
+            finance.record_handover(TODAY, Decimal('31348000'))
             day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
     outlook = day['outlook']
     assert outlook['salary_shift'] == '1234000.00' and outlook['salary_monthly'] == '0.00'
     assert outlook['salary_due'] == '1234000.00'
     assert outlook['other'] == '100000.00'  # дивиденды в «прочее» не входят
     assert outlook['procurement'] == '0.00'
+    assert outlook['cashier_incoming'] == '31348000.00' and outlook['cashier_incoming_source'] == 'recorded'
     opening = Decimal(day['opening_balance'])
-    expected = Decimal(day['cashier']['expected_handover'])
-    evening = overview.round_to(opening + expected - Decimal('1234000') - Decimal('100000'), Decimal(10000))
+    evening = overview.round_to(opening + Decimal('31348000') - Decimal('1234000') - Decimal('100000'),
+                                Decimal(10000))
     assert Decimal(outlook['evening']) == evening
+    # Сегодняшняя касса (расчёт кассира на сейчас) в «к вечеру» не входит.
+    assert Decimal(day['cashier']['expected_handover']) > 0
+    # Пока передачи нет и расчёта за вчера нет — «к вечеру» неизвестно, а не утро − расходы.
+    if before['outlook']['cashier_incoming'] is None:
+        assert before['outlook']['evening'] is None
 
 
 def test_day_carries_cashier_brief_report_for_home_screen(tmp_path, today):

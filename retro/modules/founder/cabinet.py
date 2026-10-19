@@ -193,13 +193,19 @@ def shift_accrued(request, day: date) -> Decimal:
     return sum((row.payable for row in rows if row.payable is not None), Decimal(0))
 
 
-async def day_outlook(request, day: date, accounting: dict, expected):
+async def day_outlook(request, day: date, accounting: dict):
     """«Уйдёт сегодня» и «У бухгалтера к вечеру ≈» (Функционал §3.8).
 
     Зарплаты = начислено сменным за вчера + оклады, выданные сегодня.
     Закуп ≈ и прочее ≈ — среднее за 7 прошлых дней (закуп бухгалтера и прочие
-    расходы без дивидендов). К вечеру ≈ = на утро + к передаче − зарплаты −
-    закуп − прочее. Оценки округляем до 10 000."""
+    расходы без дивидендов). Оценки округляем до 10 000.
+
+    К вечеру ≈ = на утро + касса за вчера + прочие поступления − зарплаты −
+    закуп − прочее (T-514). Касса за вчера — деньги, которые бухгалтер получает
+    сегодня: записанная передача (подтверждённая или ещё нет — книга берёт в
+    остаток только подтверждённую, а деньги у бухгалтера уже на руках), а пока
+    её нет — расчёт кассы за вчера. Сегодняшняя касса сюда не входит: её
+    передадут завтра утром, и днём это ещё не вся сумма."""
     state = request.app.state
     if day == ACCOUNTING_START:
         recent, shift = [], Decimal(0)
@@ -214,15 +220,26 @@ async def day_outlook(request, day: date, accounting: dict, expected):
         (values.get(key, Decimal(0)) for values in recent.values()), Decimal(0)) / sample_days, overview.OUTLOOK_STEP)
     monthly = sum((Decimal(row['amount']) for row in accounting['monthly_payments']['today']), Decimal(0))
     salary, procurement, other = shift + monthly, average('procurement'), average('other')
-    opening = accounting['ledger']['cash_flow'].get('opening_balance')
+    flow = accounting['ledger']['cash_flow']
+    opening = flow.get('opening_balance')
+    handover = accounting.get('cashier_handover') or {}
+    if handover.get('amount') is not None:
+        incoming, source = Decimal(handover['amount']), 'recorded'
+    elif handover.get('expected') is not None:
+        incoming, source = Decimal(handover['expected']), 'expected'
+    else:
+        incoming, source = None, None
+    receipts = Decimal(flow.get('other_receipts') or 0)
     evening = None
-    if opening is not None:
-        evening = overview.round_to(Decimal(opening) + Decimal(expected or 0) - salary - procurement - other,
+    if opening is not None and incoming is not None:
+        evening = overview.round_to(Decimal(opening) + incoming + receipts - salary - procurement - other,
                                     overview.OUTLOOK_STEP)
     return dict(salary_due=money(salary), salary_shift=money(shift), salary_monthly=money(monthly),
                 procurement=money(procurement), other=money(other),
                 evening=money(evening) if evening is not None else None,
-                handover_expected=expected is not None, estimate=True)
+                cashier_incoming=money(incoming) if incoming is not None else None,
+                cashier_incoming_source=source, other_receipts=money(receipts),
+                handover_expected=source == 'expected', estimate=True)
 
 
 def handover_expected(cashier, handover_state):
@@ -299,7 +316,7 @@ async def founder_day(request, day: date, *, orders=None, flows=None, brief=Fals
     day_orders = (orders or {}).get(day.isoformat(), {})
     outlook = None
     if day == today_tashkent():
-        outlook = await day_outlook(request, day, accounting, expected)
+        outlook = await day_outlook(request, day, accounting)
     return dict(
         date=day.isoformat(), weekday=day.weekday(), today=day == today_tashkent(),
         cashier=cashier, cashier_error=cashier_error,

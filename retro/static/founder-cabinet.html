@@ -50,6 +50,9 @@
         <details id="fo-div-history" class="fo-div-history" hidden><summary>Прошлые недели</summary><div id="fo-div-history-list"></div></details>
       </article>
 
+      <!-- T-514: на телефоне блок «Счёт Шефа» переезжает сюда, сразу под дивиденды (founder-cabinet.js, placeChef). -->
+      <div id="fo-chef-slot-phone" class="fo-chef-slot"></div>
+
       <!-- T-512: краткие отчёты кассира (вчера, сегодня) и бухгалтера (сегодня) сразу под дивидендами. -->
       <article class="rm-phone-card fo-rep">
         <div class="fo-rep-tabs" role="tablist" aria-label="Отчёт дня">
@@ -140,14 +143,15 @@
         <p class="fo-hint fo-week-legend">Проверка передачи: ✓ совпало с расчётом · ⚠ расхождение или передача не записана · … день ещё идёт · – кассир не работал в панели, сверки нет · ? нет данных iiko</p>
       </section>
 
-      <a class="fo-fold" href="#fo-acc" data-fold="fo-acc" role="button" aria-expanded="false" aria-controls="fo-acc"><span>Проверка бухгалтера · Счёт Шефа</span><i aria-hidden="true">›</i></a>
+      <a class="fo-fold" href="#fo-acc" data-fold="fo-acc" role="button" aria-expanded="false" aria-controls="fo-acc"><span>Проверка бухгалтера</span><i aria-hidden="true">›</i></a>
       <div id="fo-acc" class="fo-grid">
         <section class="fo-panel">
           <div class="fo-panel-head"><div><p class="eyebrow is-red">ПРОВЕРКА БУХГАЛТЕРА</p><h2 id="fo-checks-title">—</h2></div><button id="fo-ask-checks" class="fo-ai-button" type="button">✦ Разобрать с AI</button></div>
           <div id="fo-checks" class="dir-issues"></div>
           <p id="fo-checks-more" class="fo-hint"></p>
         </section>
-        <section class="fo-panel">
+        <span id="fo-chef-slot-desk" hidden></span>
+        <section id="fo-chef-panel" class="fo-panel">
           <div class="fo-panel-head"><div><p class="eyebrow">СЧЁТ ШЕФА · IIKO</p><h2 id="fo-chef-title">—</h2></div><span id="fo-chef-over" class="fo-red"></span></div>
           <!-- Недельный порог (ТЗ 16.10, п. 4.2): прогресс и что с уведомлением учредителю. -->
           <div id="fo-chef-limit" class="fo-bars fo-chef-limit" hidden>
