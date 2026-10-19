@@ -389,12 +389,101 @@
     });
   }
 
+  /* ── Краткие отчёты дня (T-512): касса вчера/сегодня, бухгалтер сегодня ── */
+  const REPORT_KEY = 'retro.founder.report-tab';
+  const REPORT_TABS = ['cashier-y', 'cashier-t', 'accountant-t'];
+  function reportTab() {
+    let saved = null;
+    try { saved = localStorage.getItem(REPORT_KEY); } catch (error) { saved = null; }
+    return REPORT_TABS.includes(saved) ? saved : 'cashier-y';
+  }
+  function chooseReport(tab) {
+    try { localStorage.setItem(REPORT_KEY, tab); } catch (error) { /* выбор просто не запомнится */ }
+    renderBrief(tab);
+  }
+
+  function briefLine(row, extra) {
+    const line = node('div', 'fo-line' + (row.muted ? ' is-muted' : '') + (extra ? ' ' + extra : ''));
+    line.append(node('span', '', row.label), node('b', 'rm-num', row.value));
+    return line;
+  }
+  function briefPill(pill) {
+    return pill ? node('span', 'fo-rep-pill is-' + pill.tone, pill.text) : null;
+  }
+
+  function cashierBody(view) {
+    const box = document.createDocumentFragment();
+    const head = node('div', 'fo-rep-head');
+    head.append(node('span', 'fo-label', 'Продажи по кассе'));
+    const pill = briefPill(view.pill);
+    if (pill) head.append(pill);
+    const big = node('div', 'fo-big');
+    big.append(node('strong', 'rm-num', sum(view.sales)), node('small', '', 'сум'));
+    box.append(head, big);
+    if (view.checks) box.append(node('p', 'fo-rep-sub', view.checks));
+    view.payments.forEach(row => box.append(briefLine(row)));
+    const handover = node('div', 'fo-rep-hand');
+    handover.append(node('span', 'fo-rep-hand-label', 'К передаче бухгалтеру'));
+    const amount = node('div', 'fo-big');
+    amount.append(node('strong', 'rm-num', sum(view.handover)), node('small', '', view.handover === null ? '' : 'сум'));
+    handover.append(amount);
+    view.steps.forEach(row => handover.append(briefLine(row)));
+    const received = node('div', 'fo-line fo-rep-recv');
+    const value = node('b', 'rm-num', view.received.value + ' ');
+    const mark = node('span', 'fo-mark is-' + view.received.tone, view.received.mark);
+    if (view.received.tip) mark.title = view.received.tip;
+    value.append(mark);
+    received.append(node('span', '', view.received.label), value);
+    handover.append(received);
+    box.append(handover);
+    view.notes.forEach(text => box.append(node('p', 'fo-rep-note', text)));
+    return box;
+  }
+
+  function accountantBody(view) {
+    const box = document.createDocumentFragment();
+    const head = node('div', 'fo-rep-head');
+    head.append(node('span', 'fo-label', 'У бухгалтера сейчас'));
+    const pill = briefPill(view.pill);
+    if (pill) head.append(pill);
+    const big = node('div', 'fo-big');
+    big.append(node('strong', 'rm-num', sum(view.balance)), node('small', '', view.balance === null ? '' : 'сум'));
+    box.append(head, big, node('p', 'fo-rep-sub', view.ops));
+    view.rows.forEach(row => box.append(briefLine(row)));
+    return box;
+  }
+
+  function renderBrief(tab) {
+    tab = tab || reportTab();
+    document.querySelectorAll('.fo-rep-tabs [role=tab]').forEach(button => {
+      const on = button.dataset.rep === tab;
+      button.setAttribute('aria-selected', String(on));
+      button.tabIndex = on ? 0 : -1;
+    });
+    const body = $('fo-rep-body');
+    body.setAttribute('aria-labelledby', 'fo-rep-tab-' + tab);
+    const key = tab === 'cashier-y' ? 'yesterday' : 'today';
+    const day = state.data[key];
+    if (!day) {
+      const failed = state.failed && state.failed[key];
+      if (failed) body.replaceChildren(node('p', 'fo-empty', failed));
+      else skeletonLines(body, 4);
+      return;
+    }
+    const view = tab === 'accountant-t' ? logic.accountantBrief(day) : logic.cashierBrief(day, state.today);
+    if (view.error) { body.replaceChildren(node('p', 'fo-empty', view.error)); return; }
+    body.replaceChildren(tab === 'accountant-t' ? accountantBody(view) : cashierBody(view));
+  }
+
   async function loadPhone() {
     const [today, yesterday] = await Promise.allSettled([
       load('today', '/api/founder/day?date=' + state.today),
       load('yesterday', '/api/founder/day?date=' + state.yesterday),
     ]);
     renderPhoneDays(today.value, yesterday.value);
+    state.failed = {today: today.status === 'rejected' ? today.reason.message : null,
+      yesterday: yesterday.status === 'rejected' ? yesterday.reason.message : null};
+    renderBrief();
     // Время — чтения iiko сервером (ТЗ 16.10, п. 2), не часы телефона.
     setText('updated', today.status === 'rejected' ? today.reason.message : logic.todayStatus(today.value, state.today));
   }
@@ -779,6 +868,17 @@
     $('k-div-edit').addEventListener('click', () => {
       if (!desk.matches && state.editor.open) $('fo-div-editor-phone').scrollIntoView({block: 'center', behavior: 'smooth'});
     });
+    document.querySelectorAll('.fo-rep-tabs [role=tab]').forEach(button => {
+      button.addEventListener('click', () => chooseReport(button.dataset.rep));
+      // Стрелки переключают вкладки, как у обычного списка вкладок.
+      button.addEventListener('keydown', event => {
+        if (event.key !== 'ArrowRight' && event.key !== 'ArrowLeft') return;
+        const index = REPORT_TABS.indexOf(button.dataset.rep);
+        const next = REPORT_TABS[(index + (event.key === 'ArrowRight' ? 1 : REPORT_TABS.length - 1)) % REPORT_TABS.length];
+        chooseReport(next);
+        $('fo-rep-tab-' + next).focus();
+      });
+    });
     $('fo-chat-close').addEventListener('click', closePhoneChat);
     document.addEventListener('keydown', event => {
       if (event.key === 'Escape' && document.body.classList.contains('fo-chat-open')) closePhoneChat();
@@ -803,6 +903,7 @@
       setText('updated', error.message);
     }
     state.yesterday = shiftDay(state.today, -1);
+    renderBrief();
     const date = new Date(state.today + 'T12:00:00Z');
     setText('fo-phone-date', date.toLocaleDateString('ru-RU', {weekday: 'long', day: 'numeric', month: 'long', timeZone: 'UTC'}).replace(/^./, c => c.toUpperCase()));
     const month = state.today.slice(0, 7);

@@ -4407,3 +4407,33 @@ globalThis.RetroTemplatesUz.push(
   [/^Служба уведомлений отказала \((.+)\)\. Попробуйте позже\.$/, "Bildirishnoma xizmati rad etdi ($1). Keyinroq urinib ko'ring."],
 );
 /* ── /T-509 ── */
+
+/* ── T-512: краткие отчёты дня на главной учредителя ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Отчёт дня': "Kunlik hisobot",
+  'Касса · вчера': "Kassa · kecha",
+  'Касса · сегодня': "Kassa · bugun",
+  'Бухгалтер · сегодня': "Buxgalter · bugun",
+  'Продажи по кассе': "Kassa bo'yicha savdo",
+  'Смена ещё не открыта': "Smena hali ochilmagan",
+  'Бухгалтер получил': "Buxgalter oldi",
+  'Бухгалтер подтвердил': "Buxgalter tasdiqladi",
+  'ещё не передано': "hali topshirilmagan",
+  'У бухгалтера сейчас': "Buxgalterda hozir",
+  'Отчёт дня не сдан': "Kunlik hisobot topshirilmagan",
+  'Изменён после сдачи': "Topshirilgandan keyin o'zgartirilgan",
+  'На утро': "Ertalabga",
+  '+ От кассира': "+ Kassirdan",
+  '− Зарплаты': "− Ish haqlari",
+  'Операций за день пока нет': "Kun davomida hali operatsiya yo'q",
+  'Нет данных iiko за этот день': "Bu kun uchun iiko ma'lumoti yo'q",
+  'Нет данных бухгалтера за этот день': "Bu kun uchun buxgalter ma'lumoti yo'q",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Смена закрыта (\d\d:\d\d)$/, "Smena yopildi $1"],
+  [/^Отчёт сдан (\d\d:\d\d)$/, "Hisobot topshirildi $1"],
+  [/^(\d+) (?:чек|чека|чеков)$/, "$1 ta chek"],
+  [/^(\d+) (?:чек|чека|чеков) · средний (.+)$/, "$1 ta chek · o'rtacha $2"],
+  [/^(\d+) (?:операция|операции|операций) за день$/, "Kun davomida $1 ta operatsiya"],
+);
+/* ── /T-512 ── */
