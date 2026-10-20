@@ -4383,6 +4383,7 @@ globalThis.RetroTemplatesUz.push(
 /* ── T-509: уведомления о Счёте Шефа на устройстве (push.js) ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Уведомления о Счёте Шефа': "Oshpaz hisobi haqida bildirishnomalar",
+  'Уведомления': "Bildirishnomalar",
   'Каждый заказ за Счёт Шефа — уведомление на это устройство.': "Oshpaz hisobidagi har bir buyurtma — shu qurilmaga bildirishnoma.",
   'Включены на этом устройстве.': "Shu qurilmada yoqilgan.",
   'Уведомления для сайта запрещены: Safari → Настройки → Веб-сайты → Уведомления.': "Sayt uchun bildirishnomalar taqiqlangan: Safari → Sozlamalar → Veb-saytlar → Bildirishnomalar.",

@@ -2,8 +2,8 @@
  *
  * Рисует переключатель в каждом [data-push] страницы: «Включить», а когда
  * включено — «Проверить» и «Выключить». Плашка с data-push="until-on" (в блоке
- * «Счёт Шефа») после включения пропадает: выключают и проверяют из профиля,
- * а если уведомления запретить в браузере — она вернётся с подсказкой.
+ * «Счёт Шефа») после включения сжимается в тонкую строку (founder-cabinet.css):
+ * на компьютере — строка с кнопками, на телефоне её нет совсем — там они в профиле.
  * Устройство подписывается в браузере, адрес и ключи уходят на сервер
  * (/api/founder/push/*), обработчик — /sw.js.
  *
@@ -76,7 +76,7 @@
 
   function render(state, note) {
     boxes.forEach(box => {
-      box.hidden = state === 'on' && box.dataset.push === 'until-on';
+      box.hidden = false;
       box.dataset.state = state;
       const status = document.createElement('span');
       status.className = 'push-status';
@@ -87,7 +87,8 @@
       if (state === 'off') actions.append(button('Включить', enable, true));
       if (state === 'on') actions.append(button('Проверить', test), button('Выключить', disable));
       const title = document.createElement('strong');
-      title.textContent = 'Уведомления о Счёте Шефа';
+      // Строка «включены» стоит в самом блоке Счёта Шефа — хватает «Уведомления».
+      title.textContent = state === 'on' && box.dataset.push === 'until-on' ? 'Уведомления' : 'Уведомления о Счёте Шефа';
       const text = document.createElement('span');
       text.className = 'push-text';
       text.append(title, status);
