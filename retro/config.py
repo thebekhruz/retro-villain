@@ -137,9 +137,10 @@ class Settings:
     shokh_module: bool = False
     # KPI официантов (T-465…T-469): вкладка у менеджера, карточка и настройка
     # периода у директора, /api/*/kpi. Пока обкатывается только на стенде
-    # (prerelease): в этой ветке включён по умолчанию, в `main` — выключен
-    # (T-522). Переопределить — KPI_MODULE=1 / KPI_MODULE=0.
-    kpi_module: bool = True
+    # (prerelease): там включён по умолчанию, в этой ветке (`main`, прод) —
+    # выключен (T-522). При мерже prerelease → main оставлять False.
+    # Переопределить без выпуска — KPI_MODULE=1 / KPI_MODULE=0.
+    kpi_module: bool = False
     claude_api_key: str = field(default='', repr=False)
     claude_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
