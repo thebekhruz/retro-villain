@@ -1,5 +1,6 @@
 """KPI официантов через API: менеджер смотрит рейтинг, директор настраивает, закрывает, выгружает Excel
 и передаёт премии бухгалтеру. iiko подменён источником с готовыми чеками; SQLite и Postgres."""
+from dataclasses import replace
 from datetime import date, timedelta
 from io import BytesIO
 
@@ -61,8 +62,9 @@ def settings(tmp_path, **extra):
     return Settings(data_dir=tmp_path, dashboard_panel_users=USERS, **extra)
 
 
-def sqlite_app(tmp_path):
-    return create_app(settings(tmp_path), expense_db_path=tmp_path / 'cashier.sqlite3',
+def sqlite_app(tmp_path, **extra):
+    # В `main` KPI по умолчанию выключен (T-522): тесты модуля включают его явно.
+    return create_app(settings(tmp_path, **{'kpi_module': True, **extra}), expense_db_path=tmp_path / 'cashier.sqlite3',
                       accountant_db_path=tmp_path / 'accountant.sqlite3',
                       director_db_path=tmp_path / 'director.sqlite3', founder_db_path=tmp_path / 'founder.sqlite3')
 
@@ -74,6 +76,7 @@ def client(request, tmp_path):
             pytest.skip('RETRO_TEST_POSTGRES_URL не задан')
         with postgres_app(tmp_path, None) as app:
             app.state.accounts = app.state.accounts  # как в кабинете менеджера
+            app.state.settings = replace(app.state.settings, kpi_module=True)  # T-522: в main выключен
             app.state.kpi_source = FakeSource()
             with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as http:
                 yield http
@@ -256,3 +259,33 @@ def test_close_creates_snapshot_next_period_excel_and_payouts(client):
         payouts = client.app.state.accountant_finance.extra_payouts(TODAY, TODAY)
         assert any(p['note'].startswith('KPI официантов') for p in payouts)
         assert director(client).post(f'/api/director/kpi/payouts?period={closed["period"]["id"]}', json={}).status_code == 409
+
+
+def test_kpi_module_flag_hides_api_and_tells_pages(tmp_path, monkeypatch):
+    """T-522: KPI официантов обкатывается только на стенде. Без переменной — по
+    умолчанию ветки (в `main` выключен); KPI_MODULE=0 — /api/*/kpi отвечают 404, а
+    /api/config говорит страницам спрятать вкладку и карточку."""
+    assert Settings().kpi_module is False
+    monkeypatch.delenv('KPI_MODULE', raising=False)
+    assert Settings.from_env().kpi_module is Settings.kpi_module
+    monkeypatch.setenv('KPI_MODULE', '0')
+    assert Settings.from_env().kpi_module is False
+    monkeypatch.setenv('KPI_MODULE', '1')
+    assert Settings.from_env().kpi_module is True
+
+    app = create_app(settings(tmp_path, kpi_module=False), expense_db_path=tmp_path / 'cashier.sqlite3',
+                     accountant_db_path=tmp_path / 'accountant.sqlite3',
+                     director_db_path=tmp_path / 'director.sqlite3', founder_db_path=tmp_path / 'founder.sqlite3')
+    app.state.kpi_source = FakeSource()
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as http:
+        assert director(http).get('/api/config').json()['kpi'] is False
+        assert director(http).get('/api/director/kpi').status_code == 404
+        assert director(http).post('/api/director/kpi/close', json={}).status_code == 404
+        assert manager(http).get('/api/manager/kpi').status_code == 404
+        assert manager(http).get('/manager').status_code == 200  # сам кабинет на месте
+    plain = create_app(settings(tmp_path), expense_db_path=tmp_path / 'cashier.sqlite3',
+                       accountant_db_path=tmp_path / 'accountant.sqlite3',
+                       director_db_path=tmp_path / 'director.sqlite3', founder_db_path=tmp_path / 'founder.sqlite3')
+    with TestClient(plain, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as http:
+        assert director(http).get('/api/config').json()['kpi'] is False  # умолчание main
+        assert manager(http).get('/api/manager/kpi').status_code == 404

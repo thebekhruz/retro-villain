@@ -27,7 +27,13 @@
   const config = globalThis.RetroConfig
     || fetch('/api/config', {headers: {accept: 'application/json'}}).then(response => (response.ok ? response.json() : null));
   Promise.resolve(config).then(data => {
-    if (!data || data.user === 'local') return;
+    if (!data) return;
+    // Разделы по флагам сервера (T-522): `[data-feature="kpi"]` спрятан в
+    // разметке и показывается, только когда модуль включён в /api/config.
+    document.querySelectorAll('[data-feature]').forEach(element => {
+      element.hidden = data[element.dataset.feature] === false;
+    });
+    if (data.user === 'local') return;
     const name = String(data.user_name || data.user || '').trim();
     const mark = (Array.from(name)[0] || '').toUpperCase();
     const fill = (selector, text) => document.querySelectorAll(selector).forEach(node => {

@@ -733,6 +733,9 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
                     # Экран запирает выдачу сам, до похода на сервер: без этого
                     # флага кнопки остались бы мёртвыми даже при снятом гейте.
                     check_mode=settings.check_mode,
+                    # KPI официантов (T-522): по флагу страницы показывают вкладку
+                    # менеджера и карточку директора (`[data-feature="kpi"]`).
+                    kpi=settings.kpi_module,
                     modules=modules, planned_modules=0)
 
     app.include_router(cashier_router)
@@ -747,8 +750,12 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(sales_director_router)
     app.include_router(sales_founder_router)
     app.include_router(manager_router)
-    app.include_router(kpi_manager_router)
-    app.include_router(kpi_director_router)
+    def kpi_module_on():
+        if not app.state.settings.kpi_module:
+            raise HTTPException(404, 'KPI официантов выключен (KPI_MODULE).')
+
+    app.include_router(kpi_manager_router, dependencies=[Depends(kpi_module_on)])
+    app.include_router(kpi_director_router, dependencies=[Depends(kpi_module_on)])
     app.include_router(users_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
