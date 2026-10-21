@@ -537,6 +537,21 @@ def test_day_carries_cashier_brief_report_for_home_screen(tmp_path, today):
     assert Decimal(report['revenue']) == Decimal(report['sales']) + sum(entry.amount for entry in known)
 
 
+def test_day_carries_usd_deposits_and_safe_balance_for_home_screen(tmp_path, today):
+    """T-520: доллары на главной — взносы кассира «в сейф» за день и остаток
+    сейфа у бухгалтера; неделе они не нужны."""
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        finance.reserve_entry(TODAY - timedelta(days=1), 'usd', 'opening', '3330', 'Пересчёт сейфа')
+        assert c.post('/api/cashier/usd-deposits', json={'date': TODAY.isoformat(), 'amount': '120'}).status_code == 201
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+        week = c.get('/api/founder/week', params={'date': TODAY.isoformat()}).json()
+    assert day['usd']['total'] == '120' and day['usd']['safe_balance'] == '3450'
+    assert [row['amount'] for row in day['usd']['deposits']] == ['120']
+    assert day['cashier']['report']['usd_total'] == '120'
+    assert all(item.get('usd') is None for item in week['days'])
+
+
 def test_brief_report_counts_prepayments_received_that_day(tmp_path, today):
     """T-512: предоплаты, полученные за день, — в выручке и отдельным списком по
     способам; неделя реестр предоплат не запрашивает."""

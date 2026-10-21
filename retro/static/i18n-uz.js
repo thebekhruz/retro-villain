@@ -4442,3 +4442,13 @@ globalThis.RetroTemplatesUz.push(
   [/^(\d+) (?:операция|операции|операций) за день$/, "Kun davomida $1 ta operatsiya"],
 );
 /* ── /T-512 ── */
+
+/* ── T-520: расшифровки на главной учредителя — аккордеоны и доллары ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Доллары в сейфе': "Seyfdagi dollar",
+  'Взнос кассира': "Kassir badali",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Взнос кассира · (\d\d:\d\d)$/, "Kassir badali · $1"],
+);
+/* ── /T-520 ── */

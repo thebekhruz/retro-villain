@@ -352,8 +352,9 @@
     const usd = num(report.usd_total) || 0;
     const steps = [step('Наличные', report.demo_cash, ''), step('Предоплаты наличными', report.cash_prepayment, '+'),
       step('Поступления', report.receipts, '+'), step('Расходы', report.expenses, '−'),
-      step('На закуп', report.shokh, '−')];
-    if (usd) steps.push({label: '− Доллары в сейф', value: '$' + sum(usd), muted: false});
+      step('На закуп', report.shokh, '−'),
+      // Доллары — всегда строкой (T-520): ноль приглушён, за строкой — взносы дня.
+      {label: '− Доллары в сейф', value: '$' + sum(usd), muted: !usd, details: usdDeposits(day.usd)}];
     const handover = day.handover || {};
     const mark = handoverMark(day);
     let received;
@@ -388,6 +389,40 @@
     };
   }
 
+  /** Взносы кассира «в сейф» за день — расшифровка строки долларов (T-520). */
+  function usdDeposits(usd) {
+    return ((usd && usd.deposits) || []).map(item => ({
+      label: 'Взнос кассира' + (item.created_at ? ' · ' + clock(item.created_at) : ''),
+      value: '$' + sum(num(item.amount)),
+    }));
+  }
+
+  /** Строки «Доллары в сейфе» у бухгалтера (T-520): остаток резерва на конец
+   *  дня; без пересчёта сейфа он неизвестен — «не задан», как у бухгалтера. */
+  function usdLine(usd) {
+    if (!usd) return null;
+    const safe = num(usd.safe_balance);
+    const details = usdDeposits(usd);
+    return {label: 'Доллары в сейфе', value: safe === null ? 'не задан' : '$' + sum(safe),
+      muted: safe === null && !details.length, details};
+  }
+
+  /** Движения дня за строкой расшифровки (T-520): строка раскрывается и
+   *  показывает, из чего сложилась сумма. Типы — как cash_flow бухгалтера:
+   *  «Зарплаты» = выплаты по начислениям, «Прочие расходы» = статьи журнала,
+   *  аванс Шоху и отложенное в сейф. */
+  const BRIEF_MOVEMENTS = {
+    cashier: ['cashier_transfer', 'auto_cashier'],
+    receipts: ['other_receipt'],
+    salary: ['salary_payment'],
+    other: ['other_expense', 'procurement_advance', 'reserve_transfer'],
+  };
+  function briefDetails(movements, group) {
+    const types = BRIEF_MOVEMENTS[group];
+    return movements.filter(item => types.includes(item.type))
+      .map(item => ({label: item.description || '—', value: sum(num(item.amount))}));
+  }
+
   /** Отчёт бухгалтера за день (T-512): остаток сейчас и движение денег —
    *  `cash_flow` из /api/accountant/day, как у бухгалтера на 2a. */
   function accountantBrief(day) {
@@ -418,11 +453,12 @@
       rows: [
         step('На утро', flow.opening_balance, ''),
         cashier === null || cashier === undefined ? {label: '+ От кассира', value: 'не записано', muted: true}
-          : step('От кассира', cashier, '+'),
-        step('Прочие поступления', flow.other_receipts, '+'),
-        step('Зарплаты', flow.salary_paid, '−'),
-        step('Прочие расходы', flow.other_outflows, '−'),
+          : Object.assign(step('От кассира', cashier, '+'), {details: briefDetails(movements, 'cashier')}),
+        Object.assign(step('Прочие поступления', flow.other_receipts, '+'), {details: briefDetails(movements, 'receipts')}),
+        Object.assign(step('Зарплаты', flow.salary_paid, '−'), {details: briefDetails(movements, 'salary')}),
+        Object.assign(step('Прочие расходы', flow.other_outflows, '−'), {details: briefDetails(movements, 'other')}),
       ],
+      usd: usdLine(day.usd),
     };
   }
 

@@ -50,9 +50,6 @@
         <details id="fo-div-history" class="fo-div-history" hidden><summary>Прошлые недели</summary><div id="fo-div-history-list"></div></details>
       </article>
 
-      <!-- T-514: на телефоне блок «Счёт Шефа» переезжает сюда, сразу под дивиденды (founder-cabinet.js, placeChef). -->
-      <div id="fo-chef-slot-phone" class="fo-chef-slot"></div>
-
       <!-- T-512: краткие отчёты кассира (вчера, сегодня) и бухгалтера (сегодня) сразу под дивидендами. -->
       <article class="rm-phone-card fo-rep">
         <div class="fo-rep-tabs" role="tablist" aria-label="Отчёт дня">
@@ -62,6 +59,10 @@
         </div>
         <div id="fo-rep-body" class="fo-rep-body" role="tabpanel" aria-live="polite"></div>
       </article>
+
+      <!-- T-514/T-520: на телефоне блок «Счёт Шефа» переезжает сюда — после отчётов кассы и бухгалтера
+           (порядок учредителя: касса → бухгалтер → Счёт Шефа; founder-cabinet.js, placeChef). -->
+      <div id="fo-chef-slot-phone" class="fo-chef-slot"></div>
 
       <article class="rm-phone-card">
         <span class="fo-label">Демо-касса вчера · <span id="fo-y-date">—</span> · Retro</span>

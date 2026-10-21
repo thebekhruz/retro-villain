@@ -18,7 +18,7 @@ from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import TZ, DataError, today_tashkent
 from retro.modules.cashier.routes import CLOSED_DAY_TTL, with_prepayments
 from retro.modules.cashier.till import (expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total,
-                                       till_summary)
+                                       till_summary, usd_day)
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
@@ -317,6 +317,9 @@ async def founder_day(request, day: date, *, orders=None, flows=None, brief=Fals
     outlook = None
     if day == today_tashkent():
         outlook = await day_outlook(request, day, accounting)
+    # Доллары (T-520): взносы кассира «в сейф» за день и остаток сейфа у
+    # бухгалтера — только главной (brief); неделе и месяцу они не нужны.
+    usd = await asyncio.to_thread(usd_day, state.accountant_finance, day) if brief else None
     return dict(
         date=day.isoformat(), weekday=day.weekday(), today=day == today_tashkent(),
         cashier=cashier, cashier_error=cashier_error,
@@ -331,6 +334,7 @@ async def founder_day(request, day: date, *, orders=None, flows=None, brief=Fals
         opening_balance=ledger['cash_flow'].get('opening_balance'),
         outlook=outlook,
         closing_balance=ledger['cash_balance'],
+        usd=usd,
         accounting=accounting)
 
 
