@@ -256,3 +256,29 @@ def test_close_creates_snapshot_next_period_excel_and_payouts(client):
         payouts = client.app.state.accountant_finance.extra_payouts(TODAY, TODAY)
         assert any(p['note'].startswith('KPI официантов') for p in payouts)
         assert director(client).post(f'/api/director/kpi/payouts?period={closed["period"]["id"]}', json={}).status_code == 409
+
+
+def test_kpi_module_flag_hides_api_and_tells_pages(tmp_path, monkeypatch):
+    """T-522: KPI официантов обкатывается только на стенде. Без переменной — по
+    умолчанию ветки (здесь включён); KPI_MODULE=0 — /api/*/kpi отвечают 404, а
+    /api/config говорит страницам спрятать вкладку и карточку."""
+    assert Settings().kpi_module is True
+    monkeypatch.delenv('KPI_MODULE', raising=False)
+    assert Settings.from_env().kpi_module is Settings.kpi_module
+    monkeypatch.setenv('KPI_MODULE', '0')
+    assert Settings.from_env().kpi_module is False
+    monkeypatch.setenv('KPI_MODULE', '1')
+    assert Settings.from_env().kpi_module is True
+
+    app = create_app(settings(tmp_path, kpi_module=False), expense_db_path=tmp_path / 'cashier.sqlite3',
+                     accountant_db_path=tmp_path / 'accountant.sqlite3',
+                     director_db_path=tmp_path / 'director.sqlite3', founder_db_path=tmp_path / 'founder.sqlite3')
+    app.state.kpi_source = FakeSource()
+    with TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as http:
+        assert director(http).get('/api/config').json()['kpi'] is False
+        assert director(http).get('/api/director/kpi').status_code == 404
+        assert director(http).post('/api/director/kpi/close', json={}).status_code == 404
+        assert manager(http).get('/api/manager/kpi').status_code == 404
+        assert manager(http).get('/manager').status_code == 200  # сам кабинет на месте
+    with TestClient(sqlite_app(tmp_path), base_url='http://127.0.0.1', client=('127.0.0.1', 50000)) as http:
+        assert director(http).get('/api/config').json()['kpi'] is True

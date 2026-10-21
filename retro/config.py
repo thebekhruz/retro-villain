@@ -135,6 +135,11 @@ class Settings:
     # вносит бухгалтер по счёт-фактуре на «Балансе Шохруха», а модуля закупа
     # нет вовсе: ни в меню, ни на входе, ни в API. Вернуть — SHOKH_MODULE=1.
     shokh_module: bool = False
+    # KPI официантов (T-465…T-469): вкладка у менеджера, карточка и настройка
+    # периода у директора, /api/*/kpi. Пока обкатывается только на стенде
+    # (prerelease): в этой ветке включён по умолчанию, в `main` — выключен
+    # (T-522). Переопределить — KPI_MODULE=1 / KPI_MODULE=0.
+    kpi_module: bool = True
     claude_api_key: str = field(default='', repr=False)
     claude_model: str = ''
     director_categories: dict[str, str] = field(default_factory=dict)
@@ -214,6 +219,8 @@ class Settings:
         check_mode_on = os.getenv('ACCOUNTANT_CHECK_MODE', '').strip().casefold() \
             in {'1', 'true', 'yes', 'да'}
         shokh_module_on = os.getenv('SHOKH_MODULE', '').strip().casefold() in {'1', 'true', 'yes', 'да'}
+        kpi_value = os.getenv('KPI_MODULE', '').strip().casefold()
+        kpi_module_on = cls.kpi_module if not kpi_value else kpi_value in {'1', 'true', 'yes', 'да'}
         categories = parse_director_categories(os.getenv('IIKO_DIRECTOR_CATEGORIES', ''))
         excluded_groups = parse_director_excluded_groups(os.getenv('IIKO_DIRECTOR_EXCLUDED_GROUPS', ''))
         price_tiers = parse_director_price_tiers(os.getenv('DIRECTOR_PRICE_TIERS', ''))
@@ -271,6 +278,7 @@ class Settings:
             manual_handover_only=manual,
             check_mode=check_mode_on,
             shokh_module=shokh_module_on,
+            kpi_module=kpi_module_on,
             claude_api_key=os.getenv('CLAUDE_API_KEY', ''),
             claude_model=os.getenv('CLAUDE_MODEL', 'claude-sonnet-4-6'),
             director_categories=categories,
