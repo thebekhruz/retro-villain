@@ -322,9 +322,6 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app = FastAPI(title='Retro Milliy', docs_url=None, redoc_url=None, openapi_url=None,
                   lifespan=lifespan, dependencies=[Depends(require_accounting_dates)])
     app.state.settings = settings
-    # Список сессий лежит рядом с базами модулей, на том же томе:
-    # иначе каждый деплой выбрасывает смену на экран входа.
-    app.state.sessions = SessionStore(settings.data_dir / 'sessions.json')
     app.state.iiko = IikoClient(settings)
     app.state.bookings = BookingAnalyticsClient(settings, transport=booking_transport)
     app.state.broadcasts = BookingBroadcastClient(settings, transport=broadcast_transport)
@@ -334,6 +331,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     # В Postgres все таблицы живут в одной базе; в SQLite — каждый модуль в
     # своём файле, как было. Явно переданные пути (тесты, скрипты) сильнее.
     shared = Database(settings.database_url) if settings.database_url else None
+    # Сессии — в той же базе, что и данные (T-515): каталог данных на хостинге
+    # живёт внутри контейнера и пустеет при каждом выкате, а с ним раньше
+    # пропадал и sessions.json — всех выбрасывало на экран входа.
+    app.state.sessions = SessionStore(shared or settings.data_dir / 'sessions.sqlite3',
+                                      legacy=settings.data_dir / 'sessions.json')
     # Учётные записи панели (T-442): таблица в общей базе, за ней — переменные.
     app.state.accounts = PanelAccounts(
         settings, PanelUserStore(shared or settings.data_dir / 'panel-users.sqlite3'))
@@ -597,7 +599,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         token = app.state.sessions.create(body.username, role)
         response = JSONResponse({'role': role, 'path': ROLE_PATHS[role]})
         response.set_cookie(
-            SESSION_COOKIE, token, max_age=12 * 60 * 60, httponly=True,
+            # Как и вход по номеру — на срок сессии (30 дней), а не на 12 часов (T-515).
+            SESSION_COOKIE, token, max_age=int(app.state.sessions.lifetime.total_seconds()), httponly=True,
             samesite=SESSION_SAMESITE, secure=effective_scheme(request) == 'https', path='/')
         return response
 

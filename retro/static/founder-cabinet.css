@@ -243,6 +243,34 @@
 .fo-acc-line.is-bad{color:var(--late)}
 .fo-acc-line.is-ok{color:var(--ok)}
 #fo-chef-week .fo-line b{color:var(--late)}
+/* T-512: краткие отчёты дня на телефоне */
+.fo-rep-tabs{display:grid;grid-template-columns:repeat(3,1fr);gap:4px;padding:3px;margin:-2px -2px 12px;border-radius:12px;background:#eef1ea}
+.fo-rep-tabs button{min-height:34px;padding:6px 4px;border:0;border-radius:9px;background:none;color:var(--ink-2);font:inherit;font-size:11px;font-weight:600;line-height:1.2}
+.fo-rep-tabs button[aria-selected=true]{background:#fff;color:var(--ink);box-shadow:0 1px 3px #0000001a}
+.fo-rep-head{display:flex;justify-content:space-between;align-items:center;gap:8px}
+.fo-rep-pill{flex:none;padding:3px 8px;border-radius:999px;font-size:10px;font-weight:600;background:#eef1ea;color:var(--ink-2)}
+.fo-rep-pill.is-ok{background:#e4efe6;color:#2f6b4f}
+.fo-rep-pill.is-wait{background:#f6eedc;color:#806125}
+.fo-rep-pill.is-bad{background:#f7e3e6;color:#aa4656}
+.fo-rep-sub{margin:2px 0 0;font-size:11px;color:var(--muted-2)}
+.fo-rep-body .fo-line.fo-rep-group>span{font-weight:600;color:var(--ink)}
+.fo-rep-body .fo-line.fo-rep-sub-line{padding-left:12px;border-top-style:dashed}
+.fo-rep-body .fo-line.fo-rep-sub-line b{font-weight:500}
+.fo-rep-body .fo-line.is-muted>*{color:#a3ada4}
+.fo-rep-hand{margin-top:12px;padding:12px;border-radius:14px;background:#f5f7f2}
+.fo-rep-hand-label{display:block;font-size:12px;font-weight:600;color:var(--ink-2)}
+.fo-rep-hand .fo-big strong{font-size:22px}
+.fo-rep-hand .fo-line{border-top-color:#e6eae1}
+.fo-rep-recv b{font-weight:650}
+.fo-mark.is-wait{color:#9aa69b}
+.fo-rep-note{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:#fbf3e0;color:#806125;font-size:11px}
+/* T-520: строка с операциями — аккордеон: стрелка у подписи, внутри — операции дня */
+.fo-rep-fold summary{list-style:none;cursor:pointer;min-height:30px;align-items:center}
+.fo-rep-fold summary::-webkit-details-marker{display:none}
+.fo-rep-fold summary>span::after{content:'›';display:inline-block;margin-left:6px;color:#9aa69b;font-weight:600;transition:transform .15s}
+.fo-rep-fold[open]>summary>span::after{transform:rotate(90deg)}
+.fo-rep-fold .fo-rep-sub-line{margin-top:6px;padding-top:6px}
+.fo-rep-fold .fo-rep-sub-line>span{overflow-wrap:anywhere}
 
 /* ── Раскладки ────────────────────────────────────────────────────────── */
 @media(max-width:1180px){
@@ -416,6 +444,24 @@
   font:inherit;font-size:13px;font-weight:600;color:var(--ink,#1d2b24);cursor:pointer}
 .push-button.is-primary{border-color:#24594b;background:#24594b;color:#fff}
 .push-button:disabled{opacity:.55;cursor:default}
+/* Счёт Шефа, уведомления уже включены: вместо плашки — тонкая строка под порогом
+   («🔔 Уведомления · Включены на этом устройстве.   Проверить  Выключить»). На телефоне
+   её нет: «Проверить» и «Выключить» там в профиле. */
+.push-box[data-push="until-on"][data-state="on"]{margin-top:10px;padding:0;border:0;background:none;gap:10px}
+.push-box[data-push="until-on"][data-state="on"] .push-text{display:flex;align-items:center;gap:6px;min-width:0;
+  font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.push-box[data-push="until-on"][data-state="on"] .push-text::before{content:"";flex:none;width:14px;height:14px;background:var(--ok);
+  -webkit-mask:var(--push-bell) center/contain no-repeat;mask:var(--push-bell) center/contain no-repeat}
+.push-box[data-push="until-on"][data-state="on"] .push-text strong{font-size:12px;font-weight:600;color:var(--ink-2)}
+.push-box[data-push="until-on"][data-state="on"] .push-status::before{content:"· ";color:var(--muted-2,#748376)}
+.push-box[data-push="until-on"][data-state="on"] .push-status{font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.push-box[data-push="until-on"][data-state="on"] .push-actions{gap:2px}
+.push-box[data-push="until-on"][data-state="on"] .push-button{min-height:24px;padding:0 6px;border:0;border-radius:6px;background:none;
+  font-size:12px;font-weight:600;color:#24594b}
+.push-box[data-push="until-on"][data-state="on"] .push-button:hover{background:var(--panel-2)}
+.push-box[data-push="until-on"][data-state="on"] .push-button + .push-button{color:var(--muted-2,#748376)}
+.push-box{--push-bell:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/%3E%3Cpath d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/%3E%3C/svg%3E")}
+@media(max-width:900px){.push-box[data-push="until-on"][data-state="on"]{display:none}}
 /* В листе профиля на телефоне — строка листа: кнопки под текстом, на всю ширину. */
 .app-sheet .push-box{margin-top:0;flex-direction:column;align-items:stretch}
 .app-sheet .push-actions{justify-content:stretch}

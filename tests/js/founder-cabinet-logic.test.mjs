@@ -205,3 +205,120 @@ test('T-506: строка сегодняшнего дня — время чте�
   assert.equal(logic.todayStatus({cashier: null, cashier_error: 'iiko недоступен'}, '2026-09-24'), 'Сегодня · нет данных iiko');
   assert.equal(logic.todayStatus(undefined, '2026-09-24'), '');
 });
+
+test('T-512: краткий отчёт кассира — продажи, оплаты, «К передаче» по шагам и отметка бухгалтера', () => {
+  const day = {date: '2026-10-18', handover: {recorded: '31348000.00', expected: '31346500.00', status: 'mismatch', difference: '1500.00', confirmed: true},
+    cashier: {register_revenue: '32492000.00', expected_handover: '31346500.00', shift: {open: false, closed_at: '2026-10-19T00:41:10'},
+      report: {sales: '32492000.00', receipts_count: 207, average: '156966.18',
+        payments: [{name: 'Наличные', amount: '31000000.00'}, {name: 'Uzcard', amount: '1492000.00'}],
+        demo_cash: '31000000', cash_prepayment: '0', receipts: '646500', expenses: '300000', shokh: '0', usd_total: '0',
+        handover: '31346500.00', issues: [], revenue: '40492000.00',
+        prepayments: {count: 2, total: '8000000.00', methods: [{name: 'Payme', amount: '5000000.00'}, {name: 'Наличные', amount: '3000000.00'}]}}}};
+  const view = logic.cashierBrief(day, '2026-10-19');
+  assert.equal(view.title, 'Выручка за день');
+  assert.equal(view.sales, 40492000);  // продажи + полученные предоплаты
+  assert.equal(view.prepayments.title, 'Предоплаты получены · 2');
+  assert.equal(plain(view.prepayments.total), '8 000 000');
+  assert.deepEqual(view.prepayments.rows.map(row => row.label), ['Payme', 'Наличные']);
+  assert.equal(plain(view.checks), '207 чеков · средний 156 966');
+  assert.deepEqual(view.pill, {text: 'Смена закрыта 00:41', tone: 'ok'});
+  assert.equal(plain(view.payments[0].value), '31 000 000');
+  assert.equal(view.handover, 31346500);
+  assert.deepEqual(view.steps.map(row => row.label), ['Наличные', '+ Предоплаты наличными', '+ Поступления', '− Расходы', '− На закуп', '− Доллары в сейф']);
+  assert.equal(view.steps[1].muted, true);  // ноль приглушён
+  assert.deepEqual(view.steps.at(-1), {label: '− Доллары в сейф', value: '$0', muted: true, details: []});  // без взносов — строка есть, приглушена (T-520)
+  assert.equal(view.received.label, 'Бухгалтер подтвердил');
+  assert.equal(view.received.mark, '✓↑');  // передали больше расчёта — норма (T-507)
+});
+
+test('T-512: касса сегодня — смена открыта, ещё не передано; доллары отдельной строкой; нет iiko — ошибка', () => {
+  const today = {date: '2026-10-19', handover: {recorded: null, expected: '900000.00', status: 'pending', difference: null},
+    cashier: {shift: {open: true, closed_at: null}, report: {sales: '1000000', receipts_count: 1, average: '1000000', payments: [],
+      demo_cash: '900000', cash_prepayment: '0', receipts: '0', expenses: '0', shokh: '0', usd_total: '100', handover: null,
+      issues: ['Нет курса Retro за этот день. Обновите курс USD перед передачей.'], revenue: null, prepayments: null}}};
+  const view = logic.cashierBrief(today, '2026-10-19');
+  assert.equal(view.title, 'Продажи по кассе');  // реестр предоплат не пришёл
+  assert.equal(view.sales, 1000000);
+  assert.equal(view.prepayments, null);
+  assert.equal(view.notes[0], 'Предоплаты за день недоступны — выручка требует проверки.');
+  assert.deepEqual(view.pill, {text: 'Смена открыта', tone: 'wait'});
+  assert.equal(plain(view.checks), '1 чек · средний 1 000 000');
+  assert.equal(view.received.value, 'ещё не передано');
+  assert.equal(view.received.mark, '');
+  assert.equal(view.handover, null);
+  assert.equal(view.steps.at(-1).label, '− Доллары в сейф');
+  assert.equal(view.steps.at(-1).value, '$100');
+  assert.equal(view.notes.length, 2);
+  assert.deepEqual(logic.cashierBrief({date: '2026-10-19', cashier: null, cashier_error: 'iiko не ответил'}, '2026-10-19'), {error: 'iiko не ответил'});
+  assert.equal(logic.cashierBrief(null), null);
+});
+
+test('T-512: отчёт бухгалтера за сегодня — остаток, движение денег и сдан ли отчёт', () => {
+  const day = {date: '2026-10-19', closing_balance: '425000', accounting: {
+    ledger: {cash_flow: {opening_balance: '425000', received_from_cashier: null, other_receipts: '0', salary_paid: '1200000',
+      other_outflows: '300000', closing_balance: '-1075000'},
+    movements: [{type: 'opening'}, {type: 'salary_payment'}, {type: 'other_expense'}]}, day_report: null}};
+  const view = logic.accountantBrief(day);
+  assert.equal(view.balance, -1075000);
+  assert.equal(view.ops, '2 операции за день');
+  assert.deepEqual(view.pill, {text: 'Отчёт дня не сдан', tone: 'wait'});
+  assert.deepEqual(view.rows.map(row => row.label), ['На утро', '+ От кассира', '+ Прочие поступления', '− Зарплаты', '− Прочие расходы']);
+  assert.equal(view.rows[1].value, 'не записано');
+  assert.equal(view.pendingNote, '');
+  // Кассир передал 31 348 000, бухгалтер ещё не подтвердил: в книге остаток 425 000,
+  // а у бухгалтера на руках — утро + от кассира.
+  const pending = {date: '2026-10-19', accounting: {ledger: {cash_flow: {opening_balance: '425000', received_from_cashier: '31348000',
+    received_counted: '0', handover_status: 'pending', other_receipts: '0', salary_paid: '0', other_outflows: '0', closing_balance: '425000'},
+  movements: [{type: 'opening'}, {type: 'cashier_transfer'}]}, day_report: null}};
+  const held = logic.accountantBrief(pending);
+  assert.equal(held.balance, 31773000);
+  assert.equal(plain(held.pendingNote), 'Включая 31 348 000 от кассира — бухгалтер ещё не подтвердил получение');
+  pending.accounting.ledger.cash_flow.received_counted = '31348000';
+  pending.accounting.ledger.cash_flow.closing_balance = '31773000';
+  assert.equal(logic.accountantBrief(pending).balance, 31773000);  // подтвердил — не прибавляем дважды
+  assert.equal(logic.accountantBrief(pending).pendingNote, '');
+  day.accounting.day_report = {submitted_at: '2026-10-19T13:15:00+05:00', changed: false};
+  assert.deepEqual(logic.accountantBrief(day).pill, {text: 'Отчёт сдан 13:15', tone: 'ok'});
+  day.accounting.day_report.changed = true;
+  assert.equal(logic.accountantBrief(day).pill.tone, 'bad');
+  assert.deepEqual(logic.accountantBrief({date: '2026-10-19'}), {error: 'Нет данных бухгалтера за этот день'});
+});
+
+test('T-520: строки отчёта бухгалтера раскрываются операциями дня, доллары в сейфе — отдельной строкой', () => {
+  const day = {date: '2026-10-20', closing_balance: '26321000', accounting: {
+    ledger: {cash_flow: {opening_balance: '1095000', received_from_cashier: '56076000', received_counted: '56076000',
+      other_receipts: '0', salary_paid: '12260000', other_outflows: '18590000', closing_balance: '26321000'},
+    movements: [
+      {type: 'opening', description: 'Остаток на начало дня', amount: '1095000'},
+      {type: 'auto_cashier', description: 'Касса за 19.10.2026', amount: '56076000'},
+      {type: 'salary_payment', description: 'Оклады · Иванова · за 2026-10-19', amount: '12260000'},
+      {type: 'other_expense', description: 'Коммунальные · Газ', amount: '600000', item_code: 'utilities'},
+      {type: 'procurement_advance', description: 'Выдано Шоху на закуп', amount: '17000000'},
+      {type: 'reserve_transfer', description: 'Отложено в сейф', amount: '990000'},
+    ]}, day_report: null},
+    usd: {date: '2026-10-20', deposits: [{amount: '120', created_at: '2026-10-20T21:10:00+05:00'}], total: '120', safe_balance: '3450'}};
+  const view = logic.accountantBrief(day);
+  assert.deepEqual(view.rows.map(row => row.label), ['На утро', '+ От кассира', '+ Прочие поступления', '− Зарплаты', '− Прочие расходы']);
+  assert.equal(view.rows[0].details, undefined);  // «На утро» не раскрывается
+  assert.deepEqual(view.rows[1].details.map(item => item.label), ['Касса за 19.10.2026']);
+  assert.deepEqual(view.rows[2].details, []);  // нечего раскрывать — обычная строка
+  assert.deepEqual(view.rows[3].details.map(item => item.label), ['Оклады · Иванова · за 2026-10-19']);
+  assert.deepEqual(view.rows[4].details.map(item => [item.label, plain(item.value)]),
+    [['Коммунальные · Газ', '600 000'], ['Выдано Шоху на закуп', '17 000 000'], ['Отложено в сейф', '990 000']]);
+  assert.equal(view.usd.label, 'Доллары в сейфе');
+  assert.equal(plain(view.usd.value), '$3 450');
+  assert.equal(view.usd.muted, false);
+  assert.deepEqual(view.usd.details, [{label: 'Взнос кассира · 21:10', value: '$120'}]);
+  // Сейф не пересчитан и взносов нет — «не задан», приглушено; нет данных о долларах — строки нет.
+  assert.deepEqual(logic.accountantBrief({...day, usd: {deposits: [], total: '0', safe_balance: null}}).usd,
+    {label: 'Доллары в сейфе', value: 'не задан', muted: true, details: []});
+  assert.equal(logic.accountantBrief({...day, usd: null}).usd, null);
+  // Касса: взносы дня за строкой долларов.
+  const cashier = {date: '2026-10-20', handover: {recorded: null}, usd: day.usd,
+    cashier: {shift: {open: true}, report: {sales: '1000000', payments: [], demo_cash: '900000', cash_prepayment: '0', receipts: '0',
+      expenses: '0', shokh: '0', usd_total: '120', handover: null, issues: [], revenue: null, prepayments: null}}};
+  const dollars = logic.cashierBrief(cashier, '2026-10-20').steps.at(-1);
+  assert.equal(dollars.value, '$120');
+  assert.equal(dollars.muted, false);
+  assert.deepEqual(dollars.details, [{label: 'Взнос кассира · 21:10', value: '$120'}]);
+});

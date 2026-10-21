@@ -16,7 +16,9 @@ from retro.accounting_period import ACCOUNTING_START, accounting_range_start, pe
 from retro.modules.accountant.handover_dates import receipt_day
 from retro.logging_config import log_safe_failure
 from retro.modules.cashier.service import TZ, DataError, today_tashkent
-from retro.modules.cashier.till import expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total
+from retro.modules.cashier.routes import CLOSED_DAY_TTL, with_prepayments
+from retro.modules.cashier.till import (expected_handover, handover_check, load_till_totals, shokh_gives, shokh_total,
+                                       till_summary, usd_day)
 from retro.modules.shokh.store import pocket_position
 from retro.report_cache import load_iiko
 
@@ -101,9 +103,19 @@ def dividend_history(state, monday: date, weeks: int = DIVIDEND_HISTORY_WEEKS, *
     return result
 
 
-async def cashier_day(request, day: date):
-    """Касса дня глазами кассира: выручка по заведениям, «Демо», расчёт передачи."""
-    snapshot, error = await iiko_or_error(request, 'load', day, operation='cashier_day')
+async def cashier_day(request, day: date, *, brief: bool = False):
+    """Касса дня глазами кассира: выручка по заведениям, «Демо», расчёт передачи.
+
+    brief — ещё и краткий отчёт кассира для главной (T-512): тогда вместе со
+    снимком берём реестр предоплат дня, как экран кассира и отчёт в Telegram.
+    Неделе и месяцу он не нужен — лишних запросов в iiko они не делают."""
+    if brief:
+        (snapshot, error), (entries, _) = await asyncio.gather(
+            iiko_or_error(request, 'load', day, operation='cashier_day'),
+            iiko_or_error(request, 'load_prepayments', day, operation='cashier_day_prepayments', timeout=35,
+                          ttl=CLOSED_DAY_TTL if day < today_tashkent() else 30))
+    else:
+        snapshot, error = await iiko_or_error(request, 'load', day, operation='cashier_day')
     if snapshot is None:
         return None, error
     state = request.app.state
@@ -121,7 +133,52 @@ async def cashier_day(request, day: date):
         # Время чтения iiko и смена кассы — для строки «Сегодня ещё идёт · данные на ЧЧ:ММ»
         # (ТЗ 16.10, п. 2): экран не подставляет свои часы.
         fetched_at=snapshot.fetched_at.astimezone(TZ).isoformat(timespec='seconds'),
-        shift=snapshot.shift.json() if snapshot.shift is not None else None), None
+        shift=snapshot.shift.json() if snapshot.shift is not None else None,
+        **({'report': till_report(state, day, with_prepayments(snapshot, entries) if entries is not None
+                                  else snapshot, totals)} if brief else {})), None
+
+
+def till_report(state, day: date, snapshot, totals) -> dict:
+    """Краткий отчёт кассира на главной учредителя (T-512): оплаты по типам и
+    «К передаче бухгалтеру» по шагам — те же числа, что на экране кассира
+    (till_summary), без повторного счёта."""
+    summary = till_summary(state, day, snapshot, totals=totals)
+    data = snapshot.json()
+    grouped = snapshot.payment_groups is not None
+    methods: dict[str, Decimal] = {}
+    if snapshot.payment_groups is not None:
+        rows = [(item.name, item.paid) for group in snapshot.payment_groups for item in group.types]
+    else:
+        rows = [(item.name, item.amount) for item in snapshot.payments]
+    for name, amount in rows:
+        if amount:
+            name = 'Наличные' if name == 'Демо' else name
+            methods[name] = methods.get(name, Decimal(0)) + amount
+    payments = sorted(methods.items(), key=lambda item: -item[1])
+    pick = lambda key: summary.get(key)
+    # Предоплаты, полученные за день, — отдельной группой по способам, как в
+    # отчёте в Telegram; выручка дня = продажи + они (Snapshot.daily_revenue).
+    # Реестр не пришёл — None: экран пишет «недоступны», а не ноль.
+    prepayments = None
+    if snapshot.prepayments is not None:
+        by_method: dict[str, Decimal] = {}
+        for entry in snapshot.prepayments:
+            name = entry.payment_method or 'Способ не указан'
+            by_method[name] = by_method.get(name, Decimal(0)) + entry.amount
+        prepayments = dict(count=len(snapshot.prepayments), total=money(sum(by_method.values(), Decimal(0))),
+                           methods=[dict(name=name, amount=money(amount)) for name, amount
+                                    in sorted(by_method.items(), key=lambda item: -item[1])])
+    receipts = data.get('full_receipt_count') if grouped else data.get('receipt_count')
+    average = data.get('full_average_receipt') if grouped else data.get('average_receipt')
+    revenue = snapshot.daily_revenue
+    return dict(sales=money(snapshot.revenue), revenue=money(revenue) if revenue is not None else None,
+                receipts_count=receipts, average=money(average) if average is not None else None,
+                payments=[dict(name=name, amount=money(amount)) for name, amount in payments],
+                prepayments=prepayments,
+                demo_cash=pick('demo_cash'), cash_prepayment=pick('cash_prepayment'),
+                receipts=pick('receipts'), expenses=pick('expenses'), shokh=pick('shokh'),
+                usd_total=pick('usd_total'), handover=pick('handover'),
+                issues=[issue for issue in (pick('prepayment_issue'), pick('usd_issue')) if issue])
 
 
 def shift_accrued(request, day: date) -> Decimal:
@@ -136,13 +193,19 @@ def shift_accrued(request, day: date) -> Decimal:
     return sum((row.payable for row in rows if row.payable is not None), Decimal(0))
 
 
-async def day_outlook(request, day: date, accounting: dict, expected):
+async def day_outlook(request, day: date, accounting: dict):
     """«Уйдёт сегодня» и «У бухгалтера к вечеру ≈» (Функционал §3.8).
 
     Зарплаты = начислено сменным за вчера + оклады, выданные сегодня.
     Закуп ≈ и прочее ≈ — среднее за 7 прошлых дней (закуп бухгалтера и прочие
-    расходы без дивидендов). К вечеру ≈ = на утро + к передаче − зарплаты −
-    закуп − прочее. Оценки округляем до 10 000."""
+    расходы без дивидендов). Оценки округляем до 10 000.
+
+    К вечеру ≈ = на утро + касса за вчера + прочие поступления − зарплаты −
+    закуп − прочее (T-514). Касса за вчера — деньги, которые бухгалтер получает
+    сегодня: записанная передача (подтверждённая или ещё нет — книга берёт в
+    остаток только подтверждённую, а деньги у бухгалтера уже на руках), а пока
+    её нет — расчёт кассы за вчера. Сегодняшняя касса сюда не входит: её
+    передадут завтра утром, и днём это ещё не вся сумма."""
     state = request.app.state
     if day == ACCOUNTING_START:
         recent, shift = [], Decimal(0)
@@ -157,15 +220,26 @@ async def day_outlook(request, day: date, accounting: dict, expected):
         (values.get(key, Decimal(0)) for values in recent.values()), Decimal(0)) / sample_days, overview.OUTLOOK_STEP)
     monthly = sum((Decimal(row['amount']) for row in accounting['monthly_payments']['today']), Decimal(0))
     salary, procurement, other = shift + monthly, average('procurement'), average('other')
-    opening = accounting['ledger']['cash_flow'].get('opening_balance')
+    flow = accounting['ledger']['cash_flow']
+    opening = flow.get('opening_balance')
+    handover = accounting.get('cashier_handover') or {}
+    if handover.get('amount') is not None:
+        incoming, source = Decimal(handover['amount']), 'recorded'
+    elif handover.get('expected') is not None:
+        incoming, source = Decimal(handover['expected']), 'expected'
+    else:
+        incoming, source = None, None
+    receipts = Decimal(flow.get('other_receipts') or 0)
     evening = None
-    if opening is not None:
-        evening = overview.round_to(Decimal(opening) + Decimal(expected or 0) - salary - procurement - other,
+    if opening is not None and incoming is not None:
+        evening = overview.round_to(Decimal(opening) + incoming + receipts - salary - procurement - other,
                                     overview.OUTLOOK_STEP)
     return dict(salary_due=money(salary), salary_shift=money(shift), salary_monthly=money(monthly),
                 procurement=money(procurement), other=money(other),
                 evening=money(evening) if evening is not None else None,
-                handover_expected=expected is not None, estimate=True)
+                cashier_incoming=money(incoming) if incoming is not None else None,
+                cashier_incoming_source=source, other_receipts=money(receipts),
+                handover_expected=source == 'expected', estimate=True)
 
 
 def handover_expected(cashier, handover_state):
@@ -202,13 +276,13 @@ async def month_cashier(request, first: date, last: date):
     return {day.isoformat(): value for day, value, _ in results if value}, (errors[0] if errors else None)
 
 
-async def founder_day(request, day: date, *, orders=None, flows=None):
+async def founder_day(request, day: date, *, orders=None, flows=None, brief=False):
     """Один день: касса iiko, деньги бухгалтера и сверка передачи между ними."""
     from retro.modules.accountant.routes import day_view
 
     state = request.app.state
     accounting, (cashier, cashier_error) = await asyncio.gather(
-        day_view(request, day), cashier_day(request, day))
+        day_view(request, day), cashier_day(request, day, brief=brief))
     if flows is None:
         flows = overview.daily_flows(
             await asyncio.to_thread(state.accountant_finance.cash_flows_between, day, day))
@@ -242,7 +316,10 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
     day_orders = (orders or {}).get(day.isoformat(), {})
     outlook = None
     if day == today_tashkent():
-        outlook = await day_outlook(request, day, accounting, expected)
+        outlook = await day_outlook(request, day, accounting)
+    # Доллары (T-520): взносы кассира «в сейф» за день и остаток сейфа у
+    # бухгалтера — только главной (brief); неделе и месяцу они не нужны.
+    usd = await asyncio.to_thread(usd_day, state.accountant_finance, day) if brief else None
     return dict(
         date=day.isoformat(), weekday=day.weekday(), today=day == today_tashkent(),
         cashier=cashier, cashier_error=cashier_error,
@@ -257,6 +334,7 @@ async def founder_day(request, day: date, *, orders=None, flows=None):
         opening_balance=ledger['cash_flow'].get('opening_balance'),
         outlook=outlook,
         closing_balance=ledger['cash_balance'],
+        usd=usd,
         accounting=accounting)
 
 

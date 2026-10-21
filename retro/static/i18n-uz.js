@@ -4383,6 +4383,7 @@ globalThis.RetroTemplatesUz.push(
 /* ── T-509: уведомления о Счёте Шефа на устройстве (push.js) ── */
 Object.assign(globalThis.RetroDictionaryUz, {
   'Уведомления о Счёте Шефа': "Oshpaz hisobi haqida bildirishnomalar",
+  'Уведомления': "Bildirishnomalar",
   'Каждый заказ за Счёт Шефа — уведомление на это устройство.': "Oshpaz hisobidagi har bir buyurtma — shu qurilmaga bildirishnoma.",
   'Включены на этом устройстве.': "Shu qurilmada yoqilgan.",
   'Уведомления для сайта запрещены: Safari → Настройки → Веб-сайты → Уведомления.': "Sayt uchun bildirishnomalar taqiqlangan: Safari → Sozlamalar → Veb-saytlar → Bildirishnomalar.",
@@ -4407,3 +4408,47 @@ globalThis.RetroTemplatesUz.push(
   [/^Служба уведомлений отказала \((.+)\)\. Попробуйте позже\.$/, "Bildirishnoma xizmati rad etdi ($1). Keyinroq urinib ko'ring."],
 );
 /* ── /T-509 ── */
+
+/* ── T-512: краткие отчёты дня на главной учредителя ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Отчёт дня': "Kunlik hisobot",
+  'Касса · вчера': "Kassa · kecha",
+  'Касса · сегодня': "Kassa · bugun",
+  'Бухгалтер · сегодня': "Buxgalter · bugun",
+  'Продажи по кассе': "Kassa bo'yicha savdo",
+  'Способ не указан': "Usul ko'rsatilmagan",
+  'Предоплаты за день недоступны — выручка требует проверки.': "Kunlik oldindan to'lovlar mavjud emas — tushumni tekshirish kerak.",
+  'Смена ещё не открыта': "Smena hali ochilmagan",
+  'Бухгалтер получил': "Buxgalter oldi",
+  'Бухгалтер подтвердил': "Buxgalter tasdiqladi",
+  'ещё не передано': "hali topshirilmagan",
+  'У бухгалтера сейчас': "Buxgalterda hozir",
+  'Отчёт дня не сдан': "Kunlik hisobot topshirilmagan",
+  'Изменён после сдачи': "Topshirilgandan keyin o'zgartirilgan",
+  'На утро': "Ertalabga",
+  '+ От кассира': "+ Kassirdan",
+  '− Зарплаты': "− Ish haqlari",
+  'Операций за день пока нет': "Kun davomida hali operatsiya yo'q",
+  'Нет данных iiko за этот день': "Bu kun uchun iiko ma'lumoti yo'q",
+  'Нет данных бухгалтера за этот день': "Bu kun uchun buxgalter ma'lumoti yo'q",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Смена закрыта (\d\d:\d\d)$/, "Smena yopildi $1"],
+  [/^Предоплаты получены · (\d+)$/, "Oldindan to'lovlar olindi · $1"],
+  [/^Включая (.+) от кассира — бухгалтер ещё не подтвердил получение$/, "Kassirdan $1 bilan birga — buxgalter hali olganini tasdiqlamadi"],
+  [/^Отчёт сдан (\d\d:\d\d)$/, "Hisobot topshirildi $1"],
+  [/^(\d+) (?:чек|чека|чеков)$/, "$1 ta chek"],
+  [/^(\d+) (?:чек|чека|чеков) · средний (.+)$/, "$1 ta chek · o'rtacha $2"],
+  [/^(\d+) (?:операция|операции|операций) за день$/, "Kun davomida $1 ta operatsiya"],
+);
+/* ── /T-512 ── */
+
+/* ── T-520: расшифровки на главной учредителя — аккордеоны и доллары ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Доллары в сейфе': "Seyfdagi dollar",
+  'Взнос кассира': "Kassir badali",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Взнос кассира · (\d\d:\d\d)$/, "Kassir badali · $1"],
+);
+/* ── /T-520 ── */

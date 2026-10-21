@@ -46,6 +46,9 @@ class FakeIiko:
             raise DataError('iiko временно недоступен')
         return snapshot(day)
 
+    async def load_prepayments(self, day):
+        raise DataError('реестр предоплат недоступен')
+
     async def load_daily_orders(self, start, end):
         if self.error:
             raise self.error
@@ -469,7 +472,9 @@ def test_week_label_must_be_canonical():
 
 def test_today_outlook_follows_the_spec_formulas(tmp_path, today):
     """Функционал §3.8: зарплаты = начислено сменным за вчера + оклады сегодня;
-    закуп и прочее — среднее за 7 дней до 10 000; к вечеру = утро + к передаче − всё это."""
+    закуп и прочее — среднее за 7 дней до 10 000. К вечеру (T-514) = утро +
+    касса за вчера, полученная сегодня, + прочие поступления − всё это;
+    сегодняшняя касса (её передадут завтра) не входит."""
     with client(tmp_path) as c:
         finance = c.app.state.accountant_finance
         for offset in range(7):
@@ -482,16 +487,97 @@ def test_today_outlook_follows_the_spec_formulas(tmp_path, today):
         finance.add_expense(date(2026, 9, 23), 'distribution_dividends', 'Дивиденды', '700000',
                             cashier_amount=Decimal('9000000'))
         with patch('retro.modules.founder.cabinet.shift_accrued', return_value=Decimal('1234000')):
+            before = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+            # Касса за вчера пришла бухгалтеру сегодня; подтверждена или нет — деньги у него.
+            finance.record_handover(TODAY, Decimal('31348000'))
             day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
     outlook = day['outlook']
     assert outlook['salary_shift'] == '1234000.00' and outlook['salary_monthly'] == '0.00'
     assert outlook['salary_due'] == '1234000.00'
     assert outlook['other'] == '100000.00'  # дивиденды в «прочее» не входят
     assert outlook['procurement'] == '0.00'
+    assert outlook['cashier_incoming'] == '31348000.00' and outlook['cashier_incoming_source'] == 'recorded'
     opening = Decimal(day['opening_balance'])
-    expected = Decimal(day['cashier']['expected_handover'])
-    evening = overview.round_to(opening + expected - Decimal('1234000') - Decimal('100000'), Decimal(10000))
+    evening = overview.round_to(opening + Decimal('31348000') - Decimal('1234000') - Decimal('100000'),
+                                Decimal(10000))
     assert Decimal(outlook['evening']) == evening
+    # Сегодняшняя касса (расчёт кассира на сейчас) в «к вечеру» не входит.
+    assert Decimal(day['cashier']['expected_handover']) > 0
+    # Пока передачи нет и расчёта за вчера нет — «к вечеру» неизвестно, а не утро − расходы.
+    if before['outlook']['cashier_incoming'] is None:
+        assert before['outlook']['evening'] is None
+
+
+def test_day_carries_cashier_brief_report_for_home_screen(tmp_path, today):
+    """T-512: краткий отчёт кассира на главной — оплаты по типам и «К передаче»
+    по шагам теми же числами, что у кассира (till_summary)."""
+    with client(tmp_path) as c:
+        c.post('/api/cashier/receipts', json={'date': TODAY.isoformat(), 'description': 'Возврат', 'amount': '200000'})
+        c.post('/api/cashier/expenses', json={'date': TODAY.isoformat(), 'description': 'Газ', 'amount': '300000'})
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+    report = day['cashier']['report']
+    # Оплаты — по типам из касс iiko, как у кассира; «Демо» называется «Наличные».
+    paid = {}
+    for group in demo_snapshot(TODAY).payment_groups:
+        for item in group.types:
+            if item.paid:
+                name = 'Наличные' if item.name == 'Демо' else item.name
+                paid[name] = paid.get(name, Decimal(0)) + item.paid
+    assert {row['name']: Decimal(row['amount']) for row in report['payments']} == paid
+    amounts = [Decimal(row['amount']) for row in report['payments']]
+    assert amounts == sorted(amounts, reverse=True)
+    assert Decimal(report['demo_cash']) == Decimal('9000000')
+    assert Decimal(report['receipts']) == Decimal('200000') and Decimal(report['expenses']) == Decimal('300000')
+    assert Decimal(report['handover']) == Decimal('8900000')
+    assert Decimal(report['handover']) == Decimal(day['cashier']['expected_handover'])
+    assert report['issues'] == []
+    # Реестр предоплат не ответил — остаются предоплаты, что уже в снимке iiko.
+    known = demo_snapshot(TODAY).prepayments
+    assert report['prepayments']['count'] == len(known)
+    assert Decimal(report['revenue']) == Decimal(report['sales']) + sum(entry.amount for entry in known)
+
+
+def test_day_carries_usd_deposits_and_safe_balance_for_home_screen(tmp_path, today):
+    """T-520: доллары на главной — взносы кассира «в сейф» за день и остаток
+    сейфа у бухгалтера; неделе они не нужны."""
+    with client(tmp_path) as c:
+        finance = c.app.state.accountant_finance
+        finance.reserve_entry(TODAY - timedelta(days=1), 'usd', 'opening', '3330', 'Пересчёт сейфа')
+        assert c.post('/api/cashier/usd-deposits', json={'date': TODAY.isoformat(), 'amount': '120'}).status_code == 201
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+        week = c.get('/api/founder/week', params={'date': TODAY.isoformat()}).json()
+    assert day['usd']['total'] == '120' and day['usd']['safe_balance'] == '3450'
+    assert [row['amount'] for row in day['usd']['deposits']] == ['120']
+    assert day['cashier']['report']['usd_total'] == '120'
+    assert all(item.get('usd') is None for item in week['days'])
+
+
+def test_brief_report_counts_prepayments_received_that_day(tmp_path, today):
+    """T-512: предоплаты, полученные за день, — в выручке и отдельным списком по
+    способам; неделя реестр предоплат не запрашивает."""
+    from retro.modules.cashier.service import Prepayment
+
+    class WithPrepayments(FakeIiko):
+        calls = 0
+
+        async def load_prepayments(self, day):
+            WithPrepayments.calls += 1
+            return (Prepayment('1', f'{day}T12:00:00', Decimal('2000000'), 'Payme'),
+                    Prepayment('2', f'{day}T13:00:00', Decimal('500000'), 'Payme'),
+                    Prepayment('3', f'{day}T14:00:00', Decimal('3000000'), 'Наличные'))
+
+    with client(tmp_path, WithPrepayments()) as c:
+        day = c.get('/api/founder/day', params={'date': TODAY.isoformat()}).json()
+        assert WithPrepayments.calls == 1
+        c.get('/api/founder/week', params={'date': TODAY.isoformat()})
+        assert WithPrepayments.calls == 1
+    report = day['cashier']['report']
+    assert report['prepayments'] == {'count': 3, 'total': '5500000.00', 'methods': [
+        {'name': 'Наличные', 'amount': '3000000.00'}, {'name': 'Payme', 'amount': '2500000.00'}]}
+    assert Decimal(report['revenue']) == Decimal(report['sales']) + Decimal('5500000')
+    assert day['accounting']['ledger']['cash_flow'].keys() >= {
+        'opening_balance', 'received_from_cashier', 'other_receipts', 'salary_paid', 'other_outflows',
+        'closing_balance'}
 
 
 def test_dividend_history_shows_collected_of_target_and_payout(tmp_path, today):

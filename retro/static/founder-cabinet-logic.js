@@ -326,8 +326,144 @@
     };
   }
 
+  /** «22:56» из времени iiko или ISO с поясом — часы как записаны (Ташкент). */
+  function clock(iso) { return iso ? String(iso).slice(11, 16) : ''; }
+
+  /** Шаг расшифровки: «+ Поступления 120 000»; ноль — приглушён. */
+  function step(label, value, sign) {
+    const amount = num(value);
+    return {label: (sign ? sign + ' ' : '') + label, value: sum(amount), muted: !amount};
+  }
+
+  /** Краткий отчёт кассира за день на главной (T-512): продажи, оплаты по
+   *  типам и «К передаче бухгалтеру» по шагам — числа сервера (till_summary),
+   *  как у кассира; экран только раскладывает. Нет iiko — так и пишем. */
+  function cashierBrief(day, today) {
+    if (!day) return null;
+    const cashier = day.cashier;
+    if (!cashier) return {error: day.cashier_error || 'Нет данных iiko за этот день'};
+    const report = cashier.report || {};
+    const shift = cashier.shift;
+    let pill = null;
+    if (shift && shift.open) pill = {text: 'Смена открыта', tone: 'wait'};
+    else if (shift && shift.closed_at) pill = {text: 'Смена закрыта ' + clock(shift.closed_at), tone: 'ok'};
+    else if (day.date === today) pill = {text: 'Смена ещё не открыта', tone: 'wait'};
+    const count = report.receipts_count;
+    const usd = num(report.usd_total) || 0;
+    const steps = [step('Наличные', report.demo_cash, ''), step('Предоплаты наличными', report.cash_prepayment, '+'),
+      step('Поступления', report.receipts, '+'), step('Расходы', report.expenses, '−'),
+      step('На закуп', report.shokh, '−'),
+      // Доллары — всегда строкой (T-520): ноль приглушён, за строкой — взносы дня.
+      {label: '− Доллары в сейф', value: '$' + sum(usd), muted: !usd, details: usdDeposits(day.usd)}];
+    const handover = day.handover || {};
+    const mark = handoverMark(day);
+    let received;
+    if (handover.recorded !== null && handover.recorded !== undefined) {
+      received = {label: handover.confirmed ? 'Бухгалтер подтвердил' : 'Бухгалтер получил',
+        value: sum(num(handover.recorded)), mark: mark.mark, tone: mark.tone, tip: mark.tip};
+    } else {
+      received = {label: 'Бухгалтер получил', value: day.date === today ? 'ещё не передано' : 'не записано',
+        mark: day.date === today ? '' : mark.mark, tone: day.date === today ? 'wait' : mark.tone, tip: mark.tip};
+    }
+    // Выручка дня = продажи + полученные за день предоплаты (как «Выручка за
+    // день» у кассира). Реестр предоплат не пришёл — показываем продажи и
+    // честно пишем, что выручка требует проверки.
+    const prepay = report.prepayments;
+    const notes = (report.issues || []).slice();
+    if (prepay === null) notes.unshift('Предоплаты за день недоступны — выручка требует проверки.');
+    const known = report.revenue !== undefined && report.revenue !== null;
+    return {
+      title: known ? 'Выручка за день' : 'Продажи по кассе',
+      sales: num(known ? report.revenue : report.sales !== undefined ? report.sales : cashier.register_revenue),
+      prepayments: prepay ? {
+        title: 'Предоплаты получены · ' + prepay.count,
+        total: sum(num(prepay.total)),
+        rows: prepay.methods.map(item => ({label: item.name, value: sum(num(item.amount))})),
+      } : null,
+      checks: count === null || count === undefined ? '' : count + ' ' + plural(count, 'чек', 'чека', 'чеков') +
+        (num(report.average) ? ' · средний ' + sum(num(report.average)) : ''),
+      pill,
+      payments: (report.payments || []).map(item => ({label: item.name, value: sum(num(item.amount))})),
+      handover: report.handover !== undefined ? num(report.handover) : num(cashier.expected_handover),
+      steps, received, notes,
+    };
+  }
+
+  /** Взносы кассира «в сейф» за день — расшифровка строки долларов (T-520). */
+  function usdDeposits(usd) {
+    return ((usd && usd.deposits) || []).map(item => ({
+      label: 'Взнос кассира' + (item.created_at ? ' · ' + clock(item.created_at) : ''),
+      value: '$' + sum(num(item.amount)),
+    }));
+  }
+
+  /** Строки «Доллары в сейфе» у бухгалтера (T-520): остаток резерва на конец
+   *  дня; без пересчёта сейфа он неизвестен — «не задан», как у бухгалтера. */
+  function usdLine(usd) {
+    if (!usd) return null;
+    const safe = num(usd.safe_balance);
+    const details = usdDeposits(usd);
+    return {label: 'Доллары в сейфе', value: safe === null ? 'не задан' : '$' + sum(safe),
+      muted: safe === null && !details.length, details};
+  }
+
+  /** Движения дня за строкой расшифровки (T-520): строка раскрывается и
+   *  показывает, из чего сложилась сумма. Типы — как cash_flow бухгалтера:
+   *  «Зарплаты» = выплаты по начислениям, «Прочие расходы» = статьи журнала,
+   *  аванс Шоху и отложенное в сейф. */
+  const BRIEF_MOVEMENTS = {
+    cashier: ['cashier_transfer', 'auto_cashier'],
+    receipts: ['other_receipt'],
+    salary: ['salary_payment'],
+    other: ['other_expense', 'procurement_advance', 'reserve_transfer'],
+  };
+  function briefDetails(movements, group) {
+    const types = BRIEF_MOVEMENTS[group];
+    return movements.filter(item => types.includes(item.type))
+      .map(item => ({label: item.description || '—', value: sum(num(item.amount))}));
+  }
+
+  /** Отчёт бухгалтера за день (T-512): остаток сейчас и движение денег —
+   *  `cash_flow` из /api/accountant/day, как у бухгалтера на 2a. */
+  function accountantBrief(day) {
+    if (!day) return null;
+    const accounting = day.accounting;
+    const flow = accounting && accounting.ledger && accounting.ledger.cash_flow;
+    if (!flow) return {error: 'Нет данных бухгалтера за этот день'};
+    const saved = accounting.day_report;
+    const pill = !saved ? {text: 'Отчёт дня не сдан', tone: 'wait'}
+      : saved.changed ? {text: 'Изменён после сдачи', tone: 'bad'}
+        : {text: 'Отчёт сдан ' + clock(saved.submitted_at), tone: 'ok'};
+    const movements = (accounting.ledger.movements || []).filter(item => item.type !== 'opening');
+    const cashier = flow.received_from_cashier;
+    // В остаток книги передача кассира входит, только когда бухгалтер её
+    // подтвердил (handover_counted). Учредителю нужно «сколько денег у
+    // бухгалтера»: на утро + от кассира − расходы, поэтому переданное, но ещё
+    // не подтверждённое прибавляем и подписываем это.
+    const closing = num(flow.closing_balance !== undefined ? flow.closing_balance : day.closing_balance);
+    const unconfirmed = Math.max(0, (num(cashier) || 0) - (num(flow.received_counted) || 0));
+    const balance = closing === null ? null : closing + unconfirmed;
+    return {
+      balance,
+      pendingNote: closing !== null && unconfirmed
+        ? 'Включая ' + sum(unconfirmed) + ' от кассира — бухгалтер ещё не подтвердил получение' : '',
+      ops: movements.length ? movements.length + ' ' + plural(movements.length, 'операция', 'операции', 'операций') + ' за день'
+        : 'Операций за день пока нет',
+      pill,
+      rows: [
+        step('На утро', flow.opening_balance, ''),
+        cashier === null || cashier === undefined ? {label: '+ От кассира', value: 'не записано', muted: true}
+          : Object.assign(step('От кассира', cashier, '+'), {details: briefDetails(movements, 'cashier')}),
+        Object.assign(step('Прочие поступления', flow.other_receipts, '+'), {details: briefDetails(movements, 'receipts')}),
+        Object.assign(step('Зарплаты', flow.salary_paid, '−'), {details: briefDetails(movements, 'salary')}),
+        Object.assign(step('Прочие расходы', flow.other_outflows, '−'), {details: briefDetails(movements, 'other')}),
+      ],
+      usd: usdLine(day.usd),
+    };
+  }
+
   // dayWords наружу не отдаём: он нужен только подписи выдачи внутри модуля.
   return {WEEKDAYS, DIVIDEND_PRESETS, DIVIDEND_EDIT_STEP, CHEF_LIMIT, num, sum, short, plural, dm,
     forecastFor, handoverMark, weekRows, weekTotals, dividendView, stepTarget, parseAmount,
-    accountantIssues, chefAlerts, forecastNote, soldDishes, chefWeekView, todayStatus};
+    accountantIssues, chefAlerts, forecastNote, soldDishes, chefWeekView, todayStatus, cashierBrief, accountantBrief};
 });
