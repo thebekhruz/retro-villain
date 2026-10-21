@@ -808,6 +808,7 @@ iiko или Google догоняются сами: повтор через 30 м�
 
 - `IIKO_SERVER_URL`, `IIKO_LOGIN`, `IIKO_PASSWORD`, `IIKO_STORE_ID` — доступ к iiko.
 - `ACCOUNTANT_MANUAL_HANDOVER` — `1` для явных передач кассы, `0` для iiko fallback.
+- `KPI_MODULE` — KPI официантов (вкладка менеджера, карточка директора, `/api/*/kpi`). Без переменной: на `prerelease` включён, в `main` выключен (T-522); `1`/`0` переопределяет.
 - `RETRO_DATA_DIR` — общий каталог `cashier.sqlite3`, `accountant.sqlite3`, `director.sqlite3`, `founder.sqlite3`.
 - `CLAUDE_API_KEY`, `CLAUDE_MODEL` — серверный AI-анализ директора и чат учредителей.
 - `DIRECTOR_REPORT_RETENTION` — число хранимых отчётов.
