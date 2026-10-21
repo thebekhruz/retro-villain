@@ -12,8 +12,14 @@
 открыта. Отправленный день помечается в базе — повторный выкат или второй
 процесс не шлют его дважды. Упавшую отправку повторяем каждые 5 минут до
 06:00 следующего утра; позже вечерний снимок уже не нужен.
+
+Вслед за кассой уходит снимок «Финансов дня» бухгалтера (T-479,
+modules/accountant/telegram_report.py) — отдельной картинкой, со своей
+отметкой об отправке.
 """
 import asyncio
+import hashlib
+import json
 import logging
 from contextlib import closing
 from dataclasses import dataclass
@@ -24,7 +30,7 @@ from pathlib import Path
 
 from PIL import Image, ImageDraw, ImageFont
 
-from retro.db import as_database
+from retro.db import as_database, table_columns
 from retro.logging_config import log_safe_failure
 from .expenses import Expense
 from .service import DataError, Snapshot, TZ
@@ -196,6 +202,22 @@ def handover_status(report: DayReport) -> tuple[str, str]:
     return f'Передано бухгалтеру{" в " + at if at else ""}', 'ok'
 
 
+def handover_rows(summary: dict) -> list[tuple[str, str, bool, str | None]]:
+    """Формула «К передаче» по шагам. Доллары — только в долларах: в сейф
+    кладут именно доллары, пересчёт в сумы на картинке не нужен (T-485)."""
+    def step(label, value, sign):
+        muted = value is not None and Decimal(value) == 0
+        return sign + label, money(value), muted, None
+    rows = [step('Наличные', summary.get('demo_cash'), ''),
+            step('Предоплаты наличными', summary.get('cash_prepayment'), '+ '),
+            step('Поступления', summary.get('receipts'), '+ '),
+            step('Расходы', summary.get('expenses'), '− '),
+            step('На закуп', summary.get('shokh'), '− ')]
+    usd = Decimal(summary.get('usd_total') or 0)
+    rows.append(('− Доллары в сейф', f'${money(usd)}', not usd, None))
+    return rows
+
+
 def warnings(report: DayReport) -> list[str]:
     notes = []
     if preliminary(report):
@@ -274,6 +296,84 @@ class Sheet:
     def rule(self, color=BORDER, x0=PAD, x1=WIDTH - PAD):
         self.draw.line((x0, self.y, x1, self.y), fill=color, width=2)
 
+    def header(self, eyebrow: str, day: date, taken_at: datetime, pill: tuple[str, bool] | None = None,
+               title: str = 'Отчёт за'):
+        """Зелёная шапка: чей отчёт, крупно дата отчёта, день недели, плашка."""
+        draw = self.draw
+        draw.rectangle((0, 0, WIDTH, 300), fill=GREEN)
+        draw.text((PAD, 64), eyebrow, font=font(26, True), fill=GOLD, anchor='ls')
+        draw.text((PAD, 140), f'{title} {day.strftime("%d.%m.%Y")}', font=font(62, True),
+                  fill=WHITE, anchor='ls')
+        draw.text((PAD, 192), WEEKDAYS[day.weekday()].capitalize(), font=font(32), fill='#cfdcd6',
+                  anchor='ls')
+        if pill:
+            label, calm = pill
+            face = font(26, True)
+            width = self.width(label, face) + 44
+            draw.rounded_rectangle((PAD, 222, PAD + width, 270), radius=24, fill=GREEN_2 if calm else GOLD)
+            draw.text((PAD + 22, 255), label, font=face, fill=WHITE if calm else GREEN, anchor='ls')
+        draw.text((WIDTH - PAD, 255), f'снимок {taken_at.strftime("%d.%m %H:%M")}', font=font(24),
+                  fill='#cfdcd6', anchor='rs')
+        self.y = 300 + 40
+
+    def notes(self, notes: list[str]):
+        """Предупреждения — сразу под шапкой, чтобы их не пролистали."""
+        if not notes:
+            return
+        face = font(26)
+        lines = [line for note in notes for line in self.wrap(note, face, WIDTH - 2 * PAD - 48)]
+        box = 28 + len(lines) * 38 + 14
+        self.draw.rounded_rectangle((PAD, self.y, WIDTH - PAD, self.y + box), radius=18, fill=WARN_BG)
+        for index, line in enumerate(lines):
+            self.draw.text((PAD + 24, self.y + 56 + index * 38), line, font=face, fill=WARN_INK, anchor='ls')
+        self.y += box + 32
+
+    def heading(self, text: str):
+        self.draw.text((PAD, self.y + 26), text.upper(), font=font(24, True), fill=MUTED, anchor='ls')
+        self.y += 48
+
+    def big_number(self, x, y, value, *, fill, unit_fill, unit='сум'):
+        number = money(value)
+        big = font(72 if value is not None else 48, True)
+        self.draw.text((x, y), number, font=big, fill=fill, anchor='ls')
+        if value is not None and unit:
+            self.draw.text((x + 12 + self.width(number, big), y), unit, font=font(30), fill=unit_fill,
+                           anchor='ls')
+
+    def dark_card(self, eyebrow: str, amount, rows, status: tuple[str, str] | None = None):
+        """Тёмная карточка итога: число и расшифровка по шагам.
+
+        rows — (подпись, сумма текстом, приглушить, пояснение под строкой | None)."""
+        draw = self.draw
+        status_lines = self.wrap(status[0], font(26, True), WIDTH - 2 * PAD - 64) if status else []
+        height = (180 + len(rows) * 46 + sum(34 for row in rows if row[3]) + 20
+                  + (30 + len(status_lines) * 36 if status_lines else 0) + 16)
+        top = self.y
+        draw.rounded_rectangle((PAD, top, WIDTH - PAD, top + height), radius=22, fill=GREEN)
+        draw.text((PAD + 32, top + 56), eyebrow, font=font(24, True), fill=GOLD, anchor='ls')
+        self.big_number(PAD + 32, top + 142, amount, fill=WHITE, unit_fill='#cfdcd6')
+        self.y = top + 180
+        for label, value, muted, note in rows:
+            fill = '#8fa69e' if muted else '#e8efe9'
+            self.row(label, value, left_font=font(27), right_font=font(27, not muted),
+                     left_fill=fill, right_fill=fill, x0=PAD + 32, x1=WIDTH - PAD - 32, height=46)
+            if note:
+                draw.text((WIDTH - PAD - 32, self.y + 14), note, font=font(23), fill='#a9bdb5', anchor='rs')
+                self.y += 34
+        if status_lines:
+            self.y += 14
+            draw.line((PAD + 32, self.y, WIDTH - PAD - 32, self.y), fill=GREEN_2, width=2)
+            self.y += 16
+            color = {'ok': '#9fd3a8', 'warn': GOLD}.get(status[1], '#cfdcd6')
+            for line in status_lines:
+                draw.text((PAD + 32, self.y + 28), line, font=font(26, True), fill=color, anchor='ls')
+                self.y += 36
+        self.y = top + height + 34
+
+    def footer(self, text: str):
+        self.draw.text((PAD, self.y + 24), text, font=font(22), fill=MUTED, anchor='ls')
+        self.y += 64
+
     def done(self) -> bytes:
         output = BytesIO()
         self.image.crop((0, 0, WIDTH, self.y)).save(output, 'PNG', optimize=True)
@@ -287,47 +387,15 @@ def render(report: DayReport) -> bytes:
     summary = report.summary
 
     # Шапка: дата отчёта — главное на картинке.
-    header_top = 0
-    draw.rectangle((0, header_top, WIDTH, 300), fill=GREEN)
-    draw.text((PAD, 64), 'RETRO MILLIY · КАССА', font=font(26, True), fill=GOLD, anchor='ls')
-    draw.text((PAD, 140), f'Отчёт за {report.day.strftime("%d.%m.%Y")}', font=font(62, True),
-              fill=WHITE, anchor='ls')
-    draw.text((PAD, 192), WEEKDAYS[report.day.weekday()].capitalize(), font=font(32), fill='#cfdcd6',
-              anchor='ls')
-    shift = shift_text(report)
-    if shift:
-        label, closed = shift
-        face = font(26, True)
-        pill = sheet.width(label, face) + 44
-        draw.rounded_rectangle((PAD, 222, PAD + pill, 270), radius=24,
-                               fill=GREEN_2 if closed else GOLD)
-        draw.text((PAD + 22, 255), label, font=face, fill=WHITE if closed else GREEN, anchor='ls')
-    draw.text((WIDTH - PAD, 255), f'снимок {report.taken_at.strftime("%d.%m %H:%M")}', font=font(24),
-              fill='#cfdcd6', anchor='rs')
-    sheet.y = 300 + 40
-
-    # Предупреждения — сразу под шапкой, чтобы их не пролистали.
-    notes = warnings(report)
-    if notes:
-        face = font(26)
-        lines = [line for note in notes for line in sheet.wrap(note, face, WIDTH - 2 * PAD - 48)]
-        box = 28 + len(lines) * 38 + 14
-        draw.rounded_rectangle((PAD, sheet.y, WIDTH - PAD, sheet.y + box), radius=18, fill=WARN_BG)
-        for index, line in enumerate(lines):
-            draw.text((PAD + 24, sheet.y + 28 + 28 + index * 38), line, font=face, fill=WARN_INK, anchor='ls')
-        sheet.y += box + 32
+    sheet.header('RETRO MILLIY · КАССА', report.day, report.taken_at, shift_text(report))
+    sheet.notes(warnings(report))
 
     # Выручка за день.
     card_top = sheet.y
     draw.rounded_rectangle((PAD, card_top, WIDTH - PAD, card_top + 210), radius=22, fill=WHITE,
                            outline=BORDER, width=2)
     draw.text((PAD + 32, card_top + 56), 'ВЫРУЧКА ЗА ДЕНЬ', font=font(24, True), fill=MUTED, anchor='ls')
-    number = money(revenue)
-    big = font(72 if revenue is not None else 48, True)
-    draw.text((PAD + 32, card_top + 138), number, font=big, fill=GREEN, anchor='ls')
-    if revenue is not None:
-        draw.text((PAD + 44 + sheet.width(number, big), card_top + 138), 'сум', font=font(30), fill=MUTED,
-                  anchor='ls')
+    sheet.big_number(PAD + 32, card_top + 138, revenue, fill=GREEN, unit_fill=MUTED)
     parts = []
     if receipts is not None:
         parts.append(f'{receipts} чеков')
@@ -337,10 +405,7 @@ def render(report: DayReport) -> bytes:
         draw.text((PAD + 32, card_top + 184), ' · '.join(parts), font=font(26), fill=MUTED, anchor='ls')
     sheet.y = card_top + 210 + 44
 
-    def heading(text):
-        draw.text((PAD, sheet.y + 26), text.upper(), font=font(24, True), fill=MUTED, anchor='ls')
-        sheet.y += 48
-
+    heading = sheet.heading
     group_font, group_amount = font(30, True), font(30, True)
     item_font, item_amount = font(28), font(28)
 
@@ -382,95 +447,79 @@ def render(report: DayReport) -> bytes:
     listing('Поступления', [(item.description, item.amount) for item in report.receipts], 'Поступлений нет')
     usd_total = Decimal(summary.get('usd_total') or 0)
     if usd_total:
-        rate = summary.get('usd_rate')
+        # Только доллары, без пересчёта в сумы (T-485).
         sheet.row('Доллары в сейф', f'${money(usd_total)}', left_font=group_font, right_font=group_amount)
-        sheet.row(f'по курсу Retro {money(rate)}' if rate else 'курс Retro не загружен',
-                  money(summary.get('usd_deduction')), left_font=item_font, right_font=item_amount,
-                  left_fill=MUTED, right_fill=MUTED, x0=PAD + 28)
     sheet.y += 30
 
     # К передаче бухгалтеру — тёмная карточка, как правая колонка кассира.
-    rules = [('Наличные', summary.get('demo_cash'), ''),
-             ('Предоплаты наличными', summary.get('cash_prepayment'), '+ '),
-             ('Поступления', summary.get('receipts'), '+ '),
-             ('Расходы', summary.get('expenses'), '− '),
-             ('На закуп', summary.get('shokh'), '− '),
-             ('Доллары в сейф', summary.get('usd_deduction'), '− ')]
-    status, tone = handover_status(report)
-    status_lines = sheet.wrap(status, font(26, True), WIDTH - 2 * PAD - 64)
-    card_top = sheet.y
-    height = 200 + len(rules) * 46 + 30 + len(status_lines) * 36 + 36
-    draw.rounded_rectangle((PAD, card_top, WIDTH - PAD, card_top + height), radius=22, fill=GREEN)
-    draw.text((PAD + 32, card_top + 56), 'К ПЕРЕДАЧЕ БУХГАЛТЕРУ', font=font(24, True), fill=GOLD, anchor='ls')
-    handover = summary.get('handover')
-    number = money(handover)
-    big = font(72 if handover is not None else 48, True)
-    draw.text((PAD + 32, card_top + 142), number, font=big, fill=WHITE, anchor='ls')
-    if handover is not None:
-        draw.text((PAD + 44 + sheet.width(number, big), card_top + 142), 'сум', font=font(30), fill='#cfdcd6',
-                  anchor='ls')
-    sheet.y = card_top + 180
-    for label, value, sign in rules:
-        muted = value is not None and Decimal(value) == 0
-        fill = '#8fa69e' if muted else '#e8efe9'
-        sheet.row(sign + label, money(value), left_font=font(27), right_font=font(27, not muted),
-                  left_fill=fill, right_fill=fill, x0=PAD + 32, x1=WIDTH - PAD - 32, height=46)
-    sheet.y += 14
-    draw.line((PAD + 32, sheet.y, WIDTH - PAD - 32, sheet.y), fill=GREEN_2, width=2)
-    sheet.y += 16
-    color = {'ok': '#9fd3a8', 'warn': GOLD}.get(tone, '#cfdcd6')
-    for line in status_lines:
-        draw.text((PAD + 32, sheet.y + 28), line, font=font(26, True), fill=color, anchor='ls')
-        sheet.y += 36
-    sheet.y = card_top + height + 34
+    sheet.dark_card('К ПЕРЕДАЧЕ БУХГАЛТЕРУ', summary.get('handover'), handover_rows(summary),
+                    handover_status(report))
 
     fetched = report.snapshot.fetched_at
     footer = f'Данные iiko на {fetched.astimezone(TZ).strftime("%d.%m %H:%M") if fetched else "—"}' \
              ' · расчёт как в кабинете кассира'
-    draw.text((PAD, sheet.y + 24), footer, font=font(22), fill=MUTED, anchor='ls')
-    sheet.y += 64
+    sheet.footer(footer)
     return sheet.done()
 
 
 # ── Отправка и расписание ────────────────────────────────────────────────────
 
 class SentStore:
-    """Какой день уже ушёл в группу: строка-заявка не даёт двум процессам
-    отправить один день дважды."""
+    """Какой отчёт за какой день ушёл в группу и с каким содержимым.
+
+    Ключ — вид отчёта и день (T-479). `fingerprint` — отпечаток того, что было
+    на отправленной картинке (T-484): тот же отчёт без изменений второй раз не
+    уходит. `claimed_at` — заявка на отправку, чтобы два процесса (кнопка и
+    расписание, или два выката) не отправили одно и то же одновременно;
+    пустая строка — заявки нет."""
 
     def __init__(self, database):
         self.db = as_database(database)
         with closing(self.db.connect()) as connection, connection:
-            connection.execute('''CREATE TABLE IF NOT EXISTS cashier_telegram_reports (
-                day TEXT PRIMARY KEY, claimed_at TEXT NOT NULL, sent_at TEXT, message_id TEXT)''')
+            connection.execute('''CREATE TABLE IF NOT EXISTS telegram_reports (
+                kind TEXT NOT NULL, day TEXT NOT NULL, claimed_at TEXT NOT NULL, sent_at TEXT,
+                message_id TEXT, fingerprint TEXT, PRIMARY KEY(kind, day))''')
+            if 'fingerprint' not in table_columns(connection, 'telegram_reports'):
+                connection.execute('ALTER TABLE telegram_reports ADD COLUMN fingerprint TEXT')
 
-    def sent(self, day: date) -> bool:
+    def _row(self, kind: str, day: date):
         with closing(self.db.connect()) as connection:
-            row = connection.execute('SELECT sent_at FROM cashier_telegram_reports WHERE day = ?',
-                                     (day.isoformat(),)).fetchone()
+            return connection.execute('SELECT sent_at, fingerprint FROM telegram_reports WHERE kind = ? AND day = ?',
+                                      (kind, day.isoformat())).fetchone()
+
+    def sent(self, kind: str, day: date) -> bool:
+        row = self._row(kind, day)
         return bool(row and row[0])
 
-    def claim(self, day: date, now: datetime) -> bool:
+    def last_fingerprint(self, kind: str, day: date) -> str | None:
+        """Отпечаток отправленного; None — не отправляли (или до T-484)."""
+        row = self._row(kind, day)
+        return row[1] if row and row[0] else None
+
+    def claim(self, kind: str, day: date, now: datetime) -> bool:
         stamp, expired = now.isoformat(), (now - timedelta(minutes=CLAIM_MINUTES)).isoformat()
         with closing(self.db.connect()) as connection, connection:
             inserted = connection.execute(
-                'INSERT OR IGNORE INTO cashier_telegram_reports (day, claimed_at) VALUES (?, ?)',
-                (day.isoformat(), stamp)).rowcount
+                'INSERT OR IGNORE INTO telegram_reports (kind, day, claimed_at) VALUES (?, ?, ?)',
+                (kind, day.isoformat(), stamp)).rowcount
             if inserted:
                 return True
             return connection.execute(
-                'UPDATE cashier_telegram_reports SET claimed_at = ? WHERE day = ? '
-                'AND sent_at IS NULL AND claimed_at < ?', (stamp, day.isoformat(), expired)).rowcount == 1
+                "UPDATE telegram_reports SET claimed_at = ? WHERE kind = ? AND day = ? "
+                "AND (claimed_at = '' OR claimed_at < ?)", (stamp, kind, day.isoformat(), expired)).rowcount == 1
 
-    def release(self, day: date):
+    def release(self, kind: str, day: date):
         with closing(self.db.connect()) as connection, connection:
-            connection.execute('DELETE FROM cashier_telegram_reports WHERE day = ? AND sent_at IS NULL',
-                               (day.isoformat(),))
+            connection.execute('DELETE FROM telegram_reports WHERE kind = ? AND day = ? AND sent_at IS NULL',
+                               (kind, day.isoformat()))
+            connection.execute("UPDATE telegram_reports SET claimed_at = '' WHERE kind = ? AND day = ?",
+                               (kind, day.isoformat()))
 
-    def finish(self, day: date, message_id, now: datetime):
+    def finish(self, kind: str, day: date, message_id, now: datetime, fingerprint: str | None = None):
         with closing(self.db.connect()) as connection, connection:
-            connection.execute('UPDATE cashier_telegram_reports SET sent_at = ?, message_id = ? WHERE day = ?',
-                               (now.isoformat(), str(message_id), day.isoformat()))
+            connection.execute("UPDATE telegram_reports SET sent_at = ?, message_id = ?, fingerprint = ?, "
+                               "claimed_at = '' WHERE kind = ? AND day = ?",
+                               (now.isoformat(), str(message_id), fingerprint, kind, day.isoformat()))
 
 
 def due_day(now: datetime, send_at: time) -> date | None:
@@ -484,47 +533,128 @@ def due_day(now: datetime, send_at: time) -> date | None:
     return None
 
 
+def content_mark(content) -> str:
+    """Отпечаток содержимого картинки: время снимка и iiko в него не входят."""
+    return hashlib.sha256(json.dumps(content, ensure_ascii=False, sort_keys=True,
+                                     default=str).encode()).hexdigest()
+
+
+def fingerprint(report: DayReport) -> str:
+    """То, что видно на картинке кассы, без времени снимка (T-484)."""
+    revenue, receipts, average = revenue_numbers(report.snapshot)
+    return content_mark(dict(
+        day=report.day, shift=shift_text(report), revenue=revenue, receipts=receipts, average=average,
+        payments=payment_sections(report.snapshot), redeemed=report.snapshot.redeemed_total,
+        expenses=[(item.description, item.amount) for item in report.expenses],
+        receipts_list=[(item.description, item.amount) for item in report.receipts],
+        gives=[(item.get('created_at'), item['amount']) for item in report.gives],
+        summary={key: value for key, value in report.summary.items() if key != 'snapshot_id'},
+        # Передача — суммой и состоянием, без времени: повторное «Передать» с
+        # той же суммой — не новый отчёт.
+        handover=handover_mark(report.handover), warnings=warnings(report)))
+
+
+def handover_mark(record: dict | None):
+    if not record or record.get('amount') is None:
+        return None
+    return dict(amount=str(record['amount']), source=record.get('source'),
+                confirmed=bool(record.get('confirmed_at')), expected=record.get('expected_amount'))
+
+
+async def cashier_photo(app, day: date, now: datetime) -> tuple[bytes, str, str]:
+    report = await collect(app.state, day, now=now)
+    return await asyncio.to_thread(render, report), caption(report), fingerprint(report)
+
+
+async def accountant_photo(app, day: date, now: datetime) -> tuple[bytes, str, str]:
+    from retro.modules.accountant import telegram_report as accountant
+    report = await accountant.collect(app, day, now=now)
+    return await asyncio.to_thread(accountant.render, report), accountant.caption(report), accountant.fingerprint(report)
+
+
+# Порядок отправки: сначала касса, потом бухгалтер — как идут деньги.
+REPORTS = {'cashier': cashier_photo, 'accountant': accountant_photo}
+FILE_NAMES = {'cashier': 'kassa', 'accountant': 'buhgalter'}
+
+
 class TelegramDailyReport:
-    def __init__(self, app, bot, store, config, *, clock=lambda: datetime.now(TZ), collector=collect):
+    """Когда отчёт уходит в группу (T-484):
+
+    * кассир нажал «Передать бухгалтеру» — снимок кассы за этот день;
+    * бухгалтер нажал «Сохранить и сдать отчёт» — «Финансы дня»;
+    * в 23:30 — тот отчёт дня, который ещё ни разу не уходил.
+
+    Отчёт без изменений второй раз не отправляется: сравниваем отпечаток
+    содержимого с отправленным. Изменился — уходит заново с пометкой
+    «Исправленный отчёт»."""
+
+    def __init__(self, app, bot, store, config, *, clock=lambda: datetime.now(TZ), reports=None):
         self.app, self.bot, self.store, self.config = app, bot, store, config
-        self.clock, self.collector = clock, collector
-        self.retry_after: dict[date, datetime] = {}
+        self.clock, self.reports = clock, reports or REPORTS
+        self.retry_after: dict[tuple[str, date], datetime] = {}
         self.worker = None
 
-    async def build(self, day: date) -> tuple[bytes, str]:
-        report = await self.collector(self.app.state, day, now=self.clock())
-        return await asyncio.to_thread(render, report), caption(report)
+    async def deliver(self, kind: str, day: date) -> str:
+        """Отправить отчёт, если он новый или изменился.
 
-    async def send(self, day: date) -> int:
-        """Отправка дня прямо сейчас — и по расписанию, и для проверки."""
-        photo, text = await self.build(day)
-        return await self.bot.send_photo(self.config.chat_id, photo, text,
-                                         filename=f'Retro-kassa-{day.isoformat()}.png')
+        'sent' — ушёл; 'unchanged' — такой уже в группе; 'busy' — его прямо
+        сейчас отправляет другой процесс. Skip и сбои — исключениями."""
+        photo, text, mark = await self.reports[kind](self.app, day, self.clock())
+        last = await asyncio.to_thread(self.store.last_fingerprint, kind, day)
+        already = await asyncio.to_thread(self.store.sent, kind, day)
+        if already and last == mark:
+            return 'unchanged'
+        if not await asyncio.to_thread(self.store.claim, kind, day, self.clock()):
+            return 'busy'
+        try:
+            if already:
+                text = 'Исправленный отчёт\n' + text
+            message_id = await self.bot.send_photo(
+                self.config.chat_id, photo, text, filename=f'Retro-{FILE_NAMES.get(kind, kind)}-{day.isoformat()}.png')
+        except BaseException:
+            await asyncio.to_thread(self.store.release, kind, day)
+            raise
+        await asyncio.to_thread(self.store.finish, kind, day, message_id, self.clock(), mark)
+        logger.info('telegram %s report %s sent%s', kind, day, ' (corrected)' if already else '')
+        return 'sent'
 
-    async def run_once(self) -> date | None:
+    async def notify(self, kind: str, day: date):
+        """По кнопке кассира или бухгалтера — в фоне, после ответа экрану.
+        Сбой не мешает передаче или сдаче отчёта: не ушло — уйдёт в 23:30."""
+        try:
+            await self.deliver(kind, day)
+        except Skip:
+            pass
+        except Exception as error:
+            log_safe_failure('telegram-report', error, operation=f'notify:{kind}:{day.isoformat()}')
+            logger.warning('telegram %s report %s on submit failed: %s', kind, day,
+                           getattr(error, 'code', type(error).__name__))
+
+    async def run_once(self) -> list[tuple[str, date]]:
+        """23:30: отчёт дня, которого ещё нет в группе (кнопку не нажали)."""
         now = self.clock()
         day = due_day(now, self.config.send_at)
-        if day is None or self.retry_after.get(day, now) > now:
-            return None
-        if await asyncio.to_thread(self.store.sent, day):
-            return None
-        if not await asyncio.to_thread(self.store.claim, day, now):
-            return None
-        try:
-            message_id = await self.send(day)
-        except Skip:
-            await asyncio.to_thread(self.store.finish, day, 'skip', now)
-            return None
-        except Exception as error:
-            await asyncio.to_thread(self.store.release, day)
-            self.retry_after[day] = now + timedelta(minutes=RETRY_MINUTES)
-            log_safe_failure('telegram-report', error, operation=f'send:{day.isoformat()}')
-            logger.warning('telegram cashier report %s failed: %s', day, getattr(error, 'code', type(error).__name__))
-            return None
-        await asyncio.to_thread(self.store.finish, day, message_id, self.clock())
-        self.retry_after.pop(day, None)
-        logger.info('telegram cashier report %s sent', day)
-        return day
+        if day is None:
+            return []
+        sent = []
+        for kind in self.reports:
+            if self.retry_after.get((kind, day), now) > now:
+                continue
+            if await asyncio.to_thread(self.store.sent, kind, day):
+                continue
+            try:
+                if await self.deliver(kind, day) == 'sent':
+                    sent.append((kind, day))
+                self.retry_after.pop((kind, day), None)
+            except Skip:
+                if await asyncio.to_thread(self.store.claim, kind, day, now):
+                    await asyncio.to_thread(self.store.finish, kind, day, 'skip', now, 'skip')
+            except Exception as error:
+                self.retry_after[(kind, day)] = now + timedelta(minutes=RETRY_MINUTES)
+                log_safe_failure('telegram-report', error, operation=f'send:{kind}:{day.isoformat()}')
+                logger.warning('telegram %s report %s failed: %s', kind, day,
+                               getattr(error, 'code', type(error).__name__))
+        return sent
 
     def start(self, every: float = 60):
         if not self.config.auto:

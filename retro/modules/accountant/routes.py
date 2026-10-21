@@ -7,7 +7,7 @@ from dataclasses import replace
 from decimal import Decimal
 from typing import Literal
 
-from fastapi import APIRouter, HTTPException, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Request
 from fastapi.responses import JSONResponse, Response
 from pydantic import BaseModel, Field
 
@@ -303,8 +303,9 @@ def _day_data(request, day, cashier_amount, cashier_error, *, staff_only=False, 
         item['draft_total'] += row.payable or Decimal(0)
     group_items = [dict(item, shift_cost=str(item['shift_cost']),
                         draft_total=str(item['draft_total'])) for item in groups.values()]
-    # Долг уже начисленных — в salary_debt; к нему добавляются только ещё не начисленные.
-    needed = summary['salary_debt'] + Decimal(state['pending_total'])
+    # Долг уже начисленных — в salary_debt (к выдаче сегодня) и salary_debt_ahead
+    # (смена этого дня, её выдают завтра); к ним — ещё не начисленные.
+    needed = summary['salary_debt'] + summary['salary_debt_ahead'] + Decimal(state['pending_total'])
     shortfall = (max(Decimal(0), needed - summary['cash_balance'])
                  if summary['cash_balance'] is not None and not any(row.payable is None for row in rows) else None)
     scenarios = [dict(group=item['name'], saving=item['shift_cost'],
@@ -1244,13 +1245,18 @@ async def download_day_with_checks(request: Request, body: DayExportInput):
     return await _day_export(request, selected_day(body.date), checks)
 
 
-async def _day_export(request: Request, day: date, checks):
+async def day_export_bytes(request, day: date, checks=None) -> bytes:
+    """«Финансы дня» в Excel — для кнопки и для резерва в Google (T-476)."""
     from .sheets_export import day_workbook
     data = await day_view(request, day)
     staff = await asyncio.to_thread(_day_data, request, day - timedelta(days=1), None, None,
                                     staff_only=True)
     purchases = await asyncio.to_thread(request.app.state.shokh.purchases, day)
-    body = await asyncio.to_thread(day_workbook, data, staff, purchases=purchases, checks=checks)
+    return await asyncio.to_thread(day_workbook, data, staff, purchases=purchases, checks=checks)
+
+
+async def _day_export(request: Request, day: date, checks):
+    body = await day_export_bytes(request, day, checks)
     return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="Retro-finance-{day.isoformat()}.xlsx"'})
 
@@ -1487,7 +1493,7 @@ def report_author(request: Request) -> str:
 
 
 @router.post('/day-report')
-def submit_day_report(request: Request, body: DayReportInput):
+def submit_day_report(request: Request, body: DayReportInput, background: BackgroundTasks):
     """«Сохранить и сдать отчёт»: снимок дня уходит учредителю."""
     day = selected_day(body.date)
     finance = request.app.state.accountant_finance
@@ -1500,6 +1506,9 @@ def submit_day_report(request: Request, body: DayReportInput):
             shoh_balance=pocket['pocket'], checks=[item.model_dump() for item in body.checks])
     except LedgerError as error:
         finance_error(error)
+    # «Финансы дня» — в Telegram-группу (T-484); без изменений не повторяется.
+    from retro.modules.cashier.routes import notify_telegram
+    notify_telegram(request, background, 'accountant', day)
     return dict(demo=False, date=day.isoformat(), report=report)
 
 
@@ -1618,3 +1627,18 @@ def add_bazaar(request: Request, body: BazaarInput):
     except LedgerError as error:
         finance_error(error)
     return dict(demo=False, bazaars=bazaars)
+
+
+# ── Снимок «Финансов дня» в Telegram (T-479) ────────────────────────────────
+# Та же ручная проверка, что у снимка кассы: только полный доступ.
+
+@router.get('/telegram-report/preview')
+async def telegram_report_preview(request: Request, date: date | None = None):
+    from retro.modules.cashier.routes import telegram_preview
+    return await telegram_preview(request, 'accountant', selected_day(date))
+
+
+@router.post('/telegram-report')
+async def telegram_report_send(request: Request, date: date | None = None):
+    from retro.modules.cashier.routes import telegram_send
+    return await telegram_send(request, 'accountant', selected_day(date))

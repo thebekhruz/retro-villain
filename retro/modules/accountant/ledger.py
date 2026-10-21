@@ -1853,7 +1853,12 @@ class FinanceStore:
             confirmed = connection.execute('SELECT approver, confirmed_at FROM accountant_payroll_days '
                                            'WHERE day = ?', (day.isoformat(),)).fetchone()
         accruals = self.accruals(day)
-        debt = sum((Decimal(item['debt']) for item in accruals), Decimal(0))
+        # Смену выдают на следующий день: в день D к выплате смены по D − 1
+        # включительно. Смена самого D (её подтверждают завтра) — долг завтра,
+        # а не сегодня: в «Долги к оплате» дня D она не входит (T-480).
+        debt = sum((Decimal(item['debt']) for item in accruals if item['work_day'] < day.isoformat()), Decimal(0))
+        debt_ahead = sum((Decimal(item['debt']) for item in accruals if item['work_day'] >= day.isoformat()),
+                         Decimal(0))
         opening_today = sum((Decimal(item['amount']) for item in movements
                              if item['type'] == 'opening'), Decimal(0))
         received = sum((Decimal(item['amount']) for item in movements
@@ -1871,7 +1876,7 @@ class FinanceStore:
                 label = ITEMS[item['item_code']][1]
                 salary_categories[label] = salary_categories.get(label, Decimal(0)) + Decimal(item['amount'])
         return dict(accrued_on_day=accrued_on_day, salary_paid_on_day=paid_on_day,
-                    salary_debt=debt, cash_balance=balance, movements=movements,
+                    salary_debt=debt, salary_debt_ahead=debt_ahead, cash_balance=balance, movements=movements,
                     cash_flow=cash_flow,
                     salary_categories={name: str(amount) for name, amount in salary_categories.items()},
                     accruals=accruals, payroll_confirmed=bool(confirmed),

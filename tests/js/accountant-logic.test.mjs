@@ -45,6 +45,19 @@ test('первый рабочий день не предлагает выпла�
   assert.equal(next.S, '2026-10-02');
 });
 
+/* T-480: зарплату выдают на следующий день после смены. В «Финансах дня»
+   15.10 к оплате смена 14.10 и старые долги; смена 15.10 — долг 16.10. */
+test('смена самого дня выплаты не попадает в долги этого дня', () => {
+  const staff = {employees: [employee('Аббос', {employee_id: 1})]};
+  const accrual = (id, day, debt) => ({id, employee_id: 1, name: 'Аббос', work_day: day,
+    amount: '250000', paid: String(250000 - debt), debt: String(debt)});
+  const board = logic.shiftBoard({payday: '2026-10-15', accountingStart: '2026-10-13', staff, movements: [],
+    accruals: [accrual(1, '2026-10-13', 250000), accrual(2, '2026-10-14', 0), accrual(3, '2026-10-15', 250000)]});
+  assert.equal(board.S, '2026-10-14');
+  assert.deepEqual(board.rows.filter(r => r.debt > 0).map(r => r.day), ['2026-10-13']);
+  assert.ok(!board.rows.some(r => r.day === '2026-10-15'));
+});
+
 test('без Hikvision: метка и фильтр остаются, начисление и выдача доступны', () => {
   const staff = {employees: [employee('Без устройства', {
     employee_id: 101, status: 'unlinked', first_entry: null, hikvision_registered: false, blocker: null,

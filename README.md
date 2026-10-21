@@ -196,6 +196,7 @@ PYTHONPATH=. python scripts/migrate_to_postgres.py --target "$DATABASE_URL" \
 | `DASHBOARD_PHONE_USERS` | вход менеджера или админа по номеру и SMS-коду: `+998901234567=логин;…` |
 | `SMS_PROVIDER`, `ESKIZ_EMAIL`, `ESKIZ_PASSWORD`, `ESKIZ_FROM`, `SMS_TEMPLATE` | SMS с кодом входа через Eskiz |
 | `DASHBOARD_USER`, `DASHBOARD_PASSWORD` | общий вход, если роли не нужны |
+| `GOOGLE_DRIVE_CLIENT_ID`, `GOOGLE_DRIVE_CLIENT_SECRET`, `GOOGLE_DRIVE_REFRESH_TOKEN` | резерв отчётов в Google Drive (см. «Резерв в Google Drive») |
 | `DATABASE_URL` | Postgres для рабочих данных; на Railway появляется сам |
 | `RETRO_DATA_DIR` | каталог на подключённом диске, если вместо Postgres выбран диск |
 | `TRUSTED_PROXY_NETWORK` | подсеть обратного прокси хостинга |
@@ -739,6 +740,33 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
   "$RETRO_DATA_DIR"/*.sqlite3
 ```
 
+### Резерв в Google Drive
+
+Каждое утро после 06:30 по Ташкенту приложение выгружает за прошедший день те
+же файлы, что скачиваются из кабинетов: «Касса» (отчёт кассира) и «Бухгалтер»
+(«Финансы дня» с закупом Шоха). После последнего дня месяца добавляются
+«Зарплата · месяц», «Зарплата · день» и «Сверка». Файлы становятся Google
+Таблицами в папке `GOOGLE_DRIVE_FOLDER_NAME / ГГГГ-ММ`. Каждый файл
+выгружается один раз и потом не перезаписывается. Пропуски из-за сбоя
+iiko или Google догоняются сами: повтор через 30 минут, не больше четырёх
+файлов за проход. Что уже выгружено, записано в таблице `drive_backup_files`.
+
+Как подключить:
+
+1. Google Cloud Console → APIs & Services: включить **Google Drive API**.
+2. OAuth consent screen: тип External, право `drive.file`, статус
+   **In production**. В статусе Testing Google отзывает токен через 7 дней.
+3. Credentials → OAuth client ID, тип **Desktop app** → client ID и secret.
+4. Локально:
+   `GOOGLE_DRIVE_CLIENT_ID=… GOOGLE_DRIVE_CLIENT_SECRET=… python -m retro.drive_backup_auth`.
+   Войти в аккаунт, на диске которого будет резерв, и забрать напечатанный
+   `GOOGLE_DRIVE_REFRESH_TOKEN`.
+5. Три переменные положить на Railway. Сменить аккаунт = выпустить новый токен
+   и очистить таблицы `drive_backup_folders` и `drive_backup_files`.
+
+Право `drive.file` даёт приложению доступ только к папкам и файлам, которые
+оно создало само. Остальное содержимое диска ему не видно.
+
 ## Снимок кассы в Telegram
 
 Каждый вечер в `TELEGRAM_REPORT_TIME` (23:30 по Ташкенту) сервер сам собирает день
@@ -746,10 +774,23 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 доллары и «К передаче бухгалтеру» (`till_summary`, та же формула, что на экране) —
 рисует PNG (Pillow, шрифты DejaVu из `retro/assets/`) и отправляет боту в группу.
 Браузер на сервере не нужен. В шапке картинки и в подписи — дата отчёта.
+Доллары в формуле «К передаче» показаны в долларах, сумма в сумах и курс Retro —
+подписью под строкой.
+
+Вслед за кассой тем же ботом уходит снимок «Финансов дня» бухгалтера (T-479):
+остаток на конец дня с расшифровкой (та же, что лист «Итог» Excel-выгрузки),
+передача кассира, операции дня, сейф (доллары — в долларах) и подотчёт Шоха,
+долги. У каждого отчёта своя отметка об отправке в таблице `telegram_reports`.
+
+Когда отчёт уходит (T-484): кассир нажал «Передать бухгалтеру» — снимок кассы за
+день; бухгалтер нажал «Сохранить и сдать отчёт» — «Финансы дня»; в 23:30 — тот
+отчёт дня, который ещё ни разу не уходил. Отчёт без изменений второй раз не
+отправляется (отпечаток содержимого в `telegram_reports.fingerprint`, без времени
+снимка); изменился — уходит заново с пометкой «Исправленный отчёт».
 
 Смену iiko закрывают за полночь, поэтому снимок 23:30 обычно предварительный: пока
 смена открыта, это написано и на картинке, и в подписи. Отправленный день
-помечается в таблице `cashier_telegram_reports` — выкат или второй процесс его не
+помечается в таблице `telegram_reports` — выкат или второй процесс его не
 повторят. Сбой Telegram или iiko повторяется каждые 5 минут до 06:00 утра.
 
 Подключение: создать бота в @BotFather, добавить его в группу, задать
@@ -758,7 +799,8 @@ python3 scripts/check_runtime_permissions.py build/.env "$RETRO_DATA_DIR" \
 
 - `GET /api/cashier/telegram-report/preview?date=ГГГГ-ММ-ДД` — картинка в браузере, без отправки;
 - `POST /api/cashier/telegram-report?date=ГГГГ-ММ-ДД` — отправить в группу сейчас;
-  расписание этот день отправленным не считает.
+  расписание этот день отправленным не считает;
+- то же для бухгалтера: `/api/accountant/telegram-report/preview` и `/api/accountant/telegram-report`.
 
 На время тестовых отправок можно держать `TELEGRAM_REPORT_AUTO=false`.
 

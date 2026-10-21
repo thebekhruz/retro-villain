@@ -5,7 +5,7 @@ from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 
-from fastapi import APIRouter, HTTPException, Query, Request
+from fastapi import APIRouter, BackgroundTasks, HTTPException, Query, Request
 from fastapi.responses import Response
 from pydantic import BaseModel, Field
 
@@ -274,7 +274,7 @@ def handover_state(request: Request, date: date):
 
 
 @router.post('/handover', status_code=201)
-def hand_over_to_accountant(request: Request, body: HandoverInput):
+def hand_over_to_accountant(request: Request, body: HandoverInput, background: BackgroundTasks):
     """«Передать бухгалтеру»: сумма считается здесь, по формуле бухгалтера.
 
     Повторное нажатие после новых расходов или продаж переписывает сумму дня
@@ -288,7 +288,16 @@ def hand_over_to_accountant(request: Request, body: HandoverInput):
         raise HTTPException(422, str(error)) from None
     except LedgerError as error:  # в том числе HandoverChanged
         raise HTTPException(409, str(error)) from None
+    notify_telegram(request, background, 'cashier', day)
     return dict(date=day.isoformat(), handover=handover)
+
+
+def notify_telegram(request: Request, background: BackgroundTasks, kind: str, day):
+    """Отчёт в Telegram-группу по кнопке (T-484): после ответа экрану, в фоне.
+    Без изменений с прошлой отправки он не уйдёт; бота нет — ничего не делаем."""
+    reporter = getattr(request.app.state, 'telegram_report', None)
+    if reporter is not None:
+        background.add_task(reporter.notify, kind, day)
 
 
 @router.delete('/handover', status_code=204)
@@ -423,6 +432,21 @@ def till_expense_rows(day, gives):
                     Decimal(give['amount'])) for give in gives]
 
 
+def export_bytes(state, day, snapshot, expenses=None, receipts=None, gives=None):
+    """Файл «Отчёт кассы» — тот же, что кнопка «Скачать» и резерв в Google (T-476)."""
+    if expenses is None:
+        expenses = [] if snapshot.demo else state.expenses.list(day)
+    if receipts is None:
+        receipts = [] if snapshot.demo else state.expenses.list_receipts(day)
+    if gives is None:
+        gives = [] if snapshot.demo else shokh_gives(state.accountant_finance, day)
+    totals = None if snapshot.demo else till_totals(state, day)
+    return export_report(snapshot, [*expenses, *till_expense_rows(day, gives)], receipts,
+                         usd_total=totals.usd_total if totals else Decimal(0),
+                         usd_rate=totals.usd_rate if totals else None,
+                         usd_deduction=totals.usd_deduction if totals else Decimal(0))
+
+
 @router.get('/export')
 def download_report(request: Request, date: date,
                     snapshot_id: str = Query(min_length=32, max_length=32, pattern='^[a-f0-9]+$'),
@@ -444,11 +468,7 @@ def download_report(request: Request, date: date,
             or (shokh_revision is not None and shokh_revision != gives_revision(gives))
             or (usd_revision is not None and usd_revision != gives_revision(deposits))):
         raise HTTPException(409, 'Расходы, поступления или доллары изменились. Обновите день перед скачиванием.')
-    totals = None if snapshot.demo else till_totals(request.app.state, day)
-    data = export_report(snapshot, [*expenses, *till_expense_rows(day, gives)], receipts,
-                         usd_total=totals.usd_total if totals else Decimal(0),
-                         usd_rate=totals.usd_rate if totals else None,
-                         usd_deduction=totals.usd_deduction if totals else Decimal(0))
+    data = export_bytes(request.app.state, day, snapshot, expenses, receipts, gives)
     prefix = 'DEMO-' if snapshot.demo else ''
     return Response(data, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{prefix}Retro-{day.isoformat()}.xlsx"'})
@@ -602,45 +622,57 @@ def annotate_prepayment(request: Request, order_number: str, body: PrepaymentNot
 
 def require_full_access(request: Request):
     if getattr(request.state, 'dashboard_role', None) not in ('admin', 'all'):
-        raise HTTPException(403, 'Снимок кассы для Telegram доступен только администратору.')
+        raise HTTPException(403, 'Снимок для Telegram доступен только администратору.')
 
 
-async def telegram_photo(request: Request, day):
-    from .telegram_report import Skip, collect, render
+async def telegram_photo(request: Request, kind: str, day):
+    """Картинка и подпись отчёта `kind` (cashier / accountant) за день."""
+    from .telegram_report import REPORTS, Skip
+    require_full_access(request)
     try:
-        report = await collect(request.app.state, day)
+        return await REPORTS[kind](request.app, day, datetime.now(TZ))
     except Skip as reason:
         raise HTTPException(409, f'Снимок не собран: {reason}.') from None
     except TimeoutError:
         raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
     except DataError as error:
         raise HTTPException(503, str(error)) from None
-    return report, await asyncio.to_thread(render, report)
 
 
-@router.get('/telegram-report/preview')
-async def telegram_report_preview(request: Request, date: date | None = None):
-    require_full_access(request)
-    _, photo = await telegram_photo(request, selected_day(date))
+async def telegram_preview(request: Request, kind: str, day):
+    photo, *_ = await telegram_photo(request, kind, day)
     return Response(photo, media_type='image/png', headers={'Cache-Control': 'no-store'})
 
 
-@router.post('/telegram-report')
-async def telegram_report_send(request: Request, date: date | None = None):
-    """Тестовая отправка: расписание этот день отправленным не считает."""
+async def telegram_send(request: Request, kind: str, day):
+    """Отправить сейчас — по тем же правилам, что кнопки (T-484): отчёт без
+    изменений с прошлой отправки второй раз не уходит."""
     require_full_access(request)
     reporter = getattr(request.app.state, 'telegram_report', None)
     if reporter is None:
         raise HTTPException(409, 'Задайте TELEGRAM_BOT_TOKEN и TELEGRAM_REPORT_CHAT_ID.')
     from retro.integrations.telegram import TelegramError
-    from .telegram_report import caption
-    day = selected_day(date)
-    report, photo = await telegram_photo(request, day)
+    from .telegram_report import Skip
     try:
-        message_id = await reporter.bot.send_photo(reporter.config.chat_id, photo, caption(report),
-                                                   filename=f'Retro-kassa-{day.isoformat()}.png')
+        status = await reporter.deliver(kind, day)
+    except Skip as reason:
+        raise HTTPException(409, f'Снимок не собран: {reason}.') from None
+    except TimeoutError:
+        raise HTTPException(504, 'iiko отвечает дольше обычного. Повторите запрос.') from None
+    except DataError as error:
+        raise HTTPException(503, str(error)) from None
     except TelegramError as error:
-        log_safe_failure('telegram-report', error, operation='manual_send',
+        log_safe_failure('telegram-report', error, operation=f'manual_send:{kind}',
                          request_id=request.state.request_id)
         raise HTTPException(502, f'Telegram не принял отправку ({error.code}).') from None
-    return {'date': day.isoformat(), 'message_id': message_id}
+    return {'date': day.isoformat(), 'status': status}
+
+
+@router.get('/telegram-report/preview')
+async def telegram_report_preview(request: Request, date: date | None = None):
+    return await telegram_preview(request, 'cashier', selected_day(date))
+
+
+@router.post('/telegram-report')
+async def telegram_report_send(request: Request, date: date | None = None):
+    return await telegram_send(request, 'cashier', selected_day(date))

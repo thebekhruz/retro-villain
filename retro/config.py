@@ -47,6 +47,16 @@ class SmsConfig:
 
 
 @dataclass(frozen=True)
+class DriveBackupConfig:
+    """Резерв отчётов в Google Drive (T-476): OAuth-клиент и токен владельца диска."""
+    client_id: str
+    client_secret: str = field(repr=False)
+    refresh_token: str = field(repr=False)
+    folder_name: str = 'Retro Milliy · резерв отчётов'
+    start: date | None = None
+
+
+@dataclass(frozen=True)
 class HikvisionConfig:
     base_url: str
     username: str = field(repr=False)
@@ -139,6 +149,7 @@ class Settings:
     website_booking_api_url: str = ''
     website_booking_api_token: str = field(default='', repr=False)
     hikvision: HikvisionConfig | None = field(default=None, repr=False)
+    drive_backup: DriveBackupConfig | None = field(default=None, repr=False)
     telegram_report: TelegramReportConfig | None = field(default=None, repr=False)
     chef_alert: ChefAlertConfig = field(default_factory=ChefAlertConfig, repr=False)
     push: PushConfig = field(default_factory=PushConfig, repr=False)
@@ -237,6 +248,7 @@ class Settings:
         if not retention_value.isdigit() or not 1 <= int(retention_value) <= 1000:
             raise ValueError('DIRECTOR_REPORT_RETENTION должен быть числом от 1 до 1000.')
         hikvision = parse_hikvision_config(os.environ)
+        drive_backup = parse_drive_backup_config(os.environ)
         telegram_report = parse_telegram_report_config(os.environ)
         sales_history_start = parse_sales_history_start(os.getenv('SALES_HISTORY_START', ''))
         lunch_hours = parse_lunch_hours(os.getenv('LUNCH_HOURS', ''))
@@ -270,6 +282,7 @@ class Settings:
             website_booking_api_url=website_booking_url,
             website_booking_api_token=website_booking_token,
             hikvision=hikvision,
+            drive_backup=drive_backup,
             telegram_report=telegram_report,
             chef_alert=chef_alert,
             push=push,
@@ -280,6 +293,22 @@ class Settings:
             lunch_hours=lunch_hours,
             sales_snapshots_kept_days=snapshots_kept_days,
         )
+
+
+def parse_drive_backup_config(environ) -> DriveBackupConfig | None:
+    names = ('GOOGLE_DRIVE_CLIENT_ID', 'GOOGLE_DRIVE_CLIENT_SECRET', 'GOOGLE_DRIVE_REFRESH_TOKEN')
+    values = [environ.get(name, '').strip() for name in names]
+    if not any(values):
+        return None
+    if not all(values):
+        raise ValueError('Для резерва в Google Drive задайте ' + ', '.join(names) + ' вместе.')
+    folder = environ.get('GOOGLE_DRIVE_FOLDER_NAME', '').strip() or DriveBackupConfig.folder_name
+    start_value = environ.get('GOOGLE_BACKUP_START', '').strip()
+    try:
+        start = date.fromisoformat(start_value) if start_value else None
+    except ValueError:
+        raise ValueError('GOOGLE_BACKUP_START — дата вида 2026-10-14.') from None
+    return DriveBackupConfig(*values, folder_name=folder, start=start)
 
 
 def parse_clock(value: str, name: str) -> int:

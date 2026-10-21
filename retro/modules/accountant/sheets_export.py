@@ -188,7 +188,8 @@ def _shift_sheet(sheet, payday: date, ledger: dict, staff: dict):
         _note(sheet, row, f'Без суммы (нет ставки или данных Hikvision): {unknown} — в итог не вошли.', width)
         row += 1
     other = sorted((item for item in accruals
-                    if item['work_day'] != shift_day.isoformat() and Decimal(item['debt']) > 0),
+                    # Только прошлые смены: смену дня выплаты выдают завтра (T-480).
+                    if item['work_day'] < shift_day.isoformat() and Decimal(item['debt']) > 0),
                    key=lambda item: (item['work_day'], item['name']))
     if other:
         row += 1
@@ -204,6 +205,16 @@ def _shift_sheet(sheet, payday: date, ledger: dict, staff: dict):
     sheet.freeze_panes = 'A5'
 
 
+def movement_label(item: dict) -> str:
+    """Тип операции журнала так, как его называют лист «Операции» и снимок в Telegram."""
+    if item['type'] == 'other_expense':
+        special = {MONTHLY_ITEM: 'Оклад', EXTRA_ITEM: 'Доп. выплата', EXTRA_SALARY_ITEM: 'Зарплата',
+                   CASH_DIVIDENDS_ITEM: 'Дивиденды'}.get(item.get('item_code'))
+        if special:
+            return special
+    return KIND.get(item['type'], item['type'])
+
+
 def _journal_sheet(sheet, payday: date, data: dict):
     ledger = data['ledger']
     width = 5
@@ -217,15 +228,7 @@ def _journal_sheet(sheet, payday: date, data: dict):
         if item['type'] == 'opening':
             continue
         amount = _money(item['amount'])
-        label = KIND.get(item['type'], item['type'])
-        if item['type'] == 'other_expense' and item.get('item_code') == MONTHLY_ITEM:
-            label = 'Оклад'
-        elif item['type'] == 'other_expense' and item.get('item_code') == EXTRA_ITEM:
-            label = 'Доп. выплата'
-        elif item['type'] == 'other_expense' and item.get('item_code') == EXTRA_SALARY_ITEM:
-            label = 'Зарплата'
-        elif item['type'] == 'other_expense' and item.get('item_code') == CASH_DIVIDENDS_ITEM:
-            label = 'Дивиденды'
+        label = movement_label(item)
         incoming = item['type'] in INFLOW
         _row(sheet, row, [label, item['description'], _time(item.get('created_at')),
                           amount if incoming else None, None if incoming else amount], money_from=4)
@@ -278,7 +281,9 @@ def _journal_sheet(sheet, payday: date, data: dict):
     sheet.freeze_panes = 'A4'
 
 
-def _total_sheet(sheet, payday: date, data: dict):
+def cash_lines(data: dict) -> list[tuple[str, Decimal | None]]:
+    """Карточка «Деньги на расходы»: от остатка на начало дня до остатка на
+    конец. Одна расшифровка для листа «Итог» и снимка в Telegram (T-479)."""
     ledger = data['ledger']
     flow = ledger.get('cash_flow') or {}
     movements = ledger.get('movements') or []
@@ -294,17 +299,23 @@ def _total_sheet(sheet, payday: date, data: dict):
     shoh = spent(lambda item: item['type'] == 'procurement_advance' or (
         item['type'] == 'other_expense' and item.get('item_code') == 'proc_shoh'))
     other = (_money(flow.get('other_outflows')) or Decimal(0)) - monthly - shoh - extra
+    return [('На начало дня', _money(flow.get('opening_balance'))),
+            ('+ От кассира', _money(flow.get('received_from_cashier'))),
+            ('+ Прочие поступления', _money(flow.get('other_receipts'))),
+            ('− Зарплаты сменным', _sum([_money(flow.get('salary_paid')), extra])
+             if flow.get('salary_paid') is not None or extra else None),
+            ('− Оклады частями', monthly),
+            ('− Выдано Шоху на закуп', shoh),
+            ('− Прочие расходы и сейф', other),
+            ('= Остаток на конец дня', _money(flow.get('closing_balance')))]
+
+
+def _total_sheet(sheet, payday: date, data: dict):
+    ledger = data['ledger']
+    flow = ledger.get('cash_flow') or {}
     _title(sheet, f'Деньги на расходы · {payday.strftime("%d.%m.%Y")}', 2)
     _widths(sheet, [46, 20])
-    lines = [('На начало дня', _money(flow.get('opening_balance'))),
-             ('+ От кассира', _money(flow.get('received_from_cashier'))),
-             ('+ Прочие поступления', _money(flow.get('other_receipts'))),
-             ('− Зарплаты сменным', _sum([_money(flow.get('salary_paid')), extra])
-              if flow.get('salary_paid') is not None or extra else None),
-             ('− Оклады частями', monthly),
-             ('− Выдано Шоху на закуп', shoh),
-             ('− Прочие расходы и сейф', other),
-             ('= Остаток на конец дня', _money(flow.get('closing_balance')))]
+    lines = cash_lines(data)
     row = 3
     for label, value in lines:
         _row(sheet, row, [label, value], bold=label.startswith('='))
