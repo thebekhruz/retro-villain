@@ -402,10 +402,22 @@
     renderBrief(tab);
   }
 
+  /* Строка расшифровки; с `details` — аккордеон (T-520): по нажатию
+     раскрывает операции, из которых сложилась сумма. */
   function briefLine(row, extra) {
-    const line = node('div', 'fo-line' + (row.muted ? ' is-muted' : '') + (extra ? ' ' + extra : ''));
-    line.append(node('span', '', row.label), node('b', 'rm-num', row.value));
-    return line;
+    const classes = 'fo-line' + (row.muted ? ' is-muted' : '') + (extra ? ' ' + extra : '');
+    const details = row.details || [];
+    if (!details.length) {
+      const line = node('div', classes);
+      line.append(node('span', '', row.label), node('b', 'rm-num', row.value));
+      return line;
+    }
+    const fold = node('details', 'fo-rep-fold');
+    const summary = node('summary', classes);
+    summary.append(node('span', '', row.label), node('b', 'rm-num', row.value));
+    fold.append(summary);
+    details.forEach(item => fold.append(briefLine(item, 'fo-rep-sub-line')));
+    return fold;
   }
   function briefPill(pill) {
     return pill ? node('span', 'fo-rep-pill is-' + pill.tone, pill.text) : null;
@@ -455,6 +467,8 @@
     box.append(head, big, node('p', 'fo-rep-sub', view.ops));
     if (view.pendingNote) box.append(node('p', 'fo-rep-note', view.pendingNote));
     view.rows.forEach(row => box.append(briefLine(row)));
+    // Доллары в сейфе — отдельно от сумовых строк: в остаток они не входят (T-520).
+    if (view.usd) box.append(briefLine(view.usd, 'fo-rep-group'));
     return box;
   }
 

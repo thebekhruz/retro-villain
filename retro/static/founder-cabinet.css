@@ -264,6 +264,13 @@
 .fo-rep-recv b{font-weight:650}
 .fo-mark.is-wait{color:#9aa69b}
 .fo-rep-note{margin:8px 0 0;padding:8px 10px;border-radius:10px;background:#fbf3e0;color:#806125;font-size:11px}
+/* T-520: строка с операциями — аккордеон: стрелка у подписи, внутри — операции дня */
+.fo-rep-fold summary{list-style:none;cursor:pointer;min-height:30px;align-items:center}
+.fo-rep-fold summary::-webkit-details-marker{display:none}
+.fo-rep-fold summary>span::after{content:'›';display:inline-block;margin-left:6px;color:#9aa69b;font-weight:600;transition:transform .15s}
+.fo-rep-fold[open]>summary>span::after{transform:rotate(90deg)}
+.fo-rep-fold .fo-rep-sub-line{margin-top:6px;padding-top:6px}
+.fo-rep-fold .fo-rep-sub-line>span{overflow-wrap:anywhere}
 
 /* ── Раскладки ────────────────────────────────────────────────────────── */
 @media(max-width:1180px){
