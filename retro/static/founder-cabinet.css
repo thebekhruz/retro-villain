@@ -437,6 +437,24 @@
   font:inherit;font-size:13px;font-weight:600;color:var(--ink,#1d2b24);cursor:pointer}
 .push-button.is-primary{border-color:#24594b;background:#24594b;color:#fff}
 .push-button:disabled{opacity:.55;cursor:default}
+/* Счёт Шефа, уведомления уже включены: вместо плашки — тонкая строка под порогом
+   («🔔 Уведомления · Включены на этом устройстве.   Проверить  Выключить»). На телефоне
+   её нет: «Проверить» и «Выключить» там в профиле. */
+.push-box[data-push="until-on"][data-state="on"]{margin-top:10px;padding:0;border:0;background:none;gap:10px}
+.push-box[data-push="until-on"][data-state="on"] .push-text{display:flex;align-items:center;gap:6px;min-width:0;
+  font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.push-box[data-push="until-on"][data-state="on"] .push-text::before{content:"";flex:none;width:14px;height:14px;background:var(--ok);
+  -webkit-mask:var(--push-bell) center/contain no-repeat;mask:var(--push-bell) center/contain no-repeat}
+.push-box[data-push="until-on"][data-state="on"] .push-text strong{font-size:12px;font-weight:600;color:var(--ink-2)}
+.push-box[data-push="until-on"][data-state="on"] .push-status::before{content:"· ";color:var(--muted-2,#748376)}
+.push-box[data-push="until-on"][data-state="on"] .push-status{font-size:12px;overflow:hidden;text-overflow:ellipsis}
+.push-box[data-push="until-on"][data-state="on"] .push-actions{gap:2px}
+.push-box[data-push="until-on"][data-state="on"] .push-button{min-height:24px;padding:0 6px;border:0;border-radius:6px;background:none;
+  font-size:12px;font-weight:600;color:#24594b}
+.push-box[data-push="until-on"][data-state="on"] .push-button:hover{background:var(--panel-2)}
+.push-box[data-push="until-on"][data-state="on"] .push-button + .push-button{color:var(--muted-2,#748376)}
+.push-box{--push-bell:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9'/%3E%3Cpath d='M10.3 21a1.94 1.94 0 0 0 3.4 0'/%3E%3C/svg%3E")}
+@media(max-width:900px){.push-box[data-push="until-on"][data-state="on"]{display:none}}
 /* В листе профиля на телефоне — строка листа: кнопки под текстом, на всю ширину. */
 .app-sheet .push-box{margin-top:0;flex-direction:column;align-items:stretch}
 .app-sheet .push-actions{justify-content:stretch}
