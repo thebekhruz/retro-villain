@@ -24,6 +24,26 @@
 
   // Окно по умолчанию заканчивается вчера: сегодняшний день в iiko ещё идёт.
   function defaultEnd(todayIso){return shiftIso(todayIso,-1)}
+  // Период из N дней по `endIso` включительно.
+  function rangeOfDays(endIso,days){return {start:shiftIso(endIso,-(days-1)),end:endIso}}
+  function daysBetween(startIso,endIso){return Math.round((Date.parse(endIso+'T00:00:00Z')-Date.parse(startIso+'T00:00:00Z'))/864e5)+1}
+  const MAX_DAYS=92;
+  function periodError(startIso,endIso,todayIso){
+    if(!startIso||!endIso)return 'Укажите обе даты периода.';
+    if(startIso>endIso)return 'Дата начала должна быть не позже даты конца.';
+    if(todayIso&&endIso>todayIso)return 'Будущие даты недоступны.';
+    if(daysBetween(startIso,endIso)>MAX_DAYS)return `Период — не длиннее ${MAX_DAYS} дней.`;
+    return null;
+  }
+  // Какие дни подписывать на оси: не больше `limit` подписей, первая и последняя всегда.
+  function axisIndexes(count,limit=8){
+    if(count<=limit)return Array.from({length:count},(_,i)=>i);
+    const step=Math.ceil((count-1)/(limit-1)),picked=[];
+    for(let i=0;i<count-1;i+=step)picked.push(i);
+    if(count-1-picked[picked.length-1]<step/2)picked.pop();
+    picked.push(count-1);
+    return picked;
+  }
 
   function formatMoney(value){const parsed=number(value);return parsed===null?'—':money.format(parsed)}
 
@@ -129,6 +149,6 @@
     return `${period.days_with_data} из ${period.days.length} дн.`+(partial?' · есть незакрытые':'');
   }
 
-  return {coverageLabel,compactMoney,dayLabel,defaultEnd,formatMoney,formatPercent,fullDate,linePoints,lineSegments,
-    nearestIndex,niceCeil,rangeLabel,shiftIso,shortDate,signedMoney,trend,updatedLabel};
+  return {axisIndexes,coverageLabel,compactMoney,dayLabel,daysBetween,defaultEnd,formatMoney,formatPercent,fullDate,linePoints,lineSegments,
+    nearestIndex,niceCeil,periodError,rangeLabel,rangeOfDays,shiftIso,shortDate,signedMoney,trend,updatedLabel};
 });
