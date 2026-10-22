@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+  <meta name="theme-color" content="#143e35">
+  <title>Аналитика · Retro Milliy</title>
+  <link rel="icon" href="/static/favicon.svg" type="image/svg+xml">
+  <link rel="icon" href="/static/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/static/apple-touch-icon.png">
+  <link rel="manifest" href="/manifest.webmanifest">
+  <meta name="mobile-web-app-capable" content="yes"><meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Retro Milliy"><meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <link rel="stylesheet" href="/static/style.css"><link rel="stylesheet" href="/static/analytics.css">
+  <link rel="stylesheet" href="/static/mobile.css">
+  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/analytics-logic.js" defer></script><script src="/static/analytics.js" defer></script>
+</head>
+<body class="an-page" data-page="analytics">
+<aside class="sidebar" data-collapsible>
+  <a href="/analytics" class="brand" aria-label="Retro Milliy, главная"><span class="brand-mark">R<span>✦</span></span><span>RETRO<small>MILLIY</small></span></a>
+  <div class="side-rule"></div>
+  <!-- T-524: модуль «Аналитика» — роль analytics; остальные модули (у админа) дорисует nav.js по /api/config. -->
+  <nav aria-label="Модули"><a href="/analytics" class="nav-active" aria-current="page"><span class="nav-icon">◬</span> Аналитика <span class="nav-dot"></span></a></nav>
+  <!-- T-455: язык, кто вошёл и «Выйти» — внизу меню, верхней строки нет. -->
+  <div class="side-account">
+    <div class="side-status"><span class="top-status" data-status-of="updated"></span></div>
+    <div class="lang-switch side-lang" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+    <div class="side-user"><span class="side-user-mark" aria-hidden="true" data-i18n="off"></span><span class="side-user-name" data-i18n="off"></span><button id="logout" class="side-logout" type="button" title="Выйти" aria-label="Выйти"><svg class="ri" viewBox="0 0 24 24" aria-hidden="true"><path d="M14 4.5h3.5a2 2 0 0 1 2 2v11a2 2 0 0 1-2 2H14"/><path d="M10 8l-4 4 4 4"/><path d="M6 12h9"/></svg><span data-logout-text>Выйти</span></button></div>
+  </div>
+</aside>
+<main>
+  <div class="workspace an-workspace">
+    <div class="page-heading"><div><p class="eyebrow">АНАЛИТИКА · ВЫРУЧКА</p><h1>Выручка за 7 дней<span>.</span></h1><p class="subtitle">Последние семь дней против тех же дней неделей раньше и год назад. Только Retro: без школы и банкетного зала, по данным iiko.</p></div><div class="module-badge"><span>08</span><div>Модуль<small>Аналитика</small></div></div></div>
+
+    <form id="an-filters" class="controls an-controls" aria-label="Окно выручки">
+      <div class="date-group"><label class="field-label" for="an-end">По какой день</label><input id="an-end" type="date" required></div>
+      <div class="quick-days an-quick" role="group" aria-label="Быстрый выбор"><button class="chip active" type="button" data-end="yesterday">По вчера</button><button class="chip" type="button" data-end="today">Включая сегодня</button></div>
+      <button class="button primary" type="submit" id="an-show">Показать</button>
+    </form>
+    <p id="an-status" class="top-status an-status" role="status" aria-live="polite"><span id="updated" class="rm-status-skel"></span></p>
+    <p id="an-message" class="notice" role="status" aria-live="polite" hidden></p>
+
+    <section class="an-metrics" aria-label="Выручка по окнам" aria-busy="true">
+      <article class="an-metric is-current" data-period="current"><span>Последние 7 дней</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
+      <article class="an-metric is-previous" data-period="previous"><span>Неделей раньше</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
+      <article class="an-metric is-year" data-period="year"><span>Год назад</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
+    </section>
+
+    <section class="an-compare" aria-label="Сравнение с предыдущими окнами">
+      <article class="an-trend" data-against="previous"><p class="eyebrow">К НЕДЕЛЕ РАНЬШЕ</p><div class="an-trend-row"><span class="an-arrow" aria-hidden="true"></span><strong data-percent>—</strong><em data-amount>—</em></div><p data-sentence class="an-trend-text">Загрузка…</p></article>
+      <article class="an-trend" data-against="year"><p class="eyebrow">К ГОДУ НАЗАД</p><div class="an-trend-row"><span class="an-arrow" aria-hidden="true"></span><strong data-percent>—</strong><em data-amount>—</em></div><p data-sentence class="an-trend-text">Загрузка…</p></article>
+    </section>
+
+    <section class="panel an-panel" aria-labelledby="an-chart-title">
+      <div class="an-panel-head"><div><p class="eyebrow">ДИНАМИКА · ДЕНЬ К ДНЮ</p><h2 id="an-chart-title">Три недели на одном графике</h2><p class="an-panel-note">Точка — выручка Retro за день; понедельник сравнивается с понедельником, «год назад» — 52 недели назад. Подписи оси — дни последней недели.</p></div><div id="an-legend" class="an-legend" aria-hidden="true"></div></div>
+      <div id="an-chart" class="an-chart" aria-label="Линейный график выручки за три недели"></div>
+      <details class="an-table-details"><summary>Таблица по дням</summary><div class="an-table-wrap"><table class="an-table" id="an-table"><thead><tr><th>День</th><th>Последние 7 дней</th><th>Неделей раньше</th><th>Год назад</th></tr></thead><tbody></tbody></table></div></details>
+    </section>
+    <p class="an-footnote">Выручка — по датам заказов из истории чеков iiko в базе панели, только касса Retro (Яндекс Еда входит), без Retro в школе и банкетного зала, в сумах. Сегодняшний день в окно по умолчанию не входит: он ещё идёт.</p>
+    <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Аналитика</span><span>Время Ташкента</span></footer>
+  </div>
+</main>
+</body>
+</html>

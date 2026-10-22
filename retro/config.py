@@ -562,7 +562,8 @@ def parse_dashboard_panel_users(value: str) -> dict[str, tuple[str, str]]:
     # `shokh` и `manager` — необязательные роли: закуп и кабинет менеджера
     # подключают отдельно, и уже настроенные развёртывания не должны падать
     # из-за их отсутствия. Менеджеров может быть несколько.
-    allowed_roles = required_roles | {'admin', 'shokh', 'manager'}
+    # `analytics` — аналитик (T-524): только панель «Аналитика».
+    allowed_roles = required_roles | {'admin', 'shokh', 'manager', 'analytics'}
     result = {}
     roles = set()
     for raw_entry in value.split(';'):

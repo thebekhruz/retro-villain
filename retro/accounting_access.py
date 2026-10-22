@@ -20,7 +20,9 @@ IIKO_ANALYTICS_READS = frozenset({
 # перечитать день из iiko можно с начала истории, а не с начала учёта.
 SALES_HISTORY_PATHS = frozenset({
     '/api/director/sales', '/api/director/sales/reconcile', '/api/director/sales/sync',
-    '/api/founder/sales', '/api/founder/sales/reconcile'})
+    '/api/founder/sales', '/api/founder/sales/reconcile',
+    # Модуль «Аналитика» (T-524): те же sales_days, окно по любому прошедшему дню.
+    '/api/analytics/revenue/weeks'})
 
 
 def check_dates(values, *, salary=False):

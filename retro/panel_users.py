@@ -31,7 +31,7 @@ from retro.db import as_database, table_columns
 from retro.modules.manager.directions import DIRECTIONS
 from retro.phone_numbers import PHONE_ROLES, normalize_phone
 
-ROLES = ('cashier', 'accountant', 'director', 'founder', 'admin', 'shokh', 'manager')
+ROLES = ('cashier', 'accountant', 'director', 'founder', 'admin', 'shokh', 'manager', 'analytics')
 HASH_NAME = 'pbkdf2_sha256'
 HASH_ROUNDS = 200_000
 MIN_PASSWORD = 8
