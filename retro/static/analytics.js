@@ -56,8 +56,8 @@
       const notes = [trend.sentence];
       if (trend.tone !== 'unknown') notes.push(`Сравнение с ${L.rangeLabel(item.start, item.end)}.`);
       // Неполное окно честно названо: сумма по загруженным дням, а не за всю неделю.
-      if (trend.tone !== 'unknown' && other && !other.complete) notes.push(`Неделя для сравнения неполная: ${L.coverageLabel(other)}.`);
-      if (trend.tone !== 'unknown' && !data.periods[0].complete) notes.push(`Последняя неделя неполная: ${L.coverageLabel(data.periods[0])}.`);
+      if (trend.tone !== 'unknown' && other && !other.complete) notes.push(`Неделя для сравнения неполная: ${L.coverageLabel(other)}`);
+      if (trend.tone !== 'unknown' && !data.periods[0].complete) notes.push(`Последняя неделя неполная: ${L.coverageLabel(data.periods[0])}`);
       card.querySelector('[data-sentence]').textContent = notes.join(' ');
     });
   }

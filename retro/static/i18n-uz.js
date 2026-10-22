@@ -4503,7 +4503,7 @@ globalThis.RetroTemplatesUz.push(
   [/^Обновлено (\d\d\.\d\d), (\d\d:\d\d)$/, "Yangilandi $1, $2"],
   [/^(\d+) из (\d+) дн\.$/, "$1 / $2 kun"],
   [/^(\d+) из (\d+) дн\. · есть незакрытые$/, "$1 / $2 kun · yopilmaganlari bor"],
-  [/^Неделя для сравнения неполная: (.+)\.$/, "Taqqoslash haftasi to‘liq emas: $1."],
-  [/^Последняя неделя неполная: (.+)\.$/, "So‘nggi hafta to‘liq emas: $1."],
+  [/^Неделя для сравнения неполная: (.+)$/, "Taqqoslash haftasi to‘liq emas: $1"],
+  [/^Последняя неделя неполная: (.+)$/, "So‘nggi hafta to‘liq emas: $1"],
 );
 /* ── /T-524 ── */
