@@ -13,7 +13,7 @@
 .an-metric.is-current{--an-color:#143e35;background:var(--green);border-color:var(--green);color:#fff}
 .an-metric.is-current::before{background:var(--gold)}
 .an-metric.is-previous{--an-color:#c5a359}
-.an-metric.is-before{--an-color:#91a39a}
+.an-metric.is-year{--an-color:#91a39a}
 .an-metric>span{display:block;font-size:11px;font-weight:600;letter-spacing:.14em;text-transform:uppercase;color:var(--muted)}
 .an-metric.is-current>span{color:#a9c2b5}
 .an-metric strong{display:block;margin:auto 0 6px;font-size:clamp(24px,2.1vw,32px);font-weight:600;letter-spacing:-.8px;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
@@ -51,7 +51,7 @@
 .an-grid{stroke:#eef1ea;stroke-width:1}.an-grid.is-zero{stroke:#cfd8cc}
 .an-axis{fill:var(--muted);font-size:10.5px}
 .an-line{fill:none;stroke-width:2.5;stroke-linecap:round;stroke-linejoin:round}
-.an-line.is-previous{stroke-width:2}.an-line.is-before{stroke-width:2;stroke-dasharray:5 4}
+.an-line.is-previous{stroke-width:2}.an-line.is-year{stroke-width:2;stroke-dasharray:5 4}
 .an-point{stroke:#fff;stroke-width:1.5}
 .an-point.is-partial{fill:#fff;stroke-width:2}
 .an-hover-line{stroke:#91a39a;stroke-width:1;stroke-dasharray:4 4;pointer-events:none}

@@ -1,5 +1,5 @@
-/* Модуль «Аналитика» (T-524): выручка за 7 дней против двух предыдущих
-   семидневок — плитки, две карточки сравнения и линейный график из трёх линий.
+/* Модуль «Аналитика» (T-524): выручка Retro за 7 дней против недели раньше и
+   года назад — плитки, две карточки сравнения и линейный график из трёх линий.
    Данные — /api/analytics/revenue/weeks; расчёт и подписи — analytics-logic.js. */
 (() => {
   const L = globalThis.AnalyticsLogic;
@@ -7,7 +7,7 @@
   const SERIES = [
     {key: 'current', label: 'Последние 7 дней', color: '#143e35'},
     {key: 'previous', label: 'Неделей раньше', color: '#c5a359'},
-    {key: 'before', label: 'Двумя неделями раньше', color: '#91a39a', dashed: true},
+    {key: 'year', label: 'Год назад', color: '#91a39a', dashed: true},
   ];
   const endInput = $('an-end'), form = $('an-filters'), message = $('an-message'), status = $('updated');
   const chartBox = $('an-chart'), metrics = document.querySelector('.an-metrics');

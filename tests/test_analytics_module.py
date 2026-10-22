@@ -1,7 +1,8 @@
-"""Модуль «Аналитика» (T-524): выручка за 7 дней против двух предыдущих семидневок.
+"""Модуль «Аналитика» (T-524): выручка Retro за 7 дней против недели раньше и года назад.
 
 Панель общая для директора и учредителя (SHARED_PANELS), остальным закрыта.
-История продаж — в базе панели (sales_days); iiko в тестах не нужен."""
+История продаж — в базе панели (sales_days); iiko в тестах не нужен. Направление
+Retro берётся из сверки дня (reconciliation.lines), школа и банкет не считаются."""
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -10,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from retro.app import create_app, role_panels
 from retro.config import Settings
-from retro.modules.analytics.service import SPAN_DAYS, build_report, compare, span, windows
+from retro.modules.analytics.service import WINDOW, YEAR_SHIFT, build_report, compare, retro_revenue, spans, windows
 from retro.modules.cashier.service import TZ, today_tashkent
 
 USERS = {'director': ('secret', 'director'), 'founder': ('secret', 'founder'), 'cashier': ('secret', 'cashier'),
@@ -19,17 +20,28 @@ TODAY = today_tashkent()
 YESTERDAY = TODAY - timedelta(days=1)
 
 
-def seed(store, end, revenue_of, *, closed=lambda day: True):
-    """Дни трёх окон по `end` с выручкой `revenue_of(offset)`; None — день не загружен."""
-    first, _ = span(end)
-    for offset in range(SPAN_DAYS):
-        day = first + timedelta(days=offset)
-        amount = revenue_of(offset)
-        if amount is None:
-            continue
-        store.save_day(day, [], [], fetched_at=datetime.combine(day, datetime.min.time(), TZ) + timedelta(hours=23),
-                       revision='r1', closed=closed(day), revenue=Decimal(amount), iiko_revenue=Decimal(amount),
-                       status='ok', reconciliation={})
+def reconciliation(retro, school=0, banquet=0):
+    """Сверка дня, как её пишет prepare_day: итоги по направлениям в `lines`."""
+    lines = {name: dict(revenue=str(value), gross=str(value), quantity='1', orders=1)
+             for name, value in (('retro', retro), ('school', school), ('banquet', banquet)) if value}
+    return dict(tolerance='1', lines=lines, iiko=lines, operations={}, differences=[])
+
+
+def seed(store, end, revenue_of, *, closed=lambda day: True, school=0, banquet=0):
+    """Дни окон по `end` с выручкой Retro `revenue_of(offset)`, где offset 0…6 — год
+    назад, 7…13 — неделей раньше, 14…20 — последние 7 дней; None — день не загружен.
+    Школа и банкет добавляются в день отдельными направлениями и в итог Retro не входят."""
+    starts = [end - timedelta(days=YEAR_SHIFT + WINDOW - 1), end - timedelta(days=2 * WINDOW - 1), end - timedelta(days=WINDOW - 1)]
+    for index, start in enumerate(starts):
+        for shift in range(WINDOW):
+            offset, day = index * WINDOW + shift, start + timedelta(days=shift)
+            amount = revenue_of(offset)
+            if amount is None:
+                continue
+            total = Decimal(amount) + Decimal(school) + Decimal(banquet)
+            store.save_day(day, [], [], fetched_at=datetime.combine(day, datetime.min.time(), TZ) + timedelta(hours=23),
+                           revision='r1', closed=closed(day), revenue=total, iiko_revenue=total,
+                           status='ok', reconciliation=reconciliation(amount, school, banquet))
 
 
 @pytest.fixture
@@ -87,13 +99,25 @@ def test_anonymous_is_sent_to_login(client):
 
 # ── Расчёт ────────────────────────────────────────────────────────────────
 
-def test_windows_are_three_consecutive_weeks_ending_at_end():
+def test_windows_are_this_week_last_week_and_52_weeks_ago():
     end = date(2026, 10, 21)
     assert [(w['key'], w['start'], w['end']) for w in windows(end)] == [
         ('current', date(2026, 10, 15), date(2026, 10, 21)),
         ('previous', date(2026, 10, 8), date(2026, 10, 14)),
-        ('before', date(2026, 10, 1), date(2026, 10, 7))]
-    assert span(end) == (date(2026, 10, 1), date(2026, 10, 21))
+        ('year', date(2025, 10, 16), date(2025, 10, 22))]
+    # 364 дня: те же дни недели, что и сейчас.
+    assert date(2025, 10, 16).weekday() == date(2026, 10, 15).weekday()
+    assert spans(end) == [(date(2026, 10, 8), date(2026, 10, 21)), (date(2025, 10, 16), date(2025, 10, 22))]
+
+
+def test_retro_revenue_comes_from_the_day_reconciliation_only():
+    state = dict(reconciliation=reconciliation(1000, school=300, banquet=5000))
+    assert retro_revenue(state) == Decimal(1000)
+    # Школа и банкет без Retro — ноль по Retro, а не их сумма.
+    assert retro_revenue(dict(reconciliation=reconciliation(0, school=300))) == Decimal(0)
+    # Старая запись без разбивки по направлениям — день для модуля не загружен.
+    assert retro_revenue(dict(reconciliation={})) is None
+    assert retro_revenue(dict(reconciliation=None)) is None
 
 
 def test_compare_gives_sum_percent_and_direction():
@@ -109,17 +133,20 @@ def test_compare_gives_sum_percent_and_direction():
 
 
 def test_weeks_endpoint_defaults_to_yesterday_and_compares_day_to_day(client, app):
-    # Две недели назад — по 100 в день, неделю назад — по 200, последняя — по 230.
-    seed(app.state.sales_store, YESTERDAY, lambda offset: 100 if offset < 7 else 200 if offset < 14 else 230)
+    # Год назад — по 100 в день, неделю назад — по 200, последняя — по 230; школа и
+    # банкет в каждом дне есть, но в Retro не входят.
+    seed(app.state.sales_store, YESTERDAY, lambda offset: 100 if offset < 7 else 200 if offset < 14 else 230,
+         school=40, banquet=9000)
     data = client.get('/api/analytics/revenue/weeks', auth=('founder', 'secret')).json()
     assert data['end'] == YESTERDAY.isoformat() and data['today'] == TODAY.isoformat()
+    assert data['direction'] == 'retro' and 'без школы и банкетного зала' in data['direction_name']
     assert data['includes_today'] is False and data['window_days'] == 7 and data['complete'] is True
-    current, previous, before = data['periods']
+    current, previous, year = data['periods']
     assert (current['key'], current['total'], current['days_with_data'], current['complete']) == ('current', '1610', 7, True)
-    assert (previous['total'], before['total']) == ('1400', '700')
+    assert (previous['total'], year['total']) == ('1400', '700')
     assert current['start'] == (YESTERDAY - timedelta(days=6)).isoformat() and current['end'] == YESTERDAY.isoformat()
     assert previous['end'] == (YESTERDAY - timedelta(days=7)).isoformat()
-    assert before['start'] == (YESTERDAY - timedelta(days=20)).isoformat()
+    assert year['key'] == 'year' and year['end'] == (YESTERDAY - timedelta(days=364)).isoformat()
     # День к дню: i-я точка каждого окна — тот же день недели.
     for index in range(7):
         weekdays = {period['days'][index]['weekday'] for period in data['periods']}
@@ -129,7 +156,7 @@ def test_weeks_endpoint_defaults_to_yesterday_and_compares_day_to_day(client, ap
     assert data['comparison'] == [
         dict(against='previous', label='Неделей раньше', start=previous['start'], end=previous['end'],
              diff='210', percent=15.0, direction='up'),
-        dict(against='before', label='Двумя неделями раньше', start=before['start'], end=before['end'],
+        dict(against='year', label='Год назад', start=year['start'], end=year['end'],
              diff='910', percent=130.0, direction='up')]
     assert data['warnings'] == ['iiko не подключён: показана только история продаж, уже сохранённая в базе панели.']
     assert data['updated_at'] is not None
@@ -137,8 +164,7 @@ def test_weeks_endpoint_defaults_to_yesterday_and_compares_day_to_day(client, ap
 
 def test_missing_and_open_days_are_said_not_zeroed(client, app):
     # В текущем окне один день не загружен, один — не перечитан после закрытия.
-    first, _ = span(YESTERDAY)
-    gap = first + timedelta(days=16)
+    gap = YESTERDAY - timedelta(days=4)
     seed(app.state.sales_store, YESTERDAY, lambda offset: None if offset == 16 else 1000,
          closed=lambda day: day != YESTERDAY)
     data = client.get('/api/analytics/revenue/weeks', auth=('director', 'secret')).json()
@@ -190,4 +216,5 @@ def test_build_report_is_pure_and_reports_history_start():
     assert report['periods'][0]['days'][0]['weekday'] == 'чт'
     assert report['history_start'] == '2026-10-13'
     assert 'История продаж в базе начинается с 13.10.2026.' in report['warnings']
+    assert [period['key'] for period in report['periods']] == ['current', 'previous', 'year']
     assert report['timezone'] == 'Asia/Tashkent' and report['source'].startswith('iiko OLAP SALES')

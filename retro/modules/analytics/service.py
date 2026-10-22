@@ -1,15 +1,17 @@
-"""Модуль «Аналитика» (T-524): выручка за 7 дней против двух предыдущих семидневок.
+"""Модуль «Аналитика» (T-524): выручка Retro за 7 дней против недели раньше и года назад.
 
-Источник — история чеков iiko в базе панели (`sales_days.revenue`, T-486):
-тот же дневной итог, что в продажах директора и учредителя, все направления
-вместе (Retro, Retro в школе, банкетный зал). Отдельных запросов в iiko модуль
-не делает — только читает уже загруженные дни; сегодняшний день, если он в окне,
-освежает тем же `refresh_today`, что продажи.
+Источник — история чеков iiko в базе панели (`sales_days`, T-486). Берётся
+только направление **Retro** (касса ресторана без банкетного зала): итог по
+направлениям лежит в `reconciliation.lines` каждого дня, как его посчитал
+`prepare_day`; школа (`school`) и банкет (`banquet`) в цифры не входят.
+Отдельных запросов в iiko модуль не делает — только читает уже загруженные дни;
+сегодняшний день, если он в окне, освежает тем же `refresh_today`, что продажи.
 
 Окно — семь завершённых дней по вчера включительно (как «7 завершённых дней» в
 аналитике учредителя и `completed_period` блюд): день в iiko закрывается ночью,
 и сравнивать идущий день с полными нечестно. Сравнение идёт день к дню:
-понедельник с понедельником неделей раньше и двумя неделями раньше.
+понедельник с понедельником неделей раньше и 52 недели (364 дня) назад — «год
+назад» со сдвигом на целые недели, чтобы дни недели совпадали.
 """
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -17,17 +19,30 @@ from decimal import ROUND_HALF_UP, Decimal
 from retro.modules.cashier.service import TZ
 
 WINDOW = 7
+YEAR_SHIFT = 52 * WINDOW
+DIRECTION = 'retro'
+DIRECTION_NAME = 'Retro · без школы и банкетного зала'
 # Ключ, подпись и сдвиг окна в днях относительно текущего.
 PERIODS = (('current', 'Последние 7 дней', 0),
            ('previous', 'Неделей раньше', WINDOW),
-           ('before', 'Двумя неделями раньше', 2 * WINDOW))
+           ('year', 'Год назад', YEAR_SHIFT))
 WEEKDAYS = ('пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс')
-SPAN_DAYS = WINDOW * len(PERIODS)
 
 
-def span(end):
-    """Первый и последний день, которые нужны для трёх окон по `end`."""
-    return end - timedelta(days=SPAN_DAYS - 1), end
+def spans(end):
+    """Непрерывные отрезки дней, которые нужны для окон по `end`: последние две
+    недели одним куском и неделя год назад — отдельно (между ними ничего не грузим)."""
+    return [(end - timedelta(days=2 * WINDOW - 1), end),
+            (end - timedelta(days=YEAR_SHIFT + WINDOW - 1), end - timedelta(days=YEAR_SHIFT))]
+
+
+def retro_revenue(state):
+    """Выручка направления Retro за день из сохранённой сверки; None — в записи
+    дня нет разбивки по направлениям (старый формат), день считаем незагруженным."""
+    lines = (state.get('reconciliation') or {}).get('lines')
+    if not isinstance(lines, dict):
+        return None
+    return Decimal(str((lines.get(DIRECTION) or {}).get('revenue', 0)))
 
 
 def windows(end):
@@ -36,9 +51,10 @@ def windows(end):
 
 
 def _day(day, state, today):
-    if state is None:
+    revenue = None if state is None else retro_revenue(state)
+    if revenue is None:
         return dict(day=day.isoformat(), weekday=WEEKDAYS[day.weekday()], revenue=None, missing=True, partial=False)
-    return dict(day=day.isoformat(), weekday=WEEKDAYS[day.weekday()], revenue=str(state['revenue']),
+    return dict(day=day.isoformat(), weekday=WEEKDAYS[day.weekday()], revenue=str(revenue),
                 missing=False, partial=day >= today or not state['closed'])
 
 
@@ -74,9 +90,8 @@ def build_report(end, states, *, today, history_start, configured=True, refresh_
     comparison = [dict(against=other['key'], label=other['label'], start=other['start'], end=other['end'],
                        **compare(current['total'], other['total']))
                   for other in periods[1:]]
-    first, last = span(end)
-    all_days = [first + timedelta(days=offset) for offset in range(SPAN_DAYS)]
-    missing = [day for day in all_days if day not in states]
+    all_days = [date.fromisoformat(item['day']) for period in periods for item in period['days']]
+    missing = [day for day in all_days if day not in states or retro_revenue(states[day]) is None]
     warnings = []
     if not configured:
         warnings.append('iiko не подключён: показана только история продаж, уже сохранённая в базе панели.')
@@ -99,6 +114,7 @@ def build_report(end, states, *, today, history_start, configured=True, refresh_
     return dict(
         source='iiko OLAP SALES · история чеков в базе панели', timezone=str(TZ),
         today=today.isoformat(), end=end.isoformat(), includes_today=end >= today,
+        direction=DIRECTION, direction_name=DIRECTION_NAME,
         window_days=WINDOW, history_start=history_start.isoformat(), configured=configured,
         updated_at=updated.astimezone(TZ).isoformat(timespec='seconds') if updated else None,
         complete=all(period['complete'] for period in periods),
