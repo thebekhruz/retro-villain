@@ -7,7 +7,7 @@
   const sheet = document.getElementById('profile-sheet');
   if (!open || !sheet) return;
   const ROLES = {manager: 'Менеджер', director: 'Директор', founder: 'Учредитель', accountant: 'Бухгалтер',
-    cashier: 'Кассир', shokh: 'Закуп', admin: 'Администратор', all: 'Администратор'};
+    cashier: 'Кассир', shokh: 'Закуп', analytics: 'Аналитик', admin: 'Администратор', all: 'Администратор'};
 
   function show() {
     if (typeof sheet.showModal === 'function') { if (!sheet.open) sheet.showModal(); } else sheet.setAttribute('open', '');

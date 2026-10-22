@@ -4494,6 +4494,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Выручка — по датам заказов из истории чеков iiko в базе панели, только касса Retro (Яндекс Еда входит), без Retro в школе и банкетного зала, в сумах. Сегодняшний день в окно по умолчанию не входит: он ещё идёт.':
     "Tushum — panel bazasidagi iiko cheklar tarixidan buyurtma sanalari bo‘yicha, faqat Retro kassasi (Yandex Eda kiradi), maktabdagi Retro va banket zalisiz, so‘mda. Bugungi kun odatiy oynaga kirmaydi: u hali davom etmoqda.",
   'Загрузка…': "Yuklanmoqda…",
+  'Аналитик': "Tahlilchi",
 });
 globalThis.RetroTemplatesUz.push(
   [/^Выручка выросла на (.+) % \((.+)\)\.$/, "Tushum $1 % ga oshdi ($2)."],

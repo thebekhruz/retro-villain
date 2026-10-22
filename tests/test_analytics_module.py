@@ -1,6 +1,6 @@
 """Модуль «Аналитика» (T-524): выручка Retro за 7 дней против недели раньше и года назад.
 
-Панель общая для директора и учредителя (SHARED_PANELS), остальным закрыта.
+Панель открыта только роли `analytics` (аналитик) и полному доступу, остальным закрыта.
 История продаж — в базе панели (sales_days); iiko в тестах не нужен. Направление
 Retro берётся из сверки дня (reconciliation.lines), школа и банкет не считаются."""
 from datetime import date, datetime, timedelta
@@ -9,13 +9,14 @@ from decimal import Decimal
 import pytest
 from fastapi.testclient import TestClient
 
-from retro.app import create_app, role_panels
+from retro.app import ROLE_PATHS, create_app
 from retro.config import Settings
 from retro.modules.analytics.service import WINDOW, YEAR_SHIFT, build_report, compare, retro_revenue, spans, windows
 from retro.modules.cashier.service import TZ, today_tashkent
 
-USERS = {'director': ('secret', 'director'), 'founder': ('secret', 'founder'), 'cashier': ('secret', 'cashier'),
-         'karina': ('secret', 'manager'), 'buh': ('secret', 'accountant'), 'boss': ('secret', 'admin')}
+USERS = {'analyst': ('secret', 'analytics'), 'director': ('secret', 'director'), 'founder': ('secret', 'founder'),
+         'cashier': ('secret', 'cashier'), 'karina': ('secret', 'manager'), 'buh': ('secret', 'accountant'),
+         'boss': ('secret', 'admin')}
 TODAY = today_tashkent()
 YESTERDAY = TODAY - timedelta(days=1)
 
@@ -63,26 +64,26 @@ def modules(client, user):
 
 # ── Доступ ────────────────────────────────────────────────────────────────
 
-def test_analytics_is_a_shared_panel_of_director_and_founder():
-    assert role_panels('director') == {'director', 'analytics'}
-    assert role_panels('founder') == {'founder', 'analytics'}
-    assert role_panels('cashier') == {'cashier'}
-    assert role_panels(None) == frozenset()
+def test_analyst_role_lands_in_the_panel(client):
+    assert ROLE_PATHS['analytics'] == '/analytics'
+    answer = client.post('/api/session', json={'username': 'analyst', 'password': 'secret'})
+    assert answer.status_code == 200 and answer.json() == {'role': 'analytics', 'path': '/analytics'}
 
 
-def test_menu_shows_analytics_to_director_founder_and_admin_only(client):
-    assert modules(client, 'director') == ['director', 'analytics']
-    assert modules(client, 'founder') == ['founder', 'analytics']
+def test_menu_shows_analytics_to_analyst_and_admin_only(client):
+    assert modules(client, 'analyst') == ['analytics']
+    assert modules(client, 'director') == ['director']
+    assert modules(client, 'founder') == ['founder']
     assert modules(client, 'cashier') == ['cashier']
     assert modules(client, 'karina') == ['manager']
     assert modules(client, 'buh') == ['accountant']
     assert 'analytics' in modules(client, 'boss')
-    row = next(row for row in client.get('/api/config', auth=('founder', 'secret')).json()['modules']
+    row = next(row for row in client.get('/api/config', auth=('analyst', 'secret')).json()['modules']
                if row['id'] == 'analytics')
     assert row == {'id': 'analytics', 'name': 'Аналитика', 'path': '/analytics', 'available': True}
 
 
-@pytest.mark.parametrize('user, status', [('director', 200), ('founder', 200), ('boss', 200),
+@pytest.mark.parametrize('user, status', [('analyst', 200), ('boss', 200), ('director', 403), ('founder', 403),
                                           ('cashier', 403), ('karina', 403), ('buh', 403)])
 def test_page_api_and_static_follow_the_panel(client, user, status):
     assert client.get('/analytics', auth=(user, 'secret')).status_code == status
@@ -137,7 +138,7 @@ def test_weeks_endpoint_defaults_to_yesterday_and_compares_day_to_day(client, ap
     # банкет в каждом дне есть, но в Retro не входят.
     seed(app.state.sales_store, YESTERDAY, lambda offset: 100 if offset < 7 else 200 if offset < 14 else 230,
          school=40, banquet=9000)
-    data = client.get('/api/analytics/revenue/weeks', auth=('founder', 'secret')).json()
+    data = client.get('/api/analytics/revenue/weeks', auth=('analyst', 'secret')).json()
     assert data['end'] == YESTERDAY.isoformat() and data['today'] == TODAY.isoformat()
     assert data['direction'] == 'retro' and 'без школы и банкетного зала' in data['direction_name']
     assert data['includes_today'] is False and data['window_days'] == 7 and data['complete'] is True
@@ -167,7 +168,7 @@ def test_missing_and_open_days_are_said_not_zeroed(client, app):
     gap = YESTERDAY - timedelta(days=4)
     seed(app.state.sales_store, YESTERDAY, lambda offset: None if offset == 16 else 1000,
          closed=lambda day: day != YESTERDAY)
-    data = client.get('/api/analytics/revenue/weeks', auth=('director', 'secret')).json()
+    data = client.get('/api/analytics/revenue/weeks', auth=('analyst', 'secret')).json()
     current = data['periods'][0]
     assert current['days_with_data'] == 6 and current['complete'] is False and current['total'] == '6000'
     day = next(item for item in current['days'] if item['day'] == gap.isoformat())
@@ -181,7 +182,7 @@ def test_missing_and_open_days_are_said_not_zeroed(client, app):
 
 
 def test_no_history_means_no_totals_and_no_comparison(client):
-    data = client.get('/api/analytics/revenue/weeks', auth=('founder', 'secret')).json()
+    data = client.get('/api/analytics/revenue/weeks', auth=('analyst', 'secret')).json()
     assert [period['total'] for period in data['periods']] == [None, None, None]
     assert all(item['direction'] == 'unknown' and item['diff'] is None for item in data['comparison'])
     assert data['updated_at'] is None and data['complete'] is False
@@ -195,17 +196,17 @@ def test_end_can_be_moved_but_not_into_the_future(client, app):
     anchor = YESTERDAY - timedelta(days=30)
     seed(app.state.sales_store, anchor, lambda offset: 50)
     data = client.get('/api/analytics/revenue/weeks', params={'end': anchor.isoformat()},
-                      auth=('founder', 'secret')).json()
+                      auth=('analyst', 'secret')).json()
     assert data['end'] == anchor.isoformat() and data['periods'][0]['total'] == '350'
     tomorrow = TODAY + timedelta(days=1)
-    answer = client.get('/api/analytics/revenue/weeks', params={'end': tomorrow.isoformat()}, auth=('founder', 'secret'))
+    answer = client.get('/api/analytics/revenue/weeks', params={'end': tomorrow.isoformat()}, auth=('analyst', 'secret'))
     assert answer.status_code == 422 and answer.json()['detail'] == 'Будущие даты недоступны.'
-    assert client.get('/api/analytics/revenue/weeks', params={'end': 'вчера'}, auth=('founder', 'secret')).status_code == 422
+    assert client.get('/api/analytics/revenue/weeks', params={'end': 'вчера'}, auth=('analyst', 'secret')).status_code == 422
 
 
 def test_including_today_marks_the_running_day(client, app):
     seed(app.state.sales_store, TODAY, lambda offset: 10)
-    data = client.get('/api/analytics/revenue/weeks', params={'end': TODAY.isoformat()}, auth=('founder', 'secret')).json()
+    data = client.get('/api/analytics/revenue/weeks', params={'end': TODAY.isoformat()}, auth=('analyst', 'secret')).json()
     assert data['includes_today'] is True
     last = data['periods'][0]['days'][-1]
     assert last['day'] == TODAY.isoformat() and last['partial'] is True

@@ -6,11 +6,11 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from retro.app import SHARED_PANELS, STATIC_PANELS, create_app, role_panels, static_panels
+from retro.app import STATIC_PANELS, create_app, static_panels
 from retro.config import Settings
 
 STATIC = Path(__file__).resolve().parent.parent / 'retro' / 'static'
-ROLES = ('cashier', 'accountant', 'director', 'founder', 'shokh', 'manager')
+ROLES = ('cashier', 'accountant', 'director', 'founder', 'shokh', 'manager', 'analytics')
 USERS = {role: ('secret', role) for role in ROLES} | {'boss': ('secret', 'admin')}
 # Страница → панель, которой она принадлежит.
 PAGES = {'index.html': 'cashier', 'accountant.html': 'accountant', 'employees.html': 'accountant',
@@ -20,8 +20,6 @@ PAGES = {'index.html': 'cashier', 'accountant.html': 'accountant', 'employees.ht
          'users.html': 'users', 'analytics.html': 'analytics'}
 PATHS = {'cashier': '/', 'accountant': '/accountant', 'director': '/director',
          'founder': '/founder', 'shokh': '/shokh', 'manager': '/manager', 'analytics': '/analytics'}
-# Общие панели без своей роли (T-524): роль видит свой модуль и их.
-SHARED = {role: [panel for panel, roles in SHARED_PANELS.items() if role in roles] for role in ROLES}
 
 
 @pytest.fixture
@@ -41,13 +39,12 @@ def module_ids(client, user):
 
 @pytest.mark.parametrize('role', ROLES)
 def test_single_role_gets_only_its_own_module(client, role):
-    # Плюс общие панели (T-524): «Аналитика» у директора и учредителя.
-    assert module_ids(client, role) == [role] + SHARED[role]
+    assert module_ids(client, role) == [role]
 
 
 def test_full_access_sees_every_module_including_purchase(client):
     # «Пользователи» (T-445) — модуль без своей роли: его видит только полный доступ.
-    assert module_ids(client, 'boss') == list(ROLES) + ['analytics', 'users']
+    assert module_ids(client, 'boss') == list(ROLES) + ['users']
 
 
 def test_legacy_shared_login_sees_every_module(tmp_path):
@@ -56,7 +53,7 @@ def test_legacy_shared_login_sees_every_module(tmp_path):
                     client=('203.0.113.10', 50000)) as test_client:
         answer = test_client.get('/api/config', auth=('boss', 'secret'))
     # Закупа Шоха по умолчанию нет — ни в меню, ни где-либо ещё (ТЗ 02.10).
-    assert [row['id'] for row in answer.json()['modules']] == [role for role in ROLES if role != 'shokh'] + ['analytics', 'users']
+    assert [row['id'] for row in answer.json()['modules']] == [role for role in ROLES if role != 'shokh'] + ['users']
 
 
 def test_config_rows_carry_no_lock_reason(client):
@@ -78,7 +75,7 @@ def test_page_markup_links_no_foreign_module(page, panel):
 def test_foreign_panel_static_is_forbidden(client, role):
     for name, panels in STATIC_PANELS.items():
         answer = client.get('/static/' + name, auth=(role, 'secret'))
-        expected = 200 if panels & role_panels(role) else 403
+        expected = 200 if role in panels else 403
         assert answer.status_code == expected, (role, name, answer.status_code)
 
 
@@ -174,7 +171,7 @@ def test_manager_sees_only_the_cabinet_and_no_money(client):
 
 
 def test_other_panels_do_not_open_the_manager_cabinet(client):
-    for role in ('cashier', 'accountant', 'director', 'founder', 'shokh'):
+    for role in ('cashier', 'accountant', 'director', 'founder', 'shokh', 'analytics'):
         assert client.get('/api/manager/home', auth=(role, 'secret')).status_code == 403, role
         assert client.get('/manager', auth=(role, 'secret')).status_code == 403, role
     assert client.get('/api/manager/home', auth=('boss', 'secret')).status_code == 200

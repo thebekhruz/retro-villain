@@ -1,7 +1,7 @@
 """API модуля «Аналитика» (T-524): `/api/analytics/…`.
 
-Доступ — директор, учредитель и полный доступ (`retro.app.SHARED_PANELS`);
-остальным путь закрывает security_middleware. Только чтение.
+Доступ — роль `analytics` (аналитик) и полный доступ; остальным путь закрывает
+security_middleware (`panel_for_path`). Только чтение.
 """
 import asyncio
 from datetime import date, timedelta
