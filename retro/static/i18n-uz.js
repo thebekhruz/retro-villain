@@ -4452,3 +4452,58 @@ globalThis.RetroTemplatesUz.push(
   [/^Взнос кассира · (\d\d:\d\d)$/, "Kassir badali · $1"],
 );
 /* ── /T-520 ── */
+
+/* ── T-524: модуль «Аналитика» — выручка за 7 дней против двух предыдущих семидневок ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'АНАЛИТИКА · ВЫРУЧКА': "TAHLIL · TUSHUM",
+  'Выручка за 7 дней': "7 kunlik tushum",
+  'Последние семь дней против тех же дней неделей и двумя неделями раньше. Все направления вместе, по данным iiko.':
+    "So‘nggi yetti kun — bir hafta va ikki hafta oldingi shu kunlarga nisbatan. Barcha yo‘nalishlar birga, iiko ma’lumotlari bo‘yicha.",
+  'Окно выручки': "Tushum oynasi",
+  'По какой день': "Qaysi kungacha",
+  'Быстрый выбор': "Tez tanlov",
+  'По вчера': "Kechagacha",
+  'Включая сегодня': "Bugunni qo‘shib",
+  'Выручка по окнам': "Oynalar bo‘yicha tushum",
+  'Последние 7 дней': "So‘nggi 7 kun",
+  'Неделей раньше': "Bir hafta oldin",
+  'Двумя неделями раньше': "Ikki hafta oldin",
+  'Сравнение с предыдущими окнами': "Oldingi oynalar bilan taqqoslash",
+  'К НЕДЕЛЕ РАНЬШЕ': "BIR HAFTA OLDINGIGA NISBATAN",
+  'К ДВУМ НЕДЕЛЯМ РАНЬШЕ': "IKKI HAFTA OLDINGIGA NISBATAN",
+  'ДИНАМИКА · ДЕНЬ К ДНЮ': "DINAMIKA · KUNMA-KUN",
+  'Три недели на одном графике': "Bitta grafikda uch hafta",
+  'Точка — выручка дня; понедельник сравнивается с понедельником. Подписи оси — дни последней недели.':
+    "Nuqta — kunlik tushum; dushanba dushanba bilan taqqoslanadi. O‘q yozuvlari — so‘nggi hafta kunlari.",
+  'Линейный график выручки за три недели': "Uch haftalik tushumning chiziqli grafigi",
+  'Наведите или коснитесь точки, чтобы увидеть суммы трёх недель': "Uch hafta summalarini ko‘rish uchun nuqtaga olib boring yoki bosing",
+  'Таблица по дням': "Kunlar jadvali",
+  'День': "Kun",
+  'Итого': "Jami",
+  'нет данных': "ma’lumot yo‘q",
+  'нет данных для сравнения': "taqqoslash uchun ma’lumot yo‘q",
+  'Нет данных для сравнения.': "Taqqoslash uchun ma’lumot yo‘q.",
+  'Выручка не изменилась.': "Tushum o‘zgarmadi.",
+  'День ещё идёт или не перечитан после закрытия.': "Kun hali davom etmoqda yoki yopilgandan keyin qayta o‘qilmagan.",
+  'За эти три недели в базе панели нет загруженных продаж.': "Bu uch hafta uchun panel bazasida yuklangan savdolar yo‘q.",
+  'Укажите, по какой день считать.': "Qaysi kungacha hisoblashni ko‘rsating.",
+  'Не удалось загрузить выручку.': "Tushumni yuklab bo‘lmadi.",
+  'Нет связи с сервером. Повторите позже.': "Server bilan aloqa yo‘q. Keyinroq qayta urinib ko‘ring.",
+  'Нет загруженных данных': "Yuklangan ma’lumot yo‘q",
+  'Сегодня ещё идёт · нет данных': "Bugun hali davom etmoqda · ma’lumot yo‘q",
+  'Выручка — по датам заказов из истории чеков iiko в базе панели, все направления вместе, в сумах. Сегодняшний день в окно по умолчанию не входит: он ещё идёт.':
+    "Tushum — panel bazasidagi iiko cheklar tarixidan buyurtma sanalari bo‘yicha, barcha yo‘nalishlar birga, so‘mda. Bugungi kun odatiy oynaga kirmaydi: u hali davom etmoqda.",
+  'Загрузка…': "Yuklanmoqda…",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Выручка выросла на (.+) % \((.+)\)\.$/, "Tushum $1 % ga oshdi ($2)."],
+  [/^Выручка упала на (.+) % \((.+)\)\.$/, "Tushum $1 % ga kamaydi ($2)."],
+  [/^Сравнение с (\d\d\.\d\d – \d\d\.\d\d)\.$/, "$1 bilan taqqoslash."],
+  [/^Сегодня ещё идёт · данные на (\d\d:\d\d)$/, "Bugun hali davom etmoqda · ma’lumotlar $1 holatiga"],
+  [/^Обновлено (\d\d\.\d\d), (\d\d:\d\d)$/, "Yangilandi $1, $2"],
+  [/^(\d+) из (\d+) дн\.$/, "$1 / $2 kun"],
+  [/^(\d+) из (\d+) дн\. · есть незакрытые$/, "$1 / $2 kun · yopilmaganlari bor"],
+  [/^Неделя для сравнения неполная: (.+)\.$/, "Taqqoslash haftasi to‘liq emas: $1."],
+  [/^Последняя неделя неполная: (.+)\.$/, "So‘nggi hafta to‘liq emas: $1."],
+);
+/* ── /T-524 ── */

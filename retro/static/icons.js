@@ -38,6 +38,7 @@
     shokh: '<path d="M5.8 8.5h12.4l-1 11H6.8z"/><path d="M9 8.5V7a3 3 0 0 1 6 0v1.5"/>',
     manager: '<path d="M4 8.8A1.6 1.6 0 0 1 5.6 7.2H8l1.5-2.2h5L16 7.2h2.4A1.6 1.6 0 0 1 20 8.8v8.6a1.6 1.6 0 0 1-1.6 1.6H5.6A1.6 1.6 0 0 1 4 17.4z"/><circle cx="12" cy="12.8" r="3.1"/>',
     users: '<circle cx="9.5" cy="8.5" r="3.2"/><path d="M3.5 19.5a6 6 0 0 1 12 0M15.5 5.6a3.1 3.1 0 0 1 0 5.8M17.5 14.4a5.6 5.6 0 0 1 3 5.1"/>',
+    analytics: '<path d="M4 19.5h16"/><path d="M5 15.5l4.5-5 3.5 3 6-7"/>',
   };
   // Символ-иконка → рисунок. Значки модулей узнаём по символу из разметки и nav.js.
   const GLYPHS = {
@@ -45,6 +46,7 @@
     '✎': 'pencil', '↻': 'refresh', '+': 'plus', '−': 'minus', '✓': 'check', '↓': 'download',
     '→': 'arrow-right', '↗': 'external', '⌖': 'pin', '⚠': 'alert',
     '▤': 'cashier', '◫': 'accountant', '◉': 'director', '⌁': 'founder', '◇': 'shokh', '◎': 'manager', '◍': 'users',
+    '◬': 'analytics',
   };
 
   function svg(name) {

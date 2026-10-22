@@ -54,6 +54,7 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.modules.manager.routes import router as manager_router
+from retro.modules.analytics.routes import router as analytics_router
 from retro.modules.kpi.routes import director_router as kpi_director_router, manager_router as kpi_manager_router
 from retro.modules.kpi.source import KpiSource
 from retro.modules.kpi.store import KpiStore
@@ -99,6 +100,16 @@ ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
               'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
 FULL_ACCESS_ROLES = {'admin', 'all'}
+# Панели без своей роли, открытые нескольким ролям (T-524): «Аналитика» —
+# директору и учредителю. У остальных панелей роль и панель совпадают по имени.
+SHARED_PANELS: dict[str, frozenset[str]] = {'analytics': frozenset({'director', 'founder'})}
+
+
+def role_panels(role: str | None) -> frozenset[str]:
+    """Панели, открытые роли: своя плюс общие из SHARED_PANELS (полный доступ — все)."""
+    if role is None:
+        return frozenset()
+    return frozenset({role, *(panel for panel, roles in SHARED_PANELS.items() if role in roles)})
 SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс закупа».'
 
 
@@ -174,6 +185,9 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'kpi-logic.js': {'manager', 'director'}, 'kpi.css': {'manager', 'director'},
         # Пользователи (T-445): только администратор; каркас — из accountant.css
         'users.html': {'users'}, 'users.js': {'users'}, 'users.css': {'users'},
+        # Аналитика (T-524): панель директора и учредителя (SHARED_PANELS)
+        'analytics.html': {'analytics'}, 'analytics.js': {'analytics'},
+        'analytics-logic.js': {'analytics'}, 'analytics.css': {'analytics'},
     }.items()
 }
 
@@ -202,6 +216,9 @@ def panel_for_path(path: str) -> str | None:
         return 'shokh'
     if path == '/manager' or path.startswith('/manager/') or path.startswith('/api/manager/'):
         return 'manager'
+    if path == '/analytics' or path.startswith('/analytics/') or path.startswith('/api/analytics/'):
+        # Роли «analytics» нет: панель общая для директора и учредителя (SHARED_PANELS).
+        return 'analytics'
     if path == '/users' or path == '/api/users' or path.startswith('/api/users/'):
         # Роли «users» нет: модуль открыт только полному доступу (admin).
         return 'users'
@@ -509,8 +526,8 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         required_panel = panel_for_path(request.url.path)
         allowed_panels = static_panels(request.url.path)
         if not public and role not in FULL_ACCESS_ROLES and (
-                (required_panel and role != required_panel)
-                or (allowed_panels is not None and role not in allowed_panels)):
+                (required_panel and required_panel not in role_panels(role))
+                or (allowed_panels is not None and allowed_panels.isdisjoint(role_panels(role)))):
             return JSONResponse({'detail': 'Эта панель недоступна для вашей учётной записи.'}, 403)
         request.state.dashboard_role = role
         request.state.dashboard_user = identity.username if identity else None
@@ -686,6 +703,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def users_page():
         return app.state.pages.response('users.html')
 
+    @app.get('/analytics')
+    def analytics_page():
+        # Аналитика (T-524): выручка недели против двух предыдущих; директор и учредитель.
+        return app.state.pages.response('analytics.html')
+
     @app.get('/director')
     def director():
         # Телефон директора (6a). Прежний десктопный отчёт с полной таблицей
@@ -709,7 +731,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
                     ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),
                     ('shokh', 'Закуп · Шох', '/shokh'), ('manager', 'Менеджер', '/manager'),
-                    ('users', 'Пользователи', '/users'))
+                    ('analytics', 'Аналитика', '/analytics'), ('users', 'Пользователи', '/users'))
 
     @app.get('/api/config')
     def config(request: Request):
@@ -722,7 +744,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         account = app.state.accounts.get(user) if user else None
         modules = [dict(id=panel, name=name, path=path, available=True)
                    for panel, name, path in MODULE_NAMES
-                   if (role in FULL_ACCESS_ROLES or role == panel)
+                   if (role in FULL_ACCESS_ROLES or panel in role_panels(role))
                    and (panel != 'shokh' or settings.shokh_module)]
         # Имя вошедшего нужно бухгалтеру: первая выдача за смену подтверждает её
         # от его имени, отдельной формы «Кто подтвердил» в макете нет.
@@ -757,6 +779,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(kpi_manager_router, dependencies=[Depends(kpi_module_on)])
     app.include_router(kpi_director_router, dependencies=[Depends(kpi_module_on)])
     app.include_router(users_router)
+    app.include_router(analytics_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 
