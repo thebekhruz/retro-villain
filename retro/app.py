@@ -54,6 +54,7 @@ from retro.modules.director.service import DirectorService
 from retro.modules.director.routes import router as director_router
 from retro.modules.founder.routes import router as founder_router
 from retro.modules.manager.routes import router as manager_router
+from retro.modules.analytics.routes import router as analytics_router
 from retro.modules.kpi.routes import director_router as kpi_director_router, manager_router as kpi_manager_router
 from retro.modules.kpi.source import KpiSource
 from retro.modules.kpi.store import KpiStore
@@ -97,7 +98,7 @@ PUBLIC_PATHS = {'/login', '/api/session', '/static/login.css', '/static/login.js
                 '/sw.js'}
 ROLE_PATHS = {'cashier': '/', 'accountant': '/accountant',
               'director': '/director', 'founder': '/founder',
-              'shokh': '/shokh', 'manager': '/manager', 'admin': '/', 'all': '/'}
+              'shokh': '/shokh', 'manager': '/manager', 'analytics': '/analytics', 'admin': '/', 'all': '/'}
 FULL_ACCESS_ROLES = {'admin', 'all'}
 SHOKH_MODULE_OFF = 'Модуль закупа отключён: расходы Шоха ведёт бухгалтер на странице «Баланс закупа».'
 
@@ -174,6 +175,9 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'kpi-logic.js': {'manager', 'director'}, 'kpi.css': {'manager', 'director'},
         # Пользователи (T-445): только администратор; каркас — из accountant.css
         'users.html': {'users'}, 'users.js': {'users'}, 'users.css': {'users'},
+        # Аналитика (T-524): роль `analytics` — аналитик
+        'analytics.html': {'analytics'}, 'analytics.js': {'analytics'},
+        'analytics-logic.js': {'analytics'}, 'analytics.css': {'analytics'},
     }.items()
 }
 
@@ -202,6 +206,8 @@ def panel_for_path(path: str) -> str | None:
         return 'shokh'
     if path == '/manager' or path.startswith('/manager/') or path.startswith('/api/manager/'):
         return 'manager'
+    if path == '/analytics' or path.startswith('/analytics/') or path.startswith('/api/analytics/'):
+        return 'analytics'
     if path == '/users' or path == '/api/users' or path.startswith('/api/users/'):
         # Роли «users» нет: модуль открыт только полному доступу (admin).
         return 'users'
@@ -686,6 +692,11 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     def users_page():
         return app.state.pages.response('users.html')
 
+    @app.get('/analytics')
+    def analytics_page():
+        # Аналитика (T-524): выручка Retro за неделю против недели раньше и года назад; роль analytics.
+        return app.state.pages.response('analytics.html')
+
     @app.get('/director')
     def director():
         # Телефон директора (6a). Прежний десктопный отчёт с полной таблицей
@@ -709,7 +720,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     MODULE_NAMES = (('cashier', 'Кассир', '/'), ('accountant', 'Бухгалтер', '/accountant'),
                     ('director', 'Директор', '/director'), ('founder', 'Учредитель', '/founder'),
                     ('shokh', 'Закуп · Шох', '/shokh'), ('manager', 'Менеджер', '/manager'),
-                    ('users', 'Пользователи', '/users'))
+                    ('analytics', 'Аналитика', '/analytics'), ('users', 'Пользователи', '/users'))
 
     @app.get('/api/config')
     def config(request: Request):
@@ -757,6 +768,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
     app.include_router(kpi_manager_router, dependencies=[Depends(kpi_module_on)])
     app.include_router(kpi_director_router, dependencies=[Depends(kpi_module_on)])
     app.include_router(users_router)
+    app.include_router(analytics_router)
     app.mount('/static', StaticFiles(directory=STATIC), name='static')
     return app
 
