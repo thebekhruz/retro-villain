@@ -10,6 +10,8 @@ test('T-524: окно по умолчанию заканчивается вче�
   assert.equal(logic.defaultEnd('2026-03-01'), '2026-02-28');
   assert.equal(logic.shortDate('2026-10-05'), '05.10');
   assert.equal(logic.rangeLabel('2026-10-15', '2026-10-21'), '15.10 – 21.10');
+  assert.equal(logic.rangeLabel('2026-10-15', '2026-10-21', '2026-10-22'), '15.10 – 21.10');
+  assert.equal(logic.rangeLabel('2025-10-16', '2025-10-22', '2026-10-22'), '16.10.2025 – 22.10.2025');
   assert.equal(logic.dayLabel({weekday: 'пн', day: '2026-10-19'}), 'пн 19.10');
 });
 

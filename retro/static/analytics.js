@@ -37,7 +37,7 @@
       const card = document.querySelector(`.an-metric[data-period="${period.key}"]`);
       if (!card) return;
       card.querySelector('[data-total]').textContent = period.total === null ? '—' : L.formatMoney(period.total);
-      card.querySelector('[data-range]').textContent = L.rangeLabel(period.start, period.end);
+      card.querySelector('[data-range]').textContent = L.rangeLabel(period.start, period.end, data.today);
       card.querySelector('[data-coverage]').textContent = L.coverageLabel(period);
       card.classList.toggle('is-incomplete', !period.complete);
     });
@@ -54,7 +54,7 @@
       card.querySelector('[data-amount]').textContent = trend.percent === '—' ? '' : trend.amount;
       const other = data.periods.find(period => period.key === item.against);
       const notes = [trend.sentence];
-      if (trend.tone !== 'unknown') notes.push(`Сравнение с ${L.rangeLabel(item.start, item.end)}.`);
+      if (trend.tone !== 'unknown') notes.push(`Сравнение с ${L.rangeLabel(item.start, item.end, data.today)}.`);
       // Неполное окно честно названо: сумма по загруженным дням, а не за всю неделю.
       if (trend.tone !== 'unknown' && other && !other.complete) notes.push(`Неделя для сравнения неполная: ${L.coverageLabel(other)}`);
       if (trend.tone !== 'unknown' && !data.periods[0].complete) notes.push(`Последняя неделя неполная: ${L.coverageLabel(data.periods[0])}`);

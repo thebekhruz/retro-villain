@@ -4498,7 +4498,7 @@ Object.assign(globalThis.RetroDictionaryUz, {
 globalThis.RetroTemplatesUz.push(
   [/^Выручка выросла на (.+) % \((.+)\)\.$/, "Tushum $1 % ga oshdi ($2)."],
   [/^Выручка упала на (.+) % \((.+)\)\.$/, "Tushum $1 % ga kamaydi ($2)."],
-  [/^Сравнение с (\d\d\.\d\d – \d\d\.\d\d)\.$/, "$1 bilan taqqoslash."],
+  [/^Сравнение с (\d\d\.\d\d(?:\.\d{4})? – \d\d\.\d\d(?:\.\d{4})?)\.$/, "$1 bilan taqqoslash."],
   [/^Сегодня ещё идёт · данные на (\d\d:\d\d)$/, "Bugun hali davom etmoqda · ma’lumotlar $1 holatiga"],
   [/^Обновлено (\d\d\.\d\d), (\d\d:\d\d)$/, "Yangilandi $1, $2"],
   [/^(\d+) из (\d+) дн\.$/, "$1 / $2 kun"],

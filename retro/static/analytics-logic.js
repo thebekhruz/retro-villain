@@ -50,7 +50,12 @@
   }
 
   function shortDate(iso){return iso?iso.slice(8,10)+'.'+iso.slice(5,7):''}
-  function rangeLabel(start,end){return shortDate(start)+' – '+shortDate(end)}
+  function fullDate(iso){return iso?shortDate(iso)+'.'+iso.slice(0,4):''}
+  // Диапазон другого года подписываем с годом: «16.10 – 22.10» год назад вводит в заблуждение.
+  function rangeLabel(start,end,todayIso){
+    const otherYear=todayIso&&start&&start.slice(0,4)!==todayIso.slice(0,4);
+    return otherYear?fullDate(start)+' – '+fullDate(end):shortDate(start)+' – '+shortDate(end);
+  }
 
   /* Фраза сравнения: «выросла на 12,3 % (+1 234 567 сум)». Без процента (база
      нулевая) остаётся сумма; без данных — так и говорим, а не рисуем ноль. */
@@ -124,6 +129,6 @@
     return `${period.days_with_data} из ${period.days.length} дн.`+(partial?' · есть незакрытые':'');
   }
 
-  return {coverageLabel,compactMoney,dayLabel,defaultEnd,formatMoney,formatPercent,linePoints,lineSegments,
+  return {coverageLabel,compactMoney,dayLabel,defaultEnd,formatMoney,formatPercent,fullDate,linePoints,lineSegments,
     nearestIndex,niceCeil,rangeLabel,shiftIso,shortDate,signedMoney,trend,updatedLabel};
 });
