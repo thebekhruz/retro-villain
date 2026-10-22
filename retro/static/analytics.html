@@ -29,31 +29,32 @@
 </aside>
 <main>
   <div class="workspace an-workspace">
-    <div class="page-heading"><div><p class="eyebrow">АНАЛИТИКА · ВЫРУЧКА</p><h1>Выручка за 7 дней<span>.</span></h1><p class="subtitle">Последние семь дней против тех же дней неделей раньше и год назад. Только Retro: без школы и банкетного зала, по данным iiko.</p></div><div class="module-badge"><span>08</span><div>Модуль<small>Аналитика</small></div></div></div>
+    <div class="page-heading"><div><p class="eyebrow">АНАЛИТИКА · ВЫРУЧКА</p><h1>Выручка за период<span>.</span></h1><p class="subtitle">Выбранные дни против такого же отрезка перед ними и тех же дней год назад. Только Retro: без школы и банкетного зала, по данным iiko.</p></div><div class="module-badge"><span>08</span><div>Модуль<small>Аналитика</small></div></div></div>
 
-    <form id="an-filters" class="controls an-controls" aria-label="Окно выручки">
-      <div class="date-group"><label class="field-label" for="an-end">По какой день</label><input id="an-end" type="date" required></div>
-      <div class="quick-days an-quick" role="group" aria-label="Быстрый выбор"><button class="chip active" type="button" data-end="yesterday">По вчера</button><button class="chip" type="button" data-end="today">Включая сегодня</button></div>
+    <form id="an-filters" class="controls an-controls" aria-label="Период выручки">
+      <div class="date-group"><label class="field-label" for="an-start">Дата начала</label><input id="an-start" type="date" required></div>
+      <div class="date-group"><label class="field-label" for="an-end">Дата конца</label><input id="an-end" type="date" required></div>
+      <div class="quick-days an-quick" role="group" aria-label="Быстрый выбор"><button class="chip active" type="button" data-days="7">7 дней</button><button class="chip" type="button" data-days="14">14 дней</button><button class="chip" type="button" data-days="30">30 дней</button><button class="chip" type="button" data-days="today">Включая сегодня</button></div>
       <button class="button primary" type="submit" id="an-show">Показать</button>
     </form>
     <p id="an-status" class="top-status an-status" role="status" aria-live="polite"><span id="updated" class="rm-status-skel"></span></p>
     <p id="an-message" class="notice" role="status" aria-live="polite" hidden></p>
 
     <section class="an-metrics" aria-label="Выручка по окнам" aria-busy="true">
-      <article class="an-metric is-current" data-period="current"><span>Последние 7 дней</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
-      <article class="an-metric is-previous" data-period="previous"><span>Неделей раньше</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
-      <article class="an-metric is-year" data-period="year"><span>Год назад</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
+      <article class="an-metric is-current" data-period="current"><span data-label>Выбранный период</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
+      <article class="an-metric is-previous" data-period="previous"><span data-label>Период раньше</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
+      <article class="an-metric is-year" data-period="year"><span data-label>Год назад</span><strong data-total>—</strong><small><b data-range></b> · <i data-coverage></i></small></article>
     </section>
 
     <section class="an-compare" aria-label="Сравнение с предыдущими окнами">
-      <article class="an-trend" data-against="previous"><p class="eyebrow">К НЕДЕЛЕ РАНЬШЕ</p><div class="an-trend-row"><span class="an-arrow" aria-hidden="true"></span><strong data-percent>—</strong><em data-amount>—</em></div><p data-sentence class="an-trend-text">Загрузка…</p></article>
+      <article class="an-trend" data-against="previous"><p class="eyebrow">К ПЕРИОДУ РАНЬШЕ</p><div class="an-trend-row"><span class="an-arrow" aria-hidden="true"></span><strong data-percent>—</strong><em data-amount>—</em></div><p data-sentence class="an-trend-text">Загрузка…</p></article>
       <article class="an-trend" data-against="year"><p class="eyebrow">К ГОДУ НАЗАД</p><div class="an-trend-row"><span class="an-arrow" aria-hidden="true"></span><strong data-percent>—</strong><em data-amount>—</em></div><p data-sentence class="an-trend-text">Загрузка…</p></article>
     </section>
 
     <section class="panel an-panel" aria-labelledby="an-chart-title">
-      <div class="an-panel-head"><div><p class="eyebrow">ДИНАМИКА · ДЕНЬ К ДНЮ</p><h2 id="an-chart-title">Три недели на одном графике</h2><p class="an-panel-note">Точка — выручка Retro за день; понедельник сравнивается с понедельником, «год назад» — 52 недели назад. Подписи оси — дни последней недели.</p></div><div id="an-legend" class="an-legend" aria-hidden="true"></div></div>
+      <div class="an-panel-head"><div><p class="eyebrow">ДИНАМИКА · ДЕНЬ К ДНЮ</p><h2 id="an-chart-title">Три периода на одном графике</h2><p class="an-panel-note">Точка — выручка Retro за день; дни сравниваются по порядку: первый день периода с первым днём отрезка раньше, «год назад» — 52 недели назад, дни недели совпадают. Подписи оси — дни выбранного периода.</p></div><div id="an-legend" class="an-legend" aria-hidden="true"></div></div>
       <div id="an-chart" class="an-chart" aria-label="Линейный график выручки за три недели"></div>
-      <details class="an-table-details"><summary>Таблица по дням</summary><div class="an-table-wrap"><table class="an-table" id="an-table"><thead><tr><th>День</th><th>Последние 7 дней</th><th>Неделей раньше</th><th>Год назад</th></tr></thead><tbody></tbody></table></div></details>
+      <details class="an-table-details"><summary>Таблица по дням</summary><div class="an-table-wrap"><table class="an-table" id="an-table"><thead><tr><th>День</th><th data-head="current">Выбранный период</th><th data-head="previous">Период раньше</th><th data-head="year">Год назад</th></tr></thead><tbody></tbody></table></div></details>
     </section>
     <p class="an-footnote">Выручка — по датам заказов из истории чеков iiko в базе панели, только касса Retro (Яндекс Еда входит), без Retro в школе и банкетного зала, в сумах. Сегодняшний день в окно по умолчанию не входит: он ещё идёт.</p>
     <footer><span>RETRO MILLIY <span class="footer-divider">/</span> Аналитика</span><span>Время Ташкента</span></footer>

@@ -5,11 +5,11 @@
   const L = globalThis.AnalyticsLogic;
   const $ = id => document.getElementById(id);
   const SERIES = [
-    {key: 'current', label: 'Последние 7 дней', color: '#143e35'},
-    {key: 'previous', label: 'Неделей раньше', color: '#c5a359'},
+    {key: 'current', label: 'Выбранный период', color: '#143e35'},
+    {key: 'previous', label: 'Период раньше', color: '#c5a359'},
     {key: 'year', label: 'Год назад', color: '#91a39a', dashed: true},
   ];
-  const endInput = $('an-end'), form = $('an-filters'), message = $('an-message'), status = $('updated');
+  const startInput = $('an-start'), endInput = $('an-end'), form = $('an-filters'), message = $('an-message'), status = $('updated');
   const chartBox = $('an-chart'), metrics = document.querySelector('.an-metrics');
   let today = null, last = null, request = 0;
 
@@ -36,6 +36,7 @@
     data.periods.forEach(period => {
       const card = document.querySelector(`.an-metric[data-period="${period.key}"]`);
       if (!card) return;
+      card.querySelector('[data-label]').textContent = period.label;
       card.querySelector('[data-total]').textContent = period.total === null ? '—' : L.formatMoney(period.total);
       card.querySelector('[data-range]').textContent = L.rangeLabel(period.start, period.end, data.today);
       card.querySelector('[data-coverage]').textContent = L.coverageLabel(period);
@@ -62,13 +63,13 @@
     });
   }
 
-  function renderLegend() {
+  function renderLegend(data) {
     const legend = $('an-legend');
-    legend.replaceChildren(...SERIES.map(series => {
+    legend.replaceChildren(...SERIES.map((series, position) => {
       const item = document.createElement('span'), line = document.createElement('i');
       line.style.setProperty('--an-color', series.color);
       if (series.dashed) line.classList.add('is-dashed');
-      item.append(line, document.createTextNode(series.label));
+      item.append(line, document.createTextNode(data.periods[position].label));
       return item;
     }));
   }
@@ -125,7 +126,9 @@
     }
     const pointSets = values.map(list => L.linePoints(list, max, plotWidth, plotHeight));
     const currentDays = periods[0].days;
+    const labelled = new Set(L.axisIndexes(currentDays.length));
     currentDays.forEach((day, index) => {
+      if (!labelled.has(index)) return;
       const point = pointSets[0][index];
       const label = svg('text', {x: pad.left + point.x, y: height - 10, 'text-anchor': index === 0 ? 'start' : index === currentDays.length - 1 ? 'end' : 'middle', class: 'an-axis'});
       label.textContent = L.dayLabel(day);
@@ -179,6 +182,10 @@
     const body = $('an-table').tBodies[0];
     body.replaceChildren();
     const current = data.periods[0];
+    data.periods.forEach(period => {
+      const head = document.querySelector(`[data-head="${period.key}"]`);
+      if (head) head.textContent = period.label;
+    });
     current.days.forEach((_, index) => {
       const row = document.createElement('tr');
       const head = document.createElement('td');
@@ -211,7 +218,7 @@
     last = data;
     renderMetrics(data);
     renderComparison(data);
-    renderLegend();
+    renderLegend(data);
     renderChart(data);
     renderTable(data);
     status.textContent = L.updatedLabel(data);
@@ -219,14 +226,14 @@
   }
 
   async function load() {
-    const end = endInput.value;
-    if (!end) { say('Укажите, по какой день считать.', true); return; }
-    if (today && end > today) { say('Будущие даты недоступны.', true); return; }
+    const start = startInput.value, end = endInput.value;
+    const problem = L.periodError(start, end, today);
+    if (problem) { say(problem, true); return; }
     const id = ++request;
     setLoading(true);
     say('');
     try {
-      const response = await fetch('/api/analytics/revenue/weeks?end=' + encodeURIComponent(end), {headers: {accept: 'application/json'}});
+      const response = await fetch(`/api/analytics/revenue/weeks?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, {headers: {accept: 'application/json'}});
       const payload = await response.json().catch(() => null);
       if (id !== request) return;
       if (!response.ok) {
@@ -241,18 +248,32 @@
     }
   }
 
+  // Чипы: N дней по вчера; «Включая сегодня» сдвигает конец на сегодня, длина та же.
   function setQuick(kind) {
-    document.querySelectorAll('.an-quick .chip').forEach(chip => chip.classList.toggle('active', chip.dataset.end === kind));
     if (!today) return;
-    endInput.value = kind === 'today' ? today : L.defaultEnd(today);
+    if (kind === 'today') {
+      const length = startInput.value && endInput.value ? L.daysBetween(startInput.value, endInput.value) : 7;
+      Object.assign(endInput, {value: today});
+      startInput.value = L.rangeOfDays(today, Math.max(1, length)).start;
+    } else {
+      const range = L.rangeOfDays(L.defaultEnd(today), Number(kind));
+      startInput.value = range.start;
+      endInput.value = range.end;
+    }
+    markChips();
+  }
+  function markChips() {
+    const length = startInput.value && endInput.value ? L.daysBetween(startInput.value, endInput.value) : 0;
+    document.querySelectorAll('.an-quick .chip').forEach(chip => {
+      const kind = chip.dataset.days;
+      chip.classList.toggle('active', kind === 'today' ? endInput.value === today
+        : endInput.value === L.defaultEnd(today) && length === Number(kind));
+    });
   }
 
   form.addEventListener('submit', event => { event.preventDefault(); load(); });
-  document.querySelectorAll('.an-quick .chip').forEach(chip => chip.addEventListener('click', () => { setQuick(chip.dataset.end); load(); }));
-  endInput.addEventListener('change', () => {
-    document.querySelectorAll('.an-quick .chip').forEach(chip => chip.classList.toggle('active',
-      today && endInput.value === (chip.dataset.end === 'today' ? today : L.defaultEnd(today))));
-  });
+  document.querySelectorAll('.an-quick .chip').forEach(chip => chip.addEventListener('click', () => { setQuick(chip.dataset.days); load(); }));
+  [startInput, endInput].forEach(input => input.addEventListener('change', markChips));
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
@@ -262,12 +283,12 @@
   const config = globalThis.RetroConfig || fetch('/api/config', {headers: {accept: 'application/json'}}).then(r => (r.ok ? r.json() : null));
   Promise.resolve(config).then(data => {
     today = (data && data.today) || new Date().toISOString().slice(0, 10);
-    endInput.max = today;
-    setQuick('yesterday');
+    startInput.max = endInput.max = today;
+    setQuick('7');
     load();
   }).catch(() => {
     today = new Date().toISOString().slice(0, 10);
-    setQuick('yesterday');
+    setQuick('7');
     load();
   });
 })();

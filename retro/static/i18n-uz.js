@@ -4496,6 +4496,30 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'Загрузка…': "Yuklanmoqda…",
   'Аналитик': "Tahlilchi",
 });
+/* ── T-525: произвольный период в «Аналитике» ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Выручка за период': "Davr tushumi",
+  'Выбранные дни против такого же отрезка перед ними и тех же дней год назад. Только Retro: без школы и банкетного зала, по данным iiko.':
+    "Tanlangan kunlar — ulardan oldingi xuddi shunday kesim va bir yil oldingi shu kunlarga nisbatan. Faqat Retro: maktab va banket zalisiz, iiko ma’lumotlari bo‘yicha.",
+  'Период выручки': "Tushum davri",
+  'Дата начала': "Boshlanish sanasi",
+  'Дата конца': "Tugash sanasi",
+  '7 дней': "7 kun", '14 дней': "14 kun", '30 дней': "30 kun",
+  'Выбранный период': "Tanlangan davr",
+  'Период раньше': "Oldingi davr",
+  'К ПЕРИОДУ РАНЬШЕ': "OLDINGI DAVRGA NISBATAN",
+  'Три периода на одном графике': "Bitta grafikda uch davr",
+  'Точка — выручка Retro за день; дни сравниваются по порядку: первый день периода с первым днём отрезка раньше, «год назад» — 52 недели назад, дни недели совпадают. Подписи оси — дни выбранного периода.':
+    "Nuqta — Retro kunlik tushumi; kunlar tartib bo‘yicha taqqoslanadi: davrning birinchi kuni oldingi kesimning birinchi kuni bilan, «bir yil oldin» — 52 hafta oldin, hafta kunlari mos keladi. O‘q yozuvlari — tanlangan davr kunlari.",
+  'Укажите обе даты периода.': "Davrning ikkala sanasini ko‘rsating.",
+  'Дата начала должна быть не позже даты конца.': "Boshlanish sanasi tugash sanasidan kech bo‘lmasligi kerak.",
+  'Будущие даты недоступны.': "Kelgusi sanalar mavjud emas.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^(\d+) (?:день|дня|дней) раньше$/, "$1 kun oldin"],
+  [/^Период — не длиннее (\d+) дней\.$/, "Davr — $1 kundan uzun emas."],
+);
+/* ── /T-525 ── */
 globalThis.RetroTemplatesUz.push(
   [/^Выручка выросла на (.+) % \((.+)\)\.$/, "Tushum $1 % ga oshdi ($2)."],
   [/^Выручка упала на (.+) % \((.+)\)\.$/, "Tushum $1 % ga kamaydi ($2)."],
