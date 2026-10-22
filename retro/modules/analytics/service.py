@@ -95,12 +95,27 @@ def build_report(end, states, *, today, history_start, configured=True, refresh_
     warnings = []
     if not configured:
         warnings.append('iiko не подключён: показана только история продаж, уже сохранённая в базе панели.')
-    if missing:
-        warnings.append('Нет загруженных данных за ' + ', '.join(day.strftime('%d.%m') for day in missing[:10])
-                        + (f' и ещё {len(missing) - 10}' if len(missing) > 10 else '')
-                        + ' — эти дни в итоги не вошли.')
-        if any(day < history_start for day in missing):
-            warnings.append(f'История продаж в базе начинается с {history_start:%d.%m.%Y}.')
+    # Пропуски — по окнам и с годом, если окно в другом году: «16.10» год назад и
+    # «16.10» на прошлой неделе иначе не отличить. Дни после начала истории фон
+    # ещё догрузит (по дню в минуту) — об этом говорим прямо, а не «нет данных».
+    def label(day):
+        return day.strftime('%d.%m.%Y') if day.year != today.year else day.strftime('%d.%m')
+    loading = [day for day in missing if day >= history_start and day <= today]
+    for period in periods:
+        gone = [date.fromisoformat(item['day']) for item in period['days'] if item['missing']]
+        if not gone:
+            continue
+        if len(gone) == WINDOW:
+            text = f'{period["label"]} ({label(gone[0])} – {label(gone[-1])}): данных нет'
+        else:
+            text = f'{period["label"]}: нет данных за ' + ', '.join(label(day) for day in gone)
+        if all(day < history_start for day in gone):
+            text += f' — история продаж в базе начинается с {history_start:%d.%m.%Y}.'
+        elif configured and any(day in loading for day in gone):
+            text += ' — эти дни ещё загружаются из iiko, по дню в минуту; в итоги они пока не вошли.'
+        else:
+            text += ' — эти дни в итоги не вошли.'
+        warnings.append(text)
     stale = [day for day in all_days if day in states and day < today and not states[day]['closed']]
     if stale:
         warnings.append('Ещё не перечитаны после закрытия смены: '

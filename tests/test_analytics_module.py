@@ -185,7 +185,10 @@ def test_no_history_means_no_totals_and_no_comparison(client):
     assert [period['total'] for period in data['periods']] == [None, None, None]
     assert all(item['direction'] == 'unknown' and item['diff'] is None for item in data['comparison'])
     assert data['updated_at'] is None and data['complete'] is False
-    assert any('Нет загруженных данных' in text for text in data['warnings'])
+    # Без iiko на стенде — честное «данных нет», по окну; год назад — до начала истории.
+    assert any(text.startswith('Последние 7 дней (') and 'данных нет' in text for text in data['warnings'])
+    assert any(text.startswith('Год назад (') and 'история продаж в базе начинается с' in text for text in data['warnings'])
+    assert all('ещё загружаются' not in text for text in data['warnings'])  # iiko не подключён — ничего не грузится
 
 
 def test_end_can_be_moved_but_not_into_the_future(client, app):
@@ -215,6 +218,10 @@ def test_build_report_is_pure_and_reports_history_start():
     report = build_report(end, {}, today=date(2026, 10, 22), history_start=date(2026, 10, 13), configured=True)
     assert report['periods'][0]['days'][0]['weekday'] == 'чт'
     assert report['history_start'] == '2026-10-13'
-    assert 'История продаж в базе начинается с 13.10.2026.' in report['warnings']
+    assert any(text.startswith('Год назад (16.10.2025 – 22.10.2025)') and 'начинается с 13.10.2026' in text
+               for text in report['warnings'])
+    # Дни после начала истории при подключённом iiko названы загружающимися.
+    assert any(text.startswith('Последние 7 дней (15.10 – 21.10)') and 'ещё загружаются из iiko' in text
+               for text in report['warnings'])
     assert [period['key'] for period in report['periods']] == ['current', 'previous', 'year']
     assert report['timezone'] == 'Asia/Tashkent' and report['source'].startswith('iiko OLAP SALES')
