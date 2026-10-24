@@ -99,7 +99,8 @@ def list_expenses(request: Request, date: date):
 async def usd_rate(request: Request, date: date):
     day = selected_day(date)
     try:
-        return (await request.app.state.usd_rates.get(day)).json()
+        return await rate_payload(request.app.state.usd_rates, day,
+                                  await request.app.state.usd_rates.get(day))
     except DataError as error:
         log_safe_failure('cashier-route', error, operation='usd_rate',
                          request_id=request.state.request_id)
@@ -115,11 +116,18 @@ async def submit_usd_rate(request: Request, body: UsdRateInput):
     """
     day = selected_day(body.date)
     try:
-        return (await request.app.state.usd_rates.submit(day, body.payload)).json()
+        return await rate_payload(request.app.state.usd_rates, day,
+                                  await request.app.state.usd_rates.submit(day, body.payload))
     except DataError as error:
         log_safe_failure('cashier-route', error, operation='submit_usd_rate',
                          request_id=request.state.request_id)
         raise HTTPException(422, str(error)) from None
+
+
+async def rate_payload(rates, day, rate):
+    """Курс плюс дни без курса в базе (T-533): их браузер кассира дописывает сам."""
+    missing = await asyncio.to_thread(rates.missing_days, day)
+    return dict(rate.json(), missing_days=[item.isoformat() for item in missing])
 
 
 # ── Доллары сразу в сейф ─────────────────────────────────────────────────
