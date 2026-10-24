@@ -142,11 +142,35 @@ function clearUsdRate(day) {
   $('usd-status').classList.remove('is-error');
   clearUsd();
 }
+/* T-526: cbu.uz не отвечает серверу за границей, а браузеру в Узбекистане — да.
+   Если сервер курс не достал, берём JSON у ЦБ сами и отдаём серверу на сверку. */
+const CBU_RATE_URL = 'https://cbu.uz/ru/arkhiv-kursov-valyut/json/USD/';
+async function usdRateViaBrowser(day, signal, serverError) {
+  let payload;
+  try {
+    const response = await fetch(CBU_RATE_URL + encodeURIComponent(day) + '/', {signal, cache:'no-store'});
+    if (!response.ok) throw new Error('cbu ' + response.status);
+    payload = await response.json();
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
+    throw serverError;
+  }
+  return RetroState.responseJson(await request('/api/cashier/usd-rate', signal, {method:'POST',
+    headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, payload})}));
+}
+async function fetchUsdRate(day, signal) {
+  try {
+    return await RetroState.responseJson(
+      await request(`/api/cashier/usd-rate?date=${encodeURIComponent(day)}`, signal));
+  } catch (error) {
+    if (error.name === 'AbortError') throw error;
+    return usdRateViaBrowser(day, signal, error);
+  }
+}
 async function loadUsdRate(day, current, signal) {
   if (demo) { $('usd-status').textContent = 'В демонстрационном режиме курс не загружается.'; return; }
   try {
-    const data = await RetroState.responseJson(
-      await request(`/api/cashier/usd-rate?date=${encodeURIComponent(day)}`, signal));
+    const data = await fetchUsdRate(day, signal);
     if (current !== generation) return;
     usdRate = Number(data.restaurant_rate);
     $('usd-restaurant').textContent = rateRestaurant.format(Number(data.restaurant_rate));
@@ -223,6 +247,9 @@ $('usd-form').addEventListener('submit', event => {
 async function putUsd(day, value) {
   const current = generation;
   try {
+    // Без курса сервер взнос не примет: сначала добываем курс (при нужде — через браузер).
+    if (!usdRate) await loadUsdRate(day, current, undefined);
+    if (current !== generation) return false;
     const data = await RetroState.responseJson(await request('/api/cashier/usd-deposits', undefined, {method:'POST',
       headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, amount:String(value)})}));
     if (current !== generation) return false;

@@ -551,7 +551,7 @@ def create_app(settings=None, *, expense_db_path=None, accountant_db_path=None, 
         response.headers['X-Request-ID'] = request.state.request_id
         # blob: — превью фото закупа: снимок с камеры показывается до отправки
         # через URL.createObjectURL, без него Шох видел битую картинку.
-        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        response.headers['Content-Security-Policy'] = "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; connect-src 'self' https://cbu.uz; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
         return response
 
     # Сжатие: статика панели — 1,4 МБ JS и CSS, JSON отчётов тоже крупный.

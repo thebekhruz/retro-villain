@@ -58,6 +58,12 @@ class UsdBalanceInput(BaseModel):
     amount: str
 
 
+class UsdRateInput(BaseModel):
+    date: date
+    # Ответ cbu.uz как есть: список из одного объекта с Ccy/Nominal/Rate/Date.
+    payload: list
+
+
 class AmountInput(BaseModel):
     date: date
     amount: str
@@ -98,6 +104,22 @@ async def usd_rate(request: Request, date: date):
         log_safe_failure('cashier-route', error, operation='usd_rate',
                          request_id=request.state.request_id)
         raise HTTPException(503, str(error)) from None
+
+
+@router.post('/usd-rate')
+async def submit_usd_rate(request: Request, body: UsdRateInput):
+    """Курс, полученный браузером кассира у ЦБ напрямую (T-526).
+
+    cbu.uz не отвечает серверу за границей, а браузер в Узбекистане — да.
+    Сервер разбирает и сверяет присланный курс с рыночным, потом сохраняет.
+    """
+    day = selected_day(body.date)
+    try:
+        return (await request.app.state.usd_rates.submit(day, body.payload)).json()
+    except DataError as error:
+        log_safe_failure('cashier-route', error, operation='submit_usd_rate',
+                         request_id=request.state.request_id)
+        raise HTTPException(422, str(error)) from None
 
 
 # ── Доллары сразу в сейф ─────────────────────────────────────────────────
