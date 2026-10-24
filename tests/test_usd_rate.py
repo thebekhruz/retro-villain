@@ -1,4 +1,5 @@
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 import httpx
@@ -6,6 +7,13 @@ from fastapi.testclient import TestClient
 
 from legacy_app import create_app
 from retro.config import Settings
+from retro.modules.cashier.till import till_totals
+
+
+def rate_only(payload):
+    """Сам курс без служебных полей T-533 (stale, fallback_from, missing_days)."""
+    return {key: value for key, value in payload.items()
+            if key not in ('stale', 'fallback_from', 'missing_days')}
 
 
 def test_usd_rate_is_for_selected_day_and_rounded_down_to_one_decimal(tmp_path):
@@ -20,11 +28,12 @@ def test_usd_rate_is_for_selected_day_and_rounded_down_to_one_decimal(tmp_path):
     with TestClient(app, client=('127.0.0.1', 50000)) as client:
         response = client.get('/api/cashier/usd-rate', params={'date': '2026-04-25'})
         assert response.status_code == 200
-        assert response.json() == {
+        assert rate_only(response.json()) == {
             'date': '2026-04-25', 'source_date': '2026-04-24',
             'official_rate': '12015.96', 'restaurant_rate': '11800',
             'discount_percent': '1.5',
         }
+        assert response.json()['stale'] is False and response.json()['fallback_from'] is None
         page = client.get('/').text
         # T-442: на экране один курс — Retro, по нему считается вычет из передачи.
         # Курс ЦБ и разница в 1,5% — в подсказке к нему (app.js).
@@ -59,7 +68,7 @@ def test_historical_rate_stays_unchanged_after_restart_and_source_change(tmp_pat
                                rate_transport=httpx.MockTransport(changed_source)),
                     client=('127.0.0.1', 50000)) as client:
         old = client.get('/api/cashier/usd-rate', params={'date': '2026-09-17'})
-        assert old.json() == first.json()
+        assert rate_only(old.json()) == rate_only(first.json())
         assert calls == ['/ru/arkhiv-kursov-valyut/json/USD/2026-09-17/']
 
 
@@ -126,7 +135,7 @@ def test_browser_submitted_rate_is_checked_against_market_and_unblocks_deposits(
 
         submitted = client.post('/api/cashier/usd-rate', json={'date': '2026-10-24', 'payload': CBU_PAYLOAD})
         assert submitted.status_code == 200
-        assert submitted.json() == {
+        assert rate_only(submitted.json()) == {
             'date': '2026-10-24', 'source_date': '2026-10-24',
             'official_rate': '11838.92', 'restaurant_rate': '11600', 'discount_percent': '1.5'}
         assert client.get('/api/cashier/usd-rate', params={'date': '2026-10-24'}).json() == submitted.json()
@@ -171,3 +180,54 @@ def test_browser_fallback_is_wired_in_the_cashier_screen():
     assert "request('/api/cashier/usd-rate'" in script
     # Политика безопасности страницы должна пускать браузер к ЦБ.
     assert "connect-src 'self' https://cbu.uz" in (root / 'app.py').read_text(encoding='utf-8')
+
+
+# ── T-533: без связи — последний известный курс; пустую базу дописывает браузер ──
+
+def test_without_cbu_the_last_known_rate_serves_later_days_until_a_real_one_arrives(tmp_path):
+    app = create_app(Settings(data_dir=tmp_path), expense_db_path=tmp_path / 'cashier.sqlite3',
+                     accountant_db_path=tmp_path / 'accountant.sqlite3',
+                     rate_transport=httpx.MockTransport(blocked_cbu()))
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        # База пуста — опереться не на что.
+        assert client.get('/api/cashier/usd-rate', params={'date': '2026-10-24'}).status_code == 503
+        assert client.post('/api/cashier/usd-rate', json={'date': '2026-10-20', 'payload': [
+            dict(CBU_PAYLOAD[0], Rate='11900.00', Date='20.10.2026')]}).status_code == 200
+
+        stale = client.get('/api/cashier/usd-rate', params={'date': '2026-10-24'})
+        assert stale.status_code == 200
+        assert stale.json()['stale'] is True and stale.json()['fallback_from'] == '2026-10-20'
+        assert stale.json()['source_date'] == '2026-10-20'
+        assert stale.json()['restaurant_rate'] == '11700'
+        # Запасной курс не закрепляется за днём: в базе по-прежнему только 20.10.
+        assert client.app.state.usd_rates.stored(date(2026, 10, 24)) is None
+        # Пропущенные дни последних двух недель — браузеру на дозапись (без 20.10).
+        missing = stale.json()['missing_days']
+        assert '2026-10-20' not in missing and '2026-10-24' in missing and len(missing) == 13
+
+        # Взнос проходит по запасному курсу, вычет из передачи считается по нему же.
+        assert client.post('/api/cashier/usd-deposits', json={
+            'date': '2026-10-24', 'amount': '100'}).status_code == 201
+        totals = till_totals(client.app.state, date(2026, 10, 24))
+        assert totals.usd_rate == Decimal('11700') and totals.usd_deduction == Decimal('1170000')
+
+        # Пришёл настоящий курс дня — он вытесняет запасной.
+        fresh = client.post('/api/cashier/usd-rate', json={'date': '2026-10-24', 'payload': CBU_PAYLOAD})
+        assert fresh.status_code == 200 and fresh.json()['stale'] is False
+        again = client.get('/api/cashier/usd-rate', params={'date': '2026-10-24'}).json()
+        assert again['stale'] is False and again['restaurant_rate'] == '11600'
+        assert '2026-10-24' not in again['missing_days'] and len(again['missing_days']) == 12
+
+
+def test_last_known_rate_is_not_borrowed_from_the_future(tmp_path):
+    app = create_app(Settings(), expense_db_path=tmp_path / 'cashier.sqlite3',
+                     rate_transport=httpx.MockTransport(blocked_cbu()))
+    with TestClient(app, client=('127.0.0.1', 50000)) as client:
+        assert client.post('/api/cashier/usd-rate', json={'date': '2026-10-24', 'payload': CBU_PAYLOAD}).status_code == 200
+        assert client.get('/api/cashier/usd-rate', params={'date': '2026-10-23'}).status_code == 503
+
+
+def test_backfill_of_missing_days_is_wired_in_the_cashier_screen():
+    script = (Path(__file__).resolve().parent.parent / 'retro' / 'static' / 'app.js').read_text(encoding='utf-8')
+    assert 'missing_days' in script and 'backfillUsdRates' in script
+    assert 'fallback_from' in script

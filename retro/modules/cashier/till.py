@@ -348,7 +348,8 @@ def till_totals(state, day: date) -> TillTotals:
     # Вычитаем только реальные взносы выбранного дня, не весь остаток сейфа.
     usd_total = sum((Decimal(item['amount']) for item in usd_deposits(state.accountant_finance, day)
                      if not item['legacy']), Decimal(0))
-    rate = state.usd_rates.stored(day) if usd_total else None
+    # T-533: нет курса дня — берём последний известный из базы.
+    rate = state.usd_rates.effective(day) if usd_total else None
     usd_deduction = usd_total * rate.restaurant_rate if rate else (None if usd_total else Decimal(0))
     return TillTotals(sum((item.amount for item in expenses), Decimal(0)),
                       shokh_total(shokh_gives(state.accountant_finance, day)),

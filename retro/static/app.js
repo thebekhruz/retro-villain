@@ -159,13 +159,43 @@ async function usdRateViaBrowser(day, signal, serverError) {
     headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, payload})}));
 }
 async function fetchUsdRate(day, signal) {
+  let data;
   try {
-    return await RetroState.responseJson(
+    data = await RetroState.responseJson(
       await request(`/api/cashier/usd-rate?date=${encodeURIComponent(day)}`, signal));
   } catch (error) {
     if (error.name === 'AbortError') throw error;
-    return usdRateViaBrowser(day, signal, error);
+    data = await usdRateViaBrowser(day, signal, error);
   }
+  if (data.stale) {
+    // T-533: сервер отдал последний известный курс — пробуем достать настоящий через браузер.
+    try { data = await usdRateViaBrowser(day, signal, new Error('cbu')); }
+    catch (error) { if (error.name === 'AbortError') throw error; }
+  }
+  backfillUsdRates(data.missing_days, signal);
+  return data;
+}
+/* T-533: дни без курса в базе дописываем из браузера в фоне, чтобы серверу было
+   на что опереться без связи с ЦБ. Останавливаемся на первой же неудаче ЦБ. */
+let backfillRunning = false;
+async function backfillUsdRates(days, signal) {
+  if (backfillRunning || !Array.isArray(days) || !days.length) return;
+  backfillRunning = true;
+  try {
+    for (const day of [...days].sort().reverse()) {
+      if (signal?.aborted) return;
+      let payload;
+      try {
+        const response = await fetch(CBU_RATE_URL + encodeURIComponent(day) + '/', {signal, cache:'no-store'});
+        if (!response.ok) return;
+        payload = await response.json();
+      } catch { return; }
+      try {
+        await request('/api/cashier/usd-rate', signal, {method:'POST',
+          headers:{'Content-Type':'application/json'}, body:JSON.stringify({date:day, payload})});
+      } catch (error) { if (error.name === 'AbortError') return; }
+    }
+  } finally { backfillRunning = false; }
 }
 async function loadUsdRate(day, current, signal) {
   if (demo) { $('usd-status').textContent = 'В демонстрационном режиме курс не загружается.'; return; }
@@ -176,7 +206,8 @@ async function loadUsdRate(day, current, signal) {
     $('usd-restaurant').textContent = rateRestaurant.format(Number(data.restaurant_rate));
     $('usd-rate-tile').title = 'Курс ЦБ ' + rateOfficial.format(Number(data.official_rate)) + ' ('
       + formattedDay(data.source_date) + '), курс Retro на 1,5% ниже';
-    $('usd-status').textContent = '';
+    $('usd-status').textContent = data.stale
+      ? 'ЦБ недоступен, взят последний известный курс от ' + formattedDay(data.fallback_from) + '.' : '';
     showUsd();
     await refreshSummary();
   } catch (error) {

@@ -291,6 +291,9 @@ def test_founder_tools_expose_iiko_and_local_cashier_data(tmp_path):
                 'date': day.isoformat(), 'official_rate': '12500',
                 'restaurant_rate': '12300'})
 
+        # T-533: вычет из передачи читает курс через effective().
+        effective = stored
+
         async def get(self, day):
             return self.stored(day)
 
