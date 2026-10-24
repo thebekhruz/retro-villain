@@ -16,6 +16,13 @@ from retro.db import as_database
 from retro.runtime import secure_directory, secure_file
 
 CBU_ORIGIN = 'https://cbu.uz'
+# Независимый рыночный курс для сверки курса, присланного из браузера (T-526):
+# cbu.uz не отвечает зарубежным дата-центрам (Railway), а браузер кассира —
+# в Узбекистане. Кассир не должен подменить курс: расхождение с рынком
+# обычно ~0,3%, порог 3% отсекает любую выгодную подмену.
+REFERENCE_ORIGIN = 'https://open.er-api.com'
+REFERENCE_PATH = '/v6/latest/USD'
+REFERENCE_TOLERANCE = Decimal('0.03')
 DISCOUNT = Decimal('0.015')
 
 
@@ -111,6 +118,45 @@ class UsdRates:
             rate = await self._fetch(day)
             return await asyncio.to_thread(self._save, rate)
 
+    async def submit(self, day: date, payload):
+        """Курс, который браузер кассира получил у ЦБ сам (T-526).
+
+        Сервер не доверяет ему вслепую: разбирает теми же проверками, что и
+        свой запрос, и сверяет с независимым рыночным курсом. Сохранённый
+        ранее курс за день не перезаписывается.
+        """
+        saved = await asyncio.to_thread(self.stored, day)
+        if saved is not None:
+            return saved
+        rate = self._parse(day, payload)
+        reference = await self._reference()
+        deviation = abs(rate.official_rate - reference) / reference
+        if deviation > REFERENCE_TOLERANCE:
+            log_upstream_failure('cbu', ValueError(
+                f'submitted {rate.official_rate} vs reference {reference}'), operation='submit_usd_rate')
+            raise DataError('Присланный курс USD расходится с рыночным. Взнос не сохранён.')
+        async with self.lock:
+            saved = await asyncio.to_thread(self.stored, day)
+            if saved is not None:
+                return saved
+            return await asyncio.to_thread(self._save, rate)
+
+    async def _reference(self) -> Decimal:
+        try:
+            async with httpx.AsyncClient(base_url=REFERENCE_ORIGIN, timeout=10,
+                                         follow_redirects=False,
+                                         transport=self.transport) as client:
+                response = await client.get(REFERENCE_PATH)
+                response.raise_for_status()
+                payload = response.json()
+            value = Decimal(str(payload['rates']['UZS']))
+        except (httpx.HTTPError, ValueError, KeyError, TypeError, InvalidOperation) as error:
+            log_upstream_failure('usd-reference', error, operation='load_reference_rate')
+            raise DataError('Не удалось сверить курс USD с рыночным. Повторите позже.') from None
+        if not value.is_finite() or value <= 0:
+            raise DataError('Не удалось сверить курс USD с рыночным. Повторите позже.')
+        return value
+
     async def _fetch(self, day: date):
         try:
             async with httpx.AsyncClient(base_url=CBU_ORIGIN, timeout=10,
@@ -122,6 +168,10 @@ class UsdRates:
         except (httpx.HTTPError, ValueError) as error:
             log_upstream_failure('cbu', error, operation='load_usd_rate')
             raise DataError('Не удалось получить курс USD от Центрального банка.') from None
+        return self._parse(day, payload)
+
+    @staticmethod
+    def _parse(day: date, payload) -> UsdRate:
         if not isinstance(payload, list) or len(payload) != 1 or not isinstance(payload[0], dict):
             raise DataError('Центральный банк вернул некорректный курс USD.')
         item = payload[0]

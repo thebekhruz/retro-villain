@@ -6,6 +6,7 @@ from decimal import Decimal
 from io import BytesIO
 from unittest.mock import patch
 
+import httpx
 import pytest
 from fastapi.testclient import TestClient
 from openpyxl import load_workbook
@@ -69,11 +70,18 @@ class FakeIiko:
         return self.chef or []
 
 
+def cbu_rate(request):
+    # T-526: курс ЦБ — только из заглушки; cbu.uz не отвечает CI-раннерам за границей.
+    return httpx.Response(200, json=[{'Ccy': 'USD', 'Nominal': '1', 'Rate': '11838.92',
+                                      'Date': TODAY.strftime('%d.%m.%Y')}])
+
+
 def client(tmp_path, iiko=None, **settings):
     app = create_app(Settings(manual_handover_only=True, **settings),
                      expense_db_path=tmp_path / 'cashier.sqlite3',
                      accountant_db_path=tmp_path / 'accountant.sqlite3',
-                     founder_db_path=tmp_path / 'founder.sqlite3')
+                     founder_db_path=tmp_path / 'founder.sqlite3',
+                     rate_transport=httpx.MockTransport(cbu_rate))
     app.state.iiko = iiko or FakeIiko()
     return TestClient(app, base_url='http://127.0.0.1', client=('127.0.0.1', 50000))
 
