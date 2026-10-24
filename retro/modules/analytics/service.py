@@ -7,11 +7,12 @@
 Отдельных запросов в iiko модуль не делает — только читает уже загруженные дни;
 сегодняшний день, если он в окне, освежает тем же `refresh_today`, что продажи.
 
-Окно — семь завершённых дней по вчера включительно (как «7 завершённых дней» в
-аналитике учредителя и `completed_period` блюд): день в iiko закрывается ночью,
-и сравнивать идущий день с полными нечестно. Сравнение идёт день к дню:
-понедельник с понедельником неделей раньше и 52 недели (364 дня) назад — «год
-назад» со сдвигом на целые недели, чтобы дни недели совпадали.
+Окно выбирает человек (T-525): любые `start`–`end`, по умолчанию семь
+завершённых дней по вчера включительно (как «7 завершённых дней» в аналитике
+учредителя): день в iiko закрывается ночью, и сравнивать идущий день с полными
+нечестно. Сравнение идёт день к дню: «раньше» — столько же дней непосредственно
+перед окном, «год назад» — те же дни 52 недели (364 дня) назад, чтобы дни недели
+совпадали.
 """
 from datetime import date, timedelta
 from decimal import ROUND_HALF_UP, Decimal
@@ -19,21 +20,35 @@ from decimal import ROUND_HALF_UP, Decimal
 from retro.modules.cashier.service import TZ
 
 WINDOW = 7
-YEAR_SHIFT = 52 * WINDOW
+MAX_DAYS = 92
+YEAR_SHIFT = 364
 DIRECTION = 'retro'
 DIRECTION_NAME = 'Retro · без школы и банкетного зала'
-# Ключ, подпись и сдвиг окна в днях относительно текущего.
-PERIODS = (('current', 'Последние 7 дней', 0),
-           ('previous', 'Неделей раньше', WINDOW),
-           ('year', 'Год назад', YEAR_SHIFT))
 WEEKDAYS = ('пн', 'вт', 'ср', 'чт', 'пт', 'сб', 'вс')
 
 
-def spans(end):
-    """Непрерывные отрезки дней, которые нужны для окон по `end`: последние две
-    недели одним куском и неделя год назад — отдельно (между ними ничего не грузим)."""
-    return [(end - timedelta(days=2 * WINDOW - 1), end),
-            (end - timedelta(days=YEAR_SHIFT + WINDOW - 1), end - timedelta(days=YEAR_SHIFT))]
+def day_word(count):
+    rest, tail = count % 100, count % 10
+    if 11 <= rest <= 19 or tail == 0 or tail >= 5:
+        return 'дней'
+    return 'день' if tail == 1 else 'дня'
+
+
+def windows(start, end):
+    """Три окна по выбранному периоду: он сам, столько же дней перед ним и те же дни год назад."""
+    length = (end - start).days + 1
+    return [dict(key='current', label='Выбранный период', start=start, end=end),
+            dict(key='previous', label=f'{length} {day_word(length)} раньше',
+                 start=start - timedelta(days=length), end=start - timedelta(days=1)),
+            dict(key='year', label='Год назад', start=start - timedelta(days=YEAR_SHIFT), end=end - timedelta(days=YEAR_SHIFT))]
+
+
+def spans(start, end):
+    """Непрерывные отрезки дней, которые нужны для окон: период с окном «раньше»
+    одним куском и окно год назад — отдельно (между ними ничего не грузим)."""
+    length = (end - start).days + 1
+    return [(start - timedelta(days=length), end),
+            (start - timedelta(days=YEAR_SHIFT), end - timedelta(days=YEAR_SHIFT))]
 
 
 def retro_revenue(state):
@@ -45,11 +60,6 @@ def retro_revenue(state):
     return Decimal(str((lines.get(DIRECTION) or {}).get('revenue', 0)))
 
 
-def windows(end):
-    return [dict(key=key, label=label, start=end - timedelta(days=shift + WINDOW - 1), end=end - timedelta(days=shift))
-            for key, label, shift in PERIODS]
-
-
 def _day(day, state, today):
     revenue = None if state is None else retro_revenue(state)
     if revenue is None:
@@ -59,14 +69,15 @@ def _day(day, state, today):
 
 
 def _period(window, states, today):
+    length = (window['end'] - window['start']).days + 1
     days = [_day(window['start'] + timedelta(days=offset), states.get(window['start'] + timedelta(days=offset)), today)
-            for offset in range(WINDOW)]
+            for offset in range(length)]
     covered = [item for item in days if not item['missing']]
     total = sum((Decimal(item['revenue']) for item in covered), Decimal(0)) if covered else None
     return dict(key=window['key'], label=window['label'], start=window['start'].isoformat(),
                 end=window['end'].isoformat(), total=None if total is None else str(total),
                 days=days, days_with_data=len(covered),
-                complete=len(covered) == WINDOW and not any(item['partial'] for item in days))
+                complete=len(covered) == length and not any(item['partial'] for item in days))
 
 
 def compare(current, other):
@@ -83,9 +94,9 @@ def compare(current, other):
     return dict(diff=str(diff), percent=percent, direction='up' if diff > 0 else 'down' if diff < 0 else 'flat')
 
 
-def build_report(end, states, *, today, history_start, configured=True, refresh_error=None):
-    """Ответ модуля из состояний дней (`SalesStore.states`) за весь диапазон."""
-    periods = [_period(window, states, today) for window in windows(end)]
+def build_report(start, end, states, *, today, history_start, configured=True, refresh_error=None):
+    """Ответ модуля из состояний дней (`SalesStore.states`) за все окна."""
+    periods = [_period(window, states, today) for window in windows(start, end)]
     current = periods[0]
     comparison = [dict(against=other['key'], label=other['label'], start=other['start'], end=other['end'],
                        **compare(current['total'], other['total']))
@@ -105,10 +116,11 @@ def build_report(end, states, *, today, history_start, configured=True, refresh_
         gone = [date.fromisoformat(item['day']) for item in period['days'] if item['missing']]
         if not gone:
             continue
-        if len(gone) == WINDOW:
+        if len(gone) == len(period['days']):
             text = f'{period["label"]} ({label(gone[0])} – {label(gone[-1])}): данных нет'
         else:
-            text = f'{period["label"]}: нет данных за ' + ', '.join(label(day) for day in gone)
+            text = (f'{period["label"]}: нет данных за ' + ', '.join(label(day) for day in gone[:10])
+                    + (f' и ещё {len(gone) - 10}' if len(gone) > 10 else ''))
         if all(day < history_start for day in gone):
             text += f' — история продаж в базе начинается с {history_start:%d.%m.%Y}.'
         elif configured and any(day in loading for day in gone):
@@ -128,9 +140,9 @@ def build_report(end, states, *, today, history_start, configured=True, refresh_
     updated = max((states[day]['fetched_at'] for day in all_days if day in states), default=None)
     return dict(
         source='iiko OLAP SALES · история чеков в базе панели', timezone=str(TZ),
-        today=today.isoformat(), end=end.isoformat(), includes_today=end >= today,
+        today=today.isoformat(), start=start.isoformat(), end=end.isoformat(), includes_today=end >= today,
         direction=DIRECTION, direction_name=DIRECTION_NAME,
-        window_days=WINDOW, history_start=history_start.isoformat(), configured=configured,
+        window_days=(end - start).days + 1, history_start=history_start.isoformat(), configured=configured,
         updated_at=updated.astimezone(TZ).isoformat(timespec='seconds') if updated else None,
         complete=all(period['complete'] for period in periods),
         periods=periods, comparison=comparison, warnings=warnings)

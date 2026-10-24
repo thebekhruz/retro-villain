@@ -89,3 +89,21 @@ test('подпись времени и покрытия окна', () => {
   assert.equal(logic.coverageLabel(open), '7 из 7 дн. · есть незакрытые');
   assert.equal(logic.coverageLabel({days_with_data: 0, complete: false, days: Array(7).fill({})}), 'нет данных');
 });
+
+test('T-525: период из N дней, проверка дат и прореживание подписей оси', () => {
+  assert.deepEqual(logic.rangeOfDays('2026-10-21', 7), {start: '2026-10-15', end: '2026-10-21'});
+  assert.deepEqual(logic.rangeOfDays('2026-10-21', 1), {start: '2026-10-21', end: '2026-10-21'});
+  assert.equal(logic.daysBetween('2026-10-15', '2026-10-21'), 7);
+  assert.equal(logic.daysBetween('2026-10-01', '2026-10-01'), 1);
+  assert.equal(logic.periodError('2026-10-15', '2026-10-21', '2026-10-22'), null);
+  assert.equal(logic.periodError('', '2026-10-21', '2026-10-22'), 'Укажите обе даты периода.');
+  assert.equal(logic.periodError('2026-10-22', '2026-10-21', '2026-10-22'), 'Дата начала должна быть не позже даты конца.');
+  assert.equal(logic.periodError('2026-10-21', '2026-10-23', '2026-10-22'), 'Будущие даты недоступны.');
+  assert.equal(logic.periodError('2026-07-01', '2026-10-21', '2026-10-22'), 'Период — не длиннее 92 дней.');
+  assert.deepEqual(logic.axisIndexes(7), [0, 1, 2, 3, 4, 5, 6]);
+  const thirty = logic.axisIndexes(30);
+  assert.equal(thirty[0], 0);
+  assert.equal(thirty[thirty.length - 1], 29);
+  assert.ok(thirty.length <= 8);
+  assert.ok(thirty.every((value, index) => index === 0 || value > thirty[index - 1]));
+});

@@ -11,7 +11,7 @@ from fastapi.testclient import TestClient
 
 from retro.app import ROLE_PATHS, create_app
 from retro.config import Settings
-from retro.modules.analytics.service import WINDOW, YEAR_SHIFT, build_report, compare, retro_revenue, spans, windows
+from retro.modules.analytics.service import MAX_DAYS, WINDOW, YEAR_SHIFT, build_report, compare, day_word, retro_revenue, spans, windows
 from retro.modules.cashier.service import TZ, today_tashkent
 
 USERS = {'analyst': ('secret', 'analytics'), 'director': ('secret', 'director'), 'founder': ('secret', 'founder'),
@@ -100,15 +100,20 @@ def test_anonymous_is_sent_to_login(client):
 
 # ── Расчёт ────────────────────────────────────────────────────────────────
 
-def test_windows_are_this_week_last_week_and_52_weeks_ago():
-    end = date(2026, 10, 21)
-    assert [(w['key'], w['start'], w['end']) for w in windows(end)] == [
-        ('current', date(2026, 10, 15), date(2026, 10, 21)),
-        ('previous', date(2026, 10, 8), date(2026, 10, 14)),
-        ('year', date(2025, 10, 16), date(2025, 10, 22))]
+def test_windows_follow_the_chosen_period_length():
+    start, end = date(2026, 10, 15), date(2026, 10, 21)
+    assert [(w['key'], w['label'], w['start'], w['end']) for w in windows(start, end)] == [
+        ('current', 'Выбранный период', date(2026, 10, 15), date(2026, 10, 21)),
+        ('previous', '7 дней раньше', date(2026, 10, 8), date(2026, 10, 14)),
+        ('year', 'Год назад', date(2025, 10, 16), date(2025, 10, 22))]
     # 364 дня: те же дни недели, что и сейчас.
     assert date(2025, 10, 16).weekday() == date(2026, 10, 15).weekday()
-    assert spans(end) == [(date(2026, 10, 8), date(2026, 10, 21)), (date(2025, 10, 16), date(2025, 10, 22))]
+    assert spans(start, end) == [(date(2026, 10, 8), date(2026, 10, 21)), (date(2025, 10, 16), date(2025, 10, 22))]
+    # 21 день: «раньше» — 21 день перед периодом, «год назад» — те же 21 день.
+    three = windows(date(2026, 10, 1), date(2026, 10, 21))
+    assert (three[1]['label'], three[1]['start'], three[1]['end']) == ('21 день раньше', date(2026, 9, 10), date(2026, 9, 30))
+    assert (three[2]['start'], three[2]['end']) == (date(2025, 10, 2), date(2025, 10, 22))
+    assert [day_word(n) for n in (1, 2, 5, 7, 11, 21, 30)] == ['день', 'дня', 'дней', 'дней', 'дней', 'день', 'дней']
 
 
 def test_retro_revenue_comes_from_the_day_reconciliation_only():
@@ -141,6 +146,7 @@ def test_weeks_endpoint_defaults_to_yesterday_and_compares_day_to_day(client, ap
     data = client.get('/api/analytics/revenue/weeks', auth=('analyst', 'secret')).json()
     assert data['end'] == YESTERDAY.isoformat() and data['today'] == TODAY.isoformat()
     assert data['direction'] == 'retro' and 'без школы и банкетного зала' in data['direction_name']
+    assert data['start'] == (YESTERDAY - timedelta(days=6)).isoformat()
     assert data['includes_today'] is False and data['window_days'] == 7 and data['complete'] is True
     current, previous, year = data['periods']
     assert (current['key'], current['total'], current['days_with_data'], current['complete']) == ('current', '1610', 7, True)
@@ -155,7 +161,7 @@ def test_weeks_endpoint_defaults_to_yesterday_and_compares_day_to_day(client, ap
         assert date.fromisoformat(current['days'][index]['day']) - date.fromisoformat(previous['days'][index]['day']) == timedelta(days=7)
     assert current['days'][0]['revenue'] == '230' and current['days'][0]['partial'] is False
     assert data['comparison'] == [
-        dict(against='previous', label='Неделей раньше', start=previous['start'], end=previous['end'],
+        dict(against='previous', label='7 дней раньше', start=previous['start'], end=previous['end'],
              diff='210', percent=15.0, direction='up'),
         dict(against='year', label='Год назад', start=year['start'], end=year['end'],
              diff='910', percent=130.0, direction='up')]
@@ -187,7 +193,7 @@ def test_no_history_means_no_totals_and_no_comparison(client):
     assert all(item['direction'] == 'unknown' and item['diff'] is None for item in data['comparison'])
     assert data['updated_at'] is None and data['complete'] is False
     # Без iiko на стенде — честное «данных нет», по окну; год назад — до начала истории.
-    assert any(text.startswith('Последние 7 дней (') and 'данных нет' in text for text in data['warnings'])
+    assert any(text.startswith('Выбранный период (') and 'данных нет' in text for text in data['warnings'])
     assert any(text.startswith('Год назад (') and 'история продаж в базе начинается с' in text for text in data['warnings'])
     assert all('ещё загружаются' not in text for text in data['warnings'])  # iiko не подключён — ничего не грузится
 
@@ -198,6 +204,24 @@ def test_end_can_be_moved_but_not_into_the_future(client, app):
     data = client.get('/api/analytics/revenue/weeks', params={'end': anchor.isoformat()},
                       auth=('analyst', 'secret')).json()
     assert data['end'] == anchor.isoformat() and data['periods'][0]['total'] == '350'
+    # Явный период: 3 дня — «раньше» тоже 3 дня, прямо перед ними.
+    data = client.get('/api/analytics/revenue/weeks', params={'start': (anchor - timedelta(days=2)).isoformat(),
+                                                             'end': anchor.isoformat()}, auth=('analyst', 'secret')).json()
+    assert data['window_days'] == 3 and data['periods'][0]['total'] == '150'
+    assert data['periods'][1]['label'] == '3 дня раньше' and data['periods'][1]['total'] == '150'
+    assert data['periods'][1]['end'] == (anchor - timedelta(days=3)).isoformat()
+    assert len(data['periods'][2]['days']) == 3
+    # `days` без `start`: 14 дней по `end`.
+    data = client.get('/api/analytics/revenue/weeks', params={'end': anchor.isoformat(), 'days': 14},
+                      auth=('analyst', 'secret')).json()
+    assert data['window_days'] == 14 and data['periods'][1]['label'] == '14 дней раньше'
+    for params, detail in ((dict(start=anchor.isoformat(), end=(anchor - timedelta(days=1)).isoformat()),
+                            'Дата начала должна быть не позже даты конца.'),
+                           (dict(start=(anchor - timedelta(days=MAX_DAYS)).isoformat(), end=anchor.isoformat()),
+                            f'Период — не длиннее {MAX_DAYS} дней.'),
+                           (dict(end=anchor.isoformat(), days=0), f'Период — от 1 до {MAX_DAYS} дней.')):
+        answer = client.get('/api/analytics/revenue/weeks', params=params, auth=('analyst', 'secret'))
+        assert answer.status_code == 422 and answer.json()['detail'] == detail, params
     tomorrow = TODAY + timedelta(days=1)
     answer = client.get('/api/analytics/revenue/weeks', params={'end': tomorrow.isoformat()}, auth=('analyst', 'secret'))
     assert answer.status_code == 422 and answer.json()['detail'] == 'Будущие даты недоступны.'
@@ -216,13 +240,14 @@ def test_including_today_marks_the_running_day(client, app):
 
 def test_build_report_is_pure_and_reports_history_start():
     end = date(2026, 10, 21)
-    report = build_report(end, {}, today=date(2026, 10, 22), history_start=date(2026, 10, 13), configured=True)
+    report = build_report(end - timedelta(days=6), end, {}, today=date(2026, 10, 22), history_start=date(2026, 10, 13),
+                          configured=True)
     assert report['periods'][0]['days'][0]['weekday'] == 'чт'
     assert report['history_start'] == '2026-10-13'
     assert any(text.startswith('Год назад (16.10.2025 – 22.10.2025)') and 'начинается с 13.10.2026' in text
                for text in report['warnings'])
     # Дни после начала истории при подключённом iiko названы загружающимися.
-    assert any(text.startswith('Последние 7 дней (15.10 – 21.10)') and 'ещё загружаются из iiko' in text
+    assert any(text.startswith('Выбранный период (15.10 – 21.10)') and 'ещё загружаются из iiko' in text
                for text in report['warnings'])
     assert [period['key'] for period in report['periods']] == ['current', 'previous', 'year']
     assert report['timezone'] == 'Asia/Tashkent' and report['source'].startswith('iiko OLAP SALES')
