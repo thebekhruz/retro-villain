@@ -4,7 +4,7 @@ import asyncio
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal, InvalidOperation, ROUND_DOWN
 from pathlib import Path
 
@@ -24,6 +24,9 @@ REFERENCE_ORIGIN = 'https://open.er-api.com'
 REFERENCE_PATH = '/v6/latest/USD'
 REFERENCE_TOLERANCE = Decimal('0.03')
 DISCOUNT = Decimal('0.015')
+# Сколько последних дней браузер кассира дописывает в базу, если их там нет (T-533):
+# без запаса прошлых курсов серверу не на что опереться, когда ЦБ недоступен.
+BACKFILL_DAYS = 14
 
 
 def round_restaurant_rate(value: Decimal) -> Decimal:
@@ -36,11 +39,15 @@ class UsdRate:
     source_date: date
     official_rate: Decimal
     restaurant_rate: Decimal
+    # T-533: курс взят из базы за другой (последний известный) день — ЦБ был недоступен.
+    fallback_from: date | None = None
 
     def json(self):
         return dict(date=self.day.isoformat(), source_date=self.source_date.isoformat(),
                     official_rate=str(self.official_rate),
-                    restaurant_rate=str(self.restaurant_rate), discount_percent='1.5')
+                    restaurant_rate=str(self.restaurant_rate), discount_percent='1.5',
+                    stale=self.fallback_from is not None,
+                    fallback_from=self.fallback_from.isoformat() if self.fallback_from else None)
 
 
 class UsdRates:
@@ -98,6 +105,31 @@ class UsdRates:
             return None
         return UsdRate(day, date.fromisoformat(row[0]), Decimal(row[1]), round_restaurant_rate(Decimal(row[2])))
 
+    def latest_before(self, day: date):
+        """Последний сохранённый курс не позже этого дня (T-533), помеченный как запасной."""
+        with closing(self._open()) as connection:
+            row = connection.execute(
+                'SELECT day, source_date, official_rate, restaurant_rate FROM cashier_usd_rates '
+                'WHERE day <= ? ORDER BY day DESC LIMIT 1', (day.isoformat(),)).fetchone()
+        if row is None:
+            return None
+        return UsdRate(day, date.fromisoformat(row[1]), Decimal(row[2]),
+                       round_restaurant_rate(Decimal(row[3])), fallback_from=date.fromisoformat(row[0]))
+
+    def effective(self, day: date):
+        """Курс дня, а если его нет — последний известный; без внешних запросов."""
+        return self.stored(day) or self.latest_before(day)
+
+    def missing_days(self, day: date, span: int = BACKFILL_DAYS):
+        """Дни из последних `span` (по `day` включительно) без сохранённого курса."""
+        first = day - timedelta(days=span - 1)
+        with closing(self._open()) as connection:
+            rows = connection.execute('SELECT day FROM cashier_usd_rates WHERE day BETWEEN ? AND ?',
+                                      (first.isoformat(), day.isoformat())).fetchall()
+        known = {row[0] for row in rows}
+        return [candidate for offset in range(span)
+                if (candidate := first + timedelta(days=offset)).isoformat() not in known]
+
     def _save(self, rate: UsdRate):
         with closing(self._open()) as connection:
             with connection:
@@ -115,7 +147,15 @@ class UsdRates:
             saved = await asyncio.to_thread(self.stored, day)
             if saved is not None:
                 return saved
-            rate = await self._fetch(day)
+            try:
+                rate = await self._fetch(day)
+            except DataError:
+                # T-533: ЦБ недоступен — отдаём последний известный курс из базы,
+                # не сохраняя его за этот день: настоящий ещё может прийти из браузера.
+                fallback = await asyncio.to_thread(self.latest_before, day)
+                if fallback is None:
+                    raise
+                return fallback
             return await asyncio.to_thread(self._save, rate)
 
     async def submit(self, day: date, payload):
