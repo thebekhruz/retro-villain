@@ -59,7 +59,12 @@ def main() -> int:
         redirect_uri=redirect, grant_type='authorization_code'), timeout=30)
     token = response.json().get('refresh_token') if response.status_code == 200 else None
     if not token:
-        print(f'Google не выдал refresh-токен ({response.status_code}).', file=sys.stderr)
+        try:
+            body = response.json()
+            reason = f"{body.get('error', '')}: {body.get('error_description', '')}"
+        except ValueError:
+            reason = ''
+        print(f'Google не выдал refresh-токен ({response.status_code} {reason}).', file=sys.stderr)
         return 1
     print('\nGOOGLE_DRIVE_REFRESH_TOKEN=' + token)
     return 0
