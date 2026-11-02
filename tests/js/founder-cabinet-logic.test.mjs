@@ -206,6 +206,18 @@ test('T-506: строка сегодняшнего дня — время чте�
   assert.equal(logic.todayStatus(undefined, '2026-09-24'), '');
 });
 
+test('T-588: наличные банкета — шаг «К передаче» только в день, когда они есть', () => {
+  const brief = banquet_cash => logic.cashierBrief({date: '2026-11-01', handover: {},
+    cashier: {register_revenue: '30414000', expected_handover: '14201500', shift: {open: false, closed_at: '2026-11-01T23:05:05'},
+      report: {sales: '30414000', payments: [], demo_cash: '11599500', banquet_cash, cash_prepayment: '0', receipts: '0',
+        expenses: '398000', shokh: '0', usd_total: '0', handover: '14201500', issues: []}}}, '2026-11-02');
+  const withBanquet = brief('3000000');
+  assert.deepEqual(withBanquet.steps.slice(0, 2).map(row => row.label), ['Наличные', '+ Банкет наличными']);
+  assert.equal(plain(withBanquet.steps[1].value), '3 000 000');
+  assert.equal(withBanquet.steps[1].muted, false);
+  assert.ok(!brief(null).steps.some(row => row.label.includes('Банкет')));
+});
+
 test('T-512: краткий отчёт кассира — продажи, оплаты, «К передаче» по шагам и отметка бухгалтера', () => {
   const day = {date: '2026-10-18', handover: {recorded: '31348000.00', expected: '31346500.00', status: 'mismatch', difference: '1500.00', confirmed: true},
     cashier: {register_revenue: '32492000.00', expected_handover: '31346500.00', shift: {open: false, closed_at: '2026-10-19T00:41:10'},

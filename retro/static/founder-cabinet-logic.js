@@ -350,7 +350,10 @@
     else if (day.date === today) pill = {text: 'Смена ещё не открыта', tone: 'wait'};
     const count = report.receipts_count;
     const usd = num(report.usd_total) || 0;
-    const steps = [step('Наличные', report.demo_cash, ''), step('Предоплаты наличными', report.cash_prepayment, '+'),
+    const steps = [step('Наличные', report.demo_cash, ''),
+      // Наличные банкета на кассе Ретро (T-588) — только в день, когда они есть.
+      ...(num(report.banquet_cash) ? [step('Банкет наличными', report.banquet_cash, '+')] : []),
+      step('Предоплаты наличными', report.cash_prepayment, '+'),
       step('Поступления', report.receipts, '+'), step('Расходы', report.expenses, '−'),
       step('На закуп', report.shokh, '−'),
       // Доллары — всегда строкой (T-520): ноль приглушён, за строкой — взносы дня.

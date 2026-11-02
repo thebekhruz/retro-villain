@@ -3613,6 +3613,8 @@ Object.assign(globalThis.RetroDictionaryUz, {
   'К передаче бухгалтеру': "Buxgalterga topshiriladi",
   'Расходы из кассы': "Kassadan xarajatlar",
   'Поступления в кассу': "Kassaga kirimlar",
+  '+ Банкет наличными': "+ Banket uchun naqd",
+  'Банкет наличными': "Banket uchun naqd",
   '+ Предоплаты наличными': "+ Naqd oldindan to'lovlar",
   'Доллары в сейф': "Seyfga dollar",
   'Курс Retro': "Retro kursi",

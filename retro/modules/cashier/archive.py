@@ -10,8 +10,9 @@ from retro.accounting_period import ACCOUNTING_START
 from .service import (Snapshot, Payment, Prepayment, RevenueBreakdown, ShiftStatus, DataError, TZ, RETRO_REGISTER,
                       PayTypeAmount, PaymentGroup, RedeemedOrder)
 
-# 08.10: выручка по кассам iiko и зачтённые предоплаты — старые снимки их не знают.
-CALCULATION_VERSION = 'cashier-2026-10-08-v1'
+# 02.11: наличные банкета в передаче (T-588) — старые снимки их не знают, дни
+# перечитываются из iiko, иначе 01.11 осталось бы с заниженной передачей.
+CALCULATION_VERSION = 'cashier-2026-11-02-v1'
 
 
 def archive_boundary(day):
@@ -35,6 +36,7 @@ def decode_snapshot(payload):
         revenue_breakdown=RevenueBreakdown(*(Decimal(breakdown[key]) for key in
             ('retro', 'school', 'bekhruz_banquet'))) if breakdown else None,
         cash_prepayment=amount('cash_prepayment'), new_prepayment=amount('new_prepayment'),
+        banquet_cash=amount('banquet_cash') or Decimal(0),
         # Предоплаты могли не посчитаться (возврат аванса) — тогда они None, а
         # причина хранится рядом и переживает перезапуск вместе со снимком.
         prepayment_issue=value.get('prepayment_issue'),

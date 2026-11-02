@@ -371,6 +371,10 @@ function showHandover() {
   $('download').disabled = !snapshot || snapshot.stale || snapshot.refreshing || !financeData || !receiptData;
   const text = key => { const value = summaryValue(key); return value === null ? '—' : money.format(value); };
   $('demo-cash').textContent = text('demo_cash');
+  // Наличные банкета на кассе Ретро (T-588): строка только в день, когда они есть.
+  const banquet = summaryValue('banquet_cash');
+  $('handover-banquet-row').hidden = !banquet;
+  $('handover-banquet').textContent = banquet ? money.format(banquet) : '—';
   // Возврат аванса гонит смену в минус, и разностная оценка предоплат
   // перестаёт работать. День при этом валиден: выручка и чеки считаются по
   // продажам. Показываем «требует проверки», а не ноль и не прочерк.

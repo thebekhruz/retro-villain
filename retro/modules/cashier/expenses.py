@@ -259,11 +259,15 @@ def cash_to_finance(snapshot, expense_total, other_receipts=Decimal(0), usd_dedu
 
     Предоплаты наличными входят в сумму слагаемым, поэтому неизвестные
     предоплаты делают неизвестной и передачу. Подставлять вместо них ноль
-    нельзя: это молча занизило бы передачу на весь возврат аванса."""
+    нельзя: это молча занизило бы передачу на весь возврат аванса.
+
+    Наличные банкета лежат в том же ящике, поэтому тоже передаются (T-588), хотя
+    в выручку Ретро не входят."""
     if snapshot.cash_prepayment is None or usd_deduction is None:
         return None
     demo_amount = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
-    return demo_amount + snapshot.cash_prepayment + other_receipts - expense_total - usd_deduction
+    return (demo_amount + snapshot.banquet_cash + snapshot.cash_prepayment + other_receipts
+            - expense_total - usd_deduction)
 
 
 def seed_cashier_expense(path: Path, date_from: date, date_to: date, description: str,

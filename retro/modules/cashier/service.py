@@ -176,6 +176,9 @@ class Snapshot:
     # None — «неизвестно», а не ноль: расчёт предоплат отказал (prepayment_issue).
     cash_prepayment: Decimal | None = Decimal(0)
     new_prepayment: Decimal | None = Decimal(0)
+    # Наличные за банкет, принятые на кассе Ретро: «Демо» всей кассы минус «Демо»
+    # без секции банкета. Входят только в передачу, в выручку Ретро не входят (T-588).
+    banquet_cash: Decimal = Decimal(0)
     register_payment_sales: Decimal | None = None
     register_received_total: Decimal | None = None
     source: str = 'iiko'
@@ -246,6 +249,7 @@ class Snapshot:
                     payment_total=str(sum((p.amount for p in self.payments), Decimal(0))),
                     cash_prepayment=str(self.cash_prepayment) if self.cash_prepayment is not None else None,
                     new_prepayment=str(self.new_prepayment) if self.new_prepayment is not None else None,
+                    banquet_cash=str(self.banquet_cash),
                     prepayment_verified=False,
                     prepayment_issue=self.prepayment_issue,
                     prepayments=([entry.json() for entry in self.prepayments]

@@ -213,6 +213,8 @@ def handover_rows(summary: dict) -> list[tuple[str, str, bool, str | None]]:
             step('Поступления', summary.get('receipts'), '+ '),
             step('Расходы', summary.get('expenses'), '− '),
             step('На закуп', summary.get('shokh'), '− ')]
+    if summary.get('banquet_cash'):
+        rows.insert(1, step('Банкет наличными', summary['banquet_cash'], '+ '))
     usd = Decimal(summary.get('usd_total') or 0)
     rows.append(('− Доллары в сейф', f'${money(usd)}', not usd, None))
     return rows
