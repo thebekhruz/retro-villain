@@ -377,9 +377,9 @@ def till_summary(state, day: date, snapshot, *, totals=None) -> dict:
     """Готовые числа карточки «К передаче бухгалтеру» и «Касса за день» (5a).
 
     Экран их не пересчитывает (Функционал §1): формула одна — здесь и в
-    cash_to_finance. К передаче = «Демо» + предоплаты наличными + прочие
-    поступления − расходы наличными − выдано Шоху − доллары по курсу Retro.
-    Открытые счета не входят. В демо ручных операций нет."""
+    cash_to_finance. К передаче = «Демо» + наличные банкета + предоплаты
+    наличными + прочие поступления − расходы наличными − выдано Шоху − доллары
+    по курсу Retro. Открытые счета не входят. В демо ручных операций нет."""
     if totals is None or snapshot.demo:
         totals = TillTotals(Decimal(0), Decimal(0), Decimal(0)) if snapshot.demo else till_totals(state, day)
     demo_cash = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
@@ -405,7 +405,11 @@ def till_summary(state, day: date, snapshot, *, totals=None) -> dict:
                 handover=str(handover) if handover is not None else None,
                 prepayment_issue=snapshot.prepayment_issue,
                 sales=str(snapshot.revenue),
-                total_inflow=str(base + totals.receipts) if base is not None else None)
+                total_inflow=str(base + totals.receipts) if base is not None else None,
+                # Ключ только в день с такими наличными: сводка входит в отпечаток
+                # отчёта (telegram_report.fingerprint), и новый ключ в обычный день
+                # отправил бы в группу «Исправленный отчёт» при повторном «Передать».
+                **({'banquet_cash': str(snapshot.banquet_cash)} if snapshot.banquet_cash else {}))
 
 
 def expected_from_saved(state, day: date):

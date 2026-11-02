@@ -709,6 +709,14 @@ class IikoClient:
                 for row in shift_payments:
                     amounts[cell(row, 0)] += number(cell(row, 1))
                 register_sales = sum(amounts.values(), Decimal(0))
+                # Наличные банкета на кассе Ретро (T-588). «Демо» снимка считается без
+                # секции банкета, а предоплаты наличными вычитают наличные всей кассы,
+                # поэтому такая оплата не попадает ни туда, ни туда, хотя лежит в ящике.
+                # 01.11.2026: заказ 72022 доплатили 3 000 000 наличными, панель занизила
+                # передачу на эту сумму. Фильтр секции в scope не убирать: он держит
+                # банкет вне выручки Ретро.
+                retro_cash = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
+                banquet_cash = amounts['Демо'] - retro_cash
                 # Отказ расчёта предоплат не отменяет день: выручка, чеки и
                 # способы оплаты посчитаны по продажам и от смены не зависят.
                 try:
@@ -720,6 +728,7 @@ class IikoClient:
                     total_prepay = cash_prepay = None
                     issue = str(error)
                 return replace(snapshot, cash_prepayment=cash_prepay, new_prepayment=total_prepay,
+                               banquet_cash=banquet_cash,
                                register_payment_sales=register_sales,
                                register_received_total=(register_sales + total_prepay
                                                         if total_prepay is not None else None),

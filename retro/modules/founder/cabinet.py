@@ -175,7 +175,8 @@ def till_report(state, day: date, snapshot, totals) -> dict:
                 receipts_count=receipts, average=money(average) if average is not None else None,
                 payments=[dict(name=name, amount=money(amount)) for name, amount in payments],
                 prepayments=prepayments,
-                demo_cash=pick('demo_cash'), cash_prepayment=pick('cash_prepayment'),
+                demo_cash=pick('demo_cash'), banquet_cash=pick('banquet_cash'),
+                cash_prepayment=pick('cash_prepayment'),
                 receipts=pick('receipts'), expenses=pick('expenses'), shokh=pick('shokh'),
                 usd_total=pick('usd_total'), handover=pick('handover'),
                 issues=[issue for issue in (pick('prepayment_issue'), pick('usd_issue')) if issue])

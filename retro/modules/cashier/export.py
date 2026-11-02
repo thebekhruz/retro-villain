@@ -188,13 +188,18 @@ def export_report(snapshot, expenses=(), receipts=(), *, usd_total=Decimal(0),
     sheet['A30'], sheet['B30'] = 'Прочие поступления наличными', receipt_total
     for position in ('B28', 'B30'):
         sheet[position].number_format = MONEY
-    sheet['A31'] = ('Расчёт: Демо + предоплаты наличными + прочие поступления − расходы − выдано Шоху − USD по курсу Retro.'
+    # Наличные банкета (T-588): строка и слагаемое только в день, когда они есть.
+    banquet_step = ' + банкет наличными' if snapshot.banquet_cash else ''
+    sheet['A31'] = (f'Расчёт: Демо{banquet_step} + предоплаты наличными + прочие поступления − расходы − выдано Шоху − USD по курсу Retro.'
                     + (' ' + snapshot.prepayment_issue if snapshot.prepayment_issue else ''))
     sheet['A32'], sheet['B32'] = 'Доллары в сейф за день, USD', usd_total
     sheet['A33'] = 'Курс Retro за выбранный день, сум/USD'
     money_cell(sheet['B33'], usd_rate if usd_total else Decimal(0))
     sheet['A34'] = 'Вычет из передачи: доллары × курс Retro'
     money_cell(sheet['B34'], usd_deduction)
+    if snapshot.banquet_cash:
+        sheet['A35'] = 'Банкет наличными'
+        money_cell(sheet['B35'], snapshot.banquet_cash)
     for row in (31, 32, 33, 34):
         sheet.cell(row, 1).alignment = Alignment(wrap_text=True, vertical='center')
         sheet.row_dimensions[row].height = 45 if row == 31 else 30
@@ -303,8 +308,8 @@ def export_report(snapshot, expenses=(), receipts=(), *, usd_total=Decimal(0),
     manual['A1'] = 'RETRO MILLIY · РАСХОДЫ КАССИРА'
     manual['A2'] = datetime.combine(snapshot.day, datetime.min.time())
     manual['A2'].number_format = 'dd.mm.yyyy'
-    manual['A4'], manual['B4'] = 'Демо · по данным iiko', next(
-        (p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0))
+    manual['A4'] = 'Демо + банкет наличными · по данным iiko' if snapshot.banquet_cash else 'Демо · по данным iiko'
+    manual['B4'] = next((p.amount for p in snapshot.payments if p.name == 'Демо'), Decimal(0)) + snapshot.banquet_cash
     manual['A5'], manual['B5'] = 'Расходы наличными · включая зарплату', expense_total
     manual['A6'] = 'К передаче в финансовый отдел'
     money_cell(manual['B6'], handover)
