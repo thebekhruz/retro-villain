@@ -1,0 +1,45 @@
+{
+  "correlationId": "fixture-correlation",
+  "groups": [
+    {"id": "group-normal", "name": "Миллий", "isDeleted": false},
+    {"id": "group-yandex", "name": "ДОСТАВКА ЯНДЕКС", "isDeleted": false}
+  ],
+  "productCategories": [
+    {"id": "category-food", "name": "Блюда", "isDeleted": false}
+  ],
+  "products": [
+    {
+      "id": "product-normal",
+      "parentGroup": "group-normal",
+      "productCategoryId": "category-food",
+      "code": "00725",
+      "name": "Шашлык из говядины",
+      "type": "Dish",
+      "measureUnit": "порц",
+      "sizePrices": [{"price": {"currentPrice": 35000}}],
+      "isDeleted": false
+    },
+    {
+      "id": "product-yandex",
+      "parentGroup": "group-yandex",
+      "productCategoryId": "category-food",
+      "code": "02097",
+      "name": "Яндекс ДОСТАВКА Шашлык из говядины",
+      "type": "Dish",
+      "measureUnit": "порц",
+      "sizePrices": [{"price": {"currentPrice": 40000}}],
+      "isDeleted": false
+    },
+    {
+      "id": "product-deleted",
+      "parentGroup": "group-yandex",
+      "productCategoryId": "category-food",
+      "code": "99999",
+      "name": "Yandex Старое блюдо",
+      "type": "Dish",
+      "measureUnit": "порц",
+      "sizePrices": [],
+      "isDeleted": true
+    }
+  ]
+}

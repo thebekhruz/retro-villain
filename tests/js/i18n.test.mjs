@@ -186,3 +186,11 @@ test('T-501: «Как считается» и заметки ПК-отчёта �
   assert.equal(translate('Прибыль итоговая к выручке, после расхода без выручки'),
     'Yakuniy foydaning tushumga nisbati, tushumsiz xarajatdan keyin');
 });
+
+test('T-592: вся история выручки — месяцы, покрытие столбика и пропуски по-узбекски', () => {
+  assert.equal(translate('сен 2026'), 'sen 2026');
+  assert.equal(translate('ВСЯ ИСТОРИЯ'), 'BUTUN TARIX');
+  assert.equal(translate('4 из 4 дн. · край истории'), '4 / 4 kun · tarix cheti');
+  assert.equal(translate('2 из 2 дн. · край истории · есть незакрытые'), '2 / 2 kun · tarix cheti · yopilmaganlari bor');
+  assert.equal(translate('Нет данных за 3 дня из 64 — в суммы они не вошли.'), '64 kundan 3 kun uchun ma’lumot yo‘q — ular summalarga kirmagan.');
+});

@@ -13,8 +13,10 @@
   <link rel="stylesheet" href="/static/style.css">
   <link rel="stylesheet" href="/static/director-app.css">
   <link rel="stylesheet" href="/static/founder-cabinet.css">
+  <link rel="stylesheet" href="/static/founder-mobile.css">
   <link rel="stylesheet" href="/static/mobile.css">
-  <script src="/static/busy.js" defer></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script><script src="/static/push.js" defer></script>
+  <!-- Демо-режим (?demo=1) — только на localhost; подменяет ответы до первого запроса страницы. -->
+  <script src="/static/busy.js" defer></script><script src="/static/founder-demo.js"></script><script src="/static/icons.js" defer></script><script src="/static/sidebar-state.js"></script><script src="/static/feedback.js" defer></script><script src="/static/financial-write.js" defer></script><script src="/static/i18n-uz.js" defer></script><script src="/static/i18n.js" defer></script><script src="/static/nav.js" defer></script><script src="/static/logout.js" defer></script><script src="/static/app-profile.js" defer></script><script src="/static/director-logic.js" defer></script><script src="/static/accountant-logic.js" defer></script><script src="/static/founder-cabinet-logic.js" defer></script><script src="/static/founder-markdown.js" defer></script><script src="/static/ai-chat.js" defer></script><script src="/static/founder-cabinet.js" defer></script><script src="/static/push.js" defer></script><script src="/static/founder-mobile.js" defer></script>
 </head>
 <body class="founder-cabinet">
 <aside class="sidebar" data-collapsible>
@@ -39,6 +41,21 @@
       <div id="fo-alerts" class="fo-alerts" aria-live="polite"></div>
       <div id="fo-top" class="fo-phone-head"><span class="rm-phone-mark" aria-hidden="true">R</span><div><span id="fo-phone-date">Сегодня</span><strong>Мои деньги</strong></div><button id="profile-open" class="app-profile" type="button" aria-haspopup="dialog" aria-controls="profile-sheet" aria-label="Профиль"><span data-profile-mark data-i18n="off"></span></button></div>
       <p class="fo-phone-status"><span class="top-status rm-status-skel" id="updated"></span></p>
+      <!-- Макет «2а»: одна плашка вместо повторов «Подключение iiko ещё не настроено…» (founder-mobile.js). -->
+      <div id="fo-iiko-off" class="fo-iiko-off" role="status" hidden><span aria-hidden="true">!</span><p><b>Нет связи с iiko.</b> Выручка и Счёт Шефа не обновляются. Касса бухгалтера работает как обычно.</p></div>
+
+      <!-- Макет «2 · Главная», ноябрь 2026: бенто наверху, над дивидендами (ТЗ, задача 3) — касса вчера,
+           у бухгалтера, Счёт Шефа вчера, отчёт бухгалтера. Те же данные, что ниже. -->
+      <section class="fo-bento" aria-label="Коротко за вчера и сегодня">
+        <article class="fo-bento-tile is-wide">
+          <div class="fo-bento-head"><span id="fo-b-cash-label" class="fo-bento-label">Касса вчера</span><span id="fo-b-cash-change" class="fo-bento-change" hidden></span></div>
+          <div class="fo-bento-big"><strong id="fo-b-cash" class="rm-num">—</strong><small>сум</small></div>
+          <p id="fo-b-cash-note" class="fo-bento-note"></p>
+        </article>
+        <article class="fo-bento-tile"><span class="fo-bento-label">У бухгалтера</span><strong id="fo-b-acc" class="rm-num">—</strong><small>сум на руках</small></article>
+        <article class="fo-bento-tile"><span class="fo-bento-label">Счёт Шефа вчера</span><strong id="fo-b-chef" class="rm-num">—</strong><small id="fo-b-chef-sub"></small></article>
+        <article class="fo-bento-tile is-wide is-row"><span id="fo-b-report-mark" class="fo-bento-mark" aria-hidden="true"></span><span class="fo-bento-row-label">Отчёт бухгалтера за вчера</span><b id="fo-b-report">—</b></article>
+      </section>
 
       <article class="rm-phone-hero fo-div">
         <div class="fo-div-top"><span>Дивиденды · неделя <b id="fo-div-range">—</b></span></div>
@@ -50,12 +67,13 @@
         <details id="fo-div-history" class="fo-div-history" hidden><summary>Прошлые недели</summary><div id="fo-div-history-list"></div></details>
       </article>
 
-      <!-- T-512: краткие отчёты кассира (вчера, сегодня) и бухгалтера (сегодня) сразу под дивидендами. -->
+
+      <!-- T-512: краткие отчёты бухгалтера (сегодня) и кассира (вчера, сегодня) сразу под дивидендами. -->
       <article class="rm-phone-card fo-rep">
         <div class="fo-rep-tabs" role="tablist" aria-label="Отчёт дня">
+          <button id="fo-rep-tab-accountant-t" type="button" role="tab" data-rep="accountant-t" aria-selected="false" aria-controls="fo-rep-body">Бухгалтер · сегодня</button>
           <button id="fo-rep-tab-cashier-y" type="button" role="tab" data-rep="cashier-y" aria-selected="false" aria-controls="fo-rep-body">Касса · вчера</button>
           <button id="fo-rep-tab-cashier-t" type="button" role="tab" data-rep="cashier-t" aria-selected="false" aria-controls="fo-rep-body">Касса · сегодня</button>
-          <button id="fo-rep-tab-accountant-t" type="button" role="tab" data-rep="accountant-t" aria-selected="false" aria-controls="fo-rep-body">Бухгалтер · сегодня</button>
         </div>
         <div id="fo-rep-body" class="fo-rep-body" role="tabpanel" aria-live="polite"></div>
       </article>
@@ -64,7 +82,7 @@
            (порядок учредителя: касса → бухгалтер → Счёт Шефа; founder-cabinet.js, placeChef). -->
       <div id="fo-chef-slot-phone" class="fo-chef-slot"></div>
 
-      <article class="rm-phone-card">
+      <article class="rm-phone-card fo-demo-card">
         <span class="fo-label">Демо-касса вчера · <span id="fo-y-date">—</span> · Retro</span>
         <div class="fo-big"><strong id="fo-y-demo" class="rm-num">—</strong><small>сум</small></div>
         <div class="fo-line"><span>Бухгалтер получил от кассира</span><b class="rm-num"><span id="fo-y-recv">—</span> <span id="fo-y-mark" class="fo-mark"></span></b></div>
@@ -102,21 +120,39 @@
     </nav>
   </div>
 
-  <!-- Профиль: кто вошёл, язык, вся панель (администратору), выход. -->
-  <dialog id="profile-sheet" class="app-sheet" aria-labelledby="profile-name">
+  <!-- Профиль (макет «5 · Профиль», ноябрь 2026): кто вошёл, уведомления о Счёте Шефа,
+       язык, «на экран Домой», вся панель (администратору), выход. Открывается снизу. -->
+  <dialog id="profile-sheet" class="app-sheet fo-sheet" aria-labelledby="profile-name">
     <div class="app-sheet-head">
       <span class="app-sheet-mark" data-profile-mark aria-hidden="true" data-i18n="off"></span>
       <div class="app-sheet-who"><strong id="profile-name" data-profile-name data-i18n="off"></strong><span data-profile-role></span></div>
       <button id="profile-close" class="dir-close" type="button" aria-label="Закрыть">×</button>
     </div>
-    <div class="app-sheet-row">
-      <span>Язык</span>
-      <div class="lang-switch" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true">РУ</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false">UZ</button></div>
+    <p class="fo-sheet-sec">Уведомления</p>
+    <div class="fo-sheet-group">
+      <div class="push-box app-sheet-row" data-push hidden></div>
+      <div id="fo-sheet-limit-row" class="fo-sheet-item" hidden><span class="fo-sheet-text"><b>Порог отметки</b><small>Счета выше суммы — красным</small></span><em id="fo-sheet-limit" class="rm-num"></em></div>
     </div>
-    <div class="push-box app-sheet-row" data-push hidden></div>
+    <p class="fo-sheet-sec">Язык</p>
+    <div class="fo-sheet-group lang-switch fo-sheet-lang" role="group" aria-label="Til / Язык"><button type="button" class="lang-button" data-lang="ru" aria-pressed="true" data-i18n="off">Русский</button><button type="button" class="lang-button" data-lang="uz" aria-pressed="false" data-i18n="off">O‘zbekcha</button></div>
+    <p class="fo-sheet-sec">Приложение</p>
+    <div class="fo-sheet-group">
+      <details class="fo-sheet-home"><summary class="fo-sheet-item"><span class="fo-sheet-text"><b>Добавить на экран «Домой»</b><small>Без этого уведомления не приходят на iPhone</small></span></summary>
+        <ol><li>iPhone: Safari → «Поделиться» → «На экран „Домой“».</li><li>Android: Chrome → меню ⋮ → «Добавить на главный экран».</li><li>Откройте Retro Milliy со значка и включите уведомления здесь.</li></ol></details>
+    </div>
     <!-- Администратору открыты и другие модули — ему нужна дорога назад. -->
     <a id="fo-back" class="dir-primary app-secondary app-sheet-link" href="/login" hidden>Вся панель</a>
-    <button id="logout" class="dir-primary app-secondary" type="button">Выйти</button>
+    <button id="logout" class="dir-primary app-secondary fo-sheet-logout" type="button">Выйти</button>
+  </dialog>
+
+  <!-- Состав счёта Шефа (макет «4»): открывается по нажатию на уведомление, если сервер отдал блюда. -->
+  <dialog id="fo-bill-sheet" class="app-sheet fo-sheet fo-bill-sheet" aria-labelledby="fo-bill-table">
+    <div class="app-sheet-head">
+      <div class="app-sheet-who"><span id="fo-bill-day" class="fo-bill-day"></span><strong id="fo-bill-table"></strong><span id="fo-bill-waiters" data-i18n="off"></span></div>
+      <button id="fo-bill-close" class="dir-close" type="button" aria-label="Закрыть">×</button>
+    </div>
+    <div id="fo-bill-body"></div>
+    <p id="fo-bill-over" class="fo-bill-over" hidden></p>
   </dialog>
 
   <!-- ══ 7b · Компьютер: всё ли работает правильно ═══════════════════════ -->
@@ -164,6 +200,8 @@
                включили — на компьютере тонкая строка, на телефоне всё в профиле. -->
           <div class="push-box" data-push="until-on" hidden></div>
           <div id="fo-chef" class="fo-chef"></div>
+          <!-- Телефон: блок свёрнут до счетов выше порога; кнопка раскрывает весь список (на компьютере скрыта). -->
+          <button id="fo-chef-more" class="fo-chef-more" type="button" aria-expanded="false" aria-controls="fo-chef" hidden>Все счета</button>
           <div class="fo-panel-foot"><span id="fo-chef-limit-note"></span><span id="fo-chef-month"></span></div>
         </section>
       </div>

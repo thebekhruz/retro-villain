@@ -1,0 +1,354 @@
+/* Мобильная вёрстка учредителя по макету «Retro Milliy — мобильный дашборд
+   учредителя» (ноябрь 2026). Только телефон: всё — внутри брейкпоинта
+   страниц учредителя (≤ 900, как в founder-cabinet.css и founder.css);
+   на компьютере этот файл меняет только одно — прячет новые элементы
+   телефона (правило ниже). Подключается перед mobile.css. */
+
+/* Новые элементы только для телефона: на компьютере их нет вовсе. */
+/* Счёт Шефа с составом (поле `dishes`; сейчас — только в демо): строка-кнопка
+   раскрывает блюда. Без состава строки остаются прежними на любой ширине. */
+button.fo-chef-row{width:100%;margin:4px 0 0;border:0;border-top:1px solid #edf1e9;background:none;font:inherit;font-size:12px;
+  text-align:left;color:inherit;cursor:pointer}
+button.fo-chef-row.is-over{background:#fff7f8}
+.fo-chef-row.has-dishes>b::after{content:" ▾";color:#8A948E;font-weight:400}
+.fo-chef-row.has-dishes[aria-expanded=true]>b::after{content:" ▴"}
+.fo-chef-dishes{display:flex;flex-direction:column;gap:5px;margin:0 0 10px 52px;padding:10px 12px;border-radius:12px;background:#F7F6F1}
+.fo-chef-dishes[hidden]{display:none}
+.fo-bill-head{display:flex;justify-content:space-between;align-items:center;font-size:11px;color:#56635C}
+.fo-bill-sample{padding:1px 6px;border-radius:6px;background:#F3E7C6;color:#7A5C1E;font-size:11px;font-weight:700;font-style:normal;text-transform:uppercase}
+.fo-bill-dish{display:flex;justify-content:space-between;gap:10px;font-size:13px}
+.fo-bill-dish small{color:#56635C;font-size:inherit}
+.fo-bill-dish b{font-weight:600;white-space:nowrap}
+
+.fa-week,.fa-broadcast-actions,.fa-sheet-close,.fo-iiko-off{display:none}
+
+@media(max-width:900px){
+  /* ── Токены макета ───────────────────────────────────────────────────── */
+  .founder-cabinet,.founder-analytics{
+    --m-bg:#F4F3EE;--m-card:#FFFFFF;--m-line:#E7E5DD;--m-line-soft:#EEECE4;
+    --m-green:#173D33;--m-gold-on-dark:#E2C277;--m-gold:#D8B46A;
+    --m-ink:#16231E;--m-muted:#56635C;
+    --m-up:#1A6B40;--m-up-bg:#E4F2E8;--m-down:#B42318;
+    --m-warn-bg:#FBEBD6;--m-warn-ink:#6A3E0A;
+    --m-r-hero:22px;--m-r-card:18px;--m-r-inner:14px;
+    --m-gutter:16px;--m-gap:8px;
+    --m-tabbar:72px;
+    background:var(--m-bg);color:var(--m-ink)}
+
+  /* ── Нижнее меню: одно, закреплено внизу экрана ─────────────────────────
+     Было sticky внутри блока телефона и уезжало вместе с ним. Теперь всегда
+     у нижнего края, с отступом под полосу «домой» iPhone; контент страницы
+     получает снизу место на высоту меню. */
+  .fo-tabs{position:fixed;left:0;right:0;bottom:0;z-index:50;margin:0;
+    border-top:1px solid var(--m-line);background:#fffffff2}
+  .fo-phone-body,.founder-analytics .founder-workspace{
+    padding-bottom:calc(var(--m-tabbar) + 16px + env(safe-area-inset-bottom))}
+  .founder-cabinet .fo-desk .fo-content{padding-bottom:0}
+  .founder-cabinet .fo-desk .fo-content:has(.fo-open){padding-bottom:calc(var(--m-tabbar) + 16px + env(safe-area-inset-bottom))}
+  /* Раздел открыт под карточкой «Подробно» — место под меню нужно уже ему, а не карточке. */
+  .founder-cabinet:has(.fo-desk .fo-open) .fo-phone-body{padding-bottom:10px}
+  .founder-cabinet:has(.fo-desk .fo-open) .fo-phone{min-height:0}
+  .fo-tabs .rm-tab{font-size:12px;color:var(--m-muted)}
+  .fo-tabs .rm-tab.is-active{color:var(--m-green)}
+
+  /* ── Поля страницы и карточки ───────────────────────────────────────── */
+  .founder-cabinet .rm-phone{background:var(--m-bg)}
+  .fo-phone-body{padding-left:var(--m-gutter);padding-right:var(--m-gutter);gap:10px}
+  .founder-cabinet .rm-phone-card{border:1px solid var(--m-line);border-radius:var(--m-r-card)}
+  .founder-cabinet .rm-phone-hero{background:var(--m-green);border-radius:var(--m-r-hero)}
+
+  /* ── Подписи: не мельче 12px, вторичный текст контрастнее ──────────── */
+  .fo-phone-status .top-status,.fa-phone-status .top-status{font-size:13px;color:var(--m-muted)}
+  .fo-label,.fo-hint,.fo-line>span,.fo-rep-sub{font-size:13px;color:var(--m-muted)}
+
+  /* ── Касания: всё, на что нажимают, — не ниже 44px ─────────────────── */
+  .fo-acc-open,.fo-presets button,.push-button,.fo-kpi-link{min-height:44px}
+  .fo-rep-tabs [role=tab]{min-height:44px}
+
+  /* ══ Главная «Мои деньги» (макет «2 · Главная с улучшениями») ══════════ */
+
+  /* Строка свежести данных — с точкой, как в макете. */
+  .fo-phone-status .top-status:not(:empty){display:inline-flex;align-items:center;gap:8px}
+  .fo-phone-status .top-status:not(:empty)::before{content:"";width:7px;height:7px;border-radius:50%;background:#C9A24E;flex:none}
+
+  /* Херо — без изменений по содержанию; чуть плотнее, чтобы с бенто
+     помещаться в первый экран на 360. */
+  .founder-cabinet .fo-div{padding:16px 16px 12px}
+  .founder-cabinet .fo-div-history summary{min-height:36px}
+
+  /* Бенто: отдельные белые плитки с промежутком 8px. */
+  .fo-bento{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--m-gap)}
+  .fo-bento-tile{display:flex;flex-direction:column;min-width:0;padding:14px 16px;background:var(--m-card);
+    border:1px solid var(--m-line);border-radius:var(--m-r-card)}
+  .fo-bento-tile.is-wide{grid-column:span 2}
+  .fo-bento-tile>strong{margin-top:8px;font-size:20px;font-weight:700;letter-spacing:-.01em;line-height:1.2}
+  .fo-bento-tile>small{margin-top:2px;font-size:12px;color:var(--m-muted)}
+  .fo-bento-label{font-size:13px;color:var(--m-muted)}
+  .fo-bento-head{display:flex;justify-content:space-between;align-items:center;gap:8px;min-height:24px}
+  .fo-bento-change{display:inline-flex;align-items:center;padding:3px 10px;border-radius:999px;font-size:13px;font-weight:700}
+  .fo-bento-change[hidden]{display:none}
+  .fo-bento-change.is-up{background:var(--m-up-bg);color:var(--m-up)}
+  .fo-bento-change.is-down{background:#FBE4E1;color:var(--m-down)}
+  .fo-bento-big{display:flex;align-items:baseline;gap:6px;margin-top:8px}
+  .fo-bento-big strong{font-size:30px;font-weight:700;letter-spacing:-.03em;line-height:1}
+  .fo-bento-big small{font-size:14px;color:var(--m-muted)}
+  .fo-bento-note{margin:8px 0 0;font-size:12px;line-height:1.4;color:var(--m-muted)}
+  .fo-bento-note:empty{display:none}
+  .fo-bento-tile.is-row{flex-direction:row;align-items:center;gap:12px;padding:12px 16px}
+  .fo-bento-row-label{flex:1;font-size:14px}
+  .fo-bento-tile.is-row b{font-size:14px;font-weight:600}
+  .fo-bento-mark{display:grid;place-items:center;width:30px;height:30px;flex:none;border-radius:50%;font-size:14px;font-weight:700}
+  .fo-bento-mark:empty{display:none}
+  .fo-bento-mark.is-ok{background:var(--m-up-bg);color:var(--m-up)}
+  .fo-bento-mark.is-warn{background:var(--m-warn-bg);color:var(--m-warn-ink)}
+  .fo-bento-mark.is-bad{background:#FBE4E1;color:var(--m-down)}
+  .fo-bento-tile b.is-ok{color:var(--m-up)}
+  .fo-bento-tile b.is-warn{color:var(--m-warn-ink)}
+  .fo-bento-tile b.is-bad{color:var(--m-down)}
+
+  /* Вкладки кассы — сегментами, как в макете. */
+  .fo-rep-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:2px;padding:3px;border-radius:12px;background:#EFEEE7}
+  .fo-rep-tabs [role=tab]{border:0;border-radius:9px;background:none;color:var(--m-muted);font-size:12px;font-weight:500;line-height:1.2;padding:0 2px}
+  .fo-rep-tabs [role=tab][aria-selected=true]{background:#fff;color:var(--m-ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  /* Раскрывающиеся строки («› + От кассира»): подпись — слева, сумма — справа. */
+  .fo-rep-fold summary{justify-content:flex-start;gap:6px}
+  .fo-rep-fold summary>b{margin-left:auto}
+
+  /* Счёт Шефа на телефоне: карточка в общем стиле; свёрнут до счетов выше порога. */
+  #fo-chef-slot-phone .fo-panel{display:flex;flex-direction:column;padding:16px 14px 4px;border-color:var(--m-line);border-radius:var(--m-r-card)}
+  /* Развёрнуто, как в макете: список → «Свернуть» → уведомления → итог месяца. */
+  #fo-chef-slot-phone .fo-panel .push-box{order:1}
+  #fo-chef-slot-phone .fo-panel .fo-panel-foot{order:2;padding:10px 0 12px}
+  #fo-chef-panel.is-folded .fo-chef-row:not(.is-over),
+  #fo-chef-panel.is-folded .push-box,
+  #fo-chef-panel.is-folded .fo-panel-foot{display:none}
+  .fo-chef-row.is-over{background:#FDF3F1}
+  .fo-chef-row.is-over b{color:var(--m-down)}
+  .fo-chef-more{display:flex;align-items:center;justify-content:center;width:100%;min-height:48px;margin-top:4px;border:0;
+    border-top:1px solid var(--m-line-soft);background:none;color:#1E5B47;font:inherit;font-size:14px;font-weight:600;cursor:pointer}
+  .fo-chef-more[hidden]{display:none}
+
+  /* Скрыто на телефоне (не удалено): «Демо-касса вчера» — её цифры уже в бенто
+     и во вкладках; «Кабинет основателя · Общая картина» и заголовки разделов
+     под ней — переезжают в Аналитику. Список замечаний остаётся: его
+     раскрывает «Все замечания ↓». */
+  .fo-demo-card{display:none}
+  .fo-desk .fo-heading,.fo-desk .fo-kpis,.fo-desk .fo-fold,.fo-desk .rm-footer{display:none}
+  /* Разделы недели открываются по ссылке из Аналитики (/founder#fo-week) или «Все замечания ↓». */
+  .fo-desk :is(#fo-week,#fo-acc,#fo-reports,#fo-exp,#fo-menu):not(.fo-open){display:none}
+  .fo-desk :is(#fo-week,#fo-acc,#fo-reports,#fo-exp,#fo-menu){scroll-margin-top:12px}
+  .fo-desk .fo-content{padding-top:0}
+
+  /* ══ Аналитика (макет «3б · Аналитика целиком + Общая картина») ════════ */
+
+  .founder-analytics .founder-workspace{padding-top:14px;padding-left:var(--m-gutter);padding-right:var(--m-gutter)}
+  .founder-analytics .fa-phone-status{margin-bottom:12px}
+  /* «Аналитика» уже в шапке — повтор «Кабинет основателя · Общая картина» только для чтения с экрана. */
+  .fa-week-head{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0 0 0 0);white-space:nowrap}
+
+  /* Раздел «Неделя» — «Общая картина». */
+  .fa-week{display:flex;flex-direction:column;gap:10px}
+  .fa-week-head h2,.founder-analytics .page-heading h1{margin:4px 0 0;font-size:26px;font-weight:600;letter-spacing:-.02em}
+  .fa-week-head h2 span,.founder-analytics .page-heading h1 span{color:#C9A24E}
+  .fa-week-switch{display:flex;align-items:center;justify-content:space-between;padding:2px;border:1px solid var(--m-line);
+    border-radius:var(--m-r-inner);background:var(--m-card);font-size:14px}
+  .fa-week-switch button{width:44px;height:44px;border:0;background:none;font-size:22px;color:var(--m-ink);cursor:pointer}
+  .fa-week-switch button:disabled{opacity:.3;cursor:default}
+  .fa-week-switch small{font-size:14px;color:var(--m-muted)}
+  .fa-week-hero{position:relative;overflow:hidden;padding:18px;border-radius:var(--m-r-hero);background:var(--m-green);color:#fff}
+  .fa-week-hero>span,.fa-week-hero>small{display:block;font-size:13px;color:#D5E0DA}
+  .fa-week-hero>small{margin-top:8px;font-size:12px}
+  .fa-week-hero>div{display:flex;align-items:baseline;gap:10px;margin-top:8px}
+  .fa-week-hero strong{font-size:34px;font-weight:700;letter-spacing:-.03em;line-height:1}
+  .fa-week-hero em{padding:3px 9px;border-radius:999px;font-size:13px;font-weight:700;font-style:normal}
+  .fa-week-hero em[hidden]{display:none}
+  .fa-week-hero em.is-up{background:rgba(140,220,170,.18);color:#A8EBC2}
+  .fa-week-hero em.is-down{background:rgba(255,160,150,.18);color:#FFC2BA}
+  .fa-week-tiles{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--m-gap)}
+  .fa-week-tiles article{min-width:0;padding:14px 16px;border:1px solid var(--m-line);border-radius:var(--m-r-card);background:var(--m-card)}
+  .fa-week-tiles article[hidden]{display:none}
+  .fa-week-tiles article.is-wide{grid-column:span 2}
+  .fa-week-tiles article.is-gold{background:#FBF5E8;border-color:#EEE2C3}
+  .fa-week-tiles span{display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:13px;color:var(--m-muted)}
+  .fa-week-tiles .is-gold span,.fa-week-tiles .is-gold small{color:#7A5C1E}
+  .fa-week-tiles span i{display:grid;place-items:center;width:22px;height:22px;border:1px solid #D9C69A;border-radius:50%;font-size:11px;font-weight:700;font-style:normal}
+  .fa-week-tiles strong{display:block;margin-top:8px;font-size:21px;font-weight:700}
+  .fa-week-tiles small{display:block;margin-top:3px;font-size:12px;color:var(--m-muted)}
+  .fa-bar{height:5px;margin:8px 0 5px;border-radius:3px;background:var(--m-line-soft);overflow:hidden}
+  .fa-bar span{display:block;height:100%;width:0;background:#C9A24E}
+  .fa-bar.is-split{height:6px;background:repeating-linear-gradient(90deg,#C9D6CF 0 4px,transparent 4px 7px)}
+  .fa-bar.is-split span{background:var(--m-green)}
+
+  /* Раздел «Как работает ресторан» — после разделительной линии. */
+  .founder-analytics .page-heading{margin:26px 0 10px;padding-top:22px;border-top:1px solid #DCD9CE}
+  .founder-analytics .page-heading .subtitle,.founder-analytics .module-badge{display:none}
+
+  /* Три быстрых периода поровну. */
+  .founder-analytics .quick-periods{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px;overflow:visible}
+  .founder-analytics .quick-periods .chip{min-height:44px;justify-content:center;white-space:normal;text-align:center;line-height:1.2;font-size:13px}
+  .founder-analytics .quick-periods .chip.is-active{background:var(--m-green);border-color:var(--m-green);color:#fff}
+
+  /* Направления: «Всего» первым тёмным, Retro и «в школе» рядом, банкеты узкой строкой. */
+  .founder-analytics .revenue-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--m-gap)}
+  .founder-analytics .revenue-metrics article{min-height:0;padding:14px 16px;border-radius:var(--m-r-card)}
+  .founder-analytics .revenue-metrics article.total{order:-1;grid-column:span 2}
+  .founder-analytics .revenue-metrics article[data-direction=banquet]{grid-column:span 2}
+  .founder-analytics .revenue-metrics strong{margin:8px 0 3px;font-size:19px}
+  .founder-analytics .revenue-metrics .total strong{font-size:28px}
+  .founder-analytics .founder-metrics-note{display:none}
+
+  /* Списки вместо плиток: продажи, P&L, расходы. Строка — подпись слева, сумма справа. */
+  .founder-analytics :is(.sales-bridge-metrics,.accounting-metrics,.expense-metrics){display:flex;flex-direction:column;gap:0;margin:0;
+    overflow:hidden;border:1px solid var(--m-line);border-radius:var(--m-r-card);background:var(--m-card)}
+  .founder-analytics :is(.sales-bridge-metrics,.accounting-metrics,.expense-metrics) article{flex-direction:row;align-items:center;
+    justify-content:space-between;gap:12px;min-height:46px;padding:8px 16px;border:0;border-top:1px solid var(--m-line-soft);border-radius:0;background:none;color:var(--m-ink)}
+  .founder-analytics :is(.sales-bridge-metrics,.accounting-metrics,.expense-metrics) article::before{display:none}
+  .founder-analytics :is(.sales-bridge-metrics,.accounting-metrics,.expense-metrics) span{font-size:14px;font-weight:400;letter-spacing:0;text-indent:0;text-transform:none;color:var(--m-ink)}
+  .founder-analytics :is(.sales-bridge-metrics,.accounting-metrics,.expense-metrics) strong{margin:0;font-size:15px;font-weight:600;color:var(--m-ink);white-space:nowrap}
+  .founder-analytics :is(.sales-bridge-metrics,.accounting-metrics,.expense-metrics) small{display:none}
+  .founder-analytics :is(.sales-bridge-metrics,.accounting-metrics,.expense-metrics) article[hidden]{display:none}
+  .founder-analytics .sales-bridge-metrics article:first-child{border-top:0}
+  /* Внутри карточки раздела список — без второй рамки, до краёв карточки. */
+  .founder-analytics .founder-panel :is(.sales-bridge-metrics,.expense-metrics){margin:4px -16px 0;border:0;border-top:1px solid var(--m-line-soft);border-radius:0}
+  .founder-analytics .accounting-metrics article.cost span,.founder-analytics .accounting-metrics article.net:not(.final) span{color:var(--m-muted)}
+  .founder-analytics .accounting-metrics article.profit{font-weight:600}
+  .founder-analytics .accounting-metrics article.final{margin:8px;padding:14px;border-radius:var(--m-r-inner);background:var(--m-green);color:#fff}
+  .founder-analytics .accounting-metrics article.final span{font-size:12px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--m-gold-on-dark)}
+  .founder-analytics .accounting-metrics article.final strong{font-size:18px;color:#fff}
+  .founder-analytics .expense-metrics article:first-child{border-top:0}
+  .founder-analytics .expense-metrics article.total-expense{background:#FBF5E8;font-weight:600}
+  /* Пояснения к разделам — короче: заголовок и цифры; длинные абзацы остаются на компьютере. */
+  .founder-analytics :is(.founder-section-head,.founder-panel-head) p:not(.eyebrow),
+  .founder-analytics .expense-panel>.founder-note,
+  .founder-analytics .founder-panel>.founder-note:not(#revenue-partial):not(#booking-coverage){display:none}
+  .founder-analytics .founder-panel{padding:16px;border-radius:var(--m-r-card)}
+  .founder-analytics .founder-section-head{margin:18px 0 8px}
+  .founder-analytics .founder-section-head h2,.founder-analytics .founder-panel-head h2{font-size:18px}
+
+  /* Брони и гости: компактно — итоги плитками, без графика и источников. */
+  .founder-analytics .booking-metrics{grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+  .founder-analytics .booking-metrics article{min-height:0;padding:10px 12px}
+  .founder-analytics .booking-metrics strong{margin-top:4px;font-size:18px}
+  .founder-analytics .booking-metrics small{font-size:12px}
+  .founder-analytics :is(.booking-chart-head,.booking-chart,.booking-source-head,.booking-sources,#booking-coverage){display:none}
+
+  /* Сообщение гостям: компактная карточка; форма и журнал — во весь экран. */
+  .fa-broadcast-actions{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:12px}
+  .fa-broadcast-actions .button{min-height:44px;justify-content:center}
+  .broadcast-panel:not(.fa-writing) :is(.broadcast-recipients,#broadcast-form,#broadcast-status,#broadcast-result),
+  .broadcast-panel:not(.fa-journal) #broadcast-history{display:none}
+  .broadcast-panel:is(.fa-writing,.fa-journal){position:fixed;inset:0;z-index:1100;overflow-y:auto;margin:0;border-radius:0;
+    padding:calc(16px + env(safe-area-inset-top)) var(--m-gutter) calc(24px + env(safe-area-inset-bottom));background:var(--m-bg)}
+  .broadcast-panel:is(.fa-writing,.fa-journal) .fa-broadcast-actions{display:none}
+  .broadcast-panel:is(.fa-writing,.fa-journal) .fa-sheet-close{display:grid;place-items:center;position:absolute;top:calc(12px + env(safe-area-inset-top));right:12px;
+    width:44px;height:44px;border:1px solid var(--m-line);border-radius:50%;background:#fff;font-size:22px;color:var(--m-ink);cursor:pointer}
+  body.fa-sheet-open{overflow:hidden}
+  body.fa-sheet-open .fo-tabs{display:none}
+
+  /* ══ Профиль (макет «5 · Профиль»): шторка снизу ═══════════════════════ */
+
+  /* Кружок без имени — значок человека, а не пустая точка. */
+  .founder-cabinet .app-profile span:empty::before,.founder-analytics .app-profile span:empty::before,
+  .fo-sheet .app-sheet-mark:empty::before{content:"";display:block;width:20px;height:20px;background:currentColor;
+    -webkit-mask:var(--m-person) center/contain no-repeat;mask:var(--m-person) center/contain no-repeat}
+  .founder-cabinet,.founder-analytics{--m-person:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2' stroke-linecap='round'%3E%3Ccircle cx='12' cy='8' r='4'/%3E%3Cpath d='M4 21c1.5-4 4.5-6 8-6s6.5 2 8 6'/%3E%3C/svg%3E")}
+  .fo-sheet .app-sheet-mark{color:var(--m-gold-on-dark);background:var(--m-green)}
+
+  .fo-sheet{width:100vw;max-height:88dvh;overflow-y:auto;padding:10px var(--m-gutter) calc(20px + env(safe-area-inset-bottom));
+    border:0;border-radius:28px 28px 0 0;background:var(--m-bg)}
+  .fo-sheet[open]{display:flex;flex-direction:column;gap:0}
+  .fo-sheet>*{flex-shrink:0}
+  .fo-sheet::before{content:"";align-self:center;width:40px;height:5px;margin-bottom:14px;border-radius:3px;background:#D3D1C8}
+  .fo-sheet .app-sheet-head{padding:0 4px}
+  .fo-sheet .dir-close{background:#fff;border:1px solid var(--m-line)}
+  .fo-sheet-sec{margin:18px 4px 8px;font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;color:#3D4943}
+  .fo-sheet-group{overflow:hidden;border:1px solid var(--m-line);border-radius:16px;background:var(--m-card)}
+  .fo-sheet-item{display:flex;align-items:center;gap:12px;min-height:60px;padding:10px 14px;list-style:none;cursor:default}
+  .fo-sheet-item[hidden]{display:none}
+  .fo-sheet-group>*+*{border-top:1px solid var(--m-line-soft)}
+  .fo-sheet-text{display:flex;flex-direction:column;flex:1;min-width:0}
+  .fo-sheet-text b{font-size:15px;font-weight:500;color:var(--m-ink)}
+  .fo-sheet-text small{margin-top:2px;font-size:12px;color:var(--m-muted)}
+  .fo-sheet-item em{font-style:normal;font-size:14px;font-weight:600;color:#3D4943}
+
+  /* Уведомления о Счёте Шефа — строка с переключателем. Кнопки те же, что в push.js
+     («Включить» / «Выключить»): выглядят как переключатель; «Проверить» — ссылкой. */
+  .fo-sheet .push-box{display:flex;flex-direction:row;align-items:center;gap:12px;margin:0;min-height:60px;padding:10px 14px;border:0;border-radius:0;background:none}
+  .fo-sheet .push-box[hidden]{display:none}
+  .fo-sheet .push-text{display:flex;flex-direction:column;flex:1;min-width:0}
+  .fo-sheet .push-text strong{font-size:15px;font-weight:500;color:var(--m-ink)}
+  .fo-sheet .push-status{margin-top:2px;font-size:12px;line-height:1.35;color:var(--m-muted)}
+  .fo-sheet .push-box[data-state=denied] .push-status{color:var(--m-down)}
+  .fo-sheet .push-actions{display:flex;align-items:center;gap:8px;flex:none}
+  .fo-sheet .push-button{flex:none;min-height:44px;padding:0 4px;border:0;background:none;font:inherit;font-size:13px;font-weight:600;color:#1E5B47;cursor:pointer}
+  .fo-sheet .push-box[data-state=off] .push-button.is-primary,
+  .fo-sheet .push-box[data-state=on] .push-button:last-child{position:relative;width:50px;min-height:30px;height:30px;padding:0;
+    border-radius:15px;background:#D3D1C8;font-size:0;color:transparent}
+  .fo-sheet .push-box[data-state=on] .push-button:last-child{background:var(--m-green)}
+  .fo-sheet .push-box[data-state=off] .push-button.is-primary::after,
+  .fo-sheet .push-box[data-state=on] .push-button:last-child::after{content:"";position:absolute;top:3px;left:3px;width:24px;height:24px;
+    border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.2);transition:left .2s}
+  .fo-sheet .push-box[data-state=on] .push-button:last-child::after{left:23px}
+
+  /* Язык: «Русский / O‘zbekcha» — сегментами. */
+  .fo-sheet-lang{display:grid;grid-template-columns:1fr 1fr;gap:4px;padding:4px;margin:0;background:var(--m-bg);border-radius:12px;border:6px solid var(--m-card)}
+  .fo-sheet .fo-sheet-lang .lang-button{min-height:44px;border:0;border-radius:9px;background:none;font-size:14px;font-weight:500;color:var(--m-muted)}
+  .fo-sheet .fo-sheet-lang .lang-button[aria-pressed=true]{background:#fff;color:var(--m-ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.08)}
+
+  /* «Добавить на экран „Домой“» — раскрывается короткой инструкцией. */
+  .fo-sheet-home summary{cursor:pointer}
+  .fo-sheet-home summary::-webkit-details-marker{display:none}
+  .fo-sheet-home summary::before{content:none}
+  .fo-sheet-home summary::after{content:"›";font-size:20px;color:#8A948E;transition:transform .2s}
+  .fo-sheet-home[open] summary::after{transform:rotate(90deg)}
+  .fo-sheet-home ol{margin:0;padding:0 14px 14px 34px;font-size:13px;line-height:1.5;color:var(--m-muted)}
+
+  .fo-sheet .dir-primary{min-height:52px;margin-top:12px;border-radius:14px}
+  .fo-sheet .dir-primary.app-secondary.fo-sheet-logout{margin-top:18px;background:#fff;border:1px solid var(--m-line);color:var(--m-down);font-weight:600}
+
+  /* ══ Счёт Шефа (макет «4»): уведомление с блюдами и шторка состава ═════ */
+  #fo-chef-panel.is-folded .fo-chef-row:not(.is-over)+.fo-chef-dishes{display:none}
+  .fo-alert-body{flex:1;min-width:0;padding:0;border:0;background:none;font:inherit;text-align:left;color:inherit;cursor:pointer}
+  .fo-alert-dishes{margin-top:4px!important;font-size:13px!important;line-height:1.4;color:#3E4A44!important}
+  .fo-bill-sheet .app-sheet-who strong{margin-top:6px;font-size:22px;font-weight:700}
+  .fo-bill-day{font-size:12px!important;font-weight:700;letter-spacing:.08em;color:var(--m-muted)}
+  .fo-bill-list{display:flex;flex-direction:column;margin-top:16px}
+  .fo-bill-list .fo-bill-head{padding-bottom:6px;font-size:13px;font-weight:500}
+  .fo-bill-list .fo-bill-dish{align-items:center;min-height:44px;border-top:1px solid var(--m-line-soft);font-size:15px}
+  .fo-bill-list .fo-bill-dish.is-total{margin-top:4px;border-top:2px solid var(--m-ink);font-size:17px;font-weight:700}
+  .fo-bill-list .fo-bill-dish.is-total b{font-weight:700}
+  .fo-bill-list b.is-over{color:var(--m-down)}
+  .fo-bill-over:not([hidden]){margin:16px 0 0;padding:12px 14px;border-radius:var(--m-r-inner);background:#FBE4E1;color:#8E1B13;font-size:14px;line-height:1.4}
+
+  /* ══ Нет связи с iiko (макет «2а»): одна плашка, повторы скрыты ═════════ */
+  .fo-iiko-off:not([hidden]){display:flex;align-items:flex-start;gap:10px;padding:12px 14px;border:1px solid #F0D3A8;
+    border-radius:var(--m-r-inner);background:var(--m-warn-bg);color:#5C3608}
+  .fo-iiko-off>span{display:grid;place-items:center;width:20px;height:20px;flex:none;margin-top:1px;border-radius:50%;
+    background:#7A4A0E;color:#fff;font-size:12px;font-weight:700}
+  .fo-iiko-off p{margin:0;font-size:14px;line-height:1.4}
+  .fo-iiko-off b{font-weight:600}
+  .founder-analytics .fo-iiko-off{margin:0 0 12px}
+  .fo-iiko-repeat{display:none!important}
+}
+
+/* ТЗ «Мобильная версия дашборда учредителя», 10.11.2026.
+   Задача 2: в мобильной Аналитике остаются только «Общая картина» и «Сообщение
+   гостям». Остальное скрыто по ширине экрана, из кода не удалено — на
+   компьютере всё на месте. Задача 1: карточка «Подробно» с главной убрана из вёрстки. */
+@media (max-width:900px){
+  .founder-analytics .page-heading,
+  .founder-analytics #filters,
+  .founder-analytics .quick-periods,
+  .founder-analytics #stale,
+  .founder-analytics #scope-hint,
+  .founder-analytics .founder-metrics-note,
+  .founder-analytics #fa-revenue,
+  .founder-analytics [aria-labelledby=revenue-title],
+  .founder-analytics [aria-labelledby=sales-bridge-title],
+  .founder-analytics #fa-pnl,
+  .founder-analytics .accounting-metrics,
+  .founder-analytics #fa-costs,
+  .founder-analytics #fa-guests,
+  .founder-analytics .series-table-panel{display:none!important}
+}

@@ -591,7 +591,7 @@ def test_settings_parse_lunch_and_history_start():
     for wrong in ('15:00-12:00', '12', '12:00-25:00', 'обед'):
         with pytest.raises(ValueError):
             parse_lunch_hours(wrong)
-    assert parse_sales_history_start('') == date(2026, 9, 1)
+    assert parse_sales_history_start('') == date(2025, 9, 16)  # T-592: первый день продаж Retro в iiko
     assert parse_sales_history_start('2026-10-01') == date(2026, 10, 1)
     with pytest.raises(ValueError):
         parse_sales_history_start('01.10.2026')

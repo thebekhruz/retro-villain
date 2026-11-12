@@ -22,6 +22,10 @@
 .an-metric.is-current small{color:#b9cdbc}
 .an-metric small b{font-weight:600}
 .an-metric small i{font-style:normal}
+/* T-648: переключатель режима «год назад» внутри карточки; кнопки переносятся, а не рвут её. */
+.an-year-mode{display:flex;flex-wrap:wrap;gap:4px;margin:12px 0 10px}
+.an-year-mode .chip{min-height:34px;padding:6px 10px;font-size:12px;border:1px solid var(--border);background:#fff;white-space:nowrap}
+.an-year-mode .chip.active{background:#edf2e9;border-color:#cfe0cd}
 
 .an-compare{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:16px;margin-bottom:20px}
 .an-trend{padding:18px 22px;background:#fff;border:1px solid var(--border);border-radius:var(--radius)}
@@ -69,6 +73,15 @@
 .an-chart.is-loading{background:linear-gradient(90deg,#f3f5f0 25%,#eaeee6 37%,#f3f5f0 63%);background-size:400% 100%;border-radius:12px}
 @media(prefers-reduced-motion:no-preference){.an-chart.is-loading{animation:an-shimmer 1.4s ease-in-out infinite}@keyframes an-shimmer{0%{background-position:100% 0}100%{background-position:0 0}}}
 
+/* T-592: вся история — сводка и столбики. */
+.an-history-group{border-left:0;padding-left:0;flex-wrap:wrap}
+.an-history-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:12px;margin:18px 0 0}
+.an-history-summary div{padding:12px 14px;background:#f6f8f3;border-radius:10px;min-width:0}
+.an-history-summary dt{font-size:10px;font-weight:650;letter-spacing:1.2px;text-transform:uppercase;color:var(--muted)}
+.an-history-summary dd{margin:6px 0 0;font-size:16px;font-weight:600;font-variant-numeric:tabular-nums;overflow-wrap:anywhere}
+.an-bar{fill:#143e35}
+.an-bar.is-incomplete{fill:#a9bfb3}
+.an-history-message{margin:16px 0 0}
 .an-table-details{margin-top:18px;border-top:1px solid var(--border);padding-top:14px}
 .an-table-details summary{cursor:pointer;font-size:13px;font-weight:600;color:var(--green2)}
 .an-table-wrap{overflow-x:auto;margin-top:12px}
@@ -84,4 +97,4 @@
 
 @media(max-width:1180px){.an-metrics{gap:12px}.an-metric{padding:17px}}
 @media(max-width:900px){.an-metrics{grid-template-columns:1fr 1fr}.an-metric.is-current{grid-column:span 2}.an-panel-head{flex-direction:column}.an-chart{height:250px}}
-@media(max-width:650px){.an-metrics,.an-compare{grid-template-columns:1fr;gap:12px}.an-metric.is-current{grid-column:auto}.an-metric{min-height:112px;border-radius:13px}.an-controls{display:grid;grid-template-columns:1fr;gap:12px}.an-controls .button{margin:0}.an-quick{justify-content:flex-start}.an-panel{padding:19px 16px}.an-chart{height:230px}.an-tooltip{min-width:170px}}
+@media(max-width:650px){.an-history-summary{grid-template-columns:1fr 1fr}.an-metrics,.an-compare{grid-template-columns:1fr;gap:12px}.an-metric.is-current{grid-column:auto}.an-metric{min-height:112px;border-radius:13px}.an-controls{display:grid;grid-template-columns:1fr;gap:12px}.an-controls .button{margin:0}.an-quick{justify-content:flex-start}.an-panel{padding:19px 16px}.an-chart{height:230px}.an-tooltip{min-width:170px}.an-year-mode .chip{flex:1 1 0;min-height:40px}}

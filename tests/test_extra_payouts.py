@@ -30,7 +30,7 @@ from retro.modules.accountant import extra_payouts, routes, salary_day
 from retro.modules.accountant.extra_payouts import ExtraPayoutChanged, ExtraPayoutConfirm
 from retro.modules.accountant.ledger import FinanceStore, LedgerError
 from retro.modules.accountant.roster import RosterStore
-from retro.modules.accountant.salary_day_export import matches_query
+from retro.modules.accountant.salary_day_export import matches_query, salary_day_workbook
 
 TODAY = date(2026, 10, 17)
 PAID = date(2026, 10, 16)
@@ -304,10 +304,9 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     put(people['jahongir'], PAID, '300000')
     assert post(client, people['karamat']).status_code == 201
     month = client.get('/api/accountant/salary-day/month', params={'month': '2026-10'}).json()
-    response = client.get('/api/accountant/salary-day/export', params={'month': '2026-10'})
-    assert response.status_code == 200
-    assert 'Retro-salary-day-2026-10.xlsx' in response.headers['content-disposition']
-    book = load_workbook(BytesIO(response.content))
+    # Полная ведомость со сменами — её пишет резерв в Google Drive; кнопка
+    # «Скачать Excel» отдаёт только сотрудников (тест ниже).
+    book = load_workbook(BytesIO(salary_day_workbook(month)))
     sheet = book['Ведомость']
     rows = sheet_values(sheet)
     assert rows[0][0] == 'RETRO MILLIY · Зарплата · день · октябрь 2026'
@@ -341,6 +340,59 @@ def test_excel_matches_the_screen_totals_and_prints_with_headers(client):
     assert extras[5][1] == 'Итого' and extras[5][6] == 150000
 
 
+def test_excel_button_exports_only_staff_columns_and_keeps_shifts_in_the_database(client):
+    """Кнопка «Скачать Excel»: №, сотрудник, должность, ставка и пустой столбец
+    для подписи — без смен, выплат и итогов. Сами смены и выплаты не трогаются."""
+    people = client.people
+    put = lambda person, day, amount: client.put('/api/accountant/salary-day/cell', json=dict(
+        date=day.isoformat(), employee_id=person.id, amount=amount, expected_amount='0'))
+    put(people['ihtiyor'], date(2026, 10, 15), '360000')
+    put(people['jahongir'], PAID, '300000')
+    assert post(client, people['karamat']).status_code == 201
+    before = client.get('/api/accountant/salary-day/month', params={'month': '2026-10', 'basis': 'shift'}).json()
+    response = client.get('/api/accountant/salary-day/export', params={'month': '2026-10', 'basis': 'shift'})
+    assert response.status_code == 200
+    assert 'Retro-salary-day-2026-10.xlsx' in response.headers['content-disposition']
+    book = load_workbook(BytesIO(response.content))
+    assert book.sheetnames == ['Ведомость']  # листа «Доп. выплаты» в выгрузке кнопки нет
+    sheet = book['Ведомость']
+    rows = sheet_values(sheet)
+    assert rows[0][0] == 'RETRO MILLIY · Зарплата · день · октябрь 2026'
+    assert rows[1][0] == 'Вся ведомость, 4 сотрудника. Последний столбец — для подписи или отметки.'
+    assert rows[3] == ['№', 'Сотрудник', 'Должность', 'Ставка', None]
+    assert sheet.max_column == 5
+    body = rows[4:]
+    assert len(body) == len(before['people']) == 4
+    assert [row[0] for row in body] == [1, 2, 3, 4]
+    by_name = {row[1]: row for row in body}
+    for person in before['people']:
+        line = by_name[person['name']]
+        assert line[3] == int(Decimal(person['rate'])) and line[4] is None
+    assert by_name['Баходиров Ихтиер'][2] == 'Менеджер'
+    assert by_name['Карамат'][2] == 'Хостес · временный'
+    assert sheet.cell(5, 4).number_format == '#,##0'
+    # Ни смен, ни сумм выплат, ни итогов в файле нет.
+    text = [str(value) for row in rows for value in row if value is not None]
+    assert not any(word in value for value in text for word in ('Смена', 'Выплата', 'Итого', 'Доп. выплат'))
+    assert all(cell.comment is None for row in sheet.iter_rows() for cell in row)
+    assert 300000 not in [value for row in body for value in row]  # выплата Жахонгиру — не ставка
+    # Оформление: сетка у каждой ячейки таблицы, всё влево, номер — по центру.
+    for row in range(4, 4 + len(body) + 1):
+        for column in range(1, 6):
+            cell = sheet.cell(row, column)
+            assert all(getattr(cell.border, side).style == 'thin' for side in ('left', 'right', 'top', 'bottom')), cell.coordinate
+            assert cell.alignment.horizontal == ('center' if column == 1 else 'left'), cell.coordinate
+    assert sheet['A4'].fill.fgColor.rgb.endswith('E3EBDF') and sheet['B4'].font.bold
+    # Печать: шапка таблицы на каждой странице, книжный лист по ширине.
+    assert sheet.print_title_rows == '$1:$4' and sheet.page_setup.orientation == 'portrait'
+    assert sheet.page_setup.fitToWidth == 1 and sheet.freeze_panes == 'A5'
+    # Выгрузка ничего не меняет: смены и выплаты на месте, экран — тот же.
+    after = client.get('/api/accountant/salary-day/month', params={'month': '2026-10', 'basis': 'shift'}).json()
+    assert after == before
+    cells = next(p for p in after['people'] if p['id'] == people['ihtiyor'].id)['cells']
+    assert cells['2026-10-14']['amount'] == '360000'
+
+
 def test_excel_selection_is_named_in_the_header(client):
     client.app.state.accountant_finance  # noqa: B018 — стенд уже собран фикстурой
     assert post(client, client.people['karamat']).status_code == 201
@@ -349,7 +401,11 @@ def test_excel_selection_is_named_in_the_header(client):
     assert 'selection' in response.headers['content-disposition']
     rows = sheet_values(load_workbook(BytesIO(response.content))['Ведомость'])
     assert 'Выборка: группа «Встреча гостей», поиск «karamat» — 1 из 4 сотрудников.' in rows[1][0]
-    assert rows[4][1] == 'Карамат' and rows[5][1] == 'Итого за день'
+    assert rows[4][:4] == [1, 'Карамат', 'Хостес · временный', 150000] and len(rows) == 5
+    # Пустая выборка — честная строка, а не пустой лист.
+    response = client.get('/api/accountant/salary-day/export', params={'month': '2026-10', 'q': 'никого-нет'})
+    rows = sheet_values(load_workbook(BytesIO(response.content))['Ведомость'])
+    assert rows[4][0] == 'Никого не нашли: выборка пустая.'
 
 
 def test_search_in_the_file_is_the_same_as_on_screen():

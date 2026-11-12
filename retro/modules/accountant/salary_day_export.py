@@ -1,6 +1,11 @@
 """«Зарплата · день» в Excel для печати (ТЗ 09.10, Б-07).
 
-Тот же ответ, что видит экран (`/salary-day/month?basis=payment`): столбец —
+Кнопка «Скачать Excel» отдаёт только список сотрудников (`salary_day_staff_workbook`):
+№, сотрудник, должность, ставка и пустой столбец для подписи или отметки —
+без смен и выплат. Полная ведомость (`salary_day_workbook`) ниже — для
+резерва в Google Drive, где нужен архив денег по дням.
+
+Ведомость — тот же ответ, что видит экран (`/salary-day/month?basis=payment`): столбец —
 день выдачи денег, обычная смена — предыдущий день. Фактические даты сохранённых
 смен остаются в примечаниях. Доп. выплаты входят в итог дня выдачи и сотрудника,
 а сами расписаны вторым листом — с датой смены, датой выплаты и назначением.
@@ -18,15 +23,20 @@ from io import BytesIO
 
 from openpyxl import Workbook
 from openpyxl.comments import Comment
-from openpyxl.styles import Alignment, PatternFill
+from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
 from openpyxl.utils import get_column_letter
 
-from .sheets_export import _head, _money, _note, _row, _sum, _title, _widths
+from .sheets_export import GREEN, _head, _money, _note, _row, _sum, _title, _widths
 
 MONTHS = ('январь', 'февраль', 'март', 'апрель', 'май', 'июнь', 'июль', 'август',
           'сентябрь', 'октябрь', 'ноябрь', 'декабрь')
 HEAD_ROW = 4
 NO_GROUP = 'Без группы'
+# Список сотрудников (кнопка) — лист для подписей: сетка видна на экране и на
+# бумаге, шапка выделена, строки через одну подкрашены.
+GRID = Side(style='thin', color='B9C3B5')
+HEAD_FILL = PatternFill('solid', fgColor='E3EBDF')
+STRIPE_FILL = PatternFill('solid', fgColor='F7F9F5')
 
 # Поиск — как на экране (employees-logic.js, matchesQuery): без регистра,
 # «ё» = «е», кириллица находится латиницей (Alijon → Алижон).
@@ -109,6 +119,68 @@ def _print(sheet, last_column: int, last_row: int) -> None:
     sheet.print_area = f'A1:{get_column_letter(last_column)}{last_row}'
 
 
+def _role(person: dict) -> str:
+    """Должность с пометками, как на экране: временный (с периодом, T-434) и архив."""
+    role = person.get('role') or ''
+    if person.get('temporary'):
+        tag = 'временный' + (f" · {person['work_period']}" if person.get('work_period') else '')
+        role = (role + ' · ' + tag).strip(' ·')
+    if person.get('archived'):
+        role = (role + ' · архив').strip(' ·')
+    return role
+
+
+def salary_day_staff_workbook(data: dict, *, group: str | None = None, query: str | None = None,
+                              role: str | None = None) -> bytes:
+    """Кнопка «Скачать Excel»: сотрудники ведомости месяца без смен и выплат.
+
+    `data` — ответ `/salary-day/month` (люди месяца); выборка — как на экране.
+    Последний столбец пустой: в нём расписываются или ставят отметку."""
+    people = select_people(data.get('people') or [], group, query, role)
+    month = date.fromisoformat(data['month'] + '-01')
+    mode = _mode(group, query, len(people), len(data.get('people') or []), role)
+    workbook = Workbook()
+    sheet = workbook.active
+    sheet.title = 'Ведомость'
+    labels = ['№', 'Сотрудник', 'Должность', 'Ставка', '']
+    width = len(labels)
+    _title(sheet, f'RETRO MILLIY · Зарплата · день · {MONTHS[month.month - 1]} {month.year}', width)
+    _note(sheet, 2, f'{mode}. Последний столбец — для подписи или отметки.', width)
+    sheet.row_dimensions[2].height = 30
+    _widths(sheet, [5, 34, 30, 14, 22])
+    _head(sheet, HEAD_ROW, labels)
+    row = HEAD_ROW + 1
+    for number, person in enumerate(people, 1):
+        _row(sheet, row, [number, person['name'], _role(person), _money(person.get('rate')), None], money_from=4)
+        sheet.row_dimensions[row].height = 24  # место для подписи от руки
+        row += 1
+    _staff_grid(sheet, HEAD_ROW + len(people), width)
+    if not people:
+        _note(sheet, row, 'Никого не нашли: выборка пустая.', width)
+        row += 1
+    sheet.freeze_panes = sheet.cell(HEAD_ROW + 1, 1).coordinate
+    _print(sheet, width, row - 1)
+    sheet.page_setup.orientation = 'portrait'  # пять узких столбцов — книжный лист
+    buffer = BytesIO()
+    workbook.save(buffer)
+    return buffer.getvalue()
+
+
+def _staff_grid(sheet, last_row: int, width: int) -> None:
+    """Сетка и выравнивание списка сотрудников: всё влево, номер — по центру."""
+    border = Border(left=GRID, right=GRID, top=GRID, bottom=GRID)
+    for row in range(HEAD_ROW, last_row + 1):
+        for column in range(1, width + 1):
+            cell = sheet.cell(row, column)
+            cell.border = border
+            cell.alignment = Alignment(vertical='center', horizontal='center' if column == 1 else 'left')
+            if row == HEAD_ROW:
+                cell.fill = HEAD_FILL
+                cell.font = Font(name='Calibri', size=10, bold=True, color=GREEN)
+            elif (row - HEAD_ROW) % 2 == 0:
+                cell.fill = STRIPE_FILL
+
+
 def salary_day_workbook(data: dict, *, group: str | None = None, query: str | None = None,
                         role: str | None = None) -> bytes:
     """`data` — ответ `/salary-day/month`; `group`, `role`, `query` — выборка экрана."""
@@ -166,14 +238,7 @@ def _sheet(sheet, data, days, people, extras, month, period, mode):
             per_day[index] += cells[index] + own_extra[index]
             extra_per_day[index] += own_extra[index]
         extra = _sum(own_extra)
-        role = person.get('role') or ''
-        if person.get('temporary'):
-            # Период временного (T-434) — рядом с пометкой, как на экране.
-            tag = 'временный' + (f" · {person['work_period']}" if person.get('work_period') else '')
-            role = (role + ' · ' + tag).strip(' ·')
-        if person.get('archived'):
-            role = (role + ' · архив').strip(' ·')
-        _row(sheet, row, [number, person['name'], role, _money(person.get('rate'))]
+        _row(sheet, row, [number, person['name'], _role(person), _money(person.get('rate'))]
              + [value or None for value in cells] + [extra or None, _sum(cells) + extra], money_from=4)
         for index, day in enumerate(days):
             dates = (person['cells'].get(day) or {}).get('paid_days' if by_shift else 'work_days') or []

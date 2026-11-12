@@ -21,7 +21,10 @@ SMS_PROVIDERS = ('eskiz', 'console')
 SMS_TEMPLATE = 'Код подтверждения для входа в платформу Retro: {code}'
 # История продаж (T-499): с какого дня держим чеки iiko в своей базе и что
 # считаем обедом. Окно — минуты от полуночи по Ташкенту, правая граница не входит.
-SALES_HISTORY_START = date(2026, 9, 1)
+# Первый день продаж Retro в iiko (15.09.2025 — ноль чеков). Только история
+# продаж (sales_days: аналитика, продажи директора и учредителя); граница учёта
+# бухгалтера и кассира — отдельная ACCOUNTING_START в accounting_period.py.
+SALES_HISTORY_START = date(2025, 9, 16)
 LUNCH_HOURS = (12 * 60, 15 * 60)
 # Сколько дней хранить почасовые контрольные снимки продаж (T-507).
 SALES_SNAPSHOTS_KEPT_DAYS = 400
@@ -355,7 +358,7 @@ def parse_sales_snapshots_kept_days(value: str) -> int:
 
 
 def parse_sales_history_start(value: str) -> date:
-    """SALES_HISTORY_START=2026-09-01 — первый день истории продаж в базе."""
+    """SALES_HISTORY_START=2025-09-16 — первый день истории продаж в базе."""
     if not value.strip():
         return SALES_HISTORY_START
     try:

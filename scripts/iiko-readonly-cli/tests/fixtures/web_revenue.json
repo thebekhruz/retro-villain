@@ -1,0 +1,18 @@
+{
+  "result": {
+    "rows": [
+      {
+        "field0": {"value": "Наличные"},
+        "field1": {"value": 10},
+        "field2": {"value": 50000},
+        "field3": {"value": 500000}
+      },
+      {
+        "field0": {"value": "Яндекс"},
+        "field1": {"value": 2},
+        "field2": {"value": 75000},
+        "field3": {"value": 150000}
+      }
+    ]
+  }
+}

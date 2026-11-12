@@ -340,7 +340,11 @@ function show(options={}){
   return load(options);
 }
 
-async function start(){paintSkeleton();try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;$('fa-phone-excel').href='/api/founder/export/month?month='+config.today.slice(0,7);applyFilters(FounderLogic.filtersFromQuery(location.search,config.today));await show()}catch(error){setLoading(false);settleSkeletons();setMessage('Не удалось определить текущую дату сервера.',true)}}
+// Телефон (ТЗ 10.11, задача 2): выручка, P&L, расходы и брони скрыты — не грузим их из iiko,
+// пока экран не станет шире; «Общую картину» и статус дня рисует founder-analytics-mobile.js.
+const phoneOnly=typeof matchMedia==='function'?matchMedia('(max-width: 900px)'):null;
+function whenWide(){return new Promise(resolve=>{if(!phoneOnly||!phoneOnly.matches)return resolve();const wide=()=>{if(phoneOnly.matches)return;phoneOnly.removeEventListener('change',wide);resolve()};phoneOnly.addEventListener('change',wide)})}
+async function start(){paintSkeleton();try{const config=await globalThis.RetroConfig;$('start').max=config.today;$('end').max=config.today;$('fa-phone-excel').href='/api/founder/export/month?month='+config.today.slice(0,7);applyFilters(FounderLogic.filtersFromQuery(location.search,config.today));await whenWide();await show()}catch(error){setLoading(false);settleSkeletons();setMessage('Не удалось определить текущую дату сервера.',true)}}
 /** Фильтр сменили — прежние цифры остаются на экране с пометкой «устарело»;
  *  стирать всё до «Показать» значило оставить учредителя с пустой страницей. */
 function invalidatePending(event){

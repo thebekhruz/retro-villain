@@ -9,7 +9,7 @@ import pytest
 from openpyxl import load_workbook
 
 from test_salary_payout_dates import (c, seed, oct_, cash_days, shift_cell, shift_sheet,
-                                      cell, day_json, spent_on, table)  # noqa: F401
+                                      cell, day_json, full_ledger, spent_on, table)  # noqa: F401
 from legacy_boundary import legacy_boundary  # noqa: F401 — фикстура
 
 pytestmark = pytest.mark.usefixtures('legacy_boundary')
@@ -28,8 +28,7 @@ def test_several_checks_for_one_employee_spend_today_once_and_export_actual_date
         assert cells[work]['amount'] == '360000'
         assert cells[work]['paid_days'] == ['2026-10-12']
         assert cells[work]['editable']
-    response = c.get('/api/accountant/salary-day/export?month=2026-10&basis=shift')
-    book = load_workbook(BytesIO(response.content))['Ведомость']
+    book = full_ledger(c, '2026-10', 'shift')['Ведомость']
     headers = [value.value for value in book[4]]
     row = next(r for r in book.iter_rows(min_row=5) if r[1].value == person.name)
     for work in ('09.10', '10.10'):

@@ -1,0 +1,20 @@
+{
+  "result": {
+    "rows": [
+      {
+        "field0": {"value": "00725"},
+        "field1": {"value": "Шашлык из говядины"},
+        "field2": {"value": "Шашлыки"},
+        "field3": {"value": 10},
+        "field4": {"value": 350000}
+      },
+      {
+        "field0": {"value": "02097"},
+        "field1": {"value": "Яндекс ДОСТАВКА Шашлык из говядины"},
+        "field2": {"value": "ДОСТАВКА ЯНДЕКС"},
+        "field3": {"value": 3},
+        "field4": {"value": 120000}
+      }
+    ]
+  }
+}

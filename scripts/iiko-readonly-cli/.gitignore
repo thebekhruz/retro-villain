@@ -1,0 +1,6 @@
+.env
+.env.*
+!config.env.example
+exports/*
+!exports/.gitkeep
+*.tmp

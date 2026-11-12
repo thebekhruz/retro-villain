@@ -162,6 +162,9 @@ STATIC_PANELS: dict[str, frozenset[str]] = {
         'founder-broadcast.js': {'founder'}, 'founder-broadcast-logic.js': {'founder'},
         'founder-broadcast-history.js': {'founder'},
         'founder.css': {'founder'}, 'founder-cabinet.css': {'founder'},
+        # Мобильная вёрстка по макету и демо-режим (?demo=1, только localhost)
+        'founder-mobile.css': {'founder'}, 'founder-demo.js': {'founder'},
+        'founder-analytics-mobile.js': {'founder'}, 'founder-mobile.js': {'founder'},
         # Уведомления о Счёте Шефа на устройстве (Web Push); обработчик — /sw.js
         'push.js': {'founder'},
         # Закуп · Шох

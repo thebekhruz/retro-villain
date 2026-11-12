@@ -4534,3 +4534,91 @@ globalThis.RetroTemplatesUz.push(
   [/^Последняя неделя неполная: (.+)$/, "So‘nggi hafta to‘liq emas: $1"],
 );
 /* ── /T-524 ── */
+/* ── T-648: режим окна «год назад» — те же дни недели или те же даты ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'Как сравнивать с годом назад': "Bir yil oldin bilan qanday taqqoslash",
+  'Те же дни недели': "Hafta kunlari bir xil",
+  'Те же даты': "Sanalar bir xil",
+  'Год назад · те же дни недели': "Bir yil oldin · hafta kunlari bir xil",
+  'Год назад · те же даты': "Bir yil oldin · sanalar bir xil",
+  'Точка — выручка Retro за день; дни сравниваются по порядку: первый день периода с первым днём отрезка раньше, «год назад» — по переключателю: те же дни недели 52 недели назад или те же даты годом раньше. Подписи оси — дни выбранного периода.':
+    "Nuqta — Retro kunlik tushumi; kunlar tartib bo‘yicha taqqoslanadi: davrning birinchi kuni oldingi kesimning birinchi kuni bilan, «bir yil oldin» — almashtirgich bo‘yicha: 52 hafta oldingi shu hafta kunlari yoki bir yil oldingi shu sanalar. O‘q yozuvlari — tanlangan davr kunlari.",
+  'Режим «год назад» — weekday (те же дни недели) или date (те же даты).':
+    "«Bir yil oldin» rejimi — weekday (hafta kunlari bir xil) yoki date (sanalar bir xil).",
+});
+/* ── /T-648 ── */
+/* ── T-592: вся история выручки в «Аналитике» ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  'ВСЯ ИСТОРИЯ': "BUTUN TARIX",
+  'Выручка за всё время': "Butun davr tushumi",
+  'Столбик — выручка Retro за день, неделю (пн–вс) или месяц с первого дня истории продаж в базе панели по сегодня. Светлый столбик — неполный: край истории, пропуск или день, который ещё идёт; сравнивайте их по среднему за день в подсказке.':
+    "Ustun — panel bazasidagi savdo tarixining birinchi kunidan bugungacha Retro’ning kunlik, haftalik (du–ya) yoki oylik tushumi. Och rangli ustun — to‘liq emas: tarix cheti, bo‘shliq yoki hali davom etayotgan kun; ularni izohdagi kunlik o‘rtacha bo‘yicha taqqoslang.",
+  'Детализация истории': "Tarix tafsiloti",
+  'По неделям': "Haftalar bo‘yicha",
+  'По месяцам': "Oylar bo‘yicha",
+  'В среднем за день': "Kunlik o‘rtacha",
+  'Дней с данными': "Ma’lumotli kunlar",
+  'Столбчатый график выручки за всю историю': "Butun tarix tushumining ustunli grafigi",
+  'Наведите или коснитесь столбика, чтобы увидеть сумму': "Summani ko‘rish uchun ustunga olib boring yoki bosing",
+  'В базе панели ещё нет загруженных продаж.': "Panel bazasida hali yuklangan savdolar yo‘q.",
+  'Не удалось загрузить историю выручки.': "Tushum tarixini yuklab bo‘lmadi.",
+  'Детализация — day, week или month.': "Tafsilot — day, week yoki month.",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^(янв|фев|мар|апр|май|июн|июл|авг|сен|окт|ноя|дек) (\d{4})$/,
+    (all, month, year) => ({янв: 'yan', фев: 'fev', мар: 'mar', апр: 'apr', май: 'may', июн: 'iyn', июл: 'iyl',
+      авг: 'avg', сен: 'sen', окт: 'okt', ноя: 'noy', дек: 'dek'})[month] + ' ' + year],
+  [/^(\d+) из (\d+) дн\.((?: · (?:край истории|есть незакрытые))+)$/,
+    (all, loaded, days, notes) => `${loaded} / ${days} kun` + notes.replace(' · край истории', ' · tarix cheti')
+      .replace(' · есть незакрытые', ' · yopilmaganlari bor')],
+  [/^Нет данных за (\d+) (?:день|дня|дней) из (\d+) — они ещё загружаются из iiko, по дню в минуту; в суммы пока не вошли\.$/,
+    "$2 kundan $1 kun uchun ma’lumot yo‘q — ular hali iiko’dan daqiqasiga bir kundan yuklanmoqda; summalarga hali kirmagan."],
+  [/^Нет данных за (\d+) (?:день|дня|дней) из (\d+) — в суммы они не вошли\.$/,
+    "$2 kundan $1 kun uchun ma’lumot yo‘q — ular summalarga kirmagan."],
+);
+/* ── /T-592 ── */
+/* ── Учредитель: мобильная версия (макет, ноябрь 2026) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  // Главная «Сегодня»: плитки наверху, Счёт Шефа, плашка iiko
+  'Коротко за вчера и сегодня': "Kecha va bugun qisqacha",
+  'У бухгалтера': "Buxgalterda",
+  'сум на руках': "so‘m qo‘lida",
+  'бухгалтер получил': "buxgalter oldi",
+  'бухгалтер подтвердил': "buxgalter tasdiqladi",
+  'нет данных iiko за вчера': "kecha uchun iiko ma’lumoti yo‘q",
+  'Замечания: нет данных iiko': "Izohlar: iiko ma’lumoti yo‘q",
+  'Нет связи с iiko.': "iiko bilan aloqa yo‘q.",
+  'Выручка и Счёт Шефа не обновляются. Касса бухгалтера работает как обычно.':
+    "Tushum va Shef hisobi yangilanmayapti. Buxgalter kassasi odatdagidek ishlayapti.",
+  'Состав счёта': "Hisob tarkibi",
+  'пример': "namuna",
+  // Профиль
+  'Порог отметки': "Belgilash chegarasi",
+  'Счета выше суммы — красным': "Bu summadan yuqori hisoblar — qizil rangda",
+  'Приложение': "Ilova",
+  'Добавить на экран «Домой»': "«Asosiy ekran»ga qo‘shish",
+  'Без этого уведомления не приходят на iPhone': "Busiz iPhone’ga bildirishnomalar kelmaydi",
+  'iPhone: Safari → «Поделиться» → «На экран „Домой“».': "iPhone: Safari → «Ulashish» → «Asosiy ekranga».",
+  'Android: Chrome → меню ⋮ → «Добавить на главный экран».': "Android: Chrome → menyu ⋮ → «Bosh ekranga qo‘shish».",
+  'Откройте Retro Milliy со значка и включите уведомления здесь.': "Retro Milliy’ni belgidan oching va bildirishnomalarni shu yerda yoqing.",
+  // Аналитика на телефоне
+  'КАБИНЕТ ОСНОВАТЕЛЯ': "ASOSCHI KABINETI",
+  '· текущая': "· joriy",
+  'Прошлая неделя': "O‘tgan hafta",
+  'Следующая неделя': "Keyingi hafta",
+  'Демо — продажи по демо-кассе Retro, входят в выручку Retro': "Демо — Retro demo-kassasi bo‘yicha savdo, Retro tushumiga kiradi",
+  'Написать сообщение': "Xabar yozish",
+  'Журнал →': "Jurnal →",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Касса вчера · (\S+) (\d\d\.\d\d)$/, "Kechagi kassa · $1 $2"],
+  [/^к (\S+) (\d\d\.\d\d) · (.+)$/, "$1 $2 ga nisbatan · $3"],
+  [/^(\d+) (?:счёт|счёта|счетов)$/, "$1 ta hisob"],
+  [/^Все счета недели · (\d+) ▾$/, "Haftaning barcha hisoblari · $1 ▾"],
+  [/^Стол (.+?) · (.+) · больше (.+) за один счёт$/, "Stol $1 · $2 · bitta hisobda $3 dan ortiq"],
+  [/^СЧЁТ ШЕФА · (\d\d\.\d\d)$/, "SHEF HISOBI · $1"],
+  [/^Счёт выше порога (.+) — отмечен для проверки$/, "Hisob $1 chegarasidan yuqori — tekshirish uchun belgilandi"],
+  // Аналитика: «пн–вт: 30,5 млн к 27,2 млн прошлой недели» — те же дни недели прошлой недели
+  [/^(\S+): (.+) к (.+) прошлой недели$/, "$1: $2, o‘tgan haftaning shu kunlarida $3"],
+);
+/* ── /Учредитель: мобильная версия ── */

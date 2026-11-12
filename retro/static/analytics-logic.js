@@ -149,6 +149,32 @@
     return `${period.days_with_data} из ${period.days.length} дн.`+(partial?' · есть незакрытые':'');
   }
 
-  return {axisIndexes,coverageLabel,compactMoney,dayLabel,daysBetween,defaultEnd,formatMoney,formatPercent,fullDate,linePoints,lineSegments,
+  /* T-592: столбики истории по индексам 0…n-1. Зазор — доля шага, но столбик не
+     тоньше 1 px: за несколько лет по дням их сотни. Столбик без данных — null. */
+  function barRects(values,max,plotWidth,plotHeight,gap=0.22){
+    const count=values.length,step=count?plotWidth/count:0;
+    const width=Math.max(1,step*(1-(count>60?0.12:gap)));
+    return values.map((value,index)=>{
+      const parsed=number(value),x=index*step+(step-width)/2;
+      if(parsed===null)return {index,x,width,y:null,height:0,center:x+width/2,value:null};
+      const height=max>0?Math.max(0,parsed/max)*plotHeight:0;
+      return {index,x,width,y:plotHeight-height,height,center:x+width/2,value:parsed};
+    });
+  }
+  function barIndex(x,plotWidth,count){
+    if(count<=1)return 0;
+    return Math.max(0,Math.min(count-1,Math.floor(x/(plotWidth/count))));
+  }
+  // «8 из 7 дн.» не бывает: обрезанный краем истории столбик так и подписан.
+  function bucketCoverage(bucket){
+    if(!bucket)return '';
+    if(bucket.days_with_data===0)return 'нет данных';
+    const notes=[`${bucket.days_with_data} из ${bucket.days} дн.`];
+    if(bucket.clipped)notes.push('край истории');
+    if(bucket.partial)notes.push('есть незакрытые');
+    return notes.join(' · ');
+  }
+
+  return {axisIndexes,barIndex,barRects,bucketCoverage,coverageLabel,compactMoney,dayLabel,daysBetween,defaultEnd,formatMoney,formatPercent,fullDate,linePoints,lineSegments,
     nearestIndex,niceCeil,periodError,rangeLabel,rangeOfDays,shiftIso,shortDate,signedMoney,trend,updatedLabel};
 });

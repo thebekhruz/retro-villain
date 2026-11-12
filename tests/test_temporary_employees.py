@@ -424,8 +424,9 @@ def test_salary_day_month_and_excel_follow_the_period(api):
                                               outside=True)
     # Посещаемость клетке вне периода не ставится: её нет в списке дня смены.
     assert 'attendance' not in row['cells']['2026-10-08']
-    response = api.get('/api/accountant/salary-day/export', params={'month': '2026-10'})
-    sheet = load_workbook(BytesIO(response.content))['Ведомость']
+    # Полная ведомость со сменами (резерв в Google Drive) — из того же ответа экрана.
+    from retro.modules.accountant.salary_day_export import salary_day_workbook
+    sheet = load_workbook(BytesIO(salary_day_workbook(month)))['Ведомость']
     rows = [[cell.value for cell in line] for line in sheet.iter_rows()]
     line = next(index for index, values in enumerate(rows, 1) if values[1] == 'Карамат')
     assert rows[line - 1][2] == 'Хостес · временный · 08.10–10.10'

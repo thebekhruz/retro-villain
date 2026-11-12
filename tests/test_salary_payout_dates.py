@@ -185,6 +185,17 @@ def shift_sheet(c, month='2026-10'):
     return response.json()
 
 
+def full_ledger(c, month, basis):
+    """Полная ведомость со сменами (резерв в Google Drive) из того же ответа, что
+    видит экран: кнопка «Скачать Excel» отдаёт только сотрудников, без смен."""
+    from io import BytesIO
+    from openpyxl import load_workbook
+    from retro.modules.accountant.salary_day_export import salary_day_workbook
+    response = c.get('/api/accountant/salary-day/month', params={'month': month, 'basis': basis})
+    assert response.status_code == 200, response.text
+    return load_workbook(BytesIO(salary_day_workbook(response.json())))
+
+
 @pytest.mark.parametrize('paid,work', [
     (oct_(6), oct_(5)), (oct_(10), oct_(9)),
     (date(2026, 11, 1), oct_(31)), (date(2027, 1, 1), date(2026, 12, 31))])
@@ -208,10 +219,7 @@ def test_payment_column_writes_same_day_expense_and_exports_previous_shift(c, pa
     assert stored['editable'] is True
     assert day_json(c, paid)['ledger']['salary_paid_on_day'] == '260000'
     assert day_json(c, work)['ledger']['salary_paid_on_day'] == '0'
-    response = c.get('/api/accountant/salary-day/export', params={
-        'month': paid.strftime('%Y-%m'), 'basis': 'payment'})
-    assert response.status_code == 200, response.text
-    sheet = load_workbook(BytesIO(response.content))['Ведомость']
+    sheet = full_ledger(c, paid.strftime('%Y-%m'), 'payment')['Ведомость']
     headers = [v.value for v in sheet[4]]
     col = headers.index(f'Выплата {paid:%d.%m}\nза смену {work:%d.%m}')
     row = next(row for row in sheet.iter_rows(min_row=5) if row[1].value == person.name)
@@ -288,9 +296,7 @@ def test_shift_view_and_export_keep_actual_dates_of_existing_payments_and_extras
     assert shift_sheet(c, '2026-11')['extras'] == []
     assert day_json(c, oct_(9))['ledger']['salary_paid_on_day'] == '360000'
     assert day_json(c, oct_(10))['ledger']['salary_paid_on_day'] == '0'
-    response = c.get('/api/accountant/salary-day/export', params={'month': '2026-10', 'basis': 'shift'})
-    assert response.status_code == 200, response.text
-    book = load_workbook(BytesIO(response.content))
+    book = full_ledger(c, '2026-10', 'shift')
     sheet = book['Ведомость']
     headers = [cell.value for cell in sheet[4]]
     assert 'Смена 31.10' in headers

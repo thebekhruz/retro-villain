@@ -107,3 +107,24 @@ test('T-525: период из N дней, проверка дат и проре
   assert.ok(thirty.length <= 8);
   assert.ok(thirty.every((value, index) => index === 0 || value > thirty[index - 1]));
 });
+
+test('T-592: столбики истории — шаг, зазор, пропуск без столбика, индекс под курсором', () => {
+  const bars = logic.barRects(['100', null, '50'], 100, 300, 100);
+  assert.deepEqual(bars.map(bar => [bar.x, bar.width, bar.y, bar.height, bar.center]),
+    [[11, 78, 0, 100, 50], [111, 78, null, 0, 150], [211, 78, 50, 50, 250]]);
+  // Сотни дней в узком графике — столбик не тоньше пикселя и не за краем.
+  const many = logic.barRects(Array(800).fill('1'), 1, 400, 100);
+  assert.ok(many.every(bar => bar.width >= 1));
+  assert.ok(many[799].center < 400);
+  assert.equal(logic.barIndex(0, 300, 3), 0);
+  assert.equal(logic.barIndex(149, 300, 3), 1);
+  assert.equal(logic.barIndex(999, 300, 3), 2);
+  assert.equal(logic.barIndex(-5, 300, 3), 0);
+});
+
+test('T-592: подпись покрытия столбика называет край истории и незакрытые дни', () => {
+  assert.equal(logic.bucketCoverage({days: 7, days_with_data: 0}), 'нет данных');
+  assert.equal(logic.bucketCoverage({days: 7, days_with_data: 7, clipped: false, partial: false}), '7 из 7 дн.');
+  assert.equal(logic.bucketCoverage({days: 4, days_with_data: 4, clipped: true, partial: false}), '4 из 4 дн. · край истории');
+  assert.equal(logic.bucketCoverage({days: 2, days_with_data: 2, clipped: true, partial: true}), '2 из 2 дн. · край истории · есть незакрытые');
+});

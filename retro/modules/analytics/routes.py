@@ -10,19 +10,26 @@ from fastapi import APIRouter, HTTPException, Request
 
 from retro.modules.cashier.service import today_tashkent
 
-from .service import MAX_DAYS, WINDOW, build_report, spans
+from .service import GROUPS, MAX_DAYS, WINDOW, YEAR_MODES, build_report, history_report, spans
 
 router = APIRouter(prefix='/api/analytics', tags=['analytics'])
 
 
 @router.get('/revenue/weeks')
 async def revenue_weeks(request: Request, start: date | None = None, end: date | None = None,
-                        days: int | None = None):
-    """Выручка Retro за выбранный период, столько же дней раньше и те же дни год назад.
+                        days: int | None = None, year: str = 'weekday'):
+    """Выручка Retro за выбранный период, столько же дней раньше и год назад.
 
     Период — `start`–`end`; без `start` — `days` дней (по умолчанию 7) по `end`
     (по умолчанию вчера). `end` в будущем недоступен; `end` = сегодня можно —
-    тогда последний день помечен как идущий и это сказано в предупреждениях."""
+    тогда последний день помечен как идущий и это сказано в предупреждениях.
+
+    `year` — режим окна «год назад» (T-648): `weekday` (по умолчанию) — 364 дня
+    назад, совпадают дни недели; `date` — те же календарные даты годом раньше,
+    для праздников. По умолчанию день недели: обычная неделя ресторана зависит
+    от него сильнее, чем от числа. Окно «раньше» от режима не зависит."""
+    if year not in YEAR_MODES:
+        raise HTTPException(422, 'Режим «год назад» — weekday (те же дни недели) или date (те же даты).')
     today = today_tashkent()
     end = end or today - timedelta(days=1)
     if start is None:
@@ -43,7 +50,7 @@ async def revenue_weeks(request: Request, start: date | None = None, end: date |
     states = {}
     # Сначала свежие дни: фон берёт очередь по порядку, а смотреть хочется на
     # последнюю неделю, а не на неделю раньше, которая стоит в отрезке первой.
-    for first, last in spans(start, end):
+    for first, last in spans(start, end, year):
         known = await asyncio.to_thread(sales.store.states, first, last)
         if sales.sync is not None:
             sales.sync.want([first + timedelta(days=offset) for offset in range((last - first).days, -1, -1)
@@ -51,4 +58,25 @@ async def revenue_weeks(request: Request, start: date | None = None, end: date |
         refresh_error = await sales.refresh_today(first, last) or refresh_error
         states.update(await asyncio.to_thread(sales.store.states, first, last))
     return build_report(start, end, states, today=today, history_start=sales.settings.sales_history_start,
-                        configured=sales.sync is not None, refresh_error=refresh_error)
+                        configured=sales.sync is not None, refresh_error=refresh_error, year=year)
+
+
+@router.get('/revenue/history')
+async def revenue_history(request: Request, group: str = 'week'):
+    """Выручка Retro за всю историю продаж в базе панели — по дням, неделям или месяцам.
+
+    Начало — первый сохранённый день или `SALES_HISTORY_START`, что раньше; конец —
+    сегодня (идущий день помечен). Пропущенные дни встают в очередь фоновой
+    загрузки, как и в окне выше; в iiko отдельно модуль не ходит."""
+    if group not in GROUPS:
+        raise HTTPException(422, 'Детализация — day, week или month.')
+    today = today_tashkent()
+    sales = request.app.state.sales
+    history_start = sales.settings.sales_history_start
+    coverage = await asyncio.to_thread(sales.store.coverage)
+    first = min(history_start, date.fromisoformat(coverage['first_day'])) if coverage['first_day'] else history_start
+    first = min(first, today)
+    refresh_error = await sales.refresh_today(first, today)
+    states = await asyncio.to_thread(sales.store.states, first, today)
+    return history_report(first, today, states, group=group, history_start=history_start,
+                          configured=sales.sync is not None, refresh_error=refresh_error)

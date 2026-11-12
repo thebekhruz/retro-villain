@@ -1,6 +1,7 @@
 /* Модуль «Аналитика» (T-524): выручка Retro за 7 дней против недели раньше и
    года назад — плитки, две карточки сравнения и линейный график из трёх линий.
-   Данные — /api/analytics/revenue/weeks; расчёт и подписи — analytics-logic.js. */
+   Ниже (T-592) — вся история столбиками по дням, неделям или месяцам.
+   Данные — /api/analytics/revenue/weeks и …/history; расчёт и подписи — analytics-logic.js. */
 (() => {
   const L = globalThis.AnalyticsLogic;
   const $ = id => document.getElementById(id);
@@ -11,7 +12,9 @@
   ];
   const startInput = $('an-start'), endInput = $('an-end'), form = $('an-filters'), message = $('an-message'), status = $('updated');
   const chartBox = $('an-chart'), metrics = document.querySelector('.an-metrics');
-  let today = null, last = null, request = 0;
+  // T-648: режим окна «год назад» — weekday (те же дни недели) или date (те же даты);
+  // живёт до перезагрузки страницы и переживает смену периода.
+  let today = null, last = null, request = 0, yearMode = 'weekday';
 
   function svg(name, attrs = {}) {
     const node = document.createElementNS('http://www.w3.org/2000/svg', name);
@@ -233,7 +236,7 @@
     setLoading(true);
     say('');
     try {
-      const response = await fetch(`/api/analytics/revenue/weeks?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}`, {headers: {accept: 'application/json'}});
+      const response = await fetch(`/api/analytics/revenue/weeks?start=${encodeURIComponent(start)}&end=${encodeURIComponent(end)}&year=${encodeURIComponent(yearMode)}`, {headers: {accept: 'application/json'}});
       const payload = await response.json().catch(() => null);
       if (id !== request) return;
       if (!response.ok) {
@@ -271,13 +274,170 @@
     });
   }
 
+  function markYearMode() {
+    document.querySelectorAll('.an-year-mode .chip').forEach(chip => {
+      const on = chip.dataset.year === yearMode;
+      chip.classList.toggle('active', on);
+      chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    });
+  }
+
+  // ── T-592: вся история — столбики по дням, неделям или месяцам ─────────
+  const historyBox = $('an-history-chart'), historyMessage = $('an-history-message');
+  let history = null, historyGroup = 'week', historyRequest = 0;
+
+  function sayHistory(text, error = false) {
+    historyMessage.hidden = !text;
+    historyMessage.textContent = text || '';
+    historyMessage.classList.toggle('is-error', Boolean(error));
+  }
+
+  function historyTooltip(bucket) {
+    const box = document.createElement('div');
+    box.className = 'an-tooltip';
+    const title = document.createElement('strong');
+    title.textContent = bucket.label;
+    const rows = document.createElement('div');
+    rows.className = 'an-tooltip-rows';
+    [['Выручка', bucket.total === null ? 'нет данных' : L.formatMoney(bucket.total)],
+      ['В среднем за день', bucket.average === null ? '—' : L.formatMoney(bucket.average)],
+      ['Дней с данными', L.bucketCoverage(bucket)]].forEach(([label, text]) => {
+      const row = document.createElement('span'), name = document.createElement('span'), value = document.createElement('b');
+      name.textContent = label;
+      value.textContent = text;
+      row.append(name, value);
+      rows.append(row);
+    });
+    box.append(title, rows);
+    return box;
+  }
+
+  function renderHistoryChart(data) {
+    historyBox.replaceChildren();
+    const buckets = data.buckets;
+    if (!buckets.some(bucket => bucket.days_with_data > 0)) {
+      const empty = document.createElement('div');
+      empty.className = 'an-empty';
+      empty.textContent = 'В базе панели ещё нет загруженных продаж.';
+      historyBox.append(empty);
+      return;
+    }
+    const width = Math.max(320, Math.floor(historyBox.clientWidth || 720)), height = Math.max(200, historyBox.clientHeight || 280);
+    const pad = {left: 58, right: 18, top: 14, bottom: 34};
+    const plotWidth = width - pad.left - pad.right, plotHeight = height - pad.top - pad.bottom;
+    const max = L.niceCeil(Math.max(0, ...buckets.map(bucket => Number(bucket.total)).filter(Number.isFinite)));
+    const chart = svg('svg', {viewBox: `0 0 ${width} ${height}`, 'aria-hidden': 'true'});
+    for (let step = 0; step <= 4; step += 1) {
+      const value = max - max * step / 4, y = pad.top + plotHeight * step / 4;
+      chart.append(svg('line', {x1: pad.left, y1: y, x2: width - pad.right, y2: y, class: value === 0 ? 'an-grid is-zero' : 'an-grid'}));
+      const label = svg('text', {x: pad.left - 8, y: y + 3.5, 'text-anchor': 'end', class: 'an-axis'});
+      label.textContent = L.compactMoney(value);
+      chart.append(label);
+    }
+    const rects = L.barRects(buckets.map(bucket => bucket.total), max, plotWidth, plotHeight);
+    // Подписи оси: при узких столбиках — не чаще, чем помещается текст.
+    const limit = Math.max(2, Math.min(8, Math.floor(plotWidth / (historyGroup === 'week' ? 110 : 70))));
+    const labelled = new Set(L.axisIndexes(buckets.length, limit));
+    buckets.forEach((bucket, index) => {
+      const rect = rects[index];
+      if (rect.y !== null && rect.height > 0) {
+        chart.append(svg('rect', {x: pad.left + rect.x, y: pad.top + rect.y, width: rect.width, height: rect.height,
+          rx: Math.min(4, rect.width / 3), class: bucket.complete ? 'an-bar' : 'an-bar is-incomplete'}));
+      }
+      if (!labelled.has(index)) return;
+      const label = svg('text', {x: pad.left + rect.center, y: height - 10,
+        'text-anchor': index === 0 && buckets.length > 1 ? 'start' : index === buckets.length - 1 && buckets.length > 1 ? 'end' : 'middle', class: 'an-axis'});
+      // Неделя на оси — первым днём в истории: обрезанная началом неделя не «31.08», а «01.09».
+      label.textContent = historyGroup === 'week'
+        ? (bucket.start.slice(0, 4) === data.today.slice(0, 4) ? L.shortDate(bucket.start) : L.fullDate(bucket.start)) : bucket.label;
+      chart.append(label);
+    });
+    const hoverLine = svg('line', {y1: pad.top, y2: pad.top + plotHeight, class: 'an-hover-line', visibility: 'hidden'});
+    const hoverLayer = svg('rect', {x: pad.left, y: pad.top, width: plotWidth, height: plotHeight, class: 'an-hover-layer',
+      tabindex: '0', 'aria-label': 'Наведите или коснитесь столбика, чтобы увидеть сумму'});
+    chart.append(hoverLine, hoverLayer);
+    let tooltip = null;
+    const show = event => {
+      const bounds = chart.getBoundingClientRect();
+      if (!bounds.width) return;
+      const chartX = (event.clientX - bounds.left) / bounds.width * width - pad.left;
+      const index = L.barIndex(chartX, plotWidth, buckets.length);
+      const x = pad.left + rects[index].center;
+      const next = historyTooltip(buckets[index]);
+      if (tooltip) tooltip.replaceWith(next); else historyBox.append(next);
+      tooltip = next;
+      tooltip.style.left = x / width * 100 + '%';
+      tooltip.classList.toggle('is-left', x > width * 0.62);
+      hoverLine.setAttribute('visibility', 'visible');
+      hoverLine.setAttribute('x1', x);
+      hoverLine.setAttribute('x2', x);
+    };
+    const hide = () => {
+      if (tooltip) tooltip.remove();
+      tooltip = null;
+      hoverLine.setAttribute('visibility', 'hidden');
+    };
+    hoverLayer.addEventListener('pointermove', show);
+    hoverLayer.addEventListener('pointerdown', show);
+    hoverLayer.addEventListener('pointerleave', hide);
+    hoverLayer.addEventListener('blur', hide);
+    historyBox.append(chart);
+  }
+
+  function renderHistory(data) {
+    history = data;
+    $('an-history-total').textContent = data.total === null ? '—' : L.formatMoney(data.total) + ' сум';
+    $('an-history-average').textContent = data.average === null ? '—' : L.formatMoney(data.average) + ' сум';
+    $('an-history-range').textContent = L.rangeLabel(data.start, data.end, data.today);
+    $('an-history-days').textContent = `${data.days_with_data} из ${data.days}`;
+    renderHistoryChart(data);
+    sayHistory(data.warnings && data.warnings.length ? data.warnings.join(' ') : '');
+  }
+
+  async function loadHistory() {
+    const id = ++historyRequest;
+    historyBox.classList.add('is-loading');
+    document.querySelectorAll('.an-history-group .chip').forEach(chip => chip.classList.toggle('active', chip.dataset.group === historyGroup));
+    try {
+      const response = await fetch(`/api/analytics/revenue/history?group=${encodeURIComponent(historyGroup)}`, {headers: {accept: 'application/json'}});
+      const payload = await response.json().catch(() => null);
+      if (id !== historyRequest) return;
+      if (!response.ok) {
+        sayHistory((payload && payload.detail) || 'Не удалось загрузить историю выручки.', true);
+        return;
+      }
+      renderHistory(payload);
+    } catch (error) {
+      if (id === historyRequest) sayHistory('Нет связи с сервером. Повторите позже.', true);
+    } finally {
+      if (id === historyRequest) historyBox.classList.remove('is-loading');
+    }
+  }
+
+  document.querySelectorAll('.an-history-group .chip').forEach(chip => chip.addEventListener('click', () => {
+    historyGroup = chip.dataset.group;
+    loadHistory();
+  }));
+  loadHistory();
+
   form.addEventListener('submit', event => { event.preventDefault(); load(); });
   document.querySelectorAll('.an-quick .chip').forEach(chip => chip.addEventListener('click', () => { setQuick(chip.dataset.days); load(); }));
+  // Смена режима перезапрашивает тот же период тем же load(): поздний ответ
+  // прежнего режима отсекает тот же счётчик `request`. При неверном периоде
+  // режим не меняем: load() его не загрузит, и кнопка разошлась бы с цифрами.
+  document.querySelectorAll('.an-year-mode .chip').forEach(chip => chip.addEventListener('click', () => {
+    if (chip.dataset.year === yearMode) return;
+    const problem = L.periodError(startInput.value, endInput.value, today);
+    if (problem) { say(problem, true); return; }
+    yearMode = chip.dataset.year;
+    markYearMode();
+    load();
+  }));
   [startInput, endInput].forEach(input => input.addEventListener('change', markChips));
   let resizeTimer = null;
   window.addEventListener('resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (last) renderChart(last); }, 150);
+    resizeTimer = setTimeout(() => { if (last) renderChart(last); if (history) renderHistoryChart(history); }, 150);
   });
 
   const config = globalThis.RetroConfig || fetch('/api/config', {headers: {accept: 'application/json'}}).then(r => (r.ok ? r.json() : null));

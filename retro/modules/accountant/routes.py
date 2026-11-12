@@ -696,14 +696,16 @@ def delete_extra_payout(request: Request, payout_id: int):
 @router.get('/salary-day/export')
 def download_salary_day(request: Request, month: str, group: str | None = None, q: str | None = None,
                         role: str | None = None, basis: Literal['payment', 'shift'] = 'payment'):
-    """«Зарплата · день» в Excel для печати (Б-07): вся ведомость или выборка
-    (группа, должность, поиск) — режим написан в шапке файла."""
-    from .salary_day_export import salary_day_workbook
+    """«Зарплата · день» в Excel для печати (Б-07): только сотрудники — №, ФИО,
+    должность, ставка и пустой столбец для подписи; смены и выплаты в файл не
+    идут. Вся ведомость или выборка (группа, должность, поиск) — режим написан
+    в шапке файла. Полная ведомость со сменами остаётся в резерве Google Drive."""
+    from .salary_day_export import salary_day_staff_workbook
     data = salary_day_month(request, month, basis)
     group = (group or '').strip() or None
     query = (q or '').strip() or None
     role = (role or '').strip() or None
-    body = salary_day_workbook(data, group=group, query=query, role=role)
+    body = salary_day_staff_workbook(data, group=group, query=query, role=role)
     name = f'Retro-salary-day-{month}' + ('-selection' if group or query or role else '') + '.xlsx'
     return Response(body, media_type='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
                     headers={'Content-Disposition': f'attachment; filename="{name}"'})

@@ -199,6 +199,13 @@ def test_builders_produce_the_same_files_as_cabinet_downloads(tmp_path):
     assert cashier['отчет']['B2'].value > 0
     for content in files.values():
         assert openpyxl.load_workbook(BytesIO(content)).sheetnames
+    # «Зарплата · день» — здесь единственное отличие от кнопки кабинета: кнопка
+    # отдаёт только сотрудников, а резерв остаётся архивом денег по дням.
+    salary = openpyxl.load_workbook(BytesIO(files['salary_day']))
+    assert salary.sheetnames == ['Ведомость', 'Доп. выплаты']
+    head = [cell.value for cell in salary['Ведомость'][4]]
+    assert head[:4] == ['№', 'Сотрудник', 'Должность', 'Ставка'] and head[-2:] == ['Доп. выплаты', 'Итого']
+    assert any(str(value).startswith('Выплата ') for value in head[4:-2])
 
 
 def test_demo_cashier_day_is_skipped(tmp_path):
