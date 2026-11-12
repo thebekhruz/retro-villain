@@ -1,10 +1,9 @@
-/* Аналитика учредителя на телефоне (макет «3б · Аналитика целиком», ноябрь 2026).
+/* Аналитика учредителя на телефоне (макет «3б», ТЗ от 10.11.2026, задача 2).
  *
- * Только показ: строка разделов, «Общая картина» недели сверху, свёрнутый
- * фильтр, компактная рассылка и свёрнутая таблица «По периодам». Неделя
+ * На телефоне — только «Общая картина» недели и компактная рассылка. Неделя
  * берётся теми же запросами, что в кабинете (/api/founder/week, дивиденды,
- * прогноз), и считается той же логикой кабинета (FounderCabinetLogic) —
- * новых расчётов и запросов нет. На компьютере (≥ 901) ничего не делает. */
+ * прогноз), и считается логикой кабинета (FounderCabinetLogic); здесь только
+ * сравнение с теми же днями прошлой недели. На компьютере (≥ 901) ничего не делает. */
 (() => {
   const $ = id => document.getElementById(id);
   const logic = globalThis.FounderCabinetLogic;
@@ -31,18 +30,12 @@
     const current = week.start <= state.today && state.today <= week.end;
     setText('fa-week-range', dm(week.start) + '–' + dm(week.end));
     setText('fa-week-current', current ? '· текущая' : '');
+    // Большая аналитика на телефоне не грузится (founder.js) — статус дня, как на главной, из этой недели.
+    if (current) setText('updated', logic.todayStatus(week.days.find(day => day.date === state.today), state.today));
     $('fa-week-next').disabled = current || week.end >= state.today;
     setText('fa-week-total', short(totals.retro + totals.school));
-    // Процент к прошлой неделе — только если сервер его прислал (сейчас — только демо).
-    const compare = week.compare, change = $('fa-week-change');
-    const percent = compare ? num(compare.percent) : null;
-    change.hidden = percent === null;
-    if (percent !== null) {
-      change.textContent = (percent >= 0 ? '▲ ' : '▼ ') + Math.abs(percent) + '%';
-      change.className = percent >= 0 ? 'is-up' : 'is-down';
-    }
+    renderCompare(week, null);  // процент — когда придёт прошлая неделя
     const days = totals.days + ' ' + plural(totals.days, 'день', 'дня', 'дней');
-    setText('fa-week-days', percent !== null ? 'к тем же ' + days + ' прошлой недели' : days + ' недели');
     setText('fa-k-retro', short(totals.retro));
     setText('fa-k-retro-sub', days + ' недели');
     setText('fa-k-ox', short(totals.school));
@@ -50,6 +43,33 @@
     setText('fa-k-demo', short(totals.demo));
     setText('fa-k-demo-sub', totals.demoShare === null ? '' : totals.demoShare + '% выручки Retro');
     renderDividends(week);
+  }
+
+  /** Выручка (Retro + Oxbridge) этой недели к тем же дням недели прошлой: Пн–Вт к Пн–Вт,
+   *  по дню недели, а не по датам. Только закрытые дни: сегодняшний ещё идёт, и неполный
+   *  день против целого всегда дал бы минус. Нет данных iiko хоть за один такой день — сравнения нет. */
+  function weekCompare(week, previous) {
+    const days = ((week && week.days) || []).filter(day => !day.future && day.cashier && day.date < state.today);
+    const before = new Map(((previous && previous.days) || []).map(day => [day.weekday, day]));
+    const pairs = days.map(day => before.get(day.weekday));
+    if (!days.length || pairs.some(day => !day || !day.cashier)) return null;
+    const revenue = list => list.reduce((acc, day) => acc + (num(day.cashier.retro) || 0) + (num(day.cashier.school) || 0), 0);
+    const current = revenue(days), past = revenue(pairs);
+    if (!past) return null;
+    const name = day => logic.WEEKDAYS[day.weekday].toLowerCase();
+    return {current, past, percent: Math.round((current - past) / past * 100),
+      span: days.length === 1 ? name(days[0]) : name(days[0]) + '–' + name(days[days.length - 1])};
+  }
+
+  /** Процент к тем же дням недели прошлой недели — относительно прошлой недели. */
+  function renderCompare(week, view) {
+    const change = $('fa-week-change'), count = logic.weekTotals(week).days;
+    change.hidden = !view;
+    if (!view) { setText('fa-week-days', count + ' ' + plural(count, 'день', 'дня', 'дней') + ' недели'); return; }
+    change.textContent = (view.percent >= 0 ? '▲ ' : '▼ ') + Math.abs(view.percent) + '%';
+    change.className = view.percent >= 0 ? 'is-up' : 'is-down';
+    // Итог выше — с сегодняшним днём, процент — по закрытым дням: обе суммы сравнения на виду.
+    setText('fa-week-days', view.span + ': ' + short(view.current) + ' к ' + short(view.past) + ' прошлой недели');
   }
 
   function renderDividends(week) {
@@ -85,10 +105,17 @@
   }
 
   function loadWeek() {
-    request('/api/founder/week?date=' + state.weekDate).then(week => {
+    // Быстро листают недели — рисуем только ответ на последний выбор.
+    const asked = state.weekDate;
+    request('/api/founder/week?date=' + asked).then(week => {
+      if (asked !== state.weekDate) return;
       state.weekStart = week.start;
       renderWeek(week);
-    }).catch(weekFailed);
+      // Прошлая неделя — тот же запрос, нужна только для сравнения; не ответила — процента нет.
+      return request('/api/founder/week?date=' + shiftDay(week.start, -7)).then(previous => {
+        if (asked === state.weekDate) renderCompare(week, weekCompare(week, previous));
+      }, () => {});
+    }).catch(error => { if (asked === state.weekDate) weekFailed(error); });
   }
 
   async function startWeek() {
@@ -117,46 +144,6 @@
     loadWeek();
   });
 
-  // ── Строка разделов: подсветка раздела, который сейчас на экране ──────
-  const sectionLinks = [...document.querySelectorAll('.fa-sections a')];
-  if (typeof IntersectionObserver === 'function') {
-    const seen = new Map();
-    const observer = new IntersectionObserver(entries => {
-      entries.forEach(entry => seen.set(entry.target.id, entry.isIntersecting));
-      const first = sectionLinks.find(link => seen.get(link.hash.slice(1)));
-      if (!first) return;
-      sectionLinks.forEach(link => {
-        if (link === first) link.setAttribute('aria-current', 'true'); else link.removeAttribute('aria-current');
-      });
-    }, {rootMargin: '-120px 0px -55% 0px'});
-    sectionLinks.forEach(link => { const target = $(link.hash.slice(1)); if (target) observer.observe(target); });
-  }
-
-  // ── Фильтр одной строкой; «Изменить» открывает ту же форму ────────────
-  const GRANULARITY = {day: 'по дням', week: 'по неделям', month: 'по месяцам'};
-  function filterSummary() {
-    const start = $('start').value, end = $('end').value;
-    setText('fa-filter-range', dm(start) + ' – ' + dm(end));
-    const directions = [...document.querySelectorAll('input[name=direction]')];
-    const checked = directions.filter(input => input.checked);
-    const scope = checked.length === directions.length ? 'все направления'
-      : checked.map(input => input.parentElement.textContent.trim()).join(', ') || 'направления не выбраны';
-    setText('fa-filter-rest', '· ' + scope + ' · ' + GRANULARITY[$('granularity').value]);
-  }
-  $('fa-filter-open').addEventListener('click', () => {
-    const open = !$('filters').classList.contains('fa-open');
-    $('filters').classList.toggle('fa-open', open);
-    $('fa-filter-open').setAttribute('aria-expanded', String(open));
-  });
-  $('filters').addEventListener('change', filterSummary);
-  // Даты фильтра ставит founder.js без событий: сводку обновляем, когда меняется строка состояния.
-  new MutationObserver(filterSummary).observe($('updated'), {childList: true, characterData: true, subtree: true});
-  // Нажали «Показать» — форма сворачивается обратно в строку.
-  $('filters').addEventListener('submit', () => {
-    $('filters').classList.remove('fa-open');
-    $('fa-filter-open').setAttribute('aria-expanded', 'false');
-  });
-
   // ── Рассылка: форма и журнал — во весь экран ──────────────────────────
   const broadcast = document.querySelector('.broadcast-panel');
   function openBroadcast(mode) {
@@ -169,14 +156,6 @@
   $('fa-broadcast-journal').addEventListener('click', () => openBroadcast('fa-journal'));
   $('fa-broadcast-close').addEventListener('click', () => openBroadcast(null));
   document.addEventListener('keydown', event => { if (event.key === 'Escape' && document.body.classList.contains('fa-sheet-open')) openBroadcast(null); });
-
-  // ── «Выручка и брони по периодам» свёрнуто в строку ───────────────────
-  $('fa-series-toggle').addEventListener('click', () => {
-    const panel = document.querySelector('.series-table-panel');
-    const open = !panel.classList.contains('fa-open');
-    panel.classList.toggle('fa-open', open);
-    $('fa-series-toggle').setAttribute('aria-expanded', String(open));
-  });
 
   startWeek();
   phone.addEventListener('change', startWeek);

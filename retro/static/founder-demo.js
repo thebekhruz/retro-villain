@@ -66,9 +66,9 @@
         demo_cash: '18200000', cash_prepayment: '1500000', receipts: '11300000', expenses: '478000', shokh: '400000',
         usd_total: '0', handover: '30122000',
         prepayments: {count: 2, total: '1500000', methods: [{name: 'Uzcard', amount: '1500000'}]}, issues: []},
-      // Только в демо: сравнение с тем же днём прошлой недели. В ответе сервера этого поля нет.
-      compare: {date: '2026-11-02', revenue: '27224553', percent: 12},
     };
+    // Дни раньше вчерашнего (тот же день недели неделю назад) — касса поменьше, чтобы было видно сравнение.
+    if (cashier && date < YESTERDAY) cashier.report = {...cashier.report, revenue: '27224553'};
     const accounting = today ? {
       date: TODAY,
       ledger: {cash_flow: {opening_balance: '22937000', received_from_cashier: '30122000', received_counted: '30122000',
@@ -117,8 +117,7 @@
           : {salary: '26000000', procurement: '2400000', other: '2500000', dividends: '0'},
         closing_balance: value.closing_balance};
     });
-    // Только в демо: выручка к тем же дням прошлой недели. В ответе сервера этого поля нет.
-    return {start: WEEK_START, end: shift(WEEK_START, 6), days, compare: {percent: 8}};
+    return {start: WEEK_START, end: shift(WEEK_START, 6), days};
   }
 
   const FORECAST_DAYS = [['Пн', 38e6, 3.5e6, 240], ['Вт', 40e6, 3.7e6, 280], ['Ср', 41e6, 3.8e6, 285], ['Чт', 43e6, 3.9e6, 300],

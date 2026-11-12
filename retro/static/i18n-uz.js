@@ -4577,3 +4577,48 @@ globalThis.RetroTemplatesUz.push(
     "$2 kundan $1 kun uchun ma’lumot yo‘q — ular summalarga kirmagan."],
 );
 /* ── /T-592 ── */
+/* ── Учредитель: мобильная версия (макет, ноябрь 2026) ── */
+Object.assign(globalThis.RetroDictionaryUz, {
+  // Главная «Сегодня»: плитки наверху, Счёт Шефа, плашка iiko
+  'Коротко за вчера и сегодня': "Kecha va bugun qisqacha",
+  'У бухгалтера': "Buxgalterda",
+  'сум на руках': "so‘m qo‘lida",
+  'бухгалтер получил': "buxgalter oldi",
+  'бухгалтер подтвердил': "buxgalter tasdiqladi",
+  'нет данных iiko за вчера': "kecha uchun iiko ma’lumoti yo‘q",
+  'Замечания: нет данных iiko': "Izohlar: iiko ma’lumoti yo‘q",
+  'Нет связи с iiko.': "iiko bilan aloqa yo‘q.",
+  'Выручка и Счёт Шефа не обновляются. Касса бухгалтера работает как обычно.':
+    "Tushum va Shef hisobi yangilanmayapti. Buxgalter kassasi odatdagidek ishlayapti.",
+  'Состав счёта': "Hisob tarkibi",
+  'пример': "namuna",
+  // Профиль
+  'Порог отметки': "Belgilash chegarasi",
+  'Счета выше суммы — красным': "Bu summadan yuqori hisoblar — qizil rangda",
+  'Приложение': "Ilova",
+  'Добавить на экран «Домой»': "«Asosiy ekran»ga qo‘shish",
+  'Без этого уведомления не приходят на iPhone': "Busiz iPhone’ga bildirishnomalar kelmaydi",
+  'iPhone: Safari → «Поделиться» → «На экран „Домой“».': "iPhone: Safari → «Ulashish» → «Asosiy ekranga».",
+  'Android: Chrome → меню ⋮ → «Добавить на главный экран».': "Android: Chrome → menyu ⋮ → «Bosh ekranga qo‘shish».",
+  'Откройте Retro Milliy со значка и включите уведомления здесь.': "Retro Milliy’ni belgidan oching va bildirishnomalarni shu yerda yoqing.",
+  // Аналитика на телефоне
+  'КАБИНЕТ ОСНОВАТЕЛЯ': "ASOSCHI KABINETI",
+  '· текущая': "· joriy",
+  'Прошлая неделя': "O‘tgan hafta",
+  'Следующая неделя': "Keyingi hafta",
+  'Демо — продажи по демо-кассе Retro, входят в выручку Retro': "Демо — Retro demo-kassasi bo‘yicha savdo, Retro tushumiga kiradi",
+  'Написать сообщение': "Xabar yozish",
+  'Журнал →': "Jurnal →",
+});
+globalThis.RetroTemplatesUz.push(
+  [/^Касса вчера · (\S+) (\d\d\.\d\d)$/, "Kechagi kassa · $1 $2"],
+  [/^к (\S+) (\d\d\.\d\d) · (.+)$/, "$1 $2 ga nisbatan · $3"],
+  [/^(\d+) (?:счёт|счёта|счетов)$/, "$1 ta hisob"],
+  [/^Все счета недели · (\d+) ▾$/, "Haftaning barcha hisoblari · $1 ▾"],
+  [/^Стол (.+?) · (.+) · больше (.+) за один счёт$/, "Stol $1 · $2 · bitta hisobda $3 dan ortiq"],
+  [/^СЧЁТ ШЕФА · (\d\d\.\d\d)$/, "SHEF HISOBI · $1"],
+  [/^Счёт выше порога (.+) — отмечен для проверки$/, "Hisob $1 chegarasidan yuqori — tekshirish uchun belgilandi"],
+  // Аналитика: «пн–вт: 30,5 млн к 27,2 млн прошлой недели» — те же дни недели прошлой недели
+  [/^(\S+): (.+) к (.+) прошлой недели$/, "$1: $2, o‘tgan haftaning shu kunlarida $3"],
+);
+/* ── /Учредитель: мобильная версия ── */

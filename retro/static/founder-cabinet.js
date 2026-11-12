@@ -427,18 +427,23 @@
     if (yesterday) {
       const view = logic.cashierBrief(yesterday, state.today);
       setText('fo-b-cash', view.error ? '—' : sum(view.sales));
-      const compare = yesterday.cashier && yesterday.cashier.compare;
-      const percent = compare ? num(compare.percent) : null;
+      // Тот же день недели неделей раньше (пн — к прошлому пн), те же продажи кассы.
+      const before = state.data.weekAgo, past = before ? logic.cashierBrief(before, state.today) : null;
+      const compare = past && !past.error && past.sales ? past : null;
+      const percent = compare && !view.error && view.sales !== null ? Math.round((view.sales - compare.sales) / compare.sales * 100) : null;
       if (percent !== null) {
         change.hidden = false;
         change.textContent = (percent >= 0 ? '▲ ' : '▼ ') + Math.abs(percent) + '%';
         change.className = 'fo-bento-change ' + (percent >= 0 ? 'is-up' : 'is-down');
       }
       const parts = [];
-      if (compare && compare.date) parts.push('к ' + logic.WEEKDAYS[(new Date(compare.date + 'T12:00:00Z').getUTCDay() + 6) % 7].toLowerCase() + ' ' + dm(compare.date));
+      if (compare) parts.push('к ' + logic.WEEKDAYS[(new Date(before.date + 'T12:00:00Z').getUTCDay() + 6) % 7].toLowerCase() + ' ' + dm(before.date) + ' · ' + short(compare.sales));
       if (view.error) parts.push('нет данных iiko за вчера');
       else parts.push(view.received.label.toLowerCase() + ' ' + view.received.value + (view.received.mark ? ' ' + view.received.mark : ''));
-      setText('fo-b-cash-note', parts.join(' · '));
+      // Каждая часть — своим узлом: перевод на узбекский берёт строку целиком, склейку он бы не узнал.
+      const note = $('fo-b-cash-note');
+      note.replaceChildren();
+      parts.forEach((part, index) => { if (index) note.append(' · '); note.append(node('span', '', part)); });
     }
     if (today) {
       const brief = logic.accountantBrief(today);
@@ -606,6 +611,8 @@
       yesterday: yesterday.status === 'rejected' ? yesterday.reason.message : null};
     renderBrief();
     renderBento();
+    // Касса того же дня недели неделей раньше — только для процента в бенто; не ответила — процента нет.
+    load('weekAgo', '/api/founder/day?date=' + shiftDay(state.yesterday, -7)).then(renderBento, () => {});
     // Время — чтения iiko сервером (ТЗ 16.10, п. 2), не часы телефона.
     setText('updated', today.status === 'rejected' ? today.reason.message : logic.todayStatus(today.value, state.today));
   }
@@ -654,7 +661,6 @@
     setText('k-retro-sub', totals.days + ' ' + plural(totals.days, 'день', 'дня', 'дней') + ' недели');
     setText('k-ox-sub', week.orders_error ? 'чеки: ' + week.orders_error : '');
     setText('fo-week-label', dm(week.start) + '–' + dm(week.end));
-    setText('fo-more-week', short(totals.retro + totals.school));
     // Неделя кабинета всегда доходит до сегодня: итоги растут вместе с днём.
     deskStatus(logic.todayStatus(week.days.find(day => day.date === state.today), state.today));
   }
@@ -674,7 +680,6 @@
     state.issues = issues;
     renderPhoneIssues(issues);
     setText('fo-checks-title', issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') : 'Замечаний нет');
-    setText('fo-more-acc', issues.length ? issues.length + ' ' + plural(issues.length, 'замечание', 'замечания', 'замечаний') : 'замечаний нет');
     const list = $('fo-checks');
     list.replaceChildren();
     // Компьютер: семь и «ещё N — спросите AI»; телефон: весь список, ничего не прячем.
@@ -774,7 +779,6 @@
     setText('fo-exp-title', 'РАСХОДЫ ' + MONTHS_OF[index].toUpperCase());
     setText('fo-shokh-month', month);
     setText('fo-exp-total', sum(num(data.expenses.total)) + ' сум');
-    setText('fo-more-exp', short(num(data.expenses.total)));
     const list = $('fo-exp-list');
     list.replaceChildren();
     const max = Math.max(1, ...data.expenses.categories.map(item => num(item.amount)));
@@ -847,7 +851,6 @@
     setText('fo-forecast-note', logic.forecastNote(data));
     const month = data.month;
     setText('k-month', short(num(month.total)));
-    setText('fo-more-menu', short(num(month.total)));
     setText('k-month-sub', 'факт ' + short(num(month.fact)) + ' + прогноз ' + short(num(month.forecast)));
     if (state.data.week) renderWeek(state.data.week);
     if (state.data.today) renderPhoneDays(state.data.today, state.data.yesterday);
@@ -960,10 +963,9 @@
 
   /* Телефон: разделы «Всей картины» раскрываются по заголовку. */
   function setFold(id, open) {
+    const link = document.querySelector('.fo-fold[data-fold="' + id + '"]');
     $(id).classList.toggle('fo-open', open);
-    // Заголовок раздела и строка карточки «Подробно» внизу телефона — одно состояние.
-    document.querySelectorAll('.fo-fold[data-fold="' + id + '"], .fo-more [data-more="' + id + '"]')
-      .forEach(link => link.setAttribute('aria-expanded', String(open)));
+    if (link) link.setAttribute('aria-expanded', String(open));
   }
 
   /* ── Отчёты бухгалтера (ТЗ 02.10): сданные дни и закрытые месяцы ─── */
@@ -1015,7 +1017,6 @@
     const yesterday = reports.find(item => item.day === state.yesterday);
     const mark = $('fo-y-report');
     mark.textContent = !yesterday ? 'не сдан' : yesterday.changed ? 'изменён после сдачи' : 'сдан ' + stamp(yesterday.submitted_at).slice(6);
-    setText('fo-more-reports', 'вчера ' + mark.textContent);
     mark.classList.toggle('is-ok', !!yesterday && !yesterday.changed);
     mark.classList.toggle('is-warn', !yesterday || yesterday.changed);
     renderBento();
@@ -1037,12 +1038,6 @@
       setFold('fo-acc', true);
       $('fo-acc').scrollIntoView({block: 'start', behavior: 'smooth'});
     });
-    // Карточка «Подробно»: строка раскрывает раздел под карточкой, повторное нажатие — сворачивает.
-    document.querySelectorAll('.fo-more [data-more]').forEach(button => button.addEventListener('click', () => {
-      const id = button.dataset.more, open = button.getAttribute('aria-expanded') !== 'true';
-      setFold(id, open);
-      if (open) $(id).scrollIntoView({block: 'start'});
-    }));
     $('fo-bill-close').addEventListener('click', () => $('fo-bill-sheet').close());
     // Нажатие на затемнение вокруг шторки закрывает её, как у профиля.
     $('fo-bill-sheet').addEventListener('click', event => { if (event.target === event.currentTarget) event.currentTarget.close(); });
